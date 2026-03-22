@@ -22,6 +22,7 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
 - **Query generation:** sqlc
 - **Migrations:** goose
+- **Syntax highlighting:** react-syntax-highlighter (frontend, Prism + oneDark)
 
 ### Frontend (TypeScript + React)
 
@@ -30,7 +31,7 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 - **Routing:** TanStack Router
 - **State management:** Zustand
 - **Styling:** Tailwind CSS 4 + shadcn/ui (Catppuccin Mocha theme)
-- **Markdown:** react-markdown + @tailwindcss/typography
+- **Markdown:** react-markdown + @tailwindcss/typography + react-syntax-highlighter
 - **Linting/Formatting:** Biome
 
 ### Deployment
@@ -46,11 +47,12 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 |                  | <-------------------------------> |                  |
 |   React SPA      |                                   |   Go Backend     |
 |   (Vite)         |                                   |                  |
-|   Zustand        |                                   |  claudecli-go    |
-|   shadcn/ui      |                                   |  sessions        |
+|   Zustand        |                                   |  session.Manager |
+|   shadcn/ui      |                                   |  (singleton)     |
 +------------------+                                   +------------------+
                                                               |
-                                                         stdin/stdout
+                                                     claudecli-go Sessions
+                                                         (one per tab)
                                                               |
                                                        +------------------+
                                                        |  Claude CLI      |
@@ -64,11 +66,14 @@ JSON messages with `id` for request/response correlation. Push events have no `i
 
 ```jsonc
 // Client -> Server (request)
-{ "id": "req-1", "type": "session.create", "payload": { "projectId": "..." } }
-{ "id": "req-2", "type": "session.query", "payload": { "sessionId": "...", "prompt": "..." } }
+{ "id": "req-1", "type": "session.create", "payload": { "projectId": "...", "name": "...", "worktree": false } }
+{ "id": "req-2", "type": "session.list", "payload": { "projectId": "..." } }
+{ "id": "req-3", "type": "session.query", "payload": { "sessionId": "...", "prompt": "..." } }
+{ "id": "req-4", "type": "session.stop", "payload": { "sessionId": "..." } }
+{ "id": "req-5", "type": "session.subscribe", "payload": { "sessionId": "..." } }
 
 // Server -> Client (response, correlated by id)
-{ "id": "req-1", "type": "response", "payload": { "sessionId": "..." } }
+{ "id": "req-1", "type": "response", "payload": { "sessionId": "...", "name": "...", "state": "idle" } }
 
 // Server -> Client (push, no id)
 { "type": "session.event", "payload": { "sessionId": "...", "event": { "type": "text", "content": "..." } } }
@@ -87,13 +92,13 @@ agentique/
         main.go
     internal/
       server/                # HTTP server, routes, SPA handler, CORS
-      ws/                    # WebSocket handler, connection, message types
-      session/               # Claude session manager (wraps claudecli-go)
+      ws/                    # WebSocket handler, connection, message types, dispatch
+      session/               # Session manager (singleton), session wrapper, worktree module
       project/               # project CRUD handlers
       store/                 # SQLite persistence layer (sqlc generated)
     db/
-      migrations/            # goose SQL migration files
-      queries/               # sqlc query files
+      migrations/            # goose SQL migration files (001_projects, 002_sessions)
+      queries/               # sqlc query files (projects.sql, sessions.sql)
       embed.go               # embeds migrations via embed.FS
       sqlc.yaml
     go.mod
@@ -102,11 +107,13 @@ agentique/
     src/
       components/
         ui/                  # shadcn/ui components
-        chat/                # ChatPanel, TurnBlock, MessageComposer, etc.
+        chat/                # ChatPanel, TurnBlock, SessionTabs, NewSessionDialog,
+                             # MessageComposer, MessageList, Markdown, ThinkingBlock,
+                             # ToolUseBlock, ToolResultBlock
         layout/              # AppSidebar, ProjectList, NewProjectDialog
       hooks/                 # useWebSocket, useChatSession, useProjects
       lib/                   # ws-client, api, types, utils
-      stores/                # app-store (projects), chat-store (session/turns)
+      stores/                # app-store (projects), chat-store (multi-session)
       routes/                # TanStack Router file-based routes
     index.html
     package.json
@@ -193,39 +200,52 @@ Frontend:
 - [x] WebSocket client class with request/response correlation and push subscriptions
 - [x] Auto-reconnect with exponential backoff
 - [x] Zustand chat store with turn-based event accumulation
-- [x] Message rendering: user messages, assistant text (Markdown), thinking blocks (collapsible), tool use/result blocks
+- [x] Message rendering: user messages, assistant text (Markdown with syntax highlighting), thinking blocks (collapsible), tool use/result blocks (compact format, collapsed results)
 - [x] Working message composer: send prompt on Enter, disable while agent is running
 - [x] Session state indicator badge (disconnected/idle/running)
 - [x] Auto-scroll to latest message
 - [x] Cost and duration display per turn
-
-**Known issues:**
-- First message takes ~30-40s due to Claude CLI subprocess initialization
-- WebSocket connects directly to backend port in dev mode (Vite WS proxy unreliable)
+- [x] Streaming activity indicator (spinner while waiting for content)
 
 ---
 
-### M2: Multi-Session + Multi-Project
+### M2: Multi-Session + Worktrees [DONE]
 
-**Goal:** Full MVP -- multiple parallel agent sessions across multiple projects.
+**Goal:** Multiple parallel agent sessions per project with optional git worktree isolation.
 
 Backend:
-- [ ] Session manager supports multiple concurrent sessions (goroutine per session)
-- [ ] Sessions scoped to projects (each session has a `projectId` and `workDir`)
-- [ ] Session CRUD API + WebSocket commands (create, stop, list)
-- [ ] Session metadata persisted to SQLite (id, project, model, state, created_at)
-- [ ] Per-session configuration (model, permission mode, system prompt)
+- [x] Session manager refactored to server-level singleton (survives WS reconnects)
+- [x] Sessions table in SQLite (id, project_id, name, work_dir, worktree_path, state)
+- [x] Session CRUD via WebSocket: session.create, session.list, session.stop, session.subscribe
+- [x] Git worktree create/remove module (`~/.agentique/worktrees/`)
+- [x] Session state persisted to DB, overridden by live state for active sessions
+- [x] SetCallbacks for WS reconnect to adopt existing live sessions
+- [x] Graceful shutdown via srv.Shutdown() closes all live sessions
+- [x] Session state constants (StateIdle, StateRunning, etc.)
+- [x] Project path validated as directory
 
 Frontend:
-- [ ] Session tabs within a project: create new session tab, switch between sessions
-- [ ] Each tab shows its own chat history and state
-- [ ] Session creation dialog (pick model, optional system prompt)
-- [ ] Stop/kill session button
-- [ ] Project switching loads that project's sessions
-- [ ] Zustand store restructured: projects -> sessions -> messages
+- [x] Chat store rewritten: `sessions: Record<id, SessionData>` with `activeSessionId`
+- [x] Interactive session tabs: click to switch, X to stop, + to create
+- [x] New Session dialog with name input and optional worktree toggle
+- [x] Auto-create session on first message (preserves M1 UX)
+- [x] Auto-select next tab when stopping active session
+- [x] Skip stopped/done sessions when auto-creating
+- [x] WsClient.request() waits for connection before sending
+- [x] Event routing by sessionId to correct session in store
+- [x] Session list fetched on project navigation, live sessions re-subscribed
 
-**Deliverable:** Run multiple Claude agents in parallel on different tasks,
-switch between them, manage multiple projects. Core MVP complete.
+**Bug sweep (post-M2):**
+- [x] Query failure resets session state to idle (not stuck in running)
+- [x] NewSessionDialog shows error on creation failure
+- [x] Fixed nested button HTML in ProjectList (div role="button")
+- [x] Aria-labels on all icon-only buttons
+- [x] Zero console errors in normal operation
+
+**Known limitations:**
+- First session creation takes ~30-40s (Claude CLI subprocess init)
+- Chat history is in-memory only (lost on page reload, M3 adds persistence)
+- Worktree creation not tested end-to-end in browser (backend tests pass)
 
 ---
 
@@ -255,16 +275,18 @@ Key APIs in use:
 - `Client.Connect()` -> `*Session` for interactive multi-turn agents
 - `Session.Query()` to send user messages
 - `Session.Events()` channel for streaming events (session-lifetime, not per-turn)
+- `Session.SetCallbacks()` for WS reconnection (added in M2)
 - `Session.Close()` for graceful shutdown
 - `WithModel(ModelOpus)` for Opus as default model
 - `WithPermissionMode(PermissionBypass)` for no-approval mode
-- `WithWorkDir()` to set the project directory
+- `WithWorkDir()` to set the project or worktree directory
 
 Lessons learned:
 - `Events()` returns a session-lifetime channel, not per-turn. Detect turn boundaries via `ResultEvent`.
 - Don't call `Wait()` after draining `Events()` -- they share the same channel.
 - claudecli-go required a Windows fix for `Setpgid`/`syscall.Kill` (build tags in executor).
 - Claude CLI init can take 30-40s on first connect; frontend needs long timeout for `session.create`.
+- claudecli-go needed a Windows subprocess init fix (stdin/stdout pipe handling).
 
 ## Lessons from t3code
 
@@ -273,6 +295,7 @@ Things adopted:
 - Session-per-agent model with independent lifecycle
 - Sidebar navigation for projects and sessions
 - Tab-based session switching
+- Git worktree support for session isolation
 
 Things avoided:
 - Effect-TS complexity in the backend (our Go backend is simpler by nature)

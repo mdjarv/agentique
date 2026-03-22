@@ -20,18 +20,17 @@ CREATE TABLE projects (
 );
 ```
 
-### sessions
+### sessions (implemented in M2)
 
 ```sql
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL,
-    permission_mode TEXT NOT NULL DEFAULT 'default',
-    system_prompt TEXT NOT NULL DEFAULT '',
-    state TEXT NOT NULL DEFAULT 'starting',  -- starting, idle, running, done, failed
-    claude_session_id TEXT,                  -- session ID from Claude CLI
+    work_dir TEXT NOT NULL,               -- actual directory for Claude agent
+    worktree_path TEXT,                   -- NULL if no worktree, path if created
+    worktree_branch TEXT,                 -- branch name if worktree was created
+    state TEXT NOT NULL DEFAULT 'idle',   -- idle, running, done, failed, stopped
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -89,37 +88,24 @@ RETURNING *;
 DELETE FROM projects WHERE id = ?;
 ```
 
-### sessions.sql
+### sessions.sql (implemented)
 
 ```sql
--- name: ListSessionsByProject :many
-SELECT * FROM sessions WHERE project_id = ? ORDER BY created_at DESC;
+-- name: CreateSession :one
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, state)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetSession :one
 SELECT * FROM sessions WHERE id = ?;
 
--- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, model, permission_mode, system_prompt)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING *;
+-- name: ListSessionsByProject :many
+SELECT * FROM sessions WHERE project_id = ? ORDER BY created_at ASC;
 
 -- name: UpdateSessionState :exec
-UPDATE sessions
-SET state = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-WHERE id = ?;
-
--- name: SetClaudeSessionID :exec
-UPDATE sessions
-SET claude_session_id = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-WHERE id = ?;
+UPDATE sessions SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;
-
--- name: DeleteSessionsByProject :exec
-DELETE FROM sessions WHERE project_id = ?;
 ```
 
 ## Comparison with t3code

@@ -218,19 +218,34 @@ executor := claudecli.NewBidiFixtureExecutor(...)
 1. **Use `Session` (Connect) for all agent interactions** - multi-turn, streaming, lifecycle
 2. **Forward events as-is to frontend** - converted to wire types via `ToWireEvent()`, event types map cleanly to UI rendering
 3. **One event loop goroutine per session** - started at session creation, runs for session lifetime, detects turn boundaries via `ResultEvent`
-4. **Session.Close() for cleanup** - handles stdin EOF, SIGTERM, goroutine cleanup
-5. **WithCanUseTool for permission UI** - callback bridges to WebSocket for user approval (M3)
-6. **State machine maps to UI** - Starting/Idle/Running/Done/Failed -> session badges
+4. **Session manager is a server-level singleton** - sessions survive WS reconnects, metadata persisted to SQLite
+5. **SetCallbacks for WS reconnection** - new WS connection can adopt existing live sessions via `session.subscribe`
+6. **Session.Close() for cleanup** - handles stdin EOF, SIGTERM, goroutine cleanup
+7. **WithCanUseTool for permission UI** - callback bridges to WebSocket for user approval (M3)
+8. **State machine maps to UI** - Idle/Running/Done/Failed/Stopped -> session badges (using Go constants)
 
-## Lessons Learned (from M1 integration)
+## Lessons Learned (from M1 + M2 integration)
 
-- `Events()` returns a **session-lifetime channel**, not a per-turn channel. Don't `range` over it expecting it to close after each turn -- instead watch for `ResultEvent` as the turn boundary.
-- Do NOT call `Wait()` after draining `Events()` -- they share the same underlying channel. `Wait()` will block indefinitely waiting for events already consumed.
-- claudecli-go's internal state transitions to `StateIdle` automatically when it sees a `ResultEvent` via `trackState()`. No explicit state management needed on our side.
+**API usage:**
 - The client constructor is `claudecli.New()`, not `claudecli.NewClient()`.
 - `Session.Query()` takes only `(prompt string)`, no `context.Context` parameter.
 - `ResultEvent` fields: `CostUSD` (float64), `Duration` (time.Duration), `Usage` (struct), `StopReason` (string).
 - `ToolResultEvent` uses `ToolUseID` (not `ID`) to correlate with `ToolUseEvent.ID`.
 - `ErrorEvent` uses `Error()` method for the message string, and has `Fatal` bool.
-- Windows required a fix: `Setpgid` and `syscall.Kill` don't exist on Windows. Fixed with build-tag-guarded `executor_unix.go` / `executor_windows.go`.
+
+**Event channel semantics:**
+- `Events()` returns a **session-lifetime channel**, not a per-turn channel. Don't `range` over it expecting it to close after each turn -- instead watch for `ResultEvent` as the turn boundary.
+- Do NOT call `Wait()` after draining `Events()` -- they share the same underlying channel. `Wait()` will block indefinitely waiting for events already consumed.
+- claudecli-go's internal state transitions to `StateIdle` automatically when it sees a `ResultEvent` via `trackState()`. No explicit state management needed on our side.
+- The event loop goroutine reads callbacks under mutex lock to support hot-swapping via `SetCallbacks`.
+
+**Windows support:**
+- claudecli-go required a fix: `Setpgid` and `syscall.Kill` don't exist on Windows. Fixed with build-tag-guarded `executor_unix.go` / `executor_windows.go`.
+- Claude CLI subprocess init needed a Windows-specific pipe handling fix.
 - First `Connect()` can take 30-40s on Windows due to Claude CLI subprocess init time.
+
+**Multi-session (M2):**
+- Multiple sessions per project share one `session.Manager` singleton.
+- Each session gets its own event loop goroutine and claudecli-go `Session`.
+- `WithWorkDir()` can point to either the project directory or a git worktree path.
+- Session state changes are persisted to SQLite via the `onState` callback wrapper.
