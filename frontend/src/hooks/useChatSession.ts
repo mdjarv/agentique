@@ -1,10 +1,56 @@
 import { useCallback, useEffect } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSession, stopSession } from "~/lib/session-actions";
-import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
+import { type ChatEvent, type SessionMetadata, type Turn, useChatStore } from "~/stores/chat-store";
 
 interface SessionListResult {
   sessions: SessionMetadata[];
+}
+
+interface HistoryEvent {
+  type: string;
+  content?: string;
+  id?: string;
+  toolUseId?: string;
+  name?: string;
+  input?: unknown;
+  costUsd?: number;
+  duration?: number;
+  usage?: { inputTokens: number; outputTokens: number };
+  stopReason?: string;
+  fatal?: boolean;
+}
+
+interface HistoryTurn {
+  prompt: string;
+  events: HistoryEvent[];
+}
+
+interface SessionHistoryResult {
+  turns: HistoryTurn[];
+}
+
+function historyToTurns(history: HistoryTurn[]): Turn[] {
+  return history.map((ht) => ({
+    id: crypto.randomUUID(),
+    prompt: ht.prompt,
+    events: ht.events.map(
+      (e): ChatEvent => ({
+        id: crypto.randomUUID(),
+        type: e.type as ChatEvent["type"],
+        content: e.content,
+        toolId: e.id || e.toolUseId,
+        toolName: e.name,
+        toolInput: e.input,
+        cost: e.costUsd,
+        duration: e.duration,
+        usage: e.usage,
+        stopReason: e.stopReason,
+        fatal: e.fatal,
+      }),
+    ),
+    complete: ht.events.some((e) => e.type === "result"),
+  }));
 }
 
 export function useChatSession(projectId: string) {
@@ -26,6 +72,14 @@ export function useChatSession(projectId: string) {
           for (const sess of result.sessions) {
             if (sess.state !== "stopped" && sess.state !== "done") {
               ws.request("session.subscribe", { sessionId: sess.id }).catch(() => {});
+              // Fetch history for live sessions (restores turns after page reload).
+              ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id })
+                .then((hist) => {
+                  if (hist.turns.length > 0) {
+                    useChatStore.getState().setSessionHistory(sess.id, historyToTurns(hist.turns));
+                  }
+                })
+                .catch(() => {});
             }
           }
         }

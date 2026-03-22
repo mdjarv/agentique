@@ -14,5 +14,8 @@ UPDATE sessions SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'
 -- name: UpdateSessionName :exec
 UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateClaudeSessionID :exec
+UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

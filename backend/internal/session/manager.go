@@ -82,10 +82,60 @@ func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(
 
 	sess := newSession(id, cliSess, onEvent, wrappedOnState)
 
+	// Persist Claude session ID when it arrives from the CLI.
+	sess.SetClaudeIDCallback(func(sessionID, claudeSessionID string) {
+		_ = m.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
+			ClaudeSessionID: sql.NullString{String: claudeSessionID, Valid: true},
+			ID:              sessionID,
+		})
+		log.Printf("session %s: captured claude session ID %s", sessionID, claudeSessionID)
+	})
+
 	m.mu.Lock()
 	m.sessions[id] = sess
 	m.mu.Unlock()
 
+	return sess, nil
+}
+
+// Resume reconnects to an existing Claude session using WithResume().
+func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, workDir string, onEvent func(string, any), onState func(string, string)) (*Session, error) {
+	client := claudecli.New()
+	cliSess, err := client.Connect(ctx,
+		claudecli.WithWorkDir(workDir),
+		claudecli.WithModel(claudecli.ModelOpus),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+		claudecli.WithResume(claudeSessionID),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update DB state back to idle.
+	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		State: StateIdle,
+		ID:    sessionID,
+	})
+
+	// Wrap the onState callback to also persist state changes to DB.
+	wrappedOnState := func(sid string, state string) {
+		_ = m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+			State: state,
+			ID:    sid,
+		})
+		onState(sid, state)
+	}
+
+	sess := newSession(sessionID, cliSess, onEvent, wrappedOnState)
+	sess.mu.Lock()
+	sess.claudeSessionID = claudeSessionID
+	sess.mu.Unlock()
+
+	m.mu.Lock()
+	m.sessions[sessionID] = sess
+	m.mu.Unlock()
+
+	log.Printf("session %s: resumed claude session %s", sessionID, claudeSessionID)
 	return sess, nil
 }
 
@@ -137,6 +187,7 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 
 // ListByProject returns session metadata from DB.
 // For live sessions, the persisted state is overridden with the actual live state.
+// For non-live sessions with a Claude session ID, state is shown as "idle" (resumable).
 func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.Session, error) {
 	sessions, err := m.queries.ListSessionsByProject(ctx, projectID)
 	if err != nil {
@@ -149,6 +200,11 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
 			sessions[i].State = live.State()
+		} else if sessions[i].ClaudeSessionID.Valid && sessions[i].ClaudeSessionID.String != "" {
+			// Not live but has a Claude session ID -- resumable.
+			if sessions[i].State != StateStopped {
+				sessions[i].State = StateIdle
+			}
 		}
 	}
 

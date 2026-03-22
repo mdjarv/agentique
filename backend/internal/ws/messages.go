@@ -1,6 +1,10 @@
 package ws
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/allbin/agentique/backend/internal/session"
+)
 
 // ClientMessage is the envelope for all client -> server messages.
 type ClientMessage struct {
@@ -91,4 +95,12 @@ type SessionStatePayload struct {
 type SessionRenamedPayload struct {
 	SessionID string `json:"sessionId"`
 	Name      string `json:"name"`
+}
+
+type SessionHistoryPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SessionHistoryResult struct {
+	Turns []session.HistoryTurn `json:"turns"`
 }

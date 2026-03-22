@@ -20,13 +20,14 @@ type Project struct {
 }
 
 type Session struct {
-	ID             string         `json:"id"`
-	ProjectID      string         `json:"project_id"`
-	Name           string         `json:"name"`
-	WorkDir        string         `json:"work_dir"`
-	WorktreePath   sql.NullString `json:"worktree_path"`
-	WorktreeBranch sql.NullString `json:"worktree_branch"`
-	State          string         `json:"state"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
+	ID              string         `json:"id"`
+	ProjectID       string         `json:"project_id"`
+	Name            string         `json:"name"`
+	WorkDir         string         `json:"work_dir"`
+	WorktreePath    sql.NullString `json:"worktree_path"`
+	WorktreeBranch  sql.NullString `json:"worktree_branch"`
+	State           string         `json:"state"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+	ClaudeSessionID sql.NullString `json:"claude_session_id"`
 }

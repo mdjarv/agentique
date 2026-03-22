@@ -12,7 +12,7 @@ import (
 
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, state)
-VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id
 `
 
 type CreateSessionParams struct {
@@ -46,6 +46,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClaudeSessionID,
 	)
 	return i, err
 }
@@ -60,7 +61,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -76,12 +77,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClaudeSessionID,
 	)
 	return i, err
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -103,6 +105,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.State,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ClaudeSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -115,6 +118,20 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateClaudeSessionID = `-- name: UpdateClaudeSessionID :exec
+UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateClaudeSessionIDParams struct {
+	ClaudeSessionID sql.NullString `json:"claude_session_id"`
+	ID              string         `json:"id"`
+}
+
+func (q *Queries) UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error {
+	_, err := q.db.ExecContext(ctx, updateClaudeSessionID, arg.ClaudeSessionID, arg.ID)
+	return err
 }
 
 const updateSessionName = `-- name: UpdateSessionName :exec

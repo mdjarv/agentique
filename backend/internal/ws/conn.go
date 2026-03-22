@@ -84,6 +84,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionStop(msg)
 	case "session.subscribe":
 		c.handleSessionSubscribe(msg)
+	case "session.history":
+		c.handleSessionHistory(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}

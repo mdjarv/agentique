@@ -233,8 +233,33 @@ func (c *conn) handleSessionSubscribe(msg ClientMessage) {
 
 	sess := c.mgr.Get(payload.SessionID)
 	if sess == nil {
-		c.respond(msg.ID, nil, "session not active")
-		return
+		// Not live -- try to resume if it has a Claude session ID.
+		dbSess, dbErr := c.queries.GetSession(c.ctx, payload.SessionID)
+		if dbErr != nil || !dbSess.ClaudeSessionID.Valid || dbSess.ClaudeSessionID.String == "" {
+			c.respond(msg.ID, nil, "session not active")
+			return
+		}
+
+		var err error
+		sess, err = c.mgr.Resume(c.ctx, payload.SessionID, dbSess.ClaudeSessionID.String, dbSess.WorkDir,
+			func(sessionID string, event any) {
+				c.push("session.event", SessionEventPayload{
+					SessionID: sessionID,
+					Event:     event,
+				})
+			},
+			func(sessionID string, state string) {
+				c.push("session.state", SessionStatePayload{
+					SessionID: sessionID,
+					State:     state,
+				})
+			},
+		)
+		if err != nil {
+			log.Printf("session resume error: %v", err)
+			c.respond(msg.ID, nil, "failed to resume session: "+err.Error())
+			return
+		}
 	}
 
 	// Adopt this session's callbacks to this connection.
@@ -260,6 +285,32 @@ func (c *conn) handleSessionSubscribe(msg ClientMessage) {
 	})
 
 	c.respond(msg.ID, struct{}{}, "")
+}
+
+func (c *conn) handleSessionHistory(msg ClientMessage) {
+	var payload SessionHistoryPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+
+	sess := c.mgr.Get(payload.SessionID)
+	if sess == nil {
+		// Session not live -- return empty history.
+		c.respond(msg.ID, SessionHistoryResult{Turns: []session.HistoryTurn{}}, "")
+		return
+	}
+
+	turns := sess.History()
+	if turns == nil {
+		turns = []session.HistoryTurn{}
+	}
+	c.respond(msg.ID, SessionHistoryResult{Turns: turns}, "")
 }
 
 // generateSessionName calls Haiku to generate a short title from a prompt.

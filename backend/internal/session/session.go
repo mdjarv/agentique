@@ -17,16 +17,28 @@ const (
 	StateStopped = "stopped"
 )
 
+const maxBufferedEvents = 10000
+
+// HistoryTurn represents a single turn (prompt + response events) for replay.
+type HistoryTurn struct {
+	Prompt string `json:"prompt"`
+	Events []any  `json:"events"`
+}
+
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID    string
 	state string
 
-	mu         sync.Mutex
-	cliSess    *claudecli.Session
-	queryCount int
-	onEvent    func(sessionID string, event any)
-	onState    func(sessionID string, state string)
+	mu             sync.Mutex
+	cliSess        *claudecli.Session
+	queryCount     int
+	claudeSessionID string
+	prompts        []string
+	events         []any
+	onEvent        func(sessionID string, event any)
+	onState        func(sessionID string, state string)
+	onClaudeID     func(sessionID string, claudeSessionID string)
 }
 
 func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any), onState func(string, string)) *Session {
@@ -49,6 +61,13 @@ func (s *Session) State() string {
 	return s.state
 }
 
+// ClaudeSessionID returns the Claude CLI session ID, if available.
+func (s *Session) ClaudeSessionID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.claudeSessionID
+}
+
 // SetCallbacks replaces the event and state callbacks so a new WebSocket
 // connection can adopt (subscribe to) an existing live session.
 func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, string)) {
@@ -58,11 +77,58 @@ func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, s
 	s.onState = onState
 }
 
+// SetClaudeIDCallback sets the callback for when the Claude session ID is captured.
+func (s *Session) SetClaudeIDCallback(cb func(string, string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onClaudeID = cb
+}
+
 // QueryCount returns the number of queries sent to this session.
 func (s *Session) QueryCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.queryCount
+}
+
+// History returns the buffered turns for replay.
+func (s *Session) History() []HistoryTurn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.prompts) == 0 {
+		return nil
+	}
+
+	turns := make([]HistoryTurn, 0, len(s.prompts))
+	promptIdx := 0
+	var currentEvents []any
+
+	for _, ev := range s.events {
+		currentEvents = append(currentEvents, ev)
+		// A result event marks the end of a turn.
+		if wire, ok := ev.(WireResultEvent); ok && wire.Type == "result" {
+			prompt := ""
+			if promptIdx < len(s.prompts) {
+				prompt = s.prompts[promptIdx]
+				promptIdx++
+			}
+			turns = append(turns, HistoryTurn{Prompt: prompt, Events: currentEvents})
+			currentEvents = nil
+		}
+	}
+
+	// If there are remaining events without a result (turn in progress),
+	// include them as an incomplete turn.
+	if len(currentEvents) > 0 {
+		prompt := ""
+		if promptIdx < len(s.prompts) {
+			prompt = s.prompts[promptIdx]
+		}
+		turns = append(turns, HistoryTurn{Prompt: prompt, Events: currentEvents})
+	}
+
+	return turns
 }
 
 // Query sends a prompt to the Claude session and starts streaming events.
@@ -75,6 +141,7 @@ func (s *Session) Query(ctx context.Context, prompt string) error {
 	}
 	s.state = StateRunning
 	s.queryCount++
+	s.prompts = append(s.prompts, prompt)
 	s.mu.Unlock()
 
 	s.onState(s.ID, StateRunning)
@@ -93,9 +160,29 @@ func (s *Session) Query(ctx context.Context, prompt string) error {
 func (s *Session) startEventLoop() {
 	go func() {
 		for event := range s.cliSess.Events() {
+			// Capture Claude session ID from InitEvent.
+			if initEv, ok := event.(*claudecli.InitEvent); ok {
+				s.mu.Lock()
+				if s.claudeSessionID == "" && initEv.SessionID != "" {
+					s.claudeSessionID = initEv.SessionID
+					cb := s.onClaudeID
+					s.mu.Unlock()
+					if cb != nil {
+						cb(s.ID, initEv.SessionID)
+					}
+				} else {
+					s.mu.Unlock()
+				}
+				continue
+			}
+
 			wireEvent := ToWireEvent(event)
 			if wireEvent != nil {
 				s.mu.Lock()
+				// Buffer the event for history replay.
+				if len(s.events) < maxBufferedEvents {
+					s.events = append(s.events, wireEvent)
+				}
 				cb := s.onEvent
 				s.mu.Unlock()
 				cb(s.ID, wireEvent)

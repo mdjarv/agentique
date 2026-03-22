@@ -64,6 +64,9 @@ interface ChatState {
   createDraft: (projectId: string) => void;
   setDraftWorktree: (sessionId: string, worktree: boolean) => void;
 
+  // History
+  setSessionHistory: (sessionId: string, turns: Turn[]) => void;
+
   // Turn/event management (now takes sessionId)
   startTurn: (sessionId: string, prompt: string) => void;
   appendEvent: (sessionId: string, event: ChatEvent) => void;
@@ -158,6 +161,22 @@ export const useChatStore = create<ChatState>((set) => ({
           [sessionId]: {
             ...session,
             meta: { ...session.meta, name },
+          },
+        },
+      };
+    }),
+
+  setSessionHistory: (sessionId, turns) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            turns,
+            currentAssistantText: "",
           },
         },
       };

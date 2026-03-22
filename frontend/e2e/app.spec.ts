@@ -32,9 +32,10 @@ test.describe("Health check", () => {
 });
 
 test.describe("Project management", () => {
-  test("starts with empty project list", async ({ page }) => {
+  test("starts with default project from cwd", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("No projects yet")).toBeVisible();
+    // Default project is auto-created from cwd on first launch
+    await expect(page.getByText("agentique", { exact: true })).toBeVisible();
   });
 
   test("can create a project via the dialog", async ({ page }) => {
@@ -110,11 +111,11 @@ test.describe("Chat UI", () => {
   test("new session button visible on project hover", async ({ page }) => {
     await page.goto("/");
 
-    // Hover over the project to reveal new session button
+    // Hover over the Test Project to reveal new session button
     const projectItem = page.getByText("Test Project").first();
     await projectItem.hover();
 
-    await expect(page.getByLabel("New session")).toBeVisible();
+    await expect(page.getByLabel("New session").first()).toBeVisible();
   });
 });
 
@@ -150,10 +151,11 @@ test.describe("Delete project", () => {
     const projectItem = page.getByText("Test Project").first();
     await projectItem.hover();
 
-    // Click the delete button (trash icon) - force click since it's opacity-0 until hover
-    await page.getByLabel("Delete project").click({ force: true });
+    // Click the delete button scoped to Test Project row
+    const projectRow = page.getByText("Test Project").first().locator("..").locator("..");
+    await projectRow.getByLabel("Delete project").click({ force: true });
 
-    // Project should be removed from sidebar
-    await expect(page.getByText("No projects yet")).toBeVisible({ timeout: 5000 });
+    // Test Project should be gone (default project may still exist)
+    await expect(page.getByText("Test Project")).not.toBeVisible({ timeout: 5000 });
   });
 });
