@@ -4,20 +4,22 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	claudecli "github.com/allbin/claudecli-go"
 )
 
-// Session wraps a single CLI interactive session.
+// Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID    string
 	state string
 
 	mu      sync.Mutex
-	cliSess CLISession
+	cliSess *claudecli.Session
 	onEvent func(sessionID string, event any)
 	onState func(sessionID string, state string)
 }
 
-func newSession(id string, cliSess CLISession, onEvent func(string, any), onState func(string, string)) *Session {
+func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any), onState func(string, string)) *Session {
 	s := &Session{
 		ID:      id,
 		state:   "idle",
@@ -82,7 +84,7 @@ func (s *Session) setState(state string) {
 	s.onState(s.ID, state)
 }
 
-// Close gracefully shuts down the CLI session.
+// Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

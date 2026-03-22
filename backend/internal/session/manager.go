@@ -1,40 +1,34 @@
 package session
 
 import (
+	"context"
 	"sync"
 
+	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 )
 
-// Manager manages the lifecycle of CLI sessions.
+// Manager manages the lifecycle of claudecli-go sessions.
 type Manager struct {
-	mu        sync.Mutex
-	sessions  map[string]*Session
-	connector CLIConnector
+	mu       sync.Mutex
+	sessions map[string]*Session
 }
 
-// NewManager creates a new session manager using the real CLI connector.
+// NewManager creates a new session manager.
 func NewManager() *Manager {
-	return &Manager{
-		sessions:  make(map[string]*Session),
-		connector: NewRealConnector(),
-	}
+	return &Manager{sessions: make(map[string]*Session)}
 }
 
-// NewManagerWithConnector creates a new session manager with a custom connector
-// (useful for testing).
-func NewManagerWithConnector(connector CLIConnector) *Manager {
-	return &Manager{
-		sessions:  make(map[string]*Session),
-		connector: connector,
-	}
-}
-
-// Create starts a new CLI session for the given project directory.
+// Create starts a new claudecli-go session for the given project directory.
 // The onEvent and onState callbacks receive the session ID as their first argument
 // so callers can identify the session without capturing a pointer that isn't yet assigned.
-func (m *Manager) Create(workDir string, onEvent func(string, any), onState func(string, string)) (*Session, error) {
-	cliSess, err := m.connector.Connect(workDir)
+func (m *Manager) Create(ctx context.Context, workDir string, onEvent func(string, any), onState func(string, string)) (*Session, error) {
+	client := claudecli.New()
+	cliSess, err := client.Connect(ctx,
+		claudecli.WithWorkDir(workDir),
+		claudecli.WithModel(claudecli.ModelOpus),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+	)
 	if err != nil {
 		return nil, err
 	}

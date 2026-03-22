@@ -23,7 +23,7 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		return
 	}
 
-	sess, err := c.mgr.Create(project.Path,
+	sess, err := c.mgr.Create(c.ctx, project.Path,
 		func(sessionID string, event any) {
 			c.push("session.event", SessionEventPayload{
 				SessionID: sessionID,
