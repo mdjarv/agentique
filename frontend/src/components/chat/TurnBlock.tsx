@@ -5,17 +5,15 @@ import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import type { Turn } from "~/stores/chat-store";
-import { useChatStore } from "~/stores/chat-store";
 
 interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
+  currentAssistantText: string;
+  sessionState: string;
 }
 
-export function TurnBlock({ turn, isLast }: TurnBlockProps) {
-  const currentAssistantText = useChatStore((s) => s.currentAssistantText);
-  const sessionState = useChatStore((s) => s.sessionState);
-
+export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: TurnBlockProps) {
   const isStreaming = isLast && !turn.complete;
 
   // Accumulate text from completed events, or use streaming text for the last turn.

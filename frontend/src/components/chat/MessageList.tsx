@@ -1,11 +1,15 @@
 import { useEffect, useRef } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { useChatStore } from "~/stores/chat-store";
+import type { Turn } from "~/stores/chat-store";
 
-export function MessageList() {
-  const turns = useChatStore((s) => s.turns);
-  const currentAssistantText = useChatStore((s) => s.currentAssistantText);
+interface MessageListProps {
+  turns: Turn[];
+  currentAssistantText: string;
+  sessionState: string;
+}
+
+export function MessageList({ turns, currentAssistantText, sessionState }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
@@ -25,7 +29,13 @@ export function MessageList() {
     <ScrollArea className="flex-1">
       <div className="p-4 space-y-6">
         {turns.map((turn, i) => (
-          <TurnBlock key={turn.id} turn={turn} isLast={i === turns.length - 1} />
+          <TurnBlock
+            key={turn.id}
+            turn={turn}
+            isLast={i === turns.length - 1}
+            currentAssistantText={currentAssistantText}
+            sessionState={sessionState}
+          />
         ))}
         <div ref={bottomRef} />
       </div>

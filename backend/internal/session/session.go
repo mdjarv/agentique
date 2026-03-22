@@ -39,6 +39,15 @@ func (s *Session) State() string {
 	return s.state
 }
 
+// SetCallbacks replaces the event and state callbacks so a new WebSocket
+// connection can adopt (subscribe to) an existing live session.
+func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onEvent = onEvent
+	s.onState = onState
+}
+
 // Query sends a prompt to the Claude session and starts streaming events.
 func (s *Session) Query(ctx context.Context, prompt string) error {
 	s.mu.Lock()
@@ -68,7 +77,10 @@ func (s *Session) startEventLoop() {
 		for event := range s.cliSess.Events() {
 			wireEvent := ToWireEvent(event)
 			if wireEvent != nil {
-				s.onEvent(s.ID, wireEvent)
+				s.mu.Lock()
+				cb := s.onEvent
+				s.mu.Unlock()
+				cb(s.ID, wireEvent)
 			}
 
 			// ResultEvent marks the end of a turn.
@@ -90,8 +102,9 @@ func (s *Session) startEventLoop() {
 func (s *Session) setState(state string) {
 	s.mu.Lock()
 	s.state = state
+	cb := s.onState
 	s.mu.Unlock()
-	s.onState(s.ID, state)
+	cb(s.ID, state)
 }
 
 // Close gracefully shuts down the claudecli-go session.

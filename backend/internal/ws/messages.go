@@ -32,15 +32,48 @@ type ErrorBody struct {
 
 type SessionCreatePayload struct {
 	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+	Worktree  bool   `json:"worktree"`
+	Branch    string `json:"branch"`
 }
 
 type SessionCreateResult struct {
-	SessionID string `json:"sessionId"`
+	SessionID      string `json:"sessionId"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	WorktreePath   string `json:"worktreePath,omitempty"`
+	WorktreeBranch string `json:"worktreeBranch,omitempty"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 type SessionQueryPayload struct {
 	SessionID string `json:"sessionId"`
 	Prompt    string `json:"prompt"`
+}
+
+type SessionListPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type SessionInfo struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	WorktreePath   string `json:"worktreePath,omitempty"`
+	WorktreeBranch string `json:"worktreeBranch,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+type SessionListResult struct {
+	Sessions []SessionInfo `json:"sessions"`
+}
+
+type SessionStopPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SessionSubscribePayload struct {
+	SessionID string `json:"sessionId"`
 }
 
 // --- Push event payloads ---

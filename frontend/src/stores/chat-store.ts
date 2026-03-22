@@ -21,49 +21,136 @@ export interface Turn {
   complete: boolean;
 }
 
-type SessionState = "disconnected" | "starting" | "idle" | "running" | "done" | "failed";
+export type SessionState =
+  | "disconnected"
+  | "starting"
+  | "idle"
+  | "running"
+  | "done"
+  | "failed"
+  | "stopped";
 
-interface ChatState {
-  sessionId: string | null;
-  sessionState: SessionState;
-  turns: Turn[];
-  currentAssistantText: string;
-
-  setSessionId: (id: string) => void;
-  setSessionState: (state: SessionState) => void;
-  startTurn: (prompt: string) => void;
-  appendEvent: (event: ChatEvent) => void;
-  completeTurn: () => void;
-  reset: () => void;
+export interface SessionMetadata {
+  id: string;
+  name: string;
+  state: SessionState;
+  worktreePath?: string;
+  worktreeBranch?: string;
+  createdAt: string;
 }
 
+export interface SessionData {
+  meta: SessionMetadata;
+  turns: Turn[];
+  currentAssistantText: string;
+}
+
+interface ChatState {
+  sessions: Record<string, SessionData>;
+  activeSessionId: string | null;
+
+  // Session management
+  setSessions: (sessions: SessionMetadata[]) => void;
+  addSession: (meta: SessionMetadata) => void;
+  removeSession: (id: string) => void;
+  setActiveSessionId: (id: string | null) => void;
+  setSessionState: (sessionId: string, state: SessionState) => void;
+
+  // Turn/event management (now takes sessionId)
+  startTurn: (sessionId: string, prompt: string) => void;
+  appendEvent: (sessionId: string, event: ChatEvent) => void;
+  completeTurn: (sessionId: string) => void;
+
+  // Project-level reset
+  resetProject: () => void;
+}
+
+// Use these with useChatStore((s) => ...) for direct access.
+// Avoid derived selectors that create new references.
+
 export const useChatStore = create<ChatState>((set) => ({
-  sessionId: null,
-  sessionState: "disconnected",
-  turns: [],
-  currentAssistantText: "",
+  sessions: {},
+  activeSessionId: null,
 
-  setSessionId: (id) => set({ sessionId: id }),
+  setSessions: (metas) =>
+    set((s) => {
+      const sessions = { ...s.sessions };
+      for (const meta of metas) {
+        if (sessions[meta.id]) {
+          const existing = sessions[meta.id] as SessionData;
+          sessions[meta.id] = {
+            meta,
+            turns: existing.turns,
+            currentAssistantText: existing.currentAssistantText,
+          };
+        } else {
+          sessions[meta.id] = { meta, turns: [], currentAssistantText: "" };
+        }
+      }
+      return { sessions };
+    }),
 
-  setSessionState: (state) => set({ sessionState: state }),
-
-  startTurn: (prompt) =>
+  addSession: (meta) =>
     set((s) => ({
-      turns: [
-        ...s.turns,
-        {
-          id: crypto.randomUUID(),
-          prompt,
-          events: [],
-          complete: false,
-        },
-      ],
-      currentAssistantText: "",
+      sessions: {
+        ...s.sessions,
+        [meta.id]: { meta, turns: [], currentAssistantText: "" },
+      },
     })),
 
-  appendEvent: (event) =>
+  removeSession: (id) =>
     set((s) => {
-      const turns = [...s.turns];
+      const { [id]: _, ...rest } = s.sessions;
+      const activeSessionId = s.activeSessionId === id ? null : s.activeSessionId;
+      return { sessions: rest, activeSessionId };
+    }),
+
+  setActiveSessionId: (id) => set({ activeSessionId: id }),
+
+  setSessionState: (sessionId, state) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            meta: { ...session.meta, state },
+          },
+        },
+      };
+    }),
+
+  startTurn: (sessionId, prompt) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            turns: [
+              ...session.turns,
+              {
+                id: crypto.randomUUID(),
+                prompt,
+                events: [],
+                complete: false,
+              },
+            ],
+            currentAssistantText: "",
+          },
+        },
+      };
+    }),
+
+  appendEvent: (sessionId, event) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
       if (!lastTurn) return s;
 
@@ -73,29 +160,39 @@ export const useChatStore = create<ChatState>((set) => ({
       };
       turns[turns.length - 1] = updatedTurn;
 
-      let currentAssistantText = s.currentAssistantText;
+      let currentAssistantText = session.currentAssistantText;
       if (event.type === "text" && event.content) {
         currentAssistantText += event.content;
       }
 
-      return { turns, currentAssistantText };
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: { ...session, turns, currentAssistantText },
+        },
+      };
     }),
 
-  completeTurn: () =>
+  completeTurn: (sessionId) =>
     set((s) => {
-      const turns = [...s.turns];
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
       if (!lastTurn) return s;
 
       turns[turns.length - 1] = { ...lastTurn, complete: true };
-      return { turns, sessionState: "idle" };
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            turns,
+            meta: { ...session.meta, state: "idle" },
+          },
+        },
+      };
     }),
 
-  reset: () =>
-    set({
-      sessionId: null,
-      sessionState: "disconnected",
-      turns: [],
-      currentAssistantText: "",
-    }),
+  resetProject: () => set({ sessions: {}, activeSessionId: null }),
 }));

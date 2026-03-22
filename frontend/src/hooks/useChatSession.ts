@@ -1,19 +1,50 @@
 import { useCallback, useEffect } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { useChatStore } from "~/stores/chat-store";
+import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
+
+interface SessionCreateResult {
+  sessionId: string;
+  name: string;
+  state: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
+  createdAt: string;
+}
+
+interface SessionListResult {
+  sessions: SessionMetadata[];
+}
 
 export function useChatSession(projectId: string) {
   const ws = useWebSocket();
-  const store = useChatStore();
 
+  // On project change: reset, fetch sessions, subscribe to live ones
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-subscribe only when projectId changes
   useEffect(() => {
-    store.reset();
+    const s = useChatStore.getState();
+    s.resetProject();
 
+    ws.request<SessionListResult>("session.list", { projectId })
+      .then((result) => {
+        const s = useChatStore.getState();
+        s.setSessions(result.sessions);
+        const firstSession = result.sessions[0];
+        if (firstSession) {
+          s.setActiveSessionId(firstSession.id);
+          for (const sess of result.sessions) {
+            if (sess.state !== "stopped" && sess.state !== "done") {
+              ws.request("session.subscribe", { sessionId: sess.id }).catch(() => {});
+            }
+          }
+        }
+      })
+      .catch(console.error);
+
+    // Route push events by sessionId
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = payload.event;
-      store.appendEvent({
+      useChatStore.getState().appendEvent(payload.sessionId, {
         id: crypto.randomUUID(),
         type: event.type,
         content: event.content,
@@ -28,13 +59,13 @@ export function useChatSession(projectId: string) {
       });
 
       if (event.type === "result") {
-        store.completeTurn();
+        useChatStore.getState().completeTurn(payload.sessionId);
       }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubState = ws.subscribe("session.state", (payload: any) => {
-      store.setSessionState(payload.state);
+      useChatStore.getState().setSessionState(payload.sessionId, payload.state);
     });
 
     return () => {
@@ -43,34 +74,59 @@ export function useChatSession(projectId: string) {
     };
   }, [projectId]);
 
+  const createSession = useCallback(
+    async (name: string, worktree: boolean, branch?: string) => {
+      const result = await ws.request<SessionCreateResult>(
+        "session.create",
+        { projectId, name, worktree, branch },
+        120000,
+      );
+      const meta: SessionMetadata = {
+        id: result.sessionId,
+        name: result.name,
+        state: result.state as SessionMetadata["state"],
+        worktreePath: result.worktreePath,
+        worktreeBranch: result.worktreeBranch,
+        createdAt: result.createdAt,
+      };
+      useChatStore.getState().addSession(meta);
+      useChatStore.getState().setActiveSessionId(result.sessionId);
+      return result.sessionId;
+    },
+    [projectId, ws],
+  );
+
   const sendQuery = useCallback(
     async (prompt: string) => {
-      let { sessionId } = useChatStore.getState();
+      let activeId = useChatStore.getState().activeSessionId;
 
-      if (!sessionId) {
-        try {
-          const result = await ws.request<{ sessionId: string }>(
-            "session.create",
-            { projectId },
-            120000,
-          );
-          sessionId = result.sessionId;
-          store.setSessionId(sessionId);
-        } catch (err) {
-          console.error("Failed to create session:", err);
-          return;
-        }
+      if (!activeId) {
+        const sessions = Object.keys(useChatStore.getState().sessions);
+        const name = `Session ${sessions.length + 1}`;
+        activeId = await createSession(name, false);
       }
 
-      store.startTurn(prompt);
+      useChatStore.getState().startTurn(activeId, prompt);
       try {
-        await ws.request("session.query", { sessionId, prompt });
+        await ws.request("session.query", { sessionId: activeId, prompt });
       } catch (err) {
         console.error("Failed to send query:", err);
       }
     },
-    [projectId, ws, store],
+    [ws, createSession],
   );
 
-  return { sendQuery };
+  const stopSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        await ws.request("session.stop", { sessionId });
+      } catch (err) {
+        console.error("Failed to stop session:", err);
+      }
+      useChatStore.getState().removeSession(sessionId);
+    },
+    [ws],
+  );
+
+  return { sendQuery, createSession, stopSession };
 }

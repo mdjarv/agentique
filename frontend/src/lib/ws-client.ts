@@ -64,10 +64,24 @@ export class WsClient {
     this.ws?.close();
   }
 
+  /** Wait for the WebSocket to be connected, with a timeout. */
+  private waitForConnection(timeoutMs = 5000): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsub();
+        reject(new Error("WebSocket connection timeout"));
+      }, timeoutMs);
+      const unsub = this.onConnect(() => {
+        clearTimeout(timer);
+        unsub();
+        resolve();
+      });
+    });
+  }
+
   async request<T = unknown>(type: string, payload: unknown = {}, timeoutMs = 30000): Promise<T> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket not connected");
-    }
+    await this.waitForConnection();
 
     const id = `req-${++this.requestId}`;
     const msg = JSON.stringify({ id, type, payload });

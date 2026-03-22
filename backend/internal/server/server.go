@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/allbin/agentique/backend/internal/project"
+	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/ws"
 )
@@ -12,11 +13,13 @@ import (
 // Server is the main HTTP server for the Agentique backend.
 type Server struct {
 	mux *http.ServeMux
+	mgr *session.Manager
 }
 
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries) *Server {
 	mux := http.NewServeMux()
+	mgr := session.NewManager(queries)
 
 	// Project handler.
 	ph := &project.Handler{Queries: queries}
@@ -30,15 +33,22 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
 	// WebSocket endpoint.
-	wsh := &ws.Handler{Queries: queries}
+	wsh := &ws.Handler{Queries: queries, Manager: mgr}
 	mux.Handle("GET /ws", wsh)
 
 	// SPA catch-all for frontend.
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})
 
-	s := &Server{mux: mux}
+	s := &Server{mux: mux, mgr: mgr}
 	return s
+}
+
+// Shutdown gracefully closes all live sessions.
+func (s *Server) Shutdown() {
+	if s.mgr != nil {
+		s.mgr.CloseAll()
+	}
 }
 
 // ServeHTTP implements the http.Handler interface, delegating to the internal mux

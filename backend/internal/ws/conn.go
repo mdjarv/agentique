@@ -20,21 +20,20 @@ type conn struct {
 	mu      sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queries) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queries, mgr *session.Manager) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
 		ctx:     ctx,
 		cancel:  cancel,
 		ws:      ws,
 		queries: queries,
+		mgr:     mgr,
 		sendCh:  make(chan any, 64),
 	}
 }
 
 func (c *conn) run() {
-	c.mgr = session.NewManager()
 	defer func() {
-		c.mgr.CloseAll()
 		c.cancel()
 		c.ws.Close()
 	}()
@@ -79,6 +78,12 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionCreate(msg)
 	case "session.query":
 		c.handleSessionQuery(msg)
+	case "session.list":
+		c.handleSessionList(msg)
+	case "session.stop":
+		c.handleSessionStop(msg)
+	case "session.subscribe":
+		c.handleSessionSubscribe(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}
