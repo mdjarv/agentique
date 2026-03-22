@@ -68,7 +68,21 @@ func main() {
 	log.Println("server stopped")
 }
 
-// ensureDefaultProject creates a project for the current working directory
+// findGitRoot walks up from dir to find the nearest .git directory.
+func findGitRoot(dir string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// ensureDefaultProject creates a project for the git root (or cwd)
 // if no projects exist. This gives a ready-to-use experience on first launch.
 func ensureDefaultProject(q *store.Queries) {
 	projects, err := q.ListProjects(context.Background())
@@ -81,15 +95,21 @@ func ensureDefaultProject(q *store.Queries) {
 		return
 	}
 
-	name := filepath.Base(cwd)
+	// Prefer the git root so the project covers the whole repo.
+	projectDir := cwd
+	if root := findGitRoot(cwd); root != "" {
+		projectDir = root
+	}
+
+	name := filepath.Base(projectDir)
 	_, err = q.CreateProject(context.Background(), store.CreateProjectParams{
 		ID:   uuid.NewString(),
 		Name: name,
-		Path: cwd,
+		Path: projectDir,
 	})
 	if err != nil {
 		log.Printf("failed to create default project: %v", err)
 		return
 	}
-	log.Printf("created default project %q (%s)", name, cwd)
+	log.Printf("created default project %q (%s)", name, projectDir)
 }

@@ -1,6 +1,6 @@
 # Development
 dev-backend:
-    cd backend && air
+    cd backend && go run ./cmd/agentique -addr :8080
 
 dev-frontend:
     cd frontend && npm run dev
@@ -34,9 +34,10 @@ sqlc:
 check:
     cd frontend && npx biome check src/ && npx tsc --noEmit
 
-# Reset
+# Reset (cleans DB from both project root and backend/)
 reset:
     rm -f agentique.db agentique.db-journal agentique.db-wal agentique.db-shm
+    rm -f backend/agentique.db backend/agentique.db-journal backend/agentique.db-wal backend/agentique.db-shm
     @echo "Reset complete. Restart server for fresh state."
 
 # Clean build artifacts
