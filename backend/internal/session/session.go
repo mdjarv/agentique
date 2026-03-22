@@ -28,6 +28,7 @@ func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any)
 		onState: onState,
 	}
 	onState(id, "idle")
+	s.startEventLoop()
 	return s
 }
 
@@ -56,25 +57,34 @@ func (s *Session) Query(ctx context.Context, prompt string) error {
 		return err
 	}
 
-	go s.streamEvents()
 	return nil
 }
 
-func (s *Session) streamEvents() {
-	for event := range s.cliSess.Events() {
-		wireEvent := ToWireEvent(event)
-		if wireEvent != nil {
-			s.onEvent(s.ID, wireEvent)
-		}
-	}
+// startEventLoop begins reading events from the claudecli-go session.
+// Called once after session creation. The loop runs for the lifetime of the
+// session, forwarding events and detecting turn boundaries via ResultEvent.
+func (s *Session) startEventLoop() {
+	go func() {
+		for event := range s.cliSess.Events() {
+			wireEvent := ToWireEvent(event)
+			if wireEvent != nil {
+				s.onEvent(s.ID, wireEvent)
+			}
 
-	// Events channel closed -- turn complete.
-	_, err := s.cliSess.Wait()
-	if err != nil {
-		s.setState("failed")
-		return
-	}
-	s.setState("idle")
+			// ResultEvent marks the end of a turn.
+			if _, ok := event.(*claudecli.ResultEvent); ok {
+				s.setState("idle")
+			}
+
+			// Fatal error ends the session.
+			if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
+				s.setState("failed")
+			}
+		}
+
+		// Channel closed means session process ended.
+		s.setState("done")
+	}()
 }
 
 func (s *Session) setState(state string) {
