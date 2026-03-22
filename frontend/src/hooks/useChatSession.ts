@@ -100,6 +100,14 @@ export function useChatSession(projectId: string) {
     async (prompt: string) => {
       let activeId = useChatStore.getState().activeSessionId;
 
+      // Check if the active session is still usable (not stopped/done).
+      if (activeId) {
+        const activeState = useChatStore.getState().sessions[activeId]?.meta.state;
+        if (activeState === "stopped" || activeState === "done") {
+          activeId = null;
+        }
+      }
+
       if (!activeId) {
         const sessions = Object.keys(useChatStore.getState().sessions);
         const name = `Session ${sessions.length + 1}`;
