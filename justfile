@@ -39,11 +39,6 @@ reset:
     rm -f agentique.db agentique.db-journal agentique.db-wal agentique.db-shm
     @echo "Reset complete. Restart server for fresh state."
 
-reset-full:
-    rm -f agentique.db agentique.db-journal agentique.db-wal agentique.db-shm
-    rm -rf ~/.claude/sessions/
-    @echo "Full reset complete (DB + Claude sessions)."
-
 # Clean build artifacts
 clean:
     rm -rf frontend/dist
