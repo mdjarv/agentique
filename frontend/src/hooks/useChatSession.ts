@@ -3,7 +3,13 @@ import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSession, stopSession } from "~/lib/session-actions";
 import { copyToClipboard, uuid } from "~/lib/utils";
-import { type ChatEvent, type SessionMetadata, type Turn, useChatStore } from "~/stores/chat-store";
+import {
+  type Attachment,
+  type ChatEvent,
+  type SessionMetadata,
+  type Turn,
+  useChatStore,
+} from "~/stores/chat-store";
 
 interface SessionListResult {
   sessions: SessionMetadata[];
@@ -23,8 +29,16 @@ interface HistoryEvent {
   fatal?: boolean;
 }
 
+interface HistoryAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+}
+
 interface HistoryTurn {
   prompt: string;
+  attachments?: HistoryAttachment[];
   events: HistoryEvent[];
 }
 
@@ -36,6 +50,12 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
   return history.map((ht) => ({
     id: uuid(),
     prompt: ht.prompt,
+    attachments: (ht.attachments ?? []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      mimeType: a.mimeType,
+      dataUrl: a.dataUrl,
+    })),
     events: ht.events.map(
       (e): ChatEvent => ({
         id: uuid(),
@@ -142,7 +162,7 @@ export function useChatSession(projectId: string) {
   );
 
   const sendQuery = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, attachments?: Attachment[]) => {
       const store = useChatStore.getState();
       let sessionId = store.activeSessionId;
       const session = sessionId ? store.sessions[sessionId] : undefined;
@@ -158,8 +178,17 @@ export function useChatSession(projectId: string) {
         }
 
         // Backend handles lazy resume if session is not live.
-        useChatStore.getState().startTurn(sessionId, prompt);
-        await ws.request("session.query", { sessionId, prompt });
+        useChatStore.getState().startTurn(sessionId, prompt, attachments);
+
+        const payload: Record<string, unknown> = { sessionId, prompt };
+        if (attachments && attachments.length > 0) {
+          payload.attachments = attachments.map((a) => ({
+            name: a.name,
+            mimeType: a.mimeType,
+            dataUrl: a.dataUrl,
+          }));
+        }
+        await ws.request("session.query", payload);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         toast.error(msg, {

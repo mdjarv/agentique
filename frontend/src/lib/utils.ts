@@ -17,6 +17,23 @@ export function uuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Could not read image data."));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read image."));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
 export function copyToClipboard(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));

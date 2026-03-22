@@ -15,9 +15,18 @@ export interface ChatEvent {
   fatal?: boolean;
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string; // data:...;base64,... for sending/history
+  previewUrl?: string; // blob: URL for local preview (not persisted)
+}
+
 export interface Turn {
   id: string;
   prompt: string;
+  attachments: Attachment[];
   events: ChatEvent[];
   complete: boolean;
 }
@@ -69,7 +78,7 @@ interface ChatState {
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
 
   // Turn/event management (now takes sessionId)
-  startTurn: (sessionId: string, prompt: string) => void;
+  startTurn: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
   appendEvent: (sessionId: string, event: ChatEvent) => void;
   completeTurn: (sessionId: string) => void;
 
@@ -217,7 +226,7 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  startTurn: (sessionId, prompt) =>
+  startTurn: (sessionId, prompt, attachments) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
@@ -231,6 +240,7 @@ export const useChatStore = create<ChatState>((set) => ({
               {
                 id: uuid(),
                 prompt,
+                attachments: attachments ?? [],
                 events: [],
                 complete: false,
               },

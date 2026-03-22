@@ -4,6 +4,8 @@ github.com/allbin/claudecli-go v0.0.0-20260322092632-6ef883401b1b h1:jKzQmfIwSnc
 github.com/allbin/claudecli-go v0.0.0-20260322092632-6ef883401b1b/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/claudecli-go v0.0.0-20260322102154-5d23d9814e7b h1:g12HJ5yL41jjPf7aP3I7TJNLPuqVjWnVSpDZoDrCNfs=
 github.com/allbin/claudecli-go v0.0.0-20260322102154-5d23d9814e7b/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260322231901-11bdced7a3f9 h1:XXJSq+pbEeLl5NLz5sUIr0dUXRx4sizcn8X74gBn8BM=
+github.com/allbin/claudecli-go v0.0.0-20260322231901-11bdced7a3f9/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

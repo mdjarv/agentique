@@ -136,7 +136,7 @@ func (c *conn) handleSessionQuery(msg ClientMessage) {
 		}
 	}
 
-	if err := sess.Query(c.ctx, payload.Prompt); err != nil {
+	if err := sess.Query(c.ctx, payload.Prompt, payload.Attachments); err != nil {
 		c.respond(msg.ID, nil, "query failed: "+err.Error())
 		return
 	}

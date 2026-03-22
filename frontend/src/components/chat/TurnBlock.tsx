@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  FileText,
   Loader2,
   Terminal,
   User,
@@ -162,7 +163,29 @@ export function TurnBlock({
           </AvatarFallback>
         </Avatar>
         <div className="max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
-          <p className="text-sm whitespace-pre-wrap">{turn.prompt}</p>
+          {turn.attachments && turn.attachments.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap mb-2">
+              {turn.attachments.map((a) =>
+                a.mimeType.startsWith("image/") ? (
+                  <img
+                    key={a.id}
+                    src={a.previewUrl ?? a.dataUrl}
+                    alt={a.name}
+                    className="h-20 max-w-[200px] object-cover rounded"
+                  />
+                ) : (
+                  <div
+                    key={a.id}
+                    className="h-20 w-20 rounded bg-primary-foreground/10 flex flex-col items-center justify-center gap-1 px-1"
+                  >
+                    <FileText className="h-5 w-5" />
+                    <span className="text-[9px] truncate w-full text-center">{a.name}</span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+          {turn.prompt && <p className="text-sm whitespace-pre-wrap">{turn.prompt}</p>}
         </div>
       </div>
 

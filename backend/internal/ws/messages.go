@@ -55,8 +55,9 @@ type SessionCreateResult struct {
 }
 
 type SessionQueryPayload struct {
-	SessionID string `json:"sessionId"`
-	Prompt    string `json:"prompt"`
+	SessionID   string                    `json:"sessionId"`
+	Prompt      string                    `json:"prompt"`
+	Attachments []session.QueryAttachment `json:"attachments,omitempty"`
 }
 
 type SessionListPayload struct {

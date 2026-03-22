@@ -10,6 +10,7 @@ import (
 // HistoryTurn represents a single turn (prompt + response events) for replay.
 type HistoryTurn struct {
 	Prompt string            `json:"prompt"`
+	Attachments []QueryAttachment      `json:"attachments,omitempty"`
 	Events []json.RawMessage `json:"events"`
 }
 
@@ -32,9 +33,13 @@ func HistoryFromDB(ctx context.Context, q *store.Queries, sessionID string) ([]H
 		}
 
 		if row.Type == "prompt" {
-			var p struct{ Prompt string `json:"prompt"` }
+			var p struct {
+				Prompt string       `json:"prompt"`
+				Attachments []QueryAttachment `json:"attachments,omitempty"`
+			}
 			if json.Unmarshal([]byte(row.Data), &p) == nil {
 				t.Prompt = p.Prompt
+				t.Attachments = p.Attachments
 			}
 		} else {
 			t.Events = append(t.Events, json.RawMessage(row.Data))
