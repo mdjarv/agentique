@@ -2,14 +2,14 @@ import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 
 const stateColors: Record<SessionState, string> = {
-  draft: "bg-[#9399b2]",
-  idle: "bg-[#a6e3a1]",
-  running: "bg-[#f9e2af]",
-  starting: "bg-[#89b4fa]",
-  failed: "bg-[#f38ba8]",
-  disconnected: "bg-[#6c7086]",
-  stopped: "bg-[#585b70]",
-  done: "bg-[#585b70]",
+  draft: "bg-[#565f89]",
+  idle: "bg-[#9ece6a]",
+  running: "bg-[#e0af68]",
+  starting: "bg-[#7aa2f7]",
+  failed: "bg-[#f7768e]",
+  disconnected: "bg-[#414868]",
+  stopped: "bg-[#3b4261]",
+  done: "bg-[#3b4261]",
 };
 
 interface SessionStatusDotProps {
@@ -23,7 +23,7 @@ export function SessionStatusDot({ state, hasUnseenCompletion }: SessionStatusDo
     <span
       className={cn(
         "inline-block h-2 w-2 rounded-full shrink-0",
-        showAttention ? "bg-[#40a02b]" : stateColors[state],
+        showAttention ? "bg-[#73daca]" : stateColors[state],
         (state === "running" || showAttention) && "animate-pulse",
       )}
       title={showAttention ? "completed" : state}
