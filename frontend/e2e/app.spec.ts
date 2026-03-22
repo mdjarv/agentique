@@ -44,10 +44,18 @@ test.describe("Project management", () => {
     await page.getByText("New Project").click();
     await expect(page.getByText("Create New Project")).toBeVisible();
 
-    // Fill in the form -- use a temp directory that exists
+    // Create button should be disabled without a path
+    await expect(page.getByRole("button", { name: "Create" })).toBeDisabled();
+
+    // Fill in the directory -- name should auto-fill from path
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentique-test-"));
+    await page.getByLabel("Directory").fill(tempDir);
+
+    // Override the auto-filled name
     await page.getByLabel("Name").fill("Test Project");
-    await page.getByLabel("Path").fill(tempDir);
+
+    // Create button should now be enabled
+    await expect(page.getByRole("button", { name: "Create" })).toBeEnabled();
 
     // Submit
     await page.getByRole("button", { name: "Create" }).click();
