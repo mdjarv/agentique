@@ -71,9 +71,11 @@ export function useChatSession(projectId: string) {
           s.setActiveSessionId(firstSession.id);
           for (const sess of result.sessions) {
             if (sess.state !== "stopped" && sess.state !== "done") {
-              ws.request("session.subscribe", { sessionId: sess.id }).catch(() => {});
-              // Fetch history for live sessions (restores turns after page reload).
-              ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id })
+              // Subscribe first (may trigger resume ~30-40s), then fetch history.
+              ws.request("session.subscribe", { sessionId: sess.id }, 120000)
+                .then(() =>
+                  ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id }),
+                )
                 .then((hist) => {
                   if (hist.turns.length > 0) {
                     useChatStore.getState().setSessionHistory(sess.id, historyToTurns(hist.turns));

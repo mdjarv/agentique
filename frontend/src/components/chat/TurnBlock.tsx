@@ -59,7 +59,7 @@ export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: 
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-2 max-w-[85%]">
+          <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-hidden">
             {/* Thinking blocks */}
             {thinkingEvents.map((e) => (
               <ThinkingBlock key={e.id} content={e.content ?? ""} />

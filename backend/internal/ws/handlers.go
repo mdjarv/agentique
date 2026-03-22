@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/allbin/agentique/backend/internal/session"
@@ -240,8 +241,17 @@ func (c *conn) handleSessionSubscribe(msg ClientMessage) {
 			return
 		}
 
+		// Use worktree dir if it exists, otherwise fall back to project root.
+		workDir := dbSess.WorkDir
+		if _, statErr := os.Stat(workDir); statErr != nil {
+			project, projErr := c.queries.GetProject(c.ctx, dbSess.ProjectID)
+			if projErr == nil {
+				workDir = project.Path
+			}
+		}
+
 		var err error
-		sess, err = c.mgr.Resume(c.ctx, payload.SessionID, dbSess.ClaudeSessionID.String, dbSess.WorkDir,
+		sess, err = c.mgr.Resume(c.ctx, payload.SessionID, dbSess.ClaudeSessionID.String, workDir,
 			func(sessionID string, event any) {
 				c.push("session.event", SessionEventPayload{
 					SessionID: sessionID,

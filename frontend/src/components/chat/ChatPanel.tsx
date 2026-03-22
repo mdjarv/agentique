@@ -1,5 +1,6 @@
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
+import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -19,6 +20,9 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full" data-project-id={projectId}>
+      {activeSession && activeSession.meta.state !== "draft" && (
+        <SessionHeader session={activeSession} />
+      )}
       <MessageList
         turns={activeSession?.turns ?? []}
         currentAssistantText={activeSession?.currentAssistantText ?? ""}
