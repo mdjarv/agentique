@@ -1,0 +1,223 @@
+# claudecli-go API Reference
+
+Reference notes for [allbin/claudecli-go](https://github.com/allbin/claudecli-go).
+Go SDK wrapping the Claude Code CLI as a subprocess. Zero external dependencies.
+Requires Go 1.23+ and Claude CLI >= 2.0.0 on PATH.
+
+## Execution Modes
+
+### 1. Interactive Session (primary for Agentique)
+
+```go
+client := claudecli.NewClient()
+session, err := client.Connect(ctx,
+    claudecli.WithWorkDir("/path/to/project"),
+    claudecli.WithModel(claudecli.ModelSonnet),
+    claudecli.WithPermissionMode(claudecli.PermissionDefault),
+    claudecli.WithSystemPrompt("You are a helpful assistant"),
+)
+
+// Send a query
+err = session.Query(ctx, "Explain the main.go file")
+
+// Stream events
+for event := range session.Events() {
+    switch e := event.(type) {
+    case *claudecli.TextEvent:
+        // Assistant text content
+    case *claudecli.ThinkingEvent:
+        // Extended thinking
+    case *claudecli.ToolUseEvent:
+        // Tool invocation (name, input)
+    case *claudecli.ToolResultEvent:
+        // Tool result
+    case *claudecli.ResultEvent:
+        // Turn complete (cost, usage, stop reason)
+    case *claudecli.ErrorEvent:
+        // Error (may be fatal or non-fatal)
+    }
+}
+
+// Wait for turn completion
+result, err := session.Wait()
+
+// Send another query (multi-turn)
+err = session.Query(ctx, "Now refactor that function")
+
+// Graceful shutdown
+session.Close()
+```
+
+### 2. Streaming (one-shot)
+
+```go
+stream, err := claudecli.Run(ctx, "Explain this code",
+    claudecli.WithWorkDir("/path"),
+)
+for event := range stream.Events() { ... }
+result, err := stream.Wait()
+```
+
+### 3. Blocking (one-shot, simpler)
+
+```go
+result, err := client.RunBlocking(ctx, "Explain this code")
+// result.Text, result.Cost, result.Usage, result.SessionID
+```
+
+### 4. Convenience Wrappers
+
+```go
+// Get full text response
+text, result, err := client.RunText(ctx, "Explain this code")
+
+// Get typed JSON response
+var analysis CodeAnalysis
+err := claudecli.RunJSON(ctx, "Analyze this code", &analysis,
+    claudecli.WithJSONSchema(schema),
+)
+```
+
+## Session Control Protocol
+
+Mid-session commands (bidirectional JSON over stdin/stdout):
+
+```go
+session.SetModel(claudecli.ModelOpus)
+session.SetPermissionMode(claudecli.PermissionBypass)
+session.Interrupt()  // interrupt current generation
+// MCP server add/remove also available
+```
+
+## Event Types
+
+| Event | Fields | Description |
+|---|---|---|
+| `StartEvent` | model, args, workdir | Before CLI starts |
+| `InitEvent` | sessionID, model, tools | Session initialized |
+| `TextEvent` | content | Assistant text chunk |
+| `ThinkingEvent` | content, signature | Extended thinking |
+| `ToolUseEvent` | id, name, input (JSON) | Tool invocation |
+| `ToolResultEvent` | id, content | Tool result |
+| `ResultEvent` | cost, duration, usage, stopReason | Turn complete |
+| `RateLimitEvent` | status, utilization | Rate limit info |
+| `StderrEvent` | content | CLI stderr output |
+| `ErrorEvent` | message, fatal, details | Error (implements error) |
+| `ControlRequestEvent` | (internal) | Session control |
+| `StreamEvent` | (partial) | Partial message updates |
+
+## Configuration Options
+
+### Model & Thinking
+
+```go
+WithModel(ModelSonnet)             // ModelHaiku, ModelSonnet, ModelOpus
+WithFallbackModel(ModelHaiku)
+WithMaxThinkingTokens(4096)
+WithEffort(EffortHigh)             // EffortLow, EffortMedium, EffortHigh
+```
+
+### Prompts
+
+```go
+WithSystemPrompt("custom system prompt")
+WithAppendSystemPrompt("appended to default")
+```
+
+### Tools & Permissions
+
+```go
+WithPermissionMode(PermissionDefault)  // Default, Plan, AcceptEdits, Bypass, DontAsk, Auto
+WithTools("tool1", "tool2")            // Allow specific tools
+WithDisallowedTools("tool1")           // Block specific tools
+WithBuiltinTools("tool1")
+
+// Permission callback (for interactive approval)
+WithCanUseTool(func(req ToolPermissionRequest) PermissionResponse {
+    // req.ToolName, req.Input, req.Suggestion
+    return PermissionResponse{Allow: true}
+})
+```
+
+### Sessions
+
+```go
+WithSessionID("existing-session-id")   // Resume specific session
+WithResume()                           // Resume last session
+WithContinue()                         // Continue last conversation
+```
+
+### Output
+
+```go
+WithJSONSchema(schemaString)           // Structured output with validation
+```
+
+### Execution
+
+```go
+WithWorkDir("/path/to/project")
+WithEnv(map[string]string{"KEY": "val"})
+WithTimeout(5 * time.Minute)
+```
+
+### MCP
+
+```go
+WithMCPConfig(config)
+WithStrictMCPConfig(config)
+```
+
+## Session State Machine
+
+```
+StateStarting -> StateIdle -> StateRunning -> StateIdle (next query)
+                                           -> StateDone
+                                           -> StateFailed
+```
+
+- `StateStarting` - CLI process spawning
+- `StateIdle` - Ready for next query
+- `StateRunning` - Processing a query
+- `StateDone` - Session ended normally
+- `StateFailed` - Session ended with error
+
+## Error Handling
+
+```go
+var cliErr *claudecli.Error
+if errors.As(err, &cliErr) {
+    cliErr.ExitCode
+    cliErr.Stderr
+    cliErr.Details.Type      // "rate_limit", "auth", "overloaded"
+    cliErr.Details.RetryAfter
+    cliErr.IsRateLimit()
+    cliErr.IsAuth()
+    cliErr.IsOverloaded()
+}
+
+var unmarshalErr *claudecli.UnmarshalError
+if errors.As(err, &unmarshalErr) {
+    unmarshalErr.Raw         // Original text before parse failure
+}
+```
+
+## Testing
+
+```go
+// Fixture executor replays recorded JSONL (no real CLI needed)
+executor := claudecli.NewFixtureExecutorFromFile("testdata/session.jsonl")
+client := claudecli.NewClient(claudecli.WithExecutor(executor))
+
+// BidiFixtureExecutor for interactive session testing
+executor := claudecli.NewBidiFixtureExecutor(...)
+```
+
+## Key Design Decisions for Agentique
+
+1. **Use `Session` (Connect) for all agent interactions** - multi-turn, streaming, lifecycle
+2. **Forward events as-is to frontend** - the event types map cleanly to UI rendering
+3. **One goroutine per session** - reads from Events() channel, writes to WebSocket
+4. **Session.Close() for cleanup** - handles stdin EOF, SIGTERM, goroutine cleanup
+5. **WithCanUseTool for permission UI** - callback bridges to WebSocket for user approval
+6. **State machine maps to UI** - Starting/Idle/Running/Done/Failed -> session badges
