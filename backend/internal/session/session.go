@@ -22,10 +22,11 @@ type Session struct {
 	ID    string
 	state string
 
-	mu      sync.Mutex
-	cliSess *claudecli.Session
-	onEvent func(sessionID string, event any)
-	onState func(sessionID string, state string)
+	mu         sync.Mutex
+	cliSess    *claudecli.Session
+	queryCount int
+	onEvent    func(sessionID string, event any)
+	onState    func(sessionID string, state string)
 }
 
 func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any), onState func(string, string)) *Session {
@@ -57,6 +58,13 @@ func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, s
 	s.onState = onState
 }
 
+// QueryCount returns the number of queries sent to this session.
+func (s *Session) QueryCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.queryCount
+}
+
 // Query sends a prompt to the Claude session and starts streaming events.
 func (s *Session) Query(ctx context.Context, prompt string) error {
 	s.mu.Lock()
@@ -66,6 +74,7 @@ func (s *Session) Query(ctx context.Context, prompt string) error {
 		return fmt.Errorf("session is %s, not %s", st, StateIdle)
 	}
 	s.state = StateRunning
+	s.queryCount++
 	s.mu.Unlock()
 
 	s.onState(s.ID, StateRunning)

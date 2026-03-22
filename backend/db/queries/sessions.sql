@@ -11,5 +11,8 @@ SELECT * FROM sessions WHERE project_id = ? ORDER BY created_at ASC;
 -- name: UpdateSessionState :exec
 UPDATE sessions SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateSessionName :exec
+UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

@@ -60,9 +60,15 @@ export function useChatSession(projectId: string) {
       useChatStore.getState().setSessionState(payload.sessionId, payload.state);
     });
 
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubRenamed = ws.subscribe("session.renamed", (payload: any) => {
+      useChatStore.getState().setSessionName(payload.sessionId, payload.name);
+    });
+
     return () => {
       unsubEvent();
       unsubState();
+      unsubRenamed();
     };
   }, [projectId]);
 
@@ -76,7 +82,7 @@ export function useChatSession(projectId: string) {
     async (prompt: string) => {
       let activeId = useChatStore.getState().activeSessionId;
 
-      // Check if the active session is still usable (not stopped/done).
+      // Skip stopped/done sessions
       if (activeId) {
         const activeState = useChatStore.getState().sessions[activeId]?.meta.state;
         if (activeState === "stopped" || activeState === "done") {
@@ -84,13 +90,24 @@ export function useChatSession(projectId: string) {
         }
       }
 
+      // If no active session, create a draft then promote it
       if (!activeId) {
-        const sessions = Object.keys(useChatStore.getState().sessions);
-        const name = `Session ${sessions.length + 1}`;
+        useChatStore.getState().createDraft(projectId);
+        activeId = useChatStore.getState().activeSessionId;
+        if (!activeId) return;
+      }
+
+      // Promote draft to real backend session
+      if (activeId?.startsWith("draft-")) {
+        const draftMeta = useChatStore.getState().sessions[activeId]?.meta;
+        const worktree = draftMeta?.worktree ?? false;
         try {
-          activeId = await createSessionCb(name, false);
+          const realId = await createSession(ws, projectId, "", worktree);
+          useChatStore.getState().removeSession(activeId);
+          useChatStore.getState().setActiveSessionId(realId);
+          activeId = realId;
         } catch (err) {
-          console.error("Failed to create session:", err);
+          console.error("Failed to create session from draft:", err);
           return;
         }
       }
@@ -103,7 +120,7 @@ export function useChatSession(projectId: string) {
         useChatStore.getState().setSessionState(activeId, "idle");
       }
     },
-    [ws, createSessionCb],
+    [ws, projectId],
   );
 
   const stopSessionCb = useCallback((sessionId: string) => stopSession(ws, sessionId), [ws]);

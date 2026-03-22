@@ -22,6 +22,7 @@ export interface Turn {
 }
 
 export type SessionState =
+  | "draft"
   | "disconnected"
   | "starting"
   | "idle"
@@ -37,12 +38,14 @@ export interface SessionMetadata {
   worktreePath?: string;
   worktreeBranch?: string;
   createdAt: string;
+  worktree?: boolean; // draft-only: user's worktree toggle preference
 }
 
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
   currentAssistantText: string;
+  hasUnseenCompletion: boolean;
 }
 
 interface ChatState {
@@ -55,6 +58,11 @@ interface ChatState {
   removeSession: (id: string) => void;
   setActiveSessionId: (id: string | null) => void;
   setSessionState: (sessionId: string, state: SessionState) => void;
+  setSessionName: (sessionId: string, name: string) => void;
+
+  // Draft session management
+  createDraft: (projectId: string) => void;
+  setDraftWorktree: (sessionId: string, worktree: boolean) => void;
 
   // Turn/event management (now takes sessionId)
   startTurn: (sessionId: string, prompt: string) => void;
@@ -82,9 +90,15 @@ export const useChatStore = create<ChatState>((set) => ({
             meta,
             turns: existing.turns,
             currentAssistantText: existing.currentAssistantText,
+            hasUnseenCompletion: existing.hasUnseenCompletion,
           };
         } else {
-          sessions[meta.id] = { meta, turns: [], currentAssistantText: "" };
+          sessions[meta.id] = {
+            meta,
+            turns: [],
+            currentAssistantText: "",
+            hasUnseenCompletion: false,
+          };
         }
       }
       return { sessions };
@@ -94,7 +108,7 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => ({
       sessions: {
         ...s.sessions,
-        [meta.id]: { meta, turns: [], currentAssistantText: "" },
+        [meta.id]: { meta, turns: [], currentAssistantText: "", hasUnseenCompletion: false },
       },
     })),
 
@@ -105,7 +119,19 @@ export const useChatStore = create<ChatState>((set) => ({
       return { sessions: rest, activeSessionId };
     }),
 
-  setActiveSessionId: (id) => set({ activeSessionId: id }),
+  setActiveSessionId: (id) =>
+    set((s) => {
+      if (id && s.sessions[id]) {
+        return {
+          activeSessionId: id,
+          sessions: {
+            ...s.sessions,
+            [id]: { ...(s.sessions[id] as SessionData), hasUnseenCompletion: false },
+          },
+        };
+      }
+      return { activeSessionId: id };
+    }),
 
   setSessionState: (sessionId, state) =>
     set((s) => {
@@ -117,6 +143,55 @@ export const useChatStore = create<ChatState>((set) => ({
           [sessionId]: {
             ...session,
             meta: { ...session.meta, state },
+          },
+        },
+      };
+    }),
+
+  setSessionName: (sessionId, name) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            meta: { ...session.meta, name },
+          },
+        },
+      };
+    }),
+
+  createDraft: () =>
+    set((s) => {
+      const draftId = `draft-${crypto.randomUUID()}`;
+      const meta: SessionMetadata = {
+        id: draftId,
+        name: "New session",
+        state: "draft",
+        createdAt: new Date().toISOString(),
+        worktree: false,
+      };
+      return {
+        sessions: {
+          ...s.sessions,
+          [draftId]: { meta, turns: [], currentAssistantText: "", hasUnseenCompletion: false },
+        },
+        activeSessionId: draftId,
+      };
+    }),
+
+  setDraftWorktree: (sessionId, worktree) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session || session.meta.state !== "draft") return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionId]: {
+            ...session,
+            meta: { ...session.meta, worktree },
           },
         },
       };
@@ -182,6 +257,7 @@ export const useChatStore = create<ChatState>((set) => ({
       if (!lastTurn) return s;
 
       turns[turns.length - 1] = { ...lastTurn, complete: true };
+      const isViewing = s.activeSessionId === sessionId;
       return {
         sessions: {
           ...s.sessions,
@@ -189,6 +265,7 @@ export const useChatStore = create<ChatState>((set) => ({
             ...session,
             turns,
             meta: { ...session.meta, state: "idle" },
+            hasUnseenCompletion: !isViewing,
           },
         },
       };

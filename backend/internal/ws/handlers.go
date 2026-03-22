@@ -1,11 +1,15 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
+	claudecli "github.com/allbin/claudecli-go"
 )
 
 func (c *conn) handleSessionCreate(msg ClientMessage) {
@@ -132,6 +136,29 @@ func (c *conn) handleSessionQuery(msg ClientMessage) {
 	}
 
 	c.respond(msg.ID, struct{}{}, "")
+
+	// Auto-name session from the first prompt using Haiku.
+	if sess.QueryCount() == 1 {
+		sessionID := payload.SessionID
+		prompt := payload.Prompt
+		go func() {
+			name := generateSessionName(prompt)
+			if name == "" {
+				return
+			}
+			if err := c.queries.UpdateSessionName(context.Background(), store.UpdateSessionNameParams{
+				Name: name,
+				ID:   sessionID,
+			}); err != nil {
+				log.Printf("auto-rename db update error: %v", err)
+				return
+			}
+			c.push("session.renamed", SessionRenamedPayload{
+				SessionID: sessionID,
+				Name:      name,
+			})
+		}()
+	}
 }
 
 func (c *conn) handleSessionList(msg ClientMessage) {
@@ -233,4 +260,38 @@ func (c *conn) handleSessionSubscribe(msg ClientMessage) {
 	})
 
 	c.respond(msg.ID, struct{}{}, "")
+}
+
+// generateSessionName calls Haiku to generate a short title from a prompt.
+func generateSessionName(prompt string) string {
+	// Truncate long prompts to keep the naming call cheap.
+	p := prompt
+	if len(p) > 500 {
+		p = p[:500]
+	}
+	namePrompt := "Generate a short 2-4 word title for this coding task. " +
+		"Respond with ONLY the title, no quotes or punctuation:\n\n" + p
+
+	client := claudecli.New()
+	result, err := client.RunBlocking(context.Background(), namePrompt,
+		claudecli.WithModel(claudecli.ModelHaiku),
+		claudecli.WithMaxTurns(1),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+	)
+	if err != nil {
+		log.Printf("auto-rename haiku error: %v", err)
+		return ""
+	}
+
+	name := strings.TrimSpace(result.Text)
+	// Strip surrounding quotes if present.
+	name = strings.Trim(name, "\"'")
+	if name == "" {
+		return ""
+	}
+	// Cap at 50 chars.
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	return name
 }

@@ -14,6 +14,8 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
   );
 
   const sessionState = activeSession?.meta.state ?? "disconnected";
+  const isDraft = sessionState === "draft";
+  const worktree = activeSession?.meta.worktree ?? false;
 
   return (
     <div className="flex flex-col h-full" data-project-id={projectId}>
@@ -22,7 +24,17 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
         currentAssistantText={activeSession?.currentAssistantText ?? ""}
         sessionState={sessionState}
       />
-      <MessageComposer onSend={sendQuery} disabled={sessionState === "running"} />
+      <MessageComposer
+        onSend={sendQuery}
+        disabled={sessionState === "running"}
+        isDraft={isDraft}
+        worktree={worktree}
+        onWorktreeChange={(v) => {
+          if (activeSession) {
+            useChatStore.getState().setDraftWorktree(activeSession.meta.id, v);
+          }
+        }}
+      />
     </div>
   );
 }

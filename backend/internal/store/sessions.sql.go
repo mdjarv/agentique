@@ -117,6 +117,20 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 	return items, nil
 }
 
+const updateSessionName = `-- name: UpdateSessionName :exec
+UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateSessionNameParams struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
+func (q *Queries) UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionName, arg.Name, arg.ID)
+	return err
+}
+
 const updateSessionState = `-- name: UpdateSessionState :exec
 UPDATE sessions SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

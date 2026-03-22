@@ -135,7 +135,10 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
                   className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
                   onClick={() => handleSessionClick(id)}
                 >
-                  <SessionStatusDot state={session.state} />
+                  <SessionStatusDot
+                    state={session.state}
+                    hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+                  />
                   <span className="truncate">{session.name}</span>
                   {session.worktreeBranch && (
                     <GitBranch className="h-3 w-3 text-muted-foreground shrink-0" />

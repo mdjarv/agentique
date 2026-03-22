@@ -87,3 +87,8 @@ type SessionStatePayload struct {
 	SessionID string `json:"sessionId"`
 	State     string `json:"state"`
 }
+
+type SessionRenamedPayload struct {
+	SessionID string `json:"sessionId"`
+	Name      string `json:"name"`
+}
