@@ -1,4 +1,4 @@
-import { Bot, User } from "lucide-react";
+import { Bot, Loader2, User } from "lucide-react";
 import { Markdown } from "~/components/chat/Markdown";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
@@ -14,21 +14,30 @@ interface TurnBlockProps {
 
 export function TurnBlock({ turn, isLast }: TurnBlockProps) {
   const currentAssistantText = useChatStore((s) => s.currentAssistantText);
+  const sessionState = useChatStore((s) => s.sessionState);
+
+  const isStreaming = isLast && !turn.complete;
 
   // Accumulate text from completed events, or use streaming text for the last turn.
-  const textContent =
-    isLast && !turn.complete
-      ? currentAssistantText
-      : turn.events
-          .filter((e) => e.type === "text")
-          .map((e) => e.content ?? "")
-          .join("");
+  const textContent = isStreaming
+    ? currentAssistantText
+    : turn.events
+        .filter((e) => e.type === "text")
+        .map((e) => e.content ?? "")
+        .join("");
 
   const thinkingEvents = turn.events.filter((e) => e.type === "thinking");
   const toolUseEvents = turn.events.filter((e) => e.type === "tool_use");
   const toolResultEvents = turn.events.filter((e) => e.type === "tool_result");
   const resultEvent = turn.events.find((e) => e.type === "result");
   const errorEvents = turn.events.filter((e) => e.type === "error");
+
+  const hasAssistantContent =
+    textContent ||
+    thinkingEvents.length > 0 ||
+    toolUseEvents.length > 0 ||
+    errorEvents.length > 0 ||
+    isStreaming;
 
   return (
     <div className="space-y-3">
@@ -45,7 +54,7 @@ export function TurnBlock({ turn, isLast }: TurnBlockProps) {
       </div>
 
       {/* Assistant response */}
-      {(textContent || thinkingEvents.length > 0 || toolUseEvents.length > 0) && (
+      {hasAssistantContent && (
         <div className="flex gap-3">
           <Avatar className="h-8 w-8 shrink-0">
             <AvatarFallback className="bg-muted">
@@ -65,6 +74,17 @@ export function TurnBlock({ turn, isLast }: TurnBlockProps) {
               </div>
             )}
 
+            {/* Streaming indicator when waiting for first content */}
+            {isStreaming &&
+              !textContent &&
+              thinkingEvents.length === 0 &&
+              toolUseEvents.length === 0 && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm px-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>{sessionState === "running" ? "Working..." : "Connecting..."}</span>
+                </div>
+              )}
+
             {/* Tool use/result pairs */}
             {toolUseEvents.map((toolUse) => {
               const result = toolResultEvents.find((r) => r.toolId === toolUse.toolId);
@@ -75,6 +95,13 @@ export function TurnBlock({ turn, isLast }: TurnBlockProps) {
                 </div>
               );
             })}
+
+            {/* Streaming indicator after tool calls while waiting for more */}
+            {isStreaming && (toolUseEvents.length > 0 || textContent) && (
+              <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+              </div>
+            )}
 
             {/* Error events */}
             {errorEvents.map((e) => (
