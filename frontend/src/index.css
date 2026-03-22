@@ -36,94 +36,86 @@
 }
 
 /*
- * Catppuccin Mocha palette
- * https://catppuccin.com/palette
+ * Tokyo Night (Dark) palette
+ * https://github.com/enkia/tokyo-night-vscode-theme
  *
- * Base:      #1e1e2e (crust: #11111b, mantle: #181825)
- * Surface0:  #313244
- * Surface1:  #45475a
- * Surface2:  #585b70
- * Overlay0:  #6c7086
- * Overlay1:  #7f849c
- * Subtext0:  #a6adc8
- * Subtext1:  #bac2de
- * Text:      #cdd6f4
- * Lavender:  #b4befe
- * Blue:      #89b4fa
- * Sapphire:  #74c7ec
- * Teal:      #94e2d5
- * Green:     #a6e3a1
- * Yellow:    #f9e2af
- * Peach:     #fab387
- * Maroon:    #eba0ac
- * Red:       #f38ba8
- * Mauve:     #cba6f7
- * Pink:      #f5c2e7
- * Flamingo:  #f2cdcd
- * Rosewater: #f5e0dc
+ * Background:    #1a1b26
+ * Background-alt:#16161e (terminal bg / deeper surfaces)
+ * Surface:       #24283b (editor selection, cards)
+ * Border:        #3b4261
+ * Comment:       #565f89
+ * Foreground:    #a9b1d6
+ * Foreground-br: #c0caf5 (bright text)
+ * Red:           #f7768e
+ * Green:         #9ece6a
+ * Yellow:        #e0af68
+ * Blue:          #7aa2f7
+ * Magenta:       #bb9af7
+ * Cyan:          #7dcfff
+ * Orange:        #ff9e64
  */
 
 :root {
-  /* Catppuccin Mocha as the default (and only) theme */
-  --background: #1e1e2e;
-  --foreground: #cdd6f4;
-  --card: #181825;
-  --card-foreground: #cdd6f4;
-  --popover: #1e1e2e;
-  --popover-foreground: #cdd6f4;
-  --primary: #b4befe;
-  --primary-foreground: #1e1e2e;
-  --secondary: #313244;
-  --secondary-foreground: #cdd6f4;
-  --muted: #313244;
-  --muted-foreground: #a6adc8;
-  --accent: #313244;
-  --accent-foreground: #cdd6f4;
-  --destructive: #f38ba8;
-  --destructive-foreground: #1e1e2e;
-  --border: #45475a;
-  --input: #45475a;
-  --ring: #b4befe;
-  --sidebar: #181825;
-  --sidebar-foreground: #cdd6f4;
-  --sidebar-primary: #b4befe;
-  --sidebar-primary-foreground: #1e1e2e;
-  --sidebar-accent: #313244;
-  --sidebar-accent-foreground: #cdd6f4;
-  --sidebar-border: #45475a;
-  --sidebar-ring: #b4befe;
+  /* Tokyo Night (Dark) as the default (and only) theme */
+  --background: #1a1b26;
+  --foreground: #a9b1d6;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1a1b26;
+  --popover-foreground: #a9b1d6;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #565f89;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #7aa2f7;
+  --sidebar: #16161e;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #7aa2f7;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #24283b;
+  --sidebar-accent-foreground: #a9b1d6;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #7aa2f7;
   --radius: 0.625rem;
 }
 
 /* Keep .dark class identical so shadcn components work in dark mode */
 .dark {
-  --background: #1e1e2e;
-  --foreground: #cdd6f4;
-  --card: #181825;
-  --card-foreground: #cdd6f4;
-  --popover: #1e1e2e;
-  --popover-foreground: #cdd6f4;
-  --primary: #b4befe;
-  --primary-foreground: #1e1e2e;
-  --secondary: #313244;
-  --secondary-foreground: #cdd6f4;
-  --muted: #313244;
-  --muted-foreground: #a6adc8;
-  --accent: #313244;
-  --accent-foreground: #cdd6f4;
-  --destructive: #f38ba8;
-  --destructive-foreground: #1e1e2e;
-  --border: #45475a;
-  --input: #45475a;
-  --ring: #b4befe;
-  --sidebar: #181825;
-  --sidebar-foreground: #cdd6f4;
-  --sidebar-primary: #b4befe;
-  --sidebar-primary-foreground: #1e1e2e;
-  --sidebar-accent: #313244;
-  --sidebar-accent-foreground: #cdd6f4;
-  --sidebar-border: #45475a;
-  --sidebar-ring: #b4befe;
+  --background: #1a1b26;
+  --foreground: #a9b1d6;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1a1b26;
+  --popover-foreground: #a9b1d6;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #565f89;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #7aa2f7;
+  --sidebar: #16161e;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #7aa2f7;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #24283b;
+  --sidebar-accent-foreground: #a9b1d6;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #7aa2f7;
 }
 
 @layer base {
