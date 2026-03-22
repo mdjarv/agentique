@@ -26,6 +26,7 @@ export function NewSessionDialog({ open, onOpenChange, onSubmit }: NewSessionDia
   const [worktree, setWorktree] = useState(false);
   const [branch, setBranch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const shortId = () => crypto.randomUUID().slice(0, 8);
 
@@ -35,16 +36,21 @@ export function NewSessionDialog({ open, onOpenChange, onSubmit }: NewSessionDia
       setName("");
       setWorktree(false);
       setBranch("");
+      setError(null);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       const sessionName = name.trim() || defaultName;
       const sessionBranch = worktree ? branch.trim() || `session-${shortId()}` : undefined;
       await onSubmit(sessionName, worktree, sessionBranch);
+      handleOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {
       setSubmitting(false);
     }
@@ -87,6 +93,7 @@ export function NewSessionDialog({ open, onOpenChange, onSubmit }: NewSessionDia
               />
             </div>
           )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">

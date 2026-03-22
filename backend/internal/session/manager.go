@@ -64,7 +64,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(
 			String: params.WorktreeBranch,
 			Valid:  params.WorktreeBranch != "",
 		},
-		State: "idle",
+		State: StateIdle,
 	})
 	if dbErr != nil {
 		cliSess.Close()
@@ -111,7 +111,7 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 
 	// Update DB state to stopped.
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-		State: "stopped",
+		State: StateStopped,
 		ID:    id,
 	})
 

@@ -56,9 +56,14 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate that the path exists on disk.
-	if _, err := os.Stat(req.Path); err != nil {
+	// Validate that the path exists on disk and is a directory.
+	info, err := os.Stat(req.Path)
+	if err != nil {
 		respondError(w, http.StatusBadRequest, "path does not exist on disk")
+		return
+	}
+	if !info.IsDir() {
+		respondError(w, http.StatusBadRequest, "path is not a directory")
 		return
 	}
 

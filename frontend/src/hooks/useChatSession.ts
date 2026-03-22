@@ -103,7 +103,12 @@ export function useChatSession(projectId: string) {
       if (!activeId) {
         const sessions = Object.keys(useChatStore.getState().sessions);
         const name = `Session ${sessions.length + 1}`;
-        activeId = await createSession(name, false);
+        try {
+          activeId = await createSession(name, false);
+        } catch (err) {
+          console.error("Failed to create session:", err);
+          return;
+        }
       }
 
       useChatStore.getState().startTurn(activeId, prompt);
@@ -111,6 +116,7 @@ export function useChatSession(projectId: string) {
         await ws.request("session.query", { sessionId: activeId, prompt });
       } catch (err) {
         console.error("Failed to send query:", err);
+        useChatStore.getState().setSessionState(activeId, "idle");
       }
     },
     [ws, createSession],
@@ -123,7 +129,12 @@ export function useChatSession(projectId: string) {
       } catch (err) {
         console.error("Failed to stop session:", err);
       }
-      useChatStore.getState().removeSession(sessionId);
+      const store = useChatStore.getState();
+      if (store.activeSessionId === sessionId) {
+        const nextId = Object.keys(store.sessions).find((id) => id !== sessionId) ?? null;
+        store.setActiveSessionId(nextId);
+      }
+      store.removeSession(sessionId);
     },
     [ws],
   );

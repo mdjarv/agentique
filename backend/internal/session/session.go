@@ -8,6 +8,15 @@ import (
 	claudecli "github.com/allbin/claudecli-go"
 )
 
+// Session state constants.
+const (
+	StateIdle    = "idle"
+	StateRunning = "running"
+	StateFailed  = "failed"
+	StateDone    = "done"
+	StateStopped = "stopped"
+)
+
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID    string
@@ -22,12 +31,12 @@ type Session struct {
 func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any), onState func(string, string)) *Session {
 	s := &Session{
 		ID:      id,
-		state:   "idle",
+		state:   StateIdle,
 		cliSess: cliSess,
 		onEvent: onEvent,
 		onState: onState,
 	}
-	onState(id, "idle")
+	onState(id, StateIdle)
 	s.startEventLoop()
 	return s
 }
@@ -51,18 +60,18 @@ func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, s
 // Query sends a prompt to the Claude session and starts streaming events.
 func (s *Session) Query(ctx context.Context, prompt string) error {
 	s.mu.Lock()
-	if s.state != "idle" {
+	if s.state != StateIdle {
 		st := s.state
 		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not idle", st)
+		return fmt.Errorf("session is %s, not %s", st, StateIdle)
 	}
-	s.state = "running"
+	s.state = StateRunning
 	s.mu.Unlock()
 
-	s.onState(s.ID, "running")
+	s.onState(s.ID, StateRunning)
 
 	if err := s.cliSess.Query(prompt); err != nil {
-		s.setState("failed")
+		s.setState(StateFailed)
 		return err
 	}
 
@@ -85,17 +94,17 @@ func (s *Session) startEventLoop() {
 
 			// ResultEvent marks the end of a turn.
 			if _, ok := event.(*claudecli.ResultEvent); ok {
-				s.setState("idle")
+				s.setState(StateIdle)
 			}
 
 			// Fatal error ends the session.
 			if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
-				s.setState("failed")
+				s.setState(StateFailed)
 			}
 		}
 
 		// Channel closed means session process ended.
-		s.setState("done")
+		s.setState(StateDone)
 	}()
 }
 
@@ -115,5 +124,5 @@ func (s *Session) Close() {
 		s.cliSess.Close()
 		s.cliSess = nil
 	}
-	s.state = "done"
+	s.state = StateDone
 }

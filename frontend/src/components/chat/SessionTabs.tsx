@@ -52,6 +52,7 @@ export function SessionTabs({ onCreateSession, onStopSession }: SessionTabsProps
             </Badge>
             <button
               type="button"
+              aria-label="Stop session"
               onClick={(e) => {
                 e.stopPropagation();
                 onStopSession(id);
@@ -65,6 +66,7 @@ export function SessionTabs({ onCreateSession, onStopSession }: SessionTabsProps
       })}
       <button
         type="button"
+        aria-label="New session"
         onClick={onCreateSession}
         className="shrink-0 rounded-md p-1.5 hover:bg-accent transition-colors"
       >
