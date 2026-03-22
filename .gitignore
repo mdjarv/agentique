@@ -1,0 +1,33 @@
+# Go
+backend/tmp/
+*.exe
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Build artifacts
+backend/internal/server/frontend_dist/assets/
+backend/internal/server/frontend_dist/index.html
+!backend/internal/server/frontend_dist/.gitkeep
+agentique
+agentique.exe
+
+# SQLite
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
