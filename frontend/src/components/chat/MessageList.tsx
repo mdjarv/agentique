@@ -6,9 +6,17 @@ interface MessageListProps {
   turns: Turn[];
   currentAssistantText: string;
   sessionState: string;
+  projectPath?: string;
+  worktreePath?: string;
 }
 
-export function MessageList({ turns, currentAssistantText, sessionState }: MessageListProps) {
+export function MessageList({
+  turns,
+  currentAssistantText,
+  sessionState,
+  projectPath,
+  worktreePath,
+}: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +43,8 @@ export function MessageList({ turns, currentAssistantText, sessionState }: Messa
             isLast={i === turns.length - 1}
             currentAssistantText={currentAssistantText}
             sessionState={sessionState}
+            projectPath={projectPath}
+            worktreePath={worktreePath}
           />
         ))}
         <div ref={bottomRef} />

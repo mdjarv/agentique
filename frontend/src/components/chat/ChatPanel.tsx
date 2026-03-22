@@ -2,6 +2,7 @@ import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 interface ChatPanelProps {
@@ -10,6 +11,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ projectId }: ChatPanelProps) {
   const { sendQuery } = useChatSession(projectId);
+  const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const activeSession = useChatStore((s) =>
     s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
   );
@@ -27,6 +29,8 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
         turns={activeSession?.turns ?? []}
         currentAssistantText={activeSession?.currentAssistantText ?? ""}
         sessionState={sessionState}
+        projectPath={project?.path}
+        worktreePath={activeSession?.meta.worktreePath}
       />
       <MessageComposer
         onSend={sendQuery}

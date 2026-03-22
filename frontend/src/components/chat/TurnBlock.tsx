@@ -1,22 +1,86 @@
-import { Bot, Loader2, User } from "lucide-react";
+import {
+  Bot,
+  Brain,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Loader2,
+  Terminal,
+  User,
+} from "lucide-react";
+import { useCallback, useState } from "react";
 import { Markdown } from "~/components/chat/Markdown";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
-import type { Turn } from "~/stores/chat-store";
+import { copyToClipboard } from "~/lib/utils";
+import type { ChatEvent, Turn } from "~/stores/chat-store";
 
 interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
   currentAssistantText: string;
   sessionState: string;
+  projectPath?: string;
+  worktreePath?: string;
 }
 
-export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: TurnBlockProps) {
+function CollapsibleGroup({
+  label,
+  icon,
+  count,
+  defaultExpanded,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  count: number;
+  defaultExpanded: boolean;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return (
+    <div className="border rounded-md bg-muted/30 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground w-full text-left hover:bg-muted/50 cursor-pointer transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {icon}
+        <span>
+          {count} {label}
+        </span>
+      </button>
+      {expanded && <div className="space-y-1 p-1 pt-0">{children}</div>}
+    </div>
+  );
+}
+
+export function TurnBlock({
+  turn,
+  isLast,
+  currentAssistantText,
+  sessionState,
+  projectPath,
+  worktreePath,
+}: TurnBlockProps) {
+  const [copied, setCopied] = useState(false);
   const isStreaming = isLast && !turn.complete;
 
-  // Accumulate text from completed events, or use streaming text for the last turn.
+  const handleCopy = useCallback((text: string) => {
+    copyToClipboard(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, []);
+
   const textContent = isStreaming
     ? currentAssistantText
     : turn.events
@@ -36,6 +100,57 @@ export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: 
     toolUseEvents.length > 0 ||
     errorEvents.length > 0 ||
     isStreaming;
+
+  const renderToolPair = (toolUse: ChatEvent) => {
+    const result = toolResultEvents.find((r) => r.toolId === toolUse.toolId);
+    return (
+      <div key={toolUse.id} className="space-y-1">
+        <ToolUseBlock
+          name={toolUse.toolName ?? "Unknown"}
+          input={toolUse.toolInput}
+          projectPath={projectPath}
+          worktreePath={worktreePath}
+        />
+        {result && <ToolResultBlock content={result.content ?? ""} />}
+      </div>
+    );
+  };
+
+  const renderThinkingBlocks = () => {
+    if (thinkingEvents.length === 0) return null;
+    if (thinkingEvents.length === 1) {
+      return <ThinkingBlock content={thinkingEvents[0]?.content ?? ""} />;
+    }
+    return (
+      <CollapsibleGroup
+        label="thinking blocks"
+        icon={<Brain className="h-3 w-3" />}
+        count={thinkingEvents.length}
+        defaultExpanded={false}
+      >
+        {thinkingEvents.map((e) => (
+          <ThinkingBlock key={e.id} content={e.content ?? ""} />
+        ))}
+      </CollapsibleGroup>
+    );
+  };
+
+  const renderToolCalls = () => {
+    if (toolUseEvents.length === 0) return null;
+    if (toolUseEvents.length <= 3) {
+      return <>{toolUseEvents.map(renderToolPair)}</>;
+    }
+    return (
+      <CollapsibleGroup
+        label="tool calls"
+        icon={<Terminal className="h-3 w-3" />}
+        count={toolUseEvents.length}
+        defaultExpanded={isStreaming}
+      >
+        {toolUseEvents.map(renderToolPair)}
+      </CollapsibleGroup>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -61,18 +176,12 @@ export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: 
           </Avatar>
           <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-hidden">
             {/* Thinking blocks */}
-            {thinkingEvents.map((e) => (
-              <ThinkingBlock key={e.id} content={e.content ?? ""} />
-            ))}
+            {renderThinkingBlocks()}
 
-            {/* Text content */}
-            {textContent && (
-              <div className="rounded-lg px-4 py-2 bg-muted">
-                <Markdown content={textContent} />
-              </div>
-            )}
+            {/* Tool use/result pairs */}
+            {renderToolCalls()}
 
-            {/* Streaming indicator when waiting for first content */}
+            {/* Streaming indicator */}
             {isStreaming &&
               !textContent &&
               thinkingEvents.length === 0 &&
@@ -83,19 +192,31 @@ export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: 
                 </div>
               )}
 
-            {/* Tool use/result pairs */}
-            {toolUseEvents.map((toolUse) => {
-              const result = toolResultEvents.find((r) => r.toolId === toolUse.toolId);
-              return (
-                <div key={toolUse.id} className="space-y-1">
-                  <ToolUseBlock name={toolUse.toolName ?? "Unknown"} input={toolUse.toolInput} />
-                  {result && <ToolResultBlock content={result.content ?? ""} />}
+            {isStreaming &&
+              (toolUseEvents.length > 0 || thinkingEvents.length > 0) &&
+              !textContent && (
+                <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
                 </div>
-              );
-            })}
+              )}
 
-            {/* Streaming indicator after tool calls while waiting for more */}
-            {isStreaming && (toolUseEvents.length > 0 || textContent) && (
+            {/* Text content */}
+            {textContent && (
+              <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(textContent)}
+                  className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
+                  aria-label="Copy message"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                <Markdown content={textContent} />
+              </div>
+            )}
+
+            {/* Streaming indicator after text while still working */}
+            {isStreaming && textContent && (
               <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
@@ -111,15 +232,10 @@ export function TurnBlock({ turn, isLast, currentAssistantText, sessionState }: 
               </div>
             ))}
 
-            {/* Result metadata */}
-            {resultEvent && (
-              <div className="text-xs text-muted-foreground flex gap-3">
-                {resultEvent.cost != null && resultEvent.cost > 0 && (
-                  <span>Cost: ${resultEvent.cost.toFixed(4)}</span>
-                )}
-                {resultEvent.duration != null && resultEvent.duration > 0 && (
-                  <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
-                )}
+            {/* Result metadata — duration only */}
+            {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {(resultEvent.duration / 1000).toFixed(1)}s
               </div>
             )}
           </div>

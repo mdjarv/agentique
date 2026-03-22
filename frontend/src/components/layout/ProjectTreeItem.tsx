@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
@@ -9,14 +8,8 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import { useShallow } from "zustand/shallow";
-import { useWebSocket } from "~/hooks/useWebSocket";
-import { deleteProject } from "~/lib/api";
-import { stopSession } from "~/lib/session-actions";
-import type { Project } from "~/lib/types";
-import { cn } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
-import { useChatStore } from "~/stores/chat-store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +20,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { deleteProject } from "~/lib/api";
+import { stopSession } from "~/lib/session-actions";
+import type { Project } from "~/lib/types";
+import { cn } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
+import { useChatStore } from "~/stores/chat-store";
 import { SessionStatusDot } from "./SessionStatusDot";
 
 interface ProjectTreeItemProps {
@@ -156,9 +156,14 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
                     hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
                   />
                   <span className="truncate">{session.name}</span>
-                  {session.worktreeBranch && (
-                    <GitBranch className="h-3 w-3 text-muted-foreground shrink-0" />
-                  )}
+                  {session.worktreeBranch ? (
+                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0">
+                      <GitBranch className="h-3 w-3" />
+                      <span className="truncate max-w-[6rem]">{session.worktreeBranch}</span>
+                    </span>
+                  ) : session.state !== "draft" ? (
+                    <span className="text-xs text-muted-foreground shrink-0">Local</span>
+                  ) : null}
                 </button>
                 {session.state !== "stopped" && session.state !== "done" && (
                   <button

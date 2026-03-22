@@ -1,9 +1,23 @@
 import { ChevronDown, ChevronRight, FileText, Globe, Pencil, Search, Terminal } from "lucide-react";
 import { useState } from "react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface ToolUseBlockProps {
   name: string;
   input: unknown;
+  projectPath?: string;
+  worktreePath?: string;
+}
+
+function stripPrefix(path: string, projectPath?: string, worktreePath?: string): string {
+  for (const prefix of [worktreePath, projectPath]) {
+    if (prefix && path.startsWith(prefix)) {
+      const stripped = path.slice(prefix.length);
+      return stripped.startsWith("/") ? stripped.slice(1) : stripped;
+    }
+  }
+  return path;
 }
 
 function getToolIcon(name: string) {
@@ -24,23 +38,29 @@ function getToolIcon(name: string) {
   }
 }
 
-function formatSummary(name: string, input: unknown): string {
+function formatSummary(
+  name: string,
+  input: unknown,
+  projectPath?: string,
+  worktreePath?: string,
+): string {
   if (typeof input === "string") return input;
   if (!input || typeof input !== "object") return JSON.stringify(input);
 
   const obj = input as Record<string, unknown>;
+  const strip = (p: string) => stripPrefix(p, projectPath, worktreePath);
 
   switch (name) {
     case "Read":
-      return String(obj.file_path ?? "");
+      return strip(String(obj.file_path ?? ""));
     case "Write":
-      return String(obj.file_path ?? "");
+      return strip(String(obj.file_path ?? ""));
     case "Edit":
-      return String(obj.file_path ?? "");
+      return strip(String(obj.file_path ?? ""));
     case "Glob":
       return String(obj.pattern ?? "");
     case "Grep":
-      return `${obj.pattern ?? ""}${obj.path ? ` in ${obj.path}` : ""}`;
+      return `${obj.pattern ?? ""}${obj.path ? ` in ${strip(String(obj.path))}` : ""}`;
     case "Bash":
       return String(obj.command ?? obj.description ?? "");
     case "Agent":
@@ -50,11 +70,16 @@ function formatSummary(name: string, input: unknown): string {
   }
 }
 
-function formatDetail(name: string, input: unknown): string | null {
+function formatDetail(
+  name: string,
+  input: unknown,
+  projectPath?: string,
+  worktreePath?: string,
+): string | null {
   if (!input || typeof input !== "object") return null;
   const obj = input as Record<string, unknown>;
+  const strip = (p: string) => stripPrefix(p, projectPath, worktreePath);
 
-  // Show full detail only when it adds info beyond the summary
   switch (name) {
     case "Agent":
       return JSON.stringify(input, null, 2);
@@ -62,7 +87,7 @@ function formatDetail(name: string, input: unknown): string | null {
       return obj.command ? String(obj.command) : null;
     case "Edit":
       return [
-        obj.file_path && `File: ${obj.file_path}`,
+        obj.file_path && `File: ${strip(String(obj.file_path))}`,
         obj.old_string && `Old: ${String(obj.old_string).slice(0, 200)}`,
         obj.new_string && `New: ${String(obj.new_string).slice(0, 200)}`,
       ]
@@ -77,10 +102,10 @@ function formatDetail(name: string, input: unknown): string | null {
   }
 }
 
-export function ToolUseBlock({ name, input }: ToolUseBlockProps) {
+export function ToolUseBlock({ name, input, projectPath, worktreePath }: ToolUseBlockProps) {
   const [expanded, setExpanded] = useState(false);
-  const summary = formatSummary(name, input);
-  const detail = formatDetail(name, input);
+  const summary = formatSummary(name, input, projectPath, worktreePath);
+  const detail = formatDetail(name, input, projectPath, worktreePath);
   const hasDetail = detail !== null;
 
   return (
@@ -103,11 +128,28 @@ export function ToolUseBlock({ name, input }: ToolUseBlockProps) {
         <span className="font-medium shrink-0">{name}</span>
         <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
       </button>
-      {expanded && detail && (
-        <pre className="p-2 overflow-x-auto text-muted-foreground whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
-          {detail}
-        </pre>
-      )}
+      {expanded &&
+        detail &&
+        (name === "Bash" ? (
+          <div className="border-t max-h-64 overflow-y-auto">
+            <SyntaxHighlighter
+              style={oneDark}
+              language="bash"
+              customStyle={{
+                margin: 0,
+                padding: "0.5rem",
+                fontSize: "0.75rem",
+                background: "transparent",
+              }}
+            >
+              {detail}
+            </SyntaxHighlighter>
+          </div>
+        ) : (
+          <pre className="p-2 overflow-x-auto text-muted-foreground whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
+            {detail}
+          </pre>
+        ))}
     </div>
   );
 }
