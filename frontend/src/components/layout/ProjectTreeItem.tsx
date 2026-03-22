@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
@@ -16,6 +17,16 @@ import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { SessionStatusDot } from "./SessionStatusDot";
 
 interface ProjectTreeItemProps {
@@ -28,6 +39,7 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
   const navigate = useNavigate();
   const removeProject = useAppStore((s) => s.removeProject);
   const ws = useWebSocket();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const sessionIds = useChatStore(useShallow((s) => Object.keys(s.sessions)));
   const sessions = useChatStore((s) => s.sessions);
@@ -38,8 +50,12 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
     navigate({ to: "/project/$projectId", params: { projectId: project.id } });
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteConfirm = async () => {
     try {
       await deleteProject(project.id);
       removeProject(project.id);
@@ -106,7 +122,7 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
           <button
             type="button"
             aria-label="Delete project"
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -159,6 +175,21 @@ export function ProjectTreeItem({ project, isActive, onNewSession }: ProjectTree
           })}
         </div>
       )}
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove "{project.name}" and all its sessions. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

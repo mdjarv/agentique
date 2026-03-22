@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"sync"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -211,7 +212,7 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	return sessions, nil
 }
 
-// CloseAll gracefully closes all live sessions.
+// CloseAll gracefully closes all live sessions with a per-session timeout.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	sessions := make([]*Session, 0, len(m.sessions))
@@ -221,7 +222,22 @@ func (m *Manager) CloseAll() {
 	m.sessions = make(map[string]*Session)
 	m.mu.Unlock()
 
+	var wg sync.WaitGroup
 	for _, s := range sessions {
-		s.Close()
+		wg.Add(1)
+		go func(s *Session) {
+			defer wg.Done()
+			done := make(chan struct{})
+			go func() {
+				s.Close()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				log.Printf("session %s: close timed out, abandoning", s.ID)
+			}
+		}(s)
 	}
+	wg.Wait()
 }

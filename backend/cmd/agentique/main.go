@@ -45,14 +45,19 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
+	listenErr := make(chan error, 1)
 	go func() {
 		log.Printf("Agentique server listening on %s", *addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			listenErr <- err
 		}
 	}()
 
-	<-done
+	select {
+	case err := <-listenErr:
+		log.Fatalf("server error: %v", err)
+	case <-done:
+	}
 	log.Println("shutting down server...")
 
 	// Close all live sessions before shutting down HTTP.

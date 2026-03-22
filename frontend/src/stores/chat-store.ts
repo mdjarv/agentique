@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { uuid } from "~/lib/utils";
 
 export interface ChatEvent {
   id: string;
@@ -184,7 +185,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   createDraft: () =>
     set((s) => {
-      const draftId = `draft-${crypto.randomUUID()}`;
+      const draftId = `draft-${uuid()}`;
       const meta: SessionMetadata = {
         id: draftId,
         name: "New session",
@@ -228,7 +229,7 @@ export const useChatStore = create<ChatState>((set) => ({
             turns: [
               ...session.turns,
               {
-                id: crypto.randomUUID(),
+                id: uuid(),
                 prompt,
                 events: [],
                 complete: false,

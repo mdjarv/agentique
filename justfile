@@ -1,6 +1,6 @@
 # Development
 dev-backend:
-    cd backend && go run ./cmd/agentique -addr :8080
+    cd backend && go run ./cmd/agentique -addr :9201
 
 dev-frontend:
     cd frontend && npm run dev

@@ -16,11 +16,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    host: "0.0.0.0",
+    port: 9200,
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": "http://localhost:9201",
       "/ws": {
-        target: "ws://localhost:8080",
+        target: "ws://localhost:9201",
         ws: true,
       },
     },

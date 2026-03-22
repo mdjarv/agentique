@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSession, stopSession } from "~/lib/session-actions";
+import { uuid } from "~/lib/utils";
 import { type ChatEvent, type SessionMetadata, type Turn, useChatStore } from "~/stores/chat-store";
 
 interface SessionListResult {
@@ -32,11 +33,11 @@ interface SessionHistoryResult {
 
 function historyToTurns(history: HistoryTurn[]): Turn[] {
   return history.map((ht) => ({
-    id: crypto.randomUUID(),
+    id: uuid(),
     prompt: ht.prompt,
     events: ht.events.map(
       (e): ChatEvent => ({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: e.type as ChatEvent["type"],
         content: e.content,
         toolId: e.id || e.toolUseId,
@@ -70,7 +71,16 @@ export function useChatSession(projectId: string) {
         if (firstSession) {
           s.setActiveSessionId(firstSession.id);
           for (const sess of result.sessions) {
-            if (sess.state !== "stopped" && sess.state !== "done") {
+            if (sess.state === "stopped" || sess.state === "done") {
+              // Completed sessions: just fetch history, no live subscription needed.
+              ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id })
+                .then((hist) => {
+                  if (hist.turns.length > 0) {
+                    useChatStore.getState().setSessionHistory(sess.id, historyToTurns(hist.turns));
+                  }
+                })
+                .catch(() => {});
+            } else {
               // Subscribe first (may trigger resume ~30-40s), then fetch history.
               ws.request("session.subscribe", { sessionId: sess.id }, 120000)
                 .then(() =>
@@ -93,7 +103,7 @@ export function useChatSession(projectId: string) {
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = payload.event;
       useChatStore.getState().appendEvent(payload.sessionId, {
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: event.type,
         content: event.content,
         toolId: event.id || event.toolUseId,
