@@ -1,14 +1,18 @@
 # Agentique WebSocket Protocol
 
-Design for the WebSocket protocol between frontend and Go backend.
-Deliberately simpler than t3code's approach -- no event sourcing, no Effect schemas.
+WebSocket protocol between the React frontend and Go backend.
+Simpler than t3code's approach -- no event sourcing, no Effect schemas.
+
+**Status:** Implemented in M1. Session create and query working with multi-turn support.
 
 ## Transport
 
-- Single WebSocket connection per browser tab
+- Single WebSocket connection per browser tab (singleton WsClient)
 - Endpoint: `ws://localhost:8080/ws`
-- JSON messages, newline-delimited is not needed (WebSocket frames)
-- Auto-reconnect with exponential backoff on the client side
+- In dev mode, frontend connects directly to `:8080` (Vite WS proxy is unreliable)
+- JSON messages within WebSocket frames
+- Auto-reconnect with exponential backoff (500ms -> 1s -> 2s -> 4s -> 8s cap)
+- CORS middleware skips WebSocket upgrade requests to avoid handshake corruption
 
 ## Message Format
 

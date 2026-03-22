@@ -17,11 +17,11 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 
 ### Backend (Go)
 
-- **HTTP/WS server:** net/http + gorilla/websocket (or nhooyr.io/websocket)
+- **HTTP/WS server:** net/http + gorilla/websocket
 - **Claude integration:** github.com/allbin/claudecli-go
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
 - **Query generation:** sqlc
-- **Migrations:** goose or golang-migrate
+- **Migrations:** goose
 
 ### Frontend (TypeScript + React)
 
@@ -29,9 +29,9 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 - **Build tool:** Vite
 - **Routing:** TanStack Router
 - **State management:** Zustand
-- **Styling:** Tailwind CSS 4 + shadcn/ui
+- **Styling:** Tailwind CSS 4 + shadcn/ui (Catppuccin Mocha theme)
+- **Markdown:** react-markdown + @tailwindcss/typography
 - **Linting/Formatting:** Biome
-- **Terminal rendering:** xterm.js (future, not MVP)
 
 ### Deployment
 
@@ -60,23 +60,22 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 
 ### WebSocket Protocol
 
-Simple JSON messages with a `type` field. All messages follow:
+JSON messages with `id` for request/response correlation. Push events have no `id`.
 
 ```jsonc
-// Client -> Server
-{ "type": "session.query", "sessionId": "...", "prompt": "..." }
-{ "type": "session.create", "projectId": "...", "model": "sonnet", ... }
-{ "type": "session.stop", "sessionId": "..." }
+// Client -> Server (request)
+{ "id": "req-1", "type": "session.create", "payload": { "projectId": "..." } }
+{ "id": "req-2", "type": "session.query", "payload": { "sessionId": "...", "prompt": "..." } }
 
-// Server -> Client
-{ "type": "session.event", "sessionId": "...", "event": { /* claudecli-go event */ } }
-{ "type": "session.state", "sessionId": "...", "state": "running" }
-{ "type": "error", "message": "..." }
+// Server -> Client (response, correlated by id)
+{ "id": "req-1", "type": "response", "payload": { "sessionId": "..." } }
+
+// Server -> Client (push, no id)
+{ "type": "session.event", "payload": { "sessionId": "...", "event": { "type": "text", "content": "..." } } }
+{ "type": "session.state", "payload": { "sessionId": "...", "state": "running" } }
 ```
 
-Events from claudecli-go are forwarded as-is to the frontend, keeping the protocol
-thin and avoiding translation layers. The frontend understands the event types:
-text, thinking, tool_use, tool_result, result, error, etc.
+Event types forwarded from claudecli-go: text, thinking, tool_use, tool_result, result, error.
 
 ## Project Structure
 
@@ -87,13 +86,15 @@ agentique/
       agentique/             # main entrypoint
         main.go
     internal/
-      server/                # HTTP + WebSocket server, routes
+      server/                # HTTP server, routes, SPA handler, CORS
+      ws/                    # WebSocket handler, connection, message types
       session/               # Claude session manager (wraps claudecli-go)
-      project/               # project/workspace management
-      store/                 # SQLite persistence layer
+      project/               # project CRUD handlers
+      store/                 # SQLite persistence layer (sqlc generated)
     db/
-      migrations/            # SQL migration files
+      migrations/            # goose SQL migration files
       queries/               # sqlc query files
+      embed.go               # embeds migrations via embed.FS
       sqlc.yaml
     go.mod
     go.sum
@@ -101,19 +102,19 @@ agentique/
     src/
       components/
         ui/                  # shadcn/ui components
-        chat/                # chat-specific components
-        layout/              # sidebar, header, panels
-      hooks/                 # custom React hooks
-      lib/                   # WebSocket client, types, utilities
-      stores/                # Zustand stores
-      routes/                # TanStack Router routes
+        chat/                # ChatPanel, TurnBlock, MessageComposer, etc.
+        layout/              # AppSidebar, ProjectList, NewProjectDialog
+      hooks/                 # useWebSocket, useChatSession, useProjects
+      lib/                   # ws-client, api, types, utils
+      stores/                # app-store (projects), chat-store (session/turns)
+      routes/                # TanStack Router file-based routes
     index.html
     package.json
     biome.json
     vite.config.ts
     tsconfig.json
-    tailwind.config.ts
     components.json          # shadcn/ui config
+  Makefile
   ROADMAP.md
 ```
 
@@ -128,15 +129,15 @@ During development, frontend and backend run as separate processes:
 cd frontend && npm run dev        # localhost:5173, hot module replacement
 
 # Terminal 2: Backend (Go with auto-rebuild)
-air                               # or: gow run ./cmd/agentique
+cd backend && air                 # or: go run ./cmd/agentique -addr :8080
 ```
 
-- **Frontend:** Vite's HMR gives instant feedback on React/CSS changes. The dev
-  server proxies API/WebSocket requests to the Go backend (configured in `vite.config.ts`).
-- **Backend:** Use [air](https://github.com/air-verse/air) for auto-rebuild on .go file
-  changes. Restarts the server in ~1-2 seconds. Alternative: `gow` (Go watcher).
-- **Proxy config:** Vite proxies `/api/*` and `/ws` to `localhost:8080` (Go backend)
-  so the frontend can use relative paths and avoid CORS issues.
+- **Frontend:** Vite HMR gives instant feedback on React/CSS changes. API requests
+  are proxied to the Go backend via `vite.config.ts`.
+- **Backend:** Use [air](https://github.com/air-verse/air) for auto-rebuild on .go
+  file changes, or just `go run` manually.
+- **Proxy config:** Vite proxies `/api/*` to `http://localhost:8080`. WebSocket
+  connects directly to `:8080` in dev mode (bypasses Vite proxy for reliability).
 
 In production, the Go binary embeds the built frontend -- but during dev we never
 need to rebuild the frontend to test changes.
@@ -153,57 +154,54 @@ need to rebuild the frontend to test changes.
 
 ## Milestones
 
-### M0: Skeleton + Static UI
+### M0: Skeleton + Static UI [DONE]
 
 **Goal:** Deployable app with API server and a non-functional chat layout.
-No Claude integration yet -- just the shell of the application.
 
 Backend:
-- [ ] Go module setup with basic HTTP server
-- [ ] Health check endpoint (`GET /api/health`)
-- [ ] Embed and serve built frontend assets
-- [ ] SQLite database initialization with initial schema (projects table)
-- [ ] CRUD API for projects (`GET/POST/DELETE /api/projects`)
+- [x] Go module setup with basic HTTP server
+- [x] Health check endpoint (`GET /api/health`)
+- [x] Embed and serve built frontend assets
+- [x] SQLite database initialization with initial schema (projects table)
+- [x] CRUD API for projects (`GET/POST/DELETE /api/projects`)
 
 Frontend:
-- [ ] Vite + React + TypeScript scaffolding
-- [ ] Biome config
-- [ ] Tailwind CSS + shadcn/ui setup
-- [ ] App layout: sidebar + main content area
-- [ ] Sidebar: project list (fetched from API), "new project" button
-- [ ] Main area: static chat layout (hardcoded messages for visual design)
-- [ ] Session tabs bar (non-functional, static)
-- [ ] Message composer input (non-functional)
-
-**Deliverable:** Run `go run ./cmd/agentique`, open browser, see the UI with
-a sidebar listing projects and a chat area with placeholder messages.
+- [x] Vite + React + TypeScript scaffolding
+- [x] Biome config
+- [x] Tailwind CSS + shadcn/ui setup (Catppuccin Mocha theme)
+- [x] App layout: sidebar + main content area
+- [x] Sidebar: project list (fetched from API), "new project" dialog with auto-name
+- [x] Session tabs bar and message composer layout
 
 ---
 
-### M1: Single Chat Session (WebSocket)
+### M1: Single Chat Session (WebSocket) [DONE]
 
 **Goal:** One working chat session connected to a real Claude Code agent.
-Validates the full stack: frontend -> WebSocket -> Go -> claudecli-go -> Claude CLI.
 
 Backend:
-- [ ] WebSocket endpoint (`/ws`)
-- [ ] Session manager: create a single claudecli-go `Session`
-- [ ] Forward `session.query` messages to the session via `Session.Query()`
-- [ ] Stream claudecli-go events back over WebSocket
-- [ ] Session state tracking (idle, running, done, failed)
-- [ ] Graceful session shutdown on WebSocket disconnect
+- [x] WebSocket endpoint (`/ws`) with gorilla/websocket
+- [x] Session manager wrapping claudecli-go `Session`
+- [x] Forward `session.query` messages to the session via `Session.Query()`
+- [x] Stream claudecli-go events back over WebSocket (text, thinking, tool_use, tool_result, result, error)
+- [x] Session state tracking (idle, running, done, failed)
+- [x] Session-lifetime event loop detecting turn boundaries via ResultEvent
+- [x] Graceful session shutdown on WebSocket disconnect
+- [x] CORS middleware skips WebSocket upgrade requests
 
 Frontend:
-- [ ] WebSocket client hook (`useWebSocket`)
-- [ ] Zustand store for session state and messages
-- [ ] Message rendering: user messages, assistant text, thinking blocks, tool use/result
-- [ ] Working message composer: send prompt, disable while agent is running
-- [ ] Session state indicator (badge showing idle/running/etc.)
-- [ ] Auto-scroll to latest message
-- [ ] Markdown rendering for assistant responses
+- [x] WebSocket client class with request/response correlation and push subscriptions
+- [x] Auto-reconnect with exponential backoff
+- [x] Zustand chat store with turn-based event accumulation
+- [x] Message rendering: user messages, assistant text (Markdown), thinking blocks (collapsible), tool use/result blocks
+- [x] Working message composer: send prompt on Enter, disable while agent is running
+- [x] Session state indicator badge (disconnected/idle/running)
+- [x] Auto-scroll to latest message
+- [x] Cost and duration display per turn
 
-**Deliverable:** Type a prompt, see Claude respond in real-time with streaming text,
-tool calls rendered inline. One session, one project.
+**Known issues:**
+- First message takes ~30-40s due to Claude CLI subprocess initialization
+- WebSocket connects directly to backend port in dev mode (Vite WS proxy unreliable)
 
 ---
 
@@ -237,7 +235,6 @@ switch between them, manage multiple projects. Core MVP complete.
 - [ ] Session resume via claudecli-go `WithResume()`
 - [ ] Cost/token usage display per session and aggregate
 - [ ] Tool permission handling from UI (approve/deny tool calls)
-- [ ] Dark/light theme toggle
 - [ ] Reconnection handling (WebSocket drops)
 - [ ] Error toasts and better error UX
 - [ ] Keyboard shortcuts (new session, switch tabs, focus composer)
@@ -253,28 +250,31 @@ switch between them, manage multiple projects. Core MVP complete.
 
 ## claudecli-go Integration Notes
 
-Key APIs we will use:
-- `Client.Connect()` -> `Session` for interactive multi-turn agents
+Key APIs in use:
+- `claudecli.New()` -> `Client` for creating sessions
+- `Client.Connect()` -> `*Session` for interactive multi-turn agents
 - `Session.Query()` to send user messages
-- `Session.Events()` channel for streaming events to frontend via WebSocket
-- `Session.Wait()` for turn completion
+- `Session.Events()` channel for streaming events (session-lifetime, not per-turn)
 - `Session.Close()` for graceful shutdown
-- `WithModel()`, `WithPermissionMode()`, `WithSystemPrompt()` for per-session config
+- `WithModel(ModelOpus)` for Opus as default model
+- `WithPermissionMode(PermissionBypass)` for no-approval mode
 - `WithWorkDir()` to set the project directory
-- `WithCanUseTool()` for permission callbacks (M3)
 
-Potential enhancements needed in claudecli-go:
-- TBD based on integration experience
+Lessons learned:
+- `Events()` returns a session-lifetime channel, not per-turn. Detect turn boundaries via `ResultEvent`.
+- Don't call `Wait()` after draining `Events()` -- they share the same channel.
+- claudecli-go required a Windows fix for `Setpgid`/`syscall.Kill` (build tags in executor).
+- Claude CLI init can take 30-40s on first connect; frontend needs long timeout for `session.create`.
 
 ## Lessons from t3code
 
-Things to adopt:
+Things adopted:
 - WebSocket for real-time event streaming (not polling)
 - Session-per-agent model with independent lifecycle
 - Sidebar navigation for projects and sessions
 - Tab-based session switching
 
-Things to avoid:
+Things avoided:
 - Effect-TS complexity in the backend (our Go backend is simpler by nature)
 - Event sourcing for MVP (overkill, simple CRUD is fine)
 - Codex-first assumptions baked into the protocol

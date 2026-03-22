@@ -216,8 +216,21 @@ executor := claudecli.NewBidiFixtureExecutor(...)
 ## Key Design Decisions for Agentique
 
 1. **Use `Session` (Connect) for all agent interactions** - multi-turn, streaming, lifecycle
-2. **Forward events as-is to frontend** - the event types map cleanly to UI rendering
-3. **One goroutine per session** - reads from Events() channel, writes to WebSocket
+2. **Forward events as-is to frontend** - converted to wire types via `ToWireEvent()`, event types map cleanly to UI rendering
+3. **One event loop goroutine per session** - started at session creation, runs for session lifetime, detects turn boundaries via `ResultEvent`
 4. **Session.Close() for cleanup** - handles stdin EOF, SIGTERM, goroutine cleanup
-5. **WithCanUseTool for permission UI** - callback bridges to WebSocket for user approval
+5. **WithCanUseTool for permission UI** - callback bridges to WebSocket for user approval (M3)
 6. **State machine maps to UI** - Starting/Idle/Running/Done/Failed -> session badges
+
+## Lessons Learned (from M1 integration)
+
+- `Events()` returns a **session-lifetime channel**, not a per-turn channel. Don't `range` over it expecting it to close after each turn -- instead watch for `ResultEvent` as the turn boundary.
+- Do NOT call `Wait()` after draining `Events()` -- they share the same underlying channel. `Wait()` will block indefinitely waiting for events already consumed.
+- claudecli-go's internal state transitions to `StateIdle` automatically when it sees a `ResultEvent` via `trackState()`. No explicit state management needed on our side.
+- The client constructor is `claudecli.New()`, not `claudecli.NewClient()`.
+- `Session.Query()` takes only `(prompt string)`, no `context.Context` parameter.
+- `ResultEvent` fields: `CostUSD` (float64), `Duration` (time.Duration), `Usage` (struct), `StopReason` (string).
+- `ToolResultEvent` uses `ToolUseID` (not `ID`) to correlate with `ToolUseEvent.ID`.
+- `ErrorEvent` uses `Error()` method for the message string, and has `Fatal` bool.
+- Windows required a fix: `Setpgid` and `syscall.Kill` don't exist on Windows. Fixed with build-tag-guarded `executor_unix.go` / `executor_windows.go`.
+- First `Connect()` can take 30-40s on Windows due to Claude CLI subprocess init time.
