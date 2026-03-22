@@ -1,15 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { createSession, stopSession } from "~/lib/session-actions";
 import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
-
-interface SessionCreateResult {
-  sessionId: string;
-  name: string;
-  state: string;
-  worktreePath?: string;
-  worktreeBranch?: string;
-  createdAt: string;
-}
 
 interface SessionListResult {
   sessions: SessionMetadata[];
@@ -74,25 +66,9 @@ export function useChatSession(projectId: string) {
     };
   }, [projectId]);
 
-  const createSession = useCallback(
-    async (name: string, worktree: boolean, branch?: string) => {
-      const result = await ws.request<SessionCreateResult>(
-        "session.create",
-        { projectId, name, worktree, branch },
-        120000,
-      );
-      const meta: SessionMetadata = {
-        id: result.sessionId,
-        name: result.name,
-        state: result.state as SessionMetadata["state"],
-        worktreePath: result.worktreePath,
-        worktreeBranch: result.worktreeBranch,
-        createdAt: result.createdAt,
-      };
-      useChatStore.getState().addSession(meta);
-      useChatStore.getState().setActiveSessionId(result.sessionId);
-      return result.sessionId;
-    },
+  const createSessionCb = useCallback(
+    (name: string, worktree: boolean, branch?: string) =>
+      createSession(ws, projectId, name, worktree, branch),
     [projectId, ws],
   );
 
@@ -112,7 +88,7 @@ export function useChatSession(projectId: string) {
         const sessions = Object.keys(useChatStore.getState().sessions);
         const name = `Session ${sessions.length + 1}`;
         try {
-          activeId = await createSession(name, false);
+          activeId = await createSessionCb(name, false);
         } catch (err) {
           console.error("Failed to create session:", err);
           return;
@@ -127,25 +103,10 @@ export function useChatSession(projectId: string) {
         useChatStore.getState().setSessionState(activeId, "idle");
       }
     },
-    [ws, createSession],
+    [ws, createSessionCb],
   );
 
-  const stopSession = useCallback(
-    async (sessionId: string) => {
-      try {
-        await ws.request("session.stop", { sessionId });
-      } catch (err) {
-        console.error("Failed to stop session:", err);
-      }
-      const store = useChatStore.getState();
-      if (store.activeSessionId === sessionId) {
-        const nextId = Object.keys(store.sessions).find((id) => id !== sessionId) ?? null;
-        store.setActiveSessionId(nextId);
-      }
-      store.removeSession(sessionId);
-    },
-    [ws],
-  );
+  const stopSessionCb = useCallback((sessionId: string) => stopSession(ws, sessionId), [ws]);
 
-  return { sendQuery, createSession, stopSession };
+  return { sendQuery, createSession: createSessionCb, stopSession: stopSessionCb };
 }

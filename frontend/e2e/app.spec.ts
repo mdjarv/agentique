@@ -12,7 +12,7 @@ test.describe("App loads", () => {
   test("shows empty state message", async ({ page }) => {
     await page.goto("/");
     await expect(
-      page.getByText("Select a project or create one to get started")
+      page.getByText("Select a project or create one to get started"),
     ).toBeVisible();
   });
 
@@ -63,8 +63,8 @@ test.describe("Project management", () => {
     // Dialog should close and project should appear in sidebar
     await expect(page.getByText("Test Project")).toBeVisible();
 
-    // Should navigate to the project's chat view
-    await expect(page.getByText("Session 1")).toBeVisible();
+    // Should navigate to the project's chat view with message composer
+    await expect(page.getByPlaceholder("Send a message...")).toBeVisible();
 
     // Clean up temp dir
     fs.rmdirSync(tempDir);
@@ -84,7 +84,6 @@ test.describe("Project management", () => {
     await page.getByText("Test Project").click();
 
     // Verify chat panel components render
-    await expect(page.getByText("Session 1")).toBeVisible();
     await expect(page.getByPlaceholder("Send a message...")).toBeVisible();
   });
 });
@@ -98,16 +97,6 @@ test.describe("Chat UI", () => {
     await expect(page.getByText("Send a message to start chatting")).toBeVisible();
   });
 
-  test("session tab shows state badge", async ({ page }) => {
-    await page.goto("/");
-    await page.getByText("Test Project").click();
-
-    // Session tab should show a state badge
-    await expect(page.getByText("Session 1")).toBeVisible();
-    // State should be disconnected initially (no WebSocket connection in test)
-    await expect(page.locator("[data-slot='badge']")).toBeVisible();
-  });
-
   test("message composer is visible and enabled", async ({ page }) => {
     await page.goto("/");
     await page.getByText("Test Project").click();
@@ -116,6 +105,16 @@ test.describe("Chat UI", () => {
     await expect(textarea).toBeVisible();
     // Composer should not be disabled (it's only disabled while running)
     await expect(textarea).not.toBeDisabled();
+  });
+
+  test("new session button visible on project hover", async ({ page }) => {
+    await page.goto("/");
+
+    // Hover over the project to reveal new session button
+    const projectItem = page.getByText("Test Project").first();
+    await projectItem.hover();
+
+    await expect(page.getByLabel("New session")).toBeVisible();
   });
 });
 
@@ -151,10 +150,8 @@ test.describe("Delete project", () => {
     const projectItem = page.getByText("Test Project").first();
     await projectItem.hover();
 
-    // Click the delete button (trash icon) - it's inside the same container
-    const projectButton = projectItem.locator("..").locator("..");
-    const deleteButton = projectButton.locator("button").last();
-    await deleteButton.click();
+    // Click the delete button (trash icon) - force click since it's opacity-0 until hover
+    await page.getByLabel("Delete project").click({ force: true });
 
     // Project should be removed from sidebar
     await expect(page.getByText("No projects yet")).toBeVisible({ timeout: 5000 });
