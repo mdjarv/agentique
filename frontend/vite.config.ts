@@ -20,7 +20,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8080",
       "/ws": {
-        target: "http://localhost:8080",
+        target: "ws://localhost:8080",
         ws: true,
       },
     },

@@ -17,10 +17,10 @@ export function useChatSession(projectId: string) {
         id: crypto.randomUUID(),
         type: event.type,
         content: event.content,
-        toolId: event.id,
+        toolId: event.id || event.toolUseId,
         toolName: event.name,
         toolInput: event.input,
-        cost: event.cost,
+        cost: event.costUsd,
         duration: event.duration,
         usage: event.usage,
         stopReason: event.stopReason,
@@ -49,7 +49,11 @@ export function useChatSession(projectId: string) {
 
       if (!sessionId) {
         try {
-          const result = await ws.request<{ sessionId: string }>("session.create", { projectId });
+          const result = await ws.request<{ sessionId: string }>(
+            "session.create",
+            { projectId },
+            120000,
+          );
           sessionId = result.sessionId;
           store.setSessionId(sessionId);
         } catch (err) {

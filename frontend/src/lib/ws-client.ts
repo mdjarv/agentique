@@ -25,9 +25,11 @@ export class WsClient {
 
   connect(): void {
     if (this.ws) return;
+    console.log("[WsClient] connecting to", this.url);
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
+      console.log("[WsClient] connected");
       this.reconnectDelay = 500;
       for (const fn of this.connectListeners) fn();
     };
@@ -36,7 +38,8 @@ export class WsClient {
       this.handleMessage(ev.data as string);
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
+      console.log("[WsClient] closed:", ev.code, ev.reason);
       this.ws = null;
       for (const fn of this.disconnectListeners) fn();
       // Reject all pending requests.
@@ -51,8 +54,8 @@ export class WsClient {
       }
     };
 
-    this.ws.onerror = () => {
-      // onclose will fire after this.
+    this.ws.onerror = (ev) => {
+      console.log("[WsClient] error:", ev);
     };
   }
 
@@ -61,7 +64,7 @@ export class WsClient {
     this.ws?.close();
   }
 
-  async request<T = unknown>(type: string, payload: unknown = {}): Promise<T> {
+  async request<T = unknown>(type: string, payload: unknown = {}, timeoutMs = 30000): Promise<T> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("WebSocket not connected");
     }
@@ -73,7 +76,7 @@ export class WsClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Request ${type} timed out`));
-      }, 30000);
+      }, timeoutMs);
 
       this.pending.set(id, { resolve, reject, timer });
       this.ws?.send(msg);

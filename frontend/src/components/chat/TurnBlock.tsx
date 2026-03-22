@@ -89,16 +89,11 @@ export function TurnBlock({ turn, isLast }: TurnBlockProps) {
             {/* Result metadata */}
             {resultEvent && (
               <div className="text-xs text-muted-foreground flex gap-3">
-                {resultEvent.cost !== undefined && (
+                {resultEvent.cost != null && resultEvent.cost > 0 && (
                   <span>Cost: ${resultEvent.cost.toFixed(4)}</span>
                 )}
-                {resultEvent.duration !== undefined && (
+                {resultEvent.duration != null && resultEvent.duration > 0 && (
                   <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
-                )}
-                {resultEvent.usage && (
-                  <span>
-                    {resultEvent.usage.inputTokens + resultEvent.usage.outputTokens} tokens
-                  </span>
                 )}
               </div>
             )}
