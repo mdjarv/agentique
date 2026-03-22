@@ -85,42 +85,37 @@ test.describe("Project management", () => {
 
     // Verify chat panel components render
     await expect(page.getByText("Session 1")).toBeVisible();
-    await expect(page.getByText("Session 2")).toBeVisible();
     await expect(page.getByPlaceholder("Send a message...")).toBeVisible();
   });
 });
 
-test.describe("Static chat UI", () => {
-  test("renders hardcoded messages", async ({ page }) => {
-    await page.goto("/");
-
-    // Navigate to a project
-    await page.getByText("Test Project").click();
-
-    // Check for hardcoded conversation content
-    await expect(
-      page.getByText("Can you explain the project structure?")
-    ).toBeVisible();
-    await expect(
-      page.getByText("standard monorepo structure", { exact: false })
-    ).toBeVisible();
-  });
-
-  test("renders session tabs with badges", async ({ page }) => {
+test.describe("Chat UI", () => {
+  test("shows empty chat state", async ({ page }) => {
     await page.goto("/");
     await page.getByText("Test Project").click();
 
-    await expect(page.getByText("idle")).toBeVisible();
-    await expect(page.getByText("running")).toBeVisible();
+    // Should show "Send a message to start chatting" empty state
+    await expect(page.getByText("Send a message to start chatting")).toBeVisible();
   });
 
-  test("message composer is visible but disabled", async ({ page }) => {
+  test("session tab shows state badge", async ({ page }) => {
+    await page.goto("/");
+    await page.getByText("Test Project").click();
+
+    // Session tab should show a state badge
+    await expect(page.getByText("Session 1")).toBeVisible();
+    // State should be disconnected initially (no WebSocket connection in test)
+    await expect(page.locator("[data-slot='badge']")).toBeVisible();
+  });
+
+  test("message composer is visible and enabled", async ({ page }) => {
     await page.goto("/");
     await page.getByText("Test Project").click();
 
     const textarea = page.getByPlaceholder("Send a message...");
     await expect(textarea).toBeVisible();
-    await expect(textarea).toBeDisabled();
+    // Composer should not be disabled (it's only disabled while running)
+    await expect(textarea).not.toBeDisabled();
   });
 });
 

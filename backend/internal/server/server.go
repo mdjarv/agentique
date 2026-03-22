@@ -6,6 +6,7 @@ import (
 
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/ws"
 )
 
 // Server is the main HTTP server for the Agentique backend.
@@ -27,6 +28,10 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("GET /api/projects", ph.HandleList)
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
+
+	// WebSocket endpoint.
+	wsh := &ws.Handler{Queries: queries}
+	mux.Handle("GET /ws", wsh)
 
 	// SPA catch-all for frontend.
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")

@@ -8,16 +8,3 @@ export interface Project {
   created_at: string;
   updated_at: string;
 }
-
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: string;
-}
-
-export interface Session {
-  id: string;
-  name: string;
-  state: "idle" | "running";
-}
