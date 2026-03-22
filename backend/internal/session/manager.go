@@ -12,33 +12,39 @@ import (
 	"github.com/google/uuid"
 )
 
+// Broadcaster sends push messages to all WebSocket clients for a project.
+type Broadcaster interface {
+	Broadcast(projectID, pushType string, payload any)
+}
+
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
 	ProjectID      string
 	Name           string
 	WorkDir        string
-	WorktreePath   string // empty if no worktree
+	WorktreePath   string
 	WorktreeBranch string
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
-// It is a server-level singleton that persists session metadata to the database.
 type Manager struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-	queries  *store.Queries
+	mu          sync.Mutex
+	sessions    map[string]*Session
+	queries     *store.Queries
+	broadcaster Broadcaster
 }
 
-// NewManager creates a new session manager backed by the given database queries.
-func NewManager(queries *store.Queries) *Manager {
+// NewManager creates a new session manager.
+func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 	return &Manager{
-		sessions: make(map[string]*Session),
-		queries:  queries,
+		sessions:    make(map[string]*Session),
+		queries:     queries,
+		broadcaster: broadcaster,
 	}
 }
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
-func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(string, any), onState func(string, string)) (*Session, error) {
+func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(params.WorkDir),
@@ -51,7 +57,6 @@ func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(
 
 	id := uuid.New().String()
 
-	// Persist to DB.
 	_, dbErr := m.queries.CreateSession(ctx, store.CreateSessionParams{
 		ID:        id,
 		ProjectID: params.ProjectID,
@@ -72,24 +77,13 @@ func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(
 		return nil, dbErr
 	}
 
-	// Wrap the onState callback to also persist state changes to DB.
-	wrappedOnState := func(sessionID string, state string) {
-		_ = m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
-			State: state,
-			ID:    sessionID,
-		})
-		onState(sessionID, state)
-	}
-
-	sess := newSession(id, cliSess, onEvent, wrappedOnState)
-
-	// Persist Claude session ID when it arrives from the CLI.
-	sess.SetClaudeIDCallback(func(sessionID, claudeSessionID string) {
-		_ = m.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
-			ClaudeSessionID: sql.NullString{String: claudeSessionID, Valid: true},
-			ID:              sessionID,
-		})
-		log.Printf("session %s: captured claude session ID %s", sessionID, claudeSessionID)
+	sess := newSession(sessionParams{
+		id:        id,
+		projectID: params.ProjectID,
+		cliSess:   cliSess,
+		queries:   m.queries,
+		broadcast: m.broadcastFunc(params.ProjectID),
+		turnIndex: -1, // first Query() will increment to 0
 	})
 
 	m.mu.Lock()
@@ -100,7 +94,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams, onEvent func(
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
-func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, workDir string, onEvent func(string, any), onState func(string, string)) (*Session, error) {
+func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projectID, workDir string) (*Session, error) {
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(workDir),
@@ -112,22 +106,23 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, workDi
 		return nil, err
 	}
 
-	// Update DB state back to idle.
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 		State: StateIdle,
 		ID:    sessionID,
 	})
 
-	// Wrap the onState callback to also persist state changes to DB.
-	wrappedOnState := func(sid string, state string) {
-		_ = m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
-			State: state,
-			ID:    sid,
-		})
-		onState(sid, state)
-	}
+	// Continue turn numbering from where we left off.
+	maxTurn, _ := m.queries.MaxTurnIndex(ctx, sessionID)
+	turnIndex := int(maxTurn)
 
-	sess := newSession(sessionID, cliSess, onEvent, wrappedOnState)
+	sess := newSession(sessionParams{
+		id:        sessionID,
+		projectID: projectID,
+		cliSess:   cliSess,
+		queries:   m.queries,
+		broadcast: m.broadcastFunc(projectID),
+		turnIndex: turnIndex,
+	})
 	sess.mu.Lock()
 	sess.claudeSessionID = claudeSessionID
 	sess.mu.Unlock()
@@ -160,35 +155,23 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 		sess.Close()
 	}
 
-	// Update DB state to stopped.
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 		State: StateStopped,
 		ID:    id,
 	})
 
-	// Clean up worktree if present.
 	dbSess, err := m.queries.GetSession(ctx, id)
 	if err == nil && dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		// Look up the project to get its path for the git worktree remove command.
 		project, projErr := m.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr == nil {
 			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
-		} else {
-			log.Printf("warning: could not look up project %s for worktree cleanup: %v", dbSess.ProjectID, projErr)
 		}
-	}
-
-	if !ok {
-		// Session was not live, but we still updated DB -- not an error.
-		return nil
 	}
 
 	return nil
 }
 
 // ListByProject returns session metadata from DB.
-// For live sessions, the persisted state is overridden with the actual live state.
-// For non-live sessions with a Claude session ID, state is shown as "idle" (resumable).
 func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.Session, error) {
 	sessions, err := m.queries.ListSessionsByProject(ctx, projectID)
 	if err != nil {
@@ -201,11 +184,6 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
 			sessions[i].State = live.State()
-		} else if sessions[i].ClaudeSessionID.Valid && sessions[i].ClaudeSessionID.String != "" {
-			// Not live but has a Claude session ID -- resumable.
-			if sessions[i].State != StateStopped {
-				sessions[i].State = StateIdle
-			}
 		}
 	}
 
@@ -240,4 +218,10 @@ func (m *Manager) CloseAll() {
 		}(s)
 	}
 	wg.Wait()
+}
+
+func (m *Manager) broadcastFunc(projectID string) func(string, any) {
+	return func(pushType string, payload any) {
+		m.broadcaster.Broadcast(projectID, pushType, payload)
+	}
 }

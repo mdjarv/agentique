@@ -34,6 +34,10 @@ type ErrorBody struct {
 
 // --- Method payloads ---
 
+type ProjectSubscribePayload struct {
+	ProjectID string `json:"projectId"`
+}
+
 type SessionCreatePayload struct {
 	ProjectID string `json:"projectId"`
 	Name      string `json:"name"`
@@ -73,10 +77,6 @@ type SessionListResult struct {
 }
 
 type SessionStopPayload struct {
-	SessionID string `json:"sessionId"`
-}
-
-type SessionSubscribePayload struct {
 	SessionID string `json:"sessionId"`
 }
 

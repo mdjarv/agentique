@@ -1,7 +1,8 @@
 import { useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSession, stopSession } from "~/lib/session-actions";
-import { uuid } from "~/lib/utils";
+import { copyToClipboard, uuid } from "~/lib/utils";
 import { type ChatEvent, type SessionMetadata, type Turn, useChatStore } from "~/stores/chat-store";
 
 interface SessionListResult {
@@ -57,48 +58,28 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
 export function useChatSession(projectId: string) {
   const ws = useWebSocket();
 
-  // On project change: reset, fetch sessions, subscribe to live ones
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-subscribe only when projectId changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-subscribe only on projectId change
   useEffect(() => {
     const s = useChatStore.getState();
     s.resetProject();
 
+    // Register for all project events via broadcast hub.
+    ws.request("project.subscribe", { projectId }).catch(console.error);
+
+    // Fetch session list and load active session history.
     ws.request<SessionListResult>("session.list", { projectId })
       .then((result) => {
         const s = useChatStore.getState();
         s.setSessions(result.sessions);
-        const firstSession = result.sessions[0];
-        if (firstSession) {
-          s.setActiveSessionId(firstSession.id);
-          for (const sess of result.sessions) {
-            if (sess.state === "stopped" || sess.state === "done") {
-              // Completed sessions: just fetch history, no live subscription needed.
-              ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id })
-                .then((hist) => {
-                  if (hist.turns.length > 0) {
-                    useChatStore.getState().setSessionHistory(sess.id, historyToTurns(hist.turns));
-                  }
-                })
-                .catch(() => {});
-            } else {
-              // Subscribe first (may trigger resume ~30-40s), then fetch history.
-              ws.request("session.subscribe", { sessionId: sess.id }, 120000)
-                .then(() =>
-                  ws.request<SessionHistoryResult>("session.history", { sessionId: sess.id }),
-                )
-                .then((hist) => {
-                  if (hist.turns.length > 0) {
-                    useChatStore.getState().setSessionHistory(sess.id, historyToTurns(hist.turns));
-                  }
-                })
-                .catch(() => {});
-            }
-          }
+        const first = result.sessions[0];
+        if (first) {
+          s.setActiveSessionId(first.id);
+          loadSessionHistory(first.id);
         }
       })
       .catch(console.error);
 
-    // Route push events by sessionId
+    // Push handlers for live events (broadcast to all project clients).
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = payload.event;
@@ -131,12 +112,66 @@ export function useChatSession(projectId: string) {
       useChatStore.getState().setSessionName(payload.sessionId, payload.name);
     });
 
+    // Re-subscribe on reconnect.
+    const unsubReconnect = ws.onConnect(() => {
+      ws.request("project.subscribe", { projectId }).catch(console.error);
+    });
+
     return () => {
       unsubEvent();
       unsubState();
       unsubRenamed();
+      unsubReconnect();
     };
   }, [projectId]);
+
+  const loadSessionHistory = useCallback(
+    (sessionId: string) => {
+      const session = useChatStore.getState().sessions[sessionId];
+      if (!session || session.turns.length > 0) return;
+
+      ws.request<SessionHistoryResult>("session.history", { sessionId })
+        .then((hist) => {
+          if (hist.turns.length > 0) {
+            useChatStore.getState().setSessionHistory(sessionId, historyToTurns(hist.turns));
+          }
+        })
+        .catch(() => {});
+    },
+    [ws],
+  );
+
+  const sendQuery = useCallback(
+    async (prompt: string) => {
+      const store = useChatStore.getState();
+      let sessionId = store.activeSessionId;
+      const session = sessionId ? store.sessions[sessionId] : undefined;
+      const state = session?.meta.state;
+
+      try {
+        if (!sessionId || state === "draft") {
+          const worktree = session?.meta.worktree ?? false;
+          const realId = await createSession(ws, projectId, "", worktree);
+          if (sessionId) useChatStore.getState().removeSession(sessionId);
+          useChatStore.getState().setActiveSessionId(realId);
+          sessionId = realId;
+        }
+
+        // Backend handles lazy resume if session is not live.
+        useChatStore.getState().startTurn(sessionId, prompt);
+        await ws.request("session.query", { sessionId, prompt });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        toast.error(msg, {
+          action: { label: "Copy", onClick: () => copyToClipboard(msg) },
+        });
+        if (sessionId) {
+          useChatStore.getState().setSessionState(sessionId, "idle");
+        }
+      }
+    },
+    [ws, projectId],
+  );
 
   const createSessionCb = useCallback(
     (name: string, worktree: boolean, branch?: string) =>
@@ -144,52 +179,12 @@ export function useChatSession(projectId: string) {
     [projectId, ws],
   );
 
-  const sendQuery = useCallback(
-    async (prompt: string) => {
-      let activeId = useChatStore.getState().activeSessionId;
-
-      // Skip stopped/done sessions
-      if (activeId) {
-        const activeState = useChatStore.getState().sessions[activeId]?.meta.state;
-        if (activeState === "stopped" || activeState === "done") {
-          activeId = null;
-        }
-      }
-
-      // If no active session, create a draft then promote it
-      if (!activeId) {
-        useChatStore.getState().createDraft(projectId);
-        activeId = useChatStore.getState().activeSessionId;
-        if (!activeId) return;
-      }
-
-      // Promote draft to real backend session
-      if (activeId?.startsWith("draft-")) {
-        const draftMeta = useChatStore.getState().sessions[activeId]?.meta;
-        const worktree = draftMeta?.worktree ?? false;
-        try {
-          const realId = await createSession(ws, projectId, "", worktree);
-          useChatStore.getState().removeSession(activeId);
-          useChatStore.getState().setActiveSessionId(realId);
-          activeId = realId;
-        } catch (err) {
-          console.error("Failed to create session from draft:", err);
-          return;
-        }
-      }
-
-      useChatStore.getState().startTurn(activeId, prompt);
-      try {
-        await ws.request("session.query", { sessionId: activeId, prompt });
-      } catch (err) {
-        console.error("Failed to send query:", err);
-        useChatStore.getState().setSessionState(activeId, "idle");
-      }
-    },
-    [ws, projectId],
-  );
-
   const stopSessionCb = useCallback((sessionId: string) => stopSession(ws, sessionId), [ws]);
 
-  return { sendQuery, createSession: createSessionCb, stopSession: stopSessionCb };
+  return {
+    sendQuery,
+    createSession: createSessionCb,
+    stopSession: stopSessionCb,
+    loadHistory: loadSessionHistory,
+  };
 }

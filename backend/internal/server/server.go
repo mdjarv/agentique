@@ -19,12 +19,11 @@ type Server struct {
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries) *Server {
 	mux := http.NewServeMux()
-	mgr := session.NewManager(queries)
+	hub := ws.NewHub()
+	mgr := session.NewManager(queries, hub)
 
-	// Project handler.
 	ph := &project.Handler{Queries: queries}
 
-	// API routes.
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -32,11 +31,9 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
-	// WebSocket endpoint.
-	wsh := &ws.Handler{Queries: queries, Manager: mgr}
+	wsh := &ws.Handler{Queries: queries, Manager: mgr, Hub: hub}
 	mux.Handle("GET /ws", wsh)
 
-	// SPA catch-all for frontend.
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})
 
@@ -51,14 +48,11 @@ func (s *Server) Shutdown() {
 	}
 }
 
-// ServeHTTP implements the http.Handler interface, delegating to the internal mux
-// with CORS middleware applied.
+// ServeHTTP implements the http.Handler interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	corsMiddleware(s.mux).ServeHTTP(w, r)
 }
 
-// corsMiddleware adds permissive CORS headers for development.
-// Skips WebSocket upgrade requests since CORS headers interfere with the handshake.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {

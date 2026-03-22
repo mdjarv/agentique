@@ -2,11 +2,19 @@ package session
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentique/backend/internal/store"
 )
+
+func sqlNullString(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
+}
 
 // Session state constants.
 const (
@@ -17,39 +25,42 @@ const (
 	StateStopped = "stopped"
 )
 
-const maxBufferedEvents = 10000
-
-// HistoryTurn represents a single turn (prompt + response events) for replay.
-type HistoryTurn struct {
-	Prompt string `json:"prompt"`
-	Events []any  `json:"events"`
-}
-
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
-	ID    string
-	state string
+	ID        string
+	ProjectID string
 
-	mu             sync.Mutex
-	cliSess        *claudecli.Session
-	queryCount     int
+	mu              sync.Mutex
+	state           string
+	cliSess         *claudecli.Session
+	queryCount      int
 	claudeSessionID string
-	prompts        []string
-	events         []any
-	onEvent        func(sessionID string, event any)
-	onState        func(sessionID string, state string)
-	onClaudeID     func(sessionID string, claudeSessionID string)
+	turnIndex       int
+	seqInTurn       int
+	queries         *store.Queries
+	broadcast       func(pushType string, payload any)
 }
 
-func newSession(id string, cliSess *claudecli.Session, onEvent func(string, any), onState func(string, string)) *Session {
+type sessionParams struct {
+	id        string
+	projectID string
+	cliSess   *claudecli.Session
+	queries   *store.Queries
+	broadcast func(pushType string, payload any)
+	turnIndex int
+}
+
+func newSession(p sessionParams) *Session {
 	s := &Session{
-		ID:      id,
-		state:   StateIdle,
-		cliSess: cliSess,
-		onEvent: onEvent,
-		onState: onState,
+		ID:        p.id,
+		ProjectID: p.projectID,
+		state:     StateIdle,
+		cliSess:   p.cliSess,
+		queries:   p.queries,
+		broadcast: p.broadcast,
+		turnIndex: p.turnIndex,
 	}
-	onState(id, StateIdle)
+	s.broadcastState(StateIdle)
 	s.startEventLoop()
 	return s
 }
@@ -68,22 +79,6 @@ func (s *Session) ClaudeSessionID() string {
 	return s.claudeSessionID
 }
 
-// SetCallbacks replaces the event and state callbacks so a new WebSocket
-// connection can adopt (subscribe to) an existing live session.
-func (s *Session) SetCallbacks(onEvent func(string, any), onState func(string, string)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onEvent = onEvent
-	s.onState = onState
-}
-
-// SetClaudeIDCallback sets the callback for when the Claude session ID is captured.
-func (s *Session) SetClaudeIDCallback(cb func(string, string)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onClaudeID = cb
-}
-
 // QueryCount returns the number of queries sent to this session.
 func (s *Session) QueryCount() int {
 	s.mu.Lock()
@@ -91,60 +86,34 @@ func (s *Session) QueryCount() int {
 	return s.queryCount
 }
 
-// History returns the buffered turns for replay.
-func (s *Session) History() []HistoryTurn {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if len(s.prompts) == 0 {
-		return nil
-	}
-
-	turns := make([]HistoryTurn, 0, len(s.prompts))
-	promptIdx := 0
-	var currentEvents []any
-
-	for _, ev := range s.events {
-		currentEvents = append(currentEvents, ev)
-		// A result event marks the end of a turn.
-		if wire, ok := ev.(WireResultEvent); ok && wire.Type == "result" {
-			prompt := ""
-			if promptIdx < len(s.prompts) {
-				prompt = s.prompts[promptIdx]
-				promptIdx++
-			}
-			turns = append(turns, HistoryTurn{Prompt: prompt, Events: currentEvents})
-			currentEvents = nil
-		}
-	}
-
-	// If there are remaining events without a result (turn in progress),
-	// include them as an incomplete turn.
-	if len(currentEvents) > 0 {
-		prompt := ""
-		if promptIdx < len(s.prompts) {
-			prompt = s.prompts[promptIdx]
-		}
-		turns = append(turns, HistoryTurn{Prompt: prompt, Events: currentEvents})
-	}
-
-	return turns
-}
-
 // Query sends a prompt to the Claude session and starts streaming events.
 func (s *Session) Query(ctx context.Context, prompt string) error {
 	s.mu.Lock()
-	if s.state != StateIdle {
+	if s.state != StateIdle && s.state != StateDone {
 		st := s.state
 		s.mu.Unlock()
 		return fmt.Errorf("session is %s, not %s", st, StateIdle)
 	}
 	s.state = StateRunning
 	s.queryCount++
-	s.prompts = append(s.prompts, prompt)
+	s.turnIndex++
+	s.seqInTurn = 0
 	s.mu.Unlock()
 
-	s.onState(s.ID, StateRunning)
+	// Persist prompt as seq 0 of the new turn.
+	promptData, _ := json.Marshal(map[string]string{"prompt": prompt})
+	_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+		SessionID: s.ID,
+		TurnIndex: int64(s.turnIndex),
+		Seq:       0,
+		Type:      "prompt",
+		Data:      string(promptData),
+	})
+	s.mu.Lock()
+	s.seqInTurn = 1
+	s.mu.Unlock()
+
+	s.broadcastState(StateRunning)
 
 	if err := s.cliSess.Query(prompt); err != nil {
 		s.setState(StateFailed)
@@ -154,9 +123,8 @@ func (s *Session) Query(ctx context.Context, prompt string) error {
 	return nil
 }
 
-// startEventLoop begins reading events from the claudecli-go session.
-// Called once after session creation. The loop runs for the lifetime of the
-// session, forwarding events and detecting turn boundaries via ResultEvent.
+// startEventLoop reads events from the claudecli-go session, persists them
+// to the database, and broadcasts them to all project WebSocket clients.
 func (s *Session) startEventLoop() {
 	go func() {
 		for event := range s.cliSess.Events() {
@@ -165,28 +133,44 @@ func (s *Session) startEventLoop() {
 				s.mu.Lock()
 				if s.claudeSessionID == "" && initEv.SessionID != "" {
 					s.claudeSessionID = initEv.SessionID
-					cb := s.onClaudeID
-					s.mu.Unlock()
-					if cb != nil {
-						cb(s.ID, initEv.SessionID)
-					}
-				} else {
-					s.mu.Unlock()
+					_ = s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
+						ClaudeSessionID: sqlNullString(initEv.SessionID),
+						ID:              s.ID,
+					})
+					log.Printf("session %s: captured claude session ID %s", s.ID, initEv.SessionID)
 				}
+				s.mu.Unlock()
 				continue
 			}
 
 			wireEvent := ToWireEvent(event)
-			if wireEvent != nil {
-				s.mu.Lock()
-				// Buffer the event for history replay.
-				if len(s.events) < maxBufferedEvents {
-					s.events = append(s.events, wireEvent)
-				}
-				cb := s.onEvent
-				s.mu.Unlock()
-				cb(s.ID, wireEvent)
+			if wireEvent == nil {
+				continue
 			}
+
+			// Persist to DB.
+			s.mu.Lock()
+			seq := s.seqInTurn
+			turnIdx := s.turnIndex
+			s.seqInTurn++
+			s.mu.Unlock()
+
+			if data, err := json.Marshal(wireEvent); err == nil {
+				typed, _ := wireEvent.(interface{ WireType() string })
+				_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+					SessionID: s.ID,
+					TurnIndex: int64(turnIdx),
+					Seq:       int64(seq),
+					Type:      typed.WireType(),
+					Data:      string(data),
+				})
+			}
+
+			// Broadcast to all project clients.
+			s.broadcast("session.event", map[string]any{
+				"sessionId": s.ID,
+				"event":     wireEvent,
+			})
 
 			// ResultEvent marks the end of a turn.
 			if _, ok := event.(*claudecli.ResultEvent); ok {
@@ -207,9 +191,19 @@ func (s *Session) startEventLoop() {
 func (s *Session) setState(state string) {
 	s.mu.Lock()
 	s.state = state
-	cb := s.onState
 	s.mu.Unlock()
-	cb(s.ID, state)
+	s.broadcastState(state)
+	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+		State: state,
+		ID:    s.ID,
+	})
+}
+
+func (s *Session) broadcastState(state string) {
+	s.broadcast("session.state", map[string]any{
+		"sessionId": s.ID,
+		"state":     state,
+	})
 }
 
 // Close gracefully shuts down the claudecli-go session.

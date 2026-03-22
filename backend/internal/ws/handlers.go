@@ -13,6 +13,22 @@ import (
 	claudecli "github.com/allbin/claudecli-go"
 )
 
+func (c *conn) handleProjectSubscribe(msg ClientMessage) {
+	var payload ProjectSubscribePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+
+	if payload.ProjectID == "" {
+		c.respond(msg.ID, nil, "projectId is required")
+		return
+	}
+
+	c.hub.Subscribe(payload.ProjectID, c)
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionCreate(msg ClientMessage) {
 	var payload SessionCreatePayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
@@ -37,7 +53,6 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 	if payload.Worktree {
 		branch := payload.Branch
 		if branch == "" {
-			// Auto-generate branch name using a short prefix.
 			branch = "session-" + msg.ID
 			if len(branch) > 30 {
 				branch = branch[:30]
@@ -53,7 +68,6 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		workDir = worktreePath
 	}
 
-	// Auto-generate name if empty.
 	name := payload.Name
 	if name == "" {
 		sessions, listErr := c.mgr.ListByProject(c.ctx, payload.ProjectID)
@@ -72,23 +86,9 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		WorktreeBranch: worktreeBranch,
 	}
 
-	sess, err := c.mgr.Create(c.ctx, params,
-		func(sessionID string, event any) {
-			c.push("session.event", SessionEventPayload{
-				SessionID: sessionID,
-				Event:     event,
-			})
-		},
-		func(sessionID string, state string) {
-			c.push("session.state", SessionStatePayload{
-				SessionID: sessionID,
-				State:     state,
-			})
-		},
-	)
+	sess, err := c.mgr.Create(c.ctx, params)
 	if err != nil {
 		log.Printf("session create error: %v", err)
-		// If we created a worktree but session creation failed, clean up.
 		if worktreePath != "" {
 			session.RemoveWorktree(project.Path, worktreePath)
 		}
@@ -96,7 +96,6 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		return
 	}
 
-	// Read the DB record to get the created_at timestamp.
 	dbSess, dbErr := c.queries.GetSession(c.ctx, sess.ID)
 	createdAt := ""
 	if dbErr == nil {
@@ -126,9 +125,15 @@ func (c *conn) handleSessionQuery(msg ClientMessage) {
 	}
 
 	sess := c.mgr.Get(payload.SessionID)
+
+	// Lazy resume: if session not live, try to resume from Claude session ID.
 	if sess == nil {
-		c.respond(msg.ID, nil, "session not found")
-		return
+		var err error
+		sess, err = c.resumeSession(payload.SessionID)
+		if err != nil {
+			c.respond(msg.ID, nil, "session not found: "+err.Error())
+			return
+		}
 	}
 
 	if err := sess.Query(c.ctx, payload.Prompt); err != nil {
@@ -141,6 +146,7 @@ func (c *conn) handleSessionQuery(msg ClientMessage) {
 	// Auto-name session from the first prompt using Haiku.
 	if sess.QueryCount() == 1 {
 		sessionID := payload.SessionID
+		projectID := sess.ProjectID
 		prompt := payload.Prompt
 		go func() {
 			name := generateSessionName(prompt)
@@ -154,12 +160,41 @@ func (c *conn) handleSessionQuery(msg ClientMessage) {
 				log.Printf("auto-rename db update error: %v", err)
 				return
 			}
-			c.push("session.renamed", SessionRenamedPayload{
+			c.hub.Broadcast(projectID, "session.renamed", SessionRenamedPayload{
 				SessionID: sessionID,
 				Name:      name,
 			})
 		}()
 	}
+}
+
+// resumeSession attempts to resume a non-live session from its Claude session ID.
+func (c *conn) resumeSession(sessionID string) (*session.Session, error) {
+	dbSess, err := c.queries.GetSession(c.ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not in DB")
+	}
+	if !dbSess.ClaudeSessionID.Valid || dbSess.ClaudeSessionID.String == "" {
+		return nil, fmt.Errorf("session has no Claude session ID")
+	}
+
+	workDir := dbSess.WorkDir
+	if _, statErr := os.Stat(workDir); statErr != nil {
+		project, projErr := c.queries.GetProject(c.ctx, dbSess.ProjectID)
+		if projErr != nil {
+			return nil, fmt.Errorf("project not found")
+		}
+		if dbSess.WorktreeBranch.Valid && dbSess.WorktreeBranch.String != "" {
+			if err := session.RestoreWorktree(project.Path, dbSess.WorktreeBranch.String, dbSess.WorktreePath.String); err != nil {
+				log.Printf("session %s: worktree restore failed, falling back to project root: %v", sessionID, err)
+				workDir = project.Path
+			}
+		} else {
+			workDir = project.Path
+		}
+	}
+
+	return c.mgr.Resume(c.ctx, sessionID, dbSess.ClaudeSessionID.String, dbSess.ProjectID, workDir)
 }
 
 func (c *conn) handleSessionList(msg ClientMessage) {
@@ -220,83 +255,6 @@ func (c *conn) handleSessionStop(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
-func (c *conn) handleSessionSubscribe(msg ClientMessage) {
-	var payload SessionSubscribePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-
-	sess := c.mgr.Get(payload.SessionID)
-	if sess == nil {
-		// Not live -- try to resume if it has a Claude session ID.
-		dbSess, dbErr := c.queries.GetSession(c.ctx, payload.SessionID)
-		if dbErr != nil || !dbSess.ClaudeSessionID.Valid || dbSess.ClaudeSessionID.String == "" {
-			c.respond(msg.ID, nil, "session not active")
-			return
-		}
-
-		// Use worktree dir if it exists, otherwise fall back to project root.
-		workDir := dbSess.WorkDir
-		if _, statErr := os.Stat(workDir); statErr != nil {
-			project, projErr := c.queries.GetProject(c.ctx, dbSess.ProjectID)
-			if projErr == nil {
-				workDir = project.Path
-			}
-		}
-
-		var err error
-		sess, err = c.mgr.Resume(c.ctx, payload.SessionID, dbSess.ClaudeSessionID.String, workDir,
-			func(sessionID string, event any) {
-				c.push("session.event", SessionEventPayload{
-					SessionID: sessionID,
-					Event:     event,
-				})
-			},
-			func(sessionID string, state string) {
-				c.push("session.state", SessionStatePayload{
-					SessionID: sessionID,
-					State:     state,
-				})
-			},
-		)
-		if err != nil {
-			log.Printf("session resume error: %v", err)
-			c.respond(msg.ID, nil, "failed to resume session: "+err.Error())
-			return
-		}
-	}
-
-	// Adopt this session's callbacks to this connection.
-	sess.SetCallbacks(
-		func(sessionID string, event any) {
-			c.push("session.event", SessionEventPayload{
-				SessionID: sessionID,
-				Event:     event,
-			})
-		},
-		func(sessionID string, state string) {
-			c.push("session.state", SessionStatePayload{
-				SessionID: sessionID,
-				State:     state,
-			})
-		},
-	)
-
-	// Push the current state immediately so the frontend is in sync.
-	c.push("session.state", SessionStatePayload{
-		SessionID: payload.SessionID,
-		State:     sess.State(),
-	})
-
-	c.respond(msg.ID, struct{}{}, "")
-}
-
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
@@ -309,23 +267,17 @@ func (c *conn) handleSessionHistory(msg ClientMessage) {
 		return
 	}
 
-	sess := c.mgr.Get(payload.SessionID)
-	if sess == nil {
-		// Session not live -- return empty history.
-		c.respond(msg.ID, SessionHistoryResult{Turns: []session.HistoryTurn{}}, "")
+	turns, err := session.HistoryFromDB(c.ctx, c.queries, payload.SessionID)
+	if err != nil {
+		c.respond(msg.ID, nil, "failed to load history: "+err.Error())
 		return
 	}
 
-	turns := sess.History()
-	if turns == nil {
-		turns = []session.HistoryTurn{}
-	}
 	c.respond(msg.ID, SessionHistoryResult{Turns: turns}, "")
 }
 
 // generateSessionName calls Haiku to generate a short title from a prompt.
 func generateSessionName(prompt string) string {
-	// Truncate long prompts to keep the naming call cheap.
 	p := prompt
 	if len(p) > 500 {
 		p = p[:500]
@@ -345,12 +297,10 @@ func generateSessionName(prompt string) string {
 	}
 
 	name := strings.TrimSpace(result.Text)
-	// Strip surrounding quotes if present.
 	name = strings.Trim(name, "\"'")
 	if name == "" {
 		return ""
 	}
-	// Cap at 50 chars.
 	if len(name) > 50 {
 		name = name[:50]
 	}

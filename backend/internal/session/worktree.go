@@ -35,6 +35,18 @@ func CreateWorktree(projectDir, branch, worktreePath string) error {
 	return nil
 }
 
+// RestoreWorktree re-creates a worktree for an existing branch.
+func RestoreWorktree(projectDir, branch, worktreePath string) error {
+	safeBranch := sanitizeBranch(branch)
+	cmd := exec.Command("git", "worktree", "add", worktreePath, safeBranch)
+	cmd.Dir = projectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git worktree restore failed: %w: %s", err, string(out))
+	}
+	return nil
+}
+
 // RemoveWorktree removes a git worktree. This is best-effort: errors are logged
 // but not returned.
 func RemoveWorktree(projectDir, worktreePath string) {

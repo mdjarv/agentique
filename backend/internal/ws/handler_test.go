@@ -420,43 +420,33 @@ func TestSessionStopRequiresSessionID(t *testing.T) {
 	}
 }
 
-func TestSessionSubscribeNotActive(t *testing.T) {
-	// Subscribing to a session that is not live should return an error.
-	ts, queries, cleanup := setupTestServer(t)
-	defer cleanup()
-
-	projDir := t.TempDir()
-	createTestProject(t, queries, "subproj", projDir)
-
-	// Insert a session in DB but it's not live (no actual claudecli process).
-	insertTestSession(t, queries, "sess-sub-1", "proj-subproj", "Session 1", projDir, "idle")
-
-	conn := dialWS(t, ts)
-	defer conn.Close()
-
-	resp := sendAndReceive(t, conn, "session.subscribe", "40",
-		ws.SessionSubscribePayload{SessionID: "sess-sub-1"})
-
-	if resp.Error == nil {
-		t.Fatal("expected error for non-active session")
-	}
-	if !strings.Contains(resp.Error.Message, "not active") {
-		t.Fatalf("expected 'not active' error, got %q", resp.Error.Message)
-	}
-}
-
-func TestSessionSubscribeRequiresSessionID(t *testing.T) {
+func TestProjectSubscribe(t *testing.T) {
 	ts, _, cleanup := setupTestServer(t)
 	defer cleanup()
 
 	conn := dialWS(t, ts)
 	defer conn.Close()
 
-	resp := sendAndReceive(t, conn, "session.subscribe", "41",
-		ws.SessionSubscribePayload{SessionID: ""})
+	resp := sendAndReceive(t, conn, "project.subscribe", "40",
+		ws.ProjectSubscribePayload{ProjectID: "proj-test"})
+
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+}
+
+func TestProjectSubscribeRequiresProjectID(t *testing.T) {
+	ts, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "project.subscribe", "41",
+		ws.ProjectSubscribePayload{ProjectID: ""})
 
 	if resp.Error == nil {
-		t.Fatal("expected error for empty sessionId")
+		t.Fatal("expected error for empty projectId")
 	}
 }
 

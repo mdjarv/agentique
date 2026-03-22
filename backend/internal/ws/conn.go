@@ -16,11 +16,12 @@ type conn struct {
 	ws      *websocket.Conn
 	queries *store.Queries
 	mgr     *session.Manager
+	hub     *Hub
 	sendCh  chan any
 	mu      sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queries, mgr *session.Manager) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queries, mgr *session.Manager, hub *Hub) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
 		ctx:     ctx,
@@ -28,12 +29,14 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queri
 		ws:      ws,
 		queries: queries,
 		mgr:     mgr,
+		hub:     hub,
 		sendCh:  make(chan any, 64),
 	}
 }
 
 func (c *conn) run() {
 	defer func() {
+		c.hub.Unsubscribe(c)
 		c.cancel()
 		c.ws.Close()
 	}()
@@ -74,6 +77,8 @@ func (c *conn) writeLoop() {
 
 func (c *conn) dispatch(msg ClientMessage) {
 	switch msg.Type {
+	case "project.subscribe":
+		c.handleProjectSubscribe(msg)
 	case "session.create":
 		c.handleSessionCreate(msg)
 	case "session.query":
@@ -82,8 +87,6 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionList(msg)
 	case "session.stop":
 		c.handleSessionStop(msg)
-	case "session.subscribe":
-		c.handleSessionSubscribe(msg)
 	case "session.history":
 		c.handleSessionHistory(msg)
 	default:

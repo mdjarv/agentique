@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
@@ -10,11 +11,21 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ projectId }: ChatPanelProps) {
-  const { sendQuery } = useChatSession(projectId);
+  const { sendQuery, loadHistory } = useChatSession(projectId);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
   const activeSession = useChatStore((s) =>
     s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
   );
+
+  // Load history when switching to a session that hasn't been loaded yet
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const s = useChatStore.getState().sessions[activeSessionId];
+    if (s && s.turns.length === 0 && s.meta.state !== "draft") {
+      loadHistory(activeSessionId);
+    }
+  }, [activeSessionId, loadHistory]);
 
   const sessionState = activeSession?.meta.state ?? "disconnected";
   const isDraft = sessionState === "draft";

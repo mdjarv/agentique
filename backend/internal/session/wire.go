@@ -45,6 +45,13 @@ type WireErrorEvent struct {
 	Fatal   bool   `json:"fatal"`
 }
 
+func (e WireTextEvent) WireType() string       { return e.Type }
+func (e WireThinkingEvent) WireType() string   { return e.Type }
+func (e WireToolUseEvent) WireType() string    { return e.Type }
+func (e WireToolResultEvent) WireType() string { return e.Type }
+func (e WireResultEvent) WireType() string     { return e.Type }
+func (e WireErrorEvent) WireType() string      { return e.Type }
+
 // ToWireEvent converts a claudecli-go event to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
 func ToWireEvent(event claudecli.Event) any {
