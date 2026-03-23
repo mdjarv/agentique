@@ -184,6 +184,7 @@ export function ProjectTreeItem({
 									name={session.name}
 									state={session.state}
 									hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+									hasPendingApproval={!!sessions[id]?.pendingApproval}
 									isActive={id === activeSessionId}
 									onClick={() => handleSessionClick(id)}
 									onStop={(e) => handleStopSession(e, id, session.state)}

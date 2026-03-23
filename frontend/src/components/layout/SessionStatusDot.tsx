@@ -15,21 +15,35 @@ const stateColors: Record<SessionState, string> = {
 interface SessionStatusDotProps {
 	state: SessionState;
 	hasUnseenCompletion?: boolean;
+	hasPendingApproval?: boolean;
 }
 
 export function SessionStatusDot({
 	state,
 	hasUnseenCompletion,
+	hasPendingApproval,
 }: SessionStatusDotProps) {
 	const showAttention = hasUnseenCompletion && state === "idle";
+	const waiting = hasPendingApproval;
+	const color = waiting
+		? "bg-[#e0af68]"
+		: showAttention
+			? "bg-[#73daca]"
+			: stateColors[state];
+	const pulse = waiting || state === "running" || showAttention;
+	const title = waiting
+		? "waiting for approval"
+		: showAttention
+			? "completed"
+			: state;
 	return (
 		<span
 			className={cn(
 				"inline-block h-2 w-2 rounded-full shrink-0",
-				showAttention ? "bg-[#73daca]" : stateColors[state],
-				(state === "running" || showAttention) && "animate-pulse",
+				color,
+				pulse && "animate-pulse",
 			)}
-			title={showAttention ? "completed" : state}
+			title={title}
 		/>
 	);
 }

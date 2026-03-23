@@ -13,22 +13,28 @@ const stateConfig: Record<SessionState, { label: string; classes: string }> = {
 };
 
 const attentionConfig = { label: "New", classes: "text-[#73daca] bg-[#73daca]/20" };
+const waitingConfig = { label: "Wait", classes: "text-[#e0af68] bg-[#e0af68]/20" };
 
 interface SessionStatusBadgeProps {
   state: SessionState;
   hasUnseenCompletion?: boolean;
+  hasPendingApproval?: boolean;
 }
 
-export function SessionStatusBadge({ state, hasUnseenCompletion }: SessionStatusBadgeProps) {
+export function SessionStatusBadge({ state, hasUnseenCompletion, hasPendingApproval }: SessionStatusBadgeProps) {
   const showAttention = hasUnseenCompletion && state === "idle";
-  const config = showAttention ? attentionConfig : stateConfig[state];
+  const config = hasPendingApproval
+    ? waitingConfig
+    : showAttention
+      ? attentionConfig
+      : stateConfig[state];
 
   return (
     <span
       className={cn(
         "inline-flex items-center justify-center rounded px-1.5 text-[10px] font-semibold leading-4 shrink-0 uppercase tracking-wide",
         config.classes,
-        (state === "running" || showAttention) && "animate-pulse",
+        (hasPendingApproval || state === "running" || showAttention) && "animate-pulse",
       )}
     >
       {config.label}

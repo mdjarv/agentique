@@ -7,6 +7,7 @@ interface SessionRowProps {
   name: string;
   state: SessionState;
   hasUnseenCompletion?: boolean;
+  hasPendingApproval?: boolean;
   isActive: boolean;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
@@ -17,6 +18,7 @@ export function SessionRow({
   name,
   state,
   hasUnseenCompletion,
+  hasPendingApproval,
   isActive,
   onClick,
   onStop,
@@ -36,7 +38,7 @@ export function SessionRow({
         className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
         onClick={onClick}
       >
-        <SessionStatusBadge state={state} hasUnseenCompletion={hasUnseenCompletion} />
+        <SessionStatusBadge state={state} hasUnseenCompletion={hasUnseenCompletion} hasPendingApproval={hasPendingApproval} />
         <span className="truncate" title={name}>
           {name}
         </span>

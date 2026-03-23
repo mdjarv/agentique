@@ -2,7 +2,7 @@ import { Check, ShieldAlert, X } from "lucide-react";
 import { useCallback } from "react";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { resolveApproval } from "~/lib/session-actions";
+import { resolveApproval, setPermissionMode } from "~/lib/session-actions";
 import type { PendingApproval } from "~/stores/chat-store";
 
 interface ApprovalBannerProps {
@@ -51,8 +51,26 @@ function formatInput(
 			return String(obj.command ?? obj.description ?? "");
 		case "Agent":
 			return String(obj.description ?? obj.prompt ?? "").slice(0, 120);
-		default:
-			return JSON.stringify(input).slice(0, 120);
+		case "WebFetch":
+		case "WebSearch":
+			return String(obj.url ?? obj.query ?? "");
+		case "EnterPlanMode":
+		case "ExitPlanMode":
+			return "Agent wants to enter plan mode";
+		default: {
+			// Try common field names before falling back to JSON
+			const desc =
+				obj.description ??
+				obj.command ??
+				obj.file_path ??
+				obj.path ??
+				obj.pattern ??
+				obj.prompt;
+			if (desc) return strip(String(desc)).slice(0, 120);
+			// Last resort: show key names instead of raw JSON
+			const keys = Object.keys(obj).filter((k) => k !== "type");
+			return keys.length > 0 ? `(${keys.join(", ")})` : toolName;
+		}
 	}
 }
 
@@ -71,6 +89,15 @@ export function ApprovalBanner({
 	);
 
 	const handleAllow = useCallback(() => {
+		resolveApproval(ws, sessionId, approval.approvalId, true).catch(
+			console.error,
+		);
+	}, [ws, sessionId, approval.approvalId]);
+
+	const handleAllowAll = useCallback(() => {
+		setPermissionMode(ws, sessionId, "bypassPermissions").catch(
+			console.error,
+		);
 		resolveApproval(ws, sessionId, approval.approvalId, true).catch(
 			console.error,
 		);
@@ -111,6 +138,14 @@ export function ApprovalBanner({
 					>
 						<Check className="h-3.5 w-3.5 mr-1" />
 						Allow
+					</Button>
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-7 px-2 text-muted-foreground hover:text-foreground"
+						onClick={handleAllowAll}
+					>
+						Allow all
 					</Button>
 				</div>
 			</div>
