@@ -226,6 +226,23 @@ func (c *conn) handleSessionSetModel(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionResolveApproval(msg ClientMessage) {
+	var payload SessionResolveApprovalPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" || payload.ApprovalID == "" {
+		c.respond(msg.ID, nil, "sessionId and approvalId are required")
+		return
+	}
+	if err := c.svc.ResolveApproval(c.ctx, payload.SessionID, payload.ApprovalID, payload.Allow, payload.Message); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

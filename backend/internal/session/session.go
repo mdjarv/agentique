@@ -12,6 +12,7 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/google/uuid"
 )
 
 func sqlNullString(s string) sql.NullString {
@@ -34,20 +35,29 @@ const (
 	StateStopped = "stopped"
 )
 
+// pendingApproval tracks a single tool permission request waiting for user input.
+type pendingApproval struct {
+	id       string
+	toolName string
+	input    json.RawMessage
+	ch       chan *claudecli.PermissionResponse
+}
+
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID        string
 	ProjectID string
 
-	mu              sync.Mutex
-	state           string
-	cliSess         *claudecli.Session
-	queryCount      int
-	claudeSessionID string
-	turnIndex       int
-	seqInTurn       int
-	queries         *store.Queries
-	broadcast       func(pushType string, payload any)
+	mu               sync.Mutex
+	state            string
+	cliSess          *claudecli.Session
+	queryCount       int
+	claudeSessionID  string
+	turnIndex        int
+	seqInTurn        int
+	queries          *store.Queries
+	broadcast        func(pushType string, payload any)
+	pendingApprovals map[string]*pendingApproval
 }
 
 type sessionParams struct {
@@ -61,17 +71,30 @@ type sessionParams struct {
 
 func newSession(p sessionParams) *Session {
 	s := &Session{
-		ID:        p.id,
-		ProjectID: p.projectID,
-		state:     StateIdle,
-		cliSess:   p.cliSess,
-		queries:   p.queries,
-		broadcast: p.broadcast,
-		turnIndex: p.turnIndex,
+		ID:               p.id,
+		ProjectID:        p.projectID,
+		state:            StateIdle,
+		cliSess:          p.cliSess,
+		queries:          p.queries,
+		broadcast:        p.broadcast,
+		turnIndex:        p.turnIndex,
+		pendingApprovals: make(map[string]*pendingApproval),
 	}
 	s.broadcastState(StateIdle)
-	s.startEventLoop()
+	if s.cliSess != nil {
+		s.startEventLoop()
+	}
 	return s
+}
+
+// setCLISession attaches a connected CLI session and starts the event loop.
+// Used when the Session must be created before Connect() so the permission callback
+// can capture the Session reference.
+func (s *Session) setCLISession(cliSess *claudecli.Session) {
+	s.mu.Lock()
+	s.cliSess = cliSess
+	s.mu.Unlock()
+	s.startEventLoop()
 }
 
 // State returns the current session state.
@@ -302,13 +325,80 @@ func (s *Session) SetModel(model string) error {
 	return nil
 }
 
+// handleToolPermission is the callback for claudecli WithCanUseTool.
+// Blocks until the user resolves the approval or Close() cancels all pending approvals.
+// claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
+// this blocks, the SDK will unblock on context cancellation.
+func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	approvalID := uuid.New().String()
+	ch := make(chan *claudecli.PermissionResponse, 1)
+
+	pa := &pendingApproval{
+		id:       approvalID,
+		toolName: toolName,
+		input:    input,
+		ch:       ch,
+	}
+
+	s.mu.Lock()
+	s.pendingApprovals[approvalID] = pa
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.pendingApprovals, approvalID)
+		s.mu.Unlock()
+	}()
+
+	s.broadcast("session.tool-permission", map[string]any{
+		"sessionId":  s.ID,
+		"approvalId": approvalID,
+		"toolName":   toolName,
+		"input":      input,
+	})
+
+	resp := <-ch
+	return resp, nil
+}
+
+// ResolveApproval sends a permission response for a pending tool approval.
+func (s *Session) ResolveApproval(approvalID string, allow bool, denyMessage string) error {
+	s.mu.Lock()
+	pa, ok := s.pendingApprovals[approvalID]
+	s.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("approval %s not found or already resolved", approvalID)
+	}
+
+	resp := &claudecli.PermissionResponse{
+		Allow:       allow,
+		DenyMessage: denyMessage,
+	}
+
+	select {
+	case pa.ch <- resp:
+		return nil
+	default:
+		return fmt.Errorf("approval %s already resolved", approvalID)
+	}
+}
+
 // Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Reject all pending approvals so callbacks unblock.
+	for id, pa := range s.pendingApprovals {
+		select {
+		case pa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}:
+		default:
+		}
+		delete(s.pendingApprovals, id)
+	}
 	if s.cliSess != nil {
 		s.cliSess.Close()
 		s.cliSess = nil
 	}
 	s.state = StateDone
+	s.mu.Unlock()
 }

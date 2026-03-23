@@ -52,11 +52,18 @@ export interface SessionMetadata {
 	worktree?: boolean; // draft-only: user's worktree toggle preference
 }
 
+export interface PendingApproval {
+	approvalId: string;
+	toolName: string;
+	input: unknown;
+}
+
 export interface SessionData {
 	meta: SessionMetadata;
 	turns: Turn[];
 	currentAssistantText: string;
 	hasUnseenCompletion: boolean;
+	pendingApproval: PendingApproval | null;
 }
 
 interface ChatState {
@@ -71,6 +78,8 @@ interface ChatState {
 	setSessionState: (sessionId: string, state: SessionState) => void;
 	setSessionName: (sessionId: string, name: string) => void;
 	setSessionModel: (sessionId: string, model: string) => void;
+	setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
+	clearPendingApproval: (sessionId: string) => void;
 
 	// Draft session management
 	createDraft: (projectId: string) => void;
@@ -112,6 +121,7 @@ export const useChatStore = create<ChatState>((set) => ({
 						turns: existing.turns,
 						currentAssistantText: existing.currentAssistantText,
 						hasUnseenCompletion: existing.hasUnseenCompletion,
+						pendingApproval: existing.pendingApproval,
 					};
 				} else {
 					sessions[meta.id] = {
@@ -119,6 +129,7 @@ export const useChatStore = create<ChatState>((set) => ({
 						turns: [],
 						currentAssistantText: "",
 						hasUnseenCompletion: false,
+						pendingApproval: null,
 					};
 				}
 			}
@@ -134,6 +145,7 @@ export const useChatStore = create<ChatState>((set) => ({
 					turns: [],
 					currentAssistantText: "",
 					hasUnseenCompletion: false,
+					pendingApproval: null,
 				},
 			},
 		})),
@@ -208,6 +220,30 @@ export const useChatStore = create<ChatState>((set) => ({
 			};
 		}),
 
+	setPendingApproval: (sessionId, approval) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, pendingApproval: approval },
+				},
+			};
+		}),
+
+	clearPendingApproval: (sessionId) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, pendingApproval: null },
+				},
+			};
+		}),
+
 	setSessionHistory: (sessionId, turns) =>
 		set((s) => {
 			const session = s.sessions[sessionId];
@@ -242,6 +278,7 @@ export const useChatStore = create<ChatState>((set) => ({
 						turns: [],
 						currentAssistantText: "",
 						hasUnseenCompletion: false,
+						pendingApproval: null,
 					},
 				},
 				activeSessionId: draftId,
@@ -278,8 +315,8 @@ export const useChatStore = create<ChatState>((set) => ({
 								id: uuid(),
 								prompt,
 								attachments: (attachments ?? []).map(
-								({ previewUrl: _, ...rest }) => rest,
-							),
+									({ previewUrl: _, ...rest }) => rest,
+								),
 								events: [],
 								complete: false,
 							},
@@ -345,6 +382,7 @@ export const useChatStore = create<ChatState>((set) => ({
 						turns: [],
 						currentAssistantText: "",
 						hasUnseenCompletion: false,
+						pendingApproval: null,
 					},
 				},
 				activeSessionId: realSession.id,

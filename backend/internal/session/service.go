@@ -417,6 +417,15 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 	return nil
 }
 
+// ResolveApproval sends a permission response for a pending tool approval.
+func (s *Service) ResolveApproval(ctx context.Context, sessionID, approvalID string, allow bool, message string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	return sess.ResolveApproval(approvalID, allow, message)
+}
+
 // InterruptSession stops the current generation without killing the session.
 func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
 	sess := s.mgr.Get(sessionID)

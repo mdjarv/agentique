@@ -73,6 +73,22 @@ export async function getSessionDiff(
 	return ws.request<DiffResult>("session.diff", { sessionId });
 }
 
+export async function resolveApproval(
+	ws: WsClient,
+	sessionId: string,
+	approvalId: string,
+	allow: boolean,
+	message?: string,
+): Promise<void> {
+	await ws.request("session.resolve-approval", {
+		sessionId,
+		approvalId,
+		allow,
+		message: message ?? "",
+	});
+	useChatStore.getState().clearPendingApproval(sessionId);
+}
+
 export async function interruptSession(
 	ws: WsClient,
 	sessionId: string,

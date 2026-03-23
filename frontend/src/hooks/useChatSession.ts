@@ -88,6 +88,18 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 			useChatStore.getState().removeSession(payload.sessionId);
 		});
 
+		// biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+		const unsubPermission = ws.subscribe(
+			"session.tool-permission",
+			(payload: any) => {
+				useChatStore.getState().setPendingApproval(payload.sessionId, {
+					approvalId: payload.approvalId,
+					toolName: payload.toolName,
+					input: payload.input,
+				});
+			},
+		);
+
 		// Re-subscribe and refresh state on reconnect.
 		const unsubReconnect = ws.onConnect(() => {
 			ws.request("project.subscribe", { projectId }).catch(console.error);
@@ -119,6 +131,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 			unsubState();
 			unsubRenamed();
 			unsubDeleted();
+			unsubPermission();
 			unsubReconnect();
 		};
 	}, [projectId]);

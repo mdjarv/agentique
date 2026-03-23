@@ -98,6 +98,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionDelete(msg)
 	case "session.set-model":
 		c.handleSessionSetModel(msg)
+	case "session.resolve-approval":
+		c.handleSessionResolveApproval(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
@@ -27,8 +28,10 @@ function SessionStatusBar({ state }: { state: SessionState }) {
 }
 
 export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
-	const { sendQuery, interruptSession, loadHistory } =
-		useChatSession(projectId, initialSessionId);
+	const { sendQuery, interruptSession, loadHistory } = useChatSession(
+		projectId,
+		initialSessionId,
+	);
 	const navigate = useNavigate();
 	const project = useAppStore((s) =>
 		s.projects.find((p) => p.id === projectId),
@@ -77,6 +80,14 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 				projectPath={project?.path}
 				worktreePath={activeSession?.meta.worktreePath}
 			/>
+			{activeSession?.pendingApproval && activeSessionId && (
+				<ApprovalBanner
+					sessionId={activeSessionId}
+					approval={activeSession.pendingApproval}
+					projectPath={project?.path}
+					worktreePath={activeSession?.meta.worktreePath}
+				/>
+			)}
 			{isTerminal ? (
 				<SessionStatusBar state={sessionState} />
 			) : (

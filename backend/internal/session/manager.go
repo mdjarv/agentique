@@ -49,18 +49,27 @@ func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
 func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
+	id := uuid.New().String()
+
+	// Build Session first (without cliSess) so the permission callback can capture it.
+	sess := newSession(sessionParams{
+		id:        id,
+		projectID: params.ProjectID,
+		queries:   m.queries,
+		broadcast: m.broadcastFunc(params.ProjectID),
+		turnIndex: -1, // first Query() will increment to 0
+	})
+
 	model := resolveModel(params.Model)
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(params.WorkDir),
 		claudecli.WithModel(model),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+		claudecli.WithCanUseTool(sess.handleToolPermission),
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	id := uuid.New().String()
 
 	_, dbErr := m.queries.CreateSession(ctx, store.CreateSessionParams{
 		ID:        id,
@@ -87,14 +96,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		return nil, dbErr
 	}
 
-	sess := newSession(sessionParams{
-		id:        id,
-		projectID: params.ProjectID,
-		cliSess:   cliSess,
-		queries:   m.queries,
-		broadcast: m.broadcastFunc(params.ProjectID),
-		turnIndex: -1, // first Query() will increment to 0
-	})
+	sess.setCLISession(cliSess)
 
 	m.mu.Lock()
 	m.sessions[id] = sess
@@ -105,11 +107,27 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 
 // Resume reconnects to an existing Claude session using WithResume().
 func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projectID, workDir, model string) (*Session, error) {
+	// Continue turn numbering from where we left off.
+	maxTurn, _ := m.queries.MaxTurnIndex(ctx, sessionID)
+	turnIndex := int(maxTurn)
+
+	// Build Session first (without cliSess) so the permission callback can capture it.
+	sess := newSession(sessionParams{
+		id:        sessionID,
+		projectID: projectID,
+		queries:   m.queries,
+		broadcast: m.broadcastFunc(projectID),
+		turnIndex: turnIndex,
+	})
+	sess.mu.Lock()
+	sess.claudeSessionID = claudeSessionID
+	sess.mu.Unlock()
+
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(workDir),
 		claudecli.WithModel(resolveModel(model)),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithResume(claudeSessionID),
 	)
 	if err != nil {
@@ -121,21 +139,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 		ID:    sessionID,
 	})
 
-	// Continue turn numbering from where we left off.
-	maxTurn, _ := m.queries.MaxTurnIndex(ctx, sessionID)
-	turnIndex := int(maxTurn)
-
-	sess := newSession(sessionParams{
-		id:        sessionID,
-		projectID: projectID,
-		cliSess:   cliSess,
-		queries:   m.queries,
-		broadcast: m.broadcastFunc(projectID),
-		turnIndex: turnIndex,
-	})
-	sess.mu.Lock()
-	sess.claudeSessionID = claudeSessionID
-	sess.mu.Unlock()
+	sess.setCLISession(cliSess)
 
 	m.mu.Lock()
 	m.sessions[sessionID] = sess
