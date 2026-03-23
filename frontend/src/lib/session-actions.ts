@@ -97,6 +97,20 @@ export async function resolveApproval(
 	useChatStore.getState().clearPendingApproval(sessionId);
 }
 
+export async function resolveQuestion(
+	ws: WsClient,
+	sessionId: string,
+	questionId: string,
+	answers: Record<string, string>,
+): Promise<void> {
+	await ws.request("session.resolve-question", {
+		sessionId,
+		questionId,
+		answers,
+	});
+	useChatStore.getState().clearPendingQuestion(sessionId);
+}
+
 export async function interruptSession(
 	ws: WsClient,
 	sessionId: string,

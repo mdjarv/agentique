@@ -58,13 +58,40 @@ export interface PendingApproval {
 	input: unknown;
 }
 
+export interface QuestionOption {
+	label: string;
+	description?: string;
+}
+
+export interface Question {
+	question: string;
+	header?: string;
+	options?: QuestionOption[];
+	multiSelect?: boolean;
+}
+
+export interface PendingQuestion {
+	questionId: string;
+	questions: Question[];
+}
+
 export interface SessionData {
 	meta: SessionMetadata;
 	turns: Turn[];
 	currentAssistantText: string;
 	hasUnseenCompletion: boolean;
 	pendingApproval: PendingApproval | null;
+	pendingQuestion: PendingQuestion | null;
 }
+
+const emptySessionData = (meta: SessionMetadata): SessionData => ({
+	meta,
+	turns: [],
+	currentAssistantText: "",
+	hasUnseenCompletion: false,
+	pendingApproval: null,
+	pendingQuestion: null,
+});
 
 interface ChatState {
 	sessions: Record<string, SessionData>;
@@ -80,6 +107,8 @@ interface ChatState {
 	setSessionModel: (sessionId: string, model: string) => void;
 	setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
 	clearPendingApproval: (sessionId: string) => void;
+	setPendingQuestion: (sessionId: string, question: PendingQuestion) => void;
+	clearPendingQuestion: (sessionId: string) => void;
 
 	// Draft session management
 	createDraft: (projectId: string) => void;
@@ -96,7 +125,7 @@ interface ChatState {
 	) => void;
 	handleServerEvent: (sessionId: string, event: ChatEvent) => void;
 
-	// Draft → real session promotion (atomic)
+	// Draft -> real session promotion (atomic)
 	promoteDraft: (draftId: string, realSession: SessionMetadata) => void;
 
 	// Project-level reset
@@ -117,20 +146,11 @@ export const useChatStore = create<ChatState>((set) => ({
 				if (sessions[meta.id]) {
 					const existing = sessions[meta.id] as SessionData;
 					sessions[meta.id] = {
+						...existing,
 						meta,
-						turns: existing.turns,
-						currentAssistantText: existing.currentAssistantText,
-						hasUnseenCompletion: existing.hasUnseenCompletion,
-						pendingApproval: existing.pendingApproval,
 					};
 				} else {
-					sessions[meta.id] = {
-						meta,
-						turns: [],
-						currentAssistantText: "",
-						hasUnseenCompletion: false,
-						pendingApproval: null,
-					};
+					sessions[meta.id] = emptySessionData(meta);
 				}
 			}
 			return { sessions };
@@ -140,13 +160,7 @@ export const useChatStore = create<ChatState>((set) => ({
 		set((s) => ({
 			sessions: {
 				...s.sessions,
-				[meta.id]: {
-					meta,
-					turns: [],
-					currentAssistantText: "",
-					hasUnseenCompletion: false,
-					pendingApproval: null,
-				},
+				[meta.id]: emptySessionData(meta),
 			},
 		})),
 
@@ -244,6 +258,30 @@ export const useChatStore = create<ChatState>((set) => ({
 			};
 		}),
 
+	setPendingQuestion: (sessionId, question) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, pendingQuestion: question },
+				},
+			};
+		}),
+
+	clearPendingQuestion: (sessionId) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, pendingQuestion: null },
+				},
+			};
+		}),
+
 	setSessionHistory: (sessionId, turns) =>
 		set((s) => {
 			const session = s.sessions[sessionId];
@@ -273,13 +311,7 @@ export const useChatStore = create<ChatState>((set) => ({
 			return {
 				sessions: {
 					...s.sessions,
-					[draftId]: {
-						meta,
-						turns: [],
-						currentAssistantText: "",
-						hasUnseenCompletion: false,
-						pendingApproval: null,
-					},
+					[draftId]: emptySessionData(meta),
 				},
 				activeSessionId: draftId,
 			};
@@ -377,13 +409,7 @@ export const useChatStore = create<ChatState>((set) => ({
 			return {
 				sessions: {
 					...rest,
-					[realSession.id]: {
-						meta: realSession,
-						turns: [],
-						currentAssistantText: "",
-						hasUnseenCompletion: false,
-						pendingApproval: null,
-					},
+					[realSession.id]: emptySessionData(realSession),
 				},
 				activeSessionId: realSession.id,
 			};

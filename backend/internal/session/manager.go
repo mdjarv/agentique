@@ -66,6 +66,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		claudecli.WithWorkDir(params.WorkDir),
 		claudecli.WithModel(model),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
+		claudecli.WithUserInput(sess.handleUserInput),
 	)
 	if err != nil {
 		return nil, err
@@ -128,6 +129,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 		claudecli.WithWorkDir(workDir),
 		claudecli.WithModel(resolveModel(model)),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
+		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithResume(claudeSessionID),
 	)
 	if err != nil {

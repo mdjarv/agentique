@@ -3,7 +3,7 @@ module github.com/allbin/agentique/backend
 go 1.26.1
 
 require (
-	github.com/allbin/claudecli-go v0.0.0-20260322231901-11bdced7a3f9
+	github.com/allbin/claudecli-go v0.0.0-20260323122851-dddb8f8f3dfa
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pressly/goose/v3 v3.27.0

@@ -102,6 +102,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionSetPermission(msg)
 	case "session.resolve-approval":
 		c.handleSessionResolveApproval(msg)
+	case "session.resolve-question":
+		c.handleSessionResolveQuestion(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}

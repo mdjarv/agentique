@@ -425,6 +425,15 @@ func (s *Service) ResolveApproval(ctx context.Context, sessionID, approvalID str
 	return sess.ResolveApproval(approvalID, allow, message)
 }
 
+// ResolveQuestion sends answers for a pending user question.
+func (s *Service) ResolveQuestion(ctx context.Context, sessionID, questionID string, answers map[string]string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	return sess.ResolveQuestion(questionID, answers)
+}
+
 // SetPermissionMode changes the permission mode for a live session.
 func (s *Service) SetPermissionMode(ctx context.Context, sessionID, mode string) error {
 	sess := s.mgr.Get(sessionID)

@@ -43,6 +43,13 @@ type pendingApproval struct {
 	ch       chan *claudecli.PermissionResponse
 }
 
+// pendingQuestion tracks a single AskUserQuestion request waiting for user input.
+type pendingQuestion struct {
+	id        string
+	questions []claudecli.Question
+	ch        chan map[string]string
+}
+
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID        string
@@ -57,8 +64,9 @@ type Session struct {
 	seqInTurn        int
 	queries          *store.Queries
 	broadcast        func(pushType string, payload any)
-	pendingApprovals map[string]*pendingApproval
-	autoApprove      bool
+	pendingApprovals  map[string]*pendingApproval
+	pendingQuestions  map[string]*pendingQuestion
+	autoApprove       bool
 }
 
 type sessionParams struct {
@@ -80,6 +88,7 @@ func newSession(p sessionParams) *Session {
 		broadcast:        p.broadcast,
 		turnIndex:        p.turnIndex,
 		pendingApprovals: make(map[string]*pendingApproval),
+		pendingQuestions: make(map[string]*pendingQuestion),
 	}
 	s.broadcastState(StateIdle)
 	if s.cliSess != nil {
@@ -422,6 +431,59 @@ func (s *Session) ResolveApproval(approvalID string, allow bool, denyMessage str
 	}
 }
 
+// handleUserInput is the callback for claudecli WithUserInput.
+// Blocks until the user answers or Close() cancels all pending questions.
+func (s *Session) handleUserInput(questions []claudecli.Question) (map[string]string, error) {
+	questionID := uuid.New().String()
+	ch := make(chan map[string]string, 1)
+
+	pq := &pendingQuestion{
+		id:        questionID,
+		questions: questions,
+		ch:        ch,
+	}
+
+	s.mu.Lock()
+	s.pendingQuestions[questionID] = pq
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.pendingQuestions, questionID)
+		s.mu.Unlock()
+	}()
+
+	s.broadcast("session.user-question", map[string]any{
+		"sessionId":  s.ID,
+		"questionId": questionID,
+		"questions":  questions,
+	})
+
+	answers := <-ch
+	if answers == nil {
+		return nil, fmt.Errorf("question cancelled")
+	}
+	return answers, nil
+}
+
+// ResolveQuestion sends answers for a pending user question.
+func (s *Session) ResolveQuestion(questionID string, answers map[string]string) error {
+	s.mu.Lock()
+	pq, ok := s.pendingQuestions[questionID]
+	s.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("question %s not found or already resolved", questionID)
+	}
+
+	select {
+	case pq.ch <- answers:
+		return nil
+	default:
+		return fmt.Errorf("question %s already resolved", questionID)
+	}
+}
+
 // Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
 	s.mu.Lock()
@@ -432,6 +494,14 @@ func (s *Session) Close() {
 		default:
 		}
 		delete(s.pendingApprovals, id)
+	}
+	// Cancel all pending questions so callbacks unblock.
+	for id, pq := range s.pendingQuestions {
+		select {
+		case pq.ch <- nil:
+		default:
+		}
+		delete(s.pendingQuestions, id)
 	}
 	if s.cliSess != nil {
 		s.cliSess.Close()

@@ -88,14 +88,25 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 			useChatStore.getState().removeSession(payload.sessionId);
 		});
 
-		// biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
 		const unsubPermission = ws.subscribe(
 			"session.tool-permission",
+			// biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
 			(payload: any) => {
 				useChatStore.getState().setPendingApproval(payload.sessionId, {
 					approvalId: payload.approvalId,
 					toolName: payload.toolName,
 					input: payload.input,
+				});
+			},
+		);
+
+		const unsubQuestion = ws.subscribe(
+			"session.user-question",
+			// biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+			(payload: any) => {
+				useChatStore.getState().setPendingQuestion(payload.sessionId, {
+					questionId: payload.questionId,
+					questions: payload.questions,
 				});
 			},
 		);
@@ -132,6 +143,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 			unsubRenamed();
 			unsubDeleted();
 			unsubPermission();
+			unsubQuestion();
 			unsubReconnect();
 		};
 	}, [projectId]);

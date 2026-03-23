@@ -148,3 +148,9 @@ type SessionResolveApprovalPayload struct {
 	Allow      bool   `json:"allow"`
 	Message    string `json:"message"`
 }
+
+type SessionResolveQuestionPayload struct {
+	SessionID  string            `json:"sessionId"`
+	QuestionID string            `json:"questionId"`
+	Answers    map[string]string `json:"answers"`
+}

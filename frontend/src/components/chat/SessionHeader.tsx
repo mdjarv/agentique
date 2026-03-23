@@ -165,7 +165,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
 				<SessionStatusDot
 					state={meta.state}
 					hasUnseenCompletion={session.hasUnseenCompletion}
-					hasPendingApproval={!!session.pendingApproval}
+					hasPendingApproval={!!session.pendingApproval || !!session.pendingQuestion}
 				/>
 				<span className="font-medium truncate">{meta.name}</span>
 				{meta.worktreeBranch ? (
