@@ -80,6 +80,11 @@ export function useChatSession(projectId: string) {
 			useChatStore.getState().setSessionName(payload.sessionId, payload.name);
 		});
 
+		// biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+		const unsubDeleted = ws.subscribe("session.deleted", (payload: any) => {
+			useChatStore.getState().removeSession(payload.sessionId);
+		});
+
 		// Re-subscribe on reconnect.
 		const unsubReconnect = ws.onConnect(() => {
 			ws.request("project.subscribe", { projectId }).catch(console.error);
@@ -89,6 +94,7 @@ export function useChatSession(projectId: string) {
 			unsubEvent();
 			unsubState();
 			unsubRenamed();
+			unsubDeleted();
 			unsubReconnect();
 		};
 	}, [projectId]);

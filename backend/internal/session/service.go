@@ -206,6 +206,179 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string) (HistoryResu
 	return HistoryResult{Turns: turns}, nil
 }
 
+// MergeResult describes the outcome of a merge operation.
+type MergeResult struct {
+	Status        string   `json:"status"`
+	CommitHash    string   `json:"commitHash,omitempty"`
+	ConflictFiles []string `json:"conflictFiles,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+// MergeSession merges a worktree session's branch into the project's main branch.
+func (s *Service) MergeSession(ctx context.Context, sessionID string, cleanup bool) (MergeResult, error) {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("session not found")
+	}
+	if !dbSess.WorktreeBranch.Valid || dbSess.WorktreeBranch.String == "" {
+		return MergeResult{}, fmt.Errorf("session has no worktree branch")
+	}
+
+	project, err := s.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("project not found")
+	}
+
+	if live := s.mgr.Get(sessionID); live != nil && live.State() == StateRunning {
+		return MergeResult{}, fmt.Errorf("session is running")
+	}
+
+	dirty, err := HasUncommittedChanges(project.Path)
+	if err != nil {
+		return MergeResult{Status: "error", Error: err.Error()}, nil
+	}
+	if dirty {
+		return MergeResult{Status: "error", Error: "project root has uncommitted changes"}, nil
+	}
+
+	branch := dbSess.WorktreeBranch.String
+	hash, mergeErr := MergeBranch(project.Path, branch)
+	if mergeErr != nil {
+		files, _ := MergeConflictFiles(project.Path)
+		_ = AbortMerge(project.Path)
+		if len(files) > 0 {
+			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
+		}
+		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
+	}
+
+	if cleanup {
+		if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
+			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
+		}
+		if delErr := DeleteBranch(project.Path, branch); delErr != nil {
+			log.Printf("session %s: branch delete after merge: %v", sessionID, delErr)
+		}
+		_ = s.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+			State: StateStopped,
+			ID:    sessionID,
+		})
+		s.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+			"sessionId": sessionID,
+			"state":     StateStopped,
+		})
+	}
+
+	return MergeResult{Status: "merged", CommitHash: hash}, nil
+}
+
+// CreatePRResult describes the outcome of a PR creation.
+type CreatePRResult struct {
+	Status string `json:"status"`
+	URL    string `json:"url,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// CreatePRParams holds parameters for creating a PR.
+type CreatePRParams struct {
+	SessionID string
+	Title     string
+	Body      string
+}
+
+// CreatePR pushes the session branch and creates a GitHub PR.
+func (s *Service) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRResult, error) {
+	dbSess, err := s.queries.GetSession(ctx, p.SessionID)
+	if err != nil {
+		return CreatePRResult{}, fmt.Errorf("session not found")
+	}
+	if !dbSess.WorktreeBranch.Valid || dbSess.WorktreeBranch.String == "" {
+		return CreatePRResult{}, fmt.Errorf("session has no worktree branch")
+	}
+
+	project, err := s.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return CreatePRResult{}, fmt.Errorf("project not found")
+	}
+
+	if !HasGhCli() {
+		return CreatePRResult{Status: "error", Error: "gh CLI not installed"}, nil
+	}
+
+	hasOrigin, err := HasRemote(project.Path, "origin")
+	if err != nil {
+		return CreatePRResult{Status: "error", Error: err.Error()}, nil
+	}
+	if !hasOrigin {
+		return CreatePRResult{Status: "error", Error: "no origin remote configured"}, nil
+	}
+
+	branch := dbSess.WorktreeBranch.String
+
+	if url, prErr := GetExistingPR(project.Path, branch); prErr == nil && url != "" {
+		return CreatePRResult{Status: "existing", URL: url}, nil
+	}
+
+	if err := PushBranch(project.Path, branch); err != nil {
+		return CreatePRResult{Status: "error", Error: err.Error()}, nil
+	}
+
+	title := p.Title
+	if title == "" {
+		title = dbSess.Name
+	}
+
+	url, err := CreatePR(project.Path, branch, title, p.Body)
+	if err != nil {
+		return CreatePRResult{Status: "error", Error: err.Error()}, nil
+	}
+
+	return CreatePRResult{Status: "created", URL: url}, nil
+}
+
+// DeleteSession stops a live session, removes its worktree/branch, and deletes from DB.
+func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
+	if live := s.mgr.Get(sessionID); live != nil {
+		_ = s.mgr.Stop(ctx, sessionID)
+	}
+
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found")
+	}
+
+	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
+	if projErr == nil {
+		if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
+			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
+		}
+		if dbSess.WorktreeBranch.Valid && dbSess.WorktreeBranch.String != "" {
+			if delErr := DeleteBranch(project.Path, dbSess.WorktreeBranch.String); delErr != nil {
+				log.Printf("session %s: branch delete: %v", sessionID, delErr)
+			}
+		}
+	}
+
+	if err := s.queries.DeleteSession(ctx, sessionID); err != nil {
+		return fmt.Errorf("db delete failed: %w", err)
+	}
+
+	s.hub.Broadcast(dbSess.ProjectID, "session.deleted", map[string]any{
+		"sessionId": sessionID,
+	})
+
+	return nil
+}
+
+// InterruptSession stops the current generation without killing the session.
+func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	return sess.Interrupt()
+}
+
 // GetDiff returns the diff of a worktree session against its base commit.
 func (s *Service) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
 	dbSess, err := s.queries.GetSession(ctx, sessionID)

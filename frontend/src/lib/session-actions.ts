@@ -65,6 +65,47 @@ export async function interruptSession(
 	await ws.request("session.interrupt", { sessionId });
 }
 
+export interface MergeResult {
+	status: string;
+	commitHash?: string;
+	conflictFiles?: string[];
+	error?: string;
+}
+
+export interface CreatePRResult {
+	status: string;
+	url?: string;
+	error?: string;
+}
+
+export async function mergeSession(
+	ws: WsClient,
+	sessionId: string,
+	cleanup: boolean,
+): Promise<MergeResult> {
+	return ws.request<MergeResult>("session.merge", { sessionId, cleanup });
+}
+
+export async function createPR(
+	ws: WsClient,
+	sessionId: string,
+	title?: string,
+	body?: string,
+): Promise<CreatePRResult> {
+	return ws.request<CreatePRResult>("session.create-pr", {
+		sessionId,
+		title,
+		body,
+	});
+}
+
+export async function deleteSession(
+	ws: WsClient,
+	sessionId: string,
+): Promise<void> {
+	await ws.request("session.delete", { sessionId });
+}
+
 export async function stopSession(
 	ws: WsClient,
 	sessionId: string,

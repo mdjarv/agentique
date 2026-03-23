@@ -90,6 +90,12 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionDiff(msg)
 	case "session.interrupt":
 		c.handleSessionInterrupt(msg)
+	case "session.merge":
+		c.handleSessionMerge(msg)
+	case "session.create-pr":
+		c.handleSessionCreatePR(msg)
+	case "session.delete":
+		c.handleSessionDelete(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}

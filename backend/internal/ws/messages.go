@@ -113,3 +113,18 @@ type SessionDiffPayload struct {
 type SessionInterruptPayload struct {
 	SessionID string `json:"sessionId"`
 }
+
+type SessionMergePayload struct {
+	SessionID string `json:"sessionId"`
+	Cleanup   bool   `json:"cleanup"`
+}
+
+type SessionCreatePRPayload struct {
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+}
+
+type SessionDeletePayload struct {
+	SessionID string `json:"sessionId"`
+}

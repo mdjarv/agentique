@@ -151,6 +151,63 @@ func (c *conn) handleSessionInterrupt(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionMerge(msg ClientMessage) {
+	var payload SessionMergePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	result, err := c.svc.MergeSession(c.ctx, payload.SessionID, payload.Cleanup)
+	if err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, result, "")
+}
+
+func (c *conn) handleSessionCreatePR(msg ClientMessage) {
+	var payload SessionCreatePRPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	result, err := c.svc.CreatePR(c.ctx, session.CreatePRParams{
+		SessionID: payload.SessionID,
+		Title:     payload.Title,
+		Body:      payload.Body,
+	})
+	if err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, result, "")
+}
+
+func (c *conn) handleSessionDelete(msg ClientMessage) {
+	var payload SessionDeletePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	if err := c.svc.DeleteSession(c.ctx, payload.SessionID); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
