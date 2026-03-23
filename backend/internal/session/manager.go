@@ -265,9 +265,11 @@ func (m *Manager) CloseAll() {
 				s.Close()
 				close(done)
 			}()
+			timer := time.NewTimer(5 * time.Second)
+			defer timer.Stop()
 			select {
 			case <-done:
-			case <-time.After(5 * time.Second):
+			case <-timer.C:
 				log.Printf("session %s: close timed out, abandoning", s.ID)
 			}
 		}(s)

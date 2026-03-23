@@ -40,6 +40,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-subscribe only on projectId change
   useEffect(() => {
+    let stale = false;
     const s = useChatStore.getState();
     s.resetProject();
 
@@ -49,6 +50,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
     // Fetch session list and load active session history.
     ws.request<SessionListResult>("session.list", { projectId })
       .then((result) => {
+        if (stale) return;
         const s = useChatStore.getState();
         s.setSessions(result.sessions);
         const target =
@@ -110,10 +112,12 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
     // Re-subscribe and refresh state on reconnect.
     const unsubReconnect = ws.onConnect(() => {
+      if (stale) return;
       ws.request("project.subscribe", { projectId }).catch(console.error);
 
       ws.request<SessionListResult>("session.list", { projectId })
         .then((result) => {
+          if (stale) return;
           const s = useChatStore.getState();
           s.setSessions(result.sessions);
           const activeId = s.activeSessionId;
@@ -125,6 +129,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
     });
 
     return () => {
+      stale = true;
       unsubEvent();
       unsubState();
       unsubRenamed();

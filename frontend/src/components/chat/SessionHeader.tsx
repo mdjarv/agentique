@@ -68,15 +68,15 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const currentModel = (meta.model ?? "opus") as ModelId;
   const isBusy = isRunning;
 
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  type ActiveDialog = "none" | "delete" | "pr" | "commit";
+  const [activeDialog, setActiveDialog] = useState<ActiveDialog>("none");
+  const [deleting, setDeleting] = useState(false);
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
   const [merging, setMerging] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
-  const [showPRDialog, setShowPRDialog] = useState(false);
-  const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [committing, setCommitting] = useState(false);
 
   const handleModelChange = useCallback(
@@ -137,7 +137,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
             </a>
           </span>,
         );
-        setShowPRDialog(false);
+        setActiveDialog("none");
       } else {
         toast.error(result.error ?? "PR creation failed");
       }
@@ -153,7 +153,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
     try {
       const result = await commitSession(ws, meta.id, message);
       toast.success(`Committed (${result.commitHash.slice(0, 7)})`);
-      setShowCommitDialog(false);
+      setActiveDialog("none");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Commit failed");
     } finally {
@@ -162,9 +162,12 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   };
 
   const handleDelete = async () => {
+    setDeleting(true);
     try {
       await deleteSession(ws, meta.id);
+      setActiveDialog("none");
     } catch (err) {
+      setDeleting(false);
       toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   };
@@ -215,7 +218,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => setShowCommitDialog(true)}
+              onClick={() => setActiveDialog("commit")}
               disabled={committing}
             >
               {committing ? (
@@ -257,7 +260,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => setShowPRDialog(true)}
+              onClick={() => setActiveDialog("pr")}
               disabled={creatingPR}
             >
               {creatingPR ? (
@@ -306,7 +309,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
             variant="ghost"
             size="sm"
             className="h-7 px-1.5 text-xs text-muted-foreground hover:text-destructive"
-            onClick={() => setShowDeleteDialog(true)}
+            onClick={() => setActiveDialog("delete")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -326,15 +329,18 @@ export function SessionHeader({ session }: SessionHeaderProps) {
 
       {/* Create PR dialog */}
       <CreatePRDialog
-        open={showPRDialog}
-        onOpenChange={setShowPRDialog}
+        open={activeDialog === "pr"}
+        onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
         defaultTitle={meta.name}
         onSubmit={handlePRSubmit}
         loading={creatingPR}
       />
 
       {/* Delete confirmation */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <AlertDialog
+        open={activeDialog === "delete"}
+        onOpenChange={(open) => setActiveDialog(open ? "delete" : "none")}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete session</AlertDialogTitle>
@@ -345,15 +351,17 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       {/* Commit dialog */}
       <CommitDialog
-        open={showCommitDialog}
-        onOpenChange={setShowCommitDialog}
+        open={activeDialog === "commit"}
+        onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
         onSubmit={handleCommit}
         loading={committing}
       />

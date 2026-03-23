@@ -243,8 +243,11 @@ func (s *Service) MergeSession(ctx context.Context, sessionID string, cleanup bo
 		return MergeResult{}, fmt.Errorf("project not found")
 	}
 
-	if live := s.mgr.Get(sessionID); live != nil && live.State() == StateRunning {
-		return MergeResult{}, fmt.Errorf("session is running")
+	if live := s.mgr.Get(sessionID); live != nil {
+		if err := live.TryLockForMerge(); err != nil {
+			return MergeResult{}, err
+		}
+		defer live.UnlockMerge(StateIdle)
 	}
 
 	dirty, err := HasUncommittedChanges(project.Path)
@@ -257,7 +260,10 @@ func (s *Service) MergeSession(ctx context.Context, sessionID string, cleanup bo
 
 	// Auto-commit uncommitted changes in the worktree before merging.
 	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		wtDirty, _ := HasUncommittedChanges(dbSess.WorktreePath.String)
+		wtDirty, wtErr := HasUncommittedChanges(dbSess.WorktreePath.String)
+		if wtErr != nil {
+			log.Printf("session %s: failed to check worktree changes: %v", sessionID, wtErr)
+		}
 		if wtDirty {
 			if err := AutoCommitAll(dbSess.WorktreePath.String, "agentique: auto-commit before merge"); err != nil {
 				return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
@@ -341,7 +347,10 @@ func (s *Service) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRResul
 
 	// Auto-commit uncommitted changes in worktree before pushing.
 	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		wtDirty, _ := HasUncommittedChanges(dbSess.WorktreePath.String)
+		wtDirty, wtErr := HasUncommittedChanges(dbSess.WorktreePath.String)
+		if wtErr != nil {
+			log.Printf("session %s: failed to check worktree changes: %v", p.SessionID, wtErr)
+		}
 		if wtDirty {
 			if err := AutoCommitAll(dbSess.WorktreePath.String, "agentique: auto-commit before PR"); err != nil {
 				return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil

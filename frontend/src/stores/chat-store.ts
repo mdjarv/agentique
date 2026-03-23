@@ -174,7 +174,9 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => {
       const { [id]: _, ...rest } = s.sessions;
       const activeSessionId = s.activeSessionId === id ? null : s.activeSessionId;
-      return { sessions: rest, activeSessionId };
+      const historyLoading = new Set(s.historyLoading);
+      historyLoading.delete(id);
+      return { sessions: rest, activeSessionId, historyLoading };
     }),
 
   setActiveSessionId: (id) =>
@@ -322,10 +324,10 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionHistory: (sessionId, turns) =>
     set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
       const nextLoading = new Set(s.historyLoading);
       nextLoading.delete(sessionId);
+      const session = s.sessions[sessionId];
+      if (!session) return { historyLoading: nextLoading };
       return {
         historyLoading: nextLoading,
         sessions: {

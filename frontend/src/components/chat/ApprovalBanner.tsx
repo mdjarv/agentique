@@ -1,5 +1,5 @@
 import { Check, ShieldAlert, X } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -73,25 +73,31 @@ export function ApprovalBanner({
   worktreePath,
 }: ApprovalBannerProps) {
   const ws = useWebSocket();
+  const [submitting, setSubmitting] = useState(false);
   const summary = formatInput(approval.toolName, approval.input, projectPath, worktreePath);
 
   const handleAllow = useCallback(() => {
+    setSubmitting(true);
     resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
+      setSubmitting(false);
       toast.error(err instanceof Error ? err.message : "Failed to approve tool");
     });
   }, [ws, sessionId, approval.approvalId]);
 
   const handleAllowAll = useCallback(() => {
-    setAutoApprove(ws, sessionId, true).catch((err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
-    });
-    resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to approve tool");
-    });
+    setSubmitting(true);
+    resolveApproval(ws, sessionId, approval.approvalId, true)
+      .then(() => setAutoApprove(ws, sessionId, true))
+      .catch((err) => {
+        setSubmitting(false);
+        toast.error(err instanceof Error ? err.message : "Failed to approve tool");
+      });
   }, [ws, sessionId, approval.approvalId]);
 
   const handleDeny = useCallback(() => {
+    setSubmitting(true);
     resolveApproval(ws, sessionId, approval.approvalId, false, "User denied").catch((err) => {
+      setSubmitting(false);
       toast.error(err instanceof Error ? err.message : "Failed to deny tool");
     });
   }, [ws, sessionId, approval.approvalId]);
@@ -108,6 +114,7 @@ export function ApprovalBanner({
             variant="ghost"
             className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={handleDeny}
+            disabled={submitting}
           >
             <X className="h-3.5 w-3.5 mr-1" />
             Deny
@@ -116,6 +123,7 @@ export function ApprovalBanner({
             size="sm"
             className="h-7 px-2 bg-green-600 hover:bg-green-700 text-white"
             onClick={handleAllow}
+            disabled={submitting}
           >
             <Check className="h-3.5 w-3.5 mr-1" />
             Allow
@@ -125,6 +133,7 @@ export function ApprovalBanner({
             variant="ghost"
             className="h-7 px-2 text-muted-foreground hover:text-foreground"
             onClick={handleAllowAll}
+            disabled={submitting}
           >
             Allow all
           </Button>

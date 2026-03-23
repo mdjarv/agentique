@@ -9,7 +9,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
@@ -60,10 +60,23 @@ export function MessageComposer({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
+
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  useEffect(() => {
+    return () => {
+      for (const a of attachmentsRef.current) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      }
+    };
+  }, []);
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if ((!trimmed && attachments.length === 0) || disabled) return;
+    if ((!trimmed && attachments.length === 0) || disabled || submittingRef.current) return;
+    submittingRef.current = true;
     onSend(trimmed, attachments.length > 0 ? attachments : undefined);
     setText("");
     setAttachments((prev) => {
@@ -75,6 +88,9 @@ export function MessageComposer({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
+    queueMicrotask(() => {
+      submittingRef.current = false;
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

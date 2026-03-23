@@ -33,6 +33,7 @@ const (
 	StateFailed  = "failed"
 	StateDone    = "done"
 	StateStopped = "stopped"
+	StateMerging = "merging"
 )
 
 // pendingApproval tracks a single tool permission request waiting for user input.
@@ -55,6 +56,8 @@ type Session struct {
 	ID        string
 	ProjectID string
 
+	ctx              context.Context
+	cancelCtx        context.CancelFunc
 	mu               sync.Mutex
 	state            string
 	cliSess          *claudecli.Session
@@ -81,9 +84,12 @@ type sessionParams struct {
 }
 
 func newSession(p sessionParams) *Session {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
 		ID:               p.id,
 		ProjectID:        p.projectID,
+		ctx:              ctx,
+		cancelCtx:        cancel,
 		state:            StateIdle,
 		cliSess:          p.cliSess,
 		queries:          p.queries,
@@ -306,7 +312,7 @@ func (s *Session) broadcastState(state string) {
 		"sessionId": s.ID,
 		"state":     state,
 	}
-	if s.workDir != "" {
+	if s.workDir != "" && (state == StateIdle || state == StateDone) {
 		if dirty, err := HasUncommittedChanges(s.workDir); err == nil {
 			payload["hasDirtyWorktree"] = dirty
 		}
@@ -410,8 +416,12 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 		"input":      input,
 	})
 
-	resp := <-ch
-	return resp, nil
+	select {
+	case resp := <-ch:
+		return resp, nil
+	case <-s.ctx.Done():
+		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
+	}
 }
 
 // ResolveApproval sends a permission response for a pending tool approval.
@@ -465,11 +475,15 @@ func (s *Session) handleUserInput(questions []claudecli.Question) (map[string]st
 		"questions":  questions,
 	})
 
-	answers := <-ch
-	if answers == nil {
-		return nil, fmt.Errorf("question cancelled")
+	select {
+	case answers := <-ch:
+		if answers == nil {
+			return nil, fmt.Errorf("question cancelled")
+		}
+		return answers, nil
+	case <-s.ctx.Done():
+		return nil, fmt.Errorf("session closed")
 	}
-	return answers, nil
 }
 
 // ResolveQuestion sends answers for a pending user question.
@@ -492,6 +506,7 @@ func (s *Session) ResolveQuestion(questionID string, answers map[string]string) 
 
 // Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
+	s.cancelCtx()
 	s.mu.Lock()
 	// Reject all pending approvals so callbacks unblock.
 	for id, pa := range s.pendingApprovals {
@@ -514,5 +529,25 @@ func (s *Session) Close() {
 		s.cliSess = nil
 	}
 	s.state = StateDone
+	s.mu.Unlock()
+}
+
+// TryLockForMerge atomically transitions to StateMerging if the session is not running.
+func (s *Session) TryLockForMerge() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state == StateRunning || s.state == "starting" {
+		return fmt.Errorf("session is running")
+	}
+	s.state = StateMerging
+	return nil
+}
+
+// UnlockMerge transitions back from StateMerging to newState.
+func (s *Session) UnlockMerge(newState string) {
+	s.mu.Lock()
+	if s.state == StateMerging {
+		s.state = newState
+	}
 	s.mu.Unlock()
 }

@@ -96,13 +96,16 @@ function QuestionInput({
 export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
   const ws = useWebSocket();
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   const setAnswer = useCallback((questionText: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionText]: value }));
   }, []);
 
   const handleSubmit = useCallback(() => {
+    setSubmitting(true);
     resolveQuestion(ws, sessionId, pending.questionId, answers).catch((err) => {
+      setSubmitting(false);
       toast.error(err instanceof Error ? err.message : "Failed to submit answer");
     });
   }, [ws, sessionId, pending.questionId, answers]);
@@ -131,7 +134,7 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
           <Button
             size="sm"
             className="h-7 px-3 bg-purple-600 hover:bg-purple-700 text-white"
-            disabled={!allAnswered}
+            disabled={!allAnswered || submitting}
             onClick={handleSubmit}
           >
             <Send className="h-3.5 w-3.5 mr-1" />

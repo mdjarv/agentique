@@ -23,7 +23,14 @@ func WorktreeBasePath() string {
 
 // WorktreePath returns the full path for a worktree given a project name and branch.
 func WorktreePath(projectName, branch string) string {
-	return filepath.Join(WorktreeBasePath(), sanitizeBranch(projectName), sanitizeBranch(branch))
+	base := filepath.Join(WorktreeBasePath(), sanitizeBranch(projectName))
+	result := filepath.Join(base, sanitizeBranch(branch))
+	cleanBase := filepath.Clean(base) + string(filepath.Separator)
+	cleanResult := filepath.Clean(result)
+	if !strings.HasPrefix(cleanResult, cleanBase) {
+		result = filepath.Join(base, "safe-"+sanitizeBranch(branch))
+	}
+	return result
 }
 
 // CreateWorktree creates a new git worktree at worktreePath branching from HEAD.
@@ -63,7 +70,13 @@ func RemoveWorktree(projectDir, worktreePath string) {
 
 // sanitizeBranch replaces characters that are problematic in branch names and paths.
 func sanitizeBranch(name string) string {
-	return strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, "..", "")
+	name = strings.TrimLeft(name, ".-")
+	if name == "" {
+		name = "unnamed"
+	}
+	return name
 }
 
 // DiffStat represents a single file's change summary.

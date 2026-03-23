@@ -54,6 +54,8 @@ export function ProjectTreeItem({
   const removeProject = useAppStore((s) => s.removeProject);
   const ws = useWebSocket();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [busySessionId, setBusySessionId] = useState<string | null>(null);
 
   const sessionIds = useChatStore(useShallow((s) => Object.keys(s.sessions)));
   const sessions = useChatStore((s) => s.sessions);
@@ -86,6 +88,8 @@ export function ProjectTreeItem({
 
   const handleStopSession = async (e: React.MouseEvent, sessionId: string, state: string) => {
     e.stopPropagation();
+    if (busySessionId) return;
+    setBusySessionId(sessionId);
     try {
       if (state === "running") {
         await interruptSession(ws, sessionId);
@@ -94,15 +98,24 @@ export function ProjectTreeItem({
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to stop session");
+    } finally {
+      setBusySessionId(null);
     }
   };
 
-  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+  const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
+    setSessionToDelete(sessionId);
+  };
+
+  const confirmDeleteSession = async () => {
+    if (!sessionToDelete) return;
     try {
-      await deleteSession(ws, sessionId);
+      await deleteSession(ws, sessionToDelete);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete session");
+    } finally {
+      setSessionToDelete(null);
     }
   };
 
@@ -211,6 +224,26 @@ export function ProjectTreeItem({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!sessionToDelete}
+        onOpenChange={(open) => {
+          if (!open) setSessionToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete session</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the session and its data. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSession}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

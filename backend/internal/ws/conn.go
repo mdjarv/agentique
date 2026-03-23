@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/allbin/agentique/backend/internal/session"
@@ -43,6 +44,11 @@ func (c *conn) run() {
 }
 
 func (c *conn) readLoop() {
+	c.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.ws.SetPongHandler(func(string) error {
+		c.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 	for {
 		var msg ClientMessage
 		if err := c.ws.ReadJSON(&msg); err != nil {
@@ -56,16 +62,36 @@ func (c *conn) readLoop() {
 }
 
 func (c *conn) writeLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-c.ctx.Done():
-			return
+			// Drain remaining messages before closing.
+			c.ws.SetWriteDeadline(time.Now().Add(1 * time.Second))
+			for {
+				select {
+				case msg := <-c.sendCh:
+					c.mu.Lock()
+					_ = c.ws.WriteJSON(msg)
+					c.mu.Unlock()
+				default:
+					return
+				}
+			}
 		case msg := <-c.sendCh:
 			c.mu.Lock()
 			err := c.ws.WriteJSON(msg)
 			c.mu.Unlock()
 			if err != nil {
 				log.Printf("ws write error: %v", err)
+				return
+			}
+		case <-ticker.C:
+			c.mu.Lock()
+			err := c.ws.WriteMessage(websocket.PingMessage, nil)
+			c.mu.Unlock()
+			if err != nil {
 				return
 			}
 		}
