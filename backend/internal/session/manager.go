@@ -28,6 +28,8 @@ type CreateParams struct {
 	WorktreeBranch  string
 	WorktreeBaseSHA string
 	Model           string
+	PlanMode        bool
+	AutoApprove     bool
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -60,14 +62,25 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		turnIndex: -1, // first Query() will increment to 0
 	})
 
+	// Set auto-approve before connecting so the callback has it immediately.
+	if params.AutoApprove {
+		sess.SetAutoApprove(true)
+	}
+
 	model := resolveModel(params.Model)
-	client := claudecli.New()
-	cliSess, err := client.Connect(ctx,
+	connectOpts := []claudecli.Option{
 		claudecli.WithWorkDir(params.WorkDir),
 		claudecli.WithModel(model),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
-	)
+	}
+	// Pass plan mode as CLI flag to avoid post-connect control request race.
+	if params.PlanMode {
+		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
+	}
+
+	client := claudecli.New()
+	cliSess, err := client.Connect(ctx, connectOpts...)
 	if err != nil {
 		return nil, err
 	}

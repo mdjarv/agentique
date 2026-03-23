@@ -128,20 +128,14 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		WorktreeBranch:  worktreeBranch,
 		WorktreeBaseSHA: worktreeBaseSHA,
 		Model:           model,
+		PlanMode:        p.PlanMode,
+		AutoApprove:     p.AutoApprove,
 	})
 	if err != nil {
 		if worktreePath != "" {
 			RemoveWorktree(project.Path, worktreePath)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
-	}
-
-	// Apply initial permission settings.
-	if p.PlanMode {
-		_ = sess.SetPermissionMode("plan")
-	}
-	if p.AutoApprove {
-		sess.SetAutoApprove(true)
 	}
 
 	dbSess, dbErr := s.queries.GetSession(ctx, sess.ID)
