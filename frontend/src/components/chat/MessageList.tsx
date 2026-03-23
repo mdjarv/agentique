@@ -3,52 +3,57 @@ import { TurnBlock } from "~/components/chat/TurnBlock";
 import type { Turn } from "~/stores/chat-store";
 
 interface MessageListProps {
-  turns: Turn[];
-  currentAssistantText: string;
-  sessionState: string;
-  projectPath?: string;
-  worktreePath?: string;
+	turns: Turn[];
+	currentAssistantText: string;
+	sessionState: string;
+	projectPath?: string;
+	worktreePath?: string;
 }
 
 export function MessageList({
-  turns,
-  currentAssistantText,
-  sessionState,
-  projectPath,
-  worktreePath,
+	turns,
+	currentAssistantText,
+	sessionState,
+	projectPath,
+	worktreePath,
 }: MessageListProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const bottomRef = useRef<HTMLDivElement>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns, currentAssistantText]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
+	useEffect(() => {
+		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+	}, [turns, currentAssistantText]);
 
-  if (turns.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Send a message to start chatting</p>
-      </div>
-    );
-  }
+	if (turns.length === 0) {
+		return (
+			<div className="flex-1 flex items-center justify-center">
+				<p className="text-muted-foreground">
+					Send a message to start chatting
+				</p>
+			</div>
+		);
+	}
 
-  return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-      <div className="p-4 space-y-6 min-w-0">
-        {turns.map((turn, i) => (
-          <TurnBlock
-            key={turn.id}
-            turn={turn}
-            isLast={i === turns.length - 1}
-            currentAssistantText={currentAssistantText}
-            sessionState={sessionState}
-            projectPath={projectPath}
-            worktreePath={worktreePath}
-          />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-    </div>
-  );
+	return (
+		<div
+			ref={scrollRef}
+			className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+		>
+			<div className="p-4 space-y-6 min-w-0">
+				{turns.map((turn, i) => (
+					<TurnBlock
+						key={turn.id}
+						turn={turn}
+						isLast={i === turns.length - 1}
+						currentAssistantText={currentAssistantText}
+						sessionState={sessionState}
+						projectPath={projectPath}
+						worktreePath={worktreePath}
+					/>
+				))}
+				<div ref={bottomRef} />
+			</div>
+		</div>
+	);
 }

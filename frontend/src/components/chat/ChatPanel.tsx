@@ -7,53 +7,55 @@ import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 interface ChatPanelProps {
-  projectId: string;
+	projectId: string;
 }
 
 export function ChatPanel({ projectId }: ChatPanelProps) {
-  const { sendQuery, loadHistory } = useChatSession(projectId);
-  const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const activeSession = useChatStore((s) =>
-    s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
-  );
+	const { sendQuery, loadHistory } = useChatSession(projectId);
+	const project = useAppStore((s) =>
+		s.projects.find((p) => p.id === projectId),
+	);
+	const activeSessionId = useChatStore((s) => s.activeSessionId);
+	const activeSession = useChatStore((s) =>
+		s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
+	);
 
-  // Load history when switching to a session that hasn't been loaded yet
-  useEffect(() => {
-    if (!activeSessionId) return;
-    const s = useChatStore.getState().sessions[activeSessionId];
-    if (s && s.turns.length === 0 && s.meta.state !== "draft") {
-      loadHistory(activeSessionId);
-    }
-  }, [activeSessionId, loadHistory]);
+	// Load history when switching to a session that hasn't been loaded yet
+	useEffect(() => {
+		if (!activeSessionId) return;
+		const s = useChatStore.getState().sessions[activeSessionId];
+		if (s && s.turns.length === 0 && s.meta.state !== "draft") {
+			loadHistory(activeSessionId);
+		}
+	}, [activeSessionId, loadHistory]);
 
-  const sessionState = activeSession?.meta.state ?? "disconnected";
-  const isDraft = sessionState === "draft";
-  const worktree = activeSession?.meta.worktree ?? false;
+	const sessionState = activeSession?.meta.state ?? "disconnected";
+	const isDraft = sessionState === "draft";
+	const worktree = activeSession?.meta.worktree ?? false;
 
-  return (
-    <div className="flex flex-col h-full" data-project-id={projectId}>
-      {activeSession && activeSession.meta.state !== "draft" && (
-        <SessionHeader session={activeSession} />
-      )}
-      <MessageList
-        turns={activeSession?.turns ?? []}
-        currentAssistantText={activeSession?.currentAssistantText ?? ""}
-        sessionState={sessionState}
-        projectPath={project?.path}
-        worktreePath={activeSession?.meta.worktreePath}
-      />
-      <MessageComposer
-        onSend={sendQuery}
-        disabled={sessionState === "running"}
-        isDraft={isDraft}
-        worktree={worktree}
-        onWorktreeChange={(v) => {
-          if (activeSession) {
-            useChatStore.getState().setDraftWorktree(activeSession.meta.id, v);
-          }
-        }}
-      />
-    </div>
-  );
+	return (
+		<div className="flex flex-col h-full" data-project-id={projectId}>
+			{activeSession && activeSession.meta.state !== "draft" && (
+				<SessionHeader session={activeSession} />
+			)}
+			<MessageList
+				turns={activeSession?.turns ?? []}
+				currentAssistantText={activeSession?.currentAssistantText ?? ""}
+				sessionState={sessionState}
+				projectPath={project?.path}
+				worktreePath={activeSession?.meta.worktreePath}
+			/>
+			<MessageComposer
+				onSend={sendQuery}
+				disabled={sessionState === "running"}
+				isDraft={isDraft}
+				worktree={worktree}
+				onWorktreeChange={(v) => {
+					if (activeSession) {
+						useChatStore.getState().setDraftWorktree(activeSession.meta.id, v);
+					}
+				}}
+			/>
+		</div>
+	);
 }
