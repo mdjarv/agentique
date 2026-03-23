@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/server"
+	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/ws"
 )
@@ -238,10 +239,6 @@ func TestSessionCreateProtocol(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test that connects to Claude CLI in short mode")
 	}
-	// session.create with a valid project will try to connect to Claude CLI.
-	// In test environments the CLI may or may not be available. We test both paths:
-	// - If CLI is unavailable: expect an error response mentioning "failed to create session"
-	// - If CLI is available: expect a successful response with session info
 	ts, queries, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -262,7 +259,7 @@ func TestSessionCreateProtocol(t *testing.T) {
 	} else {
 		// CLI is available -- verify response has session info.
 		raw, _ := json.Marshal(resp.Payload)
-		var result ws.SessionCreateResult
+		var result session.CreateSessionResult
 		if err := json.Unmarshal(raw, &result); err != nil {
 			t.Fatalf("unmarshal result: %v", err)
 		}
@@ -301,7 +298,7 @@ func TestSessionList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	var result ws.SessionListResult
+	var result session.ListSessionsResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
@@ -338,7 +335,7 @@ func TestSessionListEmpty(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(resp.Payload)
-	var result ws.SessionListResult
+	var result session.ListSessionsResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
@@ -392,7 +389,7 @@ func TestSessionStop(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(resp.Payload)
-	var result ws.SessionListResult
+	var result session.ListSessionsResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
@@ -473,7 +470,7 @@ func TestMultipleSessions(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(resp.Payload)
-	var result ws.SessionListResult
+	var result session.ListSessionsResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}

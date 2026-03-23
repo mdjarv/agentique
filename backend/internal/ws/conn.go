@@ -7,30 +7,27 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
 )
 
 type conn struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	ws      *websocket.Conn
-	queries *store.Queries
-	mgr     *session.Manager
-	hub     *Hub
-	sendCh  chan any
-	mu      sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	ws     *websocket.Conn
+	svc    *session.Service
+	hub    *Hub
+	sendCh chan any
+	mu     sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, queries *store.Queries, mgr *session.Manager, hub *Hub) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, hub *Hub) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
-		ctx:     ctx,
-		cancel:  cancel,
-		ws:      ws,
-		queries: queries,
-		mgr:     mgr,
-		hub:     hub,
-		sendCh:  make(chan any, 64),
+		ctx:    ctx,
+		cancel: cancel,
+		ws:     ws,
+		svc:    svc,
+		hub:    hub,
+		sendCh: make(chan any, 64),
 	}
 }
 

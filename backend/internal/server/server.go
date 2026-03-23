@@ -21,6 +21,7 @@ func New(queries *store.Queries) *Server {
 	mux := http.NewServeMux()
 	hub := ws.NewHub()
 	mgr := session.NewManager(queries, hub)
+	svc := session.NewService(mgr, queries, hub)
 
 	ph := &project.Handler{Queries: queries}
 
@@ -31,7 +32,7 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
-	wsh := &ws.Handler{Queries: queries, Manager: mgr, Hub: hub}
+	wsh := &ws.Handler{Service: svc, Hub: hub}
 	mux.Handle("GET /ws", wsh)
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")

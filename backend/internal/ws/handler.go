@@ -6,7 +6,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
 )
 
 var upgrader = websocket.Upgrader{
@@ -15,8 +14,7 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket connections.
 type Handler struct {
-	Queries *store.Queries
-	Manager *session.Manager
+	Service *session.Service
 	Hub     *Hub
 }
 
@@ -27,6 +25,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := newConn(r.Context(), wsConn, h.Queries, h.Manager, h.Hub)
+	c := newConn(r.Context(), wsConn, h.Service, h.Hub)
 	c.run()
 }
