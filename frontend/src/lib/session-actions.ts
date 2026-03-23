@@ -51,8 +51,11 @@ export async function createSession(
 		worktreeBranch: result.worktreeBranch,
 		createdAt: result.createdAt,
 	};
-	useChatStore.getState().addSession(meta);
-	useChatStore.getState().setActiveSessionId(result.sessionId);
+	const store = useChatStore.getState();
+	store.addSession(meta);
+	if (opts?.planMode) store.setSessionPlanMode(result.sessionId, true);
+	if (opts?.autoApprove) store.setSessionAutoApprove(result.sessionId, true);
+	store.setActiveSessionId(result.sessionId);
 	return result.sessionId;
 }
 
