@@ -12,6 +12,7 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -338,7 +339,7 @@ func (s *Session) broadcastState(state State) {
 		"state":     string(state),
 	}
 	if s.workDir != "" && (state == StateIdle || state == StateDone) {
-		if dirty, err := HasUncommittedChanges(s.workDir); err == nil {
+		if dirty, err := gitops.HasUncommittedChanges(s.workDir); err == nil {
 			payload["hasDirtyWorktree"] = dirty
 		}
 	}

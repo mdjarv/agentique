@@ -50,7 +50,8 @@ Don't be afraid to change existing code. Don't take shortcuts by just adding loc
 - **backend/cmd/agentique**: Entry point, DB init, default project creation.
 - **backend/internal/server**: HTTP mux, SPA handler, embedded frontend assets.
 - **backend/internal/ws**: WebSocket handler, hub (connection registry + broadcasting), wire message types.
-- **backend/internal/session**: Session lifecycle (Service), git operations (GitService), event streaming, state machine, worktree management.
+- **backend/internal/gitops**: Pure git/gh CLI wrappers (merge, branch, worktree, diff, PR), no session dependencies.
+- **backend/internal/session**: Session lifecycle (Service), GitService (orchestrates gitops), event streaming, state machine.
 - **backend/internal/project**: Project CRUD routes.
 - **backend/internal/store**: SQLite via sqlc — generated query code, migrations via goose.
 - **frontend/src/components/chat/**: Chat UI — message rendering, composer, turn blocks, tool display.

@@ -1,8 +1,7 @@
-package session
+package gitops
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -165,40 +164,4 @@ func TestHasRemote(t *testing.T) {
 func TestHasGhCli(t *testing.T) {
 	// Just verify it doesn't panic. Result depends on environment.
 	_ = HasGhCli()
-}
-
-// --- helpers ---
-
-func testGitRun(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=test",
-		"GIT_AUTHOR_EMAIL=test@test.com",
-		"GIT_COMMITTER_NAME=test",
-		"GIT_COMMITTER_EMAIL=test@test.com",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v: %s", args, err, string(out))
-	}
-}
-
-func testGitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v: %s", args, err, string(out))
-	}
-	return string(out)
-}
-
-func writeFile(t *testing.T, dir, name, content string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
 }

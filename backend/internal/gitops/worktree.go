@@ -1,4 +1,4 @@
-package session
+package gitops
 
 import (
 	"context"
@@ -25,19 +25,19 @@ func WorktreeBasePath() string {
 
 // WorktreePath returns the full path for a worktree given a project name and branch.
 func WorktreePath(projectName, branch string) string {
-	base := filepath.Join(WorktreeBasePath(), sanitizeBranch(projectName))
-	result := filepath.Join(base, sanitizeBranch(branch))
+	base := filepath.Join(WorktreeBasePath(), SanitizeBranch(projectName))
+	result := filepath.Join(base, SanitizeBranch(branch))
 	cleanBase := filepath.Clean(base) + string(filepath.Separator)
 	cleanResult := filepath.Clean(result)
 	if !strings.HasPrefix(cleanResult, cleanBase) {
-		result = filepath.Join(base, "safe-"+sanitizeBranch(branch))
+		result = filepath.Join(base, "safe-"+SanitizeBranch(branch))
 	}
 	return result
 }
 
 // CreateWorktree creates a new git worktree at worktreePath branching from HEAD.
 func CreateWorktree(projectDir, branch, worktreePath string) error {
-	safeBranch := sanitizeBranch(branch)
+	safeBranch := SanitizeBranch(branch)
 	out, err := gitRun(projectDir, "worktree", "add", "-b", safeBranch, worktreePath, "HEAD")
 	if err != nil {
 		return fmt.Errorf("git worktree add failed: %w: %s", err, string(out))
@@ -47,7 +47,7 @@ func CreateWorktree(projectDir, branch, worktreePath string) error {
 
 // RestoreWorktree re-creates a worktree for an existing branch.
 func RestoreWorktree(projectDir, branch, worktreePath string) error {
-	safeBranch := sanitizeBranch(branch)
+	safeBranch := SanitizeBranch(branch)
 	out, err := gitRun(projectDir, "worktree", "add", worktreePath, safeBranch)
 	if err != nil {
 		return fmt.Errorf("git worktree restore failed: %w: %s", err, string(out))
@@ -64,8 +64,8 @@ func RemoveWorktree(projectDir, worktreePath string) {
 	}
 }
 
-// sanitizeBranch replaces characters that are problematic in branch names and paths.
-func sanitizeBranch(name string) string {
+// SanitizeBranch replaces characters that are problematic in branch names and paths.
+func SanitizeBranch(name string) string {
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, "..", "")
 	name = strings.TrimLeft(name, ".-")

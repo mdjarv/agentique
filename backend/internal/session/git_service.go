@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
@@ -42,7 +43,7 @@ func autoCommitWorktree(sessionID, wtPath, reason string) error {
 	if wtPath == "" {
 		return nil
 	}
-	dirty, err := HasUncommittedChanges(wtPath)
+	dirty, err := gitops.HasUncommittedChanges(wtPath)
 	if err != nil {
 		log.Printf("session %s: failed to check worktree changes: %v", sessionID, err)
 		return nil
@@ -50,7 +51,7 @@ func autoCommitWorktree(sessionID, wtPath, reason string) error {
 	if !dirty {
 		return nil
 	}
-	return AutoCommitAll(wtPath, "agentique: auto-commit before "+reason)
+	return gitops.AutoCommitAll(wtPath, "agentique: auto-commit before "+reason)
 }
 
 // GitService handles git operations (merge, PR, diff, commit) for sessions.
@@ -88,7 +89,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		defer live.UnlockMerge(StateIdle)
 	}
 
-	dirty, err := HasUncommittedChanges(project.Path)
+	dirty, err := gitops.HasUncommittedChanges(project.Path)
 	if err != nil {
 		return MergeResult{Status: "error", Error: err.Error()}, nil
 	}
@@ -101,10 +102,10 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
-	hash, mergeErr := MergeBranch(project.Path, branch)
+	hash, mergeErr := gitops.MergeBranch(project.Path, branch)
 	if mergeErr != nil {
-		files, _ := MergeConflictFiles(project.Path)
-		_ = AbortMerge(project.Path)
+		files, _ := gitops.MergeConflictFiles(project.Path)
+		_ = gitops.AbortMerge(project.Path)
 		if len(files) > 0 {
 			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
 		}
@@ -113,9 +114,9 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	if cleanup {
 		if wtPath != "" {
-			RemoveWorktree(project.Path, wtPath)
+			gitops.RemoveWorktree(project.Path, wtPath)
 		}
-		if delErr := DeleteBranch(project.Path, branch); delErr != nil {
+		if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
 			log.Printf("session %s: branch delete after merge: %v", sessionID, delErr)
 		}
 		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
@@ -147,11 +148,11 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		return CreatePRResult{}, fmt.Errorf("project not found")
 	}
 
-	if !HasGhCli() {
+	if !gitops.HasGhCli() {
 		return CreatePRResult{Status: "error", Error: "gh CLI not installed"}, nil
 	}
 
-	hasOrigin, err := HasRemote(project.Path, "origin")
+	hasOrigin, err := gitops.HasRemote(project.Path, "origin")
 	if err != nil {
 		return CreatePRResult{Status: "error", Error: err.Error()}, nil
 	}
@@ -164,11 +165,11 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
-	if url, prErr := GetExistingPR(project.Path, branch); prErr == nil && url != "" {
+	if url, prErr := gitops.GetExistingPR(project.Path, branch); prErr == nil && url != "" {
 		return CreatePRResult{Status: "existing", URL: url}, nil
 	}
 
-	if err := PushBranch(project.Path, branch); err != nil {
+	if err := gitops.PushBranch(project.Path, branch); err != nil {
 		return CreatePRResult{Status: "error", Error: err.Error()}, nil
 	}
 
@@ -177,7 +178,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		title = dbSess.Name
 	}
 
-	url, err := CreatePR(project.Path, branch, title, p.Body)
+	url, err := gitops.CreatePR(project.Path, branch, title, p.Body)
 	if err != nil {
 		return CreatePRResult{Status: "error", Error: err.Error()}, nil
 	}
@@ -187,26 +188,26 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 
 // Diff returns the diff for a session.
 // Worktree sessions diff against their base SHA; non-worktree sessions diff HEAD.
-func (g *GitService) Diff(ctx context.Context, sessionID string) (DiffResult, error) {
+func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffResult, error) {
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return DiffResult{}, fmt.Errorf("session not found")
+		return gitops.DiffResult{}, fmt.Errorf("session not found")
 	}
 
 	// Worktree session: diff worktree against base SHA.
 	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
 		if _, statErr := os.Stat(wtPath); statErr != nil {
-			return DiffResult{}, fmt.Errorf("worktree directory not found")
+			return gitops.DiffResult{}, fmt.Errorf("worktree directory not found")
 		}
-		return WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha))
+		return gitops.WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha))
 	}
 
 	// Non-worktree session: diff work dir against HEAD.
 	workDir := dbSess.WorkDir
 	if _, statErr := os.Stat(workDir); statErr != nil {
-		return DiffResult{}, fmt.Errorf("work directory not found")
+		return gitops.DiffResult{}, fmt.Errorf("work directory not found")
 	}
-	return WorktreeDiff(workDir, "HEAD")
+	return gitops.WorktreeDiff(workDir, "HEAD")
 }
 
 // Commit stages all changes and commits in the session's work directory.
@@ -226,7 +227,7 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		return CommitResult{}, fmt.Errorf("work directory not found")
 	}
 
-	dirty, err := HasUncommittedChanges(dir)
+	dirty, err := gitops.HasUncommittedChanges(dir)
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("failed to check changes: %w", err)
 	}
@@ -234,11 +235,11 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		return CommitResult{}, fmt.Errorf("no uncommitted changes")
 	}
 
-	if err := AutoCommitAll(dir, message); err != nil {
+	if err := gitops.AutoCommitAll(dir, message); err != nil {
 		return CommitResult{}, fmt.Errorf("commit failed: %w", err)
 	}
 
-	hash, err := headCommitHash(dir)
+	hash, err := gitops.HeadCommitHash(dir)
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("commit succeeded but failed to get hash: %w", err)
 	}

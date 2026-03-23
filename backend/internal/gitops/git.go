@@ -1,4 +1,4 @@
-package session
+package gitops
 
 import (
 	"context"
@@ -57,7 +57,7 @@ func MergeBranch(projectDir, branch string) (string, error) {
 		return "", fmt.Errorf("git merge failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
-	hash, err := headCommitHash(projectDir)
+	hash, err := HeadCommitHash(projectDir)
 	if err != nil {
 		return "", fmt.Errorf("merge succeeded but failed to get commit hash: %w", err)
 	}
@@ -175,7 +175,8 @@ func GetExistingPR(projectDir, branch string) (string, error) {
 	return url, nil
 }
 
-func headCommitHash(dir string) (string, error) {
+// HeadCommitHash returns the HEAD commit hash for the given directory.
+func HeadCommitHash(dir string) (string, error) {
 	out, err := gitRun(dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse HEAD failed: %w: %s", err, strings.TrimSpace(string(out)))

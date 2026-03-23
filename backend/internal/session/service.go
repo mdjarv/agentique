@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -109,14 +110,14 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 			branch = "session-" + suffix
 		}
 		worktreeBranch = branch
-		worktreePath = WorktreePath(project.Name, branch)
+		worktreePath = gitops.WorktreePath(project.Name, branch)
 
-		baseSHA, shaErr := GetWorktreeBaseSHA(project.Path)
+		baseSHA, shaErr := gitops.GetWorktreeBaseSHA(project.Path)
 		if shaErr == nil {
 			worktreeBaseSHA = baseSHA
 		}
 
-		if err := CreateWorktree(project.Path, branch, worktreePath); err != nil {
+		if err := gitops.CreateWorktree(project.Path, branch, worktreePath); err != nil {
 			return CreateSessionResult{}, fmt.Errorf("failed to create worktree: %w", err)
 		}
 		workDir = worktreePath
@@ -150,7 +151,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	})
 	if err != nil {
 		if worktreePath != "" {
-			RemoveWorktree(project.Path, worktreePath)
+			gitops.RemoveWorktree(project.Path, worktreePath)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -209,7 +210,7 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
 		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr == nil {
-			RemoveWorktree(project.Path, wtPath)
+			gitops.RemoveWorktree(project.Path, wtPath)
 		}
 	}
 	return nil
@@ -261,10 +262,10 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 	if projErr == nil {
 		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-			RemoveWorktree(project.Path, wtPath)
+			gitops.RemoveWorktree(project.Path, wtPath)
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
-			if delErr := DeleteBranch(project.Path, branch); delErr != nil {
+			if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
 				log.Printf("session %s: branch delete: %v", sessionID, delErr)
 			}
 		}
@@ -361,7 +362,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 			return nil, fmt.Errorf("project not found: %w", projErr)
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
-			if err := RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
+			if err := gitops.RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
 				log.Printf("session %s: worktree restore failed, falling back to project root: %v", sessionID, err)
 				workDir = project.Path
 			}

@@ -1,4 +1,4 @@
-package session
+package gitops
 
 import (
 	"os"
@@ -6,40 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 )
-
-// initGitRepo creates a temporary git repo with one commit so worktrees can be created.
-func initGitRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test",
-			"GIT_AUTHOR_EMAIL=test@test.com",
-			"GIT_COMMITTER_NAME=test",
-			"GIT_COMMITTER_EMAIL=test@test.com",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v failed: %v: %s", args, err, string(out))
-		}
-	}
-
-	run("init")
-	run("checkout", "-b", "main")
-
-	// Create a file and commit so HEAD exists.
-	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hello"), 0644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	run("add", ".")
-	run("commit", "-m", "initial")
-
-	return dir
-}
 
 func TestCreateWorktree(t *testing.T) {
 	repoDir := initGitRepo(t)
@@ -97,9 +63,9 @@ func TestSanitizeBranch(t *testing.T) {
 		{"a/b/c", "a-b-c"},
 	}
 	for _, tt := range tests {
-		got := sanitizeBranch(tt.input)
+		got := SanitizeBranch(tt.input)
 		if got != tt.want {
-			t.Errorf("sanitizeBranch(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("SanitizeBranch(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
@@ -156,10 +122,10 @@ func TestWorktreeDiff_WithChanges(t *testing.T) {
 	}
 
 	// Make changes in the worktree.
-	gitRun := func(dir string, args ...string) {
+	wtGitRun := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
+		cmd.Dir = wtPath
 		cmd.Env = append(os.Environ(),
 			"GIT_AUTHOR_NAME=test",
 			"GIT_AUTHOR_EMAIL=test@test.com",
@@ -178,8 +144,8 @@ func TestWorktreeDiff_WithChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wtPath, "new.txt"), []byte("new file\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	gitRun(wtPath, "add", ".")
-	gitRun(wtPath, "commit", "-m", "changes")
+	wtGitRun("add", ".")
+	wtGitRun("commit", "-m", "changes")
 
 	result, err := WorktreeDiff(wtPath, baseSHA)
 	if err != nil {
