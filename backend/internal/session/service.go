@@ -25,12 +25,14 @@ type SessionInfo struct {
 
 // CreateSessionParams holds client-provided parameters for creating a session.
 type CreateSessionParams struct {
-	ProjectID string
-	Name      string
-	Worktree  bool
-	Branch    string
-	Model     string
-	RequestID string // used as fallback branch name suffix
+	ProjectID   string
+	Name        string
+	Worktree    bool
+	Branch      string
+	Model       string
+	PlanMode    bool
+	AutoApprove bool
+	RequestID   string // used as fallback branch name suffix
 }
 
 // CreateSessionResult is the wire type returned after session creation.
@@ -132,6 +134,14 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 			RemoveWorktree(project.Path, worktreePath)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Apply initial permission settings.
+	if p.PlanMode {
+		_ = sess.SetPermissionMode("plan")
+	}
+	if p.AutoApprove {
+		sess.SetAutoApprove(true)
 	}
 
 	dbSess, dbErr := s.queries.GetSession(ctx, sess.ID)

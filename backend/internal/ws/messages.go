@@ -39,11 +39,13 @@ type ProjectSubscribePayload struct {
 }
 
 type SessionCreatePayload struct {
-	ProjectID string `json:"projectId"`
-	Name      string `json:"name"`
-	Worktree  bool   `json:"worktree"`
-	Branch    string `json:"branch"`
-	Model     string `json:"model"`
+	ProjectID   string `json:"projectId"`
+	Name        string `json:"name"`
+	Worktree    bool   `json:"worktree"`
+	Branch      string `json:"branch"`
+	Model       string `json:"model"`
+	PlanMode    bool   `json:"planMode"`
+	AutoApprove bool   `json:"autoApprove"`
 }
 
 type SessionCreateResult struct {

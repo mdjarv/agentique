@@ -177,7 +177,10 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 				if (!sessionId || state === "draft") {
 					const worktree = session?.meta.worktree ?? false;
 					const draftId = sessionId;
-					const realId = await createSession(ws, projectId, "", worktree);
+					const realId = await createSession(ws, projectId, "", worktree, {
+						planMode: session?.planMode,
+						autoApprove: session?.autoApprove,
+					});
 					if (draftId) {
 						useChatStore.getState().removeSession(draftId);
 					}
@@ -210,7 +213,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
 	const createSessionCb = useCallback(
 		async (name: string, worktree: boolean, branch?: string) => {
-			return createSession(ws, projectId, name, worktree, branch);
+			return createSession(ws, projectId, name, worktree, { branch });
 		},
 		[projectId, ws],
 	);

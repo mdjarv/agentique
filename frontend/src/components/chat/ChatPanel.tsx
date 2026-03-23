@@ -37,25 +37,32 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	);
 
 	const ws = useWebSocket();
+	const sessionState = activeSession?.meta.state ?? "disconnected";
+	const isDraft = sessionState === "draft";
 	const planMode = activeSession?.planMode ?? false;
 	const autoApprove = activeSession?.autoApprove ?? false;
 
 	const handlePlanModeChange = useCallback(
 		(enabled: boolean) => {
 			if (!activeSessionId) return;
-			const mode = enabled ? "plan" : "default";
-			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
 			useChatStore.getState().setSessionPlanMode(activeSessionId, enabled);
+			if (!isDraft) {
+				const mode = enabled ? "plan" : "default";
+				setPermissionMode(ws, activeSessionId, mode).catch(console.error);
+			}
 		},
-		[ws, activeSessionId],
+		[ws, activeSessionId, isDraft],
 	);
 
 	const handleAutoApproveChange = useCallback(
 		(enabled: boolean) => {
 			if (!activeSessionId) return;
-			setAutoApprove(ws, activeSessionId, enabled).catch(console.error);
+			useChatStore.getState().setSessionAutoApprove(activeSessionId, enabled);
+			if (!isDraft) {
+				setAutoApprove(ws, activeSessionId, enabled).catch(console.error);
+			}
 		},
-		[ws, activeSessionId],
+		[ws, activeSessionId, isDraft],
 	);
 
 	// Load history when switching to a session that hasn't been loaded yet
@@ -80,8 +87,6 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 		});
 	}, [activeSessionId, navigate, projectId]);
 
-	const sessionState = activeSession?.meta.state ?? "disconnected";
-	const isDraft = sessionState === "draft";
 	const resumePlaceholder = resumePlaceholders[sessionState];
 	const worktree = activeSession?.meta.worktree ?? false;
 

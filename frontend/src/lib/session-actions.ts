@@ -15,17 +15,31 @@ interface SessionCreateResult {
 	createdAt: string;
 }
 
+export interface CreateSessionOpts {
+	branch?: string;
+	model?: string;
+	planMode?: boolean;
+	autoApprove?: boolean;
+}
+
 export async function createSession(
 	ws: WsClient,
 	projectId: string,
 	name: string,
 	worktree: boolean,
-	branch?: string,
-	model?: string,
+	opts?: CreateSessionOpts,
 ): Promise<string> {
 	const result = await ws.request<SessionCreateResult>(
 		"session.create",
-		{ projectId, name, worktree, branch, model },
+		{
+			projectId,
+			name,
+			worktree,
+			branch: opts?.branch,
+			model: opts?.model,
+			planMode: opts?.planMode,
+			autoApprove: opts?.autoApprove,
+		},
 		120000,
 	);
 	const meta: SessionMetadata = {

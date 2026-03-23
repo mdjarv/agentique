@@ -35,12 +35,14 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 	}
 
 	result, err := c.svc.CreateSession(c.ctx, session.CreateSessionParams{
-		ProjectID: payload.ProjectID,
-		Name:      payload.Name,
-		Worktree:  payload.Worktree,
-		Branch:    payload.Branch,
-		Model:     payload.Model,
-		RequestID: msg.ID,
+		ProjectID:   payload.ProjectID,
+		Name:        payload.Name,
+		Worktree:    payload.Worktree,
+		Branch:      payload.Branch,
+		Model:       payload.Model,
+		PlanMode:    payload.PlanMode,
+		AutoApprove: payload.AutoApprove,
+		RequestID:   msg.ID,
 	})
 	if err != nil {
 		c.respond(msg.ID, nil, err.Error())
