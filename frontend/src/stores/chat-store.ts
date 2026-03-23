@@ -268,7 +268,7 @@ export const useChatStore = create<ChatState>((set) => ({
 				name: "New session",
 				state: "draft",
 				createdAt: new Date().toISOString(),
-				worktree: false,
+				worktree: true,
 			};
 			return {
 				sessions: {

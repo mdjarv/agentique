@@ -9,6 +9,7 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/google/uuid"
 )
 
 // SessionInfo is the wire type for session metadata sent to clients.
@@ -85,10 +86,8 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	if p.Worktree {
 		branch := p.Branch
 		if branch == "" {
-			branch = "session-" + p.RequestID
-			if len(branch) > 30 {
-				branch = branch[:30]
-			}
+			suffix := uuid.New().String()[:8]
+			branch = "session-" + suffix
 		}
 		worktreeBranch = branch
 		worktreePath = WorktreePath(project.Name, branch)
