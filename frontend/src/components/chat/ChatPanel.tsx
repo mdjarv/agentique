@@ -85,9 +85,17 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	const resumePlaceholder = resumePlaceholders[sessionState];
 	const worktree = activeSession?.meta.worktree ?? false;
 
+	if (!activeSession) {
+		return (
+			<div className="flex flex-col h-full items-center justify-center text-muted-foreground" data-project-id={projectId}>
+				<p className="text-sm">Select a session or start a new chat</p>
+			</div>
+		);
+	}
+
 	return (
 		<div className="flex flex-col h-full" data-project-id={projectId}>
-			{activeSession && activeSession.meta.state !== "draft" && (
+			{activeSession.meta.state !== "draft" && (
 				<SessionHeader session={activeSession} />
 			)}
 			<MessageList

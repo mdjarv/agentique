@@ -189,7 +189,12 @@ export function ProjectTreeItem({
 					<button
 						type="button"
 						onClick={handleNewSession}
-						className="flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+						className={cn(
+							"flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs transition-colors",
+							activeSessionId?.startsWith("draft-")
+								? "text-foreground bg-accent/70"
+								: "text-muted-foreground hover:text-foreground hover:bg-accent",
+						)}
 					>
 						<Plus className="h-3 w-3" />
 						<span>New chat</span>
