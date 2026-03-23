@@ -1,11 +1,11 @@
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { parseServerEvent } from "~/lib/events";
 import { createSession, stopSession } from "~/lib/session-actions";
 import { copyToClipboard, uuid } from "~/lib/utils";
 import {
   type Attachment,
-  type ChatEvent,
   type SessionMetadata,
   type Turn,
   useChatStore,
@@ -15,31 +15,10 @@ interface SessionListResult {
   sessions: SessionMetadata[];
 }
 
-interface HistoryEvent {
-  type: string;
-  content?: string;
-  id?: string;
-  toolUseId?: string;
-  name?: string;
-  input?: unknown;
-  costUsd?: number;
-  duration?: number;
-  usage?: { inputTokens: number; outputTokens: number };
-  stopReason?: string;
-  fatal?: boolean;
-}
-
-interface HistoryAttachment {
-  id: string;
-  name: string;
-  mimeType: string;
-  dataUrl: string;
-}
-
 interface HistoryTurn {
   prompt: string;
-  attachments?: HistoryAttachment[];
-  events: HistoryEvent[];
+  attachments?: Attachment[];
+  events: Record<string, unknown>[];
 }
 
 interface SessionHistoryResult {
@@ -50,27 +29,8 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
   return history.map((ht) => ({
     id: uuid(),
     prompt: ht.prompt,
-    attachments: (ht.attachments ?? []).map((a) => ({
-      id: a.id,
-      name: a.name,
-      mimeType: a.mimeType,
-      dataUrl: a.dataUrl,
-    })),
-    events: ht.events.map(
-      (e): ChatEvent => ({
-        id: uuid(),
-        type: e.type as ChatEvent["type"],
-        content: e.content,
-        toolId: e.id || e.toolUseId,
-        toolName: e.name,
-        toolInput: e.input,
-        cost: e.costUsd,
-        duration: e.duration,
-        usage: e.usage,
-        stopReason: e.stopReason,
-        fatal: e.fatal,
-      }),
-    ),
+    attachments: ht.attachments ?? [],
+    events: ht.events.map(parseServerEvent),
     complete: ht.events.some((e) => e.type === "result"),
   }));
 }
@@ -102,20 +62,8 @@ export function useChatSession(projectId: string) {
     // Push handlers for live events (broadcast to all project clients).
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
-      const event = payload.event;
-      useChatStore.getState().appendEvent(payload.sessionId, {
-        id: uuid(),
-        type: event.type,
-        content: event.content,
-        toolId: event.id || event.toolUseId,
-        toolName: event.name,
-        toolInput: event.input,
-        cost: event.costUsd,
-        duration: event.duration,
-        usage: event.usage,
-        stopReason: event.stopReason,
-        fatal: event.fatal,
-      });
+      const event = parseServerEvent(payload.event);
+      useChatStore.getState().appendEvent(payload.sessionId, event);
 
       if (event.type === "result") {
         useChatStore.getState().completeTurn(payload.sessionId);

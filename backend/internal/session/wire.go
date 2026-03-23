@@ -19,21 +19,21 @@ type WireThinkingEvent struct {
 }
 
 type WireToolUseEvent struct {
-	Type  string          `json:"type"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	ToolID    string          `json:"toolId"`
+	ToolName  string          `json:"toolName"`
+	ToolInput json.RawMessage `json:"toolInput"`
 }
 
 type WireToolResultEvent struct {
-	Type      string `json:"type"`
-	ToolUseID string `json:"toolUseId"`
-	Content   string `json:"content"`
+	Type    string `json:"type"`
+	ToolID  string `json:"toolId"`
+	Content string `json:"content"`
 }
 
 type WireResultEvent struct {
 	Type       string  `json:"type"`
-	CostUSD    float64 `json:"costUsd"`
+	Cost       float64 `json:"cost"`
 	Duration   int64   `json:"duration"`
 	Usage      any     `json:"usage"`
 	StopReason string  `json:"stopReason"`
@@ -61,13 +61,13 @@ func ToWireEvent(event claudecli.Event) any {
 	case *claudecli.ThinkingEvent:
 		return WireThinkingEvent{Type: "thinking", Content: e.Content}
 	case *claudecli.ToolUseEvent:
-		return WireToolUseEvent{Type: "tool_use", ID: e.ID, Name: e.Name, Input: e.Input}
+		return WireToolUseEvent{Type: "tool_use", ToolID: e.ID, ToolName: e.Name, ToolInput: e.Input}
 	case *claudecli.ToolResultEvent:
-		return WireToolResultEvent{Type: "tool_result", ToolUseID: e.ToolUseID, Content: e.Content}
+		return WireToolResultEvent{Type: "tool_result", ToolID: e.ToolUseID, Content: e.Content}
 	case *claudecli.ResultEvent:
 		return WireResultEvent{
 			Type:       "result",
-			CostUSD:    e.CostUSD,
+			Cost:       e.CostUSD,
 			Duration:   e.Duration.Milliseconds(),
 			Usage:      e.Usage,
 			StopReason: e.StopReason,
