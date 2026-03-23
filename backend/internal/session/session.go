@@ -288,6 +288,20 @@ func (s *Session) Interrupt() error {
 	return nil
 }
 
+// SetModel changes the model for this session. Only allowed when idle.
+func (s *Session) SetModel(model string) error {
+	s.mu.Lock()
+	if s.state == StateRunning {
+		s.mu.Unlock()
+		return fmt.Errorf("cannot change model while running")
+	}
+	cli := s.cliSess
+	s.mu.Unlock()
+
+	cli.SetModel(resolveModel(model))
+	return nil
+}
+
 // Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
 	s.mu.Lock()

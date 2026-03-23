@@ -39,6 +39,7 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		Name:      payload.Name,
 		Worktree:  payload.Worktree,
 		Branch:    payload.Branch,
+		Model:     payload.Model,
 		RequestID: msg.ID,
 	})
 	if err != nil {
@@ -202,6 +203,23 @@ func (c *conn) handleSessionDelete(msg ClientMessage) {
 		return
 	}
 	if err := c.svc.DeleteSession(c.ctx, payload.SessionID); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
+func (c *conn) handleSessionSetModel(msg ClientMessage) {
+	var payload SessionSetModelPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" || payload.Model == "" {
+		c.respond(msg.ID, nil, "sessionId and model are required")
+		return
+	}
+	if err := c.svc.SetSessionModel(c.ctx, payload.SessionID, payload.Model); err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
 	}

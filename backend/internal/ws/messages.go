@@ -43,12 +43,14 @@ type SessionCreatePayload struct {
 	Name      string `json:"name"`
 	Worktree  bool   `json:"worktree"`
 	Branch    string `json:"branch"`
+	Model     string `json:"model"`
 }
 
 type SessionCreateResult struct {
 	SessionID      string `json:"sessionId"`
 	Name           string `json:"name"`
 	State          string `json:"state"`
+	Model          string `json:"model"`
 	WorktreePath   string `json:"worktreePath,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	CreatedAt      string `json:"createdAt"`
@@ -68,6 +70,7 @@ type SessionInfo struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	State          string `json:"state"`
+	Model          string `json:"model"`
 	WorktreePath   string `json:"worktreePath,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	CreatedAt      string `json:"createdAt"`
@@ -127,4 +130,9 @@ type SessionCreatePRPayload struct {
 
 type SessionDeletePayload struct {
 	SessionID string `json:"sessionId"`
+}
+
+type SessionSetModelPayload struct {
+	SessionID string `json:"sessionId"`
+	Model     string `json:"model"`
 }

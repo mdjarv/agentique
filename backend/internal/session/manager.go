@@ -27,6 +27,7 @@ type CreateParams struct {
 	WorktreePath    string
 	WorktreeBranch  string
 	WorktreeBaseSHA string
+	Model           string
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -48,10 +49,11 @@ func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
 func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
+	model := resolveModel(params.Model)
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(params.WorkDir),
-		claudecli.WithModel(claudecli.ModelOpus),
+		claudecli.WithModel(model),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
 	)
 	if err != nil {
@@ -78,6 +80,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 			Valid:  params.WorktreeBaseSHA != "",
 		},
 		State: StateIdle,
+		Model: params.Model,
 	})
 	if dbErr != nil {
 		cliSess.Close()
@@ -101,11 +104,11 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
-func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projectID, workDir string) (*Session, error) {
+func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projectID, workDir, model string) (*Session, error) {
 	client := claudecli.New()
 	cliSess, err := client.Connect(ctx,
 		claudecli.WithWorkDir(workDir),
-		claudecli.WithModel(claudecli.ModelOpus),
+		claudecli.WithModel(resolveModel(model)),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
 		claudecli.WithResume(claudeSessionID),
 	)
@@ -254,5 +257,17 @@ func (m *Manager) CloseAll() {
 func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	return func(pushType string, payload any) {
 		m.broadcaster.Broadcast(projectID, pushType, payload)
+	}
+}
+
+// resolveModel maps a string model name to a claudecli.Model constant.
+func resolveModel(name string) claudecli.Model {
+	switch name {
+	case "haiku":
+		return claudecli.ModelHaiku
+	case "sonnet":
+		return claudecli.ModelSonnet
+	default:
+		return claudecli.ModelOpus
 	}
 }

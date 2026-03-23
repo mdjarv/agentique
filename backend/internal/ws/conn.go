@@ -96,6 +96,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionCreatePR(msg)
 	case "session.delete":
 		c.handleSessionDelete(msg)
+	case "session.set-model":
+		c.handleSessionSetModel(msg)
 	default:
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}

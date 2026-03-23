@@ -45,6 +45,7 @@ export interface SessionMetadata {
 	id: string;
 	name: string;
 	state: SessionState;
+	model?: string;
 	worktreePath?: string;
 	worktreeBranch?: string;
 	createdAt: string;
@@ -69,6 +70,7 @@ interface ChatState {
 	setActiveSessionId: (id: string | null) => void;
 	setSessionState: (sessionId: string, state: SessionState) => void;
 	setSessionName: (sessionId: string, name: string) => void;
+	setSessionModel: (sessionId: string, model: string) => void;
 
 	// Draft session management
 	createDraft: (projectId: string) => void;
@@ -186,6 +188,21 @@ export const useChatStore = create<ChatState>((set) => ({
 					[sessionId]: {
 						...session,
 						meta: { ...session.meta, name },
+					},
+				},
+			};
+		}),
+
+	setSessionModel: (sessionId, model) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: {
+						...session,
+						meta: { ...session.meta, model },
 					},
 				},
 			};

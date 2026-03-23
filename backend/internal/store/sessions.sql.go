@@ -11,8 +11,8 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model
 `
 
 type CreateSessionParams struct {
@@ -24,6 +24,7 @@ type CreateSessionParams struct {
 	WorktreeBranch  sql.NullString `json:"worktree_branch"`
 	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
 	State           string         `json:"state"`
+	Model           string         `json:"model"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -36,6 +37,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.WorktreeBranch,
 		arg.WorktreeBaseSha,
 		arg.State,
+		arg.Model,
 	)
 	var i Session
 	err := row.Scan(
@@ -50,6 +52,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.UpdatedAt,
 		&i.ClaudeSessionID,
 		&i.WorktreeBaseSha,
+		&i.Model,
 	)
 	return i, err
 }
@@ -64,7 +67,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -82,12 +85,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.UpdatedAt,
 		&i.ClaudeSessionID,
 		&i.WorktreeBaseSha,
+		&i.Model,
 	)
 	return i, err
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -111,6 +115,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.UpdatedAt,
 			&i.ClaudeSessionID,
 			&i.WorktreeBaseSha,
+			&i.Model,
 		); err != nil {
 			return nil, err
 		}
@@ -139,6 +144,20 @@ func (q *Queries) UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSes
 	return err
 }
 
+const updateSessionModel = `-- name: UpdateSessionModel :exec
+UPDATE sessions SET model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateSessionModelParams struct {
+	Model string `json:"model"`
+	ID    string `json:"id"`
+}
+
+func (q *Queries) UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionModel, arg.Model, arg.ID)
+	return err
+}
+
 const updateSessionName = `-- name: UpdateSessionName :exec
 UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `
@@ -164,19 +183,5 @@ type UpdateSessionStateParams struct {
 
 func (q *Queries) UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error {
 	_, err := q.db.ExecContext(ctx, updateSessionState, arg.State, arg.ID)
-	return err
-}
-
-const updateWorktreeBaseSha = `-- name: UpdateWorktreeBaseSha :exec
-UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
-`
-
-type UpdateWorktreeBaseShaParams struct {
-	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
-	ID              string         `json:"id"`
-}
-
-func (q *Queries) UpdateWorktreeBaseSha(ctx context.Context, arg UpdateWorktreeBaseShaParams) error {
-	_, err := q.db.ExecContext(ctx, updateWorktreeBaseSha, arg.WorktreeBaseSha, arg.ID)
 	return err
 }

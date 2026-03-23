@@ -16,6 +16,7 @@ type SessionInfo struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	State          string `json:"state"`
+	Model          string `json:"model"`
 	WorktreePath   string `json:"worktreePath,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	CreatedAt      string `json:"createdAt"`
@@ -27,6 +28,7 @@ type CreateSessionParams struct {
 	Name      string
 	Worktree  bool
 	Branch    string
+	Model     string
 	RequestID string // used as fallback branch name suffix
 }
 
@@ -35,6 +37,7 @@ type CreateSessionResult struct {
 	SessionID      string `json:"sessionId"`
 	Name           string `json:"name"`
 	State          string `json:"state"`
+	Model          string `json:"model"`
 	WorktreePath   string `json:"worktreePath,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	CreatedAt      string `json:"createdAt"`
@@ -111,6 +114,11 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		name = fmt.Sprintf("Session %d", count+1)
 	}
 
+	model := p.Model
+	if model == "" {
+		model = "opus"
+	}
+
 	sess, err := s.mgr.Create(ctx, CreateParams{
 		ProjectID:       p.ProjectID,
 		Name:            name,
@@ -118,6 +126,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		WorktreePath:    worktreePath,
 		WorktreeBranch:  worktreeBranch,
 		WorktreeBaseSHA: worktreeBaseSHA,
+		Model:           model,
 	})
 	if err != nil {
 		if worktreePath != "" {
@@ -136,6 +145,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		SessionID:      sess.ID,
 		Name:           name,
 		State:          sess.State(),
+		Model:          model,
 		WorktreePath:   worktreePath,
 		WorktreeBranch: worktreeBranch,
 		CreatedAt:      createdAt,
@@ -183,6 +193,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			ID:        ss.ID,
 			Name:      ss.Name,
 			State:     ss.State,
+			Model:     ss.Model,
 			CreatedAt: ss.CreatedAt,
 		}
 		if ss.WorktreePath.Valid {
@@ -370,6 +381,22 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// SetSessionModel changes the model for a live session.
+func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	if err := sess.SetModel(model); err != nil {
+		return err
+	}
+	_ = s.queries.UpdateSessionModel(ctx, store.UpdateSessionModelParams{
+		Model: model,
+		ID:    sessionID,
+	})
+	return nil
+}
+
 // InterruptSession stops the current generation without killing the session.
 func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
 	sess := s.mgr.Get(sessionID)
@@ -426,7 +453,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 	}
 
-	return s.mgr.Resume(ctx, sessionID, dbSess.ClaudeSessionID.String, dbSess.ProjectID, workDir)
+	return s.mgr.Resume(ctx, sessionID, dbSess.ClaudeSessionID.String, dbSess.ProjectID, workDir, dbSess.Model)
 }
 
 // autoName calls Haiku to generate a short title and broadcasts the rename.
