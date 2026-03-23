@@ -1,3 +1,7 @@
+# List available tasks
+default:
+    @just --list
+
 # Development
 dev-backend:
     cd backend && go run ./cmd/agentique -addr :9201
