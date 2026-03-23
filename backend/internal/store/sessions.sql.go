@@ -11,18 +11,19 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, state)
-VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha
 `
 
 type CreateSessionParams struct {
-	ID             string         `json:"id"`
-	ProjectID      string         `json:"project_id"`
-	Name           string         `json:"name"`
-	WorkDir        string         `json:"work_dir"`
-	WorktreePath   sql.NullString `json:"worktree_path"`
-	WorktreeBranch sql.NullString `json:"worktree_branch"`
-	State          string         `json:"state"`
+	ID              string         `json:"id"`
+	ProjectID       string         `json:"project_id"`
+	Name            string         `json:"name"`
+	WorkDir         string         `json:"work_dir"`
+	WorktreePath    sql.NullString `json:"worktree_path"`
+	WorktreeBranch  sql.NullString `json:"worktree_branch"`
+	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
+	State           string         `json:"state"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -33,6 +34,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.WorkDir,
 		arg.WorktreePath,
 		arg.WorktreeBranch,
+		arg.WorktreeBaseSha,
 		arg.State,
 	)
 	var i Session
@@ -47,6 +49,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClaudeSessionID,
+		&i.WorktreeBaseSha,
 	)
 	return i, err
 }
@@ -61,7 +64,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -78,12 +81,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClaudeSessionID,
+		&i.WorktreeBaseSha,
 	)
 	return i, err
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -106,6 +110,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ClaudeSessionID,
+			&i.WorktreeBaseSha,
 		); err != nil {
 			return nil, err
 		}
@@ -159,5 +164,19 @@ type UpdateSessionStateParams struct {
 
 func (q *Queries) UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error {
 	_, err := q.db.ExecContext(ctx, updateSessionState, arg.State, arg.ID)
+	return err
+}
+
+const updateWorktreeBaseSha = `-- name: UpdateWorktreeBaseSha :exec
+UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateWorktreeBaseShaParams struct {
+	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
+	ID              string         `json:"id"`
+}
+
+func (q *Queries) UpdateWorktreeBaseSha(ctx context.Context, arg UpdateWorktreeBaseShaParams) error {
+	_, err := q.db.ExecContext(ctx, updateWorktreeBaseSha, arg.WorktreeBaseSha, arg.ID)
 	return err
 }

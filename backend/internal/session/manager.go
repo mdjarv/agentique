@@ -3,7 +3,9 @@ package session
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -19,11 +21,12 @@ type Broadcaster interface {
 
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
-	ProjectID      string
-	Name           string
-	WorkDir        string
-	WorktreePath   string
-	WorktreeBranch string
+	ProjectID       string
+	Name            string
+	WorkDir         string
+	WorktreePath    string
+	WorktreeBranch  string
+	WorktreeBaseSHA string
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -69,6 +72,10 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		WorktreeBranch: sql.NullString{
 			String: params.WorktreeBranch,
 			Valid:  params.WorktreeBranch != "",
+		},
+		WorktreeBaseSha: sql.NullString{
+			String: params.WorktreeBaseSHA,
+			Valid:  params.WorktreeBaseSHA != "",
 		},
 		State: StateIdle,
 	})
@@ -188,6 +195,30 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	}
 
 	return sessions, nil
+}
+
+// GetDiff returns the diff for a worktree session.
+func (m *Manager) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
+	dbSess, err := m.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return DiffResult{}, fmt.Errorf("session not found: %w", err)
+	}
+
+	if !dbSess.WorktreePath.Valid || dbSess.WorktreePath.String == "" {
+		return DiffResult{}, fmt.Errorf("session has no worktree")
+	}
+
+	worktreePath := dbSess.WorktreePath.String
+	if _, err := os.Stat(worktreePath); err != nil {
+		return DiffResult{}, fmt.Errorf("worktree path not accessible: %w", err)
+	}
+
+	baseSHA := ""
+	if dbSess.WorktreeBaseSha.Valid {
+		baseSHA = dbSess.WorktreeBaseSha.String
+	}
+
+	return WorktreeDiff(worktreePath, baseSHA)
 }
 
 // CloseAll gracefully closes all live sessions with a per-session timeout.

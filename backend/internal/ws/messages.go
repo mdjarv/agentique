@@ -45,6 +45,15 @@ type SessionCreatePayload struct {
 	Branch    string `json:"branch"`
 }
 
+type SessionCreateResult struct {
+	SessionID      string `json:"sessionId"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	WorktreePath   string `json:"worktreePath,omitempty"`
+	WorktreeBranch string `json:"worktreeBranch,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+}
+
 type SessionQueryPayload struct {
 	SessionID   string                    `json:"sessionId"`
 	Prompt      string                    `json:"prompt"`
@@ -55,10 +64,48 @@ type SessionListPayload struct {
 	ProjectID string `json:"projectId"`
 }
 
+type SessionInfo struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	WorktreePath   string `json:"worktreePath,omitempty"`
+	WorktreeBranch string `json:"worktreeBranch,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+type SessionListResult struct {
+	Sessions []SessionInfo `json:"sessions"`
+}
+
 type SessionStopPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// --- Push event payloads ---
+
+type SessionEventPayload struct {
+	SessionID string `json:"sessionId"`
+	Event     any    `json:"event"`
+}
+
+type SessionStatePayload struct {
+	SessionID string `json:"sessionId"`
+	State     string `json:"state"`
+}
+
+type SessionRenamedPayload struct {
+	SessionID string `json:"sessionId"`
+	Name      string `json:"name"`
+}
+
 type SessionHistoryPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SessionHistoryResult struct {
+	Turns []session.HistoryTurn `json:"turns"`
+}
+
+type SessionDiffPayload struct {
 	SessionID string `json:"sessionId"`
 }

@@ -78,6 +78,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	workDir := project.Path
 	var worktreePath, worktreeBranch string
 
+	var worktreeBaseSHA string
 	if p.Worktree {
 		branch := p.Branch
 		if branch == "" {
@@ -88,6 +89,12 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		}
 		worktreeBranch = branch
 		worktreePath = WorktreePath(project.Name, branch)
+
+		baseSHA, shaErr := GetWorktreeBaseSHA(project.Path)
+		if shaErr == nil {
+			worktreeBaseSHA = baseSHA
+		}
+
 		if err := CreateWorktree(project.Path, branch, worktreePath); err != nil {
 			return CreateSessionResult{}, fmt.Errorf("failed to create worktree: %w", err)
 		}
@@ -105,11 +112,12 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	sess, err := s.mgr.Create(ctx, CreateParams{
-		ProjectID:      p.ProjectID,
-		Name:           name,
-		WorkDir:        workDir,
-		WorktreePath:   worktreePath,
-		WorktreeBranch: worktreeBranch,
+		ProjectID:       p.ProjectID,
+		Name:            name,
+		WorkDir:         workDir,
+		WorktreePath:    worktreePath,
+		WorktreeBranch:  worktreeBranch,
+		WorktreeBaseSHA: worktreeBaseSHA,
 	})
 	if err != nil {
 		if worktreePath != "" {
@@ -196,6 +204,27 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string) (HistoryResu
 		return HistoryResult{}, err
 	}
 	return HistoryResult{Turns: turns}, nil
+}
+
+// GetDiff returns the diff of a worktree session against its base commit.
+func (s *Service) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return DiffResult{}, fmt.Errorf("session not found")
+	}
+	if !dbSess.WorktreePath.Valid || dbSess.WorktreePath.String == "" {
+		return DiffResult{}, fmt.Errorf("session has no worktree")
+	}
+	if _, statErr := os.Stat(dbSess.WorktreePath.String); statErr != nil {
+		return DiffResult{}, fmt.Errorf("worktree directory not found")
+	}
+
+	baseSHA := ""
+	if dbSess.WorktreeBaseSha.Valid {
+		baseSHA = dbSess.WorktreeBaseSha.String
+	}
+
+	return WorktreeDiff(dbSess.WorktreePath.String, baseSHA)
 }
 
 // resumeSession attempts to resume a non-live session from its Claude session ID.

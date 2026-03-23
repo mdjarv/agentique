@@ -112,3 +112,113 @@ func TestWorktreePath(t *testing.T) {
 		t.Errorf("WorktreePath = %q, want %q", got, want)
 	}
 }
+
+func TestGetWorktreeBaseSHA(t *testing.T) {
+	dir := initGitRepo(t)
+
+	sha, err := GetWorktreeBaseSHA(dir)
+	if err != nil {
+		t.Fatalf("GetWorktreeBaseSHA: %v", err)
+	}
+	if len(sha) != 40 {
+		t.Fatalf("expected 40-char SHA, got %q (len=%d)", sha, len(sha))
+	}
+}
+
+func TestWorktreeDiff_NoChanges(t *testing.T) {
+	dir := initGitRepo(t)
+
+	baseSHA, err := GetWorktreeBaseSHA(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := WorktreeDiff(dir, baseSHA)
+	if err != nil {
+		t.Fatalf("WorktreeDiff: %v", err)
+	}
+	if result.HasDiff {
+		t.Error("expected no diff for unchanged repo")
+	}
+}
+
+func TestWorktreeDiff_WithChanges(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	baseSHA, err := GetWorktreeBaseSHA(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wtPath := filepath.Join(t.TempDir(), "diff-wt")
+	if err := CreateWorktree(repoDir, "diff-test", wtPath); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Make changes in the worktree.
+	gitRun := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, string(out))
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(wtPath, "README"), []byte("changed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, "new.txt"), []byte("new file\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(wtPath, "add", ".")
+	gitRun(wtPath, "commit", "-m", "changes")
+
+	result, err := WorktreeDiff(wtPath, baseSHA)
+	if err != nil {
+		t.Fatalf("WorktreeDiff: %v", err)
+	}
+	if !result.HasDiff {
+		t.Fatal("expected diff")
+	}
+	if len(result.Files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(result.Files))
+	}
+	if result.Summary == "" {
+		t.Error("expected non-empty summary")
+	}
+	if result.Diff == "" {
+		t.Error("expected non-empty diff")
+	}
+
+	statusByPath := make(map[string]string)
+	for _, f := range result.Files {
+		statusByPath[f.Path] = f.Status
+	}
+	if statusByPath["README"] != "modified" {
+		t.Errorf("README: expected modified, got %q", statusByPath["README"])
+	}
+	if statusByPath["new.txt"] != "added" {
+		t.Errorf("new.txt: expected added, got %q", statusByPath["new.txt"])
+	}
+}
+
+func TestWorktreeDiff_EmptyBaseSHA(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Empty baseSHA falls back to HEAD — no diff when comparing HEAD to HEAD.
+	result, err := WorktreeDiff(dir, "")
+	if err != nil {
+		t.Fatalf("WorktreeDiff: %v", err)
+	}
+	if result.HasDiff {
+		t.Error("expected no diff when comparing HEAD to HEAD")
+	}
+}

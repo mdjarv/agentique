@@ -30,6 +30,7 @@ type Session struct {
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
 	ClaudeSessionID sql.NullString `json:"claude_session_id"`
+	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
 }
 
 type SessionEvent struct {
