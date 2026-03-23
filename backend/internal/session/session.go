@@ -58,6 +58,7 @@ type Session struct {
 	queries          *store.Queries
 	broadcast        func(pushType string, payload any)
 	pendingApprovals map[string]*pendingApproval
+	autoApprove      bool
 }
 
 type sessionParams struct {
@@ -317,6 +318,11 @@ func (s *Session) SetPermissionMode(mode string) error {
 		m = claudecli.PermissionDefault
 	}
 	cli.SetPermissionMode(m)
+
+	s.mu.Lock()
+	s.autoApprove = mode == "bypassPermissions"
+	s.mu.Unlock()
+
 	return nil
 }
 
@@ -355,6 +361,13 @@ func (s *Session) SetModel(model string) error {
 // claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
 // this blocks, the SDK will unblock on context cancellation.
 func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	s.mu.Lock()
+	bypass := s.autoApprove
+	s.mu.Unlock()
+	if bypass {
+		return &claudecli.PermissionResponse{Allow: true}, nil
+	}
+
 	approvalID := uuid.New().String()
 	ch := make(chan *claudecli.PermissionResponse, 1)
 
