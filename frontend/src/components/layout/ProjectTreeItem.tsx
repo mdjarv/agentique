@@ -22,7 +22,11 @@ import {
 } from "~/components/ui/alert-dialog";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteProject } from "~/lib/api";
-import { interruptSession, stopSession } from "~/lib/session-actions";
+import {
+	deleteSession,
+	interruptSession,
+	stopSession,
+} from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
 import { cn, relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -98,6 +102,11 @@ export function ProjectTreeItem({
 		} else {
 			await stopSession(ws, sessionId);
 		}
+	};
+
+	const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+		e.stopPropagation();
+		await deleteSession(ws, sessionId);
 	};
 
 	const handleSessionClick = (sessionId: string) => {
@@ -227,6 +236,14 @@ export function ProjectTreeItem({
 											<Square className="h-3 w-3" />
 										</button>
 									)}
+									<button
+										type="button"
+										aria-label="Delete session"
+										onClick={(e) => handleDeleteSession(e, id)}
+										className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
+									>
+										<Trash2 className="h-3 w-3" />
+									</button>
 								</div>
 							);
 						})}
