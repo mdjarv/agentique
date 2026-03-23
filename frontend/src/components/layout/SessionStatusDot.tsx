@@ -26,7 +26,7 @@ export function SessionStatusDot({
 	const showAttention = hasUnseenCompletion && state === "idle";
 	const waiting = hasPendingApproval;
 	const color = waiting
-		? "bg-[#e0af68]"
+		? "bg-[#bb9af7]"
 		: showAttention
 			? "bg-[#73daca]"
 			: stateColors[state];

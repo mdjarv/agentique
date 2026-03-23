@@ -13,7 +13,7 @@ const stateConfig: Record<SessionState, { label: string; classes: string }> = {
 };
 
 const attentionConfig = { label: "New", classes: "text-[#73daca] bg-[#73daca]/20" };
-const waitingConfig = { label: "Wait", classes: "text-[#e0af68] bg-[#e0af68]/20" };
+const waitingConfig = { label: "Wait", classes: "text-[#bb9af7] bg-[#bb9af7]/20" };
 
 interface SessionStatusBadgeProps {
   state: SessionState;
