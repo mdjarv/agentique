@@ -15,18 +15,20 @@ type conn struct {
 	cancel context.CancelFunc
 	ws     *websocket.Conn
 	svc    *session.Service
+	gitSvc *session.GitService
 	hub    *Hub
 	sendCh chan any
 	mu     sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, hub *Hub) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, hub *Hub) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
 		ctx:    ctx,
 		cancel: cancel,
 		ws:     ws,
 		svc:    svc,
+		gitSvc: gitSvc,
 		hub:    hub,
 		sendCh: make(chan any, 64),
 	}

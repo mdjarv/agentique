@@ -14,8 +14,9 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket connections.
 type Handler struct {
-	Service *session.Service
-	Hub     *Hub
+	Service    *session.Service
+	GitService *session.GitService
+	Hub        *Hub
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -25,6 +26,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := newConn(r.Context(), wsConn, h.Service, h.Hub)
+	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.Hub)
 	c.run()
 }

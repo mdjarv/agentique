@@ -79,7 +79,6 @@ export interface PendingQuestion {
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
-  currentAssistantText: string;
   hasUnseenCompletion: boolean;
   pendingApproval: PendingApproval | null;
   pendingQuestion: PendingQuestion | null;
@@ -90,7 +89,6 @@ export interface SessionData {
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
   meta,
   turns: [],
-  currentAssistantText: "",
   hasUnseenCompletion: false,
   pendingApproval: null,
   pendingQuestion: null,
@@ -98,7 +96,41 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   autoApprove: false,
 });
 
-interface ChatState {
+// --- Immutable update helpers ---
+
+function updateSession(
+  s: ChatState,
+  sessionId: string,
+  patch: Partial<SessionData>,
+): Partial<ChatState> {
+  const session = s.sessions[sessionId];
+  if (!session) return s;
+  return {
+    sessions: {
+      ...s.sessions,
+      [sessionId]: { ...session, ...patch },
+    },
+  };
+}
+
+function updateMeta(
+  s: ChatState,
+  sessionId: string,
+  metaPatch: Partial<SessionMetadata>,
+): Partial<ChatState> {
+  const session = s.sessions[sessionId];
+  if (!session) return s;
+  return {
+    sessions: {
+      ...s.sessions,
+      [sessionId]: { ...session, meta: { ...session.meta, ...metaPatch } },
+    },
+  };
+}
+
+// --- Store ---
+
+export interface ChatState {
   sessions: Record<string, SessionData>;
   activeSessionId: string | null;
   historyLoading: Set<string>;
@@ -137,9 +169,6 @@ interface ChatState {
   resetProject: () => void;
 }
 
-// Use these with useChatStore((s) => ...) for direct access.
-// Avoid derived selectors that create new references.
-
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
   activeSessionId: null,
@@ -150,11 +179,7 @@ export const useChatStore = create<ChatState>((set) => ({
       const sessions = { ...s.sessions };
       for (const meta of metas) {
         if (sessions[meta.id]) {
-          const existing = sessions[meta.id] as SessionData;
-          sessions[meta.id] = {
-            ...existing,
-            meta,
-          };
+          sessions[meta.id] = { ...(sessions[meta.id] as SessionData), meta };
         } else {
           sessions[meta.id] = emptySessionData(meta);
         }
@@ -164,10 +189,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   addSession: (meta) =>
     set((s) => ({
-      sessions: {
-        ...s.sessions,
-        [meta.id]: emptySessionData(meta),
-      },
+      sessions: { ...s.sessions, [meta.id]: emptySessionData(meta) },
     })),
 
   removeSession: (id) =>
@@ -184,13 +206,7 @@ export const useChatStore = create<ChatState>((set) => ({
       if (id && s.sessions[id]) {
         return {
           activeSessionId: id,
-          sessions: {
-            ...s.sessions,
-            [id]: {
-              ...(s.sessions[id] as SessionData),
-              hasUnseenCompletion: false,
-            },
-          },
+          ...updateSession(s, id, { hasUnseenCompletion: false }),
         };
       }
       return { activeSessionId: id };
@@ -198,121 +214,31 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionState: (sessionId, state, hasDirtyWorktree) =>
     set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      const meta = { ...session.meta, state };
-      if (hasDirtyWorktree !== undefined) {
-        meta.hasDirtyWorktree = hasDirtyWorktree;
-      }
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, meta },
-        },
-      };
+      const patch: Partial<SessionMetadata> = { state };
+      if (hasDirtyWorktree !== undefined) patch.hasDirtyWorktree = hasDirtyWorktree;
+      return updateMeta(s, sessionId, patch);
     }),
 
-  setSessionName: (sessionId, name) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            meta: { ...session.meta, name },
-          },
-        },
-      };
-    }),
-
-  setSessionModel: (sessionId, model) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            meta: { ...session.meta, model },
-          },
-        },
-      };
-    }),
+  setSessionName: (sessionId, name) => set((s) => updateMeta(s, sessionId, { name })),
+  setSessionModel: (sessionId, model) => set((s) => updateMeta(s, sessionId, { model })),
 
   setPendingApproval: (sessionId, approval) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, pendingApproval: approval },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { pendingApproval: approval })),
 
   clearPendingApproval: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, pendingApproval: null },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { pendingApproval: null })),
 
   setPendingQuestion: (sessionId, question) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, pendingQuestion: question },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { pendingQuestion: question })),
 
   clearPendingQuestion: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, pendingQuestion: null },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { pendingQuestion: null })),
 
   setSessionPlanMode: (sessionId, planMode) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, planMode },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { planMode })),
 
   setSessionAutoApprove: (sessionId, autoApprove) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, autoApprove },
-        },
-      };
-    }),
+    set((s) => updateSession(s, sessionId, { autoApprove })),
 
   setHistoryLoading: (sessionId, loading) =>
     set((s) => {
@@ -330,14 +256,7 @@ export const useChatStore = create<ChatState>((set) => ({
       if (!session) return { historyLoading: nextLoading };
       return {
         historyLoading: nextLoading,
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            turns,
-            currentAssistantText: "",
-          },
-        },
+        ...updateSession(s, sessionId, { turns }),
       };
     }),
 
@@ -352,10 +271,7 @@ export const useChatStore = create<ChatState>((set) => ({
         worktree: true,
       };
       return {
-        sessions: {
-          ...s.sessions,
-          [draftId]: emptySessionData(meta),
-        },
+        sessions: { ...s.sessions, [draftId]: emptySessionData(meta) },
         activeSessionId: draftId,
       };
     }),
@@ -364,40 +280,25 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session || session.meta.state !== "draft") return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            meta: { ...session.meta, worktree },
-          },
-        },
-      };
+      return updateMeta(s, sessionId, { worktree });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            turns: [
-              ...session.turns,
-              {
-                id: uuid(),
-                prompt,
-                attachments: (attachments ?? []).map(({ previewUrl: _, ...rest }) => rest),
-                events: [],
-                complete: false,
-              },
-            ],
-            currentAssistantText: "",
+      return updateSession(s, sessionId, {
+        turns: [
+          ...session.turns,
+          {
+            id: uuid(),
+            prompt,
+            attachments: (attachments ?? []).map(({ previewUrl: _, ...rest }) => rest),
+            events: [],
+            complete: false,
           },
-        },
-      };
+        ],
+      });
     }),
 
   handleServerEvent: (sessionId, event) =>
@@ -414,42 +315,26 @@ export const useChatStore = create<ChatState>((set) => ({
         return s;
       }
 
-      const updatedTurn = {
+      turns[turns.length - 1] = {
         ...lastTurn,
         events: [...lastTurn.events, event],
         complete: lastTurn.complete || event.type === "result",
       };
-      turns[turns.length - 1] = updatedTurn;
-
-      let currentAssistantText = session.currentAssistantText;
-      if (event.type === "text" && event.content) {
-        currentAssistantText += event.content;
-      }
 
       const isResult = event.type === "result";
       const isViewing = s.activeSessionId === sessionId;
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: {
-            ...session,
-            turns,
-            currentAssistantText,
-            meta: isResult ? { ...session.meta, state: "idle" } : session.meta,
-            hasUnseenCompletion: isResult ? !isViewing : session.hasUnseenCompletion,
-          },
-        },
-      };
+      const patch: Partial<SessionData> = { turns };
+      if (isResult) patch.meta = { ...session.meta, state: "idle" };
+      if (isResult) patch.hasUnseenCompletion = !isViewing;
+
+      return updateSession(s, sessionId, patch);
     }),
 
   promoteDraft: (draftId, realSession) =>
     set((s) => {
       const { [draftId]: _, ...rest } = s.sessions;
       return {
-        sessions: {
-          ...rest,
-          [realSession.id]: emptySessionData(realSession),
-        },
+        sessions: { ...rest, [realSession.id]: emptySessionData(realSession) },
         activeSessionId: realSession.id,
       };
     }),

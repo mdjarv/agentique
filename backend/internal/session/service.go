@@ -56,7 +56,7 @@ type HistoryResult struct {
 	Turns []HistoryTurn `json:"turns"`
 }
 
-// Service encapsulates all session business logic.
+// Service encapsulates session lifecycle business logic.
 type Service struct {
 	mgr     *Manager
 	queries *store.Queries
@@ -147,7 +147,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	return CreateSessionResult{
 		SessionID:      sess.ID,
 		Name:           name,
-		State:          sess.State(),
+		State:          string(sess.State()),
 		Model:          model,
 		WorktreePath:   worktreePath,
 		WorktreeBranch: worktreeBranch,
@@ -192,20 +192,15 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 
 	infos := make([]SessionInfo, 0, len(sessions))
 	for _, ss := range sessions {
-		info := SessionInfo{
-			ID:        ss.ID,
-			Name:      ss.Name,
-			State:     ss.State,
-			Model:     ss.Model,
-			CreatedAt: ss.CreatedAt,
-		}
-		if ss.WorktreePath.Valid {
-			info.WorktreePath = ss.WorktreePath.String
-		}
-		if ss.WorktreeBranch.Valid {
-			info.WorktreeBranch = ss.WorktreeBranch.String
-		}
-		infos = append(infos, info)
+		infos = append(infos, SessionInfo{
+			ID:             ss.ID,
+			Name:           ss.Name,
+			State:          ss.State,
+			Model:          ss.Model,
+			WorktreePath:   nullStr(ss.WorktreePath),
+			WorktreeBranch: nullStr(ss.WorktreeBranch),
+			CreatedAt:      ss.CreatedAt,
+		})
 	}
 
 	return ListSessionsResult{Sessions: infos}, nil
@@ -218,165 +213,6 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string) (HistoryResu
 		return HistoryResult{}, err
 	}
 	return HistoryResult{Turns: turns}, nil
-}
-
-// MergeResult describes the outcome of a merge operation.
-type MergeResult struct {
-	Status        string   `json:"status"`
-	CommitHash    string   `json:"commitHash,omitempty"`
-	ConflictFiles []string `json:"conflictFiles,omitempty"`
-	Error         string   `json:"error,omitempty"`
-}
-
-// MergeSession merges a worktree session's branch into the project's main branch.
-func (s *Service) MergeSession(ctx context.Context, sessionID string, cleanup bool) (MergeResult, error) {
-	dbSess, err := s.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return MergeResult{}, fmt.Errorf("session not found")
-	}
-	if !dbSess.WorktreeBranch.Valid || dbSess.WorktreeBranch.String == "" {
-		return MergeResult{}, fmt.Errorf("session has no worktree branch")
-	}
-
-	project, err := s.queries.GetProject(ctx, dbSess.ProjectID)
-	if err != nil {
-		return MergeResult{}, fmt.Errorf("project not found")
-	}
-
-	if live := s.mgr.Get(sessionID); live != nil {
-		if err := live.TryLockForMerge(); err != nil {
-			return MergeResult{}, err
-		}
-		defer live.UnlockMerge(StateIdle)
-	}
-
-	dirty, err := HasUncommittedChanges(project.Path)
-	if err != nil {
-		return MergeResult{Status: "error", Error: err.Error()}, nil
-	}
-	if dirty {
-		return MergeResult{Status: "error", Error: "project root has uncommitted changes"}, nil
-	}
-
-	// Auto-commit uncommitted changes in the worktree before merging.
-	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		wtDirty, wtErr := HasUncommittedChanges(dbSess.WorktreePath.String)
-		if wtErr != nil {
-			log.Printf("session %s: failed to check worktree changes: %v", sessionID, wtErr)
-		}
-		if wtDirty {
-			if err := AutoCommitAll(dbSess.WorktreePath.String, "agentique: auto-commit before merge"); err != nil {
-				return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
-			}
-		}
-	}
-
-	branch := dbSess.WorktreeBranch.String
-	hash, mergeErr := MergeBranch(project.Path, branch)
-	if mergeErr != nil {
-		files, _ := MergeConflictFiles(project.Path)
-		_ = AbortMerge(project.Path)
-		if len(files) > 0 {
-			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
-		}
-		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
-	}
-
-	if cleanup {
-		if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
-		}
-		if delErr := DeleteBranch(project.Path, branch); delErr != nil {
-			log.Printf("session %s: branch delete after merge: %v", sessionID, delErr)
-		}
-		_ = s.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-			State: StateStopped,
-			ID:    sessionID,
-		})
-		s.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId": sessionID,
-			"state":     StateStopped,
-		})
-	}
-
-	return MergeResult{Status: "merged", CommitHash: hash}, nil
-}
-
-// CreatePRResult describes the outcome of a PR creation.
-type CreatePRResult struct {
-	Status string `json:"status"`
-	URL    string `json:"url,omitempty"`
-	Error  string `json:"error,omitempty"`
-}
-
-// CreatePRParams holds parameters for creating a PR.
-type CreatePRParams struct {
-	SessionID string
-	Title     string
-	Body      string
-}
-
-// CreatePR pushes the session branch and creates a GitHub PR.
-func (s *Service) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRResult, error) {
-	dbSess, err := s.queries.GetSession(ctx, p.SessionID)
-	if err != nil {
-		return CreatePRResult{}, fmt.Errorf("session not found")
-	}
-	if !dbSess.WorktreeBranch.Valid || dbSess.WorktreeBranch.String == "" {
-		return CreatePRResult{}, fmt.Errorf("session has no worktree branch")
-	}
-
-	project, err := s.queries.GetProject(ctx, dbSess.ProjectID)
-	if err != nil {
-		return CreatePRResult{}, fmt.Errorf("project not found")
-	}
-
-	if !HasGhCli() {
-		return CreatePRResult{Status: "error", Error: "gh CLI not installed"}, nil
-	}
-
-	hasOrigin, err := HasRemote(project.Path, "origin")
-	if err != nil {
-		return CreatePRResult{Status: "error", Error: err.Error()}, nil
-	}
-	if !hasOrigin {
-		return CreatePRResult{Status: "error", Error: "no origin remote configured"}, nil
-	}
-
-	branch := dbSess.WorktreeBranch.String
-
-	// Auto-commit uncommitted changes in worktree before pushing.
-	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		wtDirty, wtErr := HasUncommittedChanges(dbSess.WorktreePath.String)
-		if wtErr != nil {
-			log.Printf("session %s: failed to check worktree changes: %v", p.SessionID, wtErr)
-		}
-		if wtDirty {
-			if err := AutoCommitAll(dbSess.WorktreePath.String, "agentique: auto-commit before PR"); err != nil {
-				return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
-			}
-		}
-	}
-
-	if url, prErr := GetExistingPR(project.Path, branch); prErr == nil && url != "" {
-		return CreatePRResult{Status: "existing", URL: url}, nil
-	}
-
-	if err := PushBranch(project.Path, branch); err != nil {
-		return CreatePRResult{Status: "error", Error: err.Error()}, nil
-	}
-
-	title := p.Title
-	if title == "" {
-		title = dbSess.Name
-	}
-
-	url, err := CreatePR(project.Path, branch, title, p.Body)
-	if err != nil {
-		return CreatePRResult{Status: "error", Error: err.Error()}, nil
-	}
-
-	return CreatePRResult{Status: "created", URL: url}, nil
 }
 
 // DeleteSession stops a live session, removes its worktree/branch, and deletes from DB.
@@ -392,11 +228,11 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 	if projErr == nil {
-		if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
+		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+			RemoveWorktree(project.Path, wtPath)
 		}
-		if dbSess.WorktreeBranch.Valid && dbSess.WorktreeBranch.String != "" {
-			if delErr := DeleteBranch(project.Path, dbSess.WorktreeBranch.String); delErr != nil {
+		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
+			if delErr := DeleteBranch(project.Path, branch); delErr != nil {
 				log.Printf("session %s: branch delete: %v", sessionID, delErr)
 			}
 		}
@@ -475,83 +311,14 @@ func (s *Service) InterruptSession(ctx context.Context, sessionID string) error 
 	return sess.Interrupt()
 }
 
-// GetDiff returns the diff for a session.
-// Worktree sessions diff against their base SHA; non-worktree sessions diff HEAD (staged + unstaged).
-func (s *Service) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
-	dbSess, err := s.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("session not found")
-	}
-
-	// Worktree session: diff worktree against base SHA.
-	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		if _, statErr := os.Stat(dbSess.WorktreePath.String); statErr != nil {
-			return DiffResult{}, fmt.Errorf("worktree directory not found")
-		}
-		baseSHA := ""
-		if dbSess.WorktreeBaseSha.Valid {
-			baseSHA = dbSess.WorktreeBaseSha.String
-		}
-		return WorktreeDiff(dbSess.WorktreePath.String, baseSHA)
-	}
-
-	// Non-worktree session: diff work dir against HEAD.
-	workDir := dbSess.WorkDir
-	if _, statErr := os.Stat(workDir); statErr != nil {
-		return DiffResult{}, fmt.Errorf("work directory not found")
-	}
-	return WorktreeDiff(workDir, "HEAD")
-}
-
-// CommitResult describes the outcome of a commit operation.
-type CommitResult struct {
-	CommitHash string `json:"commitHash"`
-}
-
-// CommitSession stages all changes and commits in the session's work directory.
-func (s *Service) CommitSession(ctx context.Context, sessionID, message string) (CommitResult, error) {
-	dbSess, err := s.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("session not found")
-	}
-
-	// Use worktree path if available, otherwise work dir.
-	dir := dbSess.WorkDir
-	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		dir = dbSess.WorktreePath.String
-	}
-
-	if _, statErr := os.Stat(dir); statErr != nil {
-		return CommitResult{}, fmt.Errorf("work directory not found")
-	}
-
-	dirty, err := HasUncommittedChanges(dir)
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("failed to check changes: %w", err)
-	}
-	if !dirty {
-		return CommitResult{}, fmt.Errorf("no uncommitted changes")
-	}
-
-	if err := AutoCommitAll(dir, message); err != nil {
-		return CommitResult{}, fmt.Errorf("commit failed: %w", err)
-	}
-
-	hash, err := headCommitHash(dir)
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("commit succeeded but failed to get hash: %w", err)
-	}
-
-	return CommitResult{CommitHash: hash}, nil
-}
-
 // resumeSession attempts to resume a non-live session from its Claude session ID.
 func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session, error) {
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session not in DB")
 	}
-	if !dbSess.ClaudeSessionID.Valid || dbSess.ClaudeSessionID.String == "" {
+	claudeSessID := nullStr(dbSess.ClaudeSessionID)
+	if claudeSessID == "" {
 		return nil, fmt.Errorf("session has no Claude session ID")
 	}
 
@@ -561,8 +328,8 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		if projErr != nil {
 			return nil, fmt.Errorf("project not found")
 		}
-		if dbSess.WorktreeBranch.Valid && dbSess.WorktreeBranch.String != "" {
-			if err := RestoreWorktree(project.Path, dbSess.WorktreeBranch.String, dbSess.WorktreePath.String); err != nil {
+		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
+			if err := RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
 				log.Printf("session %s: worktree restore failed, falling back to project root: %v", sessionID, err)
 				workDir = project.Path
 			}
@@ -571,7 +338,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 	}
 
-	return s.mgr.Resume(ctx, sessionID, dbSess.ClaudeSessionID.String, dbSess.ProjectID, workDir, dbSess.Model)
+	return s.mgr.Resume(ctx, sessionID, claudeSessID, dbSess.ProjectID, workDir, dbSess.Model)
 }
 
 // autoName calls Haiku to generate a short title and broadcasts the rename.

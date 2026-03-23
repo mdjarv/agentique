@@ -125,7 +125,7 @@ func (c *conn) handleSessionDiff(msg ClientMessage) {
 		return
 	}
 
-	result, err := c.svc.GetDiff(c.ctx, payload.SessionID)
+	result, err := c.gitSvc.Diff(c.ctx, payload.SessionID)
 	if err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
@@ -164,7 +164,7 @@ func (c *conn) handleSessionMerge(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId is required")
 		return
 	}
-	result, err := c.svc.MergeSession(c.ctx, payload.SessionID, payload.Cleanup)
+	result, err := c.gitSvc.Merge(c.ctx, payload.SessionID, payload.Cleanup)
 	if err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
@@ -182,7 +182,7 @@ func (c *conn) handleSessionCreatePR(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId is required")
 		return
 	}
-	result, err := c.svc.CreatePR(c.ctx, session.CreatePRParams{
+	result, err := c.gitSvc.CreatePR(c.ctx, session.CreatePRParams{
 		SessionID: payload.SessionID,
 		Title:     payload.Title,
 		Body:      payload.Body,
@@ -306,7 +306,7 @@ func (c *conn) handleSessionCommit(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId and message are required")
 		return
 	}
-	result, err := c.svc.CommitSession(c.ctx, payload.SessionID, payload.Message)
+	result, err := c.gitSvc.Commit(c.ctx, payload.SessionID, payload.Message)
 	if err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return

@@ -3,7 +3,7 @@
 ## Task Completion Requirements
 
 - `just check` (biome + tsc) must pass before considering tasks completed.
-- `just test-backend` for Go changes.
+- `cd backend && go test ./... -count=1 -short` for Go changes — the justfile recipe doesn't accept flags, so run directly. `-short` skips the integration test that needs a live Claude CLI.
 - `just sqlc` after modifying SQL queries in `backend/db/queries/`.
 - ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the correct directory. Running `npx biome` from the project root fails silently.
 
@@ -50,19 +50,20 @@ Don't be afraid to change existing code. Don't take shortcuts by just adding loc
 - **backend/cmd/agentique**: Entry point, DB init, default project creation.
 - **backend/internal/server**: HTTP mux, SPA handler, embedded frontend assets.
 - **backend/internal/ws**: WebSocket handler, hub (connection registry + broadcasting), wire message types.
-- **backend/internal/session**: Session lifecycle manager, event streaming, worktree management.
+- **backend/internal/session**: Session lifecycle (Service), git operations (GitService), event streaming, state machine, worktree management.
 - **backend/internal/project**: Project CRUD routes.
 - **backend/internal/store**: SQLite via sqlc — generated query code, migrations via goose.
 - **frontend/src/components/chat/**: Chat UI — message rendering, composer, turn blocks, tool display.
 - **frontend/src/components/layout/**: Sidebar, project tree, session status.
 - **frontend/src/hooks/**: useWebSocket (connection + reconnect), useChatSession, useProjects.
-- **frontend/src/stores/**: Zustand — app-store (projects), chat-store (sessions + turns).
+- **frontend/src/stores/**: Zustand — app-store (projects), chat-store (sessions + turns), streaming-store (assistant text), selectors.
 - **frontend/src/lib/**: Types, WS client (request/response correlation), event schemas, utils.
 
 ## Dev Workflow
 
 ```
-just dev-frontend   # Vite HMR on :9200, proxies /api/* to :9201
+just dev            # Run both servers in parallel (with auto-stop of previous)
+just dev-frontend   # Vite HMR on :9200
 just dev-backend    # Go server on :9201
 ```
 

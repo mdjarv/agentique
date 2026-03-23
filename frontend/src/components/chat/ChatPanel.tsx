@@ -11,6 +11,8 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { setAutoApprove, setPermissionMode } from "~/lib/session-actions";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
+import { selectActiveSession } from "~/stores/selectors";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ChatPanelProps {
   projectId: string;
@@ -28,11 +30,12 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
   const navigate = useNavigate();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const activeSession = useChatStore((s) =>
-    s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
-  );
+  const activeSession = useChatStore(selectActiveSession);
   const isLoadingHistory = useChatStore((s) =>
     s.activeSessionId ? s.historyLoading.has(s.activeSessionId) : false,
+  );
+  const currentAssistantText = useStreamingStore((s) =>
+    activeSessionId ? (s.texts[activeSessionId] ?? "") : "",
   );
 
   const ws = useWebSocket();
@@ -108,7 +111,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       {activeSession.meta.state !== "draft" && <SessionHeader session={activeSession} />}
       <MessageList
         turns={activeSession?.turns ?? []}
-        currentAssistantText={activeSession?.currentAssistantText ?? ""}
+        currentAssistantText={currentAssistantText}
         sessionState={sessionState}
         projectPath={project?.path}
         worktreePath={activeSession?.meta.worktreePath}

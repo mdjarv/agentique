@@ -103,7 +103,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 			String: params.WorktreeBaseSHA,
 			Valid:  params.WorktreeBaseSHA != "",
 		},
-		State: StateIdle,
+		State: string(StateIdle),
 		Model: params.Model,
 	})
 	if dbErr != nil {
@@ -152,7 +152,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 	}
 
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-		State: StateIdle,
+		State: string(StateIdle),
 		ID:    sessionID,
 	})
 
@@ -187,15 +187,17 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	}
 
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-		State: StateStopped,
+		State: string(StateStopped),
 		ID:    id,
 	})
 
 	dbSess, err := m.queries.GetSession(ctx, id)
-	if err == nil && dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
-		project, projErr := m.queries.GetProject(ctx, dbSess.ProjectID)
-		if projErr == nil {
-			RemoveWorktree(project.Path, dbSess.WorktreePath.String)
+	if err == nil {
+		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+			project, projErr := m.queries.GetProject(ctx, dbSess.ProjectID)
+			if projErr == nil {
+				RemoveWorktree(project.Path, wtPath)
+			}
 		}
 	}
 
@@ -214,7 +216,7 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
-			sessions[i].State = live.State()
+			sessions[i].State = string(live.State())
 		}
 	}
 
@@ -228,21 +230,16 @@ func (m *Manager) GetDiff(ctx context.Context, sessionID string) (DiffResult, er
 		return DiffResult{}, fmt.Errorf("session not found: %w", err)
 	}
 
-	if !dbSess.WorktreePath.Valid || dbSess.WorktreePath.String == "" {
+	wtPath := nullStr(dbSess.WorktreePath)
+	if wtPath == "" {
 		return DiffResult{}, fmt.Errorf("session has no worktree")
 	}
 
-	worktreePath := dbSess.WorktreePath.String
-	if _, err := os.Stat(worktreePath); err != nil {
+	if _, err := os.Stat(wtPath); err != nil {
 		return DiffResult{}, fmt.Errorf("worktree path not accessible: %w", err)
 	}
 
-	baseSHA := ""
-	if dbSess.WorktreeBaseSha.Valid {
-		baseSHA = dbSess.WorktreeBaseSha.String
-	}
-
-	return WorktreeDiff(worktreePath, baseSHA)
+	return WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha))
 }
 
 // CloseAll gracefully closes all live sessions with a per-session timeout.

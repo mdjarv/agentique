@@ -26,15 +26,13 @@ type QueryAttachment struct {
 	DataUrl  string `json:"dataUrl"`
 }
 
-// Session state constants.
-const (
-	StateIdle    = "idle"
-	StateRunning = "running"
-	StateFailed  = "failed"
-	StateDone    = "done"
-	StateStopped = "stopped"
-	StateMerging = "merging"
-)
+// nullStr extracts the string value from a sql.NullString, returning "" if null.
+func nullStr(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
 
 // pendingApproval tracks a single tool permission request waiting for user input.
 type pendingApproval struct {
@@ -59,7 +57,7 @@ type Session struct {
 	ctx              context.Context
 	cancelCtx        context.CancelFunc
 	mu               sync.Mutex
-	state            string
+	state            State
 	cliSess          *claudecli.Session
 	queryCount       int
 	claudeSessionID  string
@@ -117,7 +115,7 @@ func (s *Session) setCLISession(cliSess *claudecli.Session) {
 }
 
 // State returns the current session state.
-func (s *Session) State() string {
+func (s *Session) State() State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state
@@ -143,7 +141,7 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 	if s.state != StateIdle && s.state != StateDone {
 		st := s.state
 		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not %s", st, StateIdle)
+		return fmt.Errorf("session is %s, not %s", string(st), string(StateIdle))
 	}
 	s.state = StateRunning
 	s.queryCount++
@@ -296,21 +294,22 @@ func (s *Session) startEventLoop() {
 	}()
 }
 
-func (s *Session) setState(state string) {
+func (s *Session) setState(state State) {
 	s.mu.Lock()
+	validateTransition(s.state, state, s.ID)
 	s.state = state
 	s.mu.Unlock()
 	s.broadcastState(state)
 	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
-		State: state,
+		State: string(state),
 		ID:    s.ID,
 	})
 }
 
-func (s *Session) broadcastState(state string) {
+func (s *Session) broadcastState(state State) {
 	payload := map[string]any{
 		"sessionId": s.ID,
-		"state":     state,
+		"state":     string(state),
 	}
 	if s.workDir != "" && (state == StateIdle || state == StateDone) {
 		if dirty, err := HasUncommittedChanges(s.workDir); err == nil {
@@ -354,7 +353,7 @@ func (s *Session) Interrupt() error {
 	if s.state != StateRunning {
 		st := s.state
 		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not %s", st, StateRunning)
+		return fmt.Errorf("session is %s, not %s", string(st), string(StateRunning))
 	}
 	cli := s.cliSess
 	s.mu.Unlock()
@@ -536,15 +535,18 @@ func (s *Session) Close() {
 func (s *Session) TryLockForMerge() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.state == StateRunning || s.state == "starting" {
+	if s.state == StateRunning {
 		return fmt.Errorf("session is running")
+	}
+	if !s.state.CanTransitionTo(StateMerging) {
+		return fmt.Errorf("cannot merge from state %s", string(s.state))
 	}
 	s.state = StateMerging
 	return nil
 }
 
 // UnlockMerge transitions back from StateMerging to newState.
-func (s *Session) UnlockMerge(newState string) {
+func (s *Session) UnlockMerge(newState State) {
 	s.mu.Lock()
 	if s.state == StateMerging {
 		s.state = newState

@@ -10,6 +10,7 @@ import {
   type Turn,
   useChatStore,
 } from "~/stores/chat-store";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 interface SessionListResult {
   sessions: SessionMetadata[];
@@ -68,6 +69,12 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = parseServerEvent(payload.event);
       useChatStore.getState().handleServerEvent(payload.sessionId, event);
+      if (event.type === "text" && event.content) {
+        useStreamingStore.getState().appendText(payload.sessionId, event.content);
+      }
+      if (event.type === "result") {
+        useStreamingStore.getState().clearText(payload.sessionId);
+      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -185,6 +192,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
           sessionId = realId;
         }
 
+        useStreamingStore.getState().clearText(sessionId);
         useChatStore.getState().submitQuery(sessionId, prompt, attachments);
 
         const payload: Record<string, unknown> = { sessionId, prompt };

@@ -22,6 +22,7 @@ func New(queries *store.Queries) *Server {
 	hub := ws.NewHub()
 	mgr := session.NewManager(queries, hub)
 	svc := session.NewService(mgr, queries, hub)
+	gitSvc := session.NewGitService(mgr, queries, hub)
 
 	ph := &project.Handler{Queries: queries}
 
@@ -32,7 +33,7 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
-	wsh := &ws.Handler{Service: svc, Hub: hub}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, Hub: hub}
 	mux.Handle("GET /ws", wsh)
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
