@@ -22,7 +22,6 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
 - **Query generation:** sqlc
 - **Migrations:** goose
-- **Syntax highlighting:** react-syntax-highlighter (frontend, Prism + oneDark)
 
 ### Frontend (TypeScript + React)
 
@@ -82,82 +81,20 @@ JSON messages with `id` for request/response correlation. Push events have no `i
 
 Event types forwarded from claudecli-go: text, thinking, tool_use, tool_result, result, error.
 
-## Project Structure
+## Development
+
+See `just --list` for all commands. Key ones:
 
 ```
-agentique/
-  backend/
-    cmd/
-      agentique/             # main entrypoint
-        main.go
-    internal/
-      server/                # HTTP server, routes, SPA handler, CORS
-      ws/                    # WebSocket handler, connection, message types, dispatch
-      session/               # Session manager (singleton), session wrapper, worktree module
-      project/               # project CRUD handlers
-      store/                 # SQLite persistence layer (sqlc generated)
-    db/
-      migrations/            # goose SQL migration files (001_projects, 002_sessions)
-      queries/               # sqlc query files (projects.sql, sessions.sql)
-      embed.go               # embeds migrations via embed.FS
-      sqlc.yaml
-    go.mod
-    go.sum
-  frontend/
-    src/
-      components/
-        ui/                  # shadcn/ui components
-        chat/                # ChatPanel, TurnBlock, SessionTabs, NewSessionDialog,
-                             # MessageComposer, MessageList, Markdown, ThinkingBlock,
-                             # ToolUseBlock, ToolResultBlock
-        layout/              # AppSidebar, ProjectList, NewProjectDialog
-      hooks/                 # useWebSocket, useChatSession, useProjects
-      lib/                   # ws-client, api, types, utils
-      stores/                # app-store (projects), chat-store (multi-session)
-      routes/                # TanStack Router file-based routes
-    index.html
-    package.json
-    biome.json
-    vite.config.ts
-    tsconfig.json
-    components.json          # shadcn/ui config
-  Makefile
-  ROADMAP.md
+just dev              # Run both servers in parallel
+just dev-frontend     # Vite HMR on :9200
+just dev-backend      # Go server on :9201
+just check            # Biome lint + tsc typecheck
+just test-backend     # Go tests
 ```
 
-## Development Experience
-
-### Hot Reload / Fast Iteration
-
-During development, frontend and backend run as separate processes:
-
-```
-# Terminal 1: Frontend (Vite dev server with HMR)
-cd frontend && npm run dev        # localhost:5173, hot module replacement
-
-# Terminal 2: Backend (Go with auto-rebuild)
-cd backend && air                 # or: go run ./cmd/agentique -addr :8080
-```
-
-- **Frontend:** Vite HMR gives instant feedback on React/CSS changes. API requests
-  are proxied to the Go backend via `vite.config.ts`.
-- **Backend:** Use [air](https://github.com/air-verse/air) for auto-rebuild on .go
-  file changes, or just `go run` manually.
-- **Proxy config:** Vite proxies `/api/*` to `http://localhost:8080`. WebSocket
-  connects directly to `:8080` in dev mode (bypasses Vite proxy for reliability).
-
-In production, the Go binary embeds the built frontend -- but during dev we never
-need to rebuild the frontend to test changes.
-
-### Tooling
-
-| Tool | Purpose |
-|---|---|
-| air | Go hot reload (rebuilds on file change) |
-| Vite | Frontend dev server with HMR |
-| Biome | Lint + format TypeScript/React |
-| sqlc | Generate Go code from SQL queries |
-| goose | Database migrations |
+Frontend connects WebSocket directly to `:9201` (bypasses Vite proxy for reliability).
+In production, the Go binary embeds the built frontend via `embed.FS`.
 
 ## Milestones
 
@@ -244,62 +181,35 @@ Frontend:
 
 **Known limitations:**
 - First session creation takes ~30-40s (Claude CLI subprocess init)
-- Chat history is in-memory only (lost on page reload, M3 adds persistence)
-- Worktree creation not tested end-to-end in browser (backend tests pass)
 
 ---
 
-### M3: Polish + Persistence (post-MVP)
+### M3: Polish + Persistence
 
-- [ ] Persist chat history to SQLite (messages table)
-- [ ] Session resume via claudecli-go `WithResume()`
-- [ ] Cost/token usage display per session and aggregate
-- [ ] Tool permission handling from UI (approve/deny tool calls)
-- [ ] Reconnection handling (WebSocket drops)
-- [ ] Error toasts and better error UX
-- [ ] Keyboard shortcuts (new session, switch tabs, focus composer)
+**Done:**
+- [x] Session resume via claudecli-go `WithResume()`
+- [x] Tool permission handling from UI (approve/deny tool calls)
+- [x] WebSocket reconnection with exponential backoff
+- [x] Keyboard shortcuts (Ctrl+N new session, Ctrl+1-9 switch)
+- [x] Event persistence to SQLite (`session_events` table)
+- [x] Git worktree diff viewer
+
+**Remaining:**
+- [ ] Reload chat history from DB on session resume (events are persisted, frontend doesn't reload them)
+- [ ] Systematic error UX (sonner toasts used in spots, no global coverage)
+
+---
 
 ### M4: Advanced Features (future)
 
-- [ ] Git integration (branch per session, checkpointing, diffs)
-- [ ] File browser / diff viewer
+- [ ] Git integration: merge worktree branches, create PRs (backend infra exists in `session/git.go`)
 - [ ] Terminal emulator (xterm.js)
 - [ ] Desktop app via Tauri
 - [ ] Session templates / saved prompts
-- [ ] Drag-and-drop session layout (split panes)
+- [ ] Split pane session layout
 
-## claudecli-go Integration Notes
+## claudecli-go Notes
 
-Key APIs in use:
-- `claudecli.New()` -> `Client` for creating sessions
-- `Client.Connect()` -> `*Session` for interactive multi-turn agents
-- `Session.Query()` to send user messages
-- `Session.Events()` channel for streaming events (session-lifetime, not per-turn)
-- `Session.SetCallbacks()` for WS reconnection (added in M2)
-- `Session.Close()` for graceful shutdown
-- `WithModel(ModelOpus)` for Opus as default model
-- `WithPermissionMode(PermissionBypass)` for no-approval mode
-- `WithWorkDir()` to set the project or worktree directory
-
-Lessons learned:
-- `Events()` returns a session-lifetime channel, not per-turn. Detect turn boundaries via `ResultEvent`.
-- Don't call `Wait()` after draining `Events()` -- they share the same channel.
-- claudecli-go required a Windows fix for `Setpgid`/`syscall.Kill` (build tags in executor).
-- Claude CLI init can take 30-40s on first connect; frontend needs long timeout for `session.create`.
-- claudecli-go needed a Windows subprocess init fix (stdin/stdout pipe handling).
-
-## Lessons from t3code
-
-Things adopted:
-- WebSocket for real-time event streaming (not polling)
-- Session-per-agent model with independent lifecycle
-- Sidebar navigation for projects and sessions
-- Tab-based session switching
-- Git worktree support for session isolation
-
-Things avoided:
-- Effect-TS complexity in the backend (our Go backend is simpler by nature)
-- Event sourcing for MVP (overkill, simple CRUD is fine)
-- Codex-first assumptions baked into the protocol
-- Monorepo with 4+ apps (keep it simple: backend + frontend)
-- Over-engineering the WebSocket protocol (keep messages thin, forward events as-is)
+- `Events()` is session-lifetime, not per-turn. Detect turn boundaries via `ResultEvent`.
+- Claude CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
+- See [docs/claudecli-go-api.md](docs/claudecli-go-api.md) for full API reference.

@@ -1,5 +1,6 @@
 import { Send } from "lucide-react";
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveQuestion } from "~/lib/session-actions";
@@ -101,7 +102,9 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
   }, []);
 
   const handleSubmit = useCallback(() => {
-    resolveQuestion(ws, sessionId, pending.questionId, answers).catch(console.error);
+    resolveQuestion(ws, sessionId, pending.questionId, answers).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to submit answer");
+    });
   }, [ws, sessionId, pending.questionId, answers]);
 
   const allAnswered = pending.questions.every((q) => (answers[q.question] ?? "").trim() !== "");

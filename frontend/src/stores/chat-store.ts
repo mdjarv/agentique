@@ -100,6 +100,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
 interface ChatState {
   sessions: Record<string, SessionData>;
   activeSessionId: string | null;
+  historyLoading: Set<string>;
 
   // Session management
   setSessions: (sessions: SessionMetadata[]) => void;
@@ -121,6 +122,7 @@ interface ChatState {
   setDraftWorktree: (sessionId: string, worktree: boolean) => void;
 
   // History
+  setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
 
   // Turn/event management
@@ -140,6 +142,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
   activeSessionId: null,
+  historyLoading: new Set<string>(),
 
   setSessions: (metas) =>
     set((s) => {
@@ -307,11 +310,22 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
+  setHistoryLoading: (sessionId, loading) =>
+    set((s) => {
+      const next = new Set(s.historyLoading);
+      if (loading) next.add(sessionId);
+      else next.delete(sessionId);
+      return { historyLoading: next };
+    }),
+
   setSessionHistory: (sessionId, turns) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
+      const nextLoading = new Set(s.historyLoading);
+      nextLoading.delete(sessionId);
       return {
+        historyLoading: nextLoading,
         sessions: {
           ...s.sessions,
           [sessionId]: {
@@ -436,5 +450,5 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  resetProject: () => set({ sessions: {}, activeSessionId: null }),
+  resetProject: () => set({ sessions: {}, activeSessionId: null, historyLoading: new Set() }),
 }));

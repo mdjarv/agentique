@@ -73,7 +73,9 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const handleModelChange = useCallback(
     (model: ModelId) => {
       if (isDraft || model === currentModel) return;
-      setSessionModel(ws, meta.id, model).catch(console.error);
+      setSessionModel(ws, meta.id, model).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to change model");
+      });
     },
     [ws, meta.id, isDraft, currentModel],
   );

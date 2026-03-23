@@ -115,16 +115,8 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
           const s = useChatStore.getState();
           s.setSessions(result.sessions);
           const activeId = s.activeSessionId;
-          if (activeId && s.sessions[activeId]) {
-            ws.request<SessionHistoryResult>("session.history", {
-              sessionId: activeId,
-            })
-              .then((hist) => {
-                if (hist.turns.length > 0) {
-                  useChatStore.getState().setSessionHistory(activeId, historyToTurns(hist.turns));
-                }
-              })
-              .catch(() => {});
+          if (activeId && result.sessions.some((sess) => sess.id === activeId)) {
+            loadSessionHistory(activeId);
           }
         })
         .catch(console.error);
@@ -143,16 +135,24 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
   const loadSessionHistory = useCallback(
     (sessionId: string) => {
-      const session = useChatStore.getState().sessions[sessionId];
+      const store = useChatStore.getState();
+      const session = store.sessions[sessionId];
       if (!session || session.turns.length > 0) return;
+      if (store.historyLoading.has(sessionId)) return;
 
+      store.setHistoryLoading(sessionId, true);
       ws.request<SessionHistoryResult>("session.history", { sessionId })
         .then((hist) => {
           if (hist.turns.length > 0) {
             useChatStore.getState().setSessionHistory(sessionId, historyToTurns(hist.turns));
+          } else {
+            useChatStore.getState().setHistoryLoading(sessionId, false);
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          useChatStore.getState().setHistoryLoading(sessionId, false);
+          console.error("Failed to load session history:", err);
+        });
     },
     [ws],
   );

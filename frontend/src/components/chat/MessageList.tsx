@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import type { Turn } from "~/stores/chat-store";
@@ -8,6 +9,7 @@ interface MessageListProps {
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
+  isLoadingHistory?: boolean;
 }
 
 export function MessageList({
@@ -16,6 +18,7 @@ export function MessageList({
   sessionState,
   projectPath,
   worktreePath,
+  isLoadingHistory,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -26,6 +29,13 @@ export function MessageList({
   }, [turns, currentAssistantText]);
 
   if (turns.length === 0) {
+    if (isLoadingHistory) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
     return (
       <div className="flex-1 flex items-center justify-center">
         <p className="text-muted-foreground">Send a message to start chatting</p>

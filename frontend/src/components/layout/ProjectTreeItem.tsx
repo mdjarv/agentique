@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, FolderOpen, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
 import {
   AlertDialog,
@@ -79,22 +80,30 @@ export function ProjectTreeItem({
         navigate({ to: "/" });
       }
     } catch (err) {
-      console.error("Failed to delete project:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to delete project");
     }
   };
 
   const handleStopSession = async (e: React.MouseEvent, sessionId: string, state: string) => {
     e.stopPropagation();
-    if (state === "running") {
-      await interruptSession(ws, sessionId);
-    } else {
-      await stopSession(ws, sessionId);
+    try {
+      if (state === "running") {
+        await interruptSession(ws, sessionId);
+      } else {
+        await stopSession(ws, sessionId);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop session");
     }
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    await deleteSession(ws, sessionId);
+    try {
+      await deleteSession(ws, sessionId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete session");
+    }
   };
 
   const handleSessionClick = (sessionId: string) => {

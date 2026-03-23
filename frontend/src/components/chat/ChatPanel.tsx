@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
@@ -30,6 +31,9 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
   const activeSession = useChatStore((s) =>
     s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
   );
+  const isLoadingHistory = useChatStore((s) =>
+    s.activeSessionId ? s.historyLoading.has(s.activeSessionId) : false,
+  );
 
   const ws = useWebSocket();
   const sessionState = activeSession?.meta.state ?? "disconnected";
@@ -43,7 +47,9 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       useChatStore.getState().setSessionPlanMode(activeSessionId, enabled);
       if (!isDraft) {
         const mode = enabled ? "plan" : "default";
-        setPermissionMode(ws, activeSessionId, mode).catch(console.error);
+        setPermissionMode(ws, activeSessionId, mode).catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to set plan mode");
+        });
       }
     },
     [ws, activeSessionId, isDraft],
@@ -54,7 +60,9 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       if (!activeSessionId) return;
       useChatStore.getState().setSessionAutoApprove(activeSessionId, enabled);
       if (!isDraft) {
-        setAutoApprove(ws, activeSessionId, enabled).catch(console.error);
+        setAutoApprove(ws, activeSessionId, enabled).catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
+        });
       }
     },
     [ws, activeSessionId, isDraft],
@@ -104,6 +112,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
         sessionState={sessionState}
         projectPath={project?.path}
         worktreePath={activeSession?.meta.worktreePath}
+        isLoadingHistory={isLoadingHistory}
       />
       {activeSession?.pendingApproval && activeSessionId && (
         <ApprovalBanner

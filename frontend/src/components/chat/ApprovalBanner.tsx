@@ -1,5 +1,6 @@
 import { Check, ShieldAlert, X } from "lucide-react";
 import { useCallback } from "react";
+import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval, setAutoApprove } from "~/lib/session-actions";
@@ -75,16 +76,24 @@ export function ApprovalBanner({
   const summary = formatInput(approval.toolName, approval.input, projectPath, worktreePath);
 
   const handleAllow = useCallback(() => {
-    resolveApproval(ws, sessionId, approval.approvalId, true).catch(console.error);
+    resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to approve tool");
+    });
   }, [ws, sessionId, approval.approvalId]);
 
   const handleAllowAll = useCallback(() => {
-    setAutoApprove(ws, sessionId, true).catch(console.error);
-    resolveApproval(ws, sessionId, approval.approvalId, true).catch(console.error);
+    setAutoApprove(ws, sessionId, true).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
+    });
+    resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to approve tool");
+    });
   }, [ws, sessionId, approval.approvalId]);
 
   const handleDeny = useCallback(() => {
-    resolveApproval(ws, sessionId, approval.approvalId, false, "User denied").catch(console.error);
+    resolveApproval(ws, sessionId, approval.approvalId, false, "User denied").catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to deny tool");
+    });
   }, [ws, sessionId, approval.approvalId]);
 
   return (
