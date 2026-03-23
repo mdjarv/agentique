@@ -30,6 +30,7 @@ interface MessageComposerProps {
 	isRunning?: boolean;
 	onInterrupt?: () => void;
 	isDraft?: boolean;
+	placeholder?: string;
 	worktree?: boolean;
 	onWorktreeChange?: (value: boolean) => void;
 }
@@ -38,6 +39,7 @@ export function MessageComposer({
 	onSend,
 	disabled,
 	isRunning,
+	placeholder,
 	onInterrupt,
 	isDraft,
 	worktree,
@@ -219,7 +221,7 @@ export function MessageComposer({
 					}}
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste}
-					placeholder="Send a message..."
+					placeholder={placeholder ?? "Send a message..."}
 					className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-y-auto"
 					rows={1}
 					style={{ maxHeight: "200px" }}

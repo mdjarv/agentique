@@ -6,26 +6,18 @@ import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
 import { useAppStore } from "~/stores/app-store";
-import { type SessionState, useChatStore } from "~/stores/chat-store";
+import { useChatStore } from "~/stores/chat-store";
 
 interface ChatPanelProps {
 	projectId: string;
 	initialSessionId?: string;
 }
 
-const terminalStates: Record<string, string> = {
-	stopped: "Session stopped",
-	done: "Session complete",
-	failed: "Session failed",
+const resumePlaceholders: Record<string, string> = {
+	stopped: "Session stopped — send a message to resume...",
+	done: "Session complete — send a message to continue...",
+	failed: "Session failed — send a message to retry...",
 };
-
-function SessionStatusBar({ state }: { state: SessionState }) {
-	return (
-		<div className="px-4 py-3 text-sm text-muted-foreground border-t text-center">
-			{terminalStates[state]}
-		</div>
-	);
-}
 
 export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	const { sendQuery, interruptSession, loadHistory } = useChatSession(
@@ -65,7 +57,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 
 	const sessionState = activeSession?.meta.state ?? "disconnected";
 	const isDraft = sessionState === "draft";
-	const isTerminal = sessionState in terminalStates;
+	const resumePlaceholder = resumePlaceholders[sessionState];
 	const worktree = activeSession?.meta.worktree ?? false;
 
 	return (
@@ -88,10 +80,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 					worktreePath={activeSession?.meta.worktreePath}
 				/>
 			)}
-			{isTerminal ? (
-				<SessionStatusBar state={sessionState} />
-			) : (
-				<MessageComposer
+			<MessageComposer
 					onSend={sendQuery}
 					disabled={sessionState === "running"}
 					isRunning={sessionState === "running"}
@@ -99,6 +88,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 						if (activeSessionId) interruptSession(activeSessionId);
 					}}
 					isDraft={isDraft}
+					placeholder={resumePlaceholder}
 					worktree={worktree}
 					onWorktreeChange={(v) => {
 						if (activeSession) {
@@ -107,8 +97,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 								.setDraftWorktree(activeSession.meta.id, v);
 						}
 					}}
-				/>
-			)}
+			/>
 		</div>
 	);
 }
