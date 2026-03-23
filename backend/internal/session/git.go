@@ -71,6 +71,21 @@ func HasUncommittedChanges(dir string) (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+// AutoCommitAll stages all changes and creates a commit in the given directory.
+func AutoCommitAll(dir, message string) error {
+	add := exec.Command("git", "add", "-A")
+	add.Dir = dir
+	if out, err := add.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	commit := exec.Command("git", "commit", "-m", message)
+	commit.Dir = dir
+	if out, err := commit.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // DeleteBranch safely deletes a local branch (uses -d, not -D).
 func DeleteBranch(projectDir, branch string) error {
 	cmd := exec.Command("git", "branch", "-d", branch)
