@@ -277,7 +277,9 @@ export const useChatStore = create<ChatState>((set) => ({
 							{
 								id: uuid(),
 								prompt,
-								attachments: attachments ?? [],
+								attachments: (attachments ?? []).map(
+								({ previewUrl: _, ...rest }) => rest,
+							),
 								events: [],
 								complete: false,
 							},
