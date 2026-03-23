@@ -7,6 +7,62 @@ import (
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
+// normalizeEventJSON rewrites legacy JSON keys to the current wire format.
+// Old tool_use events used "id"/"name"/"input"; current format uses "toolId"/"toolName"/"toolInput".
+// Old tool_result events used "toolUseId"; current format uses "toolId".
+func normalizeEventJSON(eventType string, data []byte) json.RawMessage {
+	if eventType != "tool_use" && eventType != "tool_result" {
+		return json.RawMessage(data)
+	}
+
+	var m map[string]any
+	if json.Unmarshal(data, &m) != nil {
+		return json.RawMessage(data)
+	}
+
+	changed := false
+	switch eventType {
+	case "tool_use":
+		if _, ok := m["toolName"]; ok {
+			break
+		}
+		if v, ok := m["id"]; ok {
+			m["toolId"] = v
+			delete(m, "id")
+			changed = true
+		}
+		if v, ok := m["name"]; ok {
+			m["toolName"] = v
+			delete(m, "name")
+			changed = true
+		}
+		if v, ok := m["input"]; ok {
+			m["toolInput"] = v
+			delete(m, "input")
+			changed = true
+		}
+	case "tool_result":
+		if _, ok := m["toolId"]; ok {
+			break
+		}
+		if v, ok := m["toolUseId"]; ok {
+			m["toolId"] = v
+			delete(m, "toolUseId")
+			changed = true
+		}
+	}
+
+	if !changed {
+		return json.RawMessage(data)
+	}
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return json.RawMessage(data)
+	}
+	return json.RawMessage(out)
+}
+
 // HistoryTurn represents a single turn (prompt + response events) for replay.
 type HistoryTurn struct {
 	Prompt string            `json:"prompt"`
@@ -42,7 +98,7 @@ func HistoryFromDB(ctx context.Context, q *store.Queries, sessionID string) ([]H
 				t.Attachments = p.Attachments
 			}
 		} else {
-			t.Events = append(t.Events, json.RawMessage(row.Data))
+			t.Events = append(t.Events, normalizeEventJSON(row.Type, []byte(row.Data)))
 		}
 	}
 
