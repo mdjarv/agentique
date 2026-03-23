@@ -10,7 +10,8 @@ import {
 	Terminal,
 	User,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
@@ -73,6 +74,7 @@ export function TurnBlock({
 	worktreePath,
 }: TurnBlockProps) {
 	const [copied, setCopied] = useState(false);
+	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 	const isStreaming = isLast && !turn.complete;
 
 	const handleCopy = useCallback((text: string) => {
@@ -81,6 +83,15 @@ export function TurnBlock({
 			setTimeout(() => setCopied(false), 1500);
 		});
 	}, []);
+
+	useEffect(() => {
+		if (!lightboxSrc) return;
+		const handleKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setLightboxSrc(null);
+		};
+		document.addEventListener("keydown", handleKey);
+		return () => document.removeEventListener("keydown", handleKey);
+	}, [lightboxSrc]);
 
 	const textContent = isStreaming
 		? currentAssistantText
@@ -167,12 +178,18 @@ export function TurnBlock({
 						<div className="flex gap-1.5 flex-wrap mb-2">
 							{turn.attachments.map((a) =>
 								a.mimeType.startsWith("image/") ? (
-									<img
+									<button
 										key={a.id}
-										src={a.previewUrl ?? a.dataUrl}
-										alt={a.name}
-										className="h-20 max-w-[200px] object-cover rounded"
-									/>
+										type="button"
+										className="p-0 border-none bg-transparent cursor-pointer"
+										onClick={() => setLightboxSrc(a.dataUrl)}
+									>
+										<img
+											src={a.previewUrl ?? a.dataUrl}
+											alt={a.name}
+											className="h-20 max-w-[200px] object-cover rounded"
+										/>
+									</button>
 								) : (
 									<div
 										key={a.id}
@@ -278,6 +295,26 @@ export function TurnBlock({
 					</div>
 				</div>
 			)}
+
+			{lightboxSrc &&
+				createPortal(
+					<dialog
+						open
+						className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
+						onClick={() => setLightboxSrc(null)}
+						onKeyDown={(e) => {
+							if (e.key === "Escape") setLightboxSrc(null);
+						}}
+						aria-label="Image preview"
+					>
+						<img
+							src={lightboxSrc}
+							alt="Full-size preview"
+							className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+						/>
+					</dialog>,
+					document.body,
+				)}
 		</div>
 	);
 }
