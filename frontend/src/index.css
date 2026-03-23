@@ -120,6 +120,35 @@
 	--sidebar-ring: #7aa2f7;
 }
 
+/* Override Tailwind v4 universal reset for typography prose elements.
+   The prose plugin uses :where() (0 specificity) which loses to * { margin: 0 }.
+   This restores paragraph/list/heading margins inside .prose blocks. */
+.prose p,
+.prose ul,
+.prose ol,
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6,
+.prose pre,
+.prose blockquote,
+.prose hr,
+.prose table {
+	margin-top: 1em;
+	margin-bottom: 1em;
+}
+.prose p:first-child,
+.prose h1:first-child,
+.prose h2:first-child,
+.prose h3:first-child {
+	margin-top: 0;
+}
+.prose p:last-child {
+	margin-bottom: 0;
+}
+
 @layer base {
 	* {
 		@apply border-border;
