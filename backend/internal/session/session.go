@@ -306,12 +306,12 @@ func (s *Session) broadcastState(state string) {
 }
 
 // SetPermissionMode changes the permission mode for this session.
+// Sets autoApprove immediately (used by our callback), then attempts to
+// update the CLI's mode (may fail while running — that's fine since the
+// callback bypass handles it).
 func (s *Session) SetPermissionMode(mode string) error {
 	s.mu.Lock()
-	if s.state == StateRunning {
-		s.mu.Unlock()
-		return fmt.Errorf("cannot change permission mode while running")
-	}
+	s.autoApprove = mode == "bypassPermissions"
 	cli := s.cliSess
 	s.mu.Unlock()
 
@@ -326,11 +326,8 @@ func (s *Session) SetPermissionMode(mode string) error {
 	default:
 		m = claudecli.PermissionDefault
 	}
-	cli.SetPermissionMode(m)
-
-	s.mu.Lock()
-	s.autoApprove = mode == "bypassPermissions"
-	s.mu.Unlock()
+	// Best-effort: control request may fail if session is mid-turn.
+	_ = cli.SetPermissionMode(m)
 
 	return nil
 }

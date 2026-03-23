@@ -38,6 +38,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 
 	const ws = useWebSocket();
 	const [planMode, setPlanMode] = useState(false);
+	const [autoApprove, setAutoApprove] = useState(false);
 
 	const handlePlanModeChange = useCallback(
 		(enabled: boolean) => {
@@ -45,6 +46,18 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 			const mode = enabled ? "plan" : "default";
 			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
 			setPlanMode(enabled);
+			if (enabled) setAutoApprove(false);
+		},
+		[ws, activeSessionId],
+	);
+
+	const handleAutoApproveChange = useCallback(
+		(enabled: boolean) => {
+			if (!activeSessionId) return;
+			const mode = enabled ? "bypassPermissions" : "default";
+			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
+			setAutoApprove(enabled);
+			if (enabled) setPlanMode(false);
 		},
 		[ws, activeSessionId],
 	);
@@ -103,24 +116,26 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 				/>
 			)}
 			<MessageComposer
-					onSend={sendQuery}
-					disabled={sessionState === "running"}
-					isRunning={sessionState === "running"}
-					onInterrupt={() => {
-						if (activeSessionId) interruptSession(activeSessionId);
-					}}
-					isDraft={isDraft}
-					placeholder={resumePlaceholder}
-					planMode={planMode}
-					onPlanModeChange={handlePlanModeChange}
-					worktree={worktree}
-					onWorktreeChange={(v) => {
-						if (activeSession) {
-							useChatStore
-								.getState()
-								.setDraftWorktree(activeSession.meta.id, v);
-						}
-					}}
+				onSend={sendQuery}
+				disabled={sessionState === "running"}
+				isRunning={sessionState === "running"}
+				onInterrupt={() => {
+					if (activeSessionId) interruptSession(activeSessionId);
+				}}
+				isDraft={isDraft}
+				placeholder={resumePlaceholder}
+				planMode={planMode}
+				onPlanModeChange={handlePlanModeChange}
+				autoApprove={autoApprove}
+				onAutoApproveChange={handleAutoApproveChange}
+				worktree={worktree}
+				onWorktreeChange={(v) => {
+					if (activeSession) {
+						useChatStore
+							.getState()
+							.setDraftWorktree(activeSession.meta.id, v);
+					}
+				}}
 			/>
 		</div>
 	);

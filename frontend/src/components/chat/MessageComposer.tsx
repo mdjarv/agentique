@@ -5,6 +5,7 @@ import {
 	MessageSquare,
 	Paperclip,
 	SendHorizonal,
+	ShieldCheck,
 	Square,
 	X,
 } from "lucide-react";
@@ -35,6 +36,8 @@ interface MessageComposerProps {
 	placeholder?: string;
 	planMode?: boolean;
 	onPlanModeChange?: (value: boolean) => void;
+	autoApprove?: boolean;
+	onAutoApproveChange?: (value: boolean) => void;
 	worktree?: boolean;
 	onWorktreeChange?: (value: boolean) => void;
 }
@@ -48,6 +51,8 @@ export function MessageComposer({
 	isDraft,
 	planMode,
 	onPlanModeChange,
+	autoApprove,
+	onAutoApproveChange,
 	worktree,
 	onWorktreeChange,
 }: MessageComposerProps) {
@@ -152,44 +157,6 @@ export function MessageComposer({
 
 	return (
 		<div className="border-t p-4 space-y-2">
-			<div className="flex items-center gap-2">
-				{isDraft && (
-					<button
-						type="button"
-						onClick={() => onWorktreeChange?.(!worktree)}
-						className={cn(
-							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-							worktree
-								? "bg-primary/10 border-primary/30 text-primary"
-								: "bg-muted border-transparent text-muted-foreground hover:border-border",
-						)}
-					>
-						<GitBranch className="h-3 w-3" />
-						{worktree ? "Worktree" : "Local"}
-					</button>
-				)}
-				{!isDraft && onPlanModeChange && (
-					<button
-						type="button"
-						onClick={() => onPlanModeChange(!planMode)}
-						disabled={isRunning}
-						className={cn(
-							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-							planMode
-								? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500"
-								: "bg-muted border-transparent text-muted-foreground hover:border-border",
-							isRunning && "opacity-50 cursor-not-allowed",
-						)}
-					>
-						{planMode ? (
-							<ListChecks className="h-3 w-3" />
-						) : (
-							<MessageSquare className="h-3 w-3" />
-						)}
-						{planMode ? "Plan" : "Chat"}
-					</button>
-				)}
-			</div>
 			{attachments.length > 0 && (
 				<div className="flex gap-2 flex-wrap">
 					{attachments.map((a) => (
@@ -266,6 +233,59 @@ export function MessageComposer({
 					>
 						<SendHorizonal className="h-4 w-4" />
 					</Button>
+				)}
+			</div>
+			<div className="flex items-center gap-2">
+				{isDraft && (
+					<button
+						type="button"
+						onClick={() => onWorktreeChange?.(!worktree)}
+						className={cn(
+							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
+							worktree
+								? "bg-primary/10 border-primary/30 text-primary"
+								: "bg-muted border-transparent text-muted-foreground hover:border-border",
+						)}
+					>
+						<GitBranch className="h-3 w-3" />
+						{worktree ? "Worktree" : "Local"}
+					</button>
+				)}
+				{!isDraft && onPlanModeChange && (
+					<button
+						type="button"
+						onClick={() => onPlanModeChange(!planMode)}
+						disabled={isRunning}
+						className={cn(
+							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
+							planMode
+								? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500"
+								: "bg-muted border-transparent text-muted-foreground hover:border-border",
+							isRunning && "opacity-50 cursor-not-allowed",
+						)}
+					>
+						{planMode ? (
+							<ListChecks className="h-3 w-3" />
+						) : (
+							<MessageSquare className="h-3 w-3" />
+						)}
+						{planMode ? "Plan" : "Chat"}
+					</button>
+				)}
+				{!isDraft && onAutoApproveChange && (
+					<button
+						type="button"
+						onClick={() => onAutoApproveChange(!autoApprove)}
+						className={cn(
+							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
+							autoApprove
+								? "bg-green-500/10 border-green-500/30 text-green-500"
+								: "bg-muted border-transparent text-muted-foreground hover:border-border",
+						)}
+					>
+						<ShieldCheck className="h-3 w-3" />
+						{autoApprove ? "Auto-approve" : "Manual"}
+					</button>
 				)}
 			</div>
 		</div>
