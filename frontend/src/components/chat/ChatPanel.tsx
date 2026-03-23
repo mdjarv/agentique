@@ -4,10 +4,24 @@ import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
 import { useAppStore } from "~/stores/app-store";
-import { useChatStore } from "~/stores/chat-store";
+import { type SessionState, useChatStore } from "~/stores/chat-store";
 
 interface ChatPanelProps {
 	projectId: string;
+}
+
+const terminalStates: Record<string, string> = {
+	stopped: "Session stopped",
+	done: "Session complete",
+	failed: "Session failed",
+};
+
+function SessionStatusBar({ state }: { state: SessionState }) {
+	return (
+		<div className="px-4 py-3 text-sm text-muted-foreground border-t text-center">
+			{terminalStates[state]}
+		</div>
+	);
 }
 
 export function ChatPanel({ projectId }: ChatPanelProps) {
@@ -32,6 +46,7 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
 
 	const sessionState = activeSession?.meta.state ?? "disconnected";
 	const isDraft = sessionState === "draft";
+	const isTerminal = sessionState in terminalStates;
 	const worktree = activeSession?.meta.worktree ?? false;
 
 	return (
@@ -46,21 +61,27 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
 				projectPath={project?.path}
 				worktreePath={activeSession?.meta.worktreePath}
 			/>
-			<MessageComposer
-				onSend={sendQuery}
-				disabled={sessionState === "running"}
-				isRunning={sessionState === "running"}
-				onInterrupt={() => {
-					if (activeSessionId) interruptSession(activeSessionId);
-				}}
-				isDraft={isDraft}
-				worktree={worktree}
-				onWorktreeChange={(v) => {
-					if (activeSession) {
-						useChatStore.getState().setDraftWorktree(activeSession.meta.id, v);
-					}
-				}}
-			/>
+			{isTerminal ? (
+				<SessionStatusBar state={sessionState} />
+			) : (
+				<MessageComposer
+					onSend={sendQuery}
+					disabled={sessionState === "running"}
+					isRunning={sessionState === "running"}
+					onInterrupt={() => {
+						if (activeSessionId) interruptSession(activeSessionId);
+					}}
+					isDraft={isDraft}
+					worktree={worktree}
+					onWorktreeChange={(v) => {
+						if (activeSession) {
+							useChatStore
+								.getState()
+								.setDraftWorktree(activeSession.meta.id, v);
+						}
+					}}
+				/>
+			)}
 		</div>
 	);
 }

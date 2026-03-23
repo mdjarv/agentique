@@ -1,3 +1,4 @@
+import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { NewProjectDialog } from "~/components/layout/NewProjectDialog";
 import { ProjectList } from "~/components/layout/ProjectList";
 
@@ -8,7 +9,8 @@ export function AppSidebar() {
 			<div className="flex-1 overflow-y-auto">
 				<ProjectList />
 			</div>
-			<div className="p-3 border-t">
+			<div className="p-3 border-t space-y-2">
+				<ConnectionIndicator />
 				<NewProjectDialog />
 			</div>
 		</div>

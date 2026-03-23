@@ -8,6 +8,8 @@ interface PendingRequest {
 	timer: ReturnType<typeof setTimeout>;
 }
 
+export type ConnectionState = "connected" | "reconnecting" | "disconnected";
+
 export class WsClient {
 	private ws: WebSocket | null = null;
 	private url: string;
@@ -18,9 +20,26 @@ export class WsClient {
 	private shouldReconnect = true;
 	private connectListeners = new Set<() => void>();
 	private disconnectListeners = new Set<() => void>();
+	private _connectionState: ConnectionState = "disconnected";
+	private connectionStateListeners = new Set<() => void>();
 
 	constructor(url: string) {
 		this.url = url;
+	}
+
+	get connectionState(): ConnectionState {
+		return this._connectionState;
+	}
+
+	private setConnectionState(s: ConnectionState): void {
+		if (this._connectionState === s) return;
+		this._connectionState = s;
+		for (const fn of this.connectionStateListeners) fn();
+	}
+
+	onConnectionStateChange(fn: () => void): () => void {
+		this.connectionStateListeners.add(fn);
+		return () => this.connectionStateListeners.delete(fn);
 	}
 
 	connect(): void {
@@ -31,6 +50,7 @@ export class WsClient {
 		this.ws.onopen = () => {
 			console.log("[WsClient] connected");
 			this.reconnectDelay = 500;
+			this.setConnectionState("connected");
 			for (const fn of this.connectListeners) fn();
 		};
 
@@ -49,8 +69,11 @@ export class WsClient {
 				this.pending.delete(id);
 			}
 			if (this.shouldReconnect) {
+				this.setConnectionState("reconnecting");
 				setTimeout(() => this.connect(), this.reconnectDelay);
-				this.reconnectDelay = Math.min(this.reconnectDelay * 2, 8000);
+				this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+			} else {
+				this.setConnectionState("disconnected");
 			}
 		};
 
@@ -61,6 +84,7 @@ export class WsClient {
 
 	disconnect(): void {
 		this.shouldReconnect = false;
+		this.setConnectionState("disconnected");
 		this.ws?.close();
 	}
 

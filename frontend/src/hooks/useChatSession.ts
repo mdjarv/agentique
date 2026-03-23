@@ -85,9 +85,30 @@ export function useChatSession(projectId: string) {
 			useChatStore.getState().removeSession(payload.sessionId);
 		});
 
-		// Re-subscribe on reconnect.
+		// Re-subscribe and refresh state on reconnect.
 		const unsubReconnect = ws.onConnect(() => {
 			ws.request("project.subscribe", { projectId }).catch(console.error);
+
+			ws.request<SessionListResult>("session.list", { projectId })
+				.then((result) => {
+					const s = useChatStore.getState();
+					s.setSessions(result.sessions);
+					const activeId = s.activeSessionId;
+					if (activeId && s.sessions[activeId]) {
+						ws.request<SessionHistoryResult>("session.history", {
+							sessionId: activeId,
+						})
+							.then((hist) => {
+								if (hist.turns.length > 0) {
+									useChatStore
+										.getState()
+										.setSessionHistory(activeId, historyToTurns(hist.turns));
+								}
+							})
+							.catch(() => {});
+					}
+				})
+				.catch(console.error);
 		});
 
 		return () => {

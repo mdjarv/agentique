@@ -226,20 +226,14 @@ export function MessageComposer({
 					disabled={disabled}
 				/>
 				{isRunning ? (
-					<Button
-						size="icon"
-						variant="destructive"
-						onClick={onInterrupt}
-					>
+					<Button size="icon" variant="destructive" onClick={onInterrupt}>
 						<Square className="h-4 w-4" />
 					</Button>
 				) : (
 					<Button
 						size="icon"
 						onClick={handleSend}
-						disabled={
-							disabled || (!text.trim() && attachments.length === 0)
-						}
+						disabled={disabled || (!text.trim() && attachments.length === 0)}
 					>
 						<SendHorizonal className="h-4 w-4" />
 					</Button>

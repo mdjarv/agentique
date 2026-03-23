@@ -24,9 +24,20 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteProject } from "~/lib/api";
 import { interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
-import { cn } from "~/lib/utils";
+import { cn, relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import { useChatStore } from "~/stores/chat-store";
+import { type SessionState, useChatStore } from "~/stores/chat-store";
+
+const statePriority: Record<SessionState, number> = {
+	running: 0,
+	starting: 1,
+	idle: 2,
+	draft: 3,
+	disconnected: 4,
+	failed: 5,
+	stopped: 6,
+	done: 7,
+};
 import { SessionStatusDot } from "./SessionStatusDot";
 
 interface ProjectTreeItemProps {
@@ -153,54 +164,72 @@ export function ProjectTreeItem({
 			{/* Sessions (only for active project) */}
 			{isActive && sessionIds.length > 0 && (
 				<div className="ml-4 mt-0.5 space-y-0.5">
-					{sessionIds.map((id) => {
-						const session = sessions[id]?.meta;
-						if (!session) return null;
-						const isActiveSession = id === activeSessionId;
-						return (
-							<div
-								key={id}
-								className={cn(
-									"flex items-center gap-2 rounded-md px-2 py-1 text-sm group/session hover:bg-accent/50 transition-colors",
-									isActiveSession && "bg-accent/70",
-								)}
-							>
-								<button
-									type="button"
-									className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
-									onClick={() => handleSessionClick(id)}
+					{[...sessionIds]
+						.sort((a, b) => {
+							const sa = sessions[a]?.meta;
+							const sb = sessions[b]?.meta;
+							if (!sa || !sb) return 0;
+							const pa = statePriority[sa.state] ?? 99;
+							const pb = statePriority[sb.state] ?? 99;
+							if (pa !== pb) return pa - pb;
+							return (
+								new Date(sb.createdAt).getTime() -
+								new Date(sa.createdAt).getTime()
+							);
+						})
+						.map((id) => {
+							const session = sessions[id]?.meta;
+							if (!session) return null;
+							const isActiveSession = id === activeSessionId;
+							return (
+								<div
+									key={id}
+									className={cn(
+										"flex items-center gap-2 rounded-md px-2 py-1 text-sm group/session hover:bg-accent/50 transition-colors",
+										isActiveSession && "bg-accent/70",
+									)}
 								>
-									<SessionStatusDot
-										state={session.state}
-										hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
-									/>
-									<span className="truncate">{session.name}</span>
-									{session.worktreeBranch ? (
-										<span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0">
-											<GitBranch className="h-3 w-3" />
-											<span className="truncate max-w-[6rem]">
-												{session.worktreeBranch}
-											</span>
-										</span>
-									) : session.state !== "draft" ? (
-										<span className="text-xs text-muted-foreground shrink-0">
-											Local
-										</span>
-									) : null}
-								</button>
-								{session.state !== "stopped" && session.state !== "done" && (
 									<button
 										type="button"
-										aria-label="Stop session"
-										onClick={(e) => handleStopSession(e, id, session.state)}
-										className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
+										className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
+										onClick={() => handleSessionClick(id)}
 									>
-										<Square className="h-3 w-3" />
+										<SessionStatusDot
+											state={session.state}
+											hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+										/>
+										<span className="truncate" title={session.name}>
+											{session.name}
+										</span>
+										<span className="text-xs text-muted-foreground shrink-0">
+											{relativeTime(session.createdAt)}
+										</span>
+										{session.worktreeBranch ? (
+											<span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0">
+												<GitBranch className="h-3 w-3" />
+												<span className="truncate max-w-[6rem]">
+													{session.worktreeBranch}
+												</span>
+											</span>
+										) : session.state !== "draft" ? (
+											<span className="text-xs text-muted-foreground shrink-0">
+												Local
+											</span>
+										) : null}
 									</button>
-								)}
-							</div>
-						);
-					})}
+									{session.state !== "stopped" && session.state !== "done" && (
+										<button
+											type="button"
+											aria-label="Stop session"
+											onClick={(e) => handleStopSession(e, id, session.state)}
+											className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
+										>
+											<Square className="h-3 w-3" />
+										</button>
+									)}
+								</div>
+							);
+						})}
 				</div>
 			)}
 
