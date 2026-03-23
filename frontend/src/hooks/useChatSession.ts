@@ -39,7 +39,7 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
 	}));
 }
 
-export function useChatSession(projectId: string) {
+export function useChatSession(projectId: string, initialSessionId?: string) {
 	const ws = useWebSocket();
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-subscribe only on projectId change
@@ -55,10 +55,13 @@ export function useChatSession(projectId: string) {
 			.then((result) => {
 				const s = useChatStore.getState();
 				s.setSessions(result.sessions);
-				const first = result.sessions[0];
-				if (first) {
-					s.setActiveSessionId(first.id);
-					loadSessionHistory(first.id);
+				const target =
+					(initialSessionId &&
+						result.sessions.find((sess) => sess.id === initialSessionId)) ||
+					result.sessions[0];
+				if (target) {
+					s.setActiveSessionId(target.id);
+					loadSessionHistory(target.id);
 				}
 			})
 			.catch(console.error);

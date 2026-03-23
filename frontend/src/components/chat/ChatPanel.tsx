@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
@@ -8,6 +9,7 @@ import { type SessionState, useChatStore } from "~/stores/chat-store";
 
 interface ChatPanelProps {
 	projectId: string;
+	initialSessionId?: string;
 }
 
 const terminalStates: Record<string, string> = {
@@ -24,9 +26,10 @@ function SessionStatusBar({ state }: { state: SessionState }) {
 	);
 }
 
-export function ChatPanel({ projectId }: ChatPanelProps) {
+export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	const { sendQuery, interruptSession, loadHistory } =
-		useChatSession(projectId);
+		useChatSession(projectId, initialSessionId);
+	const navigate = useNavigate();
 	const project = useAppStore((s) =>
 		s.projects.find((p) => p.id === projectId),
 	);
@@ -43,6 +46,19 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
 			loadHistory(activeSessionId);
 		}
 	}, [activeSessionId, loadHistory]);
+
+	// Sync active session ID to URL search param
+	useEffect(() => {
+		const isDraftSession = activeSessionId?.startsWith("draft-");
+		const session =
+			isDraftSession || !activeSessionId ? undefined : activeSessionId;
+		navigate({
+			to: "/project/$projectId",
+			params: { projectId },
+			search: { session },
+			replace: true,
+		});
+	}, [activeSessionId, navigate, projectId]);
 
 	const sessionState = activeSession?.meta.state ?? "disconnected";
 	const isDraft = sessionState === "draft";

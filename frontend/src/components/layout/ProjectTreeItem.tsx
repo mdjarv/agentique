@@ -114,6 +114,7 @@ export function ProjectTreeItem({
 			navigate({
 				to: "/project/$projectId",
 				params: { projectId: project.id },
+				search: { session: sessionId },
 			});
 		}
 		setActiveSessionId(sessionId);
