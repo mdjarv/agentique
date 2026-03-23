@@ -251,7 +251,7 @@ export function MessageComposer({
 						{worktree ? "Worktree" : "Local"}
 					</button>
 				)}
-				{!isDraft && onPlanModeChange && (
+				{onPlanModeChange && (
 					<button
 						type="button"
 						onClick={() => onPlanModeChange(!planMode)}
@@ -272,7 +272,7 @@ export function MessageComposer({
 						{planMode ? "Plan" : "Chat"}
 					</button>
 				)}
-				{!isDraft && onAutoApproveChange && (
+				{onAutoApproveChange && (
 					<button
 						type="button"
 						onClick={() => onAutoApproveChange(!autoApprove)}

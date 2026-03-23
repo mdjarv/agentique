@@ -155,6 +155,7 @@ export function ProjectTreeItem({
 			{isActive && (
 				<div className="ml-4 mt-0.5 space-y-0.5">
 					{[...sessionIds]
+						.filter((id) => sessions[id]?.meta.state !== "draft")
 						.sort((a, b) => {
 							const sa = sessions[a]?.meta;
 							const sb = sessions[b]?.meta;
