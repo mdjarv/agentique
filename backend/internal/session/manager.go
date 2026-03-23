@@ -60,6 +60,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		queries:   m.queries,
 		broadcast: m.broadcastFunc(params.ProjectID),
 		turnIndex: -1, // first Query() will increment to 0
+		workDir:   params.WorkDir,
 	})
 
 	// Set auto-approve before connecting so the callback has it immediately.
@@ -132,6 +133,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 		queries:   m.queries,
 		broadcast: m.broadcastFunc(projectID),
 		turnIndex: turnIndex,
+		workDir:   workDir,
 	})
 	sess.mu.Lock()
 	sess.claudeSessionID = claudeSessionID

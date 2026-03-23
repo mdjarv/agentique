@@ -184,19 +184,16 @@ Frontend:
 
 ---
 
-### M3: Polish + Persistence
+### M3: Polish + Persistence [DONE]
 
-**Done:**
 - [x] Session resume via claudecli-go `WithResume()`
 - [x] Tool permission handling from UI (approve/deny tool calls)
 - [x] WebSocket reconnection with exponential backoff
 - [x] Keyboard shortcuts (Ctrl+N new session, Ctrl+1-9 switch)
 - [x] Event persistence to SQLite (`session_events` table)
 - [x] Git worktree diff viewer
-
-**Remaining:**
-- [ ] Reload chat history from DB on session resume (events are persisted, frontend doesn't reload them)
-- [ ] Systematic error UX (sonner toasts used in spots, no global coverage)
+- [x] Reload chat history from DB on session resume
+- [x] Systematic error toasts (sonner) for user-initiated actions
 
 ---
 

@@ -70,7 +70,9 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubState = ws.subscribe("session.state", (payload: any) => {
-      useChatStore.getState().setSessionState(payload.sessionId, payload.state);
+      useChatStore
+        .getState()
+        .setSessionState(payload.sessionId, payload.state, payload.hasDirtyWorktree);
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload

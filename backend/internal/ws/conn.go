@@ -94,6 +94,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionMerge(msg)
 	case "session.create-pr":
 		c.handleSessionCreatePR(msg)
+	case "session.commit":
+		c.handleSessionCommit(msg)
 	case "session.delete":
 		c.handleSessionDelete(msg)
 	case "session.set-model":

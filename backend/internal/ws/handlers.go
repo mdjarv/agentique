@@ -296,6 +296,24 @@ func (c *conn) handleSessionResolveQuestion(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionCommit(msg ClientMessage) {
+	var payload SessionCommitPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" || payload.Message == "" {
+		c.respond(msg.ID, nil, "sessionId and message are required")
+		return
+	}
+	result, err := c.svc.CommitSession(c.ctx, payload.SessionID, payload.Message)
+	if err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, result, "")
+}
+
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

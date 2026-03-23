@@ -189,6 +189,8 @@ export function ProjectTreeItem({
                   }
                   isPlanning={!!sessions[id]?.planMode}
                   isActive={id === activeSessionId}
+                  worktreeBranch={session.worktreeBranch}
+                  hasDirtyWorktree={session.hasDirtyWorktree}
                   onClick={() => handleSessionClick(id)}
                   onStop={(e) => handleStopSession(e, id, session.state)}
                   onDelete={(e) => handleDeleteSession(e, id)}

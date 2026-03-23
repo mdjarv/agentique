@@ -466,25 +466,74 @@ func (s *Service) InterruptSession(ctx context.Context, sessionID string) error 
 	return sess.Interrupt()
 }
 
-// GetDiff returns the diff of a worktree session against its base commit.
+// GetDiff returns the diff for a session.
+// Worktree sessions diff against their base SHA; non-worktree sessions diff HEAD (staged + unstaged).
 func (s *Service) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("session not found")
 	}
-	if !dbSess.WorktreePath.Valid || dbSess.WorktreePath.String == "" {
-		return DiffResult{}, fmt.Errorf("session has no worktree")
-	}
-	if _, statErr := os.Stat(dbSess.WorktreePath.String); statErr != nil {
-		return DiffResult{}, fmt.Errorf("worktree directory not found")
+
+	// Worktree session: diff worktree against base SHA.
+	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
+		if _, statErr := os.Stat(dbSess.WorktreePath.String); statErr != nil {
+			return DiffResult{}, fmt.Errorf("worktree directory not found")
+		}
+		baseSHA := ""
+		if dbSess.WorktreeBaseSha.Valid {
+			baseSHA = dbSess.WorktreeBaseSha.String
+		}
+		return WorktreeDiff(dbSess.WorktreePath.String, baseSHA)
 	}
 
-	baseSHA := ""
-	if dbSess.WorktreeBaseSha.Valid {
-		baseSHA = dbSess.WorktreeBaseSha.String
+	// Non-worktree session: diff work dir against HEAD.
+	workDir := dbSess.WorkDir
+	if _, statErr := os.Stat(workDir); statErr != nil {
+		return DiffResult{}, fmt.Errorf("work directory not found")
+	}
+	return WorktreeDiff(workDir, "HEAD")
+}
+
+// CommitResult describes the outcome of a commit operation.
+type CommitResult struct {
+	CommitHash string `json:"commitHash"`
+}
+
+// CommitSession stages all changes and commits in the session's work directory.
+func (s *Service) CommitSession(ctx context.Context, sessionID, message string) (CommitResult, error) {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return CommitResult{}, fmt.Errorf("session not found")
 	}
 
-	return WorktreeDiff(dbSess.WorktreePath.String, baseSHA)
+	// Use worktree path if available, otherwise work dir.
+	dir := dbSess.WorkDir
+	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
+		dir = dbSess.WorktreePath.String
+	}
+
+	if _, statErr := os.Stat(dir); statErr != nil {
+		return CommitResult{}, fmt.Errorf("work directory not found")
+	}
+
+	dirty, err := HasUncommittedChanges(dir)
+	if err != nil {
+		return CommitResult{}, fmt.Errorf("failed to check changes: %w", err)
+	}
+	if !dirty {
+		return CommitResult{}, fmt.Errorf("no uncommitted changes")
+	}
+
+	if err := AutoCommitAll(dir, message); err != nil {
+		return CommitResult{}, fmt.Errorf("commit failed: %w", err)
+	}
+
+	hash, err := headCommitHash(dir)
+	if err != nil {
+		return CommitResult{}, fmt.Errorf("commit succeeded but failed to get hash: %w", err)
+	}
+
+	return CommitResult{CommitHash: hash}, nil
 }
 
 // resumeSession attempts to resume a non-live session from its Claude session ID.

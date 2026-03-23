@@ -5,12 +5,16 @@ import {
   FileDiff,
   FolderOpen,
   GitBranch,
+  GitCommitHorizontal,
   GitMerge,
   Loader2,
   Trash2,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { CommitDialog } from "~/components/chat/CommitDialog";
+import { ConflictPanel } from "~/components/chat/ConflictPanel";
+import { CreatePRDialog } from "~/components/chat/CreatePRDialog";
 import { DiffView } from "~/components/chat/DiffView";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
 import {
@@ -35,6 +39,7 @@ import {
   type DiffResult,
   MODELS,
   type ModelId,
+  commitSession,
   createPR,
   deleteSession,
   getSessionDiff,
@@ -67,8 +72,12 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
+  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
   const [merging, setMerging] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
+  const [showPRDialog, setShowPRDialog] = useState(false);
+  const [showCommitDialog, setShowCommitDialog] = useState(false);
+  const [committing, setCommitting] = useState(false);
 
   const handleModelChange = useCallback(
     (model: ModelId) => {
@@ -104,7 +113,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       if (result.status === "merged") {
         toast.success(`Merged (${result.commitHash?.slice(0, 7)})`);
       } else if (result.status === "conflict") {
-        toast.error(`Conflict in: ${result.conflictFiles?.join(", ")}`);
+        setConflictFiles(result.conflictFiles ?? []);
       } else {
         toast.error(result.error ?? "Merge failed");
       }
@@ -115,10 +124,10 @@ export function SessionHeader({ session }: SessionHeaderProps) {
     }
   };
 
-  const handleCreatePR = async () => {
+  const handlePRSubmit = async (title: string, body: string) => {
     setCreatingPR(true);
     try {
-      const result = await createPR(ws, meta.id);
+      const result = await createPR(ws, meta.id, title, body);
       if (result.status === "created" || result.status === "existing") {
         toast.success(
           <span>
@@ -128,6 +137,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
             </a>
           </span>,
         );
+        setShowPRDialog(false);
       } else {
         toast.error(result.error ?? "PR creation failed");
       }
@@ -135,6 +145,19 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       toast.error(err instanceof Error ? err.message : "PR creation failed");
     } finally {
       setCreatingPR(false);
+    }
+  };
+
+  const handleCommit = async (message: string) => {
+    setCommitting(true);
+    try {
+      const result = await commitSession(ws, meta.id, message);
+      toast.success(`Committed (${result.commitHash.slice(0, 7)})`);
+      setShowCommitDialog(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Commit failed");
+    } finally {
+      setCommitting(false);
     }
   };
 
@@ -168,8 +191,8 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Diff button */}
-          {isWorktree && (
+          {/* Diff button — available for all non-draft sessions */}
+          {!isDraft && (
             <Button
               variant="ghost"
               size="sm"
@@ -183,6 +206,24 @@ export function SessionHeader({ session }: SessionHeaderProps) {
                 <FileDiff className="h-3.5 w-3.5" />
               )}
               Changes
+            </Button>
+          )}
+
+          {/* Commit button — non-worktree, non-draft, non-busy */}
+          {!isWorktree && !isDraft && !isBusy && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setShowCommitDialog(true)}
+              disabled={committing}
+            >
+              {committing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <GitCommitHorizontal className="h-3.5 w-3.5" />
+              )}
+              Commit
             </Button>
           )}
 
@@ -216,7 +257,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={handleCreatePR}
+              onClick={() => setShowPRDialog(true)}
               disabled={creatingPR}
             >
               {creatingPR ? (
@@ -278,6 +319,20 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       {/* Diff panel */}
       {showDiff && diffResult && <DiffView result={diffResult} />}
 
+      {/* Conflict panel */}
+      {conflictFiles && (
+        <ConflictPanel files={conflictFiles} onDismiss={() => setConflictFiles(null)} />
+      )}
+
+      {/* Create PR dialog */}
+      <CreatePRDialog
+        open={showPRDialog}
+        onOpenChange={setShowPRDialog}
+        defaultTitle={meta.name}
+        onSubmit={handlePRSubmit}
+        loading={creatingPR}
+      />
+
       {/* Delete confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
@@ -294,6 +349,14 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Commit dialog */}
+      <CommitDialog
+        open={showCommitDialog}
+        onOpenChange={setShowCommitDialog}
+        onSubmit={handleCommit}
+        loading={committing}
+      />
     </>
   );
 }

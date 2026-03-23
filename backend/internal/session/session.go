@@ -67,6 +67,7 @@ type Session struct {
 	pendingApprovals  map[string]*pendingApproval
 	pendingQuestions  map[string]*pendingQuestion
 	autoApprove       bool
+	workDir           string
 }
 
 type sessionParams struct {
@@ -76,6 +77,7 @@ type sessionParams struct {
 	queries   *store.Queries
 	broadcast func(pushType string, payload any)
 	turnIndex int
+	workDir   string
 }
 
 func newSession(p sessionParams) *Session {
@@ -89,6 +91,7 @@ func newSession(p sessionParams) *Session {
 		turnIndex:        p.turnIndex,
 		pendingApprovals: make(map[string]*pendingApproval),
 		pendingQuestions: make(map[string]*pendingQuestion),
+		workDir:          p.workDir,
 	}
 	s.broadcastState(StateIdle)
 	if s.cliSess != nil {
@@ -299,10 +302,16 @@ func (s *Session) setState(state string) {
 }
 
 func (s *Session) broadcastState(state string) {
-	s.broadcast("session.state", map[string]any{
+	payload := map[string]any{
 		"sessionId": s.ID,
 		"state":     state,
-	})
+	}
+	if s.workDir != "" {
+		if dirty, err := HasUncommittedChanges(s.workDir); err == nil {
+			payload["hasDirtyWorktree"] = dirty
+		}
+	}
+	s.broadcast("session.state", payload)
 }
 
 // SetPermissionMode changes the CLI permission mode (plan, acceptEdits, default).

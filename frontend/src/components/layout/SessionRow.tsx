@@ -1,4 +1,4 @@
-import { Square, Trash2 } from "lucide-react";
+import { GitBranch, Square, Trash2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -10,6 +10,8 @@ interface SessionRowProps {
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
   isActive: boolean;
+  worktreeBranch?: string;
+  hasDirtyWorktree?: boolean;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -22,6 +24,8 @@ export function SessionRow({
   hasPendingApproval,
   isPlanning,
   isActive,
+  worktreeBranch,
+  hasDirtyWorktree,
   onClick,
   onStop,
   onDelete,
@@ -49,6 +53,17 @@ export function SessionRow({
         <span className="truncate" title={name}>
           {name}
         </span>
+        {worktreeBranch && (
+          <span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0 max-w-[8rem]">
+            <GitBranch className="h-3 w-3 shrink-0" />
+            <span className="truncate" title={worktreeBranch}>
+              {worktreeBranch}
+            </span>
+            {hasDirtyWorktree && (
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+            )}
+          </span>
+        )}
       </button>
       {canStop && (
         <button

@@ -161,3 +161,8 @@ type SessionResolveQuestionPayload struct {
 	QuestionID string            `json:"questionId"`
 	Answers    map[string]string `json:"answers"`
 }
+
+type SessionCommitPayload struct {
+	SessionID string `json:"sessionId"`
+	Message   string `json:"message"`
+}

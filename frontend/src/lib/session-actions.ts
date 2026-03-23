@@ -172,6 +172,18 @@ export async function createPR(
   });
 }
 
+export interface CommitResult {
+  commitHash: string;
+}
+
+export async function commitSession(
+  ws: WsClient,
+  sessionId: string,
+  message: string,
+): Promise<CommitResult> {
+  return ws.request<CommitResult>("session.commit", { sessionId, message });
+}
+
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.delete", { sessionId });
 }
