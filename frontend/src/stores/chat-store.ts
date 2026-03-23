@@ -82,6 +82,8 @@ export interface SessionData {
 	hasUnseenCompletion: boolean;
 	pendingApproval: PendingApproval | null;
 	pendingQuestion: PendingQuestion | null;
+	planMode: boolean;
+	autoApprove: boolean;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -91,6 +93,8 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
 	hasUnseenCompletion: false,
 	pendingApproval: null,
 	pendingQuestion: null,
+	planMode: false,
+	autoApprove: false,
 });
 
 interface ChatState {
@@ -109,6 +113,8 @@ interface ChatState {
 	clearPendingApproval: (sessionId: string) => void;
 	setPendingQuestion: (sessionId: string, question: PendingQuestion) => void;
 	clearPendingQuestion: (sessionId: string) => void;
+	setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
+	setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
 
 	// Draft session management
 	createDraft: (projectId: string) => void;
@@ -278,6 +284,30 @@ export const useChatStore = create<ChatState>((set) => ({
 				sessions: {
 					...s.sessions,
 					[sessionId]: { ...session, pendingQuestion: null },
+				},
+			};
+		}),
+
+	setSessionPlanMode: (sessionId, planMode) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, planMode, autoApprove: planMode ? false : session.autoApprove },
+				},
+			};
+		}),
+
+	setSessionAutoApprove: (sessionId, autoApprove) =>
+		set((s) => {
+			const session = s.sessions[sessionId];
+			if (!session) return s;
+			return {
+				sessions: {
+					...s.sessions,
+					[sessionId]: { ...session, autoApprove, planMode: autoApprove ? false : session.planMode },
 				},
 			};
 		}),

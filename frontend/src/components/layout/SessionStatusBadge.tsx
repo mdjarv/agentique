@@ -15,19 +15,24 @@ const stateConfig: Record<SessionState, { label: string; classes: string }> = {
 const attentionConfig = { label: "New", classes: "text-[#73daca] bg-[#73daca]/20" };
 const waitingConfig = { label: "Wait", classes: "text-[#bb9af7] bg-[#bb9af7]/20" };
 
+const planningConfig = { label: "Plan", classes: "text-[#e0af68] bg-[#e0af68]/20" };
+
 interface SessionStatusBadgeProps {
   state: SessionState;
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
+  isPlanning?: boolean;
 }
 
-export function SessionStatusBadge({ state, hasUnseenCompletion, hasPendingApproval }: SessionStatusBadgeProps) {
+export function SessionStatusBadge({ state, hasUnseenCompletion, hasPendingApproval, isPlanning }: SessionStatusBadgeProps) {
   const showAttention = hasUnseenCompletion && state === "idle";
   const config = hasPendingApproval
     ? waitingConfig
-    : showAttention
-      ? attentionConfig
-      : stateConfig[state];
+    : isPlanning && state === "running"
+      ? planningConfig
+      : showAttention
+        ? attentionConfig
+        : stateConfig[state];
 
   return (
     <span

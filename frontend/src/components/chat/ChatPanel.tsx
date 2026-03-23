@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
@@ -37,16 +37,15 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	);
 
 	const ws = useWebSocket();
-	const [planMode, setPlanMode] = useState(false);
-	const [autoApprove, setAutoApprove] = useState(false);
+	const planMode = activeSession?.planMode ?? false;
+	const autoApprove = activeSession?.autoApprove ?? false;
 
 	const handlePlanModeChange = useCallback(
 		(enabled: boolean) => {
 			if (!activeSessionId) return;
 			const mode = enabled ? "plan" : "default";
 			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
-			setPlanMode(enabled);
-			if (enabled) setAutoApprove(false);
+			useChatStore.getState().setSessionPlanMode(activeSessionId, enabled);
 		},
 		[ws, activeSessionId],
 	);
@@ -56,8 +55,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 			if (!activeSessionId) return;
 			const mode = enabled ? "bypassPermissions" : "default";
 			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
-			setAutoApprove(enabled);
-			if (enabled) setPlanMode(false);
+			useChatStore.getState().setSessionAutoApprove(activeSessionId, enabled);
 		},
 		[ws, activeSessionId],
 	);
