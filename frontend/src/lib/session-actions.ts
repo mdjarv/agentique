@@ -73,6 +73,14 @@ export async function getSessionDiff(
 	return ws.request<DiffResult>("session.diff", { sessionId });
 }
 
+export async function setPermissionMode(
+	ws: WsClient,
+	sessionId: string,
+	mode: string,
+): Promise<void> {
+	await ws.request("session.set-permission", { sessionId, mode });
+}
+
 export async function resolveApproval(
 	ws: WsClient,
 	sessionId: string,

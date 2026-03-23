@@ -425,6 +425,15 @@ func (s *Service) ResolveApproval(ctx context.Context, sessionID, approvalID str
 	return sess.ResolveApproval(approvalID, allow, message)
 }
 
+// SetPermissionMode changes the permission mode for a live session.
+func (s *Service) SetPermissionMode(ctx context.Context, sessionID, mode string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	return sess.SetPermissionMode(mode)
+}
+
 // InterruptSession stops the current generation without killing the session.
 func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
 	sess := s.mgr.Get(sessionID)

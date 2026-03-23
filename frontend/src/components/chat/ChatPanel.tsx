@@ -1,10 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { setPermissionMode } from "~/lib/session-actions";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -31,6 +33,19 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	const activeSessionId = useChatStore((s) => s.activeSessionId);
 	const activeSession = useChatStore((s) =>
 		s.activeSessionId ? s.sessions[s.activeSessionId] : undefined,
+	);
+
+	const ws = useWebSocket();
+	const [planMode, setPlanMode] = useState(false);
+
+	const handlePlanModeChange = useCallback(
+		(enabled: boolean) => {
+			if (!activeSessionId) return;
+			const mode = enabled ? "plan" : "default";
+			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
+			setPlanMode(enabled);
+		},
+		[ws, activeSessionId],
 	);
 
 	// Load history when switching to a session that hasn't been loaded yet
@@ -89,6 +104,8 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 					}}
 					isDraft={isDraft}
 					placeholder={resumePlaceholder}
+					planMode={planMode}
+					onPlanModeChange={handlePlanModeChange}
 					worktree={worktree}
 					onWorktreeChange={(v) => {
 						if (activeSession) {

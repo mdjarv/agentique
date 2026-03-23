@@ -137,6 +137,11 @@ type SessionSetModelPayload struct {
 	Model     string `json:"model"`
 }
 
+type SessionSetPermissionPayload struct {
+	SessionID string `json:"sessionId"`
+	Mode      string `json:"mode"`
+}
+
 type SessionResolveApprovalPayload struct {
 	SessionID  string `json:"sessionId"`
 	ApprovalID string `json:"approvalId"`

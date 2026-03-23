@@ -226,6 +226,23 @@ func (c *conn) handleSessionSetModel(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionSetPermission(msg ClientMessage) {
+	var payload SessionSetPermissionPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" || payload.Mode == "" {
+		c.respond(msg.ID, nil, "sessionId and mode are required")
+		return
+	}
+	if err := c.svc.SetPermissionMode(c.ctx, payload.SessionID, payload.Mode); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionResolveApproval(msg ClientMessage) {
 	var payload SessionResolveApprovalPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

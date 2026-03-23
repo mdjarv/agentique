@@ -295,6 +295,31 @@ func (s *Session) broadcastState(state string) {
 	})
 }
 
+// SetPermissionMode changes the permission mode for this session.
+func (s *Session) SetPermissionMode(mode string) error {
+	s.mu.Lock()
+	if s.state == StateRunning {
+		s.mu.Unlock()
+		return fmt.Errorf("cannot change permission mode while running")
+	}
+	cli := s.cliSess
+	s.mu.Unlock()
+
+	var m claudecli.PermissionMode
+	switch mode {
+	case "plan":
+		m = claudecli.PermissionPlan
+	case "bypassPermissions":
+		m = claudecli.PermissionBypass
+	case "acceptEdits":
+		m = claudecli.PermissionAcceptEdits
+	default:
+		m = claudecli.PermissionDefault
+	}
+	cli.SetPermissionMode(m)
+	return nil
+}
+
 // Interrupt stops the current generation without killing the session.
 // The event loop will receive a ResultEvent and transition back to idle.
 func (s *Session) Interrupt() error {

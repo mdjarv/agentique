@@ -1,6 +1,8 @@
 import {
 	FileText,
 	GitBranch,
+	ListChecks,
+	MessageSquare,
 	Paperclip,
 	SendHorizonal,
 	Square,
@@ -31,6 +33,8 @@ interface MessageComposerProps {
 	onInterrupt?: () => void;
 	isDraft?: boolean;
 	placeholder?: string;
+	planMode?: boolean;
+	onPlanModeChange?: (value: boolean) => void;
 	worktree?: boolean;
 	onWorktreeChange?: (value: boolean) => void;
 }
@@ -42,6 +46,8 @@ export function MessageComposer({
 	placeholder,
 	onInterrupt,
 	isDraft,
+	planMode,
+	onPlanModeChange,
 	worktree,
 	onWorktreeChange,
 }: MessageComposerProps) {
@@ -146,8 +152,8 @@ export function MessageComposer({
 
 	return (
 		<div className="border-t p-4 space-y-2">
-			{isDraft && (
-				<div className="flex items-center gap-2">
+			<div className="flex items-center gap-2">
+				{isDraft && (
 					<button
 						type="button"
 						onClick={() => onWorktreeChange?.(!worktree)}
@@ -161,8 +167,29 @@ export function MessageComposer({
 						<GitBranch className="h-3 w-3" />
 						{worktree ? "Worktree" : "Local"}
 					</button>
-				</div>
-			)}
+				)}
+				{!isDraft && onPlanModeChange && (
+					<button
+						type="button"
+						onClick={() => onPlanModeChange(!planMode)}
+						disabled={isRunning}
+						className={cn(
+							"flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
+							planMode
+								? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500"
+								: "bg-muted border-transparent text-muted-foreground hover:border-border",
+							isRunning && "opacity-50 cursor-not-allowed",
+						)}
+					>
+						{planMode ? (
+							<ListChecks className="h-3 w-3" />
+						) : (
+							<MessageSquare className="h-3 w-3" />
+						)}
+						{planMode ? "Plan" : "Chat"}
+					</button>
+				)}
+			</div>
 			{attachments.length > 0 && (
 				<div className="flex gap-2 flex-wrap">
 					{attachments.map((a) => (
