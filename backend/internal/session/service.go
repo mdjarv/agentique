@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,13 @@ import (
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
+)
+
+// Sentinel errors for session operations.
+var (
+	ErrNotFound   = errors.New("session not found")
+	ErrNotLive    = errors.New("session not live")
+	ErrNoClaudeID = errors.New("session has no Claude session ID")
 )
 
 // SessionInfo is the wire type for session metadata sent to clients.
@@ -73,12 +81,21 @@ func (s *Service) Manager() *Manager {
 	return s.mgr
 }
 
+// getLiveSession returns a live session or ErrNotLive.
+func (s *Service) getLiveSession(sessionID string) (*Session, error) {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return nil, ErrNotLive
+	}
+	return sess, nil
+}
+
 // CreateSession validates the project, creates a worktree if requested,
 // generates a default name, calls mgr.Create, and cleans up on failure.
 func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (CreateSessionResult, error) {
 	project, err := s.queries.GetProject(ctx, p.ProjectID)
 	if err != nil {
-		return CreateSessionResult{}, fmt.Errorf("project not found")
+		return CreateSessionResult{}, fmt.Errorf("project not found: %w", err)
 	}
 
 	workDir := project.Path
@@ -163,7 +180,7 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 		var err error
 		sess, err = s.resumeSession(ctx, sessionID)
 		if err != nil {
-			return fmt.Errorf("session not found: %w", err)
+			return fmt.Errorf("%w: %v", ErrNotFound, err)
 		}
 	}
 
@@ -178,9 +195,24 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
-// StopSession delegates to mgr.Stop.
+// StopSession stops a live session and cleans up its worktree.
 func (s *Service) StopSession(ctx context.Context, sessionID string) error {
-	return s.mgr.Stop(ctx, sessionID)
+	if err := s.mgr.Stop(ctx, sessionID); err != nil {
+		return fmt.Errorf("stop failed: %w", err)
+	}
+
+	// Clean up worktree now that the session is stopped.
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil // session stopped, DB lookup failure is non-fatal
+	}
+	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
+		if projErr == nil {
+			RemoveWorktree(project.Path, wtPath)
+		}
+	}
+	return nil
 }
 
 // ListSessions returns session info for a project.
@@ -223,7 +255,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("session not found")
+		return ErrNotFound
 	}
 
 	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
@@ -251,9 +283,9 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 // SetSessionModel changes the model for a live session.
 func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	if err := sess.SetModel(model); err != nil {
 		return err
@@ -266,47 +298,47 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 }
 
 // ResolveApproval sends a permission response for a pending tool approval.
-func (s *Service) ResolveApproval(ctx context.Context, sessionID, approvalID string, allow bool, message string) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+func (s *Service) ResolveApproval(sessionID, approvalID string, allow bool, message string) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	return sess.ResolveApproval(approvalID, allow, message)
 }
 
 // ResolveQuestion sends answers for a pending user question.
-func (s *Service) ResolveQuestion(ctx context.Context, sessionID, questionID string, answers map[string]string) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+func (s *Service) ResolveQuestion(sessionID, questionID string, answers map[string]string) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	return sess.ResolveQuestion(questionID, answers)
 }
 
 // SetPermissionMode changes the permission mode for a live session.
-func (s *Service) SetPermissionMode(ctx context.Context, sessionID, mode string) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+func (s *Service) SetPermissionMode(sessionID, mode string) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	return sess.SetPermissionMode(mode)
 }
 
 // SetAutoApprove enables or disables automatic tool approval for a session.
-func (s *Service) SetAutoApprove(ctx context.Context, sessionID string, enabled bool) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+func (s *Service) SetAutoApprove(sessionID string, enabled bool) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	sess.SetAutoApprove(enabled)
 	return nil
 }
 
 // InterruptSession stops the current generation without killing the session.
-func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
-	sess := s.mgr.Get(sessionID)
-	if sess == nil {
-		return fmt.Errorf("session not found or not live")
+func (s *Service) InterruptSession(sessionID string) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
 	}
 	return sess.Interrupt()
 }
@@ -315,18 +347,18 @@ func (s *Service) InterruptSession(ctx context.Context, sessionID string) error 
 func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session, error) {
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("session not in DB")
+		return nil, ErrNotFound
 	}
 	claudeSessID := nullStr(dbSess.ClaudeSessionID)
 	if claudeSessID == "" {
-		return nil, fmt.Errorf("session has no Claude session ID")
+		return nil, ErrNoClaudeID
 	}
 
 	workDir := dbSess.WorkDir
 	if _, statErr := os.Stat(workDir); statErr != nil {
 		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr != nil {
-			return nil, fmt.Errorf("project not found")
+			return nil, fmt.Errorf("project not found: %w", projErr)
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
 			if err := RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {

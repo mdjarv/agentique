@@ -36,6 +36,23 @@ type CommitResult struct {
 	CommitHash string `json:"commitHash"`
 }
 
+// autoCommitWorktree commits all uncommitted changes in a worktree directory.
+// Returns nil if the directory is empty, clean, or on check failure (logged, not fatal).
+func autoCommitWorktree(sessionID, wtPath, reason string) error {
+	if wtPath == "" {
+		return nil
+	}
+	dirty, err := HasUncommittedChanges(wtPath)
+	if err != nil {
+		log.Printf("session %s: failed to check worktree changes: %v", sessionID, err)
+		return nil
+	}
+	if !dirty {
+		return nil
+	}
+	return AutoCommitAll(wtPath, "agentique: auto-commit before "+reason)
+}
+
 // GitService handles git operations (merge, PR, diff, commit) for sessions.
 type GitService struct {
 	mgr     *Manager
@@ -79,18 +96,9 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		return MergeResult{Status: "error", Error: "project root has uncommitted changes"}, nil
 	}
 
-	// Auto-commit uncommitted changes in the worktree before merging.
 	wtPath := nullStr(dbSess.WorktreePath)
-	if wtPath != "" {
-		wtDirty, wtErr := HasUncommittedChanges(wtPath)
-		if wtErr != nil {
-			log.Printf("session %s: failed to check worktree changes: %v", sessionID, wtErr)
-		}
-		if wtDirty {
-			if err := AutoCommitAll(wtPath, "agentique: auto-commit before merge"); err != nil {
-				return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
-			}
-		}
+	if err := autoCommitWorktree(sessionID, wtPath, "merge"); err != nil {
+		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
 	hash, mergeErr := MergeBranch(project.Path, branch)
@@ -151,18 +159,9 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		return CreatePRResult{Status: "error", Error: "no origin remote configured"}, nil
 	}
 
-	// Auto-commit uncommitted changes in worktree before pushing.
 	wtPath := nullStr(dbSess.WorktreePath)
-	if wtPath != "" {
-		wtDirty, wtErr := HasUncommittedChanges(wtPath)
-		if wtErr != nil {
-			log.Printf("session %s: failed to check worktree changes: %v", p.SessionID, wtErr)
-		}
-		if wtDirty {
-			if err := AutoCommitAll(wtPath, "agentique: auto-commit before PR"); err != nil {
-				return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
-			}
-		}
+	if err := autoCommitWorktree(p.SessionID, wtPath, "PR"); err != nil {
+		return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
 	if url, prErr := GetExistingPR(project.Path, branch); prErr == nil && url != "" {

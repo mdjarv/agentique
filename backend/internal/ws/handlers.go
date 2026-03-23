@@ -146,7 +146,7 @@ func (c *conn) handleSessionInterrupt(msg ClientMessage) {
 		return
 	}
 
-	if err := c.svc.InterruptSession(c.ctx, payload.SessionID); err != nil {
+	if err := c.svc.InterruptSession(payload.SessionID); err != nil {
 		c.respond(msg.ID, nil, "interrupt failed: "+err.Error())
 		return
 	}
@@ -238,7 +238,7 @@ func (c *conn) handleSessionSetPermission(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId and mode are required")
 		return
 	}
-	if err := c.svc.SetPermissionMode(c.ctx, payload.SessionID, payload.Mode); err != nil {
+	if err := c.svc.SetPermissionMode(payload.SessionID, payload.Mode); err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
 	}
@@ -255,7 +255,7 @@ func (c *conn) handleSessionSetAutoApprove(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId is required")
 		return
 	}
-	if err := c.svc.SetAutoApprove(c.ctx, payload.SessionID, payload.Enabled); err != nil {
+	if err := c.svc.SetAutoApprove(payload.SessionID, payload.Enabled); err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
 	}
@@ -272,7 +272,7 @@ func (c *conn) handleSessionResolveApproval(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId and approvalId are required")
 		return
 	}
-	if err := c.svc.ResolveApproval(c.ctx, payload.SessionID, payload.ApprovalID, payload.Allow, payload.Message); err != nil {
+	if err := c.svc.ResolveApproval(payload.SessionID, payload.ApprovalID, payload.Allow, payload.Message); err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
 	}
@@ -289,7 +289,7 @@ func (c *conn) handleSessionResolveQuestion(msg ClientMessage) {
 		c.respond(msg.ID, nil, "sessionId and questionId are required")
 		return
 	}
-	if err := c.svc.ResolveQuestion(c.ctx, payload.SessionID, payload.QuestionID, payload.Answers); err != nil {
+	if err := c.svc.ResolveQuestion(payload.SessionID, payload.QuestionID, payload.Answers); err != nil {
 		c.respond(msg.ID, nil, err.Error())
 		return
 	}

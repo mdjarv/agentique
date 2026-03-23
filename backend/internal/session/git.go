@@ -1,17 +1,58 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+const gitTimeout = 30 * time.Second
+
+// gitRun executes a git command with a timeout and returns combined stdout+stderr.
+func gitRun(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("git %s timed out after %s", args[0], gitTimeout)
+	}
+	return out, err
+}
+
+// gitStdout executes a git command with a timeout and returns only stdout.
+func gitStdout(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("git %s timed out after %s", args[0], gitTimeout)
+	}
+	return out, err
+}
+
+// ghRun executes a gh CLI command with a timeout and returns combined output.
+func ghRun(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("gh %s timed out after %s", args[0], gitTimeout)
+	}
+	return out, err
+}
 
 // MergeBranch performs a --no-ff merge of branch into the current branch in projectDir.
 // Returns the merge commit hash on success.
 func MergeBranch(projectDir, branch string) (string, error) {
-	cmd := exec.Command("git", "merge", "--no-ff", branch)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "merge", "--no-ff", branch)
 	if err != nil {
 		return "", fmt.Errorf("git merge failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -25,9 +66,7 @@ func MergeBranch(projectDir, branch string) (string, error) {
 
 // MergeConflictFiles returns the list of files with merge conflicts.
 func MergeConflictFiles(projectDir string) ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "diff", "--name-only", "--diff-filter=U")
 	if err != nil {
 		return nil, fmt.Errorf("git diff failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -40,9 +79,7 @@ func MergeConflictFiles(projectDir string) ([]string, error) {
 
 // AbortMerge aborts an in-progress merge.
 func AbortMerge(projectDir string) error {
-	cmd := exec.Command("git", "merge", "--abort")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "merge", "--abort")
 	if err != nil {
 		return fmt.Errorf("git merge --abort failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -51,9 +88,7 @@ func AbortMerge(projectDir string) error {
 
 // CurrentBranch returns the current branch name.
 func CurrentBranch(projectDir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -62,9 +97,7 @@ func CurrentBranch(projectDir string) (string, error) {
 
 // HasUncommittedChanges returns true if the working tree has uncommitted changes.
 func HasUncommittedChanges(dir string) (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(dir, "status", "--porcelain")
 	if err != nil {
 		return false, fmt.Errorf("git status failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -73,14 +106,10 @@ func HasUncommittedChanges(dir string) (bool, error) {
 
 // AutoCommitAll stages all changes and creates a commit in the given directory.
 func AutoCommitAll(dir, message string) error {
-	add := exec.Command("git", "add", "-A")
-	add.Dir = dir
-	if out, err := add.CombinedOutput(); err != nil {
+	if out, err := gitRun(dir, "add", "-A"); err != nil {
 		return fmt.Errorf("git add failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	commit := exec.Command("git", "commit", "-m", message)
-	commit.Dir = dir
-	if out, err := commit.CombinedOutput(); err != nil {
+	if out, err := gitRun(dir, "commit", "-m", message); err != nil {
 		return fmt.Errorf("git commit failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
@@ -88,9 +117,7 @@ func AutoCommitAll(dir, message string) error {
 
 // DeleteBranch safely deletes a local branch (uses -d, not -D).
 func DeleteBranch(projectDir, branch string) error {
-	cmd := exec.Command("git", "branch", "-d", branch)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "branch", "-d", branch)
 	if err != nil {
 		return fmt.Errorf("git branch -d failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -99,9 +126,7 @@ func DeleteBranch(projectDir, branch string) error {
 
 // PushBranch pushes a branch to origin with upstream tracking.
 func PushBranch(projectDir, branch string) error {
-	cmd := exec.Command("git", "push", "-u", "origin", branch)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "push", "-u", "origin", branch)
 	if err != nil {
 		return fmt.Errorf("git push failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -110,9 +135,7 @@ func PushBranch(projectDir, branch string) error {
 
 // HasRemote returns true if the named remote exists.
 func HasRemote(projectDir, remoteName string) (bool, error) {
-	cmd := exec.Command("git", "remote")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "remote")
 	if err != nil {
 		return false, fmt.Errorf("git remote failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -132,9 +155,7 @@ func HasGhCli() bool {
 
 // CreatePR creates a GitHub pull request using the gh CLI.
 func CreatePR(projectDir, branch, title, body string) (string, error) {
-	cmd := exec.Command("gh", "pr", "create", "--head", branch, "--title", title, "--body", body)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := ghRun(projectDir, "pr", "create", "--head", branch, "--title", title, "--body", body)
 	if err != nil {
 		return "", fmt.Errorf("gh pr create failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -143,9 +164,7 @@ func CreatePR(projectDir, branch, title, body string) (string, error) {
 
 // GetExistingPR checks if a PR already exists for the given branch.
 func GetExistingPR(projectDir, branch string) (string, error) {
-	cmd := exec.Command("gh", "pr", "view", branch, "--json", "url", "-q", ".url")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := ghRun(projectDir, "pr", "view", branch, "--json", "url", "-q", ".url")
 	if err != nil {
 		return "", err
 	}
@@ -157,9 +176,7 @@ func GetExistingPR(projectDir, branch string) (string, error) {
 }
 
 func headCommitHash(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse HEAD failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}

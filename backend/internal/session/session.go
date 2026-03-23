@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -49,6 +50,8 @@ type pendingQuestion struct {
 	ch        chan map[string]string
 }
 
+const eventLoopShutdownTimeout = 3 * time.Second
+
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
 	ID        string
@@ -65,10 +68,11 @@ type Session struct {
 	seqInTurn        int
 	queries          *store.Queries
 	broadcast        func(pushType string, payload any)
-	pendingApprovals  map[string]*pendingApproval
-	pendingQuestions  map[string]*pendingQuestion
-	autoApprove       bool
-	workDir           string
+	pendingApprovals map[string]*pendingApproval
+	pendingQuestions map[string]*pendingQuestion
+	autoApprove      bool
+	workDir          string
+	eventLoopDone    chan struct{}
 }
 
 type sessionParams struct {
@@ -96,6 +100,7 @@ func newSession(p sessionParams) *Session {
 		pendingApprovals: make(map[string]*pendingApproval),
 		pendingQuestions: make(map[string]*pendingQuestion),
 		workDir:          p.workDir,
+		eventLoopDone:    make(chan struct{}),
 	}
 	s.broadcastState(StateIdle)
 	if s.cliSess != nil {
@@ -155,7 +160,7 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 		promptPayload["attachments"] = attachments
 	}
 	promptData, _ := json.Marshal(promptPayload)
-	_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
 		SessionID: s.ID,
 		TurnIndex: int64(s.turnIndex),
 		Seq:       0,
@@ -231,67 +236,88 @@ func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
 
 // startEventLoop reads events from the claudecli-go session, persists them
 // to the database, and broadcasts them to all project WebSocket clients.
+// Signals eventLoopDone on exit. Exits on context cancellation or channel close.
 func (s *Session) startEventLoop() {
 	go func() {
-		for event := range s.cliSess.Events() {
-			// Capture Claude session ID from InitEvent.
-			if initEv, ok := event.(*claudecli.InitEvent); ok {
-				s.mu.Lock()
-				if s.claudeSessionID == "" && initEv.SessionID != "" {
-					s.claudeSessionID = initEv.SessionID
-					_ = s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
-						ClaudeSessionID: sqlNullString(initEv.SessionID),
-						ID:              s.ID,
-					})
-					log.Printf("session %s: captured claude session ID %s", s.ID, initEv.SessionID)
+		defer close(s.eventLoopDone)
+
+		events := s.cliSess.Events()
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					// Channel closed — session process ended.
+					// Only transition to Done if Close() hasn't already set it.
+					s.mu.Lock()
+					if s.state != StateDone {
+						s.mu.Unlock()
+						s.setState(StateDone)
+					} else {
+						s.mu.Unlock()
+					}
+					return
 				}
-				s.mu.Unlock()
-				continue
-			}
-
-			wireEvent := ToWireEvent(event)
-			if wireEvent == nil {
-				continue
-			}
-
-			// Persist to DB.
-			s.mu.Lock()
-			seq := s.seqInTurn
-			turnIdx := s.turnIndex
-			s.seqInTurn++
-			s.mu.Unlock()
-
-			if data, err := json.Marshal(wireEvent); err == nil {
-				typed, _ := wireEvent.(interface{ WireType() string })
-				_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
-					SessionID: s.ID,
-					TurnIndex: int64(turnIdx),
-					Seq:       int64(seq),
-					Type:      typed.WireType(),
-					Data:      string(data),
-				})
-			}
-
-			// Broadcast to all project clients.
-			s.broadcast("session.event", map[string]any{
-				"sessionId": s.ID,
-				"event":     wireEvent,
-			})
-
-			// ResultEvent marks the end of a turn.
-			if _, ok := event.(*claudecli.ResultEvent); ok {
-				s.setState(StateIdle)
-			}
-
-			// Fatal error ends the session.
-			if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
-				s.setState(StateFailed)
+				s.processEvent(event)
 			}
 		}
-
-		// Channel closed means session process ended.
-		s.setState(StateDone)
 	}()
+}
+
+// processEvent handles a single event from the CLI session.
+func (s *Session) processEvent(event claudecli.Event) {
+	// Capture Claude session ID from InitEvent.
+	if initEv, ok := event.(*claudecli.InitEvent); ok {
+		s.mu.Lock()
+		if s.claudeSessionID == "" && initEv.SessionID != "" {
+			s.claudeSessionID = initEv.SessionID
+			_ = s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
+				ClaudeSessionID: sqlNullString(initEv.SessionID),
+				ID:              s.ID,
+			})
+			log.Printf("session %s: captured claude session ID %s", s.ID, initEv.SessionID)
+		}
+		s.mu.Unlock()
+		return
+	}
+
+	wireEvent := ToWireEvent(event)
+	if wireEvent == nil {
+		return
+	}
+
+	// Persist to DB.
+	s.mu.Lock()
+	seq := s.seqInTurn
+	turnIdx := s.turnIndex
+	s.seqInTurn++
+	s.mu.Unlock()
+
+	if data, err := json.Marshal(wireEvent); err == nil {
+		typed, _ := wireEvent.(interface{ WireType() string })
+		_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+			SessionID: s.ID,
+			TurnIndex: int64(turnIdx),
+			Seq:       int64(seq),
+			Type:      typed.WireType(),
+			Data:      string(data),
+		})
+	}
+
+	// Broadcast to all project clients.
+	s.broadcast("session.event", map[string]any{
+		"sessionId": s.ID,
+		"event":     wireEvent,
+	})
+
+	if _, ok := event.(*claudecli.ResultEvent); ok {
+		s.setState(StateIdle)
+	}
+
+	if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
+		s.setState(StateFailed)
+	}
 }
 
 func (s *Session) setState(state State) {
@@ -320,12 +346,7 @@ func (s *Session) broadcastState(state State) {
 }
 
 // SetPermissionMode changes the CLI permission mode (plan, acceptEdits, default).
-// Does not affect autoApprove — use SetAutoApprove for that.
 func (s *Session) SetPermissionMode(mode string) error {
-	s.mu.Lock()
-	cli := s.cliSess
-	s.mu.Unlock()
-
 	var m claudecli.PermissionMode
 	switch mode {
 	case "plan":
@@ -335,7 +356,13 @@ func (s *Session) SetPermissionMode(mode string) error {
 	default:
 		m = claudecli.PermissionDefault
 	}
-	_ = cli.SetPermissionMode(m)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cliSess == nil {
+		return ErrNotLive
+	}
+	_ = s.cliSess.SetPermissionMode(m)
 	return nil
 }
 
@@ -350,29 +377,28 @@ func (s *Session) SetAutoApprove(enabled bool) {
 // The event loop will receive a ResultEvent and transition back to idle.
 func (s *Session) Interrupt() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.state != StateRunning {
-		st := s.state
-		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not %s", string(st), string(StateRunning))
+		return fmt.Errorf("session is %s, not %s", string(s.state), string(StateRunning))
 	}
-	cli := s.cliSess
-	s.mu.Unlock()
-
-	cli.Interrupt()
+	if s.cliSess == nil {
+		return ErrNotLive
+	}
+	s.cliSess.Interrupt()
 	return nil
 }
 
 // SetModel changes the model for this session. Only allowed when idle.
 func (s *Session) SetModel(model string) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.state == StateRunning {
-		s.mu.Unlock()
 		return fmt.Errorf("cannot change model while running")
 	}
-	cli := s.cliSess
-	s.mu.Unlock()
-
-	cli.SetModel(resolveModel(model))
+	if s.cliSess == nil {
+		return ErrNotLive
+	}
+	s.cliSess.SetModel(resolveModel(model))
 	return nil
 }
 
@@ -504,10 +530,30 @@ func (s *Session) ResolveQuestion(questionID string, answers map[string]string) 
 }
 
 // Close gracefully shuts down the claudecli-go session.
+// Cancels the context to unblock callbacks, closes the CLI session to stop the
+// process and close the Events channel, then waits for the event loop to exit.
 func (s *Session) Close() {
 	s.cancelCtx()
+
+	// Close CLI session to stop the process and close Events channel.
 	s.mu.Lock()
-	// Reject all pending approvals so callbacks unblock.
+	cli := s.cliSess
+	s.cliSess = nil
+	s.mu.Unlock()
+	if cli != nil {
+		cli.Close()
+	}
+
+	// Wait for event loop goroutine to finish.
+	select {
+	case <-s.eventLoopDone:
+	case <-time.After(eventLoopShutdownTimeout):
+		log.Printf("session %s: event loop did not stop in time", s.ID)
+	}
+
+	// Safety net: drain any pending approvals/questions that weren't
+	// cleared by ctx cancellation.
+	s.mu.Lock()
 	for id, pa := range s.pendingApprovals {
 		select {
 		case pa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}:
@@ -515,17 +561,12 @@ func (s *Session) Close() {
 		}
 		delete(s.pendingApprovals, id)
 	}
-	// Cancel all pending questions so callbacks unblock.
 	for id, pq := range s.pendingQuestions {
 		select {
 		case pq.ch <- nil:
 		default:
 		}
 		delete(s.pendingQuestions, id)
-	}
-	if s.cliSess != nil {
-		s.cliSess.Close()
-		s.cliSess = nil
 	}
 	s.state = StateDone
 	s.mu.Unlock()

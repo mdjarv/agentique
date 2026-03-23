@@ -3,9 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -173,7 +171,8 @@ func (m *Manager) Get(id string) *Session {
 	return m.sessions[id]
 }
 
-// Stop closes a session, updates DB state to "stopped", and removes worktree if present.
+// Stop closes a live session and marks it as stopped in DB.
+// Does not handle worktree cleanup — callers (Service) are responsible for that.
 func (m *Manager) Stop(ctx context.Context, id string) error {
 	m.mu.Lock()
 	sess, ok := m.sessions[id]
@@ -186,22 +185,10 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 		sess.Close()
 	}
 
-	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+	return m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 		State: string(StateStopped),
 		ID:    id,
 	})
-
-	dbSess, err := m.queries.GetSession(ctx, id)
-	if err == nil {
-		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-			project, projErr := m.queries.GetProject(ctx, dbSess.ProjectID)
-			if projErr == nil {
-				RemoveWorktree(project.Path, wtPath)
-			}
-		}
-	}
-
-	return nil
 }
 
 // ListByProject returns session metadata from DB.
@@ -221,25 +208,6 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	}
 
 	return sessions, nil
-}
-
-// GetDiff returns the diff for a worktree session.
-func (m *Manager) GetDiff(ctx context.Context, sessionID string) (DiffResult, error) {
-	dbSess, err := m.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("session not found: %w", err)
-	}
-
-	wtPath := nullStr(dbSess.WorktreePath)
-	if wtPath == "" {
-		return DiffResult{}, fmt.Errorf("session has no worktree")
-	}
-
-	if _, err := os.Stat(wtPath); err != nil {
-		return DiffResult{}, fmt.Errorf("worktree path not accessible: %w", err)
-	}
-
-	return WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha))
 }
 
 // CloseAll gracefully closes all live sessions with a per-session timeout.

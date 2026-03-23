@@ -11,13 +11,13 @@ func TestMergeBranch(t *testing.T) {
 	repoDir := initGitRepo(t)
 
 	// Create a feature branch with a commit.
-	gitRun(t, repoDir, "checkout", "-b", "feature")
+	testGitRun(t, repoDir, "checkout", "-b", "feature")
 	writeFile(t, repoDir, "feature.txt", "feature content")
-	gitRun(t, repoDir, "add", ".")
-	gitRun(t, repoDir, "commit", "-m", "feature commit")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "feature commit")
 
 	// Switch back to main and merge.
-	gitRun(t, repoDir, "checkout", "main")
+	testGitRun(t, repoDir, "checkout", "main")
 
 	hash, err := MergeBranch(repoDir, "feature")
 	if err != nil {
@@ -28,7 +28,7 @@ func TestMergeBranch(t *testing.T) {
 	}
 
 	// Verify the merge commit exists.
-	out := gitOutput(t, repoDir, "log", "--oneline", "-1")
+	out := testGitOutput(t, repoDir, "log", "--oneline", "-1")
 	if out == "" {
 		t.Fatal("expected merge commit in log")
 	}
@@ -43,15 +43,15 @@ func TestMergeConflictFiles(t *testing.T) {
 	repoDir := initGitRepo(t)
 
 	// Create conflicting changes on two branches.
-	gitRun(t, repoDir, "checkout", "-b", "conflict-branch")
+	testGitRun(t, repoDir, "checkout", "-b", "conflict-branch")
 	writeFile(t, repoDir, "README", "conflict branch content")
-	gitRun(t, repoDir, "add", ".")
-	gitRun(t, repoDir, "commit", "-m", "conflict branch change")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "conflict branch change")
 
-	gitRun(t, repoDir, "checkout", "main")
+	testGitRun(t, repoDir, "checkout", "main")
 	writeFile(t, repoDir, "README", "main branch content")
-	gitRun(t, repoDir, "add", ".")
-	gitRun(t, repoDir, "commit", "-m", "main branch change")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "main branch change")
 
 	// Attempt merge (should fail).
 	_, err := MergeBranch(repoDir, "conflict-branch")
@@ -88,19 +88,19 @@ func TestDeleteBranch(t *testing.T) {
 	repoDir := initGitRepo(t)
 
 	// Create a branch, merge it, then delete.
-	gitRun(t, repoDir, "checkout", "-b", "to-delete")
+	testGitRun(t, repoDir, "checkout", "-b", "to-delete")
 	writeFile(t, repoDir, "delete.txt", "content")
-	gitRun(t, repoDir, "add", ".")
-	gitRun(t, repoDir, "commit", "-m", "branch commit")
-	gitRun(t, repoDir, "checkout", "main")
-	gitRun(t, repoDir, "merge", "--no-ff", "to-delete")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "branch commit")
+	testGitRun(t, repoDir, "checkout", "main")
+	testGitRun(t, repoDir, "merge", "--no-ff", "to-delete")
 
 	if err := DeleteBranch(repoDir, "to-delete"); err != nil {
 		t.Fatalf("DeleteBranch failed: %v", err)
 	}
 
 	// Verify branch no longer exists.
-	out := gitOutput(t, repoDir, "branch", "--list", "to-delete")
+	out := testGitOutput(t, repoDir, "branch", "--list", "to-delete")
 	if out != "" {
 		t.Fatalf("expected branch to be deleted, but got: %s", out)
 	}
@@ -140,7 +140,7 @@ func TestCurrentBranch(t *testing.T) {
 		t.Fatalf("expected branch 'main', got %q", branch)
 	}
 
-	gitRun(t, repoDir, "checkout", "-b", "test-branch")
+	testGitRun(t, repoDir, "checkout", "-b", "test-branch")
 	branch, err = CurrentBranch(repoDir)
 	if err != nil {
 		t.Fatalf("CurrentBranch failed: %v", err)
@@ -169,7 +169,7 @@ func TestHasGhCli(t *testing.T) {
 
 // --- helpers ---
 
-func gitRun(t *testing.T, dir string, args ...string) {
+func testGitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -185,7 +185,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func gitOutput(t *testing.T, dir string, args ...string) string {
+func testGitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

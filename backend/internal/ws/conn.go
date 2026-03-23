@@ -10,6 +10,13 @@ import (
 	"github.com/allbin/agentique/backend/internal/session"
 )
 
+const (
+	writeTimeout = 10 * time.Second
+	pongTimeout  = 60 * time.Second
+	pingInterval = 30 * time.Second
+	sendBufSize  = 256
+)
+
 type conn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -30,7 +37,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		svc:    svc,
 		gitSvc: gitSvc,
 		hub:    hub,
-		sendCh: make(chan any, 64),
+		sendCh: make(chan any, sendBufSize),
 	}
 }
 
@@ -46,9 +53,9 @@ func (c *conn) run() {
 }
 
 func (c *conn) readLoop() {
-	c.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.ws.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.ws.SetPongHandler(func(string) error {
-		c.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		c.ws.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 	for {
@@ -64,13 +71,15 @@ func (c *conn) readLoop() {
 }
 
 func (c *conn) writeLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-c.ctx.Done():
 			// Drain remaining messages before closing.
+			c.mu.Lock()
 			c.ws.SetWriteDeadline(time.Now().Add(1 * time.Second))
+			c.mu.Unlock()
 			for {
 				select {
 				case msg := <-c.sendCh:
@@ -83,6 +92,7 @@ func (c *conn) writeLoop() {
 			}
 		case msg := <-c.sendCh:
 			c.mu.Lock()
+			c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 			err := c.ws.WriteJSON(msg)
 			c.mu.Unlock()
 			if err != nil {
@@ -91,6 +101,7 @@ func (c *conn) writeLoop() {
 			}
 		case <-ticker.C:
 			c.mu.Lock()
+			c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 			err := c.ws.WriteMessage(websocket.PingMessage, nil)
 			c.mu.Unlock()
 			if err != nil {
@@ -141,10 +152,15 @@ func (c *conn) dispatch(msg ClientMessage) {
 	}
 }
 
+// send enqueues a message for writing. Non-blocking: if the buffer is full,
+// the connection is closed (the client can't keep up).
 func (c *conn) send(msg any) {
 	select {
 	case c.sendCh <- msg:
 	case <-c.ctx.Done():
+	default:
+		log.Printf("ws: send buffer full, closing connection")
+		c.cancel()
 	}
 }
 

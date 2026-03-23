@@ -1,7 +1,9 @@
 package session
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -36,9 +38,7 @@ func WorktreePath(projectName, branch string) string {
 // CreateWorktree creates a new git worktree at worktreePath branching from HEAD.
 func CreateWorktree(projectDir, branch, worktreePath string) error {
 	safeBranch := sanitizeBranch(branch)
-	cmd := exec.Command("git", "worktree", "add", "-b", safeBranch, worktreePath, "HEAD")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "worktree", "add", "-b", safeBranch, worktreePath, "HEAD")
 	if err != nil {
 		return fmt.Errorf("git worktree add failed: %w: %s", err, string(out))
 	}
@@ -48,9 +48,7 @@ func CreateWorktree(projectDir, branch, worktreePath string) error {
 // RestoreWorktree re-creates a worktree for an existing branch.
 func RestoreWorktree(projectDir, branch, worktreePath string) error {
 	safeBranch := sanitizeBranch(branch)
-	cmd := exec.Command("git", "worktree", "add", worktreePath, safeBranch)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "worktree", "add", worktreePath, safeBranch)
 	if err != nil {
 		return fmt.Errorf("git worktree restore failed: %w: %s", err, string(out))
 	}
@@ -60,9 +58,7 @@ func RestoreWorktree(projectDir, branch, worktreePath string) error {
 // RemoveWorktree removes a git worktree. This is best-effort: errors are logged
 // but not returned.
 func RemoveWorktree(projectDir, worktreePath string) {
-	cmd := exec.Command("git", "worktree", "remove", worktreePath)
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
+	out, err := gitRun(projectDir, "worktree", "remove", worktreePath)
 	if err != nil {
 		log.Printf("warning: git worktree remove failed (best-effort): %v: %s", err, string(out))
 	}
@@ -98,9 +94,7 @@ type DiffResult struct {
 
 // GetWorktreeBaseSHA returns the current HEAD SHA in a directory.
 func GetWorktreeBaseSHA(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := gitStdout(dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
 	}
@@ -114,25 +108,18 @@ func WorktreeDiff(worktreePath, baseSHA string) (DiffResult, error) {
 	}
 
 	// Get numstat for structured file data.
-	numstatCmd := exec.Command("git", "diff", "--numstat", baseSHA)
-	numstatCmd.Dir = worktreePath
-	numstatOut, err := numstatCmd.Output()
+	numstatOut, err := gitStdout(worktreePath, "diff", "--numstat", baseSHA)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("git diff --numstat: %w", err)
 	}
 
 	// Get name-status for file status (added/modified/deleted/renamed).
-	nameStatusCmd := exec.Command("git", "diff", "--name-status", baseSHA)
-	nameStatusCmd.Dir = worktreePath
-	nameStatusOut, err := nameStatusCmd.Output()
+	nameStatusOut, err := gitStdout(worktreePath, "diff", "--name-status", baseSHA)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("git diff --name-status: %w", err)
 	}
 
-	// Parse name-status into a map.
 	statusMap := parseNameStatus(string(nameStatusOut))
-
-	// Parse numstat into DiffStat structs.
 	files := parseNumstat(string(numstatOut), statusMap)
 
 	if len(files) == 0 {
@@ -140,37 +127,61 @@ func WorktreeDiff(worktreePath, baseSHA string) (DiffResult, error) {
 	}
 
 	// Get --stat summary for display.
-	statCmd := exec.Command("git", "diff", "--stat", baseSHA)
-	statCmd.Dir = worktreePath
-	statOut, err := statCmd.Output()
+	statOut, err := gitStdout(worktreePath, "diff", "--stat", baseSHA)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("git diff --stat: %w", err)
 	}
 
-	// Get full unified diff.
-	diffCmd := exec.Command("git", "diff", baseSHA)
-	diffCmd.Dir = worktreePath
-	diffOut, err := diffCmd.Output()
+	// Get full unified diff with bounded memory.
+	diffOut, truncated, err := diffLimited(worktreePath, baseSHA, maxDiffBytes)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("git diff: %w", err)
 	}
 
-	result := DiffResult{
-		HasDiff: true,
-		Summary: strings.TrimSpace(string(statOut)),
-		Files:   files,
-		Diff:    string(diffOut),
-	}
-
-	if len(diffOut) > maxDiffBytes {
-		result.Diff = string(diffOut[:maxDiffBytes])
-		result.Truncated = true
-	}
-
-	return result, nil
+	return DiffResult{
+		HasDiff:   true,
+		Summary:   strings.TrimSpace(string(statOut)),
+		Files:     files,
+		Diff:      string(diffOut),
+		Truncated: truncated,
+	}, nil
 }
 
-// parseNameStatus parses `git diff --name-status` output into a file→status map.
+// diffLimited runs git diff and reads at most limit bytes from stdout.
+func diffLimited(dir, baseSHA string, limit int64) ([]byte, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "diff", baseSHA)
+	cmd.Dir = dir
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, false, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, false, err
+	}
+
+	lr := &io.LimitedReader{R: pipe, N: limit + 1}
+	data, readErr := io.ReadAll(lr)
+	truncated := lr.N <= 0
+	if truncated {
+		data = data[:limit]
+	}
+
+	// Drain remaining output so the process can exit cleanly.
+	_, _ = io.Copy(io.Discard, pipe)
+	_ = cmd.Wait()
+
+	if readErr != nil {
+		return nil, false, readErr
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, false, fmt.Errorf("git diff timed out after %s", gitTimeout)
+	}
+	return data, truncated, nil
+}
+
+// parseNameStatus parses `git diff --name-status` output into a file->status map.
 func parseNameStatus(output string) map[string]string {
 	m := make(map[string]string)
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
