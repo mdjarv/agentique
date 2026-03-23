@@ -2,7 +2,7 @@ import { Check, ShieldAlert, X } from "lucide-react";
 import { useCallback } from "react";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { resolveApproval, setPermissionMode } from "~/lib/session-actions";
+import { resolveApproval, setAutoApprove } from "~/lib/session-actions";
 import type { PendingApproval } from "~/stores/chat-store";
 
 interface ApprovalBannerProps {
@@ -95,9 +95,7 @@ export function ApprovalBanner({
 	}, [ws, sessionId, approval.approvalId]);
 
 	const handleAllowAll = useCallback(() => {
-		setPermissionMode(ws, sessionId, "bypassPermissions").catch(
-			console.error,
-		);
+		setAutoApprove(ws, sessionId, true).catch(console.error);
 		resolveApproval(ws, sessionId, approval.approvalId, true).catch(
 			console.error,
 		);

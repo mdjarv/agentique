@@ -100,6 +100,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionSetModel(msg)
 	case "session.set-permission":
 		c.handleSessionSetPermission(msg)
+	case "session.set-auto-approve":
+		c.handleSessionSetAutoApprove(msg)
 	case "session.resolve-approval":
 		c.handleSessionResolveApproval(msg)
 	case "session.resolve-question":

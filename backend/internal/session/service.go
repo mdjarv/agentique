@@ -443,6 +443,16 @@ func (s *Service) SetPermissionMode(ctx context.Context, sessionID, mode string)
 	return sess.SetPermissionMode(mode)
 }
 
+// SetAutoApprove enables or disables automatic tool approval for a session.
+func (s *Service) SetAutoApprove(ctx context.Context, sessionID string, enabled bool) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return fmt.Errorf("session not found or not live")
+	}
+	sess.SetAutoApprove(enabled)
+	return nil
+}
+
 // InterruptSession stops the current generation without killing the session.
 func (s *Service) InterruptSession(ctx context.Context, sessionID string) error {
 	sess := s.mgr.Get(sessionID)

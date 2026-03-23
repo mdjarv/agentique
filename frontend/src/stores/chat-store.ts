@@ -295,7 +295,7 @@ export const useChatStore = create<ChatState>((set) => ({
 			return {
 				sessions: {
 					...s.sessions,
-					[sessionId]: { ...session, planMode, autoApprove: planMode ? false : session.autoApprove },
+					[sessionId]: { ...session, planMode },
 				},
 			};
 		}),
@@ -307,7 +307,7 @@ export const useChatStore = create<ChatState>((set) => ({
 			return {
 				sessions: {
 					...s.sessions,
-					[sessionId]: { ...session, autoApprove, planMode: autoApprove ? false : session.planMode },
+					[sessionId]: { ...session, autoApprove },
 				},
 			};
 		}),

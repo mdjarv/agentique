@@ -149,6 +149,11 @@ type SessionResolveApprovalPayload struct {
 	Message    string `json:"message"`
 }
 
+type SessionSetAutoApprovePayload struct {
+	SessionID string `json:"sessionId"`
+	Enabled   bool   `json:"enabled"`
+}
+
 type SessionResolveQuestionPayload struct {
 	SessionID  string            `json:"sessionId"`
 	QuestionID string            `json:"questionId"`

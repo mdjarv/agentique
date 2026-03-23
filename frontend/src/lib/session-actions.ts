@@ -97,6 +97,15 @@ export async function resolveApproval(
 	useChatStore.getState().clearPendingApproval(sessionId);
 }
 
+export async function setAutoApprove(
+	ws: WsClient,
+	sessionId: string,
+	enabled: boolean,
+): Promise<void> {
+	await ws.request("session.set-auto-approve", { sessionId, enabled });
+	useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
+}
+
 export async function resolveQuestion(
 	ws: WsClient,
 	sessionId: string,

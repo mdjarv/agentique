@@ -7,7 +7,7 @@ import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { setPermissionMode } from "~/lib/session-actions";
+import { setAutoApprove, setPermissionMode } from "~/lib/session-actions";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -53,9 +53,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
 	const handleAutoApproveChange = useCallback(
 		(enabled: boolean) => {
 			if (!activeSessionId) return;
-			const mode = enabled ? "bypassPermissions" : "default";
-			setPermissionMode(ws, activeSessionId, mode).catch(console.error);
-			useChatStore.getState().setSessionAutoApprove(activeSessionId, enabled);
+			setAutoApprove(ws, activeSessionId, enabled).catch(console.error);
 		},
 		[ws, activeSessionId],
 	);
