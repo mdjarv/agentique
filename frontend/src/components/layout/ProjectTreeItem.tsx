@@ -1,13 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-	ChevronDown,
-	ChevronRight,
-	FolderOpen,
-	GitBranch,
-	Plus,
-	Square,
-	Trash2,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/shallow";
 import {
@@ -22,15 +14,12 @@ import {
 } from "~/components/ui/alert-dialog";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteProject } from "~/lib/api";
-import {
-	deleteSession,
-	interruptSession,
-	stopSession,
-} from "~/lib/session-actions";
+import { deleteSession, interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
-import { cn, relativeTime } from "~/lib/utils";
+import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type SessionState, useChatStore } from "~/stores/chat-store";
+import { SessionRow } from "./SessionRow";
 
 const statePriority: Record<SessionState, number> = {
 	running: 0,
@@ -42,7 +31,6 @@ const statePriority: Record<SessionState, number> = {
 	stopped: 6,
 	done: 7,
 };
-import { SessionStatusDot } from "./SessionStatusDot";
 
 interface ProjectTreeItemProps {
 	project: Project;
@@ -190,62 +178,17 @@ export function ProjectTreeItem({
 						.map((id) => {
 							const session = sessions[id]?.meta;
 							if (!session) return null;
-							const isActiveSession = id === activeSessionId;
 							return (
-								<div
+								<SessionRow
 									key={id}
-									className={cn(
-										"flex items-center gap-2 rounded-md px-2 py-1 text-sm group/session hover:bg-accent/50 transition-colors",
-										isActiveSession && "bg-accent/70",
-									)}
-								>
-									<button
-										type="button"
-										className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
-										onClick={() => handleSessionClick(id)}
-									>
-										<SessionStatusDot
-											state={session.state}
-											hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
-										/>
-										<span className="truncate" title={session.name}>
-											{session.name}
-										</span>
-										<span className="text-xs text-muted-foreground shrink-0">
-											{relativeTime(session.createdAt)}
-										</span>
-										{session.worktreeBranch ? (
-											<span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0">
-												<GitBranch className="h-3 w-3" />
-												<span className="truncate max-w-[6rem]">
-													{session.worktreeBranch}
-												</span>
-											</span>
-										) : session.state !== "draft" ? (
-											<span className="text-xs text-muted-foreground shrink-0">
-												Local
-											</span>
-										) : null}
-									</button>
-									{session.state !== "stopped" && session.state !== "done" && (
-										<button
-											type="button"
-											aria-label="Stop session"
-											onClick={(e) => handleStopSession(e, id, session.state)}
-											className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
-										>
-											<Square className="h-3 w-3" />
-										</button>
-									)}
-									<button
-										type="button"
-										aria-label="Delete session"
-										onClick={(e) => handleDeleteSession(e, id)}
-										className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
-									>
-										<Trash2 className="h-3 w-3" />
-									</button>
-								</div>
+									name={session.name}
+									state={session.state}
+									hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+									isActive={id === activeSessionId}
+									onClick={() => handleSessionClick(id)}
+									onStop={(e) => handleStopSession(e, id, session.state)}
+									onDelete={(e) => handleDeleteSession(e, id)}
+								/>
 							);
 						})}
 				</div>
