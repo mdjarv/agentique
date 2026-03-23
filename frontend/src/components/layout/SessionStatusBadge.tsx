@@ -24,7 +24,12 @@ interface SessionStatusBadgeProps {
   isPlanning?: boolean;
 }
 
-export function SessionStatusBadge({ state, hasUnseenCompletion, hasPendingApproval, isPlanning }: SessionStatusBadgeProps) {
+export function SessionStatusBadge({
+  state,
+  hasUnseenCompletion,
+  hasPendingApproval,
+  isPlanning,
+}: SessionStatusBadgeProps) {
   const showAttention = hasUnseenCompletion && state === "idle";
   const config = hasPendingApproval
     ? waitingConfig

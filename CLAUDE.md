@@ -5,6 +5,7 @@
 - `just check` (biome + tsc) must pass before considering tasks completed.
 - `just test-backend` for Go changes.
 - `just sqlc` after modifying SQL queries in `backend/db/queries/`.
+- ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the correct directory. Running `npx biome` from the project root fails silently.
 
 ## Project Snapshot
 

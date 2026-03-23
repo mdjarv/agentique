@@ -2,185 +2,181 @@
 type PushHandler = (payload: any) => void;
 
 interface PendingRequest {
-	// biome-ignore lint/suspicious/noExplicitAny: resolve accepts any response shape
-	resolve: (payload: any) => void;
-	reject: (error: Error) => void;
-	timer: ReturnType<typeof setTimeout>;
+  // biome-ignore lint/suspicious/noExplicitAny: resolve accepts any response shape
+  resolve: (payload: any) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 export type ConnectionState = "connected" | "reconnecting" | "disconnected";
 
 export class WsClient {
-	private ws: WebSocket | null = null;
-	private url: string;
-	private requestId = 0;
-	private pending = new Map<string, PendingRequest>();
-	private pushHandlers = new Map<string, Set<PushHandler>>();
-	private reconnectDelay = 500;
-	private shouldReconnect = true;
-	private connectListeners = new Set<() => void>();
-	private disconnectListeners = new Set<() => void>();
-	private _connectionState: ConnectionState = "disconnected";
-	private connectionStateListeners = new Set<() => void>();
+  private ws: WebSocket | null = null;
+  private url: string;
+  private requestId = 0;
+  private pending = new Map<string, PendingRequest>();
+  private pushHandlers = new Map<string, Set<PushHandler>>();
+  private reconnectDelay = 500;
+  private shouldReconnect = true;
+  private connectListeners = new Set<() => void>();
+  private disconnectListeners = new Set<() => void>();
+  private _connectionState: ConnectionState = "disconnected";
+  private connectionStateListeners = new Set<() => void>();
 
-	constructor(url: string) {
-		this.url = url;
-	}
+  constructor(url: string) {
+    this.url = url;
+  }
 
-	get connectionState(): ConnectionState {
-		return this._connectionState;
-	}
+  get connectionState(): ConnectionState {
+    return this._connectionState;
+  }
 
-	private setConnectionState(s: ConnectionState): void {
-		if (this._connectionState === s) return;
-		this._connectionState = s;
-		for (const fn of this.connectionStateListeners) fn();
-	}
+  private setConnectionState(s: ConnectionState): void {
+    if (this._connectionState === s) return;
+    this._connectionState = s;
+    for (const fn of this.connectionStateListeners) fn();
+  }
 
-	onConnectionStateChange(fn: () => void): () => void {
-		this.connectionStateListeners.add(fn);
-		return () => this.connectionStateListeners.delete(fn);
-	}
+  onConnectionStateChange(fn: () => void): () => void {
+    this.connectionStateListeners.add(fn);
+    return () => this.connectionStateListeners.delete(fn);
+  }
 
-	connect(): void {
-		if (this.ws) return;
-		console.log("[WsClient] connecting to", this.url);
-		this.ws = new WebSocket(this.url);
+  connect(): void {
+    if (this.ws) return;
+    console.log("[WsClient] connecting to", this.url);
+    this.ws = new WebSocket(this.url);
 
-		this.ws.onopen = () => {
-			console.log("[WsClient] connected");
-			this.reconnectDelay = 500;
-			this.setConnectionState("connected");
-			for (const fn of this.connectListeners) fn();
-		};
+    this.ws.onopen = () => {
+      console.log("[WsClient] connected");
+      this.reconnectDelay = 500;
+      this.setConnectionState("connected");
+      for (const fn of this.connectListeners) fn();
+    };
 
-		this.ws.onmessage = (ev) => {
-			this.handleMessage(ev.data as string);
-		};
+    this.ws.onmessage = (ev) => {
+      this.handleMessage(ev.data as string);
+    };
 
-		this.ws.onclose = (ev) => {
-			console.log("[WsClient] closed:", ev.code, ev.reason);
-			this.ws = null;
-			for (const fn of this.disconnectListeners) fn();
-			// Reject all pending requests.
-			for (const [id, req] of this.pending) {
-				clearTimeout(req.timer);
-				req.reject(new Error("WebSocket closed"));
-				this.pending.delete(id);
-			}
-			if (this.shouldReconnect) {
-				this.setConnectionState("reconnecting");
-				setTimeout(() => this.connect(), this.reconnectDelay);
-				this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
-			} else {
-				this.setConnectionState("disconnected");
-			}
-		};
+    this.ws.onclose = (ev) => {
+      console.log("[WsClient] closed:", ev.code, ev.reason);
+      this.ws = null;
+      for (const fn of this.disconnectListeners) fn();
+      // Reject all pending requests.
+      for (const [id, req] of this.pending) {
+        clearTimeout(req.timer);
+        req.reject(new Error("WebSocket closed"));
+        this.pending.delete(id);
+      }
+      if (this.shouldReconnect) {
+        this.setConnectionState("reconnecting");
+        setTimeout(() => this.connect(), this.reconnectDelay);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+      } else {
+        this.setConnectionState("disconnected");
+      }
+    };
 
-		this.ws.onerror = (ev) => {
-			console.log("[WsClient] error:", ev);
-		};
-	}
+    this.ws.onerror = (ev) => {
+      console.log("[WsClient] error:", ev);
+    };
+  }
 
-	disconnect(): void {
-		this.shouldReconnect = false;
-		this.setConnectionState("disconnected");
-		this.ws?.close();
-	}
+  disconnect(): void {
+    this.shouldReconnect = false;
+    this.setConnectionState("disconnected");
+    this.ws?.close();
+  }
 
-	/** Wait for the WebSocket to be connected, with a timeout. */
-	private waitForConnection(timeoutMs = 5000): Promise<void> {
-		if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				unsub();
-				reject(new Error("WebSocket connection timeout"));
-			}, timeoutMs);
-			const unsub = this.onConnect(() => {
-				clearTimeout(timer);
-				unsub();
-				resolve();
-			});
-		});
-	}
+  /** Wait for the WebSocket to be connected, with a timeout. */
+  private waitForConnection(timeoutMs = 5000): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsub();
+        reject(new Error("WebSocket connection timeout"));
+      }, timeoutMs);
+      const unsub = this.onConnect(() => {
+        clearTimeout(timer);
+        unsub();
+        resolve();
+      });
+    });
+  }
 
-	async request<T = unknown>(
-		type: string,
-		payload: unknown = {},
-		timeoutMs = 30000,
-	): Promise<T> {
-		await this.waitForConnection();
+  async request<T = unknown>(type: string, payload: unknown = {}, timeoutMs = 30000): Promise<T> {
+    await this.waitForConnection();
 
-		const id = `req-${++this.requestId}`;
-		const msg = JSON.stringify({ id, type, payload });
+    const id = `req-${++this.requestId}`;
+    const msg = JSON.stringify({ id, type, payload });
 
-		return new Promise<T>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.pending.delete(id);
-				reject(new Error(`Request ${type} timed out`));
-			}, timeoutMs);
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Request ${type} timed out`));
+      }, timeoutMs);
 
-			this.pending.set(id, { resolve, reject, timer });
-			this.ws?.send(msg);
-		});
-	}
+      this.pending.set(id, { resolve, reject, timer });
+      this.ws?.send(msg);
+    });
+  }
 
-	subscribe(type: string, handler: PushHandler): () => void {
-		let handlers = this.pushHandlers.get(type);
-		if (!handlers) {
-			handlers = new Set();
-			this.pushHandlers.set(type, handlers);
-		}
-		handlers.add(handler);
+  subscribe(type: string, handler: PushHandler): () => void {
+    let handlers = this.pushHandlers.get(type);
+    if (!handlers) {
+      handlers = new Set();
+      this.pushHandlers.set(type, handlers);
+    }
+    handlers.add(handler);
 
-		return () => {
-			handlers?.delete(handler);
-			if (handlers?.size === 0) {
-				this.pushHandlers.delete(type);
-			}
-		};
-	}
+    return () => {
+      handlers?.delete(handler);
+      if (handlers?.size === 0) {
+        this.pushHandlers.delete(type);
+      }
+    };
+  }
 
-	onConnect(fn: () => void): () => void {
-		this.connectListeners.add(fn);
-		return () => this.connectListeners.delete(fn);
-	}
+  onConnect(fn: () => void): () => void {
+    this.connectListeners.add(fn);
+    return () => this.connectListeners.delete(fn);
+  }
 
-	onDisconnect(fn: () => void): () => void {
-		this.disconnectListeners.add(fn);
-		return () => this.disconnectListeners.delete(fn);
-	}
+  onDisconnect(fn: () => void): () => void {
+    this.disconnectListeners.add(fn);
+    return () => this.disconnectListeners.delete(fn);
+  }
 
-	private handleMessage(data: string): void {
-		try {
-			const msg = JSON.parse(data);
+  private handleMessage(data: string): void {
+    try {
+      const msg = JSON.parse(data);
 
-			// Response to a pending request.
-			if (msg.id && msg.type === "response") {
-				const pending = this.pending.get(msg.id);
-				if (pending) {
-					clearTimeout(pending.timer);
-					this.pending.delete(msg.id);
-					if (msg.error) {
-						pending.reject(new Error(msg.error.message));
-					} else {
-						pending.resolve(msg.payload);
-					}
-				}
-				return;
-			}
+      // Response to a pending request.
+      if (msg.id && msg.type === "response") {
+        const pending = this.pending.get(msg.id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pending.delete(msg.id);
+          if (msg.error) {
+            pending.reject(new Error(msg.error.message));
+          } else {
+            pending.resolve(msg.payload);
+          }
+        }
+        return;
+      }
 
-			// Push event.
-			if (msg.type) {
-				const handlers = this.pushHandlers.get(msg.type);
-				if (handlers) {
-					for (const handler of handlers) {
-						handler(msg.payload);
-					}
-				}
-			}
-		} catch (err) {
-			console.error("Failed to parse WebSocket message:", err);
-		}
-	}
+      // Push event.
+      if (msg.type) {
+        const handlers = this.pushHandlers.get(msg.type);
+        if (handlers) {
+          for (const handler of handlers) {
+            handler(msg.payload);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to parse WebSocket message:", err);
+    }
+  }
 }

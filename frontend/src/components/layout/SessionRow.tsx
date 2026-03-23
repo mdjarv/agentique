@@ -40,7 +40,12 @@ export function SessionRow({
         className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
         onClick={onClick}
       >
-        <SessionStatusBadge state={state} hasUnseenCompletion={hasUnseenCompletion} hasPendingApproval={hasPendingApproval} isPlanning={isPlanning} />
+        <SessionStatusBadge
+          state={state}
+          hasUnseenCompletion={hasUnseenCompletion}
+          hasPendingApproval={hasPendingApproval}
+          isPlanning={isPlanning}
+        />
         <span className="truncate" title={name}>
           {name}
         </span>

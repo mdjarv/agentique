@@ -2,12 +2,23 @@
 default:
     @just --list
 
-# Development
+# Run both servers in parallel
+dev:
+    just stop
+    just dev-backend & just dev-frontend & wait
+
+# Go backend
 dev-backend:
     cd backend && go run ./cmd/agentique -addr :9201
 
+# React frontend
 dev-frontend:
     cd frontend && npm run dev
+
+# Stop dev servers
+stop:
+    -lsof -ti:9200 | xargs kill 2>/dev/null
+    -lsof -ti:9201 | xargs kill 2>/dev/null
 
 # Build
 build: frontend-build backend-build

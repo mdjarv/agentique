@@ -2,39 +2,39 @@
 @plugin "@tailwindcss/typography";
 
 @theme inline {
-	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-popover: var(--popover);
-	--color-popover-foreground: var(--popover-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-	--color-border: var(--border);
-	--color-input: var(--input);
-	--color-ring: var(--ring);
-	--color-sidebar: var(--sidebar);
-	--color-sidebar-foreground: var(--sidebar-foreground);
-	--color-sidebar-primary: var(--sidebar-primary);
-	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-	--color-sidebar-accent: var(--sidebar-accent);
-	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-	--color-sidebar-border: var(--sidebar-border);
-	--color-sidebar-ring: var(--sidebar-ring);
-	--radius-sm: calc(var(--radius) - 4px);
-	--radius-md: calc(var(--radius) - 2px);
-	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /*
@@ -58,66 +58,66 @@
  */
 
 :root {
-	/* Tokyo Night (Dark) as the default (and only) theme */
-	--background: #1a1b26;
-	--foreground: #a9b1d6;
-	--card: #16161e;
-	--card-foreground: #a9b1d6;
-	--popover: #1a1b26;
-	--popover-foreground: #a9b1d6;
-	--primary: #7aa2f7;
-	--primary-foreground: #1a1b26;
-	--secondary: #24283b;
-	--secondary-foreground: #a9b1d6;
-	--muted: #24283b;
-	--muted-foreground: #565f89;
-	--accent: #24283b;
-	--accent-foreground: #a9b1d6;
-	--destructive: #f7768e;
-	--destructive-foreground: #1a1b26;
-	--border: #3b4261;
-	--input: #3b4261;
-	--ring: #7aa2f7;
-	--sidebar: #16161e;
-	--sidebar-foreground: #a9b1d6;
-	--sidebar-primary: #7aa2f7;
-	--sidebar-primary-foreground: #1a1b26;
-	--sidebar-accent: #24283b;
-	--sidebar-accent-foreground: #a9b1d6;
-	--sidebar-border: #3b4261;
-	--sidebar-ring: #7aa2f7;
-	--radius: 0.625rem;
+  /* Tokyo Night (Dark) as the default (and only) theme */
+  --background: #1a1b26;
+  --foreground: #a9b1d6;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1a1b26;
+  --popover-foreground: #a9b1d6;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #565f89;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #7aa2f7;
+  --sidebar: #16161e;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #7aa2f7;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #24283b;
+  --sidebar-accent-foreground: #a9b1d6;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #7aa2f7;
+  --radius: 0.625rem;
 }
 
 /* Keep .dark class identical so shadcn components work in dark mode */
 .dark {
-	--background: #1a1b26;
-	--foreground: #a9b1d6;
-	--card: #16161e;
-	--card-foreground: #a9b1d6;
-	--popover: #1a1b26;
-	--popover-foreground: #a9b1d6;
-	--primary: #7aa2f7;
-	--primary-foreground: #1a1b26;
-	--secondary: #24283b;
-	--secondary-foreground: #a9b1d6;
-	--muted: #24283b;
-	--muted-foreground: #565f89;
-	--accent: #24283b;
-	--accent-foreground: #a9b1d6;
-	--destructive: #f7768e;
-	--destructive-foreground: #1a1b26;
-	--border: #3b4261;
-	--input: #3b4261;
-	--ring: #7aa2f7;
-	--sidebar: #16161e;
-	--sidebar-foreground: #a9b1d6;
-	--sidebar-primary: #7aa2f7;
-	--sidebar-primary-foreground: #1a1b26;
-	--sidebar-accent: #24283b;
-	--sidebar-accent-foreground: #a9b1d6;
-	--sidebar-border: #3b4261;
-	--sidebar-ring: #7aa2f7;
+  --background: #1a1b26;
+  --foreground: #a9b1d6;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1a1b26;
+  --popover-foreground: #a9b1d6;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #565f89;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #7aa2f7;
+  --sidebar: #16161e;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #7aa2f7;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #24283b;
+  --sidebar-accent-foreground: #a9b1d6;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #7aa2f7;
 }
 
 /* Override Tailwind v4 universal reset for typography prose elements.
@@ -136,47 +136,47 @@
 .prose blockquote,
 .prose hr,
 .prose table {
-	margin-top: 1em;
-	margin-bottom: 1em;
+  margin-top: 1em;
+  margin-bottom: 1em;
 }
 .prose p:first-child,
 .prose h1:first-child,
 .prose h2:first-child,
 .prose h3:first-child {
-	margin-top: 0;
+  margin-top: 0;
 }
 .prose p:last-child {
-	margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 @layer base {
-	* {
-		@apply border-border;
-		scrollbar-width: thin;
-		scrollbar-color: var(--border) transparent;
-	}
-	body {
-		@apply bg-background text-foreground font-sans;
-	}
-	code,
-	pre,
-	kbd,
-	samp,
-	textarea {
-		@apply font-mono;
-	}
-	*::-webkit-scrollbar {
-		width: 6px;
-		height: 6px;
-	}
-	*::-webkit-scrollbar-track {
-		background: transparent;
-	}
-	*::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 3px;
-	}
-	*::-webkit-scrollbar-thumb:hover {
-		background: var(--muted-foreground);
-	}
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  code,
+  pre,
+  kbd,
+  samp,
+  textarea {
+    @apply font-mono;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
 }

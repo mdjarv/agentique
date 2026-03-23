@@ -3,20 +3,19 @@ import { ChatPanel } from "~/components/chat/ChatPanel";
 import { useKeyboardShortcuts } from "~/hooks/useKeyboardShortcuts";
 
 interface ProjectSearch {
-	session?: string;
+  session?: string;
 }
 
 export const Route = createFileRoute("/project/$projectId")({
-	component: ProjectPage,
-	validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
-		session:
-			typeof search.session === "string" ? search.session : undefined,
-	}),
+  component: ProjectPage,
+  validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
+    session: typeof search.session === "string" ? search.session : undefined,
+  }),
 });
 
 function ProjectPage() {
-	const { projectId } = Route.useParams();
-	const { session } = Route.useSearch();
-	useKeyboardShortcuts(projectId);
-	return <ChatPanel projectId={projectId} initialSessionId={session} />;
+  const { projectId } = Route.useParams();
+  const { session } = Route.useSearch();
+  useKeyboardShortcuts(projectId);
+  return <ChatPanel projectId={projectId} initialSessionId={session} />;
 }
