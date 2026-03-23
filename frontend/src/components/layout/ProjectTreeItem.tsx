@@ -139,14 +139,6 @@ export function ProjectTreeItem({
 					</span>
 					<button
 						type="button"
-						aria-label="New session"
-						onClick={handleNewSession}
-						className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-primary/20 transition-opacity"
-					>
-						<Plus className="h-3.5 w-3.5" />
-					</button>
-					<button
-						type="button"
 						aria-label="Delete project"
 						onClick={handleDeleteClick}
 						className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
@@ -159,8 +151,8 @@ export function ProjectTreeItem({
 				</p>
 			</div>
 
-			{/* Sessions (only for active project) */}
-			{isActive && sessionIds.length > 0 && (
+			{/* Sessions + new chat (only for active project) */}
+			{isActive && (
 				<div className="ml-4 mt-0.5 space-y-0.5">
 					{[...sessionIds]
 						.sort((a, b) => {
@@ -191,6 +183,14 @@ export function ProjectTreeItem({
 								/>
 							);
 						})}
+					<button
+						type="button"
+						onClick={handleNewSession}
+						className="flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+					>
+						<Plus className="h-3 w-3" />
+						<span>New chat</span>
+					</button>
 				</div>
 			)}
 
