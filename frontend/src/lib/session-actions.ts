@@ -58,6 +58,13 @@ export async function getSessionDiff(
 	return ws.request<DiffResult>("session.diff", { sessionId });
 }
 
+export async function interruptSession(
+	ws: WsClient,
+	sessionId: string,
+): Promise<void> {
+	await ws.request("session.interrupt", { sessionId });
+}
+
 export async function stopSession(
 	ws: WsClient,
 	sessionId: string,

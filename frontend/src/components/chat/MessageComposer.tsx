@@ -1,4 +1,11 @@
-import { FileText, GitBranch, Paperclip, SendHorizonal, X } from "lucide-react";
+import {
+	FileText,
+	GitBranch,
+	Paperclip,
+	SendHorizonal,
+	Square,
+	X,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -20,6 +27,8 @@ function isImage(mime: string): boolean {
 interface MessageComposerProps {
 	onSend: (prompt: string, attachments?: Attachment[]) => void;
 	disabled: boolean;
+	isRunning?: boolean;
+	onInterrupt?: () => void;
 	isDraft?: boolean;
 	worktree?: boolean;
 	onWorktreeChange?: (value: boolean) => void;
@@ -28,6 +37,8 @@ interface MessageComposerProps {
 export function MessageComposer({
 	onSend,
 	disabled,
+	isRunning,
+	onInterrupt,
 	isDraft,
 	worktree,
 	onWorktreeChange,
@@ -214,13 +225,25 @@ export function MessageComposer({
 					style={{ maxHeight: "200px" }}
 					disabled={disabled}
 				/>
-				<Button
-					size="icon"
-					onClick={handleSend}
-					disabled={disabled || (!text.trim() && attachments.length === 0)}
-				>
-					<SendHorizonal className="h-4 w-4" />
-				</Button>
+				{isRunning ? (
+					<Button
+						size="icon"
+						variant="destructive"
+						onClick={onInterrupt}
+					>
+						<Square className="h-4 w-4" />
+					</Button>
+				) : (
+					<Button
+						size="icon"
+						onClick={handleSend}
+						disabled={
+							disabled || (!text.trim() && attachments.length === 0)
+						}
+					>
+						<SendHorizonal className="h-4 w-4" />
+					</Button>
+				)}
 			</div>
 		</div>
 	);

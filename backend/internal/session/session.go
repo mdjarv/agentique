@@ -272,6 +272,22 @@ func (s *Session) broadcastState(state string) {
 	})
 }
 
+// Interrupt stops the current generation without killing the session.
+// The event loop will receive a ResultEvent and transition back to idle.
+func (s *Session) Interrupt() error {
+	s.mu.Lock()
+	if s.state != StateRunning {
+		st := s.state
+		s.mu.Unlock()
+		return fmt.Errorf("session is %s, not %s", st, StateRunning)
+	}
+	cli := s.cliSess
+	s.mu.Unlock()
+
+	cli.Interrupt()
+	return nil
+}
+
 // Close gracefully shuts down the claudecli-go session.
 func (s *Session) Close() {
 	s.mu.Lock()

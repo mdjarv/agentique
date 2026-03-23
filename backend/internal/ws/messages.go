@@ -109,3 +109,7 @@ type SessionHistoryResult struct {
 type SessionDiffPayload struct {
 	SessionID string `json:"sessionId"`
 }
+
+type SessionInterruptPayload struct {
+	SessionID string `json:"sessionId"`
+}

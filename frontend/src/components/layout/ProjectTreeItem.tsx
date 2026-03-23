@@ -22,7 +22,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteProject } from "~/lib/api";
-import { stopSession } from "~/lib/session-actions";
+import { interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -76,9 +76,17 @@ export function ProjectTreeItem({
 		onNewSession();
 	};
 
-	const handleStopSession = async (e: React.MouseEvent, sessionId: string) => {
+	const handleStopSession = async (
+		e: React.MouseEvent,
+		sessionId: string,
+		state: string,
+	) => {
 		e.stopPropagation();
-		await stopSession(ws, sessionId);
+		if (state === "running") {
+			await interruptSession(ws, sessionId);
+		} else {
+			await stopSession(ws, sessionId);
+		}
 	};
 
 	const handleSessionClick = (sessionId: string) => {
@@ -184,7 +192,7 @@ export function ProjectTreeItem({
 									<button
 										type="button"
 										aria-label="Stop session"
-										onClick={(e) => handleStopSession(e, id)}
+										onClick={(e) => handleStopSession(e, id, session.state)}
 										className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
 									>
 										<Square className="h-3 w-3" />

@@ -131,6 +131,26 @@ func (c *conn) handleSessionDiff(msg ClientMessage) {
 	c.respond(msg.ID, result, "")
 }
 
+func (c *conn) handleSessionInterrupt(msg ClientMessage) {
+	var payload SessionInterruptPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+
+	if err := c.svc.InterruptSession(c.ctx, payload.SessionID); err != nil {
+		c.respond(msg.ID, nil, "interrupt failed: "+err.Error())
+		return
+	}
+
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

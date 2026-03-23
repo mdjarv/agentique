@@ -2,7 +2,11 @@ import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
-import { createSession, stopSession } from "~/lib/session-actions";
+import {
+	createSession,
+	interruptSession,
+	stopSession,
+} from "~/lib/session-actions";
 import { copyToClipboard, uuid } from "~/lib/utils";
 import {
 	type Attachment,
@@ -156,6 +160,11 @@ export function useChatSession(projectId: string) {
 		[projectId, ws],
 	);
 
+	const interruptSessionCb = useCallback(
+		(sessionId: string) => interruptSession(ws, sessionId),
+		[ws],
+	);
+
 	const stopSessionCb = useCallback(
 		(sessionId: string) => stopSession(ws, sessionId),
 		[ws],
@@ -164,6 +173,7 @@ export function useChatSession(projectId: string) {
 	return {
 		sendQuery,
 		createSession: createSessionCb,
+		interruptSession: interruptSessionCb,
 		stopSession: stopSessionCb,
 		loadHistory: loadSessionHistory,
 	};

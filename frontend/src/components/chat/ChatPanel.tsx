@@ -11,7 +11,8 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ projectId }: ChatPanelProps) {
-	const { sendQuery, loadHistory } = useChatSession(projectId);
+	const { sendQuery, interruptSession, loadHistory } =
+		useChatSession(projectId);
 	const project = useAppStore((s) =>
 		s.projects.find((p) => p.id === projectId),
 	);
@@ -48,6 +49,10 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
 			<MessageComposer
 				onSend={sendQuery}
 				disabled={sessionState === "running"}
+				isRunning={sessionState === "running"}
+				onInterrupt={() => {
+					if (activeSessionId) interruptSession(activeSessionId);
+				}}
 				isDraft={isDraft}
 				worktree={worktree}
 				onWorktreeChange={(v) => {
