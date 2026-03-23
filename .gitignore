@@ -5,6 +5,7 @@ backend/tmp/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # Build artifacts
 backend/internal/server/frontend_dist/assets/
