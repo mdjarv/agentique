@@ -103,7 +103,7 @@ export function useChatSession(projectId: string) {
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = payload.event;
-      useChatStore.getState().appendEvent(payload.sessionId, {
+      useChatStore.getState().handleServerEvent(payload.sessionId, {
         id: uuid(),
         type: event.type,
         content: event.content,
@@ -116,10 +116,6 @@ export function useChatSession(projectId: string) {
         stopReason: event.stopReason,
         fatal: event.fatal,
       });
-
-      if (event.type === "result") {
-        useChatStore.getState().completeTurn(payload.sessionId);
-      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -171,14 +167,17 @@ export function useChatSession(projectId: string) {
       try {
         if (!sessionId || state === "draft") {
           const worktree = session?.meta.worktree ?? false;
-          const realId = await createSession(ws, projectId, "", worktree);
-          if (sessionId) useChatStore.getState().removeSession(sessionId);
-          useChatStore.getState().setActiveSessionId(realId);
-          sessionId = realId;
+          const realMeta = await createSession(ws, projectId, "", worktree);
+          if (sessionId) {
+            useChatStore.getState().promoteDraft(sessionId, realMeta);
+          } else {
+            useChatStore.getState().addSession(realMeta);
+            useChatStore.getState().setActiveSessionId(realMeta.id);
+          }
+          sessionId = realMeta.id;
         }
 
-        // Backend handles lazy resume if session is not live.
-        useChatStore.getState().startTurn(sessionId, prompt, attachments);
+        useChatStore.getState().submitQuery(sessionId, prompt, attachments);
 
         const payload: Record<string, unknown> = { sessionId, prompt };
         if (attachments && attachments.length > 0) {
@@ -203,8 +202,13 @@ export function useChatSession(projectId: string) {
   );
 
   const createSessionCb = useCallback(
-    (name: string, worktree: boolean, branch?: string) =>
-      createSession(ws, projectId, name, worktree, branch),
+    async (name: string, worktree: boolean, branch?: string) => {
+      const meta = await createSession(ws, projectId, name, worktree, branch);
+      const s = useChatStore.getState();
+      s.addSession(meta);
+      s.setActiveSessionId(meta.id);
+      return meta.id;
+    },
     [projectId, ws],
   );
 

@@ -17,13 +17,13 @@ export async function createSession(
   name: string,
   worktree: boolean,
   branch?: string,
-): Promise<string> {
+): Promise<SessionMetadata> {
   const result = await ws.request<SessionCreateResult>(
     "session.create",
     { projectId, name, worktree, branch },
     120000,
   );
-  const meta: SessionMetadata = {
+  return {
     id: result.sessionId,
     name: result.name,
     state: result.state as SessionMetadata["state"],
@@ -31,9 +31,6 @@ export async function createSession(
     worktreeBranch: result.worktreeBranch,
     createdAt: result.createdAt,
   };
-  useChatStore.getState().addSession(meta);
-  useChatStore.getState().setActiveSessionId(result.sessionId);
-  return result.sessionId;
 }
 
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {

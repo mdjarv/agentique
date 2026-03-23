@@ -77,10 +77,12 @@ interface ChatState {
   // History
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
 
-  // Turn/event management (now takes sessionId)
-  startTurn: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
-  appendEvent: (sessionId: string, event: ChatEvent) => void;
-  completeTurn: (sessionId: string) => void;
+  // Turn/event management
+  submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
+  handleServerEvent: (sessionId: string, event: ChatEvent) => void;
+
+  // Draft → real session promotion (atomic)
+  promoteDraft: (draftId: string, realSession: SessionMetadata) => void;
 
   // Project-level reset
   resetProject: () => void;
@@ -226,7 +228,7 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  startTurn: (sessionId, prompt, attachments) =>
+  submitQuery: (sessionId, prompt, attachments) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
@@ -251,17 +253,24 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  appendEvent: (sessionId, event) =>
+  handleServerEvent: (sessionId, event) =>
     set((s) => {
       const session = s.sessions[sessionId];
-      if (!session) return s;
+      if (!session) {
+        console.warn("handleServerEvent: unknown session", sessionId);
+        return s;
+      }
       const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
-      if (!lastTurn) return s;
+      if (!lastTurn) {
+        console.warn("handleServerEvent: no turns for session", sessionId);
+        return s;
+      }
 
       const updatedTurn = {
         ...lastTurn,
         events: [...lastTurn.events, event],
+        complete: lastTurn.complete || event.type === "result",
       };
       turns[turns.length - 1] = updatedTurn;
 
@@ -270,23 +279,7 @@ export const useChatStore = create<ChatState>((set) => ({
         currentAssistantText += event.content;
       }
 
-      return {
-        sessions: {
-          ...s.sessions,
-          [sessionId]: { ...session, turns, currentAssistantText },
-        },
-      };
-    }),
-
-  completeTurn: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      const turns = [...session.turns];
-      const lastTurn = turns[turns.length - 1];
-      if (!lastTurn) return s;
-
-      turns[turns.length - 1] = { ...lastTurn, complete: true };
+      const isResult = event.type === "result";
       const isViewing = s.activeSessionId === sessionId;
       return {
         sessions: {
@@ -294,10 +287,28 @@ export const useChatStore = create<ChatState>((set) => ({
           [sessionId]: {
             ...session,
             turns,
-            meta: { ...session.meta, state: "idle" },
-            hasUnseenCompletion: !isViewing,
+            currentAssistantText,
+            meta: isResult ? { ...session.meta, state: "idle" } : session.meta,
+            hasUnseenCompletion: isResult ? !isViewing : session.hasUnseenCompletion,
           },
         },
+      };
+    }),
+
+  promoteDraft: (draftId, realSession) =>
+    set((s) => {
+      const { [draftId]: _, ...rest } = s.sessions;
+      return {
+        sessions: {
+          ...rest,
+          [realSession.id]: {
+            meta: realSession,
+            turns: [],
+            currentAssistantText: "",
+            hasUnseenCompletion: false,
+          },
+        },
+        activeSessionId: realSession.id,
       };
     }),
 
