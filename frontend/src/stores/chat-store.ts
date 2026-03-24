@@ -103,6 +103,7 @@ export interface SessionData {
   planMode: boolean;
   autoApprove: boolean;
   rateLimit: RateLimitInfo | null;
+  draftText: string;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -114,6 +115,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   planMode: false,
   autoApprove: false,
   rateLimit: null,
+  draftText: "",
 });
 
 // --- Immutable update helpers ---
@@ -173,6 +175,7 @@ export interface ChatState {
   // Draft session management
   createDraft: (projectId: string) => void;
   setDraftWorktree: (sessionId: string, worktree: boolean) => void;
+  setDraftText: (sessionId: string, text: string) => void;
 
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
@@ -282,6 +285,10 @@ export const useChatStore = create<ChatState>((set) => ({
 
   createDraft: () =>
     set((s) => {
+      const existing = Object.keys(s.sessions).find((id) => s.sessions[id]?.meta.state === "draft");
+      if (existing) {
+        return { activeSessionId: existing };
+      }
       const draftId = `draft-${uuid()}`;
       const meta: SessionMetadata = {
         id: draftId,
@@ -301,6 +308,13 @@ export const useChatStore = create<ChatState>((set) => ({
       const session = s.sessions[sessionId];
       if (!session || session.meta.state !== "draft") return s;
       return updateMeta(s, sessionId, { worktree });
+    }),
+
+  setDraftText: (sessionId, text) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session || session.meta.state !== "draft") return s;
+      return updateSession(s, sessionId, { draftText: text });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>

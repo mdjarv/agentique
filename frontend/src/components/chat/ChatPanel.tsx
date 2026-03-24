@@ -132,6 +132,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       )}
       {activeSession?.rateLimit && <RateLimitBanner rateLimit={activeSession.rateLimit} />}
       <MessageComposer
+        key={activeSession.meta.id}
         onSend={sendQuery}
         disabled={sessionState === "running"}
         isRunning={sessionState === "running"}
@@ -139,6 +140,12 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
           if (activeSessionId) interruptSession(activeSessionId);
         }}
         isDraft={isDraft}
+        initialText={activeSession.draftText}
+        onTextPersist={(t) => {
+          if (activeSessionId) {
+            useChatStore.getState().setDraftText(activeSessionId, t);
+          }
+        }}
         placeholder={resumePlaceholder}
         planMode={planMode}
         onPlanModeChange={handlePlanModeChange}
