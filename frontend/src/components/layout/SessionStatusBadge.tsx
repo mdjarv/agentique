@@ -1,21 +1,17 @@
+import {
+  ArrowUpCircle,
+  Check,
+  Circle,
+  Loader,
+  MessageSquare,
+  Pause,
+  PenLine,
+  TriangleAlert,
+  XCircle,
+  Zap,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
-
-const stateConfig: Record<SessionState, { label: string; classes: string }> = {
-  draft: { label: "Draft", classes: "text-[#565f89] bg-[#565f89]/20" },
-  idle: { label: "Idle", classes: "text-[#9ece6a] bg-[#9ece6a]/20" },
-  running: { label: "Run", classes: "text-[#e0af68] bg-[#e0af68]/20" },
-  starting: { label: "Init", classes: "text-[#7aa2f7] bg-[#7aa2f7]/20" },
-  failed: { label: "Fail", classes: "text-[#f7768e] bg-[#f7768e]/20" },
-  disconnected: { label: "Lost", classes: "text-[#ff9e64] bg-[#ff9e64]/20" },
-  stopped: { label: "Stop", classes: "text-[#a9b1d6] bg-[#a9b1d6]/20" },
-  done: { label: "Done", classes: "text-[#7dcfff] bg-[#7dcfff]/20" },
-};
-
-const attentionConfig = { label: "New", classes: "text-[#73daca] bg-[#73daca]/20" };
-const waitingConfig = { label: "Wait", classes: "text-[#bb9af7] bg-[#bb9af7]/20" };
-
-const planningConfig = { label: "Plan", classes: "text-[#e0af68] bg-[#e0af68]/20" };
 
 interface SessionStatusBadgeProps {
   state: SessionState;
@@ -30,24 +26,106 @@ export function SessionStatusBadge({
   hasPendingApproval,
   isPlanning,
 }: SessionStatusBadgeProps) {
-  const showAttention = hasUnseenCompletion && state === "idle";
-  const config = hasPendingApproval
-    ? waitingConfig
-    : isPlanning && state === "running"
-      ? planningConfig
-      : showAttention
-        ? attentionConfig
-        : stateConfig[state];
+  // Attention overrides
+  if (hasPendingApproval) {
+    return (
+      <Badge bg="bg-[#bb9af7]/15" text="text-[#bb9af7]" pulse title="Waiting for approval">
+        <MessageSquare className="size-3" />
+      </Badge>
+    );
+  }
+  if (isPlanning && state === "running") {
+    return (
+      <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Planning">
+        <PenLine className="size-3" />
+      </Badge>
+    );
+  }
+  if (hasUnseenCompletion && state === "idle") {
+    return (
+      <Badge bg="bg-[#73daca]/15" text="text-[#73daca]" title="New response">
+        <Zap className="size-3" />
+      </Badge>
+    );
+  }
 
+  // State icons
+  switch (state) {
+    case "running":
+      return (
+        <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Running">
+          <Loader className="size-3 animate-spin" />
+        </Badge>
+      );
+    case "starting":
+      return (
+        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title="Starting">
+          <ArrowUpCircle className="size-3" />
+        </Badge>
+      );
+    case "idle":
+      return (
+        <Badge bg="bg-[#9ece6a]/15" text="text-[#9ece6a]" title="Idle">
+          <Circle className="size-2.5" />
+        </Badge>
+      );
+    case "done":
+      return (
+        <Badge bg="bg-emerald-500/15" text="text-emerald-500" title="Done">
+          <Check className="size-3" />
+        </Badge>
+      );
+    case "stopped":
+      return (
+        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/60" title="Stopped">
+          <Pause className="size-3" />
+        </Badge>
+      );
+    case "failed":
+      return (
+        <Badge bg="bg-[#f7768e]/15" text="text-[#f7768e]" title="Failed">
+          <XCircle className="size-3" />
+        </Badge>
+      );
+    case "disconnected":
+      return (
+        <Badge bg="bg-[#ff9e64]/15" text="text-[#ff9e64]" title="Disconnected">
+          <TriangleAlert className="size-3" />
+        </Badge>
+      );
+    case "draft":
+      return (
+        <Badge bg="bg-[#565f89]/15" text="text-[#565f89]" title="Draft">
+          <PenLine className="size-3" />
+        </Badge>
+      );
+  }
+}
+
+function Badge({
+  bg,
+  text,
+  pulse,
+  title,
+  children,
+}: {
+  bg: string;
+  text: string;
+  pulse?: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded px-1.5 text-[10px] font-semibold leading-4 shrink-0 uppercase tracking-wide",
-        config.classes,
-        (hasPendingApproval || state === "running" || showAttention) && "animate-pulse",
+        "flex size-5 shrink-0 items-center justify-center rounded-full",
+        bg,
+        text,
+        pulse && "animate-pulse",
       )}
+      title={title}
     >
-      {config.label}
+      {children}
     </span>
   );
 }

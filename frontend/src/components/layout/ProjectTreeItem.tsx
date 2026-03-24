@@ -18,19 +18,129 @@ import { deleteSession, interruptSession, stopSession } from "~/lib/session-acti
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import { type SessionState, useChatStore } from "~/stores/chat-store";
+import { type ChatState, type SessionState, useChatStore } from "~/stores/chat-store";
 import { SessionRow } from "./SessionRow";
 
-const statePriority: Record<SessionState, number> = {
+const activeStates = new Set<SessionState>([
+  "running",
+  "starting",
+  "idle",
+  "draft",
+  "disconnected",
+]);
+const activePriority: Record<string, number> = {
   running: 0,
   starting: 1,
   idle: 2,
   draft: 3,
   disconnected: 4,
-  failed: 5,
-  stopped: 6,
-  done: 7,
 };
+
+function sortByPriorityThenDate(
+  ids: string[],
+  sessions: ChatState["sessions"],
+  priority: Record<string, number>,
+): string[] {
+  return [...ids].sort((a, b) => {
+    const sa = sessions[a]?.meta;
+    const sb = sessions[b]?.meta;
+    if (!sa || !sb) return 0;
+    const pa = priority[sa.state] ?? 99;
+    const pb = priority[sb.state] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
+  });
+}
+
+function renderSessionRow(
+  id: string,
+  sessions: ChatState["sessions"],
+  activeSessionId: string | null,
+  onSessionClick: (id: string) => void,
+  onStop: (e: React.MouseEvent, id: string, state: string) => void,
+  onDelete: (e: React.MouseEvent, id: string) => void,
+) {
+  const session = sessions[id]?.meta;
+  if (!session) return null;
+  return (
+    <SessionRow
+      key={id}
+      name={session.name}
+      state={session.state}
+      hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+      hasPendingApproval={!!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion}
+      isPlanning={!!sessions[id]?.planMode}
+      isActive={id === activeSessionId}
+      worktreeBranch={session.worktreeBranch}
+      hasDirtyWorktree={session.hasDirtyWorktree}
+      worktreeMerged={session.worktreeMerged}
+      commitsAhead={session.commitsAhead}
+      branchMissing={session.branchMissing}
+      hasUncommitted={session.hasUncommitted}
+      onClick={() => onSessionClick(id)}
+      onStop={(e) => onStop(e, id, session.state)}
+      onDelete={(e) => onDelete(e, id)}
+    />
+  );
+}
+
+function SessionGroups({
+  sessionIds,
+  sessions,
+  activeSessionId,
+  hideStoppedSessions,
+  onSessionClick,
+  onStop,
+  onDelete,
+}: {
+  sessionIds: string[];
+  sessions: ChatState["sessions"];
+  activeSessionId: string | null;
+  hideStoppedSessions: boolean;
+  onSessionClick: (id: string) => void;
+  onStop: (e: React.MouseEvent, id: string, state: string) => void;
+  onDelete: (e: React.MouseEvent, id: string) => void;
+}) {
+  const active: string[] = [];
+  const completed: string[] = [];
+
+  for (const id of sessionIds) {
+    const state = sessions[id]?.meta.state;
+    if (!state) continue;
+    if (activeStates.has(state)) {
+      active.push(id);
+    } else {
+      if (hideStoppedSessions && state === "stopped") continue;
+      completed.push(id);
+    }
+  }
+
+  const sortedActive = sortByPriorityThenDate(active, sessions, activePriority);
+  // Completed: newest first
+  const sortedCompleted = [...completed].sort((a, b) => {
+    const ta = new Date(sessions[a]?.meta.createdAt ?? 0).getTime();
+    const tb = new Date(sessions[b]?.meta.createdAt ?? 0).getTime();
+    return tb - ta;
+  });
+
+  return (
+    <>
+      {sortedActive.map((id) =>
+        renderSessionRow(id, sessions, activeSessionId, onSessionClick, onStop, onDelete),
+      )}
+      {sortedCompleted.length > 0 && (
+        <>
+          <p className="mt-2 mb-1 text-[10px] font-semibold tracking-widest text-muted-foreground/40 uppercase px-2">
+            Completed
+          </p>
+          {sortedCompleted.map((id) =>
+            renderSessionRow(id, sessions, activeSessionId, onSessionClick, onStop, onDelete),
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 interface ProjectTreeItemProps {
   project: Project;
@@ -199,48 +309,17 @@ export function ProjectTreeItem({
               <EyeOff className="h-3.5 w-3.5" />
             </button>
           </div>
-          {isActive &&
-            [...sessionIds]
-              .sort((a, b) => {
-                const sa = sessions[a]?.meta;
-                const sb = sessions[b]?.meta;
-                if (!sa || !sb) return 0;
-                const pa = statePriority[sa.state] ?? 99;
-                const pb = statePriority[sb.state] ?? 99;
-                if (pa !== pb) return pa - pb;
-                return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
-              })
-              .filter((id) => {
-                if (!hideStoppedSessions) return true;
-                const state = sessions[id]?.meta.state;
-                return state !== "stopped";
-              })
-              .map((id) => {
-                const session = sessions[id]?.meta;
-                if (!session) return null;
-                return (
-                  <SessionRow
-                    key={id}
-                    name={session.name}
-                    state={session.state}
-                    hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
-                    hasPendingApproval={
-                      !!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion
-                    }
-                    isPlanning={!!sessions[id]?.planMode}
-                    isActive={id === activeSessionId}
-                    worktreeBranch={session.worktreeBranch}
-                    hasDirtyWorktree={session.hasDirtyWorktree}
-                    worktreeMerged={session.worktreeMerged}
-                    commitsAhead={session.commitsAhead}
-                    branchMissing={session.branchMissing}
-                    hasUncommitted={session.hasUncommitted}
-                    onClick={() => handleSessionClick(id)}
-                    onStop={(e) => handleStopSession(e, id, session.state)}
-                    onDelete={(e) => handleDeleteSession(e, id)}
-                  />
-                );
-              })}
+          {isActive && (
+            <SessionGroups
+              sessionIds={sessionIds}
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              hideStoppedSessions={hideStoppedSessions}
+              onSessionClick={handleSessionClick}
+              onStop={handleStopSession}
+              onDelete={handleDeleteSession}
+            />
+          )}
         </div>
       )}
 

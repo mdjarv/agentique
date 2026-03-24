@@ -1,4 +1,4 @@
-import { GitBranch, Square, Trash2 } from "lucide-react";
+import { ArrowUp, GitBranch, Square, Trash2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -21,39 +21,8 @@ interface SessionRowProps {
   onDelete: (e: React.MouseEvent) => void;
 }
 
-function buildSummary(props: {
-  state: SessionState;
-  worktreeBranch?: string;
-  worktreeMerged?: boolean;
-  commitsAhead?: number;
-  branchMissing?: boolean;
-  hasUncommitted?: boolean;
-}): { text: string; color: string } | null {
-  if (!props.worktreeBranch) return null;
-  if (props.state === "draft" || props.state === "running" || props.state === "starting")
-    return null;
-
-  if (props.worktreeMerged) {
-    return { text: "merged", color: "text-[#9ece6a]/70" };
-  }
-
-  if (props.branchMissing) {
-    return { text: "branch missing", color: "text-[#f7768e]/70" };
-  }
-
-  const parts: string[] = [];
-  if (props.hasUncommitted) parts.push("uncommitted changes");
-  if (props.commitsAhead && props.commitsAhead > 0) {
-    parts.push(`${props.commitsAhead} commit${props.commitsAhead > 1 ? "s" : ""} ahead`);
-  }
-
-  if (parts.length > 0) {
-    return { text: parts.join(" · "), color: "text-[#e0af68]/70" };
-  }
-
-  if (props.state === "idle") return null;
-  return { text: "no changes", color: "text-muted-foreground/50" };
-}
+const isTerminal = (state: SessionState) =>
+  state === "done" || state === "stopped" || state === "failed";
 
 export function SessionRow({
   name,
@@ -72,15 +41,9 @@ export function SessionRow({
   onStop,
   onDelete,
 }: SessionRowProps) {
-  const canStop = state !== "stopped" && state !== "done" && state !== "draft";
-  const summary = buildSummary({
-    state,
-    worktreeBranch,
-    worktreeMerged,
-    commitsAhead,
-    branchMissing,
-    hasUncommitted,
-  });
+  const canStop = !isTerminal(state) && state !== "draft";
+  const faded = isTerminal(state) && worktreeMerged;
+  const hasAttention = !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
 
   return (
     <div
@@ -91,47 +54,69 @@ export function SessionRow({
     >
       <button
         type="button"
-        className="flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
+        className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
         onClick={onClick}
       >
-        <div className="flex items-center gap-1.5">
-          <SessionStatusBadge
-            state={state}
-            hasUnseenCompletion={hasUnseenCompletion}
-            hasPendingApproval={hasPendingApproval}
-            isPlanning={isPlanning}
-          />
-          <span className="truncate" title={name}>
-            {name}
-          </span>
-          {worktreeBranch && (
+        <SessionStatusBadge
+          state={state}
+          hasUnseenCompletion={hasUnseenCompletion}
+          hasPendingApproval={hasPendingApproval}
+          isPlanning={isPlanning}
+        />
+        <span
+          className={cn(
+            "truncate",
+            faded && "text-muted-foreground/40 line-through decoration-muted-foreground/20",
+            hasAttention && "text-[#e0af68]/90",
+          )}
+          title={name}
+        >
+          {name}
+        </span>
+
+        {/* Right-aligned decorations */}
+        <span className="ml-auto flex items-center gap-1 shrink-0">
+          {/* Commits ahead indicator */}
+          {!!commitsAhead && commitsAhead > 0 && !worktreeMerged && (
             <span
               className={cn(
-                "flex items-center gap-0.5 text-xs shrink-0 max-w-[8rem]",
-                hasDirtyWorktree
-                  ? "text-[#e0af68]/80"
-                  : worktreeMerged
-                    ? "text-[#9ece6a]/80"
-                    : "text-muted-foreground",
+                "flex items-center gap-0.5 text-[10px] font-medium",
+                hasUncommitted ? "text-[#e0af68]/70" : "text-muted-foreground/60",
               )}
-              title={
-                hasDirtyWorktree
-                  ? `${worktreeBranch} (dirty)`
-                  : worktreeMerged
-                    ? `${worktreeBranch} (merged)`
-                    : worktreeBranch
-              }
+              title={`${commitsAhead} commit${commitsAhead > 1 ? "s" : ""} ahead${hasUncommitted ? ", uncommitted changes" : ""}`}
             >
-              <GitBranch className="h-3 w-3 shrink-0" />
-              <span className="truncate">{worktreeBranch}</span>
+              <ArrowUp className="size-2.5" />
+              {commitsAhead}
             </span>
           )}
-        </div>
-        {summary && (
-          <div className={cn("text-[10px] pl-[calc(1.25rem+0.375rem)] truncate", summary.color)}>
-            {summary.text}
-          </div>
-        )}
+          {/* Branch indicator */}
+          {worktreeBranch && (
+            <span
+              title={
+                worktreeMerged
+                  ? `${worktreeBranch} (merged)`
+                  : branchMissing
+                    ? `${worktreeBranch} (missing)`
+                    : hasDirtyWorktree || hasUncommitted
+                      ? `${worktreeBranch} (dirty)`
+                      : worktreeBranch
+              }
+            >
+              <GitBranch
+                className={cn(
+                  "size-3",
+                  worktreeMerged
+                    ? "text-emerald-500/40"
+                    : hasDirtyWorktree || hasUncommitted
+                      ? "text-[#e0af68]/60"
+                      : branchMissing
+                        ? "text-[#f7768e]/50"
+                        : "text-muted-foreground/40",
+                )}
+              />
+            </span>
+          )}
+        </span>
       </button>
       {canStop && (
         <button
