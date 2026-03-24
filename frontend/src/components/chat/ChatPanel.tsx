@@ -55,12 +55,15 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [sessionId]);
 
   // Load history on mount or session switch
+  // Gates on !!session so the effect re-fires once the session list arrives
+  // (on direct navigation, session is undefined when this first runs)
+  const sessionExists = !!session;
   const hasTurns = (session?.turns.length ?? 0) > 0;
   useEffect(() => {
-    if (!hasTurns) {
+    if (sessionExists && !hasTurns) {
       loadSessionHistory(ws, sessionId);
     }
-  }, [ws, sessionId, hasTurns]);
+  }, [ws, sessionId, sessionExists, hasTurns]);
 
   // Redirect if session was deleted or doesn't exist
   useEffect(() => {
