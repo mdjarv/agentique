@@ -160,6 +160,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		workDir:   p.WorkDir,
 	})
 	sess.mu.Lock()
+	sess.queryCount = turnIndex + 1
 	sess.claudeSessionID = p.ClaudeSessionID
 	sess.autoApprove = p.AutoApprove
 	if p.PermissionMode != "" {
@@ -259,6 +260,8 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
 			sessions[i].State = string(live.State())
+		} else if sessions[i].State == string(StateIdle) || sessions[i].State == string(StateRunning) {
+			sessions[i].State = string(StateStopped)
 		}
 	}
 
