@@ -263,13 +263,15 @@ func (s *Session) startEventLoop() {
 			case event, ok := <-events:
 				if !ok {
 					s.mu.Lock()
-					if s.state != StateDone {
-						s.mu.Unlock()
+					st := s.state
+					s.mu.Unlock()
+					// Only transition to done on clean channel close.
+					// Skip if already in a terminal state (failed/stopped/done)
+					// so we don't mask the real reason the session ended.
+					if st != StateDone && st != StateFailed && st != StateStopped {
 						if err := s.setState(StateDone); err != nil {
 							slog.Error("state transition failed", "session_id", s.ID, "error", err)
 						}
-					} else {
-						s.mu.Unlock()
 					}
 					return
 				}

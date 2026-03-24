@@ -17,7 +17,7 @@ const (
 // validTransitions defines allowed state transitions.
 // Any transition not listed here is rejected.
 var validTransitions = map[State]map[State]bool{
-	StateIdle:    {StateRunning: true, StateMerging: true, StateStopped: true, StateDone: true},
+	StateIdle:    {StateRunning: true, StateFailed: true, StateMerging: true, StateStopped: true, StateDone: true},
 	StateRunning: {StateIdle: true, StateFailed: true, StateDone: true},
 	StateFailed:  {StateIdle: true, StateStopped: true, StateDone: true},
 	StateDone:    {StateIdle: true, StateStopped: true},
