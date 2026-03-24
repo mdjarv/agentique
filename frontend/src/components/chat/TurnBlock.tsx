@@ -22,6 +22,119 @@ import { copyToClipboard } from "~/lib/utils";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
+// --- Segment types ---
+
+interface ThinkingSegment {
+  kind: "thinking";
+  events: ChatEvent[];
+}
+interface ToolSegment {
+  kind: "tool";
+  pairs: { use: ChatEvent; result?: ChatEvent }[];
+}
+interface TextSegment {
+  kind: "text";
+  content: string;
+}
+interface ErrorSegment {
+  kind: "error";
+  events: ChatEvent[];
+}
+
+type Segment = ThinkingSegment | ToolSegment | TextSegment | ErrorSegment;
+type SegmentKind = Segment["kind"];
+
+function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
+  switch (e.type) {
+    case "thinking":
+      return "thinking";
+    case "tool_use":
+    case "tool_result":
+      return "tool";
+    case "text":
+      return "text";
+    case "error":
+      return "error";
+    case "result":
+      return "result";
+    default:
+      return "skip";
+  }
+}
+
+function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?: ChatEvent } {
+  const segments: Segment[] = [];
+  let resultEvent: ChatEvent | undefined;
+
+  for (const event of events) {
+    const kind = classifyEvent(event);
+    if (kind === "result") {
+      resultEvent = event;
+      continue;
+    }
+    if (kind === "skip") continue;
+
+    const last = segments[segments.length - 1];
+
+    if (last?.kind === kind) {
+      switch (last.kind) {
+        case "thinking":
+          last.events.push(event);
+          break;
+        case "tool":
+          if (event.type === "tool_use") {
+            last.pairs.push({ use: event });
+          } else {
+            const pair = last.pairs.find((p) => p.use.toolId === event.toolId);
+            if (pair) pair.result = event;
+          }
+          break;
+        case "text":
+          last.content += `\n\n${event.content ?? ""}`;
+          break;
+        case "error":
+          last.events.push(event);
+          break;
+      }
+    } else {
+      switch (kind) {
+        case "thinking":
+          segments.push({ kind: "thinking", events: [event] });
+          break;
+        case "tool":
+          if (event.type === "tool_use") {
+            segments.push({ kind: "tool", pairs: [{ use: event }] });
+          } else {
+            segments.push({ kind: "tool", pairs: [{ use: event }] });
+          }
+          break;
+        case "text":
+          segments.push({ kind: "text", content: event.content ?? "" });
+          break;
+        case "error":
+          segments.push({ kind: "error", events: [event] });
+          break;
+      }
+    }
+  }
+
+  return { segments, resultEvent };
+}
+
+function segmentKey(seg: Segment, i: number): string {
+  switch (seg.kind) {
+    case "thinking":
+    case "error":
+      return seg.events[0]?.id ?? `seg-${i}`;
+    case "tool":
+      return seg.pairs[0]?.use.id ?? `seg-${i}`;
+    case "text":
+      return `text-${i}`;
+  }
+}
+
+// --- Shared components ---
+
 interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
@@ -118,6 +231,126 @@ function formatErrorMessage(event: ChatEvent): string {
   return event.content ?? "Unknown error";
 }
 
+// --- Segment renderers ---
+
+function ThinkingSegmentView({ segment }: { segment: ThinkingSegment }) {
+  if (segment.events.length === 1) {
+    return <ThinkingBlock content={segment.events[0]?.content ?? ""} />;
+  }
+  return (
+    <CollapsibleGroup
+      label="thinking blocks"
+      icon={<Brain className="h-3 w-3" />}
+      count={segment.events.length}
+      defaultExpanded={false}
+    >
+      {segment.events.map((e) => (
+        <ThinkingBlock key={e.id} content={e.content ?? ""} />
+      ))}
+    </CollapsibleGroup>
+  );
+}
+
+function ToolSegmentView({
+  segment,
+  isStreaming,
+  sessionId,
+  projectPath,
+  worktreePath,
+}: {
+  segment: ToolSegment;
+  isStreaming: boolean;
+  sessionId: string;
+  projectPath?: string;
+  worktreePath?: string;
+}) {
+  const inFlightTool = isStreaming
+    ? [...segment.pairs].reverse().find((p) => !p.result)?.use
+    : undefined;
+
+  return (
+    <CollapsibleGroup
+      label={segment.pairs.length === 1 ? "tool call" : "tool calls"}
+      icon={<Terminal className="h-3 w-3" />}
+      count={segment.pairs.length}
+      defaultExpanded={false}
+      statusContent={
+        inFlightTool ? (
+          <InFlightToolStatus
+            event={inFlightTool}
+            sessionId={sessionId}
+            projectPath={projectPath}
+            worktreePath={worktreePath}
+          />
+        ) : undefined
+      }
+    >
+      {segment.pairs.map((pair) => (
+        <div key={pair.use.id} className="space-y-1">
+          <ToolUseBlock
+            name={pair.use.toolName ?? "Unknown"}
+            input={pair.use.toolInput}
+            category={pair.use.category}
+            toolId={pair.use.toolId}
+            sessionId={sessionId}
+            projectPath={projectPath}
+            worktreePath={worktreePath}
+          />
+          {pair.result && <ToolResultBlock content={pair.result.content ?? ""} />}
+        </div>
+      ))}
+    </CollapsibleGroup>
+  );
+}
+
+function TextSegmentView({
+  content,
+  onCopy,
+  copied,
+}: {
+  content: string;
+  onCopy: (text: string) => void;
+  copied: boolean;
+}) {
+  return (
+    <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
+      <button
+        type="button"
+        onClick={() => onCopy(content)}
+        className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
+        aria-label="Copy message"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+      <Markdown content={content} />
+    </div>
+  );
+}
+
+function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
+  return (
+    <>
+      {segment.events.map((e) => (
+        <div
+          key={e.id}
+          className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
+            e.errorType === "rate_limit" || e.errorType === "overloaded"
+              ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+              : "bg-destructive/10 text-destructive"
+          }`}
+        >
+          {(e.errorType === "rate_limit" || e.errorType === "overloaded") && (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          )}
+          <span>{formatErrorMessage(e)}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// --- Main component ---
+
 export function TurnBlock({
   turn,
   isLast,
@@ -147,92 +380,23 @@ export function TurnBlock({
     return () => document.removeEventListener("keydown", handleKey);
   }, [lightboxSrc]);
 
-  const eventsText = turn.events
-    .filter((e) => e.type === "text")
-    .map((e) => e.content ?? "")
-    .join("\n\n");
-  const textContent = isStreaming ? currentAssistantText || eventsText : eventsText;
+  const { segments, resultEvent } = buildSegments(turn.events);
 
-  const thinkingEvents = turn.events.filter((e) => e.type === "thinking");
-  const toolUseEvents = turn.events.filter((e) => e.type === "tool_use");
-  const toolResultEvents = turn.events.filter((e) => e.type === "tool_result");
-  const resultEvent = turn.events.find((e) => e.type === "result");
-  const errorEvents = turn.events.filter((e) => e.type === "error");
-
-  const hasAssistantContent =
-    textContent ||
-    thinkingEvents.length > 0 ||
-    toolUseEvents.length > 0 ||
-    errorEvents.length > 0 ||
-    isStreaming;
-
-  const renderToolPair = (toolUse: ChatEvent) => {
-    const result = toolResultEvents.find((r) => r.toolId === toolUse.toolId);
-    return (
-      <div key={toolUse.id} className="space-y-1">
-        <ToolUseBlock
-          name={toolUse.toolName ?? "Unknown"}
-          input={toolUse.toolInput}
-          category={toolUse.category}
-          toolId={toolUse.toolId}
-          sessionId={sessionId}
-          projectPath={projectPath}
-          worktreePath={worktreePath}
-        />
-        {result && <ToolResultBlock content={result.content ?? ""} />}
-      </div>
-    );
-  };
-
-  const renderThinkingBlocks = () => {
-    if (thinkingEvents.length === 0) return null;
-    if (thinkingEvents.length === 1) {
-      return <ThinkingBlock content={thinkingEvents[0]?.content ?? ""} />;
+  // Compute streaming tail: text being actively streamed that hasn't been committed as an event yet
+  let streamingTail = "";
+  if (isStreaming && currentAssistantText) {
+    const committedText = turn.events
+      .filter((e) => e.type === "text")
+      .map((e) => e.content ?? "")
+      .join("\n\n");
+    if (committedText && currentAssistantText.startsWith(committedText)) {
+      streamingTail = currentAssistantText.slice(committedText.length).replace(/^\n\n/, "");
+    } else if (!committedText) {
+      streamingTail = currentAssistantText;
     }
-    return (
-      <CollapsibleGroup
-        label="thinking blocks"
-        icon={<Brain className="h-3 w-3" />}
-        count={thinkingEvents.length}
-        defaultExpanded={false}
-      >
-        {thinkingEvents.map((e) => (
-          <ThinkingBlock key={e.id} content={e.content ?? ""} />
-        ))}
-      </CollapsibleGroup>
-    );
-  };
+  }
 
-  const renderToolCalls = () => {
-    if (toolUseEvents.length === 0) return null;
-
-    const inFlightTool = isStreaming
-      ? [...toolUseEvents]
-          .reverse()
-          .find((tu) => !toolResultEvents.some((r) => r.toolId === tu.toolId))
-      : undefined;
-
-    return (
-      <CollapsibleGroup
-        label={toolUseEvents.length === 1 ? "tool call" : "tool calls"}
-        icon={<Terminal className="h-3 w-3" />}
-        count={toolUseEvents.length}
-        defaultExpanded={false}
-        statusContent={
-          inFlightTool ? (
-            <InFlightToolStatus
-              event={inFlightTool}
-              sessionId={sessionId}
-              projectPath={projectPath}
-              worktreePath={worktreePath}
-            />
-          ) : undefined
-        }
-      >
-        {toolUseEvents.map(renderToolPair)}
-      </CollapsibleGroup>
-    );
-  };
+  const hasAssistantContent = segments.length > 0 || streamingTail || isStreaming;
 
   return (
     <div className="space-y-3">
@@ -285,71 +449,57 @@ export function TurnBlock({
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-hidden">
-            {/* Thinking blocks */}
-            {renderThinkingBlocks()}
+            {/* Chronological segments */}
+            {segments.map((seg, i) => {
+              switch (seg.kind) {
+                case "thinking":
+                  return <ThinkingSegmentView key={segmentKey(seg, i)} segment={seg} />;
+                case "tool":
+                  return (
+                    <ToolSegmentView
+                      key={segmentKey(seg, i)}
+                      segment={seg}
+                      isStreaming={isStreaming && i === segments.length - 1}
+                      sessionId={sessionId}
+                      projectPath={projectPath}
+                      worktreePath={worktreePath}
+                    />
+                  );
+                case "text":
+                  return (
+                    <TextSegmentView
+                      key={segmentKey(seg, i)}
+                      content={seg.content}
+                      onCopy={handleCopy}
+                      copied={copied}
+                    />
+                  );
+                case "error":
+                  return <ErrorSegmentView key={segmentKey(seg, i)} segment={seg} />;
+              }
+            })}
 
-            {/* Tool use/result pairs */}
-            {renderToolCalls()}
+            {/* Streaming text tail (not yet committed as an event) */}
+            {streamingTail && (
+              <TextSegmentView content={streamingTail} onCopy={handleCopy} copied={copied} />
+            )}
 
-            {/* Streaming indicator */}
-            {isStreaming &&
-              !textContent &&
-              thinkingEvents.length === 0 &&
-              toolUseEvents.length === 0 && (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm px-1">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>{sessionState === "running" ? "Working..." : "Connecting..."}</span>
-                </div>
-              )}
-
-            {isStreaming &&
-              (toolUseEvents.length > 0 || thinkingEvents.length > 0) &&
-              !textContent && (
-                <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                </div>
-              )}
-
-            {/* Text content */}
-            {textContent && (
-              <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
-                <button
-                  type="button"
-                  onClick={() => handleCopy(textContent)}
-                  className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
-                  aria-label="Copy message"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-                <Markdown content={textContent} />
+            {/* Streaming indicator — empty turn */}
+            {isStreaming && segments.length === 0 && !streamingTail && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm px-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>{sessionState === "running" ? "Working..." : "Connecting..."}</span>
               </div>
             )}
 
-            {/* Streaming indicator after text while still working */}
-            {isStreaming && textContent && (
+            {/* Streaming indicator — has content, still working */}
+            {isStreaming && (segments.length > 0 || streamingTail) && (
               <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
             )}
 
-            {/* Error events */}
-            {errorEvents.map((e) => (
-              <div
-                key={e.id}
-                className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
-                  e.errorType === "rate_limit" || e.errorType === "overloaded"
-                    ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                {(e.errorType === "rate_limit" || e.errorType === "overloaded") && (
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                )}
-                <span>{formatErrorMessage(e)}</span>
-              </div>
-            ))}
-
-            {/* Result metadata — duration only */}
+            {/* Result metadata */}
             {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
               <div className="text-xs text-muted-foreground">
                 {(resultEvent.duration / 1000).toFixed(1)}s
