@@ -33,6 +33,8 @@ interface MessageComposerProps {
   isRunning?: boolean;
   onInterrupt?: () => void;
   isDraft?: boolean;
+  initialText?: string;
+  onTextPersist?: (text: string) => void;
   placeholder?: string;
   planMode?: boolean;
   onPlanModeChange?: (value: boolean) => void;
@@ -49,6 +51,8 @@ export function MessageComposer({
   placeholder,
   onInterrupt,
   isDraft,
+  initialText,
+  onTextPersist,
   planMode,
   onPlanModeChange,
   autoApprove,
@@ -56,17 +60,27 @@ export function MessageComposer({
   worktree,
   onWorktreeChange,
 }: MessageComposerProps) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
+  const textRef = useRef(text);
+  textRef.current = text;
+  const onTextPersistRef = useRef(onTextPersist);
+  onTextPersistRef.current = onTextPersist;
 
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
 
   useEffect(() => {
+    const el = textareaRef.current;
+    if (el?.value) {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    }
     return () => {
+      onTextPersistRef.current?.(textRef.current);
       for (const a of attachmentsRef.current) {
         if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
       }
