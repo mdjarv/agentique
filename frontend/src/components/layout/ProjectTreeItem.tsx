@@ -340,17 +340,15 @@ export function ProjectTreeItem({
               <EyeOff className="h-3.5 w-3.5" />
             </button>
           </div>
-          {isActive && (
-            <SessionGroups
-              sessionIds={sessionIds}
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              hideStoppedSessions={hideStoppedSessions}
-              onSessionClick={handleSessionClick}
-              onStop={handleStopSession}
-              onDelete={handleDeleteSession}
-            />
-          )}
+          <SessionGroups
+            sessionIds={sessionIds}
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            hideStoppedSessions={hideStoppedSessions}
+            onSessionClick={handleSessionClick}
+            onStop={handleStopSession}
+            onDelete={handleDeleteSession}
+          />
         </div>
       )}
 

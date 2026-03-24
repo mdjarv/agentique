@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
 import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
+import type { Project } from "~/lib/types";
 import { copyToClipboard } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -47,23 +48,36 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
   }
 }
 
-export function useProjectSubscription(projectId: string) {
+function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string) {
+  ws.request("project.subscribe", { projectId }).catch(console.error);
+  ws.request<SessionListResult>("session.list", { projectId })
+    .then((result) => {
+      useChatStore.getState().setSessions(result.sessions, projectId);
+    })
+    .catch(console.error);
+}
+
+/**
+ * Subscribe to ALL projects and set up global WS event listeners.
+ * Mount once at the app level (e.g. in ProjectList).
+ */
+export function useGlobalSubscriptions(projects: Project[]) {
   const ws = useWebSocket();
+  const subscribedRef = useRef(new Set<string>());
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-subscribe only on projectId change
+  // Subscribe to new projects as they appear
   useEffect(() => {
-    let stale = false;
-    useChatStore.getState().resetProject();
+    for (const project of projects) {
+      if (subscribedRef.current.has(project.id)) continue;
+      subscribedRef.current.add(project.id);
+      subscribeAndLoad(ws, project.id);
+    }
+  }, [ws, projects]);
 
-    ws.request("project.subscribe", { projectId }).catch(console.error);
-
-    ws.request<SessionListResult>("session.list", { projectId })
-      .then((result) => {
-        if (stale) return;
-        useChatStore.getState().setSessions(result.sessions, projectId);
-      })
-      .catch(console.error);
-
+  // Global event listeners — mounted once, independent of project list
+  useEffect(() => {
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = parseServerEvent(payload.event);
@@ -84,7 +98,6 @@ export function useProjectSubscription(projectId: string) {
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
 
-        // Auto-dispatch next queued message now that the turn is complete
         const chatStore = useChatStore.getState();
         const sess = chatStore.sessions[sid];
         const next = sess?.queuedMessages[0];
@@ -156,23 +169,21 @@ export function useProjectSubscription(projectId: string) {
     );
 
     const unsubReconnect = ws.onConnect(() => {
-      if (stale) return;
-      ws.request("project.subscribe", { projectId }).catch(console.error);
+      // Re-subscribe all known projects on reconnect
+      subscribedRef.current.clear();
+      for (const project of projectsRef.current) {
+        subscribedRef.current.add(project.id);
+        subscribeAndLoad(ws, project.id);
+      }
 
-      ws.request<SessionListResult>("session.list", { projectId })
-        .then((result) => {
-          if (stale) return;
-          useChatStore.getState().setSessions(result.sessions, projectId);
-          const activeId = useChatStore.getState().activeSessionId;
-          if (activeId && result.sessions.some((sess) => sess.id === activeId)) {
-            loadSessionHistory(ws, activeId);
-          }
-        })
-        .catch(console.error);
+      // Reload active session history
+      const activeId = useChatStore.getState().activeSessionId;
+      if (activeId) {
+        loadSessionHistory(ws, activeId);
+      }
     });
 
     return () => {
-      stale = true;
       unsubEvent();
       unsubState();
       unsubRenamed();
@@ -182,5 +193,5 @@ export function useProjectSubscription(projectId: string) {
       unsubQuestion();
       unsubReconnect();
     };
-  }, [projectId]);
+  }, [ws]);
 }

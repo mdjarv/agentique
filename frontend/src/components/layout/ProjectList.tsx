@@ -1,12 +1,15 @@
 import { useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
+import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useProjects } from "~/hooks/useProjects";
 
 export function ProjectList() {
   const projects = useProjects();
   const params = useParams({ strict: false });
   const activeProjectId = (params as { projectId?: string }).projectId;
+  useGlobalSubscriptions(projects);
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.id)),
   );
