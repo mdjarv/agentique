@@ -177,6 +177,12 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) error {
 	sess := s.mgr.Get(sessionID)
 
+	// CLI process dead — evict and resume with a fresh connection.
+	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
+		s.mgr.Evict(sessionID)
+		sess = nil
+	}
+
 	if sess == nil {
 		var err error
 		sess, err = s.resumeSession(ctx, sessionID)

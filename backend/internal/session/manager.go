@@ -173,6 +173,20 @@ func (m *Manager) Get(id string) *Session {
 	return m.sessions[id]
 }
 
+// Evict removes a dead session from the in-memory map and closes it.
+// Unlike Stop, it does not change the DB state.
+func (m *Manager) Evict(id string) {
+	m.mu.Lock()
+	sess, ok := m.sessions[id]
+	if ok {
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
+	if sess != nil {
+		sess.Close()
+	}
+}
+
 // Stop closes a live session and marks it as stopped in DB.
 // Does not handle worktree cleanup — callers (Service) are responsible for that.
 func (m *Manager) Stop(ctx context.Context, id string) error {
