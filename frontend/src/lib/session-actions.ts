@@ -10,6 +10,7 @@ interface SessionCreateResult {
   sessionId: string;
   name: string;
   state: string;
+  connected: boolean;
   model: string;
   permissionMode: string;
   autoApprove: boolean;
@@ -50,6 +51,7 @@ export async function createSession(
     projectId,
     name: result.name,
     state: result.state as SessionMetadata["state"],
+    connected: result.connected,
     model: result.model as ModelId,
     permissionMode: result.permissionMode,
     autoApprove: result.autoApprove,

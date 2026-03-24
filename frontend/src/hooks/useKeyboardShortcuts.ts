@@ -4,12 +4,11 @@ import { type SessionState, useChatStore } from "~/stores/chat-store";
 
 const statePriority: Record<SessionState, number> = {
   running: 0,
-  starting: 1,
+  merging: 1,
   idle: 2,
-  disconnected: 3,
-  failed: 4,
-  stopped: 5,
-  done: 6,
+  failed: 3,
+  stopped: 4,
+  done: 5,
 };
 
 export function useKeyboardShortcuts(projectId: string) {

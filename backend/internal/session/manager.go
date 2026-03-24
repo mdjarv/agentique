@@ -213,6 +213,14 @@ func (m *Manager) Get(id string) *Session {
 	return m.sessions[id]
 }
 
+// IsLive reports whether a session has a connected CLI process.
+func (m *Manager) IsLive(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.sessions[id]
+	return ok
+}
+
 // Evict removes a dead session from the in-memory map and closes it.
 // Unlike Stop, it does not change the DB state.
 func (m *Manager) Evict(id string) {
@@ -260,7 +268,7 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
 			sessions[i].State = string(live.State())
-		} else if sessions[i].State == string(StateIdle) || sessions[i].State == string(StateRunning) {
+		} else if sessions[i].State == string(StateRunning) || sessions[i].State == string(StateMerging) {
 			sessions[i].State = string(StateStopped)
 		}
 	}

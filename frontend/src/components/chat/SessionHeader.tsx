@@ -66,7 +66,7 @@ const MODEL_LABELS: Record<ModelId, string> = {
 export function SessionHeader({ session }: SessionHeaderProps) {
   const { meta } = session;
   const ws = useWebSocket();
-  const isRunning = meta.state === "running" || meta.state === "starting";
+  const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
   const currentModel = (meta.model ?? "opus") as ModelId;
   const isBusy = isRunning;
@@ -242,6 +242,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       <div className="border-b px-4 py-2 flex items-center gap-2 text-sm shrink-0">
         <SessionStatusDot
           state={meta.state}
+          connected={meta.connected}
           hasUnseenCompletion={session.hasUnseenCompletion}
           hasPendingApproval={!!session.pendingApproval || !!session.pendingQuestion}
         />

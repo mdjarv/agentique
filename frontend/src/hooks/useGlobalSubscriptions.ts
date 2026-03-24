@@ -122,6 +122,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubState = ws.subscribe("session.state", (payload: any) => {
       useChatStore.getState().setSessionState(payload.sessionId, payload.state, {
+        connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
         hasUncommitted: payload.hasUncommitted,
