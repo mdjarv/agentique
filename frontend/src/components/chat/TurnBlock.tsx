@@ -151,7 +151,7 @@ function CollapsibleGroup({
   icon,
   count,
   defaultExpanded,
-  statusContent,
+  activeHeader,
   trailingIcons,
   children,
 }: {
@@ -159,7 +159,7 @@ function CollapsibleGroup({
   icon: React.ReactNode;
   count: number;
   defaultExpanded: boolean;
-  statusContent?: React.ReactNode;
+  activeHeader?: React.ReactNode;
   trailingIcons?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -169,30 +169,35 @@ function CollapsibleGroup({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground w-full text-left hover:bg-muted/50 cursor-pointer transition-colors"
+        className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground w-full text-left hover:bg-muted/50 cursor-pointer transition-colors min-w-0"
       >
         {expanded ? (
           <ChevronDown className="h-3 w-3 shrink-0" />
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0" />
         )}
-        {icon}
-        <span>
-          {count} {label}
-        </span>
+        {activeHeader && !expanded ? (
+          activeHeader
+        ) : (
+          <>
+            {icon}
+            <span>
+              {count} {label}
+            </span>
+          </>
+        )}
         {trailingIcons && (
-          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50">
+          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50 shrink-0">
             {trailingIcons}
           </span>
         )}
       </button>
-      {!expanded && statusContent}
       {expanded && <div className="space-y-1 p-1 pt-0">{children}</div>}
     </div>
   );
 }
 
-function InFlightToolStatus({
+function InFlightToolContent({
   event,
   sessionId,
   projectPath,
@@ -212,8 +217,7 @@ function InFlightToolStatus({
     : "";
 
   return (
-    <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground min-w-0">
-      <span className="w-3 shrink-0" />
+    <>
       <Loader2 className="h-3 w-3 animate-spin shrink-0" />
       {getToolIcon(event.toolName ?? "Unknown", event.category)}
       <span className="font-medium shrink-0">{event.toolName}</span>
@@ -224,6 +228,20 @@ function InFlightToolStatus({
           {streamingInput}
         </span>
       ) : null}
+    </>
+  );
+}
+
+function InFlightToolStatus(props: {
+  event: ChatEvent;
+  sessionId: string;
+  projectPath?: string;
+  worktreePath?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground min-w-0">
+      <span className="w-3 shrink-0" />
+      <InFlightToolContent {...props} />
     </div>
   );
 }
@@ -291,9 +309,9 @@ function ToolSegmentView({
       count={segment.pairs.length}
       defaultExpanded={false}
       trailingIcons={trailingIcons}
-      statusContent={
+      activeHeader={
         inFlightTool ? (
-          <InFlightToolStatus
+          <InFlightToolContent
             event={inFlightTool}
             sessionId={sessionId}
             projectPath={projectPath}
