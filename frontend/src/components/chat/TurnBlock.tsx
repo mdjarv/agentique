@@ -549,12 +549,19 @@ export function TurnBlock({
               </div>
             )}
 
-            {/* Streaming indicator — has content, still working */}
-            {isStreaming && (segments.length > 0 || streamingTail) && (
-              <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-              </div>
-            )}
+            {/* Streaming indicator — has content, still working (hidden when in-flight tool already shows a spinner) */}
+            {isStreaming &&
+              (segments.length > 0 || streamingTail) &&
+              (() => {
+                const last = segments[segments.length - 1];
+                const hasInFlightTool =
+                  last?.kind === "tool" && [...last.pairs].reverse().some((p) => !p.result);
+                return !hasInFlightTool;
+              })() && (
+                <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                </div>
+              )}
 
             {/* Result metadata */}
             {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
