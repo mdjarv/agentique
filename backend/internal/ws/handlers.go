@@ -211,6 +211,23 @@ func (c *conn) handleSessionDelete(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionRename(msg ClientMessage) {
+	var payload SessionRenamePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" || payload.Name == "" {
+		c.respond(msg.ID, nil, "sessionId and name are required")
+		return
+	}
+	if err := c.svc.RenameSession(c.ctx, payload.SessionID, payload.Name); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionSetModel(msg ClientMessage) {
 	var payload SessionSetModelPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

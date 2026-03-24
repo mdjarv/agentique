@@ -117,6 +117,11 @@ type SessionResolveQuestionPayload struct {
 	Answers    map[string]string `json:"answers"`
 }
 
+type SessionRenamePayload struct {
+	SessionID string `json:"sessionId"`
+	Name      string `json:"name"`
+}
+
 type SessionCommitPayload struct {
 	SessionID string `json:"sessionId"`
 	Message   string `json:"message"`

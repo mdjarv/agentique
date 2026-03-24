@@ -440,6 +440,25 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	return sess, nil
 }
 
+// RenameSession updates the session name in DB and broadcasts the change.
+func (s *Service) RenameSession(ctx context.Context, sessionID, name string) error {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if err := s.queries.UpdateSessionName(ctx, store.UpdateSessionNameParams{
+		Name: name,
+		ID:   sessionID,
+	}); err != nil {
+		return fmt.Errorf("rename failed: %w", err)
+	}
+	s.hub.Broadcast(dbSess.ProjectID, "session.renamed", map[string]any{
+		"sessionId": sessionID,
+		"name":      name,
+	})
+	return nil
+}
+
 // autoName calls Haiku to generate a short title and broadcasts the rename.
 func (s *Service) autoName(sessionID, projectID, prompt string) {
 	name := generateSessionName(prompt)
