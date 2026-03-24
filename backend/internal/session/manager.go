@@ -72,6 +72,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		claudecli.WithModel(model),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
+		claudecli.WithIncludePartialMessages(),
 	}
 	// Pass plan mode as CLI flag to avoid post-connect control request race.
 	if params.PlanMode {
@@ -143,6 +144,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 		claudecli.WithModel(resolveModel(model)),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
+		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(claudeSessionID),
 	)
 	if err != nil {
