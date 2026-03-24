@@ -38,7 +38,7 @@ function stripPrefix(path: string, projectPath?: string, worktreePath?: string):
   return path;
 }
 
-function getCategoryIcon(category: string) {
+export function getCategoryIcon(category: string) {
   switch (category) {
     case "command":
       return <Terminal className="h-3 w-3" />;
@@ -59,7 +59,7 @@ function getCategoryIcon(category: string) {
   }
 }
 
-function getToolIcon(name: string, category?: string) {
+export function getToolIcon(name: string, category?: string) {
   switch (name) {
     case "Read":
       return <FileText className="h-3 w-3" />;
@@ -77,7 +77,7 @@ function getToolIcon(name: string, category?: string) {
   }
 }
 
-function formatSummary(
+export function formatSummary(
   name: string,
   input: unknown,
   projectPath?: string,

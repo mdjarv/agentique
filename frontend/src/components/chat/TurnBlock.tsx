@@ -16,10 +16,11 @@ import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
-import { ToolUseBlock } from "~/components/chat/ToolUseBlock";
+import { ToolUseBlock, formatSummary, getToolIcon } from "~/components/chat/ToolUseBlock";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { copyToClipboard } from "~/lib/utils";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 interface TurnBlockProps {
   turn: Turn;
@@ -36,12 +37,14 @@ function CollapsibleGroup({
   icon,
   count,
   defaultExpanded,
+  statusContent,
   children,
 }: {
   label: string;
   icon: React.ReactNode;
   count: number;
   defaultExpanded: boolean;
+  statusContent?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -62,7 +65,44 @@ function CollapsibleGroup({
           {count} {label}
         </span>
       </button>
+      {!expanded && statusContent}
       {expanded && <div className="space-y-1 p-1 pt-0">{children}</div>}
+    </div>
+  );
+}
+
+function InFlightToolStatus({
+  event,
+  sessionId,
+  projectPath,
+  worktreePath,
+}: {
+  event: ChatEvent;
+  sessionId: string;
+  projectPath?: string;
+  worktreePath?: string;
+}) {
+  const streamingInput = useStreamingStore((s) =>
+    event.toolId ? s.toolInputs[sessionId]?.[event.toolId] : undefined,
+  );
+  const hasInput = !!event.toolInput;
+  const summary = hasInput
+    ? formatSummary(event.toolName ?? "", event.toolInput, projectPath, worktreePath)
+    : "";
+
+  return (
+    <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground min-w-0">
+      <span className="w-3 shrink-0" />
+      <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+      {getToolIcon(event.toolName ?? "Unknown", event.category)}
+      <span className="font-medium shrink-0">{event.toolName}</span>
+      {hasInput ? (
+        <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
+      ) : streamingInput ? (
+        <span className="text-muted-foreground/50 font-mono truncate min-w-0">
+          {streamingInput}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -166,15 +206,29 @@ export function TurnBlock({
 
   const renderToolCalls = () => {
     if (toolUseEvents.length === 0) return null;
-    if (toolUseEvents.length <= 3) {
-      return <>{toolUseEvents.map(renderToolPair)}</>;
-    }
+
+    const inFlightTool = isStreaming
+      ? [...toolUseEvents]
+          .reverse()
+          .find((tu) => !toolResultEvents.some((r) => r.toolId === tu.toolId))
+      : undefined;
+
     return (
       <CollapsibleGroup
-        label="tool calls"
+        label={toolUseEvents.length === 1 ? "tool call" : "tool calls"}
         icon={<Terminal className="h-3 w-3" />}
         count={toolUseEvents.length}
-        defaultExpanded={isStreaming}
+        defaultExpanded={false}
+        statusContent={
+          inFlightTool ? (
+            <InFlightToolStatus
+              event={inFlightTool}
+              sessionId={sessionId}
+              projectPath={projectPath}
+              worktreePath={worktreePath}
+            />
+          ) : undefined
+        }
       >
         {toolUseEvents.map(renderToolPair)}
       </CollapsibleGroup>
