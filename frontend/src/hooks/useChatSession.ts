@@ -44,8 +44,15 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
     if (!inner || typeof inner !== "object") return;
 
     const type: string = inner.type;
-    if (type === "content_block_start" && inner.content_block?.type === "tool_use") {
-      useStreamingStore.getState().startToolBlock(sessionId, inner.index, inner.content_block.id);
+    if (type === "content_block_start") {
+      if (inner.content_block?.type === "tool_use") {
+        useStreamingStore.getState().startToolBlock(sessionId, inner.index, inner.content_block.id);
+      } else if (inner.content_block?.type === "text") {
+        const existing = useStreamingStore.getState().texts[sessionId];
+        if (existing) {
+          useStreamingStore.getState().appendText(sessionId, "\n\n");
+        }
+      }
       return;
     }
 
@@ -106,9 +113,6 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
       useChatStore.getState().handleServerEvent(sid, event);
 
-      if (event.type === "text" && event.content) {
-        streaming.appendText(sid, event.content);
-      }
       if (event.type === "tool_use" && event.toolId) {
         streaming.clearToolInput(sid, event.toolId);
       }

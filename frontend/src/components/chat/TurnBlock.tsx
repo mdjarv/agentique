@@ -107,12 +107,11 @@ export function TurnBlock({
     return () => document.removeEventListener("keydown", handleKey);
   }, [lightboxSrc]);
 
-  const textContent = isStreaming
-    ? currentAssistantText
-    : turn.events
-        .filter((e) => e.type === "text")
-        .map((e) => e.content ?? "")
-        .join("");
+  const eventsText = turn.events
+    .filter((e) => e.type === "text")
+    .map((e) => e.content ?? "")
+    .join("\n\n");
+  const textContent = isStreaming ? currentAssistantText || eventsText : eventsText;
 
   const thinkingEvents = turn.events.filter((e) => e.type === "thinking");
   const toolUseEvents = turn.events.filter((e) => e.type === "tool_use");
