@@ -133,6 +133,7 @@ function SessionGroups({
           ids={sortedCompleted}
           sessions={sessions}
           activeSessionId={activeSessionId}
+          hasActiveSessions={sortedActive.length > 0}
           onSessionClick={onSessionClick}
           onStop={onStop}
           onDelete={onDelete}
@@ -146,6 +147,7 @@ function CompletedSection({
   ids,
   sessions,
   activeSessionId,
+  hasActiveSessions,
   onSessionClick,
   onStop,
   onDelete,
@@ -153,11 +155,12 @@ function CompletedSection({
   ids: string[];
   sessions: ChatState["sessions"];
   activeSessionId: string | null;
+  hasActiveSessions: boolean;
   onSessionClick: (id: string) => void;
   onStop: (e: React.MouseEvent, id: string, state: string) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!hasActiveSessions);
 
   return (
     <>
