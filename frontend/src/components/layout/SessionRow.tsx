@@ -30,7 +30,7 @@ export function SessionRow({
   onStop,
   onDelete,
 }: SessionRowProps) {
-  const canStop = state !== "stopped" && state !== "done";
+  const canStop = state !== "stopped" && state !== "done" && state !== "draft";
 
   return (
     <div
