@@ -112,6 +112,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       {activeSession.meta.state !== "draft" && <SessionHeader session={activeSession} />}
       <MessageList
         turns={activeSession?.turns ?? []}
+        sessionId={activeSession.meta.id}
         currentAssistantText={currentAssistantText}
         sessionState={sessionState}
         projectPath={project?.path}

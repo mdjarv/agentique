@@ -16,11 +16,14 @@ import {
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ToolUseBlockProps {
   name: string;
   input: unknown;
   category?: string;
+  toolId?: string;
+  sessionId?: string;
   projectPath?: string;
   worktreePath?: string;
 }
@@ -142,12 +145,18 @@ export function ToolUseBlock({
   name,
   input,
   category,
+  toolId,
+  sessionId,
   projectPath,
   worktreePath,
 }: ToolUseBlockProps) {
   const [expanded, setExpanded] = useState(false);
-  const summary = formatSummary(name, input, projectPath, worktreePath);
-  const detail = formatDetail(name, input, projectPath, worktreePath);
+  const streamingInput = useStreamingStore((s) =>
+    sessionId && toolId ? s.toolInputs[sessionId]?.[toolId] : undefined,
+  );
+  const isStreaming = !!streamingInput && !input;
+  const summary = isStreaming ? "" : formatSummary(name, input, projectPath, worktreePath);
+  const detail = isStreaming ? null : formatDetail(name, input, projectPath, worktreePath);
   const hasDetail = detail !== null;
 
   return (
@@ -168,7 +177,13 @@ export function ToolUseBlock({
         )}
         {getToolIcon(name, category)}
         <span className="font-medium shrink-0">{name}</span>
-        <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
+        {isStreaming ? (
+          <span className="text-muted-foreground/50 font-mono truncate min-w-0">
+            {streamingInput}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
+        )}
       </button>
       {expanded &&
         detail &&

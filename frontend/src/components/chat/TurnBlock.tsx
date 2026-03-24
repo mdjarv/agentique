@@ -24,6 +24,7 @@ import type { ChatEvent, Turn } from "~/stores/chat-store";
 interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
+  sessionId: string;
   currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
@@ -80,6 +81,7 @@ function formatErrorMessage(event: ChatEvent): string {
 export function TurnBlock({
   turn,
   isLast,
+  sessionId,
   currentAssistantText,
   sessionState,
   projectPath,
@@ -133,6 +135,8 @@ export function TurnBlock({
           name={toolUse.toolName ?? "Unknown"}
           input={toolUse.toolInput}
           category={toolUse.category}
+          toolId={toolUse.toolId}
+          sessionId={sessionId}
           projectPath={projectPath}
           worktreePath={worktreePath}
         />
