@@ -15,5 +15,10 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     usage: raw.usage as { inputTokens: number; outputTokens: number } | undefined,
     stopReason: raw.stopReason as string | undefined,
     fatal: raw.fatal as boolean | undefined,
+    status: raw.status as string | undefined,
+    utilization: raw.utilization as number | undefined,
+    category: raw.category as string | undefined,
+    errorType: raw.errorType as string | undefined,
+    retryAfterSecs: raw.retryAfterSecs as number | undefined,
   };
 }

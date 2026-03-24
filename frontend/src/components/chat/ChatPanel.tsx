@@ -5,6 +5,7 @@ import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
+import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { useChatSession } from "~/hooks/useChatSession";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -128,6 +129,7 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       {activeSession?.pendingQuestion && activeSessionId && (
         <QuestionBanner sessionId={activeSessionId} pending={activeSession.pendingQuestion} />
       )}
+      {activeSession?.rateLimit && <RateLimitBanner rateLimit={activeSession.rateLimit} />}
       <MessageComposer
         onSend={sendQuery}
         disabled={sessionState === "running"}

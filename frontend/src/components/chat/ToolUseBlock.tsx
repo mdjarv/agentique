@@ -1,4 +1,18 @@
-import { ChevronDown, ChevronRight, FileText, Globe, Pencil, Search, Terminal } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  FileSearch,
+  FileText,
+  Globe,
+  ListTodo,
+  Pencil,
+  PencilLine,
+  Plug,
+  Search,
+  Terminal,
+  Wrench,
+} from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -6,6 +20,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 interface ToolUseBlockProps {
   name: string;
   input: unknown;
+  category?: string;
   projectPath?: string;
   worktreePath?: string;
 }
@@ -20,7 +35,28 @@ function stripPrefix(path: string, projectPath?: string, worktreePath?: string):
   return path;
 }
 
-function getToolIcon(name: string) {
+function getCategoryIcon(category: string) {
+  switch (category) {
+    case "command":
+      return <Terminal className="h-3 w-3" />;
+    case "file_write":
+      return <PencilLine className="h-3 w-3" />;
+    case "file_read":
+      return <FileSearch className="h-3 w-3" />;
+    case "web":
+      return <Globe className="h-3 w-3" />;
+    case "agent":
+      return <Bot className="h-3 w-3" />;
+    case "mcp":
+      return <Plug className="h-3 w-3" />;
+    case "task":
+      return <ListTodo className="h-3 w-3" />;
+    default:
+      return <Wrench className="h-3 w-3" />;
+  }
+}
+
+function getToolIcon(name: string, category?: string) {
   switch (name) {
     case "Read":
       return <FileText className="h-3 w-3" />;
@@ -34,7 +70,7 @@ function getToolIcon(name: string) {
     case "WebSearch":
       return <Globe className="h-3 w-3" />;
     default:
-      return <Terminal className="h-3 w-3" />;
+      return category ? getCategoryIcon(category) : <Terminal className="h-3 w-3" />;
   }
 }
 
@@ -102,7 +138,13 @@ function formatDetail(
   }
 }
 
-export function ToolUseBlock({ name, input, projectPath, worktreePath }: ToolUseBlockProps) {
+export function ToolUseBlock({
+  name,
+  input,
+  category,
+  projectPath,
+  worktreePath,
+}: ToolUseBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const summary = formatSummary(name, input, projectPath, worktreePath);
   const detail = formatDetail(name, input, projectPath, worktreePath);
@@ -124,7 +166,7 @@ export function ToolUseBlock({ name, input, projectPath, worktreePath }: ToolUse
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        {getToolIcon(name)}
+        {getToolIcon(name, category)}
         <span className="font-medium shrink-0">{name}</span>
         <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
       </button>

@@ -3,7 +3,15 @@ import { uuid } from "~/lib/utils";
 
 export interface ChatEvent {
   id: string;
-  type: "text" | "thinking" | "tool_use" | "tool_result" | "result" | "error";
+  type:
+    | "text"
+    | "thinking"
+    | "tool_use"
+    | "tool_result"
+    | "result"
+    | "error"
+    | "rate_limit"
+    | "stream";
   content?: string;
   toolId?: string;
   toolName?: string;
@@ -13,6 +21,11 @@ export interface ChatEvent {
   usage?: { inputTokens: number; outputTokens: number };
   stopReason?: string;
   fatal?: boolean;
+  status?: string;
+  utilization?: number;
+  category?: string;
+  errorType?: string;
+  retryAfterSecs?: number;
 }
 
 export interface Attachment {
@@ -76,6 +89,11 @@ export interface PendingQuestion {
   questions: Question[];
 }
 
+export interface RateLimitInfo {
+  status: string;
+  utilization: number;
+}
+
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
@@ -84,6 +102,7 @@ export interface SessionData {
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
   autoApprove: boolean;
+  rateLimit: RateLimitInfo | null;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -94,6 +113,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   pendingQuestion: null,
   planMode: false,
   autoApprove: false,
+  rateLimit: null,
 });
 
 // --- Immutable update helpers ---
@@ -308,6 +328,15 @@ export const useChatStore = create<ChatState>((set) => ({
         console.warn("handleServerEvent: unknown session", sessionId);
         return s;
       }
+
+      // Transient events: update session state without appending to turns
+      if (event.type === "rate_limit") {
+        return updateSession(s, sessionId, {
+          rateLimit: { status: event.status ?? "active", utilization: event.utilization ?? 0 },
+        });
+      }
+      if (event.type === "stream") return s;
+
       const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
       if (!lastTurn) {
@@ -324,8 +353,11 @@ export const useChatStore = create<ChatState>((set) => ({
       const isResult = event.type === "result";
       const isViewing = s.activeSessionId === sessionId;
       const patch: Partial<SessionData> = { turns };
-      if (isResult) patch.meta = { ...session.meta, state: "idle" };
-      if (isResult) patch.hasUnseenCompletion = !isViewing;
+      if (isResult) {
+        patch.meta = { ...session.meta, state: "idle" };
+        patch.hasUnseenCompletion = !isViewing;
+        patch.rateLimit = null;
+      }
 
       return updateSession(s, sessionId, patch);
     }),

@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Bot,
   Brain,
   Check,
@@ -65,6 +66,17 @@ function CollapsibleGroup({
   );
 }
 
+function formatErrorMessage(event: ChatEvent): string {
+  if (event.errorType === "rate_limit") {
+    return event.retryAfterSecs
+      ? `Rate limited — retry in ${event.retryAfterSecs}s`
+      : "Rate limited";
+  }
+  if (event.errorType === "auth") return "Authentication error";
+  if (event.errorType === "overloaded") return "API overloaded — try again shortly";
+  return event.content ?? "Unknown error";
+}
+
 export function TurnBlock({
   turn,
   isLast,
@@ -120,6 +132,7 @@ export function TurnBlock({
         <ToolUseBlock
           name={toolUse.toolName ?? "Unknown"}
           input={toolUse.toolInput}
+          category={toolUse.category}
           projectPath={projectPath}
           worktreePath={worktreePath}
         />
@@ -266,9 +279,16 @@ export function TurnBlock({
             {errorEvents.map((e) => (
               <div
                 key={e.id}
-                className="rounded-lg px-4 py-2 bg-destructive/10 text-destructive text-sm"
+                className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
+                  e.errorType === "rate_limit" || e.errorType === "overloaded"
+                    ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+                    : "bg-destructive/10 text-destructive"
+                }`}
               >
-                {e.content}
+                {(e.errorType === "rate_limit" || e.errorType === "overloaded") && (
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                )}
+                <span>{formatErrorMessage(e)}</span>
               </div>
             ))}
 
