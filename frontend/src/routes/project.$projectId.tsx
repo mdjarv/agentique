@@ -1,6 +1,5 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { useKeyboardShortcuts } from "~/hooks/useKeyboardShortcuts";
-import { useProjectSubscription } from "~/hooks/useProjectSubscription";
 
 export const Route = createFileRoute("/project/$projectId")({
   component: ProjectLayout,
@@ -8,7 +7,6 @@ export const Route = createFileRoute("/project/$projectId")({
 
 function ProjectLayout() {
   const { projectId } = Route.useParams();
-  useProjectSubscription(projectId);
   useKeyboardShortcuts(projectId);
   return <Outlet />;
 }

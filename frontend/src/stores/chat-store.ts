@@ -209,9 +209,6 @@ export interface ChatState {
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
   handleServerEvent: (sessionId: string, event: ChatEvent) => void;
-
-  // Project-level reset
-  resetProject: () => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -419,7 +416,4 @@ export const useChatStore = create<ChatState>((set) => ({
 
       return updateSession(s, sessionId, patch);
     }),
-
-  resetProject: () =>
-    set({ activeSessionId: null, sessionListLoaded: false, historyLoading: new Set() }),
 }));
