@@ -150,6 +150,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionResolveApproval(msg)
 	case "session.resolve-question":
 		c.handleSessionResolveQuestion(msg)
+	case "session.rebase":
+		c.handleSessionRebase(msg)
 	case "session.generate-pr-description":
 		c.handleSessionGeneratePRDesc(msg)
 	default:

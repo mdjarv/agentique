@@ -33,6 +33,7 @@ type SessionInfo struct {
 	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
 	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
 	CommitsAhead    int    `json:"commitsAhead"`
+	CommitsBehind   int    `json:"commitsBehind"`
 	BranchMissing   bool   `json:"branchMissing,omitempty"`
 	HasUncommitted  bool   `json:"hasUncommitted,omitempty"`
 	PrUrl           string `json:"prUrl,omitempty"`
@@ -260,6 +261,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 		if branch := nullStr(ss.WorktreeBranch); branch != "" && !info.WorktreeMerged {
 			if gitops.BranchExists(project.Path, branch) {
 				info.CommitsAhead, _ = gitops.CommitsAhead(project.Path, branch)
+				info.CommitsBehind, _ = gitops.CommitsBehind(project.Path, branch)
 				if wtPath := nullStr(ss.WorktreePath); wtPath != "" {
 					info.HasUncommitted, _ = gitops.HasUncommittedChanges(wtPath)
 				}

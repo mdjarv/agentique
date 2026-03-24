@@ -211,6 +211,16 @@ export async function commitSession(
   return ws.request<CommitResult>("session.commit", { sessionId, message });
 }
 
+export interface RebaseResult {
+  status: string;
+  conflictFiles?: string[];
+  error?: string;
+}
+
+export async function rebaseSession(ws: WsClient, sessionId: string): Promise<RebaseResult> {
+  return ws.request<RebaseResult>("session.rebase", { sessionId });
+}
+
 export interface PRDescriptionResult {
   title: string;
   body: string;

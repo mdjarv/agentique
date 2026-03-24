@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -155,6 +156,79 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	return MergeResult{Status: "merged", CommitHash: hash}, nil
+}
+
+// RebaseResult describes the outcome of a rebase operation.
+type RebaseResult struct {
+	Status        string   `json:"status"`
+	ConflictFiles []string `json:"conflictFiles,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+// Rebase rebases a worktree session's branch onto the project's current HEAD.
+func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult, error) {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return RebaseResult{}, fmt.Errorf("session not found")
+	}
+	branch := nullStr(dbSess.WorktreeBranch)
+	wtPath := nullStr(dbSess.WorktreePath)
+	if branch == "" || wtPath == "" {
+		return RebaseResult{}, fmt.Errorf("session has no worktree")
+	}
+
+	project, err := g.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return RebaseResult{}, fmt.Errorf("project not found")
+	}
+
+	slog.Info("rebase started", "session_id", sessionID, "branch", branch)
+
+	if live := g.mgr.Get(sessionID); live != nil {
+		if err := live.TryLockForMerge(); err != nil {
+			return RebaseResult{}, err
+		}
+		defer func() {
+			if err := live.UnlockMerge(StateIdle); err != nil {
+				slog.Error("unlock merge failed", "session_id", sessionID, "error", err)
+			}
+		}()
+	}
+
+	if err := autoCommitWorktree(sessionID, wtPath, "rebase"); err != nil {
+		return RebaseResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
+	}
+
+	mainHead, err := gitops.HeadCommitHash(project.Path)
+	if err != nil {
+		return RebaseResult{Status: "error", Error: "failed to get main HEAD: " + err.Error()}, nil
+	}
+
+	if rebaseErr := gitops.RebaseBranch(wtPath, mainHead); rebaseErr != nil {
+		files, _ := gitops.RebaseConflictFiles(wtPath)
+		_ = gitops.AbortRebase(wtPath)
+		if len(files) > 0 {
+			slog.Warn("rebase conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+			return RebaseResult{Status: "conflict", ConflictFiles: files}, nil
+		}
+		slog.Error("rebase failed", "session_id", sessionID, "branch", branch, "error", rebaseErr)
+		return RebaseResult{Status: "error", Error: rebaseErr.Error()}, nil
+	}
+
+	_ = g.queries.UpdateWorktreeBaseSHA(ctx, store.UpdateWorktreeBaseSHAParams{
+		WorktreeBaseSha: sql.NullString{String: mainHead, Valid: true},
+		ID:              sessionID,
+	})
+
+	slog.Info("rebase completed", "session_id", sessionID, "branch", branch, "newBase", mainHead)
+
+	g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+		"sessionId":     sessionID,
+		"state":         dbSess.State,
+		"commitsBehind": 0,
+	})
+
+	return RebaseResult{Status: "rebased"}, nil
 }
 
 // CreatePR pushes the session branch and creates a GitHub PR.

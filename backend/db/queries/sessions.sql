@@ -29,6 +29,9 @@ UPDATE sessions SET auto_approve = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ'
 -- name: SetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateWorktreeBaseSHA :exec
+UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UpdateSessionPRUrl :exec
 UPDATE sessions SET pr_url = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

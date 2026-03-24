@@ -67,6 +67,7 @@ function renderSessionRow(
       hasDirtyWorktree={session.hasDirtyWorktree}
       worktreeMerged={session.worktreeMerged}
       commitsAhead={session.commitsAhead}
+      commitsBehind={session.commitsBehind}
       branchMissing={session.branchMissing}
       hasUncommitted={session.hasUncommitted}
       onClick={() => onSessionClick(id)}

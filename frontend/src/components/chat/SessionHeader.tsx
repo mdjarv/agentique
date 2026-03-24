@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   Check,
   ChevronDown,
   ExternalLink,
@@ -45,6 +46,7 @@ import {
   deleteSession,
   getSessionDiff,
   mergeSession,
+  rebaseSession,
   renameSession,
   setSessionModel,
 } from "~/lib/session-actions";
@@ -77,6 +79,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
   const [merging, setMerging] = useState(false);
+  const [rebasing, setRebasing] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -149,6 +152,24 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       toast.error(err instanceof Error ? err.message : "Merge failed");
     } finally {
       setMerging(false);
+    }
+  };
+
+  const handleRebase = async () => {
+    setRebasing(true);
+    try {
+      const result = await rebaseSession(ws, meta.id);
+      if (result.status === "rebased") {
+        toast.success("Rebased onto main");
+      } else if (result.status === "conflict") {
+        setConflictFiles(result.conflictFiles ?? []);
+      } else {
+        toast.error(result.error ?? "Rebase failed");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rebase failed");
+    } finally {
+      setRebasing(false);
     }
   };
 
@@ -293,6 +314,24 @@ export function SessionHeader({ session }: SessionHeaderProps) {
                 <GitCommitHorizontal className="h-3.5 w-3.5" />
               )}
               Commit
+            </Button>
+          )}
+
+          {/* Rebase button — only when behind main */}
+          {isWorktree && !isBusy && !!meta.commitsBehind && meta.commitsBehind > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={handleRebase}
+              disabled={rebasing}
+            >
+              {rebasing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5" />
+              )}
+              Rebase ({meta.commitsBehind})
             </Button>
           )}
 

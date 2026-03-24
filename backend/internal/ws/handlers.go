@@ -331,6 +331,24 @@ func (c *conn) handleSessionCommit(msg ClientMessage) {
 	c.respond(msg.ID, result, "")
 }
 
+func (c *conn) handleSessionRebase(msg ClientMessage) {
+	var payload SessionRebasePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	result, err := c.gitSvc.Rebase(c.ctx, payload.SessionID)
+	if err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, result, "")
+}
+
 func (c *conn) handleSessionHistory(msg ClientMessage) {
 	var payload SessionHistoryPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
