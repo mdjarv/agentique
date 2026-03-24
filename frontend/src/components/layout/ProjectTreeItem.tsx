@@ -231,6 +231,7 @@ export function ProjectTreeItem({
                     isActive={id === activeSessionId}
                     worktreeBranch={session.worktreeBranch}
                     hasDirtyWorktree={session.hasDirtyWorktree}
+                    worktreeMerged={session.worktreeMerged}
                     onClick={() => handleSessionClick(id)}
                     onStop={(e) => handleStopSession(e, id, session.state)}
                     onDelete={(e) => handleDeleteSession(e, id)}

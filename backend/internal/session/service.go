@@ -23,13 +23,14 @@ var (
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	State          string `json:"state"`
-	Model          string `json:"model"`
-	WorktreePath   string `json:"worktreePath,omitempty"`
-	WorktreeBranch string `json:"worktreeBranch,omitempty"`
-	CreatedAt      string `json:"createdAt"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	State           string `json:"state"`
+	Model           string `json:"model"`
+	WorktreePath    string `json:"worktreePath,omitempty"`
+	WorktreeBranch  string `json:"worktreeBranch,omitempty"`
+	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
+	CreatedAt       string `json:"createdAt"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -245,6 +246,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			Model:          ss.Model,
 			WorktreePath:   nullStr(ss.WorktreePath),
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
+			WorktreeMerged: ss.WorktreeMerged != 0,
 			CreatedAt:      ss.CreatedAt,
 		})
 	}
@@ -389,7 +391,14 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 	}
 
-	return s.mgr.Resume(ctx, sessionID, claudeSessID, dbSess.ProjectID, workDir, dbSess.Model)
+	sess, resumeErr := s.mgr.Resume(ctx, sessionID, claudeSessID, dbSess.ProjectID, workDir, dbSess.Model)
+	if resumeErr != nil {
+		return nil, resumeErr
+	}
+	if dbSess.WorktreeMerged != 0 {
+		sess.MarkMerged()
+	}
+	return sess, nil
 }
 
 // autoName calls Haiku to generate a short title and broadcasts the rename.

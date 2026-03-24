@@ -76,6 +76,7 @@ type Session struct {
 	pendingApprovals map[string]*pendingApproval
 	pendingQuestions map[string]*pendingQuestion
 	autoApprove      bool
+	worktreeMerged   bool
 	workDir          string
 	eventLoopDone    chan struct{}
 }
@@ -402,6 +403,11 @@ func (s *Session) broadcastState(state State) {
 			payload["hasDirtyWorktree"] = dirty
 		}
 	}
+	s.mu.Lock()
+	if s.worktreeMerged {
+		payload["worktreeMerged"] = true
+	}
+	s.mu.Unlock()
 	s.broadcast("session.state", payload)
 }
 
@@ -632,6 +638,13 @@ func (s *Session) Close() {
 		delete(s.pendingQuestions, id)
 	}
 	s.state = StateDone
+	s.mu.Unlock()
+}
+
+// MarkMerged sets the worktreeMerged flag on a live session.
+func (s *Session) MarkMerged() {
+	s.mu.Lock()
+	s.worktreeMerged = true
 	s.mu.Unlock()
 }
 

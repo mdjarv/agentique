@@ -12,7 +12,7 @@ import (
 
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged
 `
 
 type CreateSessionParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.ClaudeSessionID,
 		&i.WorktreeBaseSha,
 		&i.Model,
+		&i.WorktreeMerged,
 	)
 	return i, err
 }
@@ -67,7 +68,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -86,12 +87,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.ClaudeSessionID,
 		&i.WorktreeBaseSha,
 		&i.Model,
+		&i.WorktreeMerged,
 	)
 	return i, err
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -116,6 +118,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.ClaudeSessionID,
 			&i.WorktreeBaseSha,
 			&i.Model,
+			&i.WorktreeMerged,
 		); err != nil {
 			return nil, err
 		}
@@ -128,6 +131,15 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const setWorktreeMerged = `-- name: SetWorktreeMerged :exec
+UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+func (q *Queries) SetWorktreeMerged(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, setWorktreeMerged, id)
+	return err
 }
 
 const updateClaudeSessionID = `-- name: UpdateClaudeSessionID :exec

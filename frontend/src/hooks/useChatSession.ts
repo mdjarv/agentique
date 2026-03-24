@@ -126,7 +126,12 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
     const unsubState = ws.subscribe("session.state", (payload: any) => {
       useChatStore
         .getState()
-        .setSessionState(payload.sessionId, payload.state, payload.hasDirtyWorktree);
+        .setSessionState(
+          payload.sessionId,
+          payload.state,
+          payload.hasDirtyWorktree,
+          payload.worktreeMerged,
+        );
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload

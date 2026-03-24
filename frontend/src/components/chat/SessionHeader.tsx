@@ -182,7 +182,23 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         />
         <span className="font-medium truncate">{meta.name}</span>
         {meta.worktreeBranch ? (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+          <span
+            className={cn(
+              "flex items-center gap-1 text-xs shrink-0",
+              meta.hasDirtyWorktree
+                ? "text-[#e0af68]/80"
+                : meta.worktreeMerged
+                  ? "text-[#9ece6a]/80"
+                  : "text-muted-foreground",
+            )}
+            title={
+              meta.hasDirtyWorktree
+                ? `${meta.worktreeBranch} (dirty)`
+                : meta.worktreeMerged
+                  ? `${meta.worktreeBranch} (merged)`
+                  : meta.worktreeBranch
+            }
+          >
             <GitBranch className="h-3 w-3" />
             {meta.worktreeBranch}
           </span>

@@ -122,6 +122,11 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
 
+	_ = g.queries.SetWorktreeMerged(ctx, sessionID)
+	if live := g.mgr.Get(sessionID); live != nil {
+		live.MarkMerged()
+	}
+
 	if cleanup {
 		if wtPath != "" {
 			gitops.RemoveWorktree(project.Path, wtPath)
@@ -134,8 +139,15 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			ID:    sessionID,
 		})
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId": sessionID,
-			"state":     string(StateStopped),
+			"sessionId":      sessionID,
+			"state":          string(StateStopped),
+			"worktreeMerged": true,
+		})
+	} else {
+		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+			"sessionId":      sessionID,
+			"state":          dbSess.State,
+			"worktreeMerged": true,
 		})
 	}
 
