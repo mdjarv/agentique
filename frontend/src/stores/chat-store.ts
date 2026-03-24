@@ -56,6 +56,7 @@ export type SessionState =
 
 export interface SessionMetadata {
   id: string;
+  projectId: string;
   name: string;
   state: SessionState;
   model?: string;
@@ -156,7 +157,7 @@ export interface ChatState {
   historyLoading: Set<string>;
 
   // Session management
-  setSessions: (sessions: SessionMetadata[]) => void;
+  setSessions: (sessions: SessionMetadata[], projectId: string) => void;
   addSession: (meta: SessionMetadata) => void;
   removeSession: (id: string) => void;
   setActiveSessionId: (id: string | null) => void;
@@ -182,9 +183,6 @@ export interface ChatState {
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
   handleServerEvent: (sessionId: string, event: ChatEvent) => void;
 
-  // Draft -> real session promotion (atomic)
-  promoteDraft: (draftId: string, realSession: SessionMetadata) => void;
-
   // Project-level reset
   resetProject: () => void;
 }
@@ -194,15 +192,19 @@ export const useChatStore = create<ChatState>((set) => ({
   activeSessionId: null,
   historyLoading: new Set<string>(),
 
-  setSessions: (metas) =>
+  setSessions: (metas, projectId) =>
     set((s) => {
-      const sessions = { ...s.sessions };
-      for (const meta of metas) {
-        if (sessions[meta.id]) {
-          sessions[meta.id] = { ...(sessions[meta.id] as SessionData), meta };
-        } else {
-          sessions[meta.id] = emptySessionData(meta);
+      // Keep sessions from other projects, replace sessions for this project
+      const sessions: Record<string, SessionData> = {};
+      for (const [id, data] of Object.entries(s.sessions)) {
+        if (data.meta.projectId !== projectId) {
+          sessions[id] = data;
         }
+      }
+      for (const meta of metas) {
+        const tagged = { ...meta, projectId };
+        const existing = s.sessions[meta.id];
+        sessions[meta.id] = existing ? { ...existing, meta: tagged } : emptySessionData(tagged);
       }
       return { sessions };
     }),
@@ -280,11 +282,12 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  createDraft: () =>
+  createDraft: (projectId) =>
     set((s) => {
       const draftId = `draft-${uuid()}`;
       const meta: SessionMetadata = {
         id: draftId,
+        projectId,
         name: "New session",
         state: "draft",
         createdAt: new Date().toISOString(),
@@ -364,14 +367,5 @@ export const useChatStore = create<ChatState>((set) => ({
       return updateSession(s, sessionId, patch);
     }),
 
-  promoteDraft: (draftId, realSession) =>
-    set((s) => {
-      const { [draftId]: _, ...rest } = s.sessions;
-      return {
-        sessions: { ...rest, [realSession.id]: emptySessionData(realSession) },
-        activeSessionId: realSession.id,
-      };
-    }),
-
-  resetProject: () => set({ sessions: {}, activeSessionId: null, historyLoading: new Set() }),
+  resetProject: () => set({ activeSessionId: null, historyLoading: new Set() }),
 }));

@@ -28,15 +28,17 @@ export function useKeyboardShortcuts(projectId: string) {
       if (mod && e.key >= "1" && e.key <= "9") {
         e.preventDefault();
         const store = useChatStore.getState();
-        const sorted = Object.keys(store.sessions).sort((a, b) => {
-          const sa = store.sessions[a]?.meta;
-          const sb = store.sessions[b]?.meta;
-          if (!sa || !sb) return 0;
-          const pa = statePriority[sa.state] ?? 99;
-          const pb = statePriority[sb.state] ?? 99;
-          if (pa !== pb) return pa - pb;
-          return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
-        });
+        const sorted = Object.keys(store.sessions)
+          .filter((id) => store.sessions[id]?.meta.projectId === projectId)
+          .sort((a, b) => {
+            const sa = store.sessions[a]?.meta;
+            const sb = store.sessions[b]?.meta;
+            if (!sa || !sb) return 0;
+            const pa = statePriority[sa.state] ?? 99;
+            const pb = statePriority[sb.state] ?? 99;
+            if (pa !== pb) return pa - pb;
+            return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
+          });
         const idx = Number.parseInt(e.key, 10) - 1;
         const targetId = sorted[idx];
         if (targetId) {
