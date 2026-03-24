@@ -154,59 +154,59 @@ export function ProjectTreeItem({
           >
             {truncatePath(project.path)}
           </span>
+        </div>
+      </div>
+
+      {/* Sessions + new chat */}
+      {isExpanded && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
           <button
             type="button"
-            aria-label="New chat"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={() => {
               useChatStore.getState().createDraft(project.id);
               if (!isActive) {
                 navigate({ to: "/project/$projectId", params: { projectId: project.id } });
               }
             }}
-            className="p-0.5 rounded hover:bg-accent-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
+            <span>New chat</span>
           </button>
-        </div>
-      </div>
-
-      {/* Sessions + new chat (only when expanded and project data is loaded) */}
-      {isExpanded && isActive && (
-        <div className="ml-4 mt-0.5 space-y-0.5">
-          {[...sessionIds]
-            .filter((id) => sessions[id]?.meta.state !== "draft")
-            .sort((a, b) => {
-              const sa = sessions[a]?.meta;
-              const sb = sessions[b]?.meta;
-              if (!sa || !sb) return 0;
-              const pa = statePriority[sa.state] ?? 99;
-              const pb = statePriority[sb.state] ?? 99;
-              if (pa !== pb) return pa - pb;
-              return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
-            })
-            .map((id) => {
-              const session = sessions[id]?.meta;
-              if (!session) return null;
-              return (
-                <SessionRow
-                  key={id}
-                  name={session.name}
-                  state={session.state}
-                  hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
-                  hasPendingApproval={
-                    !!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion
-                  }
-                  isPlanning={!!sessions[id]?.planMode}
-                  isActive={id === activeSessionId}
-                  worktreeBranch={session.worktreeBranch}
-                  hasDirtyWorktree={session.hasDirtyWorktree}
-                  onClick={() => handleSessionClick(id)}
-                  onStop={(e) => handleStopSession(e, id, session.state)}
-                  onDelete={(e) => handleDeleteSession(e, id)}
-                />
-              );
-            })}
+          {isActive &&
+            [...sessionIds]
+              .filter((id) => sessions[id]?.meta.state !== "draft")
+              .sort((a, b) => {
+                const sa = sessions[a]?.meta;
+                const sb = sessions[b]?.meta;
+                if (!sa || !sb) return 0;
+                const pa = statePriority[sa.state] ?? 99;
+                const pb = statePriority[sb.state] ?? 99;
+                if (pa !== pb) return pa - pb;
+                return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
+              })
+              .map((id) => {
+                const session = sessions[id]?.meta;
+                if (!session) return null;
+                return (
+                  <SessionRow
+                    key={id}
+                    name={session.name}
+                    state={session.state}
+                    hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
+                    hasPendingApproval={
+                      !!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion
+                    }
+                    isPlanning={!!sessions[id]?.planMode}
+                    isActive={id === activeSessionId}
+                    worktreeBranch={session.worktreeBranch}
+                    hasDirtyWorktree={session.hasDirtyWorktree}
+                    onClick={() => handleSessionClick(id)}
+                    onStop={(e) => handleStopSession(e, id, session.state)}
+                    onDelete={(e) => handleDeleteSession(e, id)}
+                  />
+                );
+              })}
         </div>
       )}
 

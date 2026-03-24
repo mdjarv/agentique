@@ -7,17 +7,24 @@ export function ProjectList() {
   const projects = useProjects();
   const params = useParams({ strict: false });
   const activeProjectId = (params as { projectId?: string }).projectId;
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(
+    () => new Set(projects.map((p) => p.id)),
+  );
 
-  // Auto-expand the active project when it changes.
+  // Expand newly added projects automatically.
   useEffect(() => {
-    if (activeProjectId) {
-      setExpandedIds((prev) => {
-        if (prev.has(activeProjectId)) return prev;
-        return new Set(prev).add(activeProjectId);
-      });
-    }
-  }, [activeProjectId]);
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const p of projects) {
+        if (!next.has(p.id)) {
+          next.add(p.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [projects]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
