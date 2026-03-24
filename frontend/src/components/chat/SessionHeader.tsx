@@ -8,9 +8,10 @@ import {
   GitCommitHorizontal,
   GitMerge,
   Loader2,
+  Pencil,
   Trash2,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CommitDialog } from "~/components/chat/CommitDialog";
 import { ConflictPanel } from "~/components/chat/ConflictPanel";
@@ -44,6 +45,7 @@ import {
   deleteSession,
   getSessionDiff,
   mergeSession,
+  renameSession,
   setSessionModel,
 } from "~/lib/session-actions";
 import { cn } from "~/lib/utils";
@@ -78,6 +80,33 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const [merging, setMerging] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(meta.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  // Keep editName in sync if name changes externally (e.g. auto-name)
+  useEffect(() => {
+    if (!editing) setEditName(meta.name);
+  }, [meta.name, editing]);
+
+  const commitRename = () => {
+    const trimmed = editName.trim();
+    setEditing(false);
+    if (trimmed && trimmed !== meta.name) {
+      renameSession(ws, meta.id, trimmed).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Rename failed");
+      });
+    } else {
+      setEditName(meta.name);
+    }
+  };
 
   const handleModelChange = useCallback(
     (model: ModelId) => {
@@ -180,7 +209,31 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           hasUnseenCompletion={session.hasUnseenCompletion}
           hasPendingApproval={!!session.pendingApproval || !!session.pendingQuestion}
         />
-        <span className="font-medium truncate">{meta.name}</span>
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") {
+                setEditName(meta.name);
+                setEditing(false);
+              }
+            }}
+            className="font-medium truncate bg-transparent border-b border-border outline-none px-0 py-0 text-sm w-48"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="group/name flex items-center gap-1 font-medium truncate hover:text-foreground"
+          >
+            <span className="truncate">{meta.name}</span>
+            <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
+          </button>
+        )}
         {meta.worktreeBranch ? (
           <span
             className={cn(
