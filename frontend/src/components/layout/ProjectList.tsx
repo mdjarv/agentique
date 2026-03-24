@@ -36,7 +36,7 @@ export function ProjectList() {
   }, []);
 
   if (projects.length === 0) {
-    return <div className="p-4 text-sm text-muted-foreground">No projects yet</div>;
+    return <div className="p-4 text-sm text-sidebar-foreground/70">No projects yet</div>;
   }
 
   return (

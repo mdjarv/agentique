@@ -6,7 +6,7 @@ import { TooltipProvider } from "~/components/ui/tooltip";
 export function AppSidebar() {
   return (
     <TooltipProvider>
-      <div className="w-64 border-r bg-muted/30 flex flex-col h-full">
+      <div className="w-72 border-r bg-sidebar flex flex-col h-full">
         <div className="p-4 font-semibold text-lg border-b flex items-center justify-between">
           Agentique
           <NewProjectDialog />

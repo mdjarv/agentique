@@ -6,6 +6,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-bright: var(--foreground-bright);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -61,6 +62,7 @@
   /* Tokyo Night (Dark) as the default (and only) theme */
   --background: #1a1b26;
   --foreground: #a9b1d6;
+  --foreground-bright: #c0caf5;
   --card: #16161e;
   --card-foreground: #a9b1d6;
   --popover: #1a1b26;
@@ -93,6 +95,7 @@
 .dark {
   --background: #1a1b26;
   --foreground: #a9b1d6;
+  --foreground-bright: #c0caf5;
   --card: #16161e;
   --card-foreground: #a9b1d6;
   --popover: #1a1b26;

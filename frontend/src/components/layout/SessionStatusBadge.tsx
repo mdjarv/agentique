@@ -77,7 +77,7 @@ export function SessionStatusBadge({
       );
     case "stopped":
       return (
-        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/60" title="Stopped">
+        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/80" title="Stopped">
           <Pause className="size-3" />
         </Badge>
       );

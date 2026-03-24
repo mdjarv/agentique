@@ -172,8 +172,12 @@ export interface ChatState {
   setSessionState: (
     sessionId: string,
     state: SessionState,
-    hasDirtyWorktree?: boolean,
-    worktreeMerged?: boolean,
+    git?: Partial<
+      Pick<
+        SessionMetadata,
+        "hasDirtyWorktree" | "worktreeMerged" | "hasUncommitted" | "commitsAhead" | "branchMissing"
+      >
+    >,
   ) => void;
   setSessionName: (sessionId: string, name: string) => void;
   setSessionModel: (sessionId: string, model: string) => void;
@@ -257,11 +261,14 @@ export const useChatStore = create<ChatState>((set) => ({
       return { activeSessionId: id };
     }),
 
-  setSessionState: (sessionId, state, hasDirtyWorktree, worktreeMerged) =>
+  setSessionState: (sessionId, state, git) =>
     set((s) => {
       const patch: Partial<SessionMetadata> = { state };
-      if (hasDirtyWorktree !== undefined) patch.hasDirtyWorktree = hasDirtyWorktree;
-      if (worktreeMerged !== undefined) patch.worktreeMerged = worktreeMerged;
+      if (git) {
+        for (const [k, v] of Object.entries(git)) {
+          if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
+        }
+      }
       return updateMeta(s, sessionId, patch);
     }),
 

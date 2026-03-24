@@ -403,7 +403,9 @@ func (s *Session) broadcastState(state State) {
 	if s.workDir != "" && (state == StateIdle || state == StateDone) {
 		if dirty, err := gitops.HasUncommittedChanges(s.workDir); err == nil {
 			payload["hasDirtyWorktree"] = dirty
+			payload["hasUncommitted"] = dirty
 		}
+		s.enrichGitStatus(payload)
 	}
 	s.mu.Lock()
 	if s.worktreeMerged {
@@ -411,6 +413,30 @@ func (s *Session) broadcastState(state State) {
 	}
 	s.mu.Unlock()
 	s.broadcast("session.state", payload)
+}
+
+// enrichGitStatus adds commitsAhead and branchMissing to a broadcast payload.
+func (s *Session) enrichGitStatus(payload map[string]any) {
+	ctx := context.Background()
+	row, err := s.queries.GetSession(ctx, s.ID)
+	if err != nil {
+		return
+	}
+	branch := nullStr(row.WorktreeBranch)
+	if branch == "" || row.WorktreeMerged != 0 {
+		return
+	}
+	project, err := s.queries.GetProject(ctx, s.ProjectID)
+	if err != nil {
+		return
+	}
+	if !gitops.BranchExists(project.Path, branch) {
+		payload["branchMissing"] = true
+		return
+	}
+	if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
+		payload["commitsAhead"] = ahead
+	}
 }
 
 // PermissionMode returns the current permission mode string.
