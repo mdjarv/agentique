@@ -143,6 +143,7 @@ interface TurnBlockProps {
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
+  showEvents?: boolean;
 }
 
 function CollapsibleGroup({
@@ -359,6 +360,7 @@ export function TurnBlock({
   sessionState,
   projectPath,
   worktreePath,
+  showEvents = true,
 }: TurnBlockProps) {
   const [copied, setCopied] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -396,7 +398,10 @@ export function TurnBlock({
     }
   }
 
-  const hasAssistantContent = segments.length > 0 || streamingTail || isStreaming;
+  const visibleSegmentCount = showEvents
+    ? segments.length
+    : segments.filter((s) => s.kind !== "thinking" && s.kind !== "tool").length;
+  const hasAssistantContent = visibleSegmentCount > 0 || streamingTail || isStreaming;
 
   return (
     <div className="space-y-3">
@@ -451,6 +456,24 @@ export function TurnBlock({
           <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-hidden">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
+              if (!showEvents && (seg.kind === "thinking" || seg.kind === "tool")) {
+                // In compact mode, show in-flight tool status for the last tool segment while streaming
+                if (seg.kind === "tool" && isStreaming && i === segments.length - 1) {
+                  const inFlightTool = [...seg.pairs].reverse().find((p) => !p.result)?.use;
+                  if (inFlightTool) {
+                    return (
+                      <InFlightToolStatus
+                        key={segmentKey(seg, i)}
+                        event={inFlightTool}
+                        sessionId={sessionId}
+                        projectPath={projectPath}
+                        worktreePath={worktreePath}
+                      />
+                    );
+                  }
+                }
+                return null;
+              }
               switch (seg.kind) {
                 case "thinking":
                   return <ThinkingSegmentView key={segmentKey(seg, i)} segment={seg} />;

@@ -1,7 +1,8 @@
-import { ArrowDown, Loader2 } from "lucide-react";
+import { ArrowDown, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { Turn } from "~/stores/chat-store";
 
 const SCROLL_THRESHOLD = 48;
@@ -32,6 +33,7 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
+  const [showEvents, setShowEvents] = useState(true);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -89,20 +91,41 @@ export function MessageList({
             sessionState={sessionState}
             projectPath={projectPath}
             worktreePath={worktreePath}
+            showEvents={showEvents}
           />
         ))}
         <div ref={bottomRef} />
       </div>
-      {!following && (
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={scrollToBottom}
-          className="sticky bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-lg z-10 opacity-80 hover:opacity-100 transition-opacity"
-        >
-          <ArrowDown className="h-4 w-4" />
-        </Button>
-      )}
+      <div className="sticky bottom-4 z-10 flex justify-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={() => setShowEvents((v) => !v)}
+              className="rounded-full shadow-lg opacity-80 hover:opacity-100 transition-opacity h-8 w-8"
+            >
+              {showEvents ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{showEvents ? "Hide tool events" : "Show tool events"}</TooltipContent>
+        </Tooltip>
+        {!following && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={scrollToBottom}
+                className="rounded-full shadow-lg opacity-80 hover:opacity-100 transition-opacity h-8 w-8"
+              >
+                <ArrowDown className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Scroll to bottom</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
     </div>
   );
 }
