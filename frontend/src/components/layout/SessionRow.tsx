@@ -13,28 +13,46 @@ interface SessionRowProps {
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
-  totalCost?: number;
-  turnCount?: number;
+  commitsAhead?: number;
+  branchMissing?: boolean;
+  hasUncommitted?: boolean;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
 }
 
-function formatCost(cost: number): string {
-  if (cost < 0.01) return "<$0.01";
-  return `$${cost.toFixed(2)}`;
-}
+function buildSummary(props: {
+  state: SessionState;
+  worktreeBranch?: string;
+  worktreeMerged?: boolean;
+  commitsAhead?: number;
+  branchMissing?: boolean;
+  hasUncommitted?: boolean;
+}): { text: string; color: string } | null {
+  if (!props.worktreeBranch) return null;
+  if (props.state === "draft" || props.state === "running" || props.state === "starting")
+    return null;
 
-function buildSummary(
-  turnCount?: number,
-  totalCost?: number,
-  worktreeMerged?: boolean,
-): string | null {
+  if (props.worktreeMerged) {
+    return { text: "merged", color: "text-[#9ece6a]/70" };
+  }
+
+  if (props.branchMissing) {
+    return { text: "branch missing", color: "text-[#f7768e]/70" };
+  }
+
   const parts: string[] = [];
-  if (worktreeMerged) parts.push("merged");
-  if (turnCount) parts.push(`${turnCount} turns`);
-  if (totalCost && totalCost > 0) parts.push(formatCost(totalCost));
-  return parts.length > 0 ? parts.join(" · ") : null;
+  if (props.hasUncommitted) parts.push("uncommitted changes");
+  if (props.commitsAhead && props.commitsAhead > 0) {
+    parts.push(`${props.commitsAhead} commit${props.commitsAhead > 1 ? "s" : ""} ahead`);
+  }
+
+  if (parts.length > 0) {
+    return { text: parts.join(" · "), color: "text-[#e0af68]/70" };
+  }
+
+  if (props.state === "idle") return null;
+  return { text: "no changes", color: "text-muted-foreground/50" };
 }
 
 export function SessionRow({
@@ -47,14 +65,22 @@ export function SessionRow({
   worktreeBranch,
   hasDirtyWorktree,
   worktreeMerged,
-  totalCost,
-  turnCount,
+  commitsAhead,
+  branchMissing,
+  hasUncommitted,
   onClick,
   onStop,
   onDelete,
 }: SessionRowProps) {
   const canStop = state !== "stopped" && state !== "done" && state !== "draft";
-  const summary = buildSummary(turnCount, totalCost, worktreeMerged);
+  const summary = buildSummary({
+    state,
+    worktreeBranch,
+    worktreeMerged,
+    commitsAhead,
+    branchMissing,
+    hasUncommitted,
+  });
 
   return (
     <div
@@ -102,8 +128,8 @@ export function SessionRow({
           )}
         </div>
         {summary && (
-          <div className="text-[10px] text-muted-foreground/70 pl-[calc(1.25rem+0.375rem)] truncate">
-            {summary}
+          <div className={cn("text-[10px] pl-[calc(1.25rem+0.375rem)] truncate", summary.color)}>
+            {summary.text}
           </div>
         )}
       </button>

@@ -183,3 +183,22 @@ func HeadCommitHash(dir string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// BranchExists returns true if the given local branch exists in the repo.
+func BranchExists(dir, branch string) bool {
+	_, err := gitRun(dir, "rev-parse", "--verify", "refs/heads/"+branch)
+	return err == nil
+}
+
+// CommitsAhead returns how many commits branch has that are not in the default branch.
+// Uses the repo's HEAD branch (usually master/main) as the base.
+func CommitsAhead(dir, branch string) (int, error) {
+	out, err := gitRun(dir, "rev-list", "--count", "HEAD.."+branch)
+	if err != nil {
+		return 0, fmt.Errorf("rev-list failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	s := strings.TrimSpace(string(out))
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n, nil
+}

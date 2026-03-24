@@ -31,10 +31,11 @@ type SessionInfo struct {
 	AutoApprove     bool    `json:"autoApprove"`
 	WorktreePath    string  `json:"worktreePath,omitempty"`
 	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
-	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
-	TotalCost       float64 `json:"totalCost"`
-	TurnCount       int     `json:"turnCount"`
-	CreatedAt       string  `json:"createdAt"`
+	WorktreeMerged  bool `json:"worktreeMerged,omitempty"`
+	CommitsAhead    int  `json:"commitsAhead"`
+	BranchMissing   bool `json:"branchMissing,omitempty"`
+	HasUncommitted  bool `json:"hasUncommitted,omitempty"`
+	CreatedAt       string `json:"createdAt"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -235,11 +236,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 		return ListSessionsResult{}, err
 	}
 
-	summaries, _ := s.queries.SessionSummariesByProject(ctx, projectID)
-	summaryMap := make(map[string]store.SessionSummariesByProjectRow, len(summaries))
-	for _, sm := range summaries {
-		summaryMap[sm.SessionID] = sm
-	}
+	project, _ := s.queries.GetProject(ctx, projectID)
 
 	infos := make([]SessionInfo, 0, len(sessions))
 	for _, ss := range sessions {
@@ -255,10 +252,18 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			WorktreeMerged: ss.WorktreeMerged != 0,
 			CreatedAt:      ss.CreatedAt,
 		}
-		if sm, ok := summaryMap[ss.ID]; ok {
-			info.TotalCost = sm.TotalCost
-			info.TurnCount = int(sm.TurnCount)
+
+		if branch := nullStr(ss.WorktreeBranch); branch != "" && !info.WorktreeMerged {
+			if gitops.BranchExists(project.Path, branch) {
+				info.CommitsAhead, _ = gitops.CommitsAhead(project.Path, branch)
+				if wtPath := nullStr(ss.WorktreePath); wtPath != "" {
+					info.HasUncommitted, _ = gitops.HasUncommittedChanges(wtPath)
+				}
+			} else {
+				info.BranchMissing = true
+			}
 		}
+
 		infos = append(infos, info)
 	}
 
