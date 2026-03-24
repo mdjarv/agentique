@@ -2,7 +2,7 @@ package ws
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -62,10 +62,11 @@ func (c *conn) readLoop() {
 		var msg ClientMessage
 		if err := c.ws.ReadJSON(&msg); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				log.Printf("ws read error: %v", err)
+				slog.Warn("ws read error", "error", err)
 			}
 			return
 		}
+		slog.Debug("ws recv", "type", msg.Type, "id", msg.ID)
 		c.dispatch(msg)
 	}
 }
@@ -96,7 +97,7 @@ func (c *conn) writeLoop() {
 			err := c.ws.WriteJSON(msg)
 			c.mu.Unlock()
 			if err != nil {
-				log.Printf("ws write error: %v", err)
+				slog.Warn("ws write error", "error", err)
 				return
 			}
 		case <-ticker.C:
@@ -148,6 +149,7 @@ func (c *conn) dispatch(msg ClientMessage) {
 	case "session.resolve-question":
 		c.handleSessionResolveQuestion(msg)
 	default:
+		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}
 }
@@ -159,7 +161,7 @@ func (c *conn) send(msg any) {
 	case c.sendCh <- msg:
 	case <-c.ctx.Done():
 	default:
-		log.Printf("ws: send buffer full, closing connection")
+		slog.Warn("ws send buffer full, closing connection")
 		c.cancel()
 	}
 }

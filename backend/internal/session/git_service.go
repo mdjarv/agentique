@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
@@ -45,7 +45,7 @@ func autoCommitWorktree(sessionID, wtPath, reason string) error {
 	}
 	dirty, err := gitops.HasUncommittedChanges(wtPath)
 	if err != nil {
-		log.Printf("session %s: failed to check worktree changes: %v", sessionID, err)
+		slog.Warn("failed to check worktree changes", "session_id", sessionID, "error", err)
 		return nil
 	}
 	if !dirty {
@@ -82,13 +82,15 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		return MergeResult{}, fmt.Errorf("project not found")
 	}
 
+	slog.Info("merge started", "session_id", sessionID, "branch", branch, "cleanup", cleanup)
+
 	if live := g.mgr.Get(sessionID); live != nil {
 		if err := live.TryLockForMerge(); err != nil {
 			return MergeResult{}, err
 		}
 		defer func() {
 			if err := live.UnlockMerge(StateIdle); err != nil {
-				log.Printf("%v", err)
+				slog.Error("unlock merge failed", "session_id", sessionID, "error", err)
 			}
 		}()
 	}
@@ -111,17 +113,21 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		files, _ := gitops.MergeConflictFiles(project.Path)
 		_ = gitops.AbortMerge(project.Path)
 		if len(files) > 0 {
+			slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
 			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
 		}
+		slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
 		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
 	}
+
+	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
 
 	if cleanup {
 		if wtPath != "" {
 			gitops.RemoveWorktree(project.Path, wtPath)
 		}
 		if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
-			log.Printf("session %s: branch delete after merge: %v", sessionID, delErr)
+			slog.Warn("branch delete after merge failed", "session_id", sessionID, "error", delErr)
 		}
 		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateStopped),
@@ -152,6 +158,8 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		return CreatePRResult{}, fmt.Errorf("project not found")
 	}
 
+	slog.Info("creating PR", "session_id", p.SessionID, "branch", branch)
+
 	if !gitops.HasGhCli() {
 		return CreatePRResult{Status: "error", Error: "gh CLI not installed"}, nil
 	}
@@ -170,6 +178,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	}
 
 	if url, prErr := gitops.GetExistingPR(project.Path, branch); prErr == nil && url != "" {
+		slog.Info("PR already exists", "session_id", p.SessionID, "url", url)
 		return CreatePRResult{Status: "existing", URL: url}, nil
 	}
 
@@ -187,6 +196,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 		return CreatePRResult{Status: "error", Error: err.Error()}, nil
 	}
 
+	slog.Info("PR created", "session_id", p.SessionID, "url", url)
 	return CreatePRResult{Status: "created", URL: url}, nil
 }
 
@@ -248,5 +258,6 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		return CommitResult{}, fmt.Errorf("commit succeeded but failed to get hash: %w", err)
 	}
 
+	slog.Info("commit created", "session_id", sessionID, "commit", hash)
 	return CommitResult{CommitHash: hash}, nil
 }

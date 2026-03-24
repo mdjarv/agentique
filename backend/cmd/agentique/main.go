@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/logging"
 	"github.com/allbin/agentique/backend/internal/server"
 	"github.com/allbin/agentique/backend/internal/store"
 )
@@ -22,14 +23,18 @@ func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	flag.Parse()
 
+	logging.Init()
+
 	db, err := store.Open("agentique.db")
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 
 	queries := store.New(db)
@@ -47,7 +52,7 @@ func main() {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		log.Printf("Agentique server listening on %s", *addr)
+		slog.Info("server listening", "addr", *addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			listenErr <- err
 		}
@@ -55,10 +60,11 @@ func main() {
 
 	select {
 	case err := <-listenErr:
-		log.Fatalf("server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	case <-done:
 	}
-	log.Println("shutting down server...")
+	slog.Info("shutting down")
 
 	// Close all live sessions before shutting down HTTP.
 	srv.Shutdown()
@@ -67,10 +73,11 @@ func main() {
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatalf("server shutdown error: %v", err)
+		slog.Error("server shutdown failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }
 
 // findGitRoot walks up from dir to find the nearest .git directory.
@@ -113,8 +120,8 @@ func ensureDefaultProject(q *store.Queries) {
 		Path: projectDir,
 	})
 	if err != nil {
-		log.Printf("failed to create default project: %v", err)
+		slog.Warn("failed to create default project", "error", err)
 		return
 	}
-	log.Printf("created default project %q (%s)", name, projectDir)
+	slog.Info("created default project", "name", name, "path", projectDir)
 }

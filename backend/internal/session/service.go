@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -156,6 +156,8 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	slog.Info("session created", "session_id", sess.ID, "project", project.Name, "model", model, "worktree", p.Worktree)
+
 	dbSess, dbErr := s.queries.GetSession(ctx, sess.ID)
 	createdAt := ""
 	if dbErr == nil {
@@ -179,6 +181,7 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 
 	// CLI process dead — evict and resume with a fresh connection.
 	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
+		slog.Debug("evicting dead session for resume", "session_id", sessionID, "state", string(sess.State()))
 		s.mgr.Evict(sessionID)
 		sess = nil
 	}
@@ -190,6 +193,8 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 			return fmt.Errorf("%w: %v", ErrNotFound, err)
 		}
 	}
+
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
 
 	if err := sess.Query(ctx, prompt, attachments); err != nil {
 		return fmt.Errorf("query failed: %w", err)
@@ -204,6 +209,8 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 
 // StopSession stops a live session and cleans up its worktree.
 func (s *Service) StopSession(ctx context.Context, sessionID string) error {
+	slog.Info("stopping session", "session_id", sessionID)
+
 	if err := s.mgr.Stop(ctx, sessionID); err != nil {
 		return fmt.Errorf("stop failed: %w", err)
 	}
@@ -256,6 +263,8 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string) (HistoryResu
 
 // DeleteSession stops a live session, removes its worktree/branch, and deletes from DB.
 func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
+	slog.Info("deleting session", "session_id", sessionID)
+
 	if live := s.mgr.Get(sessionID); live != nil {
 		_ = s.mgr.Stop(ctx, sessionID)
 	}
@@ -272,7 +281,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
 			if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
-				log.Printf("session %s: branch delete: %v", sessionID, delErr)
+				slog.Warn("branch delete failed", "session_id", sessionID, "error", delErr)
 			}
 		}
 	}
@@ -297,6 +306,7 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 	if err := sess.SetModel(model); err != nil {
 		return err
 	}
+	slog.Debug("session model changed", "session_id", sessionID, "model", model)
 	_ = s.queries.UpdateSessionModel(ctx, store.UpdateSessionModelParams{
 		Model: model,
 		ID:    sessionID,
@@ -361,6 +371,8 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		return nil, ErrNoClaudeID
 	}
 
+	slog.Debug("resuming session", "session_id", sessionID, "claude_session_id", claudeSessID)
+
 	workDir := dbSess.WorkDir
 	if _, statErr := os.Stat(workDir); statErr != nil {
 		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
@@ -369,7 +381,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
 			if err := gitops.RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
-				log.Printf("session %s: worktree restore failed, falling back to project root: %v", sessionID, err)
+				slog.Warn("worktree restore failed, falling back to project root", "session_id", sessionID, "error", err)
 				workDir = project.Path
 			}
 		} else {
@@ -390,7 +402,7 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 		Name: name,
 		ID:   sessionID,
 	}); err != nil {
-		log.Printf("auto-rename db update error: %v", err)
+		slog.Warn("auto-rename db update failed", "session_id", sessionID, "error", err)
 		return
 	}
 	s.hub.Broadcast(projectID, "session.renamed", map[string]any{
@@ -415,7 +427,7 @@ func generateSessionName(prompt string) string {
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
 	)
 	if err != nil {
-		log.Printf("auto-rename haiku error: %v", err)
+		slog.Warn("auto-rename haiku failed", "error", err)
 		return ""
 	}
 

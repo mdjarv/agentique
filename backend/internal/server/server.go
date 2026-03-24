@@ -2,7 +2,9 @@ package server
 
 import (
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
@@ -52,7 +54,7 @@ func (s *Server) Shutdown() {
 
 // ServeHTTP implements the http.Handler interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(s.mux).ServeHTTP(w, r)
+	corsMiddleware(requestLogger(s.mux)).ServeHTTP(w, r)
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -72,5 +74,45 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// statusWriter wraps http.ResponseWriter to capture the status code.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	sw.status = code
+	sw.ResponseWriter.WriteHeader(code)
+}
+
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip logging for WebSocket upgrades (logged in ws package) and static assets.
+		if r.Header.Get("Upgrade") == "websocket" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		duration := time.Since(start)
+
+		level := slog.LevelDebug
+		if sw.status >= 500 {
+			level = slog.LevelError
+		} else if sw.status >= 400 {
+			level = slog.LevelWarn
+		}
+
+		slog.Log(r.Context(), level, "http",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", sw.status,
+			"duration", duration,
+		)
 	})
 }

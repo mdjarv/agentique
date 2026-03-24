@@ -1,7 +1,7 @@
 package ws
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -22,10 +22,12 @@ type Handler struct {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade error: %v", err)
+		slog.Error("ws upgrade failed", "error", err, "remote", r.RemoteAddr)
 		return
 	}
 
+	slog.Info("ws connected", "remote", r.RemoteAddr)
 	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.Hub)
 	c.run()
+	slog.Info("ws disconnected", "remote", r.RemoteAddr)
 }

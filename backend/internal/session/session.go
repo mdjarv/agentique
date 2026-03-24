@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -180,7 +180,7 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 	if len(attachments) == 0 {
 		if err := s.cliSess.Query(prompt); err != nil {
 			if stErr := s.setState(StateFailed); stErr != nil {
-				log.Printf("%v", stErr)
+				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 			}
 			return err
 		}
@@ -190,13 +190,13 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 	blocks, err := toContentBlocks(attachments)
 	if err != nil {
 		if stErr := s.setState(StateFailed); stErr != nil {
-			log.Printf("%v", stErr)
+			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
 		return fmt.Errorf("parse attachments: %w", err)
 	}
 	if err := s.cliSess.QueryWithContent(prompt, blocks...); err != nil {
 		if stErr := s.setState(StateFailed); stErr != nil {
-			log.Printf("%v", stErr)
+			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
 		return err
 	}
@@ -266,7 +266,7 @@ func (s *Session) startEventLoop() {
 					if s.state != StateDone {
 						s.mu.Unlock()
 						if err := s.setState(StateDone); err != nil {
-							log.Printf("%v", err)
+							slog.Error("state transition failed", "session_id", s.ID, "error", err)
 						}
 					} else {
 						s.mu.Unlock()
@@ -297,7 +297,7 @@ func (s *Session) startEventLoop() {
 					watchdog.Reset(watchdogFailAfter - watchdogWarnAfter)
 					continue
 				}
-				log.Printf("session %s: watchdog timeout, marking failed", s.ID)
+				slog.Error("watchdog timeout, marking session failed", "session_id", s.ID)
 				s.setState(StateFailed)
 				return
 			}
@@ -316,7 +316,7 @@ func (s *Session) processEvent(event claudecli.Event) {
 				ClaudeSessionID: sqlNullString(initEv.SessionID),
 				ID:              s.ID,
 			})
-			log.Printf("session %s: captured claude session ID %s", s.ID, initEv.SessionID)
+			slog.Debug("captured claude session ID", "session_id", s.ID, "claude_session_id", initEv.SessionID)
 		}
 		s.mu.Unlock()
 		return
@@ -363,13 +363,13 @@ func (s *Session) processEvent(event claudecli.Event) {
 
 	if _, ok := event.(*claudecli.ResultEvent); ok {
 		if err := s.setState(StateIdle); err != nil {
-			log.Printf("%v", err)
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
 	}
 
 	if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
 		if err := s.setState(StateFailed); err != nil {
-			log.Printf("%v", err)
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
 	}
 }
@@ -492,6 +492,8 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 		s.mu.Unlock()
 	}()
 
+	slog.Debug("tool permission requested", "session_id", s.ID, "tool", toolName, "approval_id", approvalID)
+
 	s.broadcast("session.tool-permission", map[string]any{
 		"sessionId":  s.ID,
 		"approvalId": approvalID,
@@ -501,6 +503,7 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 
 	select {
 	case resp := <-ch:
+		slog.Debug("tool permission resolved", "session_id", s.ID, "tool", toolName, "approval_id", approvalID, "allow", resp.Allow)
 		return resp, nil
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
@@ -606,7 +609,7 @@ func (s *Session) Close() {
 	select {
 	case <-s.eventLoopDone:
 	case <-time.After(eventLoopShutdownTimeout):
-		log.Printf("session %s: event loop did not stop in time", s.ID)
+		slog.Warn("event loop did not stop in time", "session_id", s.ID)
 	}
 
 	// Safety net: drain any pending approvals/questions that weren't

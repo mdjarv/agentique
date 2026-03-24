@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +60,7 @@ func RestoreWorktree(projectDir, branch, worktreePath string) error {
 func RemoveWorktree(projectDir, worktreePath string) {
 	out, err := gitRun(projectDir, "worktree", "remove", worktreePath)
 	if err != nil {
-		log.Printf("warning: git worktree remove failed (best-effort): %v: %s", err, string(out))
+		slog.Warn("worktree remove failed (best-effort)", "error", err, "output", strings.TrimSpace(string(out)))
 	}
 }
 

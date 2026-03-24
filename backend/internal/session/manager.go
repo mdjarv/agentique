@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -162,7 +162,7 @@ func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projec
 	m.sessions[sessionID] = sess
 	m.mu.Unlock()
 
-	log.Printf("session %s: resumed claude session %s", sessionID, claudeSessionID)
+	slog.Info("session resumed", "session_id", sessionID, "claude_session_id", claudeSessionID)
 	return sess, nil
 }
 
@@ -236,6 +236,8 @@ func (m *Manager) CloseAll() {
 	m.sessions = make(map[string]*Session)
 	m.mu.Unlock()
 
+	slog.Info("closing all sessions", "count", len(sessions))
+
 	var wg sync.WaitGroup
 	for _, s := range sessions {
 		wg.Add(1)
@@ -251,7 +253,7 @@ func (m *Manager) CloseAll() {
 			select {
 			case <-done:
 			case <-timer.C:
-				log.Printf("session %s: close timed out, abandoning", s.ID)
+				slog.Warn("session close timed out", "session_id", s.ID)
 			}
 		}(s)
 	}
