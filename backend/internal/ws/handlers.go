@@ -369,3 +369,21 @@ func (c *conn) handleSessionHistory(msg ClientMessage) {
 
 	c.respond(msg.ID, result, "")
 }
+
+func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
+	var payload SessionGeneratePRDescPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	result, err := c.gitSvc.GeneratePRDescription(c.ctx, payload.SessionID)
+	if err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, result, "")
+}

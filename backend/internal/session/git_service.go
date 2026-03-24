@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+
+	claudecli "github.com/allbin/claudecli-go"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -265,6 +268,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 
 	if url, prErr := gitops.GetExistingPR(project.Path, branch); prErr == nil && url != "" {
 		slog.Info("PR already exists", "session_id", p.SessionID, "url", url)
+		g.savePRUrl(ctx, dbSess.ProjectID, p.SessionID, url)
 		return CreatePRResult{Status: "existing", URL: url}, nil
 	}
 
@@ -283,7 +287,20 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	}
 
 	slog.Info("PR created", "session_id", p.SessionID, "url", url)
+	g.savePRUrl(ctx, dbSess.ProjectID, p.SessionID, url)
 	return CreatePRResult{Status: "created", URL: url}, nil
+}
+
+// savePRUrl persists the PR URL and broadcasts the update to clients.
+func (g *GitService) savePRUrl(ctx context.Context, projectID, sessionID, url string) {
+	_ = g.queries.UpdateSessionPRUrl(ctx, store.UpdateSessionPRUrlParams{
+		PrUrl: url,
+		ID:    sessionID,
+	})
+	g.hub.Broadcast(projectID, "session.pr-updated", map[string]any{
+		"sessionId": sessionID,
+		"prUrl":     url,
+	})
 }
 
 // Diff returns the diff for a session.
@@ -346,4 +363,85 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	slog.Info("commit created", "session_id", sessionID, "commit", hash)
 	return CommitResult{CommitHash: hash}, nil
+}
+
+// PRDescriptionResult holds generated PR title and body.
+type PRDescriptionResult struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// GeneratePRDescription uses Haiku to generate a PR title and body from the session diff.
+func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string) (PRDescriptionResult, error) {
+	diff, err := g.Diff(ctx, sessionID)
+	if err != nil {
+		return PRDescriptionResult{}, fmt.Errorf("failed to get diff: %w", err)
+	}
+	if !diff.HasDiff {
+		return PRDescriptionResult{}, fmt.Errorf("no changes to describe")
+	}
+
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return PRDescriptionResult{}, fmt.Errorf("session not found")
+	}
+
+	// Build context: stat summary + truncated diff for Haiku.
+	diffText := diff.Diff
+	const maxDiffChars = 8000
+	if len(diffText) > maxDiffChars {
+		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
+	}
+
+	prompt := fmt.Sprintf(
+		"Generate a GitHub pull request title and description for these changes.\n"+
+			"Session name: %s\n\n"+
+			"Diff summary:\n%s\n\n"+
+			"Full diff:\n%s\n\n"+
+			"Respond in EXACTLY this format with no other text:\n"+
+			"TITLE: <short PR title, max 70 chars>\n"+
+			"BODY:\n<markdown description: what changed and why, use bullet points, 2-8 lines>",
+		dbSess.Name, diff.Summary, diffText,
+	)
+
+	client := claudecli.New()
+	result, err := client.RunBlocking(ctx, prompt,
+		claudecli.WithModel(claudecli.ModelHaiku),
+		claudecli.WithMaxTurns(1),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+	)
+	if err != nil {
+		return PRDescriptionResult{}, fmt.Errorf("haiku generation failed: %w", err)
+	}
+
+	return parsePRDescription(result.Text), nil
+}
+
+// parsePRDescription extracts title and body from Haiku's "TITLE: ...\nBODY:\n..." response.
+func parsePRDescription(text string) PRDescriptionResult {
+	text = strings.TrimSpace(text)
+
+	titleIdx := strings.Index(text, "TITLE:")
+	bodyIdx := strings.Index(text, "BODY:")
+
+	var title, body string
+	if titleIdx >= 0 && bodyIdx > titleIdx {
+		title = strings.TrimSpace(text[titleIdx+len("TITLE:") : bodyIdx])
+		body = strings.TrimSpace(text[bodyIdx+len("BODY:"):])
+	} else if titleIdx >= 0 {
+		title = strings.TrimSpace(text[titleIdx+len("TITLE:"):])
+	} else {
+		// Fallback: first line is title, rest is body.
+		lines := strings.SplitN(text, "\n", 2)
+		title = strings.TrimSpace(lines[0])
+		if len(lines) > 1 {
+			body = strings.TrimSpace(lines[1])
+		}
+	}
+
+	if len(title) > 70 {
+		title = title[:70]
+	}
+
+	return PRDescriptionResult{Title: title, Body: body}
 }

@@ -130,3 +130,7 @@ type SessionCommitPayload struct {
 type SessionRebasePayload struct {
 	SessionID string `json:"sessionId"`
 }
+
+type SessionGeneratePRDescPayload struct {
+	SessionID string `json:"sessionId"`
+}

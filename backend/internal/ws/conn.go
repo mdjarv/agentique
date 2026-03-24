@@ -152,6 +152,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionResolveQuestion(msg)
 	case "session.rebase":
 		c.handleSessionRebase(msg)
+	case "session.generate-pr-description":
+		c.handleSessionGeneratePRDesc(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)

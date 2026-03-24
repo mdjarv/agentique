@@ -8,17 +8,18 @@ import { MessageQueue } from "~/components/chat/MessageQueue";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
-import { useChatSession } from "~/hooks/useChatSession";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { setAutoApprove, setPermissionMode } from "~/lib/session-actions";
+import { setAutoApprove, setPermissionMode, submitQuery } from "~/lib/session-actions";
+import { loadSessionHistory } from "~/lib/session-history";
+import { copyToClipboard } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
+import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
-import { selectActiveSession } from "~/stores/selectors";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ChatPanelProps {
   projectId: string;
-  initialSessionId?: string;
+  sessionId: string;
 }
 
 const resumePlaceholders: Record<string, string> = {
@@ -27,62 +28,100 @@ const resumePlaceholders: Record<string, string> = {
   failed: "Session failed — send a message to retry...",
 };
 
-export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
-  const { sendQuery, interruptSession, loadHistory } = useChatSession(projectId, initialSessionId);
+export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
+  const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const activeSession = useChatStore(selectActiveSession);
-  const isLoadingHistory = useChatStore((s) =>
-    s.activeSessionId ? s.historyLoading.has(s.activeSessionId) : false,
-  );
-  const currentAssistantText = useStreamingStore((s) =>
-    activeSessionId ? (s.texts[activeSessionId] ?? "") : "",
-  );
+  const session = useChatStore((s) => s.sessions[sessionId]);
+  const sessionListLoaded = useChatStore((s) => s.sessionListLoaded);
+  const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
+  const currentAssistantText = useStreamingStore((s) => s.texts[sessionId] ?? "");
 
   const composerRef = useRef<ComposerHandle>(null);
-  const ws = useWebSocket();
-  const sessionState = activeSession?.meta.state ?? "disconnected";
-  const isDraft = sessionState === "draft";
-  const planMode = activeSession?.planMode ?? false;
-  const autoApprove = activeSession?.autoApprove ?? false;
-  const queuedMessages = activeSession?.queuedMessages ?? [];
+  const sessionState = session?.meta.state ?? "disconnected";
+  const planMode = session?.planMode ?? false;
+  const autoApprove = session?.autoApprove ?? false;
+  const queuedMessages = session?.queuedMessages ?? [];
+
+  // Set this session as active for unseen-completion tracking
+  useEffect(() => {
+    useChatStore.getState().setActiveSessionId(sessionId);
+    return () => {
+      const s = useChatStore.getState();
+      if (s.activeSessionId === sessionId) {
+        s.setActiveSessionId(null);
+      }
+    };
+  }, [sessionId]);
+
+  // Load history on mount or session switch
+  const hasTurns = (session?.turns.length ?? 0) > 0;
+  useEffect(() => {
+    if (!hasTurns) {
+      loadSessionHistory(ws, sessionId);
+    }
+  }, [ws, sessionId, hasTurns]);
+
+  // Redirect if session was deleted or doesn't exist
+  useEffect(() => {
+    if (sessionListLoaded && !session) {
+      navigate({
+        to: "/project/$projectId",
+        params: { projectId },
+        replace: true,
+      });
+    }
+  }, [sessionListLoaded, session, navigate, projectId]);
 
   const handlePlanModeChange = useCallback(
     (enabled: boolean) => {
-      if (!activeSessionId) return;
-      useChatStore.getState().setSessionPlanMode(activeSessionId, enabled);
-      if (!isDraft) {
-        const mode = enabled ? "plan" : "default";
-        setPermissionMode(ws, activeSessionId, mode).catch((err) => {
-          toast.error(err instanceof Error ? err.message : "Failed to set plan mode");
-        });
-      }
+      useChatStore.getState().setSessionPlanMode(sessionId, enabled);
+      const mode = enabled ? "plan" : "default";
+      setPermissionMode(ws, sessionId, mode).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to set plan mode");
+      });
     },
-    [ws, activeSessionId, isDraft],
+    [ws, sessionId],
   );
 
   const handleAutoApproveChange = useCallback(
     (enabled: boolean) => {
-      if (!activeSessionId) return;
-      useChatStore.getState().setSessionAutoApprove(activeSessionId, enabled);
-      if (!isDraft) {
-        setAutoApprove(ws, activeSessionId, enabled).catch((err) => {
-          toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
-        });
-      }
+      useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
+      setAutoApprove(ws, sessionId, enabled).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
+      });
     },
-    [ws, activeSessionId, isDraft],
+    [ws, sessionId],
   );
 
-  // Load history when switching to a session that hasn't been loaded yet
-  useEffect(() => {
-    if (!activeSessionId) return;
-    const s = useChatStore.getState().sessions[activeSessionId];
-    if (s && s.turns.length === 0 && s.meta.state !== "draft") {
-      loadHistory(activeSessionId);
+  const handleSend = useCallback(
+    async (prompt: string, attachments?: Attachment[]) => {
+      if (sessionState === "running") {
+        useChatStore.getState().enqueueMessage(sessionId, prompt, attachments);
+        return;
+      }
+      try {
+        await submitQuery(ws, sessionId, prompt, attachments);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        toast.error(msg, {
+          action: { label: "Copy", onClick: () => copyToClipboard(msg) },
+        });
+        useChatStore.getState().setSessionState(sessionId, "idle");
+      }
+    },
+    [ws, sessionId, sessionState],
+  );
+
+  const handleInterrupt = useCallback(async () => {
+    if (queuedMessages.length > 0) {
+      const text = queuedMessages.map((m) => m.prompt).join("\n\n");
+      useChatStore.getState().clearQueue(sessionId);
+      composerRef.current?.setText(text);
     }
-  }, [activeSessionId, loadHistory]);
+    const { interruptSession } = await import("~/lib/session-actions");
+    interruptSession(ws, sessionId).catch(console.error);
+  }, [ws, sessionId, queuedMessages]);
 
   // Flush queued messages back to composer when session reaches a terminal state
   const prevStateRef = useRef(sessionState);
@@ -93,109 +132,67 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       prev === "running" &&
       (sessionState === "done" || sessionState === "failed" || sessionState === "stopped")
     ) {
-      if (activeSessionId && queuedMessages.length > 0) {
+      if (queuedMessages.length > 0) {
         const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-        useChatStore.getState().clearQueue(activeSessionId);
+        useChatStore.getState().clearQueue(sessionId);
         composerRef.current?.setText(text);
       }
     }
-  }, [sessionState, activeSessionId, queuedMessages]);
+  }, [sessionState, sessionId, queuedMessages]);
 
-  // Sync active session ID to URL search param
-  useEffect(() => {
-    const isDraftSession = activeSessionId?.startsWith("draft-");
-    const session = isDraftSession || !activeSessionId ? undefined : activeSessionId;
-    navigate({
-      to: "/project/$projectId",
-      params: { projectId },
-      search: { session },
-      replace: true,
-    });
-  }, [activeSessionId, navigate, projectId]);
-
-  const resumePlaceholder = resumePlaceholders[sessionState];
-  const worktree = activeSession?.meta.worktree ?? false;
-
-  if (!activeSession) {
+  if (!session) {
     return (
-      <div
-        className="flex flex-col h-full items-center justify-center text-muted-foreground"
-        data-project-id={projectId}
-      >
-        <p className="text-sm">Select a session or start a new chat</p>
+      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
+        <p className="text-sm">Loading session...</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full" data-project-id={projectId}>
-      {activeSession.meta.state !== "draft" && <SessionHeader session={activeSession} />}
+      <SessionHeader session={session} />
       <MessageList
-        turns={activeSession?.turns ?? []}
-        sessionId={activeSession.meta.id}
+        turns={session.turns}
+        sessionId={sessionId}
         currentAssistantText={currentAssistantText}
         sessionState={sessionState}
         projectPath={project?.path}
-        worktreePath={activeSession?.meta.worktreePath}
+        worktreePath={session.meta.worktreePath}
         isLoadingHistory={isLoadingHistory}
       />
-      {activeSession?.pendingApproval && activeSessionId && (
+      {session.pendingApproval && (
         <ApprovalBanner
-          sessionId={activeSessionId}
-          approval={activeSession.pendingApproval}
+          sessionId={sessionId}
+          approval={session.pendingApproval}
           projectPath={project?.path}
-          worktreePath={activeSession?.meta.worktreePath}
+          worktreePath={session.meta.worktreePath}
         />
       )}
-      {activeSession?.pendingQuestion && activeSessionId && (
-        <QuestionBanner sessionId={activeSessionId} pending={activeSession.pendingQuestion} />
+      {session.pendingQuestion && (
+        <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
       )}
-      {activeSession?.rateLimit && <RateLimitBanner rateLimit={activeSession.rateLimit} />}
+      {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
       {queuedMessages.length > 0 && (
         <MessageQueue
           messages={queuedMessages}
           onCancel={(msg) => {
-            if (activeSessionId) {
-              useChatStore.getState().cancelQueuedMessage(activeSessionId, msg.id);
-              composerRef.current?.setText(msg.prompt);
-            }
+            useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
+            composerRef.current?.setText(msg.prompt);
           }}
         />
       )}
       <MessageComposer
         ref={composerRef}
-        key={activeSession.meta.id}
-        onSend={sendQuery}
+        key={sessionId}
+        onSend={handleSend}
         disabled={sessionState === "disconnected" || sessionState === "starting"}
         isRunning={sessionState === "running"}
-        onInterrupt={() => {
-          if (!activeSessionId) return;
-          // Flush queue into composer before interrupting
-          if (queuedMessages.length > 0) {
-            const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-            useChatStore.getState().clearQueue(activeSessionId);
-            composerRef.current?.setText(text);
-          }
-          interruptSession(activeSessionId);
-        }}
-        isDraft={isDraft}
-        initialText={activeSession.draftText}
-        onTextPersist={(t) => {
-          if (activeSessionId) {
-            useChatStore.getState().setDraftText(activeSessionId, t);
-          }
-        }}
-        placeholder={resumePlaceholder}
+        onInterrupt={handleInterrupt}
+        placeholder={resumePlaceholders[sessionState]}
         planMode={planMode}
         onPlanModeChange={handlePlanModeChange}
         autoApprove={autoApprove}
         onAutoApproveChange={handleAutoApproveChange}
-        worktree={worktree}
-        onWorktreeChange={(v) => {
-          if (activeSession) {
-            useChatStore.getState().setDraftWorktree(activeSession.meta.id, v);
-          }
-        }}
       />
     </div>
   );

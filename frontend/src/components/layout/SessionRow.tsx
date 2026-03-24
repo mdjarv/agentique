@@ -43,7 +43,7 @@ export function SessionRow({
   onStop,
   onDelete,
 }: SessionRowProps) {
-  const canStop = !isTerminal(state) && state !== "draft";
+  const canStop = !isTerminal(state);
   const faded = isTerminal(state) && worktreeMerged;
   const hasAttention = !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
 

@@ -93,12 +93,6 @@ export function SessionStatusBadge({
           <TriangleAlert className="size-3" />
         </Badge>
       );
-    case "draft":
-      return (
-        <Badge bg="bg-[#565f89]/15" text="text-[#565f89]" title="Draft">
-          <PenLine className="size-3" />
-        </Badge>
-      );
   }
 }
 
