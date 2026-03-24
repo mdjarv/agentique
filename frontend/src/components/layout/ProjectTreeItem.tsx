@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, FolderOpen, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -17,6 +17,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteSession, interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import { type SessionState, useChatStore } from "~/stores/chat-store";
 import { SessionRow } from "./SessionRow";
 
@@ -57,6 +58,8 @@ export function ProjectTreeItem({
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const setActiveSessionId = useChatStore((s) => s.setActiveSessionId);
+  const hideStoppedSessions = useAppStore((s) => s.hideStoppedSessions);
+  const toggleHideStoppedSessions = useAppStore((s) => s.toggleHideStoppedSessions);
 
   const handleProjectClick = () => {
     onToggleExpand();
@@ -164,19 +167,34 @@ export function ProjectTreeItem({
       {/* Sessions + new chat */}
       {isExpanded && (
         <div className="ml-4 mt-0.5 space-y-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              useChatStore.getState().createDraft(project.id);
-              if (!isActive) {
-                navigate({ to: "/project/$projectId", params: { projectId: project.id } });
-              }
-            }}
-            className="flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New chat</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                useChatStore.getState().createDraft(project.id);
+                if (!isActive) {
+                  navigate({ to: "/project/$projectId", params: { projectId: project.id } });
+                }
+              }}
+              className="flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleHideStoppedSessions}
+              title={hideStoppedSessions ? "Show stopped sessions" : "Hide stopped sessions"}
+              className={cn(
+                "rounded-md p-1 transition-colors cursor-pointer",
+                hideStoppedSessions
+                  ? "text-foreground bg-accent/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              )}
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+            </button>
+          </div>
           {isActive &&
             [...sessionIds]
               .sort((a, b) => {
@@ -187,6 +205,11 @@ export function ProjectTreeItem({
                 const pb = statePriority[sb.state] ?? 99;
                 if (pa !== pb) return pa - pb;
                 return new Date(sb.createdAt).getTime() - new Date(sa.createdAt).getTime();
+              })
+              .filter((id) => {
+                if (!hideStoppedSessions) return true;
+                const state = sessions[id]?.meta.state;
+                return state !== "stopped";
               })
               .map((id) => {
                 const session = sessions[id]?.meta;

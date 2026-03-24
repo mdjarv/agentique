@@ -55,13 +55,12 @@ export function SessionRow({
         </span>
         {worktreeBranch && (
           <span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0 max-w-[8rem]">
-            <GitBranch className="h-3 w-3 shrink-0" />
+            <GitBranch
+              className={cn("h-3 w-3 shrink-0", hasDirtyWorktree && "text-yellow-600/70")}
+            />
             <span className="truncate" title={worktreeBranch}>
               {worktreeBranch}
             </span>
-            {hasDirtyWorktree && (
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
-            )}
           </span>
         )}
       </button>
