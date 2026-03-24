@@ -44,6 +44,7 @@ export async function createSession(
   );
   const meta: SessionMetadata = {
     id: result.sessionId,
+    projectId,
     name: result.name,
     state: result.state as SessionMetadata["state"],
     model: result.model as ModelId,
@@ -196,7 +197,11 @@ export async function stopSession(ws: WsClient, sessionId: string): Promise<void
   }
   const store = useChatStore.getState();
   if (store.activeSessionId === sessionId) {
-    const nextId = Object.keys(store.sessions).find((id) => id !== sessionId) ?? null;
+    const projectId = store.sessions[sessionId]?.meta.projectId;
+    const nextId =
+      Object.keys(store.sessions).find(
+        (id) => id !== sessionId && store.sessions[id]?.meta.projectId === projectId,
+      ) ?? null;
     store.setActiveSessionId(nextId);
   }
   store.removeSession(sessionId);

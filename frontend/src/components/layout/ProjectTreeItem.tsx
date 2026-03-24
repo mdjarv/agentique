@@ -53,7 +53,11 @@ export function ProjectTreeItem({
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
 
-  const sessionIds = useChatStore(useShallow((s) => Object.keys(s.sessions)));
+  const sessionIds = useChatStore(
+    useShallow((s) =>
+      Object.keys(s.sessions).filter((id) => s.sessions[id]?.meta.projectId === project.id),
+    ),
+  );
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const setActiveSessionId = useChatStore((s) => s.setActiveSessionId);

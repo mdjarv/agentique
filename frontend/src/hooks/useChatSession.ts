@@ -87,7 +87,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       .then((result) => {
         if (stale) return;
         const s = useChatStore.getState();
-        s.setSessions(result.sessions);
+        s.setSessions(result.sessions, projectId);
         const target =
           (initialSessionId && result.sessions.find((sess) => sess.id === initialSessionId)) ||
           result.sessions[0];
@@ -171,7 +171,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
         .then((result) => {
           if (stale) return;
           const s = useChatStore.getState();
-          s.setSessions(result.sessions);
+          s.setSessions(result.sessions, projectId);
           const activeId = s.activeSessionId;
           if (activeId && result.sessions.some((sess) => sess.id === activeId)) {
             loadSessionHistory(activeId);
