@@ -98,12 +98,16 @@ func ToWireEvent(event claudecli.Event) any {
 		}
 	case *claudecli.ErrorEvent:
 		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
-		var cliErr *claudecli.Error
-		if errors.As(e.Err, &cliErr) && cliErr.Details != nil {
-			we.ErrorType = cliErr.Details.Type
-			if cliErr.Details.RetryAfter > 0 {
-				we.RetryAfterSecs = int(cliErr.Details.RetryAfter.Seconds())
+		if errors.Is(e.Err, claudecli.ErrRateLimit) {
+			we.ErrorType = "rate_limit"
+			var rlErr *claudecli.RateLimitError
+			if errors.As(e.Err, &rlErr) && rlErr.RetryAfter > 0 {
+				we.RetryAfterSecs = int(rlErr.RetryAfter.Seconds())
 			}
+		} else if errors.Is(e.Err, claudecli.ErrAuth) {
+			we.ErrorType = "auth"
+		} else if errors.Is(e.Err, claudecli.ErrOverloaded) {
+			we.ErrorType = "overloaded"
 		}
 		return we
 	case *claudecli.RateLimitEvent:
