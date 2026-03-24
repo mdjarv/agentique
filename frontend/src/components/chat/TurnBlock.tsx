@@ -152,6 +152,7 @@ function CollapsibleGroup({
   count,
   defaultExpanded,
   statusContent,
+  trailingIcons,
   children,
 }: {
   label: string;
@@ -159,6 +160,7 @@ function CollapsibleGroup({
   count: number;
   defaultExpanded: boolean;
   statusContent?: React.ReactNode;
+  trailingIcons?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -178,6 +180,11 @@ function CollapsibleGroup({
         <span>
           {count} {label}
         </span>
+        {trailingIcons && (
+          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50">
+            {trailingIcons}
+          </span>
+        )}
       </button>
       {!expanded && statusContent}
       {expanded && <div className="space-y-1 p-1 pt-0">{children}</div>}
@@ -269,12 +276,21 @@ function ToolSegmentView({
     ? [...segment.pairs].reverse().find((p) => !p.result)?.use
     : undefined;
 
+  const trailingIcons = segment.pairs
+    .slice(0, 12)
+    .map((pair) => (
+      <span key={pair.use.id}>
+        {getToolIcon(pair.use.toolName ?? "Unknown", pair.use.category)}
+      </span>
+    ));
+
   return (
     <CollapsibleGroup
       label={segment.pairs.length === 1 ? "tool call" : "tool calls"}
       icon={<Terminal className="h-3 w-3" />}
       count={segment.pairs.length}
       defaultExpanded={false}
+      trailingIcons={trailingIcons}
       statusContent={
         inFlightTool ? (
           <InFlightToolStatus
