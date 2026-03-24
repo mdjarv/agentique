@@ -67,6 +67,7 @@ export interface SessionMetadata {
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
   commitsAhead?: number;
+  commitsBehind?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
   createdAt: string;
@@ -184,7 +185,12 @@ export interface ChatState {
     git?: Partial<
       Pick<
         SessionMetadata,
-        "hasDirtyWorktree" | "worktreeMerged" | "hasUncommitted" | "commitsAhead" | "branchMissing"
+        | "hasDirtyWorktree"
+        | "worktreeMerged"
+        | "hasUncommitted"
+        | "commitsAhead"
+        | "commitsBehind"
+        | "branchMissing"
       >
     >,
   ) => void;

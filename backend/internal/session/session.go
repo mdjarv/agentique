@@ -437,6 +437,9 @@ func (s *Session) enrichGitStatus(payload map[string]any) {
 	if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
 		payload["commitsAhead"] = ahead
 	}
+	if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
+		payload["commitsBehind"] = behind
+	}
 }
 
 // PermissionMode returns the current permission mode string.

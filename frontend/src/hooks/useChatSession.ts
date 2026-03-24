@@ -171,6 +171,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
         worktreeMerged: payload.worktreeMerged,
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
+        commitsBehind: payload.commitsBehind,
         branchMissing: payload.branchMissing,
       });
     });

@@ -1,4 +1,4 @@
-import { ArrowUp, GitBranch, Square, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GitBranch, Square, Trash2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -14,6 +14,7 @@ interface SessionRowProps {
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
   commitsAhead?: number;
+  commitsBehind?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
   onClick: () => void;
@@ -35,6 +36,7 @@ export function SessionRow({
   hasDirtyWorktree,
   worktreeMerged,
   commitsAhead,
+  commitsBehind,
   branchMissing,
   hasUncommitted,
   onClick,
@@ -81,6 +83,7 @@ export function SessionRow({
             worktreeMerged={worktreeMerged}
             branchMissing={branchMissing}
             commitsAhead={commitsAhead}
+            commitsBehind={commitsBehind}
             hasUncommitted={hasUncommitted}
             hasDirtyWorktree={hasDirtyWorktree}
           />
@@ -114,12 +117,14 @@ function GitStatus({
   worktreeMerged,
   branchMissing,
   commitsAhead,
+  commitsBehind,
   hasUncommitted,
   hasDirtyWorktree,
 }: {
   worktreeMerged?: boolean;
   branchMissing?: boolean;
   commitsAhead?: number;
+  commitsBehind?: number;
   hasUncommitted?: boolean;
   hasDirtyWorktree?: boolean;
 }) {
@@ -131,8 +136,9 @@ function GitStatus({
   }
 
   const ahead = !!commitsAhead && commitsAhead > 0;
+  const behind = !!commitsBehind && commitsBehind > 0;
   const dirty = hasUncommitted || hasDirtyWorktree;
-  if (!ahead && !dirty) return null;
+  if (!ahead && !behind && !dirty) return null;
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -140,6 +146,12 @@ function GitStatus({
         <span className="flex items-center gap-0.5">
           <ArrowUp className="size-2.5" />
           {commitsAhead}
+        </span>
+      )}
+      {behind && (
+        <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
+          <ArrowDown className="size-2.5" />
+          {commitsBehind}
         </span>
       )}
       {dirty && <GitBranch className="size-3 text-[#e0af68]/80" />}

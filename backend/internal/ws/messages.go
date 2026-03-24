@@ -126,3 +126,7 @@ type SessionCommitPayload struct {
 	SessionID string `json:"sessionId"`
 	Message   string `json:"message"`
 }
+
+type SessionRebasePayload struct {
+	SessionID string `json:"sessionId"`
+}

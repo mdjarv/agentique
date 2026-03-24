@@ -235,3 +235,17 @@ func (q *Queries) UpdateSessionState(ctx context.Context, arg UpdateSessionState
 	_, err := q.db.ExecContext(ctx, updateSessionState, arg.State, arg.ID)
 	return err
 }
+
+const updateWorktreeBaseSHA = `-- name: UpdateWorktreeBaseSHA :exec
+UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateWorktreeBaseSHAParams struct {
+	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
+	ID              string         `json:"id"`
+}
+
+func (q *Queries) UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error {
+	_, err := q.db.ExecContext(ctx, updateWorktreeBaseSHA, arg.WorktreeBaseSha, arg.ID)
+	return err
+}

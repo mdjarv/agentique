@@ -202,3 +202,38 @@ func CommitsAhead(dir, branch string) (int, error) {
 	fmt.Sscanf(s, "%d", &n)
 	return n, nil
 }
+
+// CommitsBehind returns how many commits the default branch has that branch does not.
+func CommitsBehind(dir, branch string) (int, error) {
+	out, err := gitRun(dir, "rev-list", "--count", branch+"..HEAD")
+	if err != nil {
+		return 0, fmt.Errorf("rev-list failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	s := strings.TrimSpace(string(out))
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n, nil
+}
+
+// RebaseBranch rebases the current branch in dir onto the given commit/ref.
+func RebaseBranch(dir, onto string) error {
+	out, err := gitRun(dir, "rebase", onto)
+	if err != nil {
+		return fmt.Errorf("git rebase failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// RebaseConflictFiles returns the list of files with rebase conflicts.
+func RebaseConflictFiles(dir string) ([]string, error) {
+	return MergeConflictFiles(dir)
+}
+
+// AbortRebase aborts an in-progress rebase.
+func AbortRebase(dir string) error {
+	out, err := gitRun(dir, "rebase", "--abort")
+	if err != nil {
+		return fmt.Errorf("git rebase --abort failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
