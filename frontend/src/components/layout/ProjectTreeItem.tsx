@@ -18,16 +18,9 @@ import { deleteSession, interruptSession, stopSession } from "~/lib/session-acti
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import { type ChatState, type SessionState, useChatStore } from "~/stores/chat-store";
+import { type ChatState, useChatStore } from "~/stores/chat-store";
 import { SessionRow } from "./SessionRow";
 
-const activeStates = new Set<SessionState>([
-  "running",
-  "starting",
-  "idle",
-  "draft",
-  "disconnected",
-]);
 const activePriority: Record<string, number> = {
   running: 0,
   starting: 1,
@@ -105,13 +98,14 @@ function SessionGroups({
   const completed: string[] = [];
 
   for (const id of sessionIds) {
-    const state = sessions[id]?.meta.state;
-    if (!state) continue;
-    if (activeStates.has(state)) {
-      active.push(id);
-    } else {
-      if (hideStoppedSessions && state === "stopped") continue;
+    const meta = sessions[id]?.meta;
+    if (!meta) continue;
+    // Completed = explicitly merged. Everything else stays active.
+    if (meta.worktreeMerged) {
       completed.push(id);
+    } else {
+      if (hideStoppedSessions && meta.state === "stopped") continue;
+      active.push(id);
     }
   }
 
