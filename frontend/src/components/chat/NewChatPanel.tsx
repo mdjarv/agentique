@@ -16,7 +16,7 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
   const navigate = useNavigate();
   const [worktree, setWorktree] = useState(true);
   const [planMode, setPlanMode] = useState(false);
-  const [autoApprove, setAutoApprove] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(true);
   const [sending, setSending] = useState(false);
 
   const handleSend = async (prompt: string, attachments?: Attachment[]) => {
