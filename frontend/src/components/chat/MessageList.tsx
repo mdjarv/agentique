@@ -5,6 +5,7 @@ import type { Turn } from "~/stores/chat-store";
 
 interface MessageListProps {
   turns: Turn[];
+  sessionId: string;
   currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
@@ -14,6 +15,7 @@ interface MessageListProps {
 
 export function MessageList({
   turns,
+  sessionId,
   currentAssistantText,
   sessionState,
   projectPath,
@@ -51,6 +53,7 @@ export function MessageList({
             key={turn.id}
             turn={turn}
             isLast={i === turns.length - 1}
+            sessionId={sessionId}
             currentAssistantText={currentAssistantText}
             sessionState={sessionState}
             projectPath={projectPath}

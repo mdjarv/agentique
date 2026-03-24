@@ -36,6 +36,33 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
   }));
 }
 
+/** Route raw Claude API stream deltas to the streaming store. */
+function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>) {
+  try {
+    // biome-ignore lint/suspicious/noExplicitAny: raw Claude API shape
+    const inner = rawEvent.event as any;
+    if (!inner || typeof inner !== "object") return;
+
+    const type: string = inner.type;
+    if (type === "content_block_start" && inner.content_block?.type === "tool_use") {
+      useStreamingStore.getState().startToolBlock(sessionId, inner.index, inner.content_block.id);
+      return;
+    }
+
+    if (type === "content_block_delta") {
+      const delta = inner.delta;
+      if (!delta) return;
+      if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
+        useStreamingStore.getState().appendToolInput(sessionId, inner.index, delta.partial_json);
+      } else if (delta.type === "text_delta" && typeof delta.text === "string") {
+        useStreamingStore.getState().appendText(sessionId, delta.text);
+      }
+    }
+  } catch {
+    // Ignore malformed stream events
+  }
+}
+
 export function useChatSession(projectId: string, initialSessionId?: string) {
   const ws = useWebSocket();
 
@@ -68,12 +95,26 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = parseServerEvent(payload.event);
-      useChatStore.getState().handleServerEvent(payload.sessionId, event);
+      const sid: string = payload.sessionId;
+      const streaming = useStreamingStore.getState();
+
+      // Stream events carry raw Claude API deltas — route them without appending to turns.
+      if (event.type === "stream") {
+        handleStreamDelta(sid, payload.event);
+        return;
+      }
+
+      useChatStore.getState().handleServerEvent(sid, event);
+
       if (event.type === "text" && event.content) {
-        useStreamingStore.getState().appendText(payload.sessionId, event.content);
+        streaming.appendText(sid, event.content);
+      }
+      if (event.type === "tool_use" && event.toolId) {
+        streaming.clearToolInput(sid, event.toolId);
       }
       if (event.type === "result") {
-        useStreamingStore.getState().clearText(payload.sessionId);
+        streaming.clearText(sid);
+        streaming.clearAllToolInputs(sid);
       }
     });
 

@@ -23,6 +23,7 @@ import type { ChatEvent, Turn } from "~/stores/chat-store";
 interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
+  sessionId: string;
   currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
@@ -68,6 +69,7 @@ function CollapsibleGroup({
 export function TurnBlock({
   turn,
   isLast,
+  sessionId,
   currentAssistantText,
   sessionState,
   projectPath,
@@ -120,6 +122,8 @@ export function TurnBlock({
         <ToolUseBlock
           name={toolUse.toolName ?? "Unknown"}
           input={toolUse.toolInput}
+          toolId={toolUse.toolId}
+          sessionId={sessionId}
           projectPath={projectPath}
           worktreePath={worktreePath}
         />

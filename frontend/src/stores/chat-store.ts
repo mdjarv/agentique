@@ -3,7 +3,7 @@ import { uuid } from "~/lib/utils";
 
 export interface ChatEvent {
   id: string;
-  type: "text" | "thinking" | "tool_use" | "tool_result" | "result" | "error";
+  type: "text" | "thinking" | "tool_use" | "tool_result" | "result" | "error" | "stream";
   content?: string;
   toolId?: string;
   toolName?: string;
