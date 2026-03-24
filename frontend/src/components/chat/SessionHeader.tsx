@@ -120,22 +120,38 @@ export function SessionHeader({ session }: SessionHeaderProps) {
     [ws, meta.id, currentModel],
   );
 
+  const fetchDiff = useCallback(async () => {
+    setLoadingDiff(true);
+    try {
+      const result = await getSessionDiff(ws, meta.id);
+      setDiffResult(result);
+      return result;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load diff");
+      return null;
+    } finally {
+      setLoadingDiff(false);
+    }
+  }, [ws, meta.id]);
+
+  // Auto-fetch diff stats when session is not running
+  useEffect(() => {
+    if (!isRunning) fetchDiff();
+  }, [isRunning, fetchDiff]);
+
   const handleViewDiff = async () => {
     if (showDiff) {
       setShowDiff(false);
       return;
     }
-    setLoadingDiff(true);
-    try {
-      const result = await getSessionDiff(ws, meta.id);
-      setDiffResult(result);
-      setShowDiff(true);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load diff");
-    } finally {
-      setLoadingDiff(false);
-    }
+    const result = diffResult ?? (await fetchDiff());
+    if (result) setShowDiff(true);
   };
+
+  const diffTotals = diffResult?.files.reduce<{ add: number; del: number }>(
+    (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
+    { add: 0, del: 0 },
+  );
 
   const handleMerge = async (cleanup: boolean) => {
     setMerging(true);
@@ -297,6 +313,12 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               <FileDiff className="h-3.5 w-3.5" />
             )}
             Changes
+            {diffTotals && (diffTotals.add > 0 || diffTotals.del > 0) && (
+              <span className="ml-0.5 tabular-nums">
+                <span className="text-green-500">+{diffTotals.add}</span>{" "}
+                <span className="text-red-500">-{diffTotals.del}</span>
+              </span>
+            )}
           </Button>
 
           {/* Commit button — non-worktree, non-busy */}
