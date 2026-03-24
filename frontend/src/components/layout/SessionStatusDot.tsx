@@ -7,9 +7,9 @@ const stateColors: Record<SessionState, string> = {
   running: "bg-[#e0af68]",
   starting: "bg-[#7aa2f7]",
   failed: "bg-[#f7768e]",
-  disconnected: "bg-[#414868]",
-  stopped: "bg-[#3b4261]",
-  done: "bg-[#3b4261]",
+  disconnected: "bg-[#ff9e64]",
+  stopped: "bg-[#a9b1d6]",
+  done: "bg-[#7dcfff]",
 };
 
 interface SessionStatusDotProps {
