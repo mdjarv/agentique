@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -14,11 +14,9 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { deleteProject } from "~/lib/api";
 import { deleteSession, interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
 import { type SessionState, useChatStore } from "~/stores/chat-store";
 import { SessionRow } from "./SessionRow";
 
@@ -51,9 +49,7 @@ export function ProjectTreeItem({
   onToggleExpand,
 }: ProjectTreeItemProps) {
   const navigate = useNavigate();
-  const removeProject = useAppStore((s) => s.removeProject);
   const ws = useWebSocket();
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
 
@@ -66,23 +62,6 @@ export function ProjectTreeItem({
     onToggleExpand();
     if (!isActive) {
       navigate({ to: "/project/$projectId", params: { projectId: project.id } });
-    }
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowDeleteDialog(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    try {
-      await deleteProject(project.id);
-      removeProject(project.id);
-      if (isActive) {
-        navigate({ to: "/" });
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete project");
     }
   };
 
@@ -156,7 +135,19 @@ export function ProjectTreeItem({
             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           )}
           <FolderOpen className="h-4 w-4 shrink-0" />
-          <span className="text-sm font-medium shrink-0">{project.name}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate({
+                to: "/project/$projectId/settings",
+                params: { projectId: project.id },
+              });
+            }}
+            className="text-sm font-medium shrink-0 hover:underline"
+          >
+            {project.name}
+          </button>
           <span
             className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1"
             dir="rtl"
@@ -165,11 +156,17 @@ export function ProjectTreeItem({
           </span>
           <button
             type="button"
-            aria-label="Delete project"
-            onClick={handleDeleteClick}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity"
+            aria-label="New chat"
+            onClick={(e) => {
+              e.stopPropagation();
+              useChatStore.getState().createDraft(project.id);
+              if (!isActive) {
+                navigate({ to: "/project/$projectId", params: { projectId: project.id } });
+              }
+            }}
+            className="p-0.5 rounded hover:bg-accent-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -212,21 +209,6 @@ export function ProjectTreeItem({
             })}
         </div>
       )}
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete project</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove "{project.name}" and all its sessions. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog
         open={!!sessionToDelete}

@@ -1,10 +1,7 @@
 import { useParams } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
 import { useProjects } from "~/hooks/useProjects";
-import { cn } from "~/lib/utils";
-import { useChatStore } from "~/stores/chat-store";
 
 export function ProjectList() {
   const projects = useProjects();
@@ -31,17 +28,9 @@ export function ProjectList() {
     });
   }, []);
 
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-
   if (projects.length === 0) {
     return <div className="p-4 text-sm text-muted-foreground">No projects yet</div>;
   }
-
-  const handleNewChat = () => {
-    if (activeProjectId) {
-      useChatStore.getState().createDraft(activeProjectId);
-    }
-  };
 
   return (
     <div className="p-2 space-y-1">
@@ -54,21 +43,6 @@ export function ProjectList() {
           onToggleExpand={() => toggleExpand(project.id)}
         />
       ))}
-      {activeProjectId && (
-        <button
-          type="button"
-          onClick={handleNewChat}
-          className={cn(
-            "flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs transition-colors",
-            activeSessionId?.startsWith("draft-")
-              ? "text-foreground bg-accent/70"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent",
-          )}
-        >
-          <Plus className="h-3 w-3" />
-          <span>New chat</span>
-        </button>
-      )}
     </div>
   );
 }
