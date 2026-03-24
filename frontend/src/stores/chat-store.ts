@@ -162,6 +162,7 @@ export interface ChatState {
   setActiveSessionId: (id: string | null) => void;
   setSessionState: (sessionId: string, state: SessionState, hasDirtyWorktree?: boolean) => void;
   setSessionName: (sessionId: string, name: string) => void;
+  setSessionWorktreeBranch: (sessionId: string, branch: string) => void;
   setSessionModel: (sessionId: string, model: string) => void;
   setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
   clearPendingApproval: (sessionId: string) => void;
@@ -240,6 +241,8 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   setSessionName: (sessionId, name) => set((s) => updateMeta(s, sessionId, { name })),
+  setSessionWorktreeBranch: (sessionId, branch) =>
+    set((s) => updateMeta(s, sessionId, { worktreeBranch: branch })),
   setSessionModel: (sessionId, model) => set((s) => updateMeta(s, sessionId, { model })),
 
   setPendingApproval: (sessionId, approval) =>

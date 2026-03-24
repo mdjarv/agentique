@@ -131,7 +131,11 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubRenamed = ws.subscribe("session.renamed", (payload: any) => {
-      useChatStore.getState().setSessionName(payload.sessionId, payload.name);
+      const store = useChatStore.getState();
+      store.setSessionName(payload.sessionId, payload.name);
+      if (payload.worktreeBranch) {
+        store.setSessionWorktreeBranch(payload.sessionId, payload.worktreeBranch);
+      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload

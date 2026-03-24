@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -73,6 +74,23 @@ func SanitizeBranch(name string) string {
 		name = "unnamed"
 	}
 	return name
+}
+
+var nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]+`)
+
+// ToKebabCase converts a human-readable title to a kebab-case branch name.
+func ToKebabCase(title string) string {
+	s := strings.ToLower(title)
+	s = nonAlphanumeric.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 50 {
+		s = s[:50]
+		s = strings.TrimRight(s, "-")
+	}
+	if s == "" {
+		return "unnamed"
+	}
+	return s
 }
 
 // DiffStat represents a single file's change summary.
