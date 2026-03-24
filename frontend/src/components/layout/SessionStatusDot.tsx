@@ -2,7 +2,6 @@ import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 
 const stateColors: Record<SessionState, string> = {
-  draft: "bg-[#565f89]",
   idle: "bg-[#9ece6a]",
   running: "bg-[#e0af68]",
   starting: "bg-[#7aa2f7]",

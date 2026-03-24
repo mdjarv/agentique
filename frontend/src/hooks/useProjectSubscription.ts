@@ -1,40 +1,16 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
-import { createSession, interruptSession, stopSession } from "~/lib/session-actions";
-import { copyToClipboard, uuid } from "~/lib/utils";
-import type { WsClient } from "~/lib/ws-client";
-import {
-  type Attachment,
-  type SessionMetadata,
-  type Turn,
-  useChatStore,
-} from "~/stores/chat-store";
+import { submitQuery } from "~/lib/session-actions";
+import { loadSessionHistory } from "~/lib/session-history";
+import { copyToClipboard } from "~/lib/utils";
+import type { SessionMetadata } from "~/stores/chat-store";
+import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 interface SessionListResult {
   sessions: SessionMetadata[];
-}
-
-interface HistoryTurn {
-  prompt: string;
-  attachments?: Attachment[];
-  events: Record<string, unknown>[];
-}
-
-interface SessionHistoryResult {
-  turns: HistoryTurn[];
-}
-
-function historyToTurns(history: HistoryTurn[]): Turn[] {
-  return history.map((ht) => ({
-    id: uuid(),
-    prompt: ht.prompt,
-    attachments: ht.attachments ?? [],
-    events: ht.events.map(parseServerEvent),
-    complete: ht.events.some((e) => e.type === "result"),
-  }));
 }
 
 /** Route raw Claude API stream deltas to the streaming store. */
@@ -71,63 +47,29 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
   }
 }
 
-/** Send a query to a specific session (no enqueue check, no draft handling). */
-function dispatchToSession(
-  ws: WsClient,
-  sessionId: string,
-  prompt: string,
-  attachments?: Attachment[],
-) {
-  useStreamingStore.getState().clearText(sessionId);
-  useChatStore.getState().submitQuery(sessionId, prompt, attachments);
-
-  const payload: Record<string, unknown> = { sessionId, prompt };
-  if (attachments && attachments.length > 0) {
-    payload.attachments = attachments.map((a) => ({
-      name: a.name,
-      mimeType: a.mimeType,
-      dataUrl: a.dataUrl,
-    }));
-  }
-  return ws.request("session.query", payload);
-}
-
-export function useChatSession(projectId: string, initialSessionId?: string) {
+export function useProjectSubscription(projectId: string) {
   const ws = useWebSocket();
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-subscribe only on projectId change
   useEffect(() => {
     let stale = false;
-    const s = useChatStore.getState();
-    s.resetProject();
+    useChatStore.getState().resetProject();
 
-    // Register for all project events via broadcast hub.
     ws.request("project.subscribe", { projectId }).catch(console.error);
 
-    // Fetch session list and load active session history.
     ws.request<SessionListResult>("session.list", { projectId })
       .then((result) => {
         if (stale) return;
-        const s = useChatStore.getState();
-        s.setSessions(result.sessions, projectId);
-        const target =
-          (initialSessionId && result.sessions.find((sess) => sess.id === initialSessionId)) ||
-          result.sessions[0];
-        if (target) {
-          s.setActiveSessionId(target.id);
-          loadSessionHistory(target.id);
-        }
+        useChatStore.getState().setSessions(result.sessions, projectId);
       })
       .catch(console.error);
 
-    // Push handlers for live events (broadcast to all project clients).
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubEvent = ws.subscribe("session.event", (payload: any) => {
       const event = parseServerEvent(payload.event);
       const sid: string = payload.sessionId;
       const streaming = useStreamingStore.getState();
 
-      // Stream events carry raw Claude API deltas — route them without appending to turns.
       if (event.type === "stream") {
         handleStreamDelta(sid, payload.event);
         return;
@@ -150,7 +92,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
           chatStore.dequeueMessage(sid);
           queueMicrotask(async () => {
             try {
-              await dispatchToSession(ws, sid, next.prompt, next.attachments);
+              await submitQuery(ws, sid, next.prompt, next.attachments);
             } catch (err) {
               const msg = err instanceof Error ? err.message : "Unknown error";
               toast.error(msg, {
@@ -213,7 +155,6 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       },
     );
 
-    // Re-subscribe and refresh state on reconnect.
     const unsubReconnect = ws.onConnect(() => {
       if (stale) return;
       ws.request("project.subscribe", { projectId }).catch(console.error);
@@ -221,11 +162,10 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       ws.request<SessionListResult>("session.list", { projectId })
         .then((result) => {
           if (stale) return;
-          const s = useChatStore.getState();
-          s.setSessions(result.sessions, projectId);
-          const activeId = s.activeSessionId;
+          useChatStore.getState().setSessions(result.sessions, projectId);
+          const activeId = useChatStore.getState().activeSessionId;
           if (activeId && result.sessions.some((sess) => sess.id === activeId)) {
-            loadSessionHistory(activeId);
+            loadSessionHistory(ws, activeId);
           }
         })
         .catch(console.error);
@@ -243,91 +183,4 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       unsubReconnect();
     };
   }, [projectId]);
-
-  const loadSessionHistory = useCallback(
-    (sessionId: string) => {
-      const store = useChatStore.getState();
-      const session = store.sessions[sessionId];
-      if (!session || session.turns.length > 0) return;
-      if (store.historyLoading.has(sessionId)) return;
-
-      store.setHistoryLoading(sessionId, true);
-      ws.request<SessionHistoryResult>("session.history", { sessionId })
-        .then((hist) => {
-          if (hist.turns.length > 0) {
-            useChatStore.getState().setSessionHistory(sessionId, historyToTurns(hist.turns));
-          } else {
-            useChatStore.getState().setHistoryLoading(sessionId, false);
-          }
-        })
-        .catch((err) => {
-          useChatStore.getState().setHistoryLoading(sessionId, false);
-          console.error("Failed to load session history:", err);
-        });
-    },
-    [ws],
-  );
-
-  const sendQuery = useCallback(
-    async (prompt: string, attachments?: Attachment[]) => {
-      const store = useChatStore.getState();
-      let sessionId = store.activeSessionId;
-      const session = sessionId ? store.sessions[sessionId] : undefined;
-      const state = session?.meta.state;
-
-      // Queue if session is currently running
-      if (sessionId && state === "running") {
-        store.enqueueMessage(sessionId, prompt, attachments);
-        return;
-      }
-
-      try {
-        if (!sessionId || state === "draft") {
-          const worktree = session?.meta.worktree ?? false;
-          const draftId = sessionId;
-          const realId = await createSession(ws, projectId, "", worktree, {
-            planMode: session?.planMode,
-            autoApprove: session?.autoApprove,
-          });
-          if (draftId) {
-            useChatStore.getState().removeSession(draftId);
-          }
-          sessionId = realId;
-        }
-
-        await dispatchToSession(ws, sessionId, prompt, attachments);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        toast.error(msg, {
-          action: { label: "Copy", onClick: () => copyToClipboard(msg) },
-        });
-        if (sessionId) {
-          useChatStore.getState().setSessionState(sessionId, "idle");
-        }
-      }
-    },
-    [ws, projectId],
-  );
-
-  const createSessionCb = useCallback(
-    async (name: string, worktree: boolean, branch?: string) => {
-      return createSession(ws, projectId, name, worktree, { branch });
-    },
-    [projectId, ws],
-  );
-
-  const interruptSessionCb = useCallback(
-    (sessionId: string) => interruptSession(ws, sessionId),
-    [ws],
-  );
-
-  const stopSessionCb = useCallback((sessionId: string) => stopSession(ws, sessionId), [ws]);
-
-  return {
-    sendQuery,
-    createSession: createSessionCb,
-    interruptSession: interruptSessionCb,
-    stopSession: stopSessionCb,
-    loadHistory: loadSessionHistory,
-  };
 }
