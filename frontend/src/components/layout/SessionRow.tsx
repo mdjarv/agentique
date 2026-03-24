@@ -1,11 +1,4 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  GitBranch,
-  GitPullRequest,
-  Square,
-  Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Square, Trash2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -54,39 +47,41 @@ export function SessionRow({
 }: SessionRowProps) {
   const canStop = !isTerminal(state);
   const faded = isTerminal(state) && worktreeMerged;
-  const hasAttention =
-    !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
+  const hasAttention = !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: div with role=button avoids nested button HTML issues with action buttons
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm group/session hover:bg-sidebar-accent/50 transition-colors",
+        "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm group/session hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
         isActive && "bg-sidebar-accent/70",
       )}
     >
-      <button
-        type="button"
-        className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
-        onClick={onClick}
+      <SessionStatusBadge
+        state={state}
+        hasUnseenCompletion={hasUnseenCompletion}
+        hasPendingApproval={hasPendingApproval}
+        isPlanning={isPlanning}
+      />
+      <span
+        className={cn(
+          "truncate text-sidebar-foreground",
+          faded && "text-muted-foreground line-through decoration-muted-foreground/50",
+          hasAttention && "text-[#e0af68]",
+        )}
+        title={worktreeBranch ? `${name}\n${worktreeBranch}` : name}
       >
-        <SessionStatusBadge
-          state={state}
-          hasUnseenCompletion={hasUnseenCompletion}
-          hasPendingApproval={hasPendingApproval}
-          isPlanning={isPlanning}
-        />
-        <span
-          className={cn(
-            "truncate text-sidebar-foreground",
-            faded &&
-              "text-muted-foreground line-through decoration-muted-foreground/50",
-            hasAttention && "text-[#e0af68]",
-          )}
-          title={worktreeBranch ? `${name}\n${worktreeBranch}` : name}
-        >
-          {name}
-        </span>
-      </button>
+        {name}
+      </span>
       {/* Right slot: git status by default, action buttons on hover */}
       <span className="relative ml-auto flex shrink-0 items-center">
         <span className="flex items-center gap-1.5 group-hover/session:invisible">
