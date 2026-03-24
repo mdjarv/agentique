@@ -61,10 +61,22 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		workDir:   params.WorkDir,
 	})
 
-	// Set auto-approve before connecting so the callback has it immediately.
+	permMode := "default"
+	if params.PlanMode {
+		permMode = "plan"
+	}
+	var autoApproveInt int64
+	if params.AutoApprove {
+		autoApproveInt = 1
+	}
+
+	// Set auto-approve and permission mode before connecting so the callback has it immediately.
 	if params.AutoApprove {
 		sess.SetAutoApprove(true)
 	}
+	sess.mu.Lock()
+	sess.permissionMode = permMode
+	sess.mu.Unlock()
 
 	model := resolveModel(params.Model)
 	connectOpts := []claudecli.Option{
@@ -102,8 +114,10 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 			String: params.WorktreeBaseSHA,
 			Valid:  params.WorktreeBaseSHA != "",
 		},
-		State: string(StateIdle),
-		Model: params.Model,
+		State:          string(StateIdle),
+		Model:          params.Model,
+		PermissionMode: permMode,
+		AutoApprove:    autoApproveInt,
 	})
 	if dbErr != nil {
 		cliSess.Close()
@@ -119,50 +133,75 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	return sess, nil
 }
 
+// ResumeParams holds the parameters for resuming an existing session.
+type ResumeParams struct {
+	SessionID       string
+	ClaudeSessionID string
+	ProjectID       string
+	WorkDir         string
+	Model           string
+	PermissionMode  string
+	AutoApprove     bool
+}
+
 // Resume reconnects to an existing Claude session using WithResume().
-func (m *Manager) Resume(ctx context.Context, sessionID, claudeSessionID, projectID, workDir, model string) (*Session, error) {
+func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) {
 	// Continue turn numbering from where we left off.
-	maxTurn, _ := m.queries.MaxTurnIndex(ctx, sessionID)
+	maxTurn, _ := m.queries.MaxTurnIndex(ctx, p.SessionID)
 	turnIndex := int(maxTurn)
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
-		id:        sessionID,
-		projectID: projectID,
+		id:        p.SessionID,
+		projectID: p.ProjectID,
 		queries:   m.queries,
-		broadcast: m.broadcastFunc(projectID),
+		broadcast: m.broadcastFunc(p.ProjectID),
 		turnIndex: turnIndex,
-		workDir:   workDir,
+		workDir:   p.WorkDir,
 	})
 	sess.mu.Lock()
-	sess.claudeSessionID = claudeSessionID
+	sess.claudeSessionID = p.ClaudeSessionID
+	sess.autoApprove = p.AutoApprove
+	if p.PermissionMode != "" {
+		sess.permissionMode = p.PermissionMode
+	}
 	sess.mu.Unlock()
 
-	client := claudecli.New()
-	cliSess, err := client.Connect(ctx,
-		claudecli.WithWorkDir(workDir),
-		claudecli.WithModel(resolveModel(model)),
+	connectOpts := []claudecli.Option{
+		claudecli.WithWorkDir(p.WorkDir),
+		claudecli.WithModel(resolveModel(p.Model)),
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithResume(claudeSessionID),
-	)
+		claudecli.WithResume(p.ClaudeSessionID),
+	}
+	if p.PermissionMode == "plan" {
+		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
+	}
+
+	client := claudecli.New()
+	cliSess, err := client.Connect(ctx, connectOpts...)
 	if err != nil {
 		return nil, err
 	}
 
 	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 		State: string(StateIdle),
-		ID:    sessionID,
+		ID:    p.SessionID,
 	})
 
 	sess.setCLISession(cliSess)
 
+	// Restore non-plan permission modes post-connect.
+	if p.PermissionMode != "" && p.PermissionMode != "default" && p.PermissionMode != "plan" {
+		_ = sess.SetPermissionMode(p.PermissionMode)
+	}
+
 	m.mu.Lock()
-	m.sessions[sessionID] = sess
+	m.sessions[p.SessionID] = sess
 	m.mu.Unlock()
 
-	slog.Info("session resumed", "session_id", sessionID, "claude_session_id", claudeSessionID)
+	slog.Info("session resumed", "session_id", p.SessionID, "claude_session_id", p.ClaudeSessionID)
 	return sess, nil
 }
 

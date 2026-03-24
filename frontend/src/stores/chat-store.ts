@@ -60,6 +60,8 @@ export interface SessionMetadata {
   name: string;
   state: SessionState;
   model?: string;
+  permissionMode?: string;
+  autoApprove?: boolean;
   worktreePath?: string;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
@@ -114,8 +116,8 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   hasUnseenCompletion: false,
   pendingApproval: null,
   pendingQuestion: null,
-  planMode: false,
-  autoApprove: false,
+  planMode: meta.permissionMode === "plan",
+  autoApprove: meta.autoApprove ?? false,
   rateLimit: null,
   draftText: "",
 });
@@ -171,7 +173,6 @@ export interface ChatState {
     worktreeMerged?: boolean,
   ) => void;
   setSessionName: (sessionId: string, name: string) => void;
-  setSessionWorktreeBranch: (sessionId: string, branch: string) => void;
   setSessionModel: (sessionId: string, model: string) => void;
   setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
   clearPendingApproval: (sessionId: string) => void;
@@ -214,7 +215,16 @@ export const useChatStore = create<ChatState>((set) => ({
       for (const meta of metas) {
         const tagged = { ...meta, projectId };
         const existing = s.sessions[meta.id];
-        sessions[meta.id] = existing ? { ...existing, meta: tagged } : emptySessionData(tagged);
+        if (existing) {
+          sessions[meta.id] = {
+            ...existing,
+            meta: tagged,
+            planMode: tagged.permissionMode === "plan",
+            autoApprove: tagged.autoApprove ?? false,
+          };
+        } else {
+          sessions[meta.id] = emptySessionData(tagged);
+        }
       }
       return { sessions };
     }),
@@ -253,8 +263,6 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   setSessionName: (sessionId, name) => set((s) => updateMeta(s, sessionId, { name })),
-  setSessionWorktreeBranch: (sessionId, branch) =>
-    set((s) => updateMeta(s, sessionId, { worktreeBranch: branch })),
   setSessionModel: (sessionId, model) => set((s) => updateMeta(s, sessionId, { model })),
 
   setPendingApproval: (sessionId, approval) =>

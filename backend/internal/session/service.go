@@ -27,6 +27,8 @@ type SessionInfo struct {
 	Name            string `json:"name"`
 	State           string `json:"state"`
 	Model           string `json:"model"`
+	PermissionMode  string `json:"permissionMode"`
+	AutoApprove     bool   `json:"autoApprove"`
 	WorktreePath    string `json:"worktreePath,omitempty"`
 	WorktreeBranch  string `json:"worktreeBranch,omitempty"`
 	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
@@ -51,6 +53,8 @@ type CreateSessionResult struct {
 	Name           string `json:"name"`
 	State          string `json:"state"`
 	Model          string `json:"model"`
+	PermissionMode string `json:"permissionMode"`
+	AutoApprove    bool   `json:"autoApprove"`
 	WorktreePath   string `json:"worktreePath,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	CreatedAt      string `json:"createdAt"`
@@ -170,6 +174,8 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Name:           name,
 		State:          string(sess.State()),
 		Model:          model,
+		PermissionMode: sess.PermissionMode(),
+		AutoApprove:    sess.AutoApprove(),
 		WorktreePath:   worktreePath,
 		WorktreeBranch: worktreeBranch,
 		CreatedAt:      createdAt,
@@ -208,24 +214,14 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
-// StopSession stops a live session and cleans up its worktree.
+// StopSession stops a live session. The worktree is preserved so the session
+// can be resumed later. Worktree cleanup happens only on DeleteSession or
+// Merge with cleanup=true.
 func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	slog.Info("stopping session", "session_id", sessionID)
 
 	if err := s.mgr.Stop(ctx, sessionID); err != nil {
 		return fmt.Errorf("stop failed: %w", err)
-	}
-
-	// Clean up worktree now that the session is stopped.
-	dbSess, err := s.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil // session stopped, DB lookup failure is non-fatal
-	}
-	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
-		if projErr == nil {
-			gitops.RemoveWorktree(project.Path, wtPath)
-		}
 	}
 	return nil
 }
@@ -244,6 +240,8 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			Name:           ss.Name,
 			State:          ss.State,
 			Model:          ss.Model,
+			PermissionMode: ss.PermissionMode,
+			AutoApprove:    ss.AutoApprove != 0,
 			WorktreePath:   nullStr(ss.WorktreePath),
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
@@ -334,22 +332,37 @@ func (s *Service) ResolveQuestion(sessionID, questionID string, answers map[stri
 	return sess.ResolveQuestion(questionID, answers)
 }
 
-// SetPermissionMode changes the permission mode for a live session.
+// SetPermissionMode changes the permission mode for a live session and persists it.
 func (s *Service) SetPermissionMode(sessionID, mode string) error {
 	sess, err := s.getLiveSession(sessionID)
 	if err != nil {
 		return err
 	}
-	return sess.SetPermissionMode(mode)
+	if err := sess.SetPermissionMode(mode); err != nil {
+		return err
+	}
+	_ = s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
+		PermissionMode: sess.PermissionMode(),
+		ID:             sessionID,
+	})
+	return nil
 }
 
-// SetAutoApprove enables or disables automatic tool approval for a session.
+// SetAutoApprove enables or disables automatic tool approval for a session and persists it.
 func (s *Service) SetAutoApprove(sessionID string, enabled bool) error {
 	sess, err := s.getLiveSession(sessionID)
 	if err != nil {
 		return err
 	}
 	sess.SetAutoApprove(enabled)
+	var v int64
+	if enabled {
+		v = 1
+	}
+	_ = s.queries.UpdateSessionAutoApprove(context.Background(), store.UpdateSessionAutoApproveParams{
+		AutoApprove: v,
+		ID:          sessionID,
+	})
 	return nil
 }
 
@@ -391,7 +404,15 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 	}
 
-	sess, resumeErr := s.mgr.Resume(ctx, sessionID, claudeSessID, dbSess.ProjectID, workDir, dbSess.Model)
+	sess, resumeErr := s.mgr.Resume(ctx, ResumeParams{
+		SessionID:       sessionID,
+		ClaudeSessionID: claudeSessID,
+		ProjectID:       dbSess.ProjectID,
+		WorkDir:         workDir,
+		Model:           dbSess.Model,
+		PermissionMode:  dbSess.PermissionMode,
+		AutoApprove:     dbSess.AutoApprove != 0,
+	})
 	if resumeErr != nil {
 		return nil, resumeErr
 	}

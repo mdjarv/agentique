@@ -10,6 +10,8 @@ interface SessionCreateResult {
   name: string;
   state: string;
   model: string;
+  permissionMode: string;
+  autoApprove: boolean;
   worktreePath?: string;
   worktreeBranch?: string;
   createdAt: string;
@@ -48,14 +50,14 @@ export async function createSession(
     name: result.name,
     state: result.state as SessionMetadata["state"],
     model: result.model as ModelId,
+    permissionMode: result.permissionMode,
+    autoApprove: result.autoApprove,
     worktreePath: result.worktreePath,
     worktreeBranch: result.worktreeBranch,
     createdAt: result.createdAt,
   };
   const store = useChatStore.getState();
   store.addSession(meta);
-  if (opts?.planMode) store.setSessionPlanMode(result.sessionId, true);
-  if (opts?.autoApprove) store.setSessionAutoApprove(result.sessionId, true);
   store.setActiveSessionId(result.sessionId);
   return result.sessionId;
 }

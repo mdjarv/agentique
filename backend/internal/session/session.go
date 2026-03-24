@@ -75,9 +75,10 @@ type Session struct {
 	broadcast        func(pushType string, payload any)
 	pendingApprovals map[string]*pendingApproval
 	pendingQuestions map[string]*pendingQuestion
-	autoApprove      bool
-	worktreeMerged   bool
-	workDir          string
+	autoApprove    bool
+	permissionMode string
+	worktreeMerged bool
+	workDir        string
 	eventLoopDone    chan struct{}
 }
 
@@ -105,6 +106,7 @@ func newSession(p sessionParams) *Session {
 		turnIndex:        p.turnIndex,
 		pendingApprovals: make(map[string]*pendingApproval),
 		pendingQuestions: make(map[string]*pendingQuestion),
+		permissionMode:   "default",
 		workDir:          p.workDir,
 		eventLoopDone:    make(chan struct{}),
 	}
@@ -411,6 +413,20 @@ func (s *Session) broadcastState(state State) {
 	s.broadcast("session.state", payload)
 }
 
+// PermissionMode returns the current permission mode string.
+func (s *Session) PermissionMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.permissionMode
+}
+
+// AutoApprove returns whether automatic tool approval is enabled.
+func (s *Session) AutoApprove() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.autoApprove
+}
+
 // SetPermissionMode changes the CLI permission mode (plan, acceptEdits, default).
 func (s *Session) SetPermissionMode(mode string) error {
 	var m claudecli.PermissionMode
@@ -420,6 +436,7 @@ func (s *Session) SetPermissionMode(mode string) error {
 	case "acceptEdits":
 		m = claudecli.PermissionAcceptEdits
 	default:
+		mode = "default"
 		m = claudecli.PermissionDefault
 	}
 
@@ -428,6 +445,7 @@ func (s *Session) SetPermissionMode(mode string) error {
 	if s.cliSess == nil {
 		return ErrNotLive
 	}
+	s.permissionMode = mode
 	_ = s.cliSess.SetPermissionMode(m)
 	return nil
 }

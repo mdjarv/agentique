@@ -33,6 +33,8 @@ type Session struct {
 	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
 	Model           string         `json:"model"`
 	WorktreeMerged  int64          `json:"worktree_merged"`
+	PermissionMode  string         `json:"permission_mode"`
+	AutoApprove     int64          `json:"auto_approve"`
 }
 
 type SessionEvent struct {
