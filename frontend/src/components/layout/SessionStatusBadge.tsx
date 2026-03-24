@@ -1,20 +1,10 @@
-import {
-  ArrowUpCircle,
-  Check,
-  Circle,
-  Loader,
-  MessageSquare,
-  Pause,
-  PenLine,
-  TriangleAlert,
-  XCircle,
-  Zap,
-} from "lucide-react";
+import { Check, Circle, Loader, MessageSquare, Pause, PenLine, XCircle, Zap } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 
 interface SessionStatusBadgeProps {
   state: SessionState;
+  connected?: boolean;
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
@@ -22,6 +12,7 @@ interface SessionStatusBadgeProps {
 
 export function SessionStatusBadge({
   state,
+  connected = true,
   hasUnseenCompletion,
   hasPendingApproval,
   isPlanning,
@@ -49,48 +40,49 @@ export function SessionStatusBadge({
     );
   }
 
-  // State icons
+  // State icons — dimmed when process is disconnected
+  const dim = !connected;
+
   switch (state) {
     case "running":
       return (
-        <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Running">
+        <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Running" dim={dim}>
           <Loader className="size-3 animate-spin" />
-        </Badge>
-      );
-    case "starting":
-      return (
-        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title="Starting">
-          <ArrowUpCircle className="size-3" />
         </Badge>
       );
     case "idle":
       return (
-        <Badge bg="bg-[#9ece6a]/15" text="text-[#9ece6a]" title="Idle">
+        <Badge
+          bg="bg-[#9ece6a]/15"
+          text="text-[#9ece6a]"
+          title={connected ? "Idle" : "Idle (disconnected)"}
+          dim={dim}
+        >
           <Circle className="size-2.5" />
         </Badge>
       );
     case "done":
       return (
-        <Badge bg="bg-emerald-500/15" text="text-emerald-500" title="Done">
+        <Badge bg="bg-emerald-500/15" text="text-emerald-500" title="Done" dim={dim}>
           <Check className="size-3" />
         </Badge>
       );
     case "stopped":
       return (
-        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/80" title="Stopped">
+        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/80" title="Stopped" dim={dim}>
           <Pause className="size-3" />
         </Badge>
       );
     case "failed":
       return (
-        <Badge bg="bg-[#f7768e]/15" text="text-[#f7768e]" title="Failed">
+        <Badge bg="bg-[#f7768e]/15" text="text-[#f7768e]" title="Failed" dim={dim}>
           <XCircle className="size-3" />
         </Badge>
       );
-    case "disconnected":
+    case "merging":
       return (
-        <Badge bg="bg-[#ff9e64]/15" text="text-[#ff9e64]" title="Disconnected">
-          <TriangleAlert className="size-3" />
+        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title="Merging" dim={dim}>
+          <Loader className="size-3 animate-spin" />
         </Badge>
       );
   }
@@ -100,12 +92,14 @@ function Badge({
   bg,
   text,
   pulse,
+  dim,
   title,
   children,
 }: {
   bg: string;
   text: string;
   pulse?: boolean;
+  dim?: boolean;
   title: string;
   children: React.ReactNode;
 }) {
@@ -116,6 +110,7 @@ function Badge({
         bg,
         text,
         pulse && "animate-pulse",
+        dim && "opacity-40",
       )}
       title={title}
     >

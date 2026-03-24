@@ -23,9 +23,8 @@ import { SessionRow } from "./SessionRow";
 
 const activePriority: Record<string, number> = {
   running: 0,
-  starting: 1,
+  merging: 1,
   idle: 2,
-  disconnected: 3,
 };
 
 function sortByPriorityThenDate(
@@ -59,6 +58,7 @@ function renderSessionRow(
       key={id}
       name={session.name}
       state={session.state}
+      connected={session.connected}
       hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
       hasPendingApproval={!!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion}
       isPlanning={!!sessions[id]?.planMode}

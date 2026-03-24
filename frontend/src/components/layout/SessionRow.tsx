@@ -6,6 +6,7 @@ import { SessionStatusBadge } from "./SessionStatusBadge";
 interface SessionRowProps {
   name: string;
   state: SessionState;
+  connected?: boolean;
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
@@ -29,6 +30,7 @@ const isTerminal = (state: SessionState) =>
 export function SessionRow({
   name,
   state,
+  connected,
   hasUnseenCompletion,
   hasPendingApproval,
   isPlanning,
@@ -68,6 +70,7 @@ export function SessionRow({
     >
       <SessionStatusBadge
         state={state}
+        connected={connected}
         hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingApproval}
         isPlanning={isPlanning}

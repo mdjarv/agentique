@@ -23,14 +23,15 @@ var (
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	State           string  `json:"state"`
-	Model           string  `json:"model"`
-	PermissionMode  string  `json:"permissionMode"`
-	AutoApprove     bool    `json:"autoApprove"`
-	WorktreePath    string  `json:"worktreePath,omitempty"`
-	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	State           string `json:"state"`
+	Connected       bool   `json:"connected"`
+	Model           string `json:"model"`
+	PermissionMode  string `json:"permissionMode"`
+	AutoApprove     bool   `json:"autoApprove"`
+	WorktreePath    string `json:"worktreePath,omitempty"`
+	WorktreeBranch  string `json:"worktreeBranch,omitempty"`
 	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
 	CommitsAhead    int    `json:"commitsAhead"`
 	CommitsBehind   int    `json:"commitsBehind"`
@@ -58,6 +59,7 @@ type CreateSessionResult struct {
 	SessionID      string `json:"sessionId"`
 	Name           string `json:"name"`
 	State          string `json:"state"`
+	Connected      bool   `json:"connected"`
 	Model          string `json:"model"`
 	PermissionMode string `json:"permissionMode"`
 	AutoApprove    bool   `json:"autoApprove"`
@@ -179,6 +181,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		SessionID:      sess.ID,
 		Name:           name,
 		State:          string(sess.State()),
+		Connected:      true,
 		Model:          model,
 		PermissionMode: sess.PermissionMode(),
 		AutoApprove:    sess.AutoApprove(),
@@ -247,6 +250,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			ID:             ss.ID,
 			Name:           ss.Name,
 			State:          ss.State,
+			Connected:      s.mgr.IsLive(ss.ID),
 			Model:          ss.Model,
 			PermissionMode: ss.PermissionMode,
 			AutoApprove:    ss.AutoApprove != 0,

@@ -399,6 +399,7 @@ func (s *Session) broadcastState(state State) {
 	payload := map[string]any{
 		"sessionId": s.ID,
 		"state":     string(state),
+		"connected": true,
 	}
 	if s.workDir != "" && (state == StateIdle || state == StateDone) {
 		if dirty, err := gitops.HasUncommittedChanges(s.workDir); err == nil {
@@ -649,6 +650,12 @@ func (s *Session) ResolveQuestion(questionID string, answers map[string]string) 
 // Cancels the context to unblock callbacks, closes the CLI session to stop the
 // process and close the Events channel, then waits for the event loop to exit.
 func (s *Session) Close() {
+	// Capture state before close — the dying CLI process may race and
+	// persist StateFailed via processEvent before we regain control.
+	s.mu.Lock()
+	stateBeforeClose := s.state
+	s.mu.Unlock()
+
 	s.cancelCtx()
 
 	// Close CLI session to stop the process and close Events channel.
@@ -684,8 +691,24 @@ func (s *Session) Close() {
 		}
 		delete(s.pendingQuestions, id)
 	}
-	s.state = StateDone
+
+	// Interrupted work → stopped. Idle sessions stay idle (nothing was
+	// interrupted, the user just hasn't sent a followup yet). Terminal
+	// states are preserved as-is.
+	finalState := stateBeforeClose
+	switch stateBeforeClose {
+	case StateRunning, StateMerging:
+		finalState = StateStopped
+	}
+	s.state = finalState
 	s.mu.Unlock()
+
+	// Persist to DB — overwrites any spurious "failed" set by the dying
+	// CLI process during shutdown.
+	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+		State: string(finalState),
+		ID:    s.ID,
+	})
 }
 
 // MarkMerged sets the worktreeMerged flag on a live session.

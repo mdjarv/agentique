@@ -44,20 +44,14 @@ export interface Turn {
   complete: boolean;
 }
 
-export type SessionState =
-  | "disconnected"
-  | "starting"
-  | "idle"
-  | "running"
-  | "done"
-  | "failed"
-  | "stopped";
+export type SessionState = "idle" | "running" | "done" | "failed" | "stopped" | "merging";
 
 export interface SessionMetadata {
   id: string;
   projectId: string;
   name: string;
   state: SessionState;
+  connected: boolean;
   model?: string;
   permissionMode?: string;
   autoApprove?: boolean;
@@ -180,9 +174,10 @@ export interface ChatState {
   setSessionState: (
     sessionId: string,
     state: SessionState,
-    git?: Partial<
+    extras?: Partial<
       Pick<
         SessionMetadata,
+        | "connected"
         | "hasDirtyWorktree"
         | "worktreeMerged"
         | "hasUncommitted"
@@ -274,11 +269,11 @@ export const useChatStore = create<ChatState>((set) => ({
       return { activeSessionId: id };
     }),
 
-  setSessionState: (sessionId, state, git) =>
+  setSessionState: (sessionId, state, extras) =>
     set((s) => {
       const patch: Partial<SessionMetadata> = { state };
-      if (git) {
-        for (const [k, v] of Object.entries(git)) {
+      if (extras) {
+        for (const [k, v] of Object.entries(extras)) {
           if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
         }
       }

@@ -38,7 +38,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const currentAssistantText = useStreamingStore((s) => s.texts[sessionId] ?? "");
 
   const composerRef = useRef<ComposerHandle>(null);
-  const sessionState = session?.meta.state ?? "disconnected";
+  const sessionState = session?.meta.state ?? "idle";
   const planMode = session?.planMode ?? false;
   const autoApprove = session?.autoApprove ?? false;
   const queuedMessages = session?.queuedMessages ?? [];
@@ -188,7 +188,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         ref={composerRef}
         key={sessionId}
         onSend={handleSend}
-        disabled={sessionState === "disconnected" || sessionState === "starting"}
         isRunning={sessionState === "running"}
         onInterrupt={handleInterrupt}
         placeholder={resumePlaceholders[sessionState]}

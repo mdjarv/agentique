@@ -34,7 +34,7 @@ export interface ComposerHandle {
 
 interface MessageComposerProps {
   onSend: (prompt: string, attachments?: Attachment[]) => void;
-  disabled: boolean;
+  disabled?: boolean;
   isRunning?: boolean;
   onInterrupt?: () => void;
   isDraft?: boolean;
