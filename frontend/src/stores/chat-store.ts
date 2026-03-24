@@ -69,6 +69,7 @@ export interface SessionMetadata {
   commitsAhead?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
+  prUrl?: string;
   createdAt: string;
   updatedAt?: string;
   worktree?: boolean; // draft-only: user's worktree toggle preference
@@ -196,6 +197,7 @@ export interface ChatState {
   clearPendingQuestion: (sessionId: string) => void;
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
   setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
+  setSessionPrUrl: (sessionId: string, prUrl: string) => void;
 
   // Draft session management
   createDraft: (projectId: string) => void;
@@ -307,6 +309,8 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionAutoApprove: (sessionId, autoApprove) =>
     set((s) => updateSession(s, sessionId, { autoApprove })),
+
+  setSessionPrUrl: (sessionId, prUrl) => set((s) => updateMeta(s, sessionId, { prUrl })),
 
   setHistoryLoading: (sessionId, loading) =>
     set((s) => {

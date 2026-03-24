@@ -35,6 +35,7 @@ type Session struct {
 	WorktreeMerged  int64          `json:"worktree_merged"`
 	PermissionMode  string         `json:"permission_mode"`
 	AutoApprove     int64          `json:"auto_approve"`
+	PrUrl           string         `json:"pr_url"`
 }
 
 type SessionEvent struct {

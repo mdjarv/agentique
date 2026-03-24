@@ -31,10 +31,11 @@ type SessionInfo struct {
 	AutoApprove     bool    `json:"autoApprove"`
 	WorktreePath    string  `json:"worktreePath,omitempty"`
 	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
-	WorktreeMerged  bool `json:"worktreeMerged,omitempty"`
-	CommitsAhead    int  `json:"commitsAhead"`
-	BranchMissing   bool `json:"branchMissing,omitempty"`
+	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
+	CommitsAhead    int    `json:"commitsAhead"`
+	BranchMissing   bool   `json:"branchMissing,omitempty"`
 	HasUncommitted  bool   `json:"hasUncommitted,omitempty"`
+	PrUrl           string `json:"prUrl,omitempty"`
 	CreatedAt       string `json:"createdAt"`
 	UpdatedAt       string `json:"updatedAt"`
 }
@@ -251,6 +252,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			WorktreePath:   nullStr(ss.WorktreePath),
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
+			PrUrl:          ss.PrUrl,
 			CreatedAt:      ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
 		}

@@ -185,6 +185,11 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       useChatStore.getState().removeSession(payload.sessionId);
     });
 
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubPrUpdated = ws.subscribe("session.pr-updated", (payload: any) => {
+      useChatStore.getState().setSessionPrUrl(payload.sessionId, payload.prUrl);
+    });
+
     const unsubPermission = ws.subscribe(
       "session.tool-permission",
       // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -232,6 +237,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       unsubState();
       unsubRenamed();
       unsubDeleted();
+      unsubPrUpdated();
       unsubPermission();
       unsubQuestion();
       unsubReconnect();
