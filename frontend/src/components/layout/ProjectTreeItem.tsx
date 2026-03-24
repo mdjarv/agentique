@@ -129,15 +129,57 @@ function SessionGroups({
         renderSessionRow(id, sessions, activeSessionId, onSessionClick, onStop, onDelete),
       )}
       {sortedCompleted.length > 0 && (
-        <>
-          <p className="mt-2 mb-1 text-[10px] font-semibold tracking-widest text-muted-foreground/40 uppercase px-2">
-            Completed
-          </p>
-          {sortedCompleted.map((id) =>
-            renderSessionRow(id, sessions, activeSessionId, onSessionClick, onStop, onDelete),
-          )}
-        </>
+        <CompletedSection
+          ids={sortedCompleted}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSessionClick={onSessionClick}
+          onStop={onStop}
+          onDelete={onDelete}
+        />
       )}
+    </>
+  );
+}
+
+function CompletedSection({
+  ids,
+  sessions,
+  activeSessionId,
+  onSessionClick,
+  onStop,
+  onDelete,
+}: {
+  ids: string[];
+  sessions: ChatState["sessions"];
+  activeSessionId: string | null;
+  onSessionClick: (id: string) => void;
+  onStop: (e: React.MouseEvent, id: string, state: string) => void;
+  onDelete: (e: React.MouseEvent, id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="group mt-2 mb-0.5 flex w-full items-center gap-1 px-2 text-left cursor-pointer"
+      >
+        {expanded ? (
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground/40 transition-transform" />
+        ) : (
+          <ChevronRight className="size-3 shrink-0 text-muted-foreground/40 transition-transform" />
+        )}
+        <span className="text-[10px] font-semibold tracking-widest text-muted-foreground/40 uppercase group-hover:text-muted-foreground/60">
+          Completed
+        </span>
+        <span className="text-[10px] text-muted-foreground/30">{ids.length}</span>
+      </button>
+      {expanded &&
+        ids.map((id) =>
+          renderSessionRow(id, sessions, activeSessionId, onSessionClick, onStop, onDelete),
+        )}
     </>
   );
 }
