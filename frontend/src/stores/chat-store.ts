@@ -101,6 +101,12 @@ export interface RateLimitInfo {
   utilization: number;
 }
 
+export interface QueuedMessage {
+  id: string;
+  prompt: string;
+  attachments?: Attachment[];
+}
+
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
@@ -111,6 +117,7 @@ export interface SessionData {
   autoApprove: boolean;
   rateLimit: RateLimitInfo | null;
   draftText: string;
+  queuedMessages: QueuedMessage[];
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -123,6 +130,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   autoApprove: meta.autoApprove ?? false,
   rateLimit: null,
   draftText: "",
+  queuedMessages: [],
 });
 
 // --- Immutable update helpers ---
@@ -192,6 +200,12 @@ export interface ChatState {
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
+
+  // Message queue
+  enqueueMessage: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
+  dequeueMessage: (sessionId: string) => void;
+  cancelQueuedMessage: (sessionId: string, messageId: string) => void;
+  clearQueue: (sessionId: string) => void;
 
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
@@ -339,6 +353,40 @@ export const useChatStore = create<ChatState>((set) => ({
       const session = s.sessions[sessionId];
       if (!session || session.meta.state !== "draft") return s;
       return updateSession(s, sessionId, { draftText: text });
+    }),
+
+  enqueueMessage: (sessionId, prompt, attachments) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return updateSession(s, sessionId, {
+        queuedMessages: [...session.queuedMessages, { id: uuid(), prompt, attachments }],
+      });
+    }),
+
+  dequeueMessage: (sessionId) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session || session.queuedMessages.length === 0) return s;
+      return updateSession(s, sessionId, {
+        queuedMessages: session.queuedMessages.slice(1),
+      });
+    }),
+
+  cancelQueuedMessage: (sessionId, messageId) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      return updateSession(s, sessionId, {
+        queuedMessages: session.queuedMessages.filter((m) => m.id !== messageId),
+      });
+    }),
+
+  clearQueue: (sessionId) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session || session.queuedMessages.length === 0) return s;
+      return updateSession(s, sessionId, { queuedMessages: [] });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>

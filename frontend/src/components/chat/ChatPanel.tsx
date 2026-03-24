@@ -1,9 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
-import { MessageComposer } from "~/components/chat/MessageComposer";
+import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
+import { MessageQueue } from "~/components/chat/MessageQueue";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
@@ -39,11 +40,13 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
     activeSessionId ? (s.texts[activeSessionId] ?? "") : "",
   );
 
+  const composerRef = useRef<ComposerHandle>(null);
   const ws = useWebSocket();
   const sessionState = activeSession?.meta.state ?? "disconnected";
   const isDraft = sessionState === "draft";
   const planMode = activeSession?.planMode ?? false;
   const autoApprove = activeSession?.autoApprove ?? false;
+  const queuedMessages = activeSession?.queuedMessages ?? [];
 
   const handlePlanModeChange = useCallback(
     (enabled: boolean) => {
@@ -80,6 +83,23 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
       loadHistory(activeSessionId);
     }
   }, [activeSessionId, loadHistory]);
+
+  // Flush queued messages back to composer when session reaches a terminal state
+  const prevStateRef = useRef(sessionState);
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    prevStateRef.current = sessionState;
+    if (
+      prev === "running" &&
+      (sessionState === "done" || sessionState === "failed" || sessionState === "stopped")
+    ) {
+      if (activeSessionId && queuedMessages.length > 0) {
+        const text = queuedMessages.map((m) => m.prompt).join("\n\n");
+        useChatStore.getState().clearQueue(activeSessionId);
+        composerRef.current?.setText(text);
+      }
+    }
+  }, [sessionState, activeSessionId, queuedMessages]);
 
   // Sync active session ID to URL search param
   useEffect(() => {
@@ -131,13 +151,32 @@ export function ChatPanel({ projectId, initialSessionId }: ChatPanelProps) {
         <QuestionBanner sessionId={activeSessionId} pending={activeSession.pendingQuestion} />
       )}
       {activeSession?.rateLimit && <RateLimitBanner rateLimit={activeSession.rateLimit} />}
+      {queuedMessages.length > 0 && (
+        <MessageQueue
+          messages={queuedMessages}
+          onCancel={(msg) => {
+            if (activeSessionId) {
+              useChatStore.getState().cancelQueuedMessage(activeSessionId, msg.id);
+              composerRef.current?.setText(msg.prompt);
+            }
+          }}
+        />
+      )}
       <MessageComposer
+        ref={composerRef}
         key={activeSession.meta.id}
         onSend={sendQuery}
-        disabled={sessionState === "running"}
+        disabled={sessionState === "disconnected" || sessionState === "starting"}
         isRunning={sessionState === "running"}
         onInterrupt={() => {
-          if (activeSessionId) interruptSession(activeSessionId);
+          if (!activeSessionId) return;
+          // Flush queue into composer before interrupting
+          if (queuedMessages.length > 0) {
+            const text = queuedMessages.map((m) => m.prompt).join("\n\n");
+            useChatStore.getState().clearQueue(activeSessionId);
+            composerRef.current?.setText(text);
+          }
+          interruptSession(activeSessionId);
         }}
         isDraft={isDraft}
         initialText={activeSession.draftText}

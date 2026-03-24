@@ -4,6 +4,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
 import { createSession, interruptSession, stopSession } from "~/lib/session-actions";
 import { copyToClipboard, uuid } from "~/lib/utils";
+import type { WsClient } from "~/lib/ws-client";
 import {
   type Attachment,
   type SessionMetadata,
@@ -70,6 +71,27 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
   }
 }
 
+/** Send a query to a specific session (no enqueue check, no draft handling). */
+function dispatchToSession(
+  ws: WsClient,
+  sessionId: string,
+  prompt: string,
+  attachments?: Attachment[],
+) {
+  useStreamingStore.getState().clearText(sessionId);
+  useChatStore.getState().submitQuery(sessionId, prompt, attachments);
+
+  const payload: Record<string, unknown> = { sessionId, prompt };
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments.map((a) => ({
+      name: a.name,
+      mimeType: a.mimeType,
+      dataUrl: a.dataUrl,
+    }));
+  }
+  return ws.request("session.query", payload);
+}
+
 export function useChatSession(projectId: string, initialSessionId?: string) {
   const ws = useWebSocket();
 
@@ -119,6 +141,26 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       if (event.type === "result") {
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
+
+        // Auto-dispatch next queued message now that the turn is complete
+        const chatStore = useChatStore.getState();
+        const sess = chatStore.sessions[sid];
+        const next = sess?.queuedMessages[0];
+        if (next) {
+          chatStore.dequeueMessage(sid);
+          queueMicrotask(async () => {
+            try {
+              await dispatchToSession(ws, sid, next.prompt, next.attachments);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : "Unknown error";
+              toast.error(msg, {
+                action: { label: "Copy", onClick: () => copyToClipboard(msg) },
+              });
+              useChatStore.getState().setSessionState(sid, "idle");
+              useChatStore.getState().clearQueue(sid);
+            }
+          });
+        }
       }
     });
 
@@ -228,6 +270,12 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
       const session = sessionId ? store.sessions[sessionId] : undefined;
       const state = session?.meta.state;
 
+      // Queue if session is currently running
+      if (sessionId && state === "running") {
+        store.enqueueMessage(sessionId, prompt, attachments);
+        return;
+      }
+
       try {
         if (!sessionId || state === "draft") {
           const worktree = session?.meta.worktree ?? false;
@@ -242,18 +290,7 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
           sessionId = realId;
         }
 
-        useStreamingStore.getState().clearText(sessionId);
-        useChatStore.getState().submitQuery(sessionId, prompt, attachments);
-
-        const payload: Record<string, unknown> = { sessionId, prompt };
-        if (attachments && attachments.length > 0) {
-          payload.attachments = attachments.map((a) => ({
-            name: a.name,
-            mimeType: a.mimeType,
-            dataUrl: a.dataUrl,
-          }));
-        }
-        await ws.request("session.query", payload);
+        await dispatchToSession(ws, sessionId, prompt, attachments);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         toast.error(msg, {
