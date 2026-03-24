@@ -86,7 +86,11 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		if err := live.TryLockForMerge(); err != nil {
 			return MergeResult{}, err
 		}
-		defer live.UnlockMerge(StateIdle)
+		defer func() {
+			if err := live.UnlockMerge(StateIdle); err != nil {
+				log.Printf("%v", err)
+			}
+		}()
 	}
 
 	dirty, err := gitops.HasUncommittedChanges(project.Path)

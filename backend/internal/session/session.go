@@ -144,10 +144,9 @@ func (s *Session) QueryCount() int {
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
 func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryAttachment) error {
 	s.mu.Lock()
-	if s.state != StateIdle && s.state != StateDone {
-		st := s.state
+	if err := validateTransition(s.state, StateRunning, s.ID); err != nil {
 		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not %s", string(st), string(StateIdle))
+		return err
 	}
 	s.state = StateRunning
 	s.queryCount++
@@ -176,7 +175,9 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 
 	if len(attachments) == 0 {
 		if err := s.cliSess.Query(prompt); err != nil {
-			s.setState(StateFailed)
+			if stErr := s.setState(StateFailed); stErr != nil {
+				log.Printf("%v", stErr)
+			}
 			return err
 		}
 		return nil
@@ -184,11 +185,15 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 
 	blocks, err := toContentBlocks(attachments)
 	if err != nil {
-		s.setState(StateFailed)
+		if stErr := s.setState(StateFailed); stErr != nil {
+			log.Printf("%v", stErr)
+		}
 		return fmt.Errorf("parse attachments: %w", err)
 	}
 	if err := s.cliSess.QueryWithContent(prompt, blocks...); err != nil {
-		s.setState(StateFailed)
+		if stErr := s.setState(StateFailed); stErr != nil {
+			log.Printf("%v", stErr)
+		}
 		return err
 	}
 	return nil
@@ -254,7 +259,9 @@ func (s *Session) startEventLoop() {
 					s.mu.Lock()
 					if s.state != StateDone {
 						s.mu.Unlock()
-						s.setState(StateDone)
+						if err := s.setState(StateDone); err != nil {
+							log.Printf("%v", err)
+						}
 					} else {
 						s.mu.Unlock()
 					}
@@ -313,17 +320,24 @@ func (s *Session) processEvent(event claudecli.Event) {
 	})
 
 	if _, ok := event.(*claudecli.ResultEvent); ok {
-		s.setState(StateIdle)
+		if err := s.setState(StateIdle); err != nil {
+			log.Printf("%v", err)
+		}
 	}
 
 	if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
-		s.setState(StateFailed)
+		if err := s.setState(StateFailed); err != nil {
+			log.Printf("%v", err)
+		}
 	}
 }
 
-func (s *Session) setState(state State) {
+func (s *Session) setState(state State) error {
 	s.mu.Lock()
-	validateTransition(s.state, state, s.ID)
+	if err := validateTransition(s.state, state, s.ID); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	s.state = state
 	s.mu.Unlock()
 	s.broadcastState(state)
@@ -331,6 +345,7 @@ func (s *Session) setState(state State) {
 		State: string(state),
 		ID:    s.ID,
 	})
+	return nil
 }
 
 func (s *Session) broadcastState(state State) {
@@ -588,10 +603,17 @@ func (s *Session) TryLockForMerge() error {
 }
 
 // UnlockMerge transitions back from StateMerging to newState.
-func (s *Session) UnlockMerge(newState State) {
+func (s *Session) UnlockMerge(newState State) error {
 	s.mu.Lock()
-	if s.state == StateMerging {
-		s.state = newState
+	if s.state != StateMerging {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: not in merging state", s.ID)
 	}
+	if err := validateTransition(s.state, newState, s.ID); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.state = newState
 	s.mu.Unlock()
+	return nil
 }

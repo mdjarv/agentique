@@ -1,6 +1,6 @@
 package session
 
-import "log"
+import "fmt"
 
 // State represents a session lifecycle state.
 type State string
@@ -15,7 +15,7 @@ const (
 )
 
 // validTransitions defines allowed state transitions.
-// Any transition not listed here is invalid (logged but not blocked).
+// Any transition not listed here is rejected.
 var validTransitions = map[State]map[State]bool{
 	StateIdle:    {StateRunning: true, StateMerging: true, StateStopped: true, StateDone: true},
 	StateRunning: {StateIdle: true, StateFailed: true, StateDone: true},
@@ -34,12 +34,10 @@ func (s State) CanTransitionTo(next State) bool {
 	return allowed[next]
 }
 
-// validateTransition logs a warning if the transition is invalid.
-// Returns true if valid.
-func validateTransition(from, to State, sessionID string) bool {
+// validateTransition returns an error if the transition is not allowed.
+func validateTransition(from, to State, sessionID string) error {
 	if from.CanTransitionTo(to) {
-		return true
+		return nil
 	}
-	log.Printf("session %s: invalid state transition %s -> %s", sessionID, from, to)
-	return false
+	return fmt.Errorf("session %s: invalid state transition %s -> %s", sessionID, from, to)
 }
