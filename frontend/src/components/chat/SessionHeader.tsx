@@ -323,22 +323,36 @@ export function SessionHeader({ session }: SessionHeaderProps) {
             </DropdownMenu>
           )}
 
-          {/* Create PR */}
-          {isWorktree && !isBusy && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => setActiveDialog("pr")}
-              disabled={creatingPR}
+          {/* PR link (when created) or Create PR button */}
+          {meta.prUrl ? (
+            <a
+              href={meta.prUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 h-7 px-2 text-xs text-[#7aa2f7]/80 hover:text-[#7aa2f7] transition-colors"
+              title={meta.prUrl}
             >
-              {creatingPR ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ExternalLink className="h-3.5 w-3.5" />
-              )}
+              <ExternalLink className="h-3.5 w-3.5" />
               PR
-            </Button>
+            </a>
+          ) : (
+            isWorktree &&
+            !isBusy && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setActiveDialog("pr")}
+                disabled={creatingPR}
+              >
+                {creatingPR ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ExternalLink className="h-3.5 w-3.5" />
+                )}
+                PR
+              </Button>
+            )
           )}
 
           {/* Model picker */}
@@ -400,6 +414,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       <CreatePRDialog
         open={activeDialog === "pr"}
         onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
+        sessionId={meta.id}
         defaultTitle={meta.name}
         onSubmit={handlePRSubmit}
         loading={creatingPR}

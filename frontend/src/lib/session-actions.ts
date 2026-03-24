@@ -192,6 +192,18 @@ export async function commitSession(
   return ws.request<CommitResult>("session.commit", { sessionId, message });
 }
 
+export interface PRDescriptionResult {
+  title: string;
+  body: string;
+}
+
+export async function generatePRDescription(
+  ws: WsClient,
+  sessionId: string,
+): Promise<PRDescriptionResult> {
+  return ws.request<PRDescriptionResult>("session.generate-pr-description", { sessionId }, 60000);
+}
+
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.delete", { sessionId });
 }
