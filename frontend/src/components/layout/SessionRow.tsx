@@ -1,4 +1,11 @@
-import { ArrowDown, ArrowUp, GitBranch, Square, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  GitBranch,
+  GitPullRequest,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -17,6 +24,7 @@ interface SessionRowProps {
   commitsBehind?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
+  prUrl?: string;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -39,13 +47,15 @@ export function SessionRow({
   commitsBehind,
   branchMissing,
   hasUncommitted,
+  prUrl,
   onClick,
   onStop,
   onDelete,
 }: SessionRowProps) {
   const canStop = !isTerminal(state);
   const faded = isTerminal(state) && worktreeMerged;
-  const hasAttention = !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
+  const hasAttention =
+    !worktreeMerged && isTerminal(state) && !!commitsAhead && commitsAhead > 0;
 
   return (
     <div
@@ -68,7 +78,8 @@ export function SessionRow({
         <span
           className={cn(
             "truncate text-sidebar-foreground",
-            faded && "text-muted-foreground line-through decoration-muted-foreground/50",
+            faded &&
+              "text-muted-foreground line-through decoration-muted-foreground/50",
             hasAttention && "text-[#e0af68]",
           )}
           title={worktreeBranch ? `${name}\n${worktreeBranch}` : name}
@@ -86,6 +97,7 @@ export function SessionRow({
             commitsBehind={commitsBehind}
             hasUncommitted={hasUncommitted}
             hasDirtyWorktree={hasDirtyWorktree}
+            prUrl={prUrl}
           />
         </span>
         <span className="absolute right-0 flex items-center gap-0.5 invisible group-hover/session:visible">
@@ -120,6 +132,7 @@ function GitStatus({
   commitsBehind,
   hasUncommitted,
   hasDirtyWorktree,
+  prUrl,
 }: {
   worktreeMerged?: boolean;
   branchMissing?: boolean;
@@ -127,7 +140,10 @@ function GitStatus({
   commitsBehind?: number;
   hasUncommitted?: boolean;
   hasDirtyWorktree?: boolean;
+  prUrl?: string;
 }) {
+  const hasPr = !!prUrl;
+
   if (worktreeMerged) {
     return <span className="text-xs text-emerald-500/70">merged</span>;
   }
@@ -138,10 +154,11 @@ function GitStatus({
   const ahead = !!commitsAhead && commitsAhead > 0;
   const behind = !!commitsBehind && commitsBehind > 0;
   const dirty = hasUncommitted || hasDirtyWorktree;
-  if (!ahead && !behind && !dirty) return null;
+  if (!ahead && !dirty && !hasPr) return null;
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {hasPr && <GitPullRequest className="size-3 text-[#7aa2f7]" />}
       {ahead && (
         <span className="flex items-center gap-0.5">
           <ArrowUp className="size-2.5" />
