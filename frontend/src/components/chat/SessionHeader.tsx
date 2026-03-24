@@ -65,7 +65,6 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const { meta } = session;
   const ws = useWebSocket();
   const isRunning = meta.state === "running" || meta.state === "starting";
-  const isDraft = meta.state === "draft";
   const isWorktree = !!meta.worktreeBranch;
   const currentModel = (meta.model ?? "opus") as ModelId;
   const isBusy = isRunning;
@@ -110,12 +109,12 @@ export function SessionHeader({ session }: SessionHeaderProps) {
 
   const handleModelChange = useCallback(
     (model: ModelId) => {
-      if (isDraft || model === currentModel) return;
+      if (model === currentModel) return;
       setSessionModel(ws, meta.id, model).catch((err) => {
         toast.error(err instanceof Error ? err.message : "Failed to change model");
       });
     },
-    [ws, meta.id, isDraft, currentModel],
+    [ws, meta.id, currentModel],
   );
 
   const handleViewDiff = async () => {
@@ -263,26 +262,24 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Diff button — available for all non-draft sessions */}
-          {!isDraft && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={handleViewDiff}
-              disabled={loadingDiff}
-            >
-              {loadingDiff ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FileDiff className="h-3.5 w-3.5" />
-              )}
-              Changes
-            </Button>
-          )}
+          {/* Diff button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={handleViewDiff}
+            disabled={loadingDiff}
+          >
+            {loadingDiff ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileDiff className="h-3.5 w-3.5" />
+            )}
+            Changes
+          </Button>
 
-          {/* Commit button — non-worktree, non-draft, non-busy */}
-          {!isWorktree && !isDraft && !isBusy && (
+          {/* Commit button — non-worktree, non-busy */}
+          {!isWorktree && !isBusy && (
             <Button
               variant="ghost"
               size="sm"
@@ -342,36 +339,34 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           )}
 
           {/* Model picker */}
-          {!isDraft && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={isRunning}
-                className={cn(
-                  "flex items-center gap-1 text-xs rounded border border-border px-1.5 py-0.5 text-muted-foreground transition-colors",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  "disabled:opacity-50 disabled:pointer-events-none",
-                )}
-              >
-                {MODEL_LABELS[currentModel]}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {MODELS.map((m) => (
-                  <DropdownMenuItem
-                    key={m}
-                    onClick={() => handleModelChange(m)}
-                    className="text-xs gap-2"
-                  >
-                    <Check
-                      className={cn("h-3 w-3", m === currentModel ? "opacity-100" : "opacity-0")}
-                    />
-                    {MODEL_LABELS[m]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={isRunning}
+              className={cn(
+                "flex items-center gap-1 text-xs rounded border border-border px-1.5 py-0.5 text-muted-foreground transition-colors",
+                "hover:bg-accent hover:text-accent-foreground",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "disabled:opacity-50 disabled:pointer-events-none",
+              )}
+            >
+              {MODEL_LABELS[currentModel]}
+              <ChevronDown className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {MODELS.map((m) => (
+                <DropdownMenuItem
+                  key={m}
+                  onClick={() => handleModelChange(m)}
+                  className="text-xs gap-2"
+                >
+                  <Check
+                    className={cn("h-3 w-3", m === currentModel ? "opacity-100" : "opacity-0")}
+                  />
+                  {MODEL_LABELS[m]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Delete */}
           <Button

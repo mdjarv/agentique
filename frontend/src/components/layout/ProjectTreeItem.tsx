@@ -25,8 +25,7 @@ const activePriority: Record<string, number> = {
   running: 0,
   starting: 1,
   idle: 2,
-  draft: 3,
-  disconnected: 4,
+  disconnected: 3,
 };
 
 function sortByPriorityThenDate(
@@ -212,7 +211,6 @@ export function ProjectTreeItem({
   );
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const setActiveSessionId = useChatStore((s) => s.setActiveSessionId);
   const hideStoppedSessions = useAppStore((s) => s.hideStoppedSessions);
   const toggleHideStoppedSessions = useAppStore((s) => s.toggleHideStoppedSessions);
 
@@ -248,11 +246,7 @@ export function ProjectTreeItem({
   const confirmDeleteSession = async () => {
     if (!sessionToDelete) return;
     try {
-      if (sessionToDelete.startsWith("draft-")) {
-        useChatStore.getState().removeSession(sessionToDelete);
-      } else {
-        await deleteSession(ws, sessionToDelete);
-      }
+      await deleteSession(ws, sessionToDelete);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete session");
     } finally {
@@ -261,14 +255,10 @@ export function ProjectTreeItem({
   };
 
   const handleSessionClick = (sessionId: string) => {
-    if (!isActive) {
-      navigate({
-        to: "/project/$projectId",
-        params: { projectId: project.id },
-        search: { session: sessionId },
-      });
-    }
-    setActiveSessionId(sessionId);
+    navigate({
+      to: "/project/$projectId/session/$sessionId",
+      params: { projectId: project.id, sessionId },
+    });
   };
 
   return (
@@ -326,10 +316,10 @@ export function ProjectTreeItem({
             <button
               type="button"
               onClick={() => {
-                useChatStore.getState().createDraft(project.id);
-                if (!isActive) {
-                  navigate({ to: "/project/$projectId", params: { projectId: project.id } });
-                }
+                navigate({
+                  to: "/project/$projectId/session/new",
+                  params: { projectId: project.id },
+                });
               }}
               className="flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
             >

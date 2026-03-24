@@ -45,7 +45,6 @@ export interface Turn {
 }
 
 export type SessionState =
-  | "draft"
   | "disconnected"
   | "starting"
   | "idle"
@@ -71,7 +70,6 @@ export interface SessionMetadata {
   hasUncommitted?: boolean;
   createdAt: string;
   updatedAt?: string;
-  worktree?: boolean; // draft-only: user's worktree toggle preference
 }
 
 export interface PendingApproval {
@@ -117,7 +115,6 @@ export interface SessionData {
   planMode: boolean;
   autoApprove: boolean;
   rateLimit: RateLimitInfo | null;
-  draftText: string;
   queuedMessages: QueuedMessage[];
 }
 
@@ -130,7 +127,6 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   planMode: meta.permissionMode === "plan",
   autoApprove: meta.autoApprove ?? false,
   rateLimit: null,
-  draftText: "",
   queuedMessages: [],
 });
 
@@ -171,6 +167,7 @@ function updateMeta(
 export interface ChatState {
   sessions: Record<string, SessionData>;
   activeSessionId: string | null;
+  sessionListLoaded: boolean;
   historyLoading: Set<string>;
 
   // Session management
@@ -197,11 +194,6 @@ export interface ChatState {
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
   setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
 
-  // Draft session management
-  createDraft: (projectId: string) => void;
-  setDraftWorktree: (sessionId: string, worktree: boolean) => void;
-  setDraftText: (sessionId: string, text: string) => void;
-
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
@@ -223,6 +215,7 @@ export interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
   activeSessionId: null,
+  sessionListLoaded: false,
   historyLoading: new Set<string>(),
 
   setSessions: (metas, projectId) =>
@@ -248,7 +241,7 @@ export const useChatStore = create<ChatState>((set) => ({
           sessions[meta.id] = emptySessionData(tagged);
         }
       }
-      return { sessions };
+      return { sessions, sessionListLoaded: true };
     }),
 
   addSession: (meta) =>
@@ -326,41 +319,6 @@ export const useChatStore = create<ChatState>((set) => ({
         historyLoading: nextLoading,
         ...updateSession(s, sessionId, { turns }),
       };
-    }),
-
-  createDraft: (projectId) =>
-    set((s) => {
-      const existing = Object.keys(s.sessions).find((id) => s.sessions[id]?.meta.state === "draft");
-      if (existing) {
-        return { activeSessionId: existing };
-      }
-      const draftId = `draft-${uuid()}`;
-      const meta: SessionMetadata = {
-        id: draftId,
-        projectId,
-        name: "New session",
-        state: "draft",
-        createdAt: new Date().toISOString(),
-        worktree: true,
-      };
-      return {
-        sessions: { ...s.sessions, [draftId]: emptySessionData(meta) },
-        activeSessionId: draftId,
-      };
-    }),
-
-  setDraftWorktree: (sessionId, worktree) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.meta.state !== "draft") return s;
-      return updateMeta(s, sessionId, { worktree });
-    }),
-
-  setDraftText: (sessionId, text) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.meta.state !== "draft") return s;
-      return updateSession(s, sessionId, { draftText: text });
     }),
 
   enqueueMessage: (sessionId, prompt, attachments) =>
@@ -458,5 +416,6 @@ export const useChatStore = create<ChatState>((set) => ({
       return updateSession(s, sessionId, patch);
     }),
 
-  resetProject: () => set({ activeSessionId: null, historyLoading: new Set() }),
+  resetProject: () =>
+    set({ activeSessionId: null, sessionListLoaded: false, historyLoading: new Set() }),
 }));

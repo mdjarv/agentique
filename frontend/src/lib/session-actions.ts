@@ -1,6 +1,7 @@
 import type { WsClient } from "~/lib/ws-client";
-import type { SessionMetadata } from "~/stores/chat-store";
+import type { Attachment, SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 export const MODELS = ["haiku", "sonnet", "opus"] as const;
 export type ModelId = (typeof MODELS)[number];
@@ -56,15 +57,33 @@ export async function createSession(
     worktreeBranch: result.worktreeBranch,
     createdAt: result.createdAt,
   };
-  const store = useChatStore.getState();
-  store.addSession(meta);
-  store.setActiveSessionId(result.sessionId);
+  useChatStore.getState().addSession(meta);
   return result.sessionId;
 }
 
 export async function renameSession(ws: WsClient, sessionId: string, name: string): Promise<void> {
   await ws.request("session.rename", { sessionId, name });
   useChatStore.getState().setSessionName(sessionId, name);
+}
+
+export async function submitQuery(
+  ws: WsClient,
+  sessionId: string,
+  prompt: string,
+  attachments?: Attachment[],
+): Promise<void> {
+  useStreamingStore.getState().clearText(sessionId);
+  useChatStore.getState().submitQuery(sessionId, prompt, attachments);
+
+  const payload: Record<string, unknown> = { sessionId, prompt };
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments.map((a) => ({
+      name: a.name,
+      mimeType: a.mimeType,
+      dataUrl: a.dataUrl,
+    }));
+  }
+  await ws.request("session.query", payload);
 }
 
 export async function setSessionModel(
@@ -202,14 +221,5 @@ export async function stopSession(ws: WsClient, sessionId: string): Promise<void
   } catch (err) {
     console.error("Failed to stop session:", err);
   }
-  const store = useChatStore.getState();
-  if (store.activeSessionId === sessionId) {
-    const projectId = store.sessions[sessionId]?.meta.projectId;
-    const nextId =
-      Object.keys(store.sessions).find(
-        (id) => id !== sessionId && store.sessions[id]?.meta.projectId === projectId,
-      ) ?? null;
-    store.setActiveSessionId(nextId);
-  }
-  store.removeSession(sessionId);
+  useChatStore.getState().removeSession(sessionId);
 }

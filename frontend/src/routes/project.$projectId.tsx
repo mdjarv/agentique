@@ -1,21 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ChatPanel } from "~/components/chat/ChatPanel";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { useKeyboardShortcuts } from "~/hooks/useKeyboardShortcuts";
-
-interface ProjectSearch {
-  session?: string;
-}
+import { useProjectSubscription } from "~/hooks/useProjectSubscription";
 
 export const Route = createFileRoute("/project/$projectId")({
-  component: ProjectPage,
-  validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
-    session: typeof search.session === "string" ? search.session : undefined,
-  }),
+  component: ProjectLayout,
 });
 
-function ProjectPage() {
+function ProjectLayout() {
   const { projectId } = Route.useParams();
-  const { session } = Route.useSearch();
+  useProjectSubscription(projectId);
   useKeyboardShortcuts(projectId);
-  return <ChatPanel projectId={projectId} initialSessionId={session} />;
+  return <Outlet />;
 }

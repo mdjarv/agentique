@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { type SessionState, useChatStore } from "~/stores/chat-store";
 
@@ -5,22 +6,26 @@ const statePriority: Record<SessionState, number> = {
   running: 0,
   starting: 1,
   idle: 2,
-  draft: 3,
-  disconnected: 4,
-  failed: 5,
-  stopped: 6,
-  done: 7,
+  disconnected: 3,
+  failed: 4,
+  stopped: 5,
+  done: 6,
 };
 
 export function useKeyboardShortcuts(projectId: string) {
+  const navigate = useNavigate();
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
-      // Ctrl/Cmd+N: new draft session
+      // Ctrl/Cmd+N: new chat
       if (mod && e.key === "n") {
         e.preventDefault();
-        useChatStore.getState().createDraft(projectId);
+        navigate({
+          to: "/project/$projectId/session/new",
+          params: { projectId },
+        });
         return;
       }
 
@@ -42,12 +47,15 @@ export function useKeyboardShortcuts(projectId: string) {
         const idx = Number.parseInt(e.key, 10) - 1;
         const targetId = sorted[idx];
         if (targetId) {
-          store.setActiveSessionId(targetId);
+          navigate({
+            to: "/project/$projectId/session/$sessionId",
+            params: { projectId, sessionId: targetId },
+          });
         }
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [projectId]);
+  }, [projectId, navigate]);
 }
