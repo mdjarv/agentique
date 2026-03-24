@@ -70,6 +70,7 @@ export interface SessionMetadata {
   branchMissing?: boolean;
   hasUncommitted?: boolean;
   createdAt: string;
+  updatedAt?: string;
   worktree?: boolean; // draft-only: user's worktree toggle preference
 }
 

@@ -34,8 +34,9 @@ type SessionInfo struct {
 	WorktreeMerged  bool `json:"worktreeMerged,omitempty"`
 	CommitsAhead    int  `json:"commitsAhead"`
 	BranchMissing   bool `json:"branchMissing,omitempty"`
-	HasUncommitted  bool `json:"hasUncommitted,omitempty"`
+	HasUncommitted  bool   `json:"hasUncommitted,omitempty"`
 	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -251,6 +252,7 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
 			CreatedAt:      ss.CreatedAt,
+			UpdatedAt:      ss.UpdatedAt,
 		}
 
 		if branch := nullStr(ss.WorktreeBranch); branch != "" && !info.WorktreeMerged {

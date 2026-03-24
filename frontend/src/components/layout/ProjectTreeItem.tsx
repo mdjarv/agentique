@@ -116,10 +116,12 @@ function SessionGroups({
   }
 
   const sortedActive = sortByPriorityThenDate(active, sessions, activePriority);
-  // Completed: newest first
+  // Completed: most recently active first
   const sortedCompleted = [...completed].sort((a, b) => {
-    const ta = new Date(sessions[a]?.meta.createdAt ?? 0).getTime();
-    const tb = new Date(sessions[b]?.meta.createdAt ?? 0).getTime();
+    const ma = sessions[a]?.meta;
+    const mb = sessions[b]?.meta;
+    const ta = new Date(ma?.updatedAt ?? ma?.createdAt ?? 0).getTime();
+    const tb = new Date(mb?.updatedAt ?? mb?.createdAt ?? 0).getTime();
     return tb - ta;
   });
 
