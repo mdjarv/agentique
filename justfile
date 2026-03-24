@@ -41,6 +41,10 @@ test-e2e: backend-build
 
 test: test-backend test-e2e
 
+# Run DB migrations
+migrate:
+    cd backend && goose -dir db/migrations sqlite3 agentique.db up
+
 # Code generation
 sqlc:
     cd backend/db && sqlc generate

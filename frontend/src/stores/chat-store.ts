@@ -66,6 +66,8 @@ export interface SessionMetadata {
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
+  totalCost?: number;
+  turnCount?: number;
   createdAt: string;
   worktree?: boolean; // draft-only: user's worktree toggle preference
 }

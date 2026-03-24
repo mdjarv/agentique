@@ -23,16 +23,18 @@ var (
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	State           string `json:"state"`
-	Model           string `json:"model"`
-	PermissionMode  string `json:"permissionMode"`
-	AutoApprove     bool   `json:"autoApprove"`
-	WorktreePath    string `json:"worktreePath,omitempty"`
-	WorktreeBranch  string `json:"worktreeBranch,omitempty"`
-	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
-	CreatedAt       string `json:"createdAt"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	State           string  `json:"state"`
+	Model           string  `json:"model"`
+	PermissionMode  string  `json:"permissionMode"`
+	AutoApprove     bool    `json:"autoApprove"`
+	WorktreePath    string  `json:"worktreePath,omitempty"`
+	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
+	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
+	TotalCost       float64 `json:"totalCost"`
+	TurnCount       int     `json:"turnCount"`
+	CreatedAt       string  `json:"createdAt"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -233,9 +235,15 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 		return ListSessionsResult{}, err
 	}
 
+	summaries, _ := s.queries.SessionSummariesByProject(ctx, projectID)
+	summaryMap := make(map[string]store.SessionSummariesByProjectRow, len(summaries))
+	for _, sm := range summaries {
+		summaryMap[sm.SessionID] = sm
+	}
+
 	infos := make([]SessionInfo, 0, len(sessions))
 	for _, ss := range sessions {
-		infos = append(infos, SessionInfo{
+		info := SessionInfo{
 			ID:             ss.ID,
 			Name:           ss.Name,
 			State:          ss.State,
@@ -246,7 +254,12 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
 			CreatedAt:      ss.CreatedAt,
-		})
+		}
+		if sm, ok := summaryMap[ss.ID]; ok {
+			info.TotalCost = sm.TotalCost
+			info.TurnCount = int(sm.TurnCount)
+		}
+		infos = append(infos, info)
 	}
 
 	return ListSessionsResult{Sessions: infos}, nil

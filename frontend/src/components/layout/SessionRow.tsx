@@ -13,9 +13,28 @@ interface SessionRowProps {
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
+  totalCost?: number;
+  turnCount?: number;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
+}
+
+function formatCost(cost: number): string {
+  if (cost < 0.01) return "<$0.01";
+  return `$${cost.toFixed(2)}`;
+}
+
+function buildSummary(
+  turnCount?: number,
+  totalCost?: number,
+  worktreeMerged?: boolean,
+): string | null {
+  const parts: string[] = [];
+  if (worktreeMerged) parts.push("merged");
+  if (turnCount) parts.push(`${turnCount} turns`);
+  if (totalCost && totalCost > 0) parts.push(formatCost(totalCost));
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export function SessionRow({
@@ -28,11 +47,14 @@ export function SessionRow({
   worktreeBranch,
   hasDirtyWorktree,
   worktreeMerged,
+  totalCost,
+  turnCount,
   onClick,
   onStop,
   onDelete,
 }: SessionRowProps) {
   const canStop = state !== "stopped" && state !== "done" && state !== "draft";
+  const summary = buildSummary(turnCount, totalCost, worktreeMerged);
 
   return (
     <div
@@ -43,39 +65,46 @@ export function SessionRow({
     >
       <button
         type="button"
-        className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
+        className="flex-1 min-w-0 cursor-pointer bg-transparent border-0 p-0 text-left text-inherit"
         onClick={onClick}
       >
-        <SessionStatusBadge
-          state={state}
-          hasUnseenCompletion={hasUnseenCompletion}
-          hasPendingApproval={hasPendingApproval}
-          isPlanning={isPlanning}
-        />
-        <span className="truncate" title={name}>
-          {name}
-        </span>
-        {worktreeBranch && (
-          <span
-            className={cn(
-              "flex items-center gap-0.5 text-xs shrink-0 max-w-[8rem]",
-              hasDirtyWorktree
-                ? "text-[#e0af68]/80"
-                : worktreeMerged
-                  ? "text-[#9ece6a]/80"
-                  : "text-muted-foreground",
-            )}
-            title={
-              hasDirtyWorktree
-                ? `${worktreeBranch} (dirty)`
-                : worktreeMerged
-                  ? `${worktreeBranch} (merged)`
-                  : worktreeBranch
-            }
-          >
-            <GitBranch className="h-3 w-3 shrink-0" />
-            <span className="truncate">{worktreeBranch}</span>
+        <div className="flex items-center gap-1.5">
+          <SessionStatusBadge
+            state={state}
+            hasUnseenCompletion={hasUnseenCompletion}
+            hasPendingApproval={hasPendingApproval}
+            isPlanning={isPlanning}
+          />
+          <span className="truncate" title={name}>
+            {name}
           </span>
+          {worktreeBranch && (
+            <span
+              className={cn(
+                "flex items-center gap-0.5 text-xs shrink-0 max-w-[8rem]",
+                hasDirtyWorktree
+                  ? "text-[#e0af68]/80"
+                  : worktreeMerged
+                    ? "text-[#9ece6a]/80"
+                    : "text-muted-foreground",
+              )}
+              title={
+                hasDirtyWorktree
+                  ? `${worktreeBranch} (dirty)`
+                  : worktreeMerged
+                    ? `${worktreeBranch} (merged)`
+                    : worktreeBranch
+              }
+            >
+              <GitBranch className="h-3 w-3 shrink-0" />
+              <span className="truncate">{worktreeBranch}</span>
+            </span>
+          )}
+        </div>
+        {summary && (
+          <div className="text-[10px] text-muted-foreground/70 pl-[calc(1.25rem+0.375rem)] truncate">
+            {summary}
+          </div>
         )}
       </button>
       {canStop && (
