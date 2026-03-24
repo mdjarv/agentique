@@ -331,8 +331,10 @@ export const useChatStore = create<ChatState>((set) => ({
 
       // Transient events: update session state without appending to turns
       if (event.type === "rate_limit") {
+        const status = event.status ?? "";
+        if (status === "allowed") return s;
         return updateSession(s, sessionId, {
-          rateLimit: { status: event.status ?? "active", utilization: event.utilization ?? 0 },
+          rateLimit: { status, utilization: event.utilization ?? 0 },
         });
       }
       if (event.type === "stream") return s;
