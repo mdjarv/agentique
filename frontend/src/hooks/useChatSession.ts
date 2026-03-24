@@ -124,14 +124,13 @@ export function useChatSession(projectId: string, initialSessionId?: string) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubState = ws.subscribe("session.state", (payload: any) => {
-      useChatStore
-        .getState()
-        .setSessionState(
-          payload.sessionId,
-          payload.state,
-          payload.hasDirtyWorktree,
-          payload.worktreeMerged,
-        );
+      useChatStore.getState().setSessionState(payload.sessionId, payload.state, {
+        hasDirtyWorktree: payload.hasDirtyWorktree,
+        worktreeMerged: payload.worktreeMerged,
+        hasUncommitted: payload.hasUncommitted,
+        commitsAhead: payload.commitsAhead,
+        branchMissing: payload.branchMissing,
+      });
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload

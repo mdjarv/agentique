@@ -48,8 +48,8 @@ export function SessionRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1 text-sm group/session hover:bg-accent/50 transition-colors",
-        isActive && "bg-accent/70",
+        "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm group/session hover:bg-sidebar-accent/50 transition-colors",
+        isActive && "bg-sidebar-accent/70",
       )}
     >
       <button
@@ -65,77 +65,84 @@ export function SessionRow({
         />
         <span
           className={cn(
-            "truncate",
-            faded && "text-muted-foreground/40 line-through decoration-muted-foreground/20",
-            hasAttention && "text-[#e0af68]/90",
+            "truncate text-sidebar-foreground",
+            faded && "text-muted-foreground line-through decoration-muted-foreground/50",
+            hasAttention && "text-[#e0af68]",
           )}
-          title={name}
+          title={worktreeBranch ? `${name}\n${worktreeBranch}` : name}
         >
           {name}
         </span>
-
-        {/* Right-aligned decorations */}
-        <span className="ml-auto flex items-center gap-1 shrink-0">
-          {/* Commits ahead indicator */}
-          {!!commitsAhead && commitsAhead > 0 && !worktreeMerged && (
-            <span
-              className={cn(
-                "flex items-center gap-0.5 text-[10px] font-medium",
-                hasUncommitted ? "text-[#e0af68]/70" : "text-muted-foreground/60",
-              )}
-              title={`${commitsAhead} commit${commitsAhead > 1 ? "s" : ""} ahead${hasUncommitted ? ", uncommitted changes" : ""}`}
-            >
-              <ArrowUp className="size-2.5" />
-              {commitsAhead}
-            </span>
-          )}
-          {/* Branch indicator */}
-          {worktreeBranch && (
-            <span
-              title={
-                worktreeMerged
-                  ? `${worktreeBranch} (merged)`
-                  : branchMissing
-                    ? `${worktreeBranch} (missing)`
-                    : hasDirtyWorktree || hasUncommitted
-                      ? `${worktreeBranch} (dirty)`
-                      : worktreeBranch
-              }
-            >
-              <GitBranch
-                className={cn(
-                  "size-3",
-                  worktreeMerged
-                    ? "text-emerald-500/40"
-                    : hasDirtyWorktree || hasUncommitted
-                      ? "text-[#e0af68]/60"
-                      : branchMissing
-                        ? "text-[#f7768e]/50"
-                        : "text-muted-foreground/40",
-                )}
-              />
-            </span>
-          )}
+      </button>
+      {/* Right slot: git status by default, action buttons on hover */}
+      <span className="relative ml-auto flex shrink-0 items-center">
+        <span className="flex items-center gap-1.5 group-hover/session:invisible">
+          <GitStatus
+            worktreeMerged={worktreeMerged}
+            branchMissing={branchMissing}
+            commitsAhead={commitsAhead}
+            hasUncommitted={hasUncommitted}
+            hasDirtyWorktree={hasDirtyWorktree}
+          />
         </span>
-      </button>
-      {canStop && (
-        <button
-          type="button"
-          aria-label="Stop session"
-          onClick={onStop}
-          className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity shrink-0"
-        >
-          <Square className="h-3 w-3" />
-        </button>
-      )}
-      <button
-        type="button"
-        aria-label="Delete session"
-        onClick={onDelete}
-        className="opacity-0 group-hover/session:opacity-100 p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-opacity shrink-0"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+        <span className="absolute right-0 flex items-center gap-0.5 invisible group-hover/session:visible">
+          {canStop && (
+            <button
+              type="button"
+              aria-label="Stop session"
+              onClick={onStop}
+              className="p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-colors shrink-0"
+            >
+              <Square className="h-3 w-3" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Delete session"
+            onClick={onDelete}
+            className="p-0.5 rounded hover:bg-destructive hover:text-destructive-foreground transition-colors shrink-0"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </span>
+      </span>
     </div>
+  );
+}
+
+function GitStatus({
+  worktreeMerged,
+  branchMissing,
+  commitsAhead,
+  hasUncommitted,
+  hasDirtyWorktree,
+}: {
+  worktreeMerged?: boolean;
+  branchMissing?: boolean;
+  commitsAhead?: number;
+  hasUncommitted?: boolean;
+  hasDirtyWorktree?: boolean;
+}) {
+  if (worktreeMerged) {
+    return <span className="text-xs text-emerald-500/70">merged</span>;
+  }
+  if (branchMissing) {
+    return <span className="text-xs text-[#f7768e]/80">missing</span>;
+  }
+
+  const ahead = !!commitsAhead && commitsAhead > 0;
+  const dirty = hasUncommitted || hasDirtyWorktree;
+  if (!ahead && !dirty) return null;
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {ahead && (
+        <span className="flex items-center gap-0.5">
+          <ArrowUp className="size-2.5" />
+          {commitsAhead}
+        </span>
+      )}
+      {dirty && <GitBranch className="size-3 text-[#e0af68]/80" />}
+    </span>
   );
 }

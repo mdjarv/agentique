@@ -166,14 +166,14 @@ function CompletedSection({
         className="group mt-2 mb-0.5 flex w-full items-center gap-1 px-2 text-left cursor-pointer"
       >
         {expanded ? (
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground/40 transition-transform" />
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform" />
         ) : (
-          <ChevronRight className="size-3 shrink-0 text-muted-foreground/40 transition-transform" />
+          <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform" />
         )}
-        <span className="text-[10px] font-semibold tracking-widest text-muted-foreground/40 uppercase group-hover:text-muted-foreground/60">
+        <span className="text-xs font-semibold tracking-widest text-muted-foreground/70 uppercase group-hover:text-muted-foreground">
           Completed
         </span>
-        <span className="text-[10px] text-muted-foreground/30">{ids.length}</span>
+        <span className="text-xs text-muted-foreground/60">{ids.length}</span>
       </button>
       {expanded &&
         ids.map((id) =>
@@ -286,8 +286,8 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 py-1.5 group hover:bg-accent transition-colors cursor-pointer",
-          isActive && "bg-accent",
+          "w-full text-left rounded-md px-2 py-1.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
+          isActive && "bg-sidebar-accent",
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -306,7 +306,7 @@ export function ProjectTreeItem({
                 params: { projectId: project.id },
               });
             }}
-            className="text-sm font-medium shrink-0 hover:underline"
+            className="text-sm font-medium shrink-0 text-foreground-bright hover:underline"
           >
             {project.name}
           </button>
@@ -331,7 +331,7 @@ export function ProjectTreeItem({
                   navigate({ to: "/project/$projectId", params: { projectId: project.id } });
                 }
               }}
-              className="flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>New chat</span>
@@ -343,8 +343,8 @@ export function ProjectTreeItem({
               className={cn(
                 "rounded-md p-1 transition-colors cursor-pointer",
                 hideStoppedSessions
-                  ? "text-foreground bg-accent/50"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                  ? "text-sidebar-foreground bg-sidebar-accent/50"
+                  : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
               )}
             >
               <EyeOff className="h-3.5 w-3.5" />
