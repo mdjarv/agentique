@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import remarkGfm from "remark-gfm";
 
 interface MarkdownProps {
   content: string;
@@ -38,7 +39,9 @@ function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<"
 export function Markdown({ content }: MarkdownProps) {
   return (
     <div className="prose prose-sm prose-invert max-w-none [&_pre]:bg-transparent [&_pre]:p-0 [&_code]:text-xs [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:rounded">
-      <ReactMarkdown components={{ code: CodeBlock }}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
