@@ -1,4 +1,4 @@
-import { Send } from "lucide-react";
+import { MessageSquare, Send } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -11,7 +11,7 @@ interface QuestionBannerProps {
   pending: PendingQuestion;
 }
 
-function QuestionInput({
+function OptionsInput({
   question,
   value,
   onChange,
@@ -20,23 +20,11 @@ function QuestionInput({
   value: string;
   onChange: (value: string) => void;
 }) {
-  if (!question.options || question.options.length === 0) {
-    return (
-      <input
-        type="text"
-        className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
-        placeholder="Type your answer..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  }
-
   if (question.multiSelect) {
     const selected = new Set(value ? value.split("\n") : []);
     return (
       <div className="flex flex-col gap-1">
-        {question.options.map((opt) => (
+        {question.options?.map((opt) => (
           <label
             key={opt.label}
             className="flex items-start gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/50"
@@ -69,7 +57,7 @@ function QuestionInput({
 
   return (
     <div className="flex flex-col gap-1">
-      {question.options.map((opt) => (
+      {question.options?.map((opt) => (
         <label
           key={opt.label}
           className="flex items-start gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/50"
@@ -89,6 +77,73 @@ function QuestionInput({
           </span>
         </label>
       ))}
+    </div>
+  );
+}
+
+function QuestionInput({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const hasOptions = question.options && question.options.length > 0;
+  const [customMode, setCustomMode] = useState(false);
+
+  if (!hasOptions) {
+    return (
+      <textarea
+        className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm resize-none"
+        placeholder="Type your response..."
+        rows={2}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  if (customMode) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <textarea
+          ref={(el) => el?.focus()}
+          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm resize-none"
+          placeholder="Type your response..."
+          rows={3}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="self-start text-xs text-purple-400 hover:text-purple-300"
+          onClick={() => {
+            onChange("");
+            setCustomMode(false);
+          }}
+        >
+          Back to options
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <OptionsInput question={question} value={value} onChange={onChange} />
+      <button
+        type="button"
+        className="self-start text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+        onClick={() => {
+          onChange("");
+          setCustomMode(true);
+        }}
+      >
+        <MessageSquare className="h-3 w-3" />
+        Type a custom response
+      </button>
     </div>
   );
 }
