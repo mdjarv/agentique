@@ -1,6 +1,6 @@
 -- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, worktree_requested)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetSession :one
 SELECT * FROM sessions WHERE id = ?;
@@ -20,11 +20,8 @@ UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M
 -- name: UpdateSessionModel :exec
 UPDATE sessions SET model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
--- name: UpdateSessionWorktree :exec
-UPDATE sessions
-SET name = ?, work_dir = ?, worktree_path = ?, worktree_branch = ?, worktree_base_sha = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-WHERE id = ?;
+-- name: SetWorktreeMerged :exec
+UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

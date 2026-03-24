@@ -19,7 +19,6 @@ type Broadcaster interface {
 
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
-	ID              string // if set, reuse this ID and skip DB insert (deferred activation)
 	ProjectID       string
 	Name            string
 	WorkDir         string
@@ -49,12 +48,8 @@ func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 }
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
-// If params.ID is set, the DB record already exists (deferred activation) — skip UUID generation and DB insert.
 func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
-	id := params.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
+	id := uuid.New().String()
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
@@ -90,32 +85,29 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		return nil, err
 	}
 
-	// Skip DB insert for deferred sessions — the record already exists.
-	if params.ID == "" {
-		_, dbErr := m.queries.CreateSession(ctx, store.CreateSessionParams{
-			ID:        id,
-			ProjectID: params.ProjectID,
-			Name:      params.Name,
-			WorkDir:   params.WorkDir,
-			WorktreePath: sql.NullString{
-				String: params.WorktreePath,
-				Valid:  params.WorktreePath != "",
-			},
-			WorktreeBranch: sql.NullString{
-				String: params.WorktreeBranch,
-				Valid:  params.WorktreeBranch != "",
-			},
-			WorktreeBaseSha: sql.NullString{
-				String: params.WorktreeBaseSHA,
-				Valid:  params.WorktreeBaseSHA != "",
-			},
-			State: string(StateIdle),
-			Model: params.Model,
-		})
-		if dbErr != nil {
-			cliSess.Close()
-			return nil, dbErr
-		}
+	_, dbErr := m.queries.CreateSession(ctx, store.CreateSessionParams{
+		ID:        id,
+		ProjectID: params.ProjectID,
+		Name:      params.Name,
+		WorkDir:   params.WorkDir,
+		WorktreePath: sql.NullString{
+			String: params.WorktreePath,
+			Valid:  params.WorktreePath != "",
+		},
+		WorktreeBranch: sql.NullString{
+			String: params.WorktreeBranch,
+			Valid:  params.WorktreeBranch != "",
+		},
+		WorktreeBaseSha: sql.NullString{
+			String: params.WorktreeBaseSHA,
+			Valid:  params.WorktreeBaseSHA != "",
+		},
+		State: string(StateIdle),
+		Model: params.Model,
+	})
+	if dbErr != nil {
+		cliSess.Close()
+		return nil, dbErr
 	}
 
 	sess.setCLISession(cliSess)

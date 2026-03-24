@@ -70,30 +70,6 @@ func TestSanitizeBranch(t *testing.T) {
 	}
 }
 
-func TestToKebabCase(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"Fix Login Bug", "fix-login-bug"},
-		{"Add OAuth2 Support", "add-oauth2-support"},
-		{"Hello, World!", "hello-world"},
-		{"", "unnamed"},
-		{"   ", "unnamed"},
-		{"UPPER CASE", "upper-case"},
-		{"multiple   spaces", "multiple-spaces"},
-		{"special!@#chars$%^here", "special-chars-here"},
-		{"already-kebab", "already-kebab"},
-		{"a very long title that exceeds the fifty character limit for branch names", "a-very-long-title-that-exceeds-the-fifty-character"},
-	}
-	for _, tt := range tests {
-		got := ToKebabCase(tt.input)
-		if got != tt.want {
-			t.Errorf("ToKebabCase(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
 func TestWorktreePath(t *testing.T) {
 	base := WorktreeBasePath()
 	got := WorktreePath("myproject", "feature/test")

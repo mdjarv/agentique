@@ -63,6 +63,7 @@ export interface SessionMetadata {
   worktreePath?: string;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
+  worktreeMerged?: boolean;
   createdAt: string;
   worktree?: boolean; // draft-only: user's worktree toggle preference
 }
@@ -163,7 +164,12 @@ export interface ChatState {
   addSession: (meta: SessionMetadata) => void;
   removeSession: (id: string) => void;
   setActiveSessionId: (id: string | null) => void;
-  setSessionState: (sessionId: string, state: SessionState, hasDirtyWorktree?: boolean) => void;
+  setSessionState: (
+    sessionId: string,
+    state: SessionState,
+    hasDirtyWorktree?: boolean,
+    worktreeMerged?: boolean,
+  ) => void;
   setSessionName: (sessionId: string, name: string) => void;
   setSessionWorktreeBranch: (sessionId: string, branch: string) => void;
   setSessionModel: (sessionId: string, model: string) => void;
@@ -238,10 +244,11 @@ export const useChatStore = create<ChatState>((set) => ({
       return { activeSessionId: id };
     }),
 
-  setSessionState: (sessionId, state, hasDirtyWorktree) =>
+  setSessionState: (sessionId, state, hasDirtyWorktree, worktreeMerged) =>
     set((s) => {
       const patch: Partial<SessionMetadata> = { state };
       if (hasDirtyWorktree !== undefined) patch.hasDirtyWorktree = hasDirtyWorktree;
+      if (worktreeMerged !== undefined) patch.worktreeMerged = worktreeMerged;
       return updateMeta(s, sessionId, patch);
     }),
 

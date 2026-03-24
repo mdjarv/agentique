@@ -12,6 +12,7 @@ interface SessionRowProps {
   isActive: boolean;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
+  worktreeMerged?: boolean;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -26,6 +27,7 @@ export function SessionRow({
   isActive,
   worktreeBranch,
   hasDirtyWorktree,
+  worktreeMerged,
   onClick,
   onStop,
   onDelete,
@@ -54,13 +56,25 @@ export function SessionRow({
           {name}
         </span>
         {worktreeBranch && (
-          <span className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0 max-w-[8rem]">
-            <GitBranch
-              className={cn("h-3 w-3 shrink-0", hasDirtyWorktree && "text-yellow-600/70")}
-            />
-            <span className="truncate" title={worktreeBranch}>
-              {worktreeBranch}
-            </span>
+          <span
+            className={cn(
+              "flex items-center gap-0.5 text-xs shrink-0 max-w-[8rem]",
+              hasDirtyWorktree
+                ? "text-[#e0af68]/80"
+                : worktreeMerged
+                  ? "text-[#9ece6a]/80"
+                  : "text-muted-foreground",
+            )}
+            title={
+              hasDirtyWorktree
+                ? `${worktreeBranch} (dirty)`
+                : worktreeMerged
+                  ? `${worktreeBranch} (merged)`
+                  : worktreeBranch
+            }
+          >
+            <GitBranch className="h-3 w-3 shrink-0" />
+            <span className="truncate">{worktreeBranch}</span>
           </span>
         )}
       </button>
