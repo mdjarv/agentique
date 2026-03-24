@@ -90,7 +90,11 @@ export function ProjectTreeItem({
   const confirmDeleteSession = async () => {
     if (!sessionToDelete) return;
     try {
-      await deleteSession(ws, sessionToDelete);
+      if (sessionToDelete.startsWith("draft-")) {
+        useChatStore.getState().removeSession(sessionToDelete);
+      } else {
+        await deleteSession(ws, sessionToDelete);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete session");
     } finally {
@@ -175,7 +179,6 @@ export function ProjectTreeItem({
           </button>
           {isActive &&
             [...sessionIds]
-              .filter((id) => sessions[id]?.meta.state !== "draft")
               .sort((a, b) => {
                 const sa = sessions[a]?.meta;
                 const sb = sessions[b]?.meta;
