@@ -51,7 +51,11 @@ type pendingQuestion struct {
 	ch        chan map[string]string
 }
 
-const eventLoopShutdownTimeout = 3 * time.Second
+const (
+	eventLoopShutdownTimeout = 3 * time.Second
+	watchdogWarnAfter        = 2 * time.Minute
+	watchdogFailAfter        = 5 * time.Minute
+)
 
 // Session wraps a single claudecli-go interactive session.
 type Session struct {
@@ -243,14 +247,16 @@ func (s *Session) startEventLoop() {
 		defer close(s.eventLoopDone)
 
 		events := s.cliSess.Events()
+		watchdog := time.NewTimer(watchdogWarnAfter)
+		defer watchdog.Stop()
+		var warned bool
+
 		for {
 			select {
 			case <-s.ctx.Done():
 				return
 			case event, ok := <-events:
 				if !ok {
-					// Channel closed — session process ended.
-					// Only transition to Done if Close() hasn't already set it.
 					s.mu.Lock()
 					if s.state != StateDone {
 						s.mu.Unlock()
@@ -260,7 +266,33 @@ func (s *Session) startEventLoop() {
 					}
 					return
 				}
+				watchdog.Reset(watchdogWarnAfter)
+				warned = false
 				s.processEvent(event)
+			case <-watchdog.C:
+				s.mu.Lock()
+				st := s.state
+				s.mu.Unlock()
+				if st != StateRunning {
+					watchdog.Reset(watchdogWarnAfter)
+					continue
+				}
+				if !warned {
+					warned = true
+					s.broadcast("session.event", map[string]any{
+						"sessionId": s.ID,
+						"event": WireErrorEvent{
+							Type:    "error",
+							Message: "session may be unresponsive — no activity for 2 minutes",
+							Fatal:   false,
+						},
+					})
+					watchdog.Reset(watchdogFailAfter - watchdogWarnAfter)
+					continue
+				}
+				log.Printf("session %s: watchdog timeout, marking failed", s.ID)
+				s.setState(StateFailed)
+				return
 			}
 		}
 	}()
