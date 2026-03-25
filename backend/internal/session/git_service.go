@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
-
-	claudecli "github.com/allbin/claudecli-go"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/allbin/agentique/backend/internal/msggen"
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
@@ -41,60 +39,6 @@ type CommitResult struct {
 	CommitHash string `json:"commitHash"`
 }
 
-// haikuCommitMsg calls Haiku to generate a commit message from a diff.
-func haikuCommitMsg(ctx context.Context, sessionName, summary, diff string) (CommitMessageResult, error) {
-	diffText := diff
-	const maxDiffChars = 8000
-	if len(diffText) > maxDiffChars {
-		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
-	}
-
-	prompt := fmt.Sprintf(
-		"Generate a git commit message for these changes.\n"+
-			"Session name: %s\n\n"+
-			"Diff summary:\n%s\n\n"+
-			"Full diff:\n%s\n\n"+
-			"Respond in EXACTLY this format with no other text:\n"+
-			"TITLE: <imperative mood, max 72 chars, no period>\n"+
-			"DESCRIPTION:\n<optional longer explanation, 1-4 lines, explain why not what>",
-		sessionName, summary, diffText,
-	)
-
-	client := claudecli.New()
-	result, err := client.RunBlocking(ctx, prompt,
-		claudecli.WithModel(claudecli.ModelHaiku),
-		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-	)
-	if err != nil {
-		return CommitMessageResult{}, fmt.Errorf("haiku generation failed: %w", err)
-	}
-
-	return parseCommitMessage(result.Text), nil
-}
-
-// generateAutoCommitMsg generates a commit message for uncommitted changes via Haiku,
-// falling back to a session-name-based message on failure.
-func generateAutoCommitMsg(ctx context.Context, sessionName, wtPath string) string {
-	fallback := sessionName + ": save changes"
-
-	diff, summary, err := gitops.UncommittedDiff(wtPath)
-	if err != nil || (diff == "" && summary == "") {
-		return fallback
-	}
-
-	result, err := haikuCommitMsg(ctx, sessionName, summary, diff)
-	if err != nil || result.Title == "" {
-		slog.Warn("haiku commit msg failed, using fallback", "error", err)
-		return fallback
-	}
-
-	if result.Description != "" {
-		return result.Title + "\n\n" + result.Description
-	}
-	return result.Title
-}
-
 // autoCommit commits all uncommitted changes in a worktree directory with a
 // Haiku-generated commit message. Returns nil if clean or on check failure.
 func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) error {
@@ -110,7 +54,7 @@ func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) erro
 		return nil
 	}
 
-	msg := generateAutoCommitMsg(ctx, sessionName, wtPath)
+	msg := msggen.AutoCommitMsg(ctx, sessionName, wtPath)
 	return gitops.AutoCommitAll(wtPath, msg)
 }
 
@@ -468,108 +412,38 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 	return CommitResult{CommitHash: hash}, nil
 }
 
-// PRDescriptionResult holds generated PR title and body.
-type PRDescriptionResult struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-}
-
-// GeneratePRDescription uses Haiku to generate a PR title and body from the session diff.
-func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string) (PRDescriptionResult, error) {
+func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string) (msggen.PRDescriptionResult, error) {
 	diff, err := g.Diff(ctx, sessionID)
 	if err != nil {
-		return PRDescriptionResult{}, fmt.Errorf("failed to get diff: %w", err)
+		return msggen.PRDescriptionResult{}, fmt.Errorf("failed to get diff: %w", err)
 	}
 	if !diff.HasDiff {
-		return PRDescriptionResult{}, fmt.Errorf("no changes to describe")
+		return msggen.PRDescriptionResult{}, fmt.Errorf("no changes to describe")
 	}
 
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return PRDescriptionResult{}, fmt.Errorf("session not found")
+		return msggen.PRDescriptionResult{}, fmt.Errorf("session not found")
 	}
 
-	// Build context: stat summary + truncated diff for Haiku.
-	diffText := diff.Diff
-	const maxDiffChars = 8000
-	if len(diffText) > maxDiffChars {
-		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
-	}
-
-	prompt := fmt.Sprintf(
-		"Generate a GitHub pull request title and description for these changes.\n"+
-			"Session name: %s\n\n"+
-			"Diff summary:\n%s\n\n"+
-			"Full diff:\n%s\n\n"+
-			"Respond in EXACTLY this format with no other text:\n"+
-			"TITLE: <short PR title, max 70 chars>\n"+
-			"BODY:\n<markdown description: what changed and why, use bullet points, 2-8 lines>",
-		dbSess.Name, diff.Summary, diffText,
-	)
-
-	client := claudecli.New()
-	result, err := client.RunBlocking(ctx, prompt,
-		claudecli.WithModel(claudecli.ModelHaiku),
-		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-	)
-	if err != nil {
-		return PRDescriptionResult{}, fmt.Errorf("haiku generation failed: %w", err)
-	}
-
-	return parsePRDescription(result.Text), nil
+	return msggen.PRDescription(ctx, dbSess.Name, diff.Summary, diff.Diff)
 }
 
-// CommitMessageResult holds generated commit title and description.
-type CommitMessageResult struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-}
-
-// GenerateCommitMessage uses Haiku to generate a commit title and description from the session diff.
-func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string) (CommitMessageResult, error) {
+func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string) (msggen.CommitMessageResult, error) {
 	diff, err := g.Diff(ctx, sessionID)
 	if err != nil {
-		return CommitMessageResult{}, fmt.Errorf("failed to get diff: %w", err)
+		return msggen.CommitMessageResult{}, fmt.Errorf("failed to get diff: %w", err)
 	}
 	if !diff.HasDiff {
-		return CommitMessageResult{}, fmt.Errorf("no changes to describe")
+		return msggen.CommitMessageResult{}, fmt.Errorf("no changes to describe")
 	}
 
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return CommitMessageResult{}, fmt.Errorf("session not found")
+		return msggen.CommitMessageResult{}, fmt.Errorf("session not found")
 	}
 
-	return haikuCommitMsg(ctx, dbSess.Name, diff.Summary, diff.Diff)
-}
-
-// parseCommitMessage extracts title and description from Haiku's "TITLE: ...\nDESCRIPTION:\n..." response.
-func parseCommitMessage(text string) CommitMessageResult {
-	text = strings.TrimSpace(text)
-
-	titleIdx := strings.Index(text, "TITLE:")
-	descIdx := strings.Index(text, "DESCRIPTION:")
-
-	var title, desc string
-	if titleIdx >= 0 && descIdx > titleIdx {
-		title = strings.TrimSpace(text[titleIdx+len("TITLE:") : descIdx])
-		desc = strings.TrimSpace(text[descIdx+len("DESCRIPTION:"):])
-	} else if titleIdx >= 0 {
-		title = strings.TrimSpace(text[titleIdx+len("TITLE:"):])
-	} else {
-		lines := strings.SplitN(text, "\n", 2)
-		title = strings.TrimSpace(lines[0])
-		if len(lines) > 1 {
-			desc = strings.TrimSpace(lines[1])
-		}
-	}
-
-	if len(title) > 72 {
-		title = title[:72]
-	}
-
-	return CommitMessageResult{Title: title, Description: desc}
+	return msggen.CommitMsg(ctx, dbSess.Name, diff.Summary, diff.Diff)
 }
 
 // CleanResult describes the outcome of a clean operation.
@@ -723,33 +597,4 @@ func appendMergeStatus(payload map[string]any, projectDir, branch string) {
 		payload["mergeStatus"] = "conflicts"
 		payload["mergeConflictFiles"] = result.ConflictFiles
 	}
-}
-
-// parsePRDescription extracts title and body from Haiku's "TITLE: ...\nBODY:\n..." response.
-func parsePRDescription(text string) PRDescriptionResult {
-	text = strings.TrimSpace(text)
-
-	titleIdx := strings.Index(text, "TITLE:")
-	bodyIdx := strings.Index(text, "BODY:")
-
-	var title, body string
-	if titleIdx >= 0 && bodyIdx > titleIdx {
-		title = strings.TrimSpace(text[titleIdx+len("TITLE:") : bodyIdx])
-		body = strings.TrimSpace(text[bodyIdx+len("BODY:"):])
-	} else if titleIdx >= 0 {
-		title = strings.TrimSpace(text[titleIdx+len("TITLE:"):])
-	} else {
-		// Fallback: first line is title, rest is body.
-		lines := strings.SplitN(text, "\n", 2)
-		title = strings.TrimSpace(lines[0])
-		if len(lines) > 1 {
-			body = strings.TrimSpace(lines[1])
-		}
-	}
-
-	if len(title) > 70 {
-		title = title[:70]
-	}
-
-	return PRDescriptionResult{Title: title, Body: body}
 }
