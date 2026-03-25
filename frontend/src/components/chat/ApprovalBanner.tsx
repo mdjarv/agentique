@@ -52,8 +52,9 @@ function formatInput(
     case "WebSearch":
       return String(obj.url ?? obj.query ?? "");
     case "EnterPlanMode":
-    case "ExitPlanMode":
       return "Agent wants to enter plan mode";
+    case "ExitPlanMode":
+      return "Agent wants to exit plan mode";
     default: {
       // Try common field names before falling back to JSON
       const desc =
