@@ -19,9 +19,8 @@ Conflict state properly scoped to component lifecycle; resets on session change.
 ### ~~[B/M] Plan mode — agent makes changes while Plan is still active~~ DONE
 Fixed in `2d0f393` — auto-approval bypass disabled when `permissionMode == "plan"`.
 
-### [B/S] ExitPlanMode approval banner says "enter plan mode"
-`ApprovalBanner.tsx:54-56` uses the same label for both `EnterPlanMode` and `ExitPlanMode`. Semantically inverted.
-Also: entering plan mode should auto-approve (safe direction); exiting may need confirmation.
+### ~~[B/S] ExitPlanMode approval banner says "enter plan mode"~~ DONE
+Fixed in `c5896cc` — distinct labels for enter/exit, EnterPlanMode auto-approved.
 
 ### [B/M] Merge cleanup unreliable — stale branches, loose objects
 Merge with cleanup doesn't delete remote tracking branches. `git gc --auto` is too conservative and may not reclaim loose objects. No standalone "clean" option for sessions merged manually or abandoned.
@@ -45,13 +44,11 @@ Already on latest (`v0.0.0-20260324082320-92fb882c72a6`, 2026-03-24).
 ### ~~[F/S] Merge should navigate to nearest active session~~ DONE
 Fixed — `session.deleted` handler now navigates to the nearest idle/running sibling, or falls back to project index.
 
-### [F/S] Manually mark session as done
-No UI to mark a session done without deleting it. State machine already supports `StateDone` from `idle`/`running`/`failed`.
-**Fix:** Add a "Mark done" option (e.g., in session header menu). New WS handler `session.mark-done` → `SetState(StateDone)`.
+### ~~[F/S] Manually mark session as done~~ DONE
+Fixed in `6143c3a` — mark-done handler + UI option added.
 
-### [F/S] Rebase conflict: button to have Claude resolve it
-When a rebase conflict is detected, show a button alongside the conflict panel that sends a pre-written message to Claude (e.g., "There are merge conflicts in the following files: X, Y, Z. Please resolve them.").
-**Note:** This is a convenience wrapper — it just sends a chat message. Keep it simple.
+### ~~[F/S] Rebase conflict: button to have Claude resolve it~~ DONE
+Fixed in `3904d5e` — resolve button sends conflict message to Claude.
 
 ### [F/S] Copy button: sticky in scroll + add to user messages
 Copy button on assistant messages disappears when the top of the message scrolls out of view (absolute positioned at `top-2 right-2`). Should remain visible while any part of the message is on screen. Also add copy to user/sent messages.
@@ -61,9 +58,8 @@ Copy button on assistant messages disappears when the top of the message scrolls
 The eye icon for toggling tool calls is too generic.
 **Fix:** Move buttons to a less obtrusive position (e.g., pinned to chat panel edge, not floating over messages). Pick a more specific icon for tool call toggle (e.g., wrench, terminal, or similar).
 
-### [F/S] Smooth scroll: immediate jump on session select, smooth only on button press
-Navigating to a session with long history does a slow smooth-scroll to the bottom.
-**Fix:** On session select → instant jump. Only use smooth-scroll when the user presses the "jump to bottom" button.
+### ~~[F/S] Smooth scroll: immediate jump on session select, smooth only on button press~~ DONE
+Fixed in `2e8db64` — instant scroll on load, smooth on follow.
 
 ### [F/M] Draft UI should match session layout
 When a draft is promoted to a real session, the layout shift is jarring because draft uses a different header/structure.
