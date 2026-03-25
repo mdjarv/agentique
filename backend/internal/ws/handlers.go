@@ -2,6 +2,7 @@ package ws
 
 import (
 	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/allbin/agentique/backend/internal/msggen"
 	"github.com/allbin/agentique/backend/internal/session"
 )
 
@@ -152,7 +153,7 @@ func (c *conn) handleSessionHistory(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
-	handleRequest(c, msg, func(p SessionGeneratePRDescPayload) (session.PRDescriptionResult, error) {
+	handleRequest(c, msg, func(p SessionGeneratePRDescPayload) (msggen.PRDescriptionResult, error) {
 		return c.gitSvc.GeneratePRDescription(c.ctx, p.SessionID)
 	})
 }
@@ -176,7 +177,7 @@ func (c *conn) handleSessionRefreshGit(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
-	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (session.CommitMessageResult, error) {
+	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(c.ctx, p.SessionID)
 	})
 }

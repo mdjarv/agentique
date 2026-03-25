@@ -32,11 +32,11 @@ See `code-review-2026-03-25.html` for the full visual report.
 
 ## P2 — Structural Debt
 
-- [ ] **BE: Session package overloaded** — 5 concerns: lifecycle, git, streaming, state machine, broadcasting. `session/*.go`
+- [x] **BE: Session package overloaded** — Partial: state machine consolidated in state.go, message generation extracted to internal/msggen package. Remaining: event loop and broadcasting still in session.go.
 - [x] **BE: No query interfaces** — Consumer-scoped interfaces in session/queries.go (5 interfaces). sqlc Querier enabled. `*store.Queries` satisfies all implicitly.
 - [x] **BE: Manager god object** — Partial: replaced fixStates() hack with RecoverStaleSessions (runs once at startup via sqlc query). List methods now only overlay live state, no more dead-session correction per call. Registry/lifecycle split deferred.
 - [x] **BE: WS handler boilerplate** — Generic handleRequest[P,R] with Validatable interface. 25 handlers reduced to one-liner closures. `ws/handle.go`
-- [ ] **BE: Implicit state machine** — Transitions scattered across setState, TryLockForMerge, Close, processEvent. `session/state.go, session.go`
+- [x] **BE: Implicit state machine** — All state methods now in state.go: State(), setState(), TryLockForMerge(), UnlockMerge(), validateTransition(). Close() bypass remains intentional (see P1 assessment).
 - [ ] **FE: Global WS singleton** — Untestable, no DI. `hooks/useWebSocket.ts`
 - [ ] **FE: Store mutations in lib/** — session-actions.ts and session-history.ts directly mutate stores. `lib/session-actions.ts, lib/session-history.ts`
 - [x] **FE: useGlobalSubscriptions god-hook** — Won't fix. Single effect is simpler for reconnection coordination. Splitting adds file sprawl and implicit ordering for minimal testability gain.
