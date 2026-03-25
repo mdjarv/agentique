@@ -107,6 +107,12 @@ export interface QueuedMessage {
   attachments?: Attachment[];
 }
 
+export interface TodoItem {
+  content: string;
+  activeForm?: string;
+  status: "completed" | "in_progress" | "pending";
+}
+
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
@@ -117,6 +123,7 @@ export interface SessionData {
   autoApprove: boolean;
   rateLimit: RateLimitInfo | null;
   queuedMessages: QueuedMessage[];
+  todos: TodoItem[] | null;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -129,7 +136,47 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   autoApprove: meta.autoApprove ?? false,
   rateLimit: null,
   queuedMessages: [],
+  todos: null,
 });
+
+// --- Todo extraction helpers ---
+
+function parseTodoItems(input: unknown): TodoItem[] | null {
+  if (!input || typeof input !== "object") return null;
+  const obj = input as Record<string, unknown>;
+  if (!Array.isArray(obj.todos)) return null;
+  const items: TodoItem[] = [];
+  for (const item of obj.todos) {
+    if (!item || typeof item !== "object") continue;
+    const t = item as Record<string, unknown>;
+    if (typeof t.content !== "string" || typeof t.status !== "string") continue;
+    items.push({
+      content: t.content,
+      activeForm: typeof t.activeForm === "string" ? t.activeForm : undefined,
+      status: t.status as TodoItem["status"],
+    });
+  }
+  return items.length > 0 ? items : null;
+}
+
+function extractTodosFromEvent(event: ChatEvent): TodoItem[] | null {
+  if (event.type !== "tool_use" || event.toolName !== "TodoWrite") return null;
+  return parseTodoItems(event.toolInput);
+}
+
+function extractTodosFromTurns(turns: Turn[]): TodoItem[] | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const events = turns[i]?.events;
+    if (!events) continue;
+    for (let j = events.length - 1; j >= 0; j--) {
+      const event = events[j];
+      if (!event) continue;
+      const todos = extractTodosFromEvent(event);
+      if (todos) return todos;
+    }
+  }
+  return null;
+}
 
 // --- Immutable update helpers ---
 
@@ -324,9 +371,10 @@ export const useChatStore = create<ChatState>((set) => ({
       nextLoading.delete(sessionId);
       const session = s.sessions[sessionId];
       if (!session) return { historyLoading: nextLoading };
+      const todos = extractTodosFromTurns(turns);
       return {
         historyLoading: nextLoading,
-        ...updateSession(s, sessionId, { turns }),
+        ...updateSession(s, sessionId, { turns, todos }),
       };
     }),
 
@@ -413,9 +461,11 @@ export const useChatStore = create<ChatState>((set) => ({
         complete: lastTurn.complete || event.type === "result",
       };
 
+      const todos = extractTodosFromEvent(event);
       const isResult = event.type === "result";
       const isViewing = s.activeSessionId === sessionId;
       const patch: Partial<SessionData> = { turns };
+      if (todos) patch.todos = todos;
       if (isResult) {
         patch.meta = { ...session.meta, state: "idle" };
         patch.hasUnseenCompletion = !isViewing;
