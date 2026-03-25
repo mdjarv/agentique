@@ -575,8 +575,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
 			if err := gitops.RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
-				slog.Warn("worktree restore failed, falling back to project root", "session_id", sessionID, "error", err)
-				workDir = project.Path
+				return nil, fmt.Errorf("worktree restore failed for branch %s: %w", branch, err)
 			}
 		} else {
 			workDir = project.Path

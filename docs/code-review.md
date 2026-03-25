@@ -24,11 +24,11 @@ See `code-review-2026-03-25.html` for the full visual report.
 - [x] **BE: Close() bypasses state machine** — Intentional. Close() is a shutdown override — the event loop may have set Failed, and Failed->Stopped isn't a normal transition but is correct for shutdown. Well-commented.
 - [x] **BE: TOCTOU in Manager.Get()** — Merge now captures live session once and reuses. Not a real race (merge lock prevents eviction), but cleaner.
 - [x] **BE: Silent DB update failures** — All 16 silenced errors fixed. Service methods return `PersistError` (callers can use errors.As). Git/session internals log at warn/error level. New `errors.go` with `PersistError` type.
-- [ ] **BE: Worktree restore silent fallback** — Failed restore on resume falls back to project root. Session may modify main branch. `session/service.go:570-578`
-- [ ] **FE: ApprovalBanner error swallowed** — setAutoApprove failure after resolveApproval: .then() swallows error, button freezes. `components/chat/ApprovalBanner.tsx:80-104`
-- [ ] **FE: subscribeAndLoad silent failure** — Project/session list failures logged to console only. Empty sidebar, no error shown. `hooks/useGlobalSubscriptions.ts:72-79`
-- [ ] **BE: Pending approval/question drop** — ResolveApproval select with default silently drops if channel full. Claude waits forever. `session/session.go:631-636,688-693`
-- [ ] **Both: Result types mix error/success** — MergeResult has both (result, error) return AND result.Error. FE uses string status, no discriminated unions. `git_service.go; session-actions.ts`
+- [x] **BE: Worktree restore silent fallback** — Now returns error instead of silently falling back to project root. Session won't resume in wrong directory.
+- [x] **FE: ApprovalBanner error swallowed** — False positive. `.catch()` is at end of chain, catches both resolveApproval and setAutoApprove failures. Success path intentionally doesn't reset submitting (banner disappears).
+- [x] **FE: subscribeAndLoad silent failure** — Added toast.error for both project.subscribe and session.list failures.
+- [x] **BE: Pending approval/question drop** — False positive. Buffered channel (cap 1) accepts exactly one response. Duplicates get "already resolved" error returned to caller. Not silent.
+- [x] **Both: Result types mix error/success** — BE pattern is by design: `error` = couldn't attempt, `Status` = domain outcome (like http.Response). FE weak typing (string status) tracked in P2 "Weak result types".
 
 ## P2 — Structural Debt
 

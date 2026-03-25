@@ -70,12 +70,18 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
 }
 
 function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string) {
-  ws.request("project.subscribe", { projectId }).catch(console.error);
+  ws.request("project.subscribe", { projectId }).catch((err) => {
+    console.error("project.subscribe failed", err);
+    toast.error("Failed to subscribe to project updates");
+  });
   ws.request<SessionListResult>("session.list", { projectId })
     .then((result) => {
       useChatStore.getState().setSessions(result.sessions, projectId);
     })
-    .catch(console.error);
+    .catch((err) => {
+      console.error("session.list failed", err);
+      toast.error("Failed to load sessions");
+    });
 }
 
 /**
