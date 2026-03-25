@@ -33,13 +33,13 @@ See `code-review-2026-03-25.html` for the full visual report.
 ## P2 — Structural Debt
 
 - [ ] **BE: Session package overloaded** — 5 concerns: lifecycle, git, streaming, state machine, broadcasting. `session/*.go`
-- [ ] **BE: No query interfaces** — store.Queries concrete everywhere. Can't test without real DB. `manager.go, service.go, git_service.go`
+- [x] **BE: No query interfaces** — Consumer-scoped interfaces in session/queries.go (5 interfaces). sqlc Querier enabled. `*store.Queries` satisfies all implicitly.
 - [ ] **BE: Manager god object** — Registry + lifecycle + state repair + shutdown. fixStates() is a hack. `session/manager.go`
 - [x] **BE: WS handler boilerplate** — Generic handleRequest[P,R] with Validatable interface. 25 handlers reduced to one-liner closures. `ws/handle.go`
 - [ ] **BE: Implicit state machine** — Transitions scattered across setState, TryLockForMerge, Close, processEvent. `session/state.go, session.go`
 - [ ] **FE: Global WS singleton** — Untestable, no DI. `hooks/useWebSocket.ts`
 - [ ] **FE: Store mutations in lib/** — session-actions.ts and session-history.ts directly mutate stores. `lib/session-actions.ts, lib/session-history.ts`
-- [ ] **FE: useGlobalSubscriptions god-hook** — 200+ lines, 7+ event types, mixes processing/mutations/navigation. `hooks/useGlobalSubscriptions.ts`
+- [x] **FE: useGlobalSubscriptions god-hook** — Won't fix. Single effect is simpler for reconnection coordination. Splitting adds file sprawl and implicit ordering for minimal testability gain.
 - [x] **FE: useGitActions mega-hook** — Split into 7 focused hooks (useSessionDiff, useMergeSession, etc). useGitActions is now a thin facade.
 - [ ] **FE: Chat store mixes domain/UI** — SessionData contains domain, UI, derived, and transient state. `stores/chat-store.ts`
 - [x] **FE: Weak result types** — MergeResult, RebaseResult, CreatePRResult, CleanResult now use discriminated unions with exhaustive narrowing.
