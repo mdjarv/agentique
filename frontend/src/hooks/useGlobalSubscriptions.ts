@@ -35,6 +35,8 @@ function findNearestActiveSession(
   return best?.id ?? null;
 }
 
+const toolBlockIndex = new Map<string, Map<number, string>>();
+
 /** Route raw Claude API stream deltas to the streaming store. */
 function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>) {
   try {
@@ -45,7 +47,12 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
     const type: string = inner.type;
     if (type === "content_block_start") {
       if (inner.content_block?.type === "tool_use") {
-        useStreamingStore.getState().startToolBlock(sessionId, inner.index, inner.content_block.id);
+        let sessionMap = toolBlockIndex.get(sessionId);
+        if (!sessionMap) {
+          sessionMap = new Map();
+          toolBlockIndex.set(sessionId, sessionMap);
+        }
+        sessionMap.set(inner.index, inner.content_block.id);
       } else if (inner.content_block?.type === "text") {
         const existing = useStreamingStore.getState().texts[sessionId];
         if (existing) {
@@ -59,7 +66,10 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
       const delta = inner.delta;
       if (!delta) return;
       if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
-        useStreamingStore.getState().appendToolInput(sessionId, inner.index, delta.partial_json);
+        const toolId = toolBlockIndex.get(sessionId)?.get(inner.index);
+        if (toolId) {
+          useStreamingStore.getState().appendToolInput(sessionId, toolId, delta.partial_json);
+        }
       } else if (delta.type === "text_delta" && typeof delta.text === "string") {
         useStreamingStore.getState().appendText(sessionId, delta.text);
       }
@@ -67,6 +77,10 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
   } catch {
     // Ignore malformed stream events
   }
+}
+
+function clearToolBlockIndex(sessionId: string) {
+  toolBlockIndex.delete(sessionId);
 }
 
 function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string) {
@@ -125,6 +139,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       if (event.type === "result") {
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
+        clearToolBlockIndex(sid);
 
         const chatStore = useChatStore.getState();
         const sess = chatStore.sessions[sid];
