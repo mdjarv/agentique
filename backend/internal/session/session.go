@@ -154,7 +154,9 @@ func (s *Session) QueryCount() int {
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
-func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryAttachment) error {
+// The caller's ctx is NOT used — all DB writes and CLI operations use background
+// contexts so they complete even if the triggering WS connection disconnects.
+func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAttachment) error {
 	s.mu.Lock()
 	if err := validateTransition(s.state, StateRunning, s.ID); err != nil {
 		s.mu.Unlock()
@@ -166,13 +168,19 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 	s.seqInTurn = 0
 	s.mu.Unlock()
 
+	// Persist running state to DB so it survives server restarts.
+	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+		State: string(StateRunning),
+		ID:    s.ID,
+	})
+
 	// Persist prompt (and images) as seq 0 of the new turn.
 	promptPayload := map[string]any{"prompt": prompt}
 	if len(attachments) > 0 {
 		promptPayload["attachments"] = attachments
 	}
 	promptData, _ := json.Marshal(promptPayload)
-	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
+	_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 		SessionID: s.ID,
 		TurnIndex: int64(s.turnIndex),
 		Seq:       0,
@@ -285,7 +293,7 @@ func (s *Session) startEventLoop() {
 				}
 				watchdog.Reset(watchdogWarnAfter)
 				warned = false
-				s.processEvent(event)
+				s.safeProcessEvent(event)
 			case <-watchdog.C:
 				s.mu.Lock()
 				st := s.state
@@ -313,6 +321,25 @@ func (s *Session) startEventLoop() {
 			}
 		}
 	}()
+}
+
+// safeProcessEvent wraps processEvent with panic recovery so a single
+// malformed event can't kill the event loop goroutine.
+func (s *Session) safeProcessEvent(event claudecli.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in processEvent", "session_id", s.ID, "panic", r)
+			s.broadcast("session.event", map[string]any{
+				"sessionId": s.ID,
+				"event": WireErrorEvent{
+					Type:    "error",
+					Message: fmt.Sprintf("internal error processing event: %v", r),
+					Fatal:   false,
+				},
+			})
+		}
+	}()
+	s.processEvent(event)
 }
 
 // processEvent handles a single event from the CLI session.
@@ -483,12 +510,20 @@ func (s *Session) SetPermissionMode(mode string) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cliSess == nil {
+		s.mu.Unlock()
 		return ErrNotLive
 	}
+	cli := s.cliSess
+	s.mu.Unlock()
+
+	if err := cli.SetPermissionMode(m); err != nil {
+		return fmt.Errorf("set permission mode: %w", err)
+	}
+
+	s.mu.Lock()
 	s.permissionMode = mode
-	_ = s.cliSess.SetPermissionMode(m)
+	s.mu.Unlock()
 	return nil
 }
 
@@ -721,6 +756,9 @@ func (s *Session) Close() {
 		State: string(finalState),
 		ID:    s.ID,
 	})
+
+	// Notify clients so they don't show stale state until next refresh.
+	s.broadcastState(finalState)
 }
 
 // MarkMerged sets the worktreeMerged flag on a live session.

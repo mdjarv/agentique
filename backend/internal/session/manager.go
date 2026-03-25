@@ -51,7 +51,7 @@ func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 }
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
-func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
+func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, error) {
 	id := uuid.New().String()
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
@@ -105,12 +105,15 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	}
 
 	client := claudecli.New()
-	cliSess, err := client.Connect(ctx, connectOpts...)
+	// Use background context: the CLI process must outlive the WS connection
+	// that triggered session creation. The WS conn context cancels on
+	// disconnect (e.g. page refresh), which would SIGTERM the CLI process.
+	cliSess, err := client.Connect(context.Background(), connectOpts...)
 	if err != nil {
 		return nil, err
 	}
 
-	_, dbErr := m.queries.CreateSession(ctx, store.CreateSessionParams{
+	_, dbErr := m.queries.CreateSession(context.Background(), store.CreateSessionParams{
 		ID:        id,
 		ProjectID: params.ProjectID,
 		Name:      params.Name,
@@ -164,9 +167,9 @@ type ResumeParams struct {
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
-func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) {
+func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 	// Continue turn numbering from where we left off.
-	maxTurn, _ := m.queries.MaxTurnIndex(ctx, p.SessionID)
+	maxTurn, _ := m.queries.MaxTurnIndex(context.Background(), p.SessionID)
 	turnIndex := int(maxTurn)
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
@@ -210,12 +213,14 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	}
 
 	client := claudecli.New()
-	cliSess, err := client.Connect(ctx, connectOpts...)
+	// Use background context: the CLI process must outlive the WS connection
+	// that triggered the resume. See Create() for rationale.
+	cliSess, err := client.Connect(context.Background(), connectOpts...)
 	if err != nil {
 		return nil, err
 	}
 
-	_ = m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+	_ = m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
 		ID:    p.SessionID,
 	})
@@ -266,7 +271,7 @@ func (m *Manager) Evict(id string) {
 
 // Stop closes a live session and marks it as stopped in DB.
 // Does not handle worktree cleanup — callers (Service) are responsible for that.
-func (m *Manager) Stop(ctx context.Context, id string) error {
+func (m *Manager) Stop(_ context.Context, id string) error {
 	m.mu.Lock()
 	sess, ok := m.sessions[id]
 	if ok {
@@ -278,7 +283,7 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 		sess.Close()
 	}
 
-	return m.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+	return m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateStopped),
 		ID:    id,
 	})
