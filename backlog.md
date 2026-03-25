@@ -64,6 +64,5 @@ Fixed in `4566cea` — refresh button added to session header.
 
 ## P3 — Features
 
-### [F/M] Multi-session delete
-Currently only single-session delete exists (`DeleteSession` takes one ID, no bulk endpoint).
-**Fix:** Add multi-select to session list (checkbox or shift-click), bulk delete endpoint in backend, confirmation dialog showing count + worktrees to be removed.
+### ~~[F/M] Multi-session delete~~ DONE
+Added `session.delete-bulk` WS handler (reuses `DeleteSession` per-session, returns per-session results for partial failures). Frontend: checkbox multi-select with shift-click range, bulk action bar, confirmation dialog showing worktree count.

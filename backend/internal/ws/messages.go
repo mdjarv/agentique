@@ -92,6 +92,20 @@ type SessionDeletePayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionDeleteBulkPayload struct {
+	SessionIDs []string `json:"sessionIds"`
+}
+
+type SessionDeleteBulkResultItem struct {
+	SessionID string `json:"sessionId"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
+}
+
+type SessionDeleteBulkResult struct {
+	Results []SessionDeleteBulkResultItem `json:"results"`
+}
+
 type SessionSetModelPayload struct {
 	SessionID string `json:"sessionId"`
 	Model     string `json:"model"`

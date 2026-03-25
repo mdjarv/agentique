@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Square, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, GitBranch, GitPullRequest, Square, Trash2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -11,6 +11,8 @@ interface SessionRowProps {
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
   isActive: boolean;
+  isSelected?: boolean;
+  showCheckbox?: boolean;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
@@ -23,6 +25,7 @@ interface SessionRowProps {
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
+  onSelect?: (e: React.MouseEvent) => void;
 }
 
 const isTerminal = (state: SessionState) =>
@@ -36,6 +39,8 @@ export function SessionRow({
   hasPendingApproval,
   isPlanning,
   isActive,
+  isSelected,
+  showCheckbox,
   worktreeBranch,
   hasDirtyWorktree,
   worktreeMerged,
@@ -48,6 +53,7 @@ export function SessionRow({
   onClick,
   onStop,
   onDelete,
+  onSelect,
 }: SessionRowProps) {
   const canStop = !isTerminal(state);
   const faded = isTerminal(state) && worktreeMerged;
@@ -68,8 +74,28 @@ export function SessionRow({
       className={cn(
         "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm group/session hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
         isActive && "bg-sidebar-accent/70",
+        isSelected && "bg-sidebar-accent/50",
       )}
     >
+      {onSelect && (
+        <button
+          type="button"
+          aria-label={isSelected ? "Deselect session" : "Select session"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(e);
+          }}
+          className={cn(
+            "size-3.5 rounded-sm border shrink-0 flex items-center justify-center transition-colors",
+            isSelected
+              ? "bg-primary border-primary text-primary-foreground"
+              : "border-muted-foreground/40 hover:border-muted-foreground",
+            !showCheckbox && !isSelected && "invisible group-hover/session:visible",
+          )}
+        >
+          {isSelected && <Check className="size-2.5" strokeWidth={3} />}
+        </button>
+      )}
       <SessionStatusBadge
         state={state}
         connected={connected}
