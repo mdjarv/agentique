@@ -144,7 +144,8 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	slog.Info("merge started", "session_id", sessionID, "branch", branch, "cleanup", cleanup)
 
-	if live := g.mgr.Get(sessionID); live != nil {
+	live := g.mgr.Get(sessionID)
+	if live != nil {
 		if err := live.TryLockForMerge(); err != nil {
 			return MergeResult{}, err
 		}
@@ -188,8 +189,10 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
 
-	_ = g.queries.SetWorktreeMerged(ctx, sessionID)
-	if live := g.mgr.Get(sessionID); live != nil {
+	if err := g.queries.SetWorktreeMerged(ctx, sessionID); err != nil {
+		slog.Warn("persist worktree merged failed", "session_id", sessionID, "error", err)
+	}
+	if live != nil {
 		live.MarkMerged()
 	}
 
@@ -202,10 +205,12 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		}
 		gitops.DeleteRemoteBranch(project.Path, branch)
 		go gitops.GC(project.Path)
-		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateStopped),
 			ID:    sessionID,
-		})
+		}); err != nil {
+			slog.Warn("persist session state after merge cleanup failed", "session_id", sessionID, "error", err)
+		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
 			"sessionId":      sessionID,
 			"state":          string(StateStopped),
@@ -215,7 +220,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		// Use live state if available (UnlockMerge just set it to idle),
 		// fall back to DB snapshot for dead sessions.
 		state := dbSess.State
-		if live := g.mgr.Get(sessionID); live != nil {
+		if live != nil {
 			state = string(live.State())
 		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
@@ -267,6 +272,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		}()
 	}
 
+
 	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
 		return RebaseResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
@@ -293,10 +299,12 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		return RebaseResult{Status: "error", Error: rebaseErr.Error()}, nil
 	}
 
-	_ = g.queries.UpdateWorktreeBaseSHA(ctx, store.UpdateWorktreeBaseSHAParams{
+	if err := g.queries.UpdateWorktreeBaseSHA(ctx, store.UpdateWorktreeBaseSHAParams{
 		WorktreeBaseSha: sql.NullString{String: mainHead, Valid: true},
 		ID:              sessionID,
-	})
+	}); err != nil {
+		slog.Warn("persist worktree base SHA failed", "session_id", sessionID, "error", err)
+	}
 
 	slog.Info("rebase completed", "session_id", sessionID, "branch", branch, "newBase", mainHead)
 
@@ -373,10 +381,12 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 
 // savePRUrl persists the PR URL and broadcasts the update to clients.
 func (g *GitService) savePRUrl(ctx context.Context, projectID, sessionID, url string) {
-	_ = g.queries.UpdateSessionPRUrl(ctx, store.UpdateSessionPRUrlParams{
+	if err := g.queries.UpdateSessionPRUrl(ctx, store.UpdateSessionPRUrlParams{
 		PrUrl: url,
 		ID:    sessionID,
-	})
+	}); err != nil {
+		slog.Warn("persist PR URL failed", "session_id", sessionID, "error", err)
+	}
 	g.hub.Broadcast(projectID, "session.pr-updated", map[string]any{
 		"sessionId": sessionID,
 		"prUrl":     url,
@@ -455,10 +465,12 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	// Local sessions are done after commit — their changes are on the main branch.
 	if !isWorktree {
-		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateDone),
 			ID:    sessionID,
-		})
+		}); err != nil {
+			slog.Warn("persist session state after commit failed", "session_id", sessionID, "error", err)
+		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
 			"sessionId": sessionID,
 			"state":     string(StateDone),
@@ -615,10 +627,12 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	gitops.DeleteRemoteBranch(project.Path, branch)
 	go gitops.GC(project.Path)
 
-	_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+	if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 		State: string(StateStopped),
 		ID:    sessionID,
-	})
+	}); err != nil {
+		slog.Warn("persist session state after clean failed", "session_id", sessionID, "error", err)
+	}
 	g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
 		"sessionId": sessionID,
 		"state":     string(StateStopped),

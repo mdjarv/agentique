@@ -80,14 +80,12 @@ func (c *conn) writeLoop() {
 			// Drain remaining messages before closing.
 			c.mu.Lock()
 			c.ws.SetWriteDeadline(time.Now().Add(1 * time.Second))
-			c.mu.Unlock()
 			for {
 				select {
 				case msg := <-c.sendCh:
-					c.mu.Lock()
 					_ = c.ws.WriteJSON(msg)
-					c.mu.Unlock()
 				default:
+					c.mu.Unlock()
 					return
 				}
 			}

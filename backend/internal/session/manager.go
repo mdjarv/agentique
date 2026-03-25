@@ -224,10 +224,12 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		return nil, err
 	}
 
-	_ = m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+	if err := m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
 		ID:    p.SessionID,
-	})
+	}); err != nil {
+		slog.Error("persist session state on resume failed", "session_id", p.SessionID, "error", err)
+	}
 
 	sess.setCLISession(cliSess)
 

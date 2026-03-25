@@ -169,10 +169,12 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	s.mu.Unlock()
 
 	// Persist running state to DB so it survives server restarts.
-	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateRunning),
 		ID:    s.ID,
-	})
+	}); err != nil {
+		slog.Error("persist running state failed", "session_id", s.ID, "error", err)
+	}
 
 	// Persist prompt (and images) as seq 0 of the new turn.
 	promptPayload := map[string]any{"prompt": prompt}
@@ -180,13 +182,15 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 		promptPayload["attachments"] = attachments
 	}
 	promptData, _ := json.Marshal(promptPayload)
-	_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+	if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 		SessionID: s.ID,
 		TurnIndex: int64(s.turnIndex),
 		Seq:       0,
 		Type:      "prompt",
 		Data:      string(promptData),
-	})
+	}); err != nil {
+		slog.Error("persist prompt event failed", "session_id", s.ID, "error", err)
+	}
 	s.mu.Lock()
 	s.seqInTurn = 1
 	s.mu.Unlock()
@@ -349,10 +353,12 @@ func (s *Session) processEvent(event claudecli.Event) {
 		s.mu.Lock()
 		if s.claudeSessionID == "" && initEv.SessionID != "" {
 			s.claudeSessionID = initEv.SessionID
-			_ = s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
+			if err := s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
 				ClaudeSessionID: sqlNullString(initEv.SessionID),
 				ID:              s.ID,
-			})
+			}); err != nil {
+				slog.Error("persist claude session ID failed", "session_id", s.ID, "error", err)
+			}
 			slog.Debug("captured claude session ID", "session_id", s.ID, "claude_session_id", initEv.SessionID)
 		}
 		s.mu.Unlock()
@@ -390,13 +396,15 @@ func (s *Session) processEvent(event claudecli.Event) {
 
 	if data, err := json.Marshal(dbEvent); err == nil {
 		typed, _ := wireEvent.(interface{ WireType() string })
-		_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 			SessionID: s.ID,
 			TurnIndex: int64(turnIdx),
 			Seq:       int64(seq),
 			Type:      typed.WireType(),
 			Data:      string(data),
-		})
+		}); err != nil {
+			slog.Error("persist event failed", "session_id", s.ID, "type", typed.WireType(), "error", err)
+		}
 	}
 
 	// Broadcast to all project clients.
@@ -427,10 +435,12 @@ func (s *Session) setState(state State) error {
 	s.state = state
 	s.mu.Unlock()
 	s.broadcastState(state)
-	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(state),
 		ID:    s.ID,
-	})
+	}); err != nil {
+		slog.Error("persist session state failed", "session_id", s.ID, "state", state, "error", err)
+	}
 	return nil
 }
 
@@ -752,10 +762,12 @@ func (s *Session) Close() {
 
 	// Persist to DB — overwrites any spurious "failed" set by the dying
 	// CLI process during shutdown.
-	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(finalState),
 		ID:    s.ID,
-	})
+	}); err != nil {
+		slog.Error("persist final state on close failed", "session_id", s.ID, "state", finalState, "error", err)
+	}
 
 	// Notify clients so they don't show stale state until next refresh.
 	s.broadcastState(finalState)

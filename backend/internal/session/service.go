@@ -447,10 +447,12 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 		return err
 	}
 	slog.Debug("session model changed", "session_id", sessionID, "model", model)
-	_ = s.queries.UpdateSessionModel(ctx, store.UpdateSessionModelParams{
+	if err := s.queries.UpdateSessionModel(ctx, store.UpdateSessionModelParams{
 		Model: model,
 		ID:    sessionID,
-	})
+	}); err != nil {
+		return newPersistError("update session model", err)
+	}
 	return nil
 }
 
@@ -481,10 +483,12 @@ func (s *Service) SetPermissionMode(sessionID, mode string) error {
 	if err := sess.SetPermissionMode(mode); err != nil {
 		return err
 	}
-	_ = s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
+	if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
 		PermissionMode: sess.PermissionMode(),
 		ID:             sessionID,
-	})
+	}); err != nil {
+		return newPersistError("update permission mode", err)
+	}
 	return nil
 }
 
@@ -499,10 +503,12 @@ func (s *Service) SetAutoApprove(sessionID string, enabled bool) error {
 	if enabled {
 		v = 1
 	}
-	_ = s.queries.UpdateSessionAutoApprove(context.Background(), store.UpdateSessionAutoApproveParams{
+	if err := s.queries.UpdateSessionAutoApprove(context.Background(), store.UpdateSessionAutoApproveParams{
 		AutoApprove: v,
 		ID:          sessionID,
-	})
+	}); err != nil {
+		return newPersistError("update auto-approve", err)
+	}
 	return nil
 }
 

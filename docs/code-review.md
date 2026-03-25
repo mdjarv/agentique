@@ -7,23 +7,23 @@ See `code-review-2026-03-25.html` for the full visual report.
 
 1. **Disconnected state systems** — FE hook local state vs Zustand store vs BE broadcasts. Store mutations scattered across lib/, hooks/, components/.
 2. **Session package god object** — BE session/ handles lifecycle, git, streaming, state machine, broadcasting, approvals. 800+ lines in session.go.
-3. **Concurrency gaps** — WS write loop races, unprotected seqInTurn, TOCTOU in Manager.Get(), broadcast-during-lock deadlocks.
+3. **~~Concurrency gaps~~** — Investigated: WS write loop cleaned up (single goroutine, no real race), seqInTurn and broadcast-deadlock were false positives. TOCTOU tightened.
 4. **No interfaces = untestable** — BE: Manager, store.Queries, gitops all concrete. FE: global WS singleton, getState() in libs.
-5. **Silent failures everywhere** — BE ignores 10+ DB update errors. FE swallows rejections with console.error. No error boundaries.
+5. **~~Silent failures everywhere~~** — BE DB errors all handled (PersistError type + logging). FE still swallows rejections with console.error. No error boundaries.
 
 ## P0 — Fix Now
 
-- [ ] **BE: WS write loop race** — Mutex unlocked between SetWriteDeadline and WriteJSON in drain path. Two goroutines can write simultaneously on shutdown. `ws/conn.go:81-107`
-- [ ] **BE: seqInTurn data race** — Field accessed from event loop goroutine and Query() without consistent mutex protection. `session/session.go:168,191,378`
-- [ ] **BE: Broadcast-during-lock deadlock** — broadcastState() called holding mu; if send channel full, closes connection which may acquire same lock. `session/session.go:437-456`
-- [ ] **BE: Orphaned CLI processes** — Manager.Create() uses background context. Server crash leaves Claude CLI processes running. `session/manager.go:115`
-- [ ] **FE: Queued message race** — queueMicrotask uses stale sessionId after dequeueMessage. Session deletion between dequeue and execution submits to dead session. `hooks/useGlobalSubscriptions.ts:123-140`
+- [x] **BE: WS write loop race** — ~~P0~~ Downgraded to P3: single goroutine, no actual race. Cleaned up drain path to hold lock across deadline+writes. `ws/conn.go:81-107`
+- [x] **BE: seqInTurn data race** — False positive. All accesses are under mu or happen-before event loop starts.
+- [x] **BE: Broadcast-during-lock deadlock** — False positive. broadcastState() unlocks mu before calling broadcast. No lock overlap.
+- [x] **BE: Orphaned CLI processes** — Already handled: SIGINT/SIGTERM trigger CloseAll() via signal handler in serve.go:63-82. SIGKILL/OOM can't be caught; PID tracking deferred unless it becomes a real problem.
+- [x] **FE: Queued message race** — False positive. Microtasks run before next macro-task (WS message), so session.deleted can't interleave. Catch block handles errors.
 
 ## P1 — Fix Soon
 
-- [ ] **BE: Close() bypasses state machine** — Direct `s.state = finalState` skips validateTransition. Can persist invalid state to DB. `session/session.go:750`
-- [ ] **BE: TOCTOU in Manager.Get()** — GitService calls mgr.Get() twice per merge/rebase. Session can be evicted between calls. `session/git_service.go:147-156,259-268`
-- [ ] **BE: Silent DB update failures** — 10+ places where DB writes ignored with `_`. State diverges on failure. `service.go:450,484,502; manager.go:227`
+- [x] **BE: Close() bypasses state machine** — Intentional. Close() is a shutdown override — the event loop may have set Failed, and Failed->Stopped isn't a normal transition but is correct for shutdown. Well-commented.
+- [x] **BE: TOCTOU in Manager.Get()** — Merge now captures live session once and reuses. Not a real race (merge lock prevents eviction), but cleaner.
+- [x] **BE: Silent DB update failures** — All 16 silenced errors fixed. Service methods return `PersistError` (callers can use errors.As). Git/session internals log at warn/error level. New `errors.go` with `PersistError` type.
 - [ ] **BE: Worktree restore silent fallback** — Failed restore on resume falls back to project root. Session may modify main branch. `session/service.go:570-578`
 - [ ] **FE: ApprovalBanner error swallowed** — setAutoApprove failure after resolveApproval: .then() swallows error, button freezes. `components/chat/ApprovalBanner.tsx:80-104`
 - [ ] **FE: subscribeAndLoad silent failure** — Project/session list failures logged to console only. Empty sidebar, no error shown. `hooks/useGlobalSubscriptions.ts:72-79`
