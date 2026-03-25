@@ -9,7 +9,7 @@ dev:
 
 # Go backend
 dev-backend:
-    cd backend && go run ./cmd/agentique serve --addr :9201
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201
 
 # React frontend
 dev-frontend:

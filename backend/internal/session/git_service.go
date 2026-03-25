@@ -654,6 +654,7 @@ func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) err
 			if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
 				payload["commitsBehind"] = behind
 			}
+			appendMergeStatus(payload, project.Path, branch)
 		}
 	}
 
@@ -691,7 +692,24 @@ func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, e
 		if behind, err := gitops.CommitsBehind(projectPath, branch); err == nil {
 			payload["commitsBehind"] = behind
 		}
+		appendMergeStatus(payload, projectPath, branch)
 		g.hub.Broadcast(projectID, "session.state", payload)
+	}
+}
+
+// appendMergeStatus runs an in-memory merge-tree check and adds mergeStatus +
+// mergeConflictFiles to the broadcast payload. Failures are treated as "unknown".
+func appendMergeStatus(payload map[string]any, projectDir, branch string) {
+	result, err := gitops.MergeTreeCheck(projectDir, branch)
+	if err != nil {
+		payload["mergeStatus"] = "unknown"
+		return
+	}
+	if result.Clean {
+		payload["mergeStatus"] = "clean"
+	} else {
+		payload["mergeStatus"] = "conflicts"
+		payload["mergeConflictFiles"] = result.ConflictFiles
 	}
 }
 

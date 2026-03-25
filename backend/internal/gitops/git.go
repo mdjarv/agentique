@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -272,4 +273,37 @@ func AbortRebase(dir string) error {
 		return fmt.Errorf("git rebase --abort failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// MergeTreeResult describes whether a merge would be clean or have conflicts.
+type MergeTreeResult struct {
+	Clean         bool
+	ConflictFiles []string
+}
+
+// MergeTreeCheck performs an in-memory merge check using git merge-tree --write-tree.
+// No working tree or index mutations — pure read-only operation.
+func MergeTreeCheck(projectDir, branch string) (MergeTreeResult, error) {
+	out, err := gitRun(projectDir, "merge-tree", "--write-tree", "--name-only", "HEAD", branch)
+	if err == nil {
+		return MergeTreeResult{Clean: true}, nil
+	}
+
+	// Exit code 1 = conflicts. Parse file names between tree hash and blank line.
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		return MergeTreeResult{}, fmt.Errorf("git merge-tree failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	lines := strings.Split(string(out), "\n")
+	var files []string
+	// Skip first line (tree hash), collect file names until blank line.
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			break
+		}
+		files = append(files, trimmed)
+	}
+	return MergeTreeResult{Clean: false, ConflictFiles: files}, nil
 }

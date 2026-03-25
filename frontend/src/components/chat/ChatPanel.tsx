@@ -2,15 +2,29 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
-import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
+import { CommitDialog } from "~/components/chat/CommitDialog";
+import { CreatePRDialog } from "~/components/chat/CreatePRDialog";
+import { DiffView } from "~/components/chat/DiffView";
+import {
+  type ComposerHandle,
+  type EffortLevel,
+  MessageComposer,
+} from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { MessageQueue } from "~/components/chat/MessageQueue";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
-import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
+import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
+import { useGitActions } from "~/hooks/useGitActions";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { setAutoApprove, setPermissionMode, submitQuery } from "~/lib/session-actions";
+import {
+  type ModelId,
+  setAutoApprove,
+  setPermissionMode,
+  setSessionModel,
+  submitQuery,
+} from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import { copyToClipboard } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -46,13 +60,19 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const queuedMessages = session?.queuedMessages ?? [];
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const hasTodos = todos !== null && todos.length > 0;
-  const [todoPanelCollapsed, setTodoPanelCollapsed] = useState(false);
+  const isWorktree = !!session?.meta.worktreeBranch;
+  const showPanel = isWorktree || hasTodos;
+
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
+
+  const git = useGitActions(sessionId);
 
   // Auto-expand panel when new todos arrive
   const prevTodosRef = useRef(todos);
   useEffect(() => {
     if (todos && todos !== prevTodosRef.current) {
-      setTodoPanelCollapsed(false);
+      setPanelCollapsed(false);
     }
     prevTodosRef.current = todos;
   }, [todos]);
@@ -69,8 +89,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [sessionId]);
 
   // Load history on mount or session switch
-  // Gates on !!session so the effect re-fires once the session list arrives
-  // (on direct navigation, session is undefined when this first runs)
   const sessionExists = !!session;
   const hasTurns = (session?.turns.length ?? 0) > 0;
   useEffect(() => {
@@ -106,6 +124,15 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
       setAutoApprove(ws, sessionId, enabled).catch((err) => {
         toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
+      });
+    },
+    [ws, sessionId],
+  );
+
+  const handleModelChange = useCallback(
+    (model: ModelId) => {
+      setSessionModel(ws, sessionId, model).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to set model");
       });
     },
     [ws, sessionId],
@@ -168,7 +195,11 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   return (
     <div className="flex h-full" data-project-id={projectId}>
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        <SessionHeader session={session} onSendMessage={handleSend} />
+        <SessionHeader session={session} />
+
+        {/* DiffView — full width in main column, triggered from panel */}
+        {git.showDiff && git.diffResult && <DiffView result={git.diffResult} />}
+
         <MessageList
           turns={session.turns}
           sessionId={sessionId}
@@ -210,14 +241,53 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           onPlanModeChange={handlePlanModeChange}
           autoApprove={autoApprove}
           onAutoApproveChange={handleAutoApproveChange}
+          model={(session.meta.model as ModelId) ?? undefined}
+          onModelChange={handleModelChange}
+          effort={(session.meta.effort as EffortLevel) ?? undefined}
         />
       </div>
-      {hasTodos &&
-        (todoPanelCollapsed ? (
-          <CollapsedTodoStrip todos={todos} onExpand={() => setTodoPanelCollapsed(false)} />
+
+      {/* Right panel — git + todos */}
+      {showPanel &&
+        (panelCollapsed ? (
+          <CollapsedSessionStrip
+            meta={session.meta}
+            todos={todos}
+            onExpand={() => setPanelCollapsed(false)}
+          />
         ) : (
-          <TodoPanel todos={todos} onCollapse={() => setTodoPanelCollapsed(true)} />
+          <SessionPanel
+            meta={session.meta}
+            todos={todos}
+            git={git}
+            onCollapse={() => setPanelCollapsed(true)}
+            onSendMessage={handleSend}
+            onOpenDialog={(d) => setActiveDialog(d)}
+          />
         ))}
+
+      {/* Dialogs */}
+      <CreatePRDialog
+        open={activeDialog === "pr"}
+        onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
+        sessionId={sessionId}
+        defaultTitle={session.meta.name}
+        onSubmit={async (title, body) => {
+          const ok = await git.handlePRSubmit(title, body);
+          if (ok) setActiveDialog("none");
+        }}
+        loading={git.creatingPR}
+      />
+      <CommitDialog
+        open={activeDialog === "commit"}
+        onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
+        sessionId={sessionId}
+        onSubmit={async (message) => {
+          const ok = await git.handleCommit(message);
+          if (ok) setActiveDialog("none");
+        }}
+        loading={git.committing}
+      />
     </div>
   );
 }

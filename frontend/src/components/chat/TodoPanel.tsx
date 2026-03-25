@@ -6,7 +6,7 @@ interface TodoPanelProps {
   onCollapse: () => void;
 }
 
-function StatusIcon({ status }: { status: TodoItem["status"] }) {
+export function StatusIcon({ status }: { status: TodoItem["status"] }) {
   switch (status) {
     case "completed":
       return <CircleCheckBig className="h-3.5 w-3.5 text-green-400 shrink-0" />;
@@ -17,7 +17,7 @@ function StatusIcon({ status }: { status: TodoItem["status"] }) {
   }
 }
 
-function TodoItemRow({ item }: { item: TodoItem }) {
+export function TodoItemRow({ item }: { item: TodoItem }) {
   const isCompleted = item.status === "completed";
   const isActive = item.status === "in_progress";
   const label = isActive ? (item.activeForm ?? item.content) : item.content;

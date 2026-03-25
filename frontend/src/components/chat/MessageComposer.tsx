@@ -1,5 +1,8 @@
 import {
+  Check,
+  ChevronDown,
   FileText,
+  Gauge,
   ListChecks,
   ListPlus,
   MessageSquare,
@@ -11,6 +14,13 @@ import {
 } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { MODELS, MODEL_LABELS, type ModelId } from "~/lib/session-actions";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
 
@@ -44,6 +54,9 @@ interface MessageComposerProps {
   onPlanModeChange?: (value: boolean) => void;
   autoApprove?: boolean;
   onAutoApproveChange?: (value: boolean) => void;
+  model?: ModelId;
+  onModelChange?: (value: ModelId) => void;
+  effort?: EffortLevel;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -60,6 +73,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onPlanModeChange,
       autoApprove,
       onAutoApproveChange,
+      model,
+      onModelChange,
+      effort,
     },
     ref,
   ) {
@@ -332,6 +348,51 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   <ShieldCheck className="h-3 w-3" />
                   {autoApprove ? "Auto" : "Manual"}
                 </button>
+              )}
+
+              {(effort !== undefined || onModelChange) && (
+                <div className="w-px h-4 bg-border mx-1" />
+              )}
+
+              {effort !== undefined && (
+                <span
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                    effort ? "text-blue-500" : "text-muted-foreground",
+                  )}
+                >
+                  <Gauge className="h-3 w-3" />
+                  {effort ? `${effort}` : "auto"}
+                </span>
+              )}
+
+              {onModelChange && model && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                      "focus-visible:outline-none",
+                    )}
+                  >
+                    {MODEL_LABELS[model]}
+                    <ChevronDown className="h-3 w-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {MODELS.map((m) => (
+                      <DropdownMenuItem
+                        key={m}
+                        onClick={() => onModelChange(m)}
+                        className="text-xs gap-2"
+                      >
+                        <Check
+                          className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
+                        />
+                        {MODEL_LABELS[m]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
 
