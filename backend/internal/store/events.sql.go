@@ -9,6 +9,45 @@ import (
 	"context"
 )
 
+const allSessionSummaries = `-- name: AllSessionSummaries :many
+SELECT
+  s.id AS session_id,
+  CAST(COALESCE(MAX(e.turn_index) + 1, 0) AS INTEGER) AS turn_count,
+  CAST(COALESCE(SUM(CASE WHEN e.type = 'result' THEN json_extract(e.data, '$.cost') ELSE 0 END), 0) AS REAL) AS total_cost
+FROM sessions s
+LEFT JOIN session_events e ON e.session_id = s.id
+GROUP BY s.id
+`
+
+type AllSessionSummariesRow struct {
+	SessionID string  `json:"session_id"`
+	TurnCount int64   `json:"turn_count"`
+	TotalCost float64 `json:"total_cost"`
+}
+
+func (q *Queries) AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error) {
+	rows, err := q.db.QueryContext(ctx, allSessionSummaries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AllSessionSummariesRow{}
+	for rows.Next() {
+		var i AllSessionSummariesRow
+		if err := rows.Scan(&i.SessionID, &i.TurnCount, &i.TotalCost); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertEvent = `-- name: InsertEvent :exec
 INSERT INTO session_events (session_id, turn_index, seq, type, data) VALUES (?, ?, ?, ?, ?)
 `

@@ -1,129 +1,137 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"log/slog"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
-	"path/filepath"
-	"syscall"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
-	dbpkg "github.com/allbin/agentique/backend/db"
-	"github.com/allbin/agentique/backend/internal/logging"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/server"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/spf13/cobra"
 )
 
+var addr string
+
+var rootCmd = &cobra.Command{
+	Use:   "agentique",
+	Short: "Agentique — manage concurrent Claude Code agents",
+	RunE:  runStatus,
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&addr, "addr", "localhost:9201", "server address")
+}
+
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP listen address")
-	flag.Parse()
-
-	logging.Init()
-
-	db, err := store.Open("agentique.db")
-	if err != nil {
-		slog.Error("failed to open database", "error", err)
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
-	}
-	defer db.Close()
-
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
-	}
-
-	queries := store.New(db)
-	ensureDefaultProject(queries)
-	srv := server.New(queries)
-
-	httpServer := &http.Server{
-		Addr:    *addr,
-		Handler: srv,
-	}
-
-	// Graceful shutdown on interrupt or SIGTERM.
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
-
-	listenErr := make(chan error, 1)
-	go func() {
-		slog.Info("server listening", "addr", *addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			listenErr <- err
-		}
-	}()
-
-	select {
-	case err := <-listenErr:
-		slog.Error("server error", "error", err)
-		os.Exit(1)
-	case <-done:
-	}
-	slog.Info("shutting down")
-
-	// Close all live sessions before shutting down HTTP.
-	srv.Shutdown()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(ctx); err != nil {
-		slog.Error("server shutdown failed", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("server stopped")
-}
-
-// findGitRoot walks up from dir to find the nearest .git directory.
-func findGitRoot(dir string) string {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
 	}
 }
 
-// ensureDefaultProject creates a project for the git root (or cwd)
-// if no projects exist. This gives a ready-to-use experience on first launch.
-func ensureDefaultProject(q *store.Queries) {
-	projects, err := q.ListProjects(context.Background())
-	if err != nil || len(projects) > 0 {
-		return
-	}
+// runStatus checks server health and shows active session summary.
+func runStatus(cmd *cobra.Command, args []string) error {
+	base := baseURL()
 
-	cwd, err := os.Getwd()
+	// Health check.
+	client := &http.Client{Timeout: 2 * time.Second}
+	_, err := client.Get(base + "/api/health")
 	if err != nil {
-		return
+		fmt.Fprintf(os.Stderr, "Agentique not running at %s\n", addr)
+		return nil
 	}
 
-	// Prefer the git root so the project covers the whole repo.
-	projectDir := cwd
-	if root := findGitRoot(cwd); root != "" {
-		projectDir = root
-	}
+	fmt.Printf("Agentique running at %s\n\n", addr)
 
-	name := filepath.Base(projectDir)
-	_, err = q.CreateProject(context.Background(), store.CreateProjectParams{
-		ID:   uuid.NewString(),
-		Name: name,
-		Path: projectDir,
-		Slug: project.Slugify(name),
-	})
+	// Fetch projects.
+	type projectInfo struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	projects, err := fetchJSON[[]projectInfo](client, base+"/api/projects")
 	if err != nil {
-		slog.Warn("failed to create default project", "error", err)
-		return
+		return fmt.Errorf("failed to fetch projects: %w", err)
 	}
-	slog.Info("created default project", "name", name, "path", projectDir)
+
+	projectNames := make(map[string]string)
+	for _, p := range projects {
+		projectNames[p.ID] = p.Name
+	}
+
+	// Fetch all sessions.
+	type sessionInfo struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"projectId"`
+		Name      string `json:"name"`
+		State     string `json:"state"`
+		Connected bool   `json:"connected"`
+	}
+	sessions, err := fetchJSON[[]sessionInfo](client, base+"/api/sessions")
+	if err != nil {
+		return fmt.Errorf("failed to fetch sessions: %w", err)
+	}
+
+	if len(sessions) == 0 {
+		fmt.Println("  No sessions")
+		return nil
+	}
+
+	// Group by project.
+	byProject := make(map[string][]sessionInfo)
+	for _, s := range sessions {
+		byProject[s.ProjectID] = append(byProject[s.ProjectID], s)
+	}
+
+	for projectID, ss := range byProject {
+		name := projectNames[projectID]
+		if name == "" {
+			name = projectID[:8]
+		}
+
+		stateCounts := make(map[string]int)
+		for _, s := range ss {
+			stateCounts[s.State]++
+		}
+
+		parts := make([]string, 0)
+		for _, state := range []string{"running", "idle", "done", "failed", "stopped"} {
+			if n := stateCounts[state]; n > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", n, state))
+			}
+		}
+
+		label := "sessions"
+		if len(ss) == 1 {
+			label = "session"
+		}
+
+		fmt.Printf("  %-16s %d %s (%s)\n", name, len(ss), label, strings.Join(parts, ", "))
+	}
+
+	return nil
+}
+
+func baseURL() string {
+	a := addr
+	if !strings.Contains(a, "://") {
+		a = "http://" + a
+	}
+	return strings.TrimRight(a, "/")
+}
+
+func fetchJSON[T any](client *http.Client, url string) (T, error) {
+	var zero T
+	resp, err := client.Get(url)
+	if err != nil {
+		return zero, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return zero, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	var result T
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return zero, err
+	}
+	return result, nil
 }

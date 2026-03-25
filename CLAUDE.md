@@ -21,6 +21,10 @@ This repository is a VERY EARLY WIP. Proposing sweeping changes that improve lon
 
 If a tradeoff is required, choose correctness and robustness over short-term convenience.
 
+## Domain Context
+
+- **Costs are irrelevant.** We use API subscriptions. Don't surface costs/prices in UI, CLI output, or mockups. The `totalCost` field exists in the data model but should not be shown to users.
+
 ## Engineering Practices
 
 These are non-negotiable. Apply them in all new code and improve existing code when you touch it.
