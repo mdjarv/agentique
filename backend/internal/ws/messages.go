@@ -141,3 +141,7 @@ type SessionGeneratePRDescPayload struct {
 type SessionGenerateCommitMsgPayload struct {
 	SessionID string `json:"sessionId"`
 }
+
+type SessionMarkDonePayload struct {
+	SessionID string `json:"sessionId"`
+}

@@ -46,6 +46,7 @@ import {
   createPR,
   deleteSession,
   getSessionDiff,
+  markSessionDone,
   mergeSession,
   rebaseSession,
   renameSession,
@@ -441,6 +442,23 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Mark done */}
+          {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1.5 text-xs text-muted-foreground hover:text-[#9ece6a]"
+              title="Mark done"
+              onClick={() => {
+                markSessionDone(ws, meta.id).catch((err) => {
+                  toast.error(err instanceof Error ? err.message : "Failed to mark done");
+                });
+              }}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </Button>
+          )}
 
           {/* Delete */}
           <Button

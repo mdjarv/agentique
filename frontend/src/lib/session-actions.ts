@@ -265,6 +265,10 @@ export async function generatePRDescription(
   return ws.request<PRDescriptionResult>("session.generate-pr-description", { sessionId }, 60000);
 }
 
+export async function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
+  await ws.request("session.mark-done", { sessionId });
+}
+
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.delete", { sessionId });
 }

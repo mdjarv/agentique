@@ -419,6 +419,39 @@ func (s *Service) SetAutoApprove(sessionID string, enabled bool) error {
 	return nil
 }
 
+// MarkSessionDone transitions a session to StateDone.
+// Works for both live (idle) and non-live (stopped/failed) sessions.
+func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
+	if sess := s.mgr.Get(sessionID); sess != nil {
+		return sess.MarkDone()
+	}
+
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+
+	from := State(dbSess.State)
+	if err := validateTransition(from, StateDone, sessionID); err != nil {
+		return err
+	}
+
+	if err := s.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		State: string(StateDone),
+		ID:    sessionID,
+	}); err != nil {
+		return fmt.Errorf("update state failed: %w", err)
+	}
+
+	s.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+		"sessionId": sessionID,
+		"state":     string(StateDone),
+		"connected": false,
+	})
+
+	return nil
+}
+
 // InterruptSession stops the current generation without killing the session.
 func (s *Service) InterruptSession(sessionID string) error {
 	sess, err := s.getLiveSession(sessionID)
