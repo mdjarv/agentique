@@ -109,37 +109,123 @@ export function formatSummary(
   }
 }
 
-function formatDetail(
+// --- Detail type system ---
+// Instead of returning a flat string, we return a tagged detail so the renderer
+// can pick the right display (diff, syntax-highlighted, plain text).
+
+interface EditDetail {
+  kind: "edit";
+  oldString: string;
+  newString: string;
+}
+interface BashDetail {
+  kind: "bash";
+  command: string;
+}
+interface TextDetail {
+  kind: "text";
+  content: string;
+}
+
+type Detail = EditDetail | BashDetail | TextDetail;
+
+function buildDetail(
   name: string,
   input: unknown,
-  projectPath?: string,
-  worktreePath?: string,
-): string | null {
+  _projectPath?: string,
+  _worktreePath?: string,
+): Detail | null {
   if (!input || typeof input !== "object") return null;
   const obj = input as Record<string, unknown>;
-  const strip = (p: string) => stripPrefix(p, projectPath, worktreePath);
 
   switch (name) {
-    case "Agent":
-      return JSON.stringify(input, null, 2);
+    // These tools have all useful info in the summary line already
+    case "Read":
+    case "Write":
+    case "Glob":
+      return null;
+
     case "Bash":
-      return obj.command ? String(obj.command) : null;
+      return obj.command ? { kind: "bash", command: String(obj.command) } : null;
+
     case "Edit":
-      return [
-        obj.file_path && `File: ${strip(String(obj.file_path))}`,
-        obj.old_string && `Old: ${String(obj.old_string).slice(0, 200)}`,
-        obj.new_string && `New: ${String(obj.new_string).slice(0, 200)}`,
-      ]
-        .filter(Boolean)
-        .join("\n");
+      if (obj.old_string != null && obj.new_string != null) {
+        return {
+          kind: "edit",
+          oldString: String(obj.old_string),
+          newString: String(obj.new_string),
+        };
+      }
+      return null;
+
+    case "Agent":
+      return { kind: "text", content: JSON.stringify(input, null, 2) };
+
     case "Grep":
-      return JSON.stringify(input, null, 2);
+      return { kind: "text", content: JSON.stringify(input, null, 2) };
+
     default: {
       const json = JSON.stringify(input, null, 2);
-      return json.length > 100 ? json : null;
+      return json.length > 100 ? { kind: "text", content: json } : null;
     }
   }
 }
+
+// --- Edit diff renderer ---
+
+function prefixLines(text: string, prefix: string): string {
+  return text
+    .split("\n")
+    .map((line) => `${prefix} ${line}`)
+    .join("\n");
+}
+
+function EditDiffView({ oldString, newString }: { oldString: string; newString: string }) {
+  return (
+    <div className="border-t max-h-64 overflow-y-auto font-mono text-xs leading-relaxed">
+      <pre className="bg-red-500/15 text-red-300 px-2 py-0.5 whitespace-pre-wrap m-0">
+        {prefixLines(oldString, "-")}
+      </pre>
+      <pre className="bg-green-500/15 text-green-300 px-2 py-0.5 whitespace-pre-wrap m-0">
+        {prefixLines(newString, "+")}
+      </pre>
+    </div>
+  );
+}
+
+// --- Detail renderer ---
+
+function DetailView({ detail }: { detail: Detail }) {
+  switch (detail.kind) {
+    case "bash":
+      return (
+        <div className="border-t max-h-64 overflow-y-auto">
+          <SyntaxHighlighter
+            style={oneDark}
+            language="bash"
+            customStyle={{
+              margin: 0,
+              padding: "0.5rem",
+              fontSize: "0.75rem",
+              background: "transparent",
+            }}
+          >
+            {detail.command}
+          </SyntaxHighlighter>
+        </div>
+      );
+    case "edit":
+      return <EditDiffView oldString={detail.oldString} newString={detail.newString} />;
+    case "text":
+      return (
+        <pre className="p-2 overflow-x-auto text-foreground/80 whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
+          {detail.content}
+        </pre>
+      );
+  }
+}
+
+// --- Main component ---
 
 export function ToolUseBlock({
   name,
@@ -156,7 +242,7 @@ export function ToolUseBlock({
   );
   const isStreaming = !!streamingInput && !input;
   const summary = isStreaming ? "" : formatSummary(name, input, projectPath, worktreePath);
-  const detail = isStreaming ? null : formatDetail(name, input, projectPath, worktreePath);
+  const detail = isStreaming ? null : buildDetail(name, input, projectPath, worktreePath);
   const hasDetail = detail !== null;
 
   return (
@@ -185,28 +271,7 @@ export function ToolUseBlock({
           <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
         )}
       </button>
-      {expanded &&
-        detail &&
-        (name === "Bash" ? (
-          <div className="border-t max-h-64 overflow-y-auto">
-            <SyntaxHighlighter
-              style={oneDark}
-              language="bash"
-              customStyle={{
-                margin: 0,
-                padding: "0.5rem",
-                fontSize: "0.75rem",
-                background: "transparent",
-              }}
-            >
-              {detail}
-            </SyntaxHighlighter>
-          </div>
-        ) : (
-          <pre className="p-2 overflow-x-auto text-muted-foreground whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
-            {detail}
-          </pre>
-        ))}
+      {expanded && detail && <DetailView detail={detail} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Bot,
+  Brain,
   Check,
   ChevronDown,
   ChevronRight,
@@ -185,7 +186,7 @@ function CollapsibleGroup({
           </>
         )}
         {trailingIcons && (
-          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50 shrink-0">
+          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/70 shrink-0">
             {trailingIcons}
           </span>
         )}
@@ -284,13 +285,20 @@ function ActivitySegmentView({
   );
   const inFlightTool = isStreaming ? [...toolItems].reverse().find((i) => !i.result) : undefined;
 
-  const trailingIcons = toolItems
-    .slice(0, 12)
-    .map((item) => (
+  const trailingIcons = segment.items.slice(0, 12).map((item) => {
+    if (item.kind === "thinking") {
+      return (
+        <span key={item.event.id}>
+          <Brain className="h-3 w-3" />
+        </span>
+      );
+    }
+    return (
       <span key={item.use.id}>
         {getToolIcon(item.use.toolName ?? "Unknown", item.use.category)}
       </span>
-    ));
+    );
+  });
 
   return (
     <CollapsibleGroup
