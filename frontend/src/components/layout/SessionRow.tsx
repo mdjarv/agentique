@@ -1,4 +1,11 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, GitBranch, GitPullRequest } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  GitBranch,
+  GitPullRequest,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
