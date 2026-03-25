@@ -136,9 +136,19 @@ func UncommittedDiff(dir string) (diff string, summary string, err error) {
 	return string(diffOut), summary, nil
 }
 
-// AutoGC runs git gc --auto to pack loose objects if thresholds are exceeded.
-func AutoGC(projectDir string) {
-	_, _ = gitRun(projectDir, "gc", "--auto", "--quiet")
+// GC runs a full git gc to pack loose objects and prune unreachable data.
+func GC(projectDir string) {
+	_, _ = gitRun(projectDir, "gc", "--quiet")
+}
+
+// DeleteRemoteBranch deletes a branch from the origin remote.
+// Fails silently if no remote exists or the branch is not on the remote.
+func DeleteRemoteBranch(projectDir, branch string) {
+	hasOrigin, err := HasRemote(projectDir, "origin")
+	if err != nil || !hasOrigin {
+		return
+	}
+	_, _ = gitRun(projectDir, "push", "origin", "--delete", branch)
 }
 
 // DeleteBranch safely deletes a local branch (uses -d, not -D).
