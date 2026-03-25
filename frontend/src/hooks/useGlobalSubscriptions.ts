@@ -151,6 +151,8 @@ export function useGlobalSubscriptions(projects: Project[]) {
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,
         branchMissing: payload.branchMissing,
+        mergeStatus: payload.mergeStatus,
+        mergeConflictFiles: payload.mergeConflictFiles,
       });
     });
 

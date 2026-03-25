@@ -165,3 +165,55 @@ func TestHasGhCli(t *testing.T) {
 	// Just verify it doesn't panic. Result depends on environment.
 	_ = HasGhCli()
 }
+
+func TestMergeTreeCheck_Clean(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	testGitRun(t, repoDir, "checkout", "-b", "feature")
+	writeFile(t, repoDir, "feature.txt", "new file")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "add feature file")
+	testGitRun(t, repoDir, "checkout", "main")
+
+	result, err := MergeTreeCheck(repoDir, "feature")
+	if err != nil {
+		t.Fatalf("MergeTreeCheck failed: %v", err)
+	}
+	if !result.Clean {
+		t.Fatalf("expected clean merge, got conflicts: %v", result.ConflictFiles)
+	}
+}
+
+func TestMergeTreeCheck_Conflict(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	testGitRun(t, repoDir, "checkout", "-b", "branch-a")
+	writeFile(t, repoDir, "README", "branch-a content")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "change on branch-a")
+
+	testGitRun(t, repoDir, "checkout", "main")
+	writeFile(t, repoDir, "README", "main content")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "change on main")
+
+	result, err := MergeTreeCheck(repoDir, "branch-a")
+	if err != nil {
+		t.Fatalf("MergeTreeCheck failed: %v", err)
+	}
+	if result.Clean {
+		t.Fatal("expected conflicts, got clean")
+	}
+	if len(result.ConflictFiles) == 0 {
+		t.Fatal("expected conflict files list")
+	}
+	found := false
+	for _, f := range result.ConflictFiles {
+		if f == "README" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected README in conflict files, got %v", result.ConflictFiles)
+	}
+}

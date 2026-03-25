@@ -68,6 +68,8 @@ export interface SessionMetadata {
   commitsBehind?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
+  mergeStatus?: "clean" | "conflicts" | "unknown";
+  mergeConflictFiles?: string[];
   prUrl?: string;
   createdAt: string;
   updatedAt?: string;
@@ -236,6 +238,8 @@ export interface ChatState {
         | "commitsAhead"
         | "commitsBehind"
         | "branchMissing"
+        | "mergeStatus"
+        | "mergeConflictFiles"
       >
     >,
   ) => void;

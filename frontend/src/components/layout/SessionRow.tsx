@@ -1,4 +1,14 @@
-import { ArrowDown, ArrowUp, Check, GitBranch, GitPullRequest, Square, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  CheckCircle2,
+  GitBranch,
+  GitPullRequest,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { SessionStatusBadge } from "./SessionStatusBadge";
@@ -20,8 +30,8 @@ interface SessionRowProps {
   commitsBehind?: number;
   branchMissing?: boolean;
   hasUncommitted?: boolean;
+  mergeStatus?: "clean" | "conflicts" | "unknown";
   prUrl?: string;
-  totalCost?: number;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -48,8 +58,8 @@ export function SessionRow({
   commitsBehind,
   branchMissing,
   hasUncommitted,
+  mergeStatus,
   prUrl,
-  totalCost,
   onClick,
   onStop,
   onDelete,
@@ -117,11 +127,6 @@ export function SessionRow({
       {/* Right slot: git status by default, action buttons on hover */}
       <span className="relative ml-auto flex shrink-0 items-center">
         <span className="flex items-center gap-1.5 group-hover/session:invisible">
-          {!!totalCost && totalCost > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              ${totalCost.toFixed(2)}
-            </span>
-          )}
           <GitStatus
             worktreeMerged={worktreeMerged}
             branchMissing={branchMissing}
@@ -129,6 +134,7 @@ export function SessionRow({
             commitsBehind={commitsBehind}
             hasUncommitted={hasUncommitted}
             hasDirtyWorktree={hasDirtyWorktree}
+            mergeStatus={mergeStatus}
             prUrl={prUrl}
           />
         </span>
@@ -164,6 +170,7 @@ function GitStatus({
   commitsBehind,
   hasUncommitted,
   hasDirtyWorktree,
+  mergeStatus,
   prUrl,
 }: {
   worktreeMerged?: boolean;
@@ -172,6 +179,7 @@ function GitStatus({
   commitsBehind?: number;
   hasUncommitted?: boolean;
   hasDirtyWorktree?: boolean;
+  mergeStatus?: "clean" | "conflicts" | "unknown";
   prUrl?: string;
 }) {
   const hasPr = !!prUrl;
@@ -186,10 +194,14 @@ function GitStatus({
   const ahead = !!commitsAhead && commitsAhead > 0;
   const behind = !!commitsBehind && commitsBehind > 0;
   const dirty = hasUncommitted || hasDirtyWorktree;
-  if (!ahead && !dirty && !hasPr) return null;
+  const hasConflicts = mergeStatus === "conflicts";
+  const readyToMerge = mergeStatus === "clean" && ahead;
+  if (!ahead && !dirty && !hasPr && !hasConflicts) return null;
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {hasConflicts && <AlertTriangle className="size-3 text-amber-500/80" />}
+      {!hasConflicts && readyToMerge && <CheckCircle2 className="size-3 text-[#9ece6a]/70" />}
       {hasPr && <GitPullRequest className="size-3 text-[#7aa2f7]" />}
       {ahead && (
         <span className="flex items-center gap-0.5">
