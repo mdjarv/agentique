@@ -181,7 +181,6 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
-	go gitops.AutoGC(project.Path)
 
 	_ = g.queries.SetWorktreeMerged(ctx, sessionID)
 	if live := g.mgr.Get(sessionID); live != nil {
@@ -195,6 +194,8 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
 			slog.Warn("branch delete after merge failed", "session_id", sessionID, "error", delErr)
 		}
+		gitops.DeleteRemoteBranch(project.Path, branch)
+		go gitops.GC(project.Path)
 		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateStopped),
 			ID:    sessionID,
@@ -550,6 +551,62 @@ func parseCommitMessage(text string) CommitMessageResult {
 	}
 
 	return CommitMessageResult{Title: title, Description: desc}
+}
+
+// CleanResult describes the outcome of a clean operation.
+type CleanResult struct {
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Clean removes git artifacts (worktree, local branch, remote branch) for a session
+// that was merged manually or abandoned. Transitions the session to stopped.
+func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, error) {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return CleanResult{}, fmt.Errorf("session not found")
+	}
+
+	branch := nullStr(dbSess.WorktreeBranch)
+	if branch == "" {
+		return CleanResult{}, fmt.Errorf("session has no worktree branch")
+	}
+
+	project, err := g.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return CleanResult{}, fmt.Errorf("project not found")
+	}
+
+	if live := g.mgr.Get(sessionID); live != nil {
+		if state := live.State(); state == StateRunning {
+			return CleanResult{}, fmt.Errorf("session is running")
+		}
+	}
+
+	slog.Info("clean started", "session_id", sessionID, "branch", branch)
+
+	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+		gitops.RemoveWorktree(project.Path, wtPath)
+	}
+	if gitops.BranchExists(project.Path, branch) {
+		if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
+			slog.Warn("branch delete during clean failed", "session_id", sessionID, "error", delErr)
+		}
+	}
+	gitops.DeleteRemoteBranch(project.Path, branch)
+	go gitops.GC(project.Path)
+
+	_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		State: string(StateStopped),
+		ID:    sessionID,
+	})
+	g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+		"sessionId": sessionID,
+		"state":     string(StateStopped),
+	})
+
+	slog.Info("clean completed", "session_id", sessionID, "branch", branch)
+	return CleanResult{Status: "cleaned"}, nil
 }
 
 // broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions

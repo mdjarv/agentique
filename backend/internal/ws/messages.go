@@ -145,3 +145,7 @@ type SessionGenerateCommitMsgPayload struct {
 type SessionMarkDonePayload struct {
 	SessionID string `json:"sessionId"`
 }
+
+type SessionCleanPayload struct {
+	SessionID string `json:"sessionId"`
+}

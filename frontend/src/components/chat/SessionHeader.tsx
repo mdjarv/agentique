@@ -2,6 +2,7 @@ import {
   ArrowDown,
   Check,
   ChevronDown,
+  Eraser,
   ExternalLink,
   FileDiff,
   FolderOpen,
@@ -42,6 +43,7 @@ import {
   MODELS,
   MODEL_LABELS,
   type ModelId,
+  cleanSession,
   commitSession,
   createPR,
   deleteSession,
@@ -79,6 +81,7 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
   const [rebasing, setRebasing] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -457,6 +460,38 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
               }}
             >
               <Check className="h-3.5 w-3.5" />
+            </Button>
+          )}
+
+          {/* Clean — remove worktree, branches, gc */}
+          {isWorktree && !isBusy && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1.5 text-xs text-muted-foreground hover:text-[#e0af68]"
+              title="Clean up worktree and branches"
+              disabled={cleaning}
+              onClick={() => {
+                setCleaning(true);
+                cleanSession(ws, meta.id)
+                  .then((r) => {
+                    if (r.status === "cleaned") {
+                      toast.success("Cleaned");
+                    } else {
+                      toast.error(r.error ?? "Clean failed");
+                    }
+                  })
+                  .catch((err) => {
+                    toast.error(err instanceof Error ? err.message : "Clean failed");
+                  })
+                  .finally(() => setCleaning(false));
+              }}
+            >
+              {cleaning ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Eraser className="h-3.5 w-3.5" />
+              )}
             </Button>
           )}
 

@@ -269,6 +269,15 @@ export async function markSessionDone(ws: WsClient, sessionId: string): Promise<
   await ws.request("session.mark-done", { sessionId });
 }
 
+export interface CleanResult {
+  status: string;
+  error?: string;
+}
+
+export async function cleanSession(ws: WsClient, sessionId: string): Promise<CleanResult> {
+  return ws.request<CleanResult>("session.clean", { sessionId });
+}
+
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.delete", { sessionId });
 }

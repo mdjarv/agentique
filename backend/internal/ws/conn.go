@@ -156,6 +156,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionGeneratePRDesc(msg)
 	case "session.mark-done":
 		c.handleSessionMarkDone(msg)
+	case "session.clean":
+		c.handleSessionClean(msg)
 	case "session.generate-commit-message":
 		c.handleSessionGenerateCommitMsg(msg)
 	default:
