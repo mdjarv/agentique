@@ -17,6 +17,7 @@ type Project struct {
 	DefaultSystemPrompt   string `json:"default_system_prompt"`
 	CreatedAt             string `json:"created_at"`
 	UpdatedAt             string `json:"updated_at"`
+	Slug                  string `json:"slug"`
 }
 
 type Session struct {

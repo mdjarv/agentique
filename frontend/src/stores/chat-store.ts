@@ -168,7 +168,7 @@ function updateMeta(
 export interface ChatState {
   sessions: Record<string, SessionData>;
   activeSessionId: string | null;
-  sessionListLoaded: boolean;
+  loadedProjects: Set<string>;
   historyLoading: Set<string>;
 
   // Session management
@@ -220,7 +220,7 @@ export interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
   activeSessionId: null,
-  sessionListLoaded: false,
+  loadedProjects: new Set<string>(),
   historyLoading: new Set<string>(),
 
   setSessions: (metas, projectId) =>
@@ -246,7 +246,9 @@ export const useChatStore = create<ChatState>((set) => ({
           sessions[meta.id] = emptySessionData(tagged);
         }
       }
-      return { sessions, sessionListLoaded: true };
+      const loadedProjects = new Set(s.loadedProjects);
+      loadedProjects.add(projectId);
+      return { sessions, loadedProjects };
     }),
 
   addSession: (meta) =>

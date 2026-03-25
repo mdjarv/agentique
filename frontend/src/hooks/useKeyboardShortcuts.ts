@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { sessionShortId } from "~/lib/utils";
 import { type SessionState, useChatStore } from "~/stores/chat-store";
 
 const statePriority: Record<SessionState, number> = {
@@ -11,10 +12,11 @@ const statePriority: Record<SessionState, number> = {
   done: 5,
 };
 
-export function useKeyboardShortcuts(projectId: string) {
+export function useKeyboardShortcuts(projectSlug: string, projectId: string) {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!projectId) return;
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
@@ -22,8 +24,8 @@ export function useKeyboardShortcuts(projectId: string) {
       if (mod && e.key === "n") {
         e.preventDefault();
         navigate({
-          to: "/project/$projectId/session/new",
-          params: { projectId },
+          to: "/project/$projectSlug/session/new",
+          params: { projectSlug },
         });
         return;
       }
@@ -47,8 +49,8 @@ export function useKeyboardShortcuts(projectId: string) {
         const targetId = sorted[idx];
         if (targetId) {
           navigate({
-            to: "/project/$projectId/session/$sessionId",
-            params: { projectId, sessionId: targetId },
+            to: "/project/$projectSlug/session/$sessionShortId",
+            params: { projectSlug, sessionShortId: sessionShortId(targetId) },
           });
         }
       }
@@ -56,5 +58,5 @@ export function useKeyboardShortcuts(projectId: string) {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [projectId, navigate]);
+  }, [projectSlug, projectId, navigate]);
 }

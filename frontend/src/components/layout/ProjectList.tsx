@@ -3,12 +3,21 @@ import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useProjects } from "~/hooks/useProjects";
+import { useChatStore } from "~/stores/chat-store";
 
 export function ProjectList() {
   const projects = useProjects();
-  const params = useParams({ strict: false }) as { projectId?: string; sessionId?: string };
-  const activeProjectId = params.projectId;
-  const activeSessionId = params.sessionId;
+  const params = useParams({ strict: false }) as {
+    projectSlug?: string;
+    sessionShortId?: string;
+  };
+  const activeProjectSlug = params.projectSlug;
+  // Resolve short ID → full UUID for active session highlighting
+  const activeSessionId = useChatStore((s) => {
+    const shortId = params.sessionShortId;
+    if (!shortId) return undefined;
+    return Object.keys(s.sessions).find((id) => id.startsWith(shortId));
+  });
   const isNewChatRoute = useRouterState({
     select: (s) => s.location.pathname.endsWith("/session/new"),
   });
@@ -52,11 +61,11 @@ export function ProjectList() {
         <ProjectTreeItem
           key={project.id}
           project={project}
-          isActive={project.id === activeProjectId}
+          isActive={project.slug === activeProjectSlug}
           isExpanded={expandedIds.has(project.id)}
           onToggleExpand={() => toggleExpand(project.id)}
           activeSessionId={activeSessionId}
-          isNewChatActive={project.id === activeProjectId && isNewChatRoute}
+          isNewChatActive={project.slug === activeProjectSlug && isNewChatRoute}
         />
       ))}
     </div>

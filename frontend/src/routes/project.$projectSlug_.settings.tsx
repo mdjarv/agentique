@@ -13,23 +13,27 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
-import { useProjects } from "~/hooks/useProjects";
-import { deleteProject } from "~/lib/api";
+import { deleteProject, updateProject } from "~/lib/api";
 import { useAppStore } from "~/stores/app-store";
 
-export const Route = createFileRoute("/project/$projectId_/settings")({
+export const Route = createFileRoute("/project/$projectSlug_/settings")({
   component: ProjectSettingsPage,
 });
 
 function ProjectSettingsPage() {
-  const { projectId } = Route.useParams();
+  const { projectSlug } = Route.useParams();
   const navigate = useNavigate();
-  const projects = useProjects();
+  const project = useAppStore((s) => s.projects.find((p) => p.slug === projectSlug));
+  const updateProjectStore = useAppStore((s) => s.updateProject);
   const removeProject = useAppStore((s) => s.removeProject);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [slugEditing, setSlugEditing] = useState(false);
+  const [slugSaving, setSlugSaving] = useState(false);
 
-  const project = projects.find((p) => p.id === projectId);
   if (!project) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -48,6 +52,33 @@ function ProjectSettingsPage() {
     }
   };
 
+  const handleSlugEdit = () => {
+    setSlug(project.slug);
+    setSlugEditing(true);
+  };
+
+  const handleSlugSave = async () => {
+    if (slug === project.slug) {
+      setSlugEditing(false);
+      return;
+    }
+    setSlugSaving(true);
+    try {
+      const updated = await updateProject(project.id, { slug });
+      updateProjectStore(updated);
+      setSlugEditing(false);
+      navigate({
+        to: "/project/$projectSlug/settings",
+        params: { projectSlug: updated.slug },
+        replace: true,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update slug");
+    } finally {
+      setSlugSaving(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto p-8 space-y-8">
@@ -55,7 +86,10 @@ function ProjectSettingsPage() {
           <button
             type="button"
             onClick={() =>
-              navigate({ to: "/project/$projectId", params: { projectId: project.id } })
+              navigate({
+                to: "/project/$projectSlug",
+                params: { projectSlug: project.slug },
+              })
             }
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
@@ -65,6 +99,44 @@ function ProjectSettingsPage() {
           <h1 className="text-2xl font-semibold">{project.name}</h1>
           <p className="text-sm text-muted-foreground">{project.path}</p>
         </div>
+
+        <Separator />
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium">URL slug</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Used in browser URLs. Changing it will break existing bookmarks.
+            </p>
+          </div>
+          {slugEditing ? (
+            <div className="flex items-end gap-2">
+              <div className="space-y-1 flex-1">
+                <Label htmlFor="slug">Slug</Label>
+                <Input
+                  id="slug"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="my-project"
+                  pattern="[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]"
+                />
+              </div>
+              <Button onClick={handleSlugSave} disabled={slugSaving}>
+                {slugSaving ? "Saving..." : "Save"}
+              </Button>
+              <Button variant="outline" onClick={() => setSlugEditing(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <code className="text-sm bg-muted px-2 py-1 rounded">{project.slug}</code>
+              <Button variant="outline" size="sm" onClick={handleSlugEdit}>
+                Edit
+              </Button>
+            </div>
+          )}
+        </section>
 
         <Separator />
 

@@ -15,6 +15,7 @@ import (
 
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/logging"
+	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/server"
 	"github.com/allbin/agentique/backend/internal/store"
 )
@@ -118,6 +119,7 @@ func ensureDefaultProject(q *store.Queries) {
 		ID:   uuid.NewString(),
 		Name: name,
 		Path: projectDir,
+		Slug: project.Slugify(name),
 	})
 	if err != nil {
 		slog.Warn("failed to create default project", "error", err)

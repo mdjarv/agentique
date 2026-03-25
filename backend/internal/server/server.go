@@ -33,6 +33,7 @@ func New(queries *store.Queries) *Server {
 	})
 	mux.HandleFunc("GET /api/projects", ph.HandleList)
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
+	mux.HandleFunc("PATCH /api/projects/{id}", ph.HandleUpdate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, Hub: hub}
