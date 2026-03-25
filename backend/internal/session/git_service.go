@@ -174,6 +174,12 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		_ = gitops.AbortMerge(project.Path)
 		if len(files) > 0 {
 			slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+			g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+				"sessionId":          sessionID,
+				"state":              dbSess.State,
+				"mergeStatus":        "conflicts",
+				"mergeConflictFiles": files,
+			})
 			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
@@ -275,6 +281,12 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		_ = gitops.AbortRebase(wtPath)
 		if len(files) > 0 {
 			slog.Warn("rebase conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+			g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+				"sessionId":          sessionID,
+				"state":              dbSess.State,
+				"mergeStatus":        "conflicts",
+				"mergeConflictFiles": files,
+			})
 			return RebaseResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("rebase failed", "session_id", sessionID, "branch", branch, "error", rebaseErr)

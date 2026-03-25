@@ -57,7 +57,6 @@ export function useGitActions(sessionId: string) {
 
   // Merge
   const [merging, setMerging] = useState(false);
-  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
 
   const handleMerge = useCallback(
     async (cleanup: boolean) => {
@@ -67,7 +66,7 @@ export function useGitActions(sessionId: string) {
         if (result.status === "merged") {
           toast.success(`Merged (${result.commitHash?.slice(0, 7)})`);
         } else if (result.status === "conflict") {
-          setConflictFiles(result.conflictFiles ?? []);
+          toast.error("Merge conflicts detected");
         } else {
           toast.error(result.error ?? "Merge failed");
         }
@@ -90,7 +89,7 @@ export function useGitActions(sessionId: string) {
       if (result.status === "rebased") {
         toast.success("Rebased onto main");
       } else if (result.status === "conflict") {
-        setConflictFiles(result.conflictFiles ?? []);
+        toast.error("Rebase conflicts detected");
       } else {
         toast.error(result.error ?? "Rebase failed");
       }
@@ -190,8 +189,6 @@ export function useGitActions(sessionId: string) {
     // Merge
     merging,
     handleMerge,
-    conflictFiles,
-    setConflictFiles,
     // Rebase
     rebasing,
     handleRebase,
