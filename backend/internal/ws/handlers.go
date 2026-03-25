@@ -197,6 +197,28 @@ func (c *conn) handleSessionCreatePR(msg ClientMessage) {
 	c.respond(msg.ID, result, "")
 }
 
+func (c *conn) handleSessionDeleteBulk(msg ClientMessage) {
+	var payload SessionDeleteBulkPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if len(payload.SessionIDs) == 0 {
+		c.respond(msg.ID, nil, "sessionIds is required")
+		return
+	}
+	results := make([]SessionDeleteBulkResultItem, 0, len(payload.SessionIDs))
+	for _, sid := range payload.SessionIDs {
+		item := SessionDeleteBulkResultItem{SessionID: sid, Success: true}
+		if err := c.svc.DeleteSession(c.ctx, sid); err != nil {
+			item.Success = false
+			item.Error = err.Error()
+		}
+		results = append(results, item)
+	}
+	c.respond(msg.ID, SessionDeleteBulkResult{Results: results}, "")
+}
+
 func (c *conn) handleSessionDelete(msg ClientMessage) {
 	var payload SessionDeletePayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

@@ -286,6 +286,23 @@ export async function deleteSession(ws: WsClient, sessionId: string): Promise<vo
   await ws.request("session.delete", { sessionId });
 }
 
+export interface BulkDeleteResultItem {
+  sessionId: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface BulkDeleteResult {
+  results: BulkDeleteResultItem[];
+}
+
+export async function deleteSessionsBulk(
+  ws: WsClient,
+  sessionIds: string[],
+): Promise<BulkDeleteResult> {
+  return ws.request<BulkDeleteResult>("session.delete-bulk", { sessionIds });
+}
+
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {
   try {
     await ws.request("session.stop", { sessionId });
