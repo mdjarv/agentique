@@ -6,10 +6,8 @@ Legend: **B**=Bug **F**=Feature **I**=Investigation | **P1**=soon **P2**=normal 
 
 ## P1 — Bugs
 
-### [B/S] Commit on local repo doesn't mark session complete
-After clicking Commit on a local (non-worktree) session, the session stays in its current state.
-`session/git_service.go` `Commit()` returns only a hash — no state transition. `SessionHeader.tsx` `handleCommit` toasts success but never updates state.
-**Fix:** After commit succeeds, transition session to `StateDone` (or expose an explicit "mark done" step).
+### ~~[B/S] Commit on local repo doesn't mark session complete~~ DONE
+Fixed — `Commit()` now transitions non-worktree sessions to `StateDone` and broadcasts state change.
 
 ### ~~[B/S] Prompt-block session titles overwritten by Haiku auto-naming~~
 Sessions created from ` ```prompt ` blocks had their extracted title overwritten by Haiku on first query. Also, empty session names got a placeholder "Session N" instead of letting Haiku name them properly.
@@ -38,10 +36,8 @@ Check what changed, whether it's safe to update, and whether it fixes any known 
 
 ## P2 — Features & UX
 
-### [F/S] Merge should navigate to nearest active session
-After merging (and the session is deleted), the user stays on the dead session page.
-`useGlobalSubscriptions.ts` removes the session from the store on `session.deleted` but doesn't trigger navigation. `ChatPanel.tsx` only redirects when `sessionListLoaded && !session`.
-**Fix:** On merge/delete, find the nearest `idle`/`running` session in the same project and navigate to it; fall back to "new chat" if none exists.
+### ~~[F/S] Merge should navigate to nearest active session~~ DONE
+Fixed — `session.deleted` handler now navigates to the nearest idle/running sibling, or falls back to project index.
 
 ### [F/S] Manually mark session as done
 No UI to mark a session done without deleting it. State machine already supports `StateDone` from `idle`/`running`/`failed`.

@@ -388,16 +388,19 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffRes
 }
 
 // Commit stages all changes and commits in the session's work directory.
+// For non-worktree (local) sessions, transitions to StateDone after a successful commit.
 func (g *GitService) Commit(ctx context.Context, sessionID, message string) (CommitResult, error) {
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("session not found")
 	}
 
+	isWorktree := nullStr(dbSess.WorktreePath) != ""
+
 	// Use worktree path if available, otherwise work dir.
 	dir := dbSess.WorkDir
-	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-		dir = wtPath
+	if isWorktree {
+		dir = nullStr(dbSess.WorktreePath)
 	}
 
 	if _, statErr := os.Stat(dir); statErr != nil {
@@ -422,6 +425,19 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 	}
 
 	slog.Info("commit created", "session_id", sessionID, "commit", hash)
+
+	// Local sessions are done after commit — their changes are on the main branch.
+	if !isWorktree {
+		_ = g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+			State: string(StateDone),
+			ID:    sessionID,
+		})
+		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+			"sessionId": sessionID,
+			"state":     string(StateDone),
+		})
+	}
+
 	return CommitResult{CommitHash: hash}, nil
 }
 
