@@ -11,6 +11,7 @@ import {
   GitMerge,
   Loader2,
   Pencil,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -51,6 +52,7 @@ import {
   markSessionDone,
   mergeSession,
   rebaseSession,
+  refreshGitStatus,
   renameSession,
   setSessionModel,
 } from "~/lib/session-actions";
@@ -82,6 +84,7 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
   const [creatingPR, setCreatingPR] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [refreshingGit, setRefreshingGit] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -323,6 +326,27 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
               </span>
             )}
           </Button>
+
+          {/* Refresh git status */}
+          {isWorktree && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1.5 text-xs text-muted-foreground"
+              title="Refresh git status"
+              disabled={refreshingGit}
+              onClick={() => {
+                setRefreshingGit(true);
+                refreshGitStatus(ws, meta.id)
+                  .catch((err) => {
+                    toast.error(err instanceof Error ? err.message : "Refresh failed");
+                  })
+                  .finally(() => setRefreshingGit(false));
+              }}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshingGit && "animate-spin")} />
+            </Button>
+          )}
 
           {/* Commit button — non-worktree, non-busy */}
           {!isWorktree && !isBusy && (

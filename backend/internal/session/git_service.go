@@ -609,6 +609,50 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	return CleanResult{Status: "cleaned"}, nil
 }
 
+// RefreshGitStatus recomputes and broadcasts git status for a single session.
+func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) error {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found")
+	}
+
+	project, err := g.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return fmt.Errorf("project not found")
+	}
+
+	g.broadcastSessionGitStatus(dbSess.ProjectID, sessionID, dbSess.State, nullStr(dbSess.WorktreeBranch), nullStr(dbSess.WorktreePath), dbSess.WorktreeMerged != 0, project.Path)
+	return nil
+}
+
+// broadcastSessionGitStatus computes and broadcasts git status for a single session.
+func (g *GitService) broadcastSessionGitStatus(projectID, sessionID, state, branch, wtPath string, merged bool, projectPath string) {
+	if branch == "" || merged {
+		return
+	}
+	payload := map[string]any{
+		"sessionId": sessionID,
+		"state":     state,
+	}
+	if !gitops.BranchExists(projectPath, branch) {
+		payload["branchMissing"] = true
+		g.hub.Broadcast(projectID, "session.state", payload)
+		return
+	}
+	if ahead, err := gitops.CommitsAhead(projectPath, branch); err == nil {
+		payload["commitsAhead"] = ahead
+	}
+	if behind, err := gitops.CommitsBehind(projectPath, branch); err == nil {
+		payload["commitsBehind"] = behind
+	}
+	if wtPath != "" {
+		if dirty, err := gitops.HasUncommittedChanges(wtPath); err == nil {
+			payload["hasUncommitted"] = dirty
+		}
+	}
+	g.hub.Broadcast(projectID, "session.state", payload)
+}
+
 // broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions
 // in the same project except excludeID. Called after operations that advance the main branch.
 func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, excludeID, projectPath string) {
@@ -624,22 +668,7 @@ func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, e
 		if branch == "" {
 			continue
 		}
-		payload := map[string]any{
-			"sessionId": ss.ID,
-			"state":     ss.State,
-		}
-		if !gitops.BranchExists(projectPath, branch) {
-			payload["branchMissing"] = true
-			g.hub.Broadcast(projectID, "session.state", payload)
-			continue
-		}
-		if ahead, err := gitops.CommitsAhead(projectPath, branch); err == nil {
-			payload["commitsAhead"] = ahead
-		}
-		if behind, err := gitops.CommitsBehind(projectPath, branch); err == nil {
-			payload["commitsBehind"] = behind
-		}
-		g.hub.Broadcast(projectID, "session.state", payload)
+		g.broadcastSessionGitStatus(projectID, ss.ID, ss.State, branch, nullStr(ss.WorktreePath), false, projectPath)
 	}
 }
 

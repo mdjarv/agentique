@@ -158,6 +158,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionMarkDone(msg)
 	case "session.clean":
 		c.handleSessionClean(msg)
+	case "session.refresh-git":
+		c.handleSessionRefreshGit(msg)
 	case "session.generate-commit-message":
 		c.handleSessionGenerateCommitMsg(msg)
 	default:
