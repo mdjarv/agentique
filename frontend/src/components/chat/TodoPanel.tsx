@@ -1,4 +1,4 @@
-import { Check, Circle, ListTodo, Loader2, PanelRightClose } from "lucide-react";
+import { Circle, CircleCheckBig, ListTodo, Loader2, PanelRightClose } from "lucide-react";
 import type { TodoItem } from "~/stores/chat-store";
 
 interface TodoPanelProps {
@@ -9,7 +9,7 @@ interface TodoPanelProps {
 function StatusIcon({ status }: { status: TodoItem["status"] }) {
   switch (status) {
     case "completed":
-      return <Check className="h-3.5 w-3.5 text-green-400 shrink-0" />;
+      return <CircleCheckBig className="h-3.5 w-3.5 text-green-400 shrink-0" />;
     case "in_progress":
       return <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin shrink-0" />;
     case "pending":
