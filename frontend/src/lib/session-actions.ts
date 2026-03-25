@@ -234,6 +234,18 @@ export interface PRDescriptionResult {
   body: string;
 }
 
+export interface CommitMessageResult {
+  title: string;
+  description: string;
+}
+
+export async function generateCommitMessage(
+  ws: WsClient,
+  sessionId: string,
+): Promise<CommitMessageResult> {
+  return ws.request<CommitMessageResult>("session.generate-commit-message", { sessionId }, 60000);
+}
+
 export async function generatePRDescription(
   ws: WsClient,
   sessionId: string,

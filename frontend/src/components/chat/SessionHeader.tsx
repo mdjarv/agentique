@@ -498,6 +498,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
       <CommitDialog
         open={activeDialog === "commit"}
         onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
+        sessionId={meta.id}
         onSubmit={handleCommit}
         loading={committing}
       />
