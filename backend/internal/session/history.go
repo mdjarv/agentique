@@ -3,8 +3,6 @@ package session
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/allbin/agentique/backend/internal/store"
 )
 
 // normalizeEventJSON rewrites legacy JSON keys to the current wire format.
@@ -71,7 +69,7 @@ type HistoryTurn struct {
 }
 
 // HistoryFromDB reconstructs turn history from persisted events.
-func HistoryFromDB(ctx context.Context, q *store.Queries, sessionID string) ([]HistoryTurn, error) {
+func HistoryFromDB(ctx context.Context, q historyQueries, sessionID string) ([]HistoryTurn, error) {
 	rows, err := q.ListEventsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err

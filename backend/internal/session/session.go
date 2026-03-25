@@ -76,7 +76,7 @@ type Session struct {
 	claudeSessionID  string
 	turnIndex        int
 	seqInTurn        int
-	queries          *store.Queries
+	queries          sessionQueries
 	broadcast        func(pushType string, payload any)
 	pendingApprovals map[string]*pendingApproval
 	pendingQuestions map[string]*pendingQuestion
@@ -91,7 +91,7 @@ type sessionParams struct {
 	id        string
 	projectID string
 	cliSess   *claudecli.Session
-	queries   *store.Queries
+	queries   sessionQueries
 	broadcast func(pushType string, payload any)
 	turnIndex int
 	workDir   string

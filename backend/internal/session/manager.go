@@ -38,12 +38,12 @@ type CreateParams struct {
 type Manager struct {
 	mu          sync.Mutex
 	sessions    map[string]*Session
-	queries     *store.Queries
+	queries     managerQueries
 	broadcaster Broadcaster
 }
 
 // NewManager creates a new session manager.
-func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
+func NewManager(queries managerQueries, broadcaster Broadcaster) *Manager {
 	return &Manager{
 		sessions:    make(map[string]*Session),
 		queries:     queries,
