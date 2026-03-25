@@ -534,7 +534,7 @@ func (s *Session) SetModel(model string) error {
 // this blocks, the SDK will unblock on context cancellation.
 func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
 	s.mu.Lock()
-	bypass := s.autoApprove
+	bypass := s.autoApprove && s.permissionMode != "plan"
 	s.mu.Unlock()
 	if bypass {
 		return &claudecli.PermissionResponse{Allow: true}, nil
