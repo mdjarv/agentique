@@ -123,6 +123,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		return CreateSessionResult{}, fmt.Errorf("project not found: %w", err)
 	}
 
+	sessionID := uuid.New().String()
 	workDir := project.Path
 	var worktreePath, worktreeBranch string
 
@@ -130,8 +131,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	if p.Worktree {
 		branch := p.Branch
 		if branch == "" {
-			suffix := uuid.New().String()[:8]
-			branch = "session-" + suffix
+			branch = "session-" + sessionID[:8]
 		}
 		worktreeBranch = branch
 		worktreePath = gitops.WorktreePath(project.Name, branch)
@@ -155,6 +155,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	sess, err := s.mgr.Create(ctx, CreateParams{
+		ID:              sessionID,
 		ProjectID:       p.ProjectID,
 		Name:            name,
 		WorkDir:         workDir,

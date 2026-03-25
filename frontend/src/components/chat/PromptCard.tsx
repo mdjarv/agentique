@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSession, submitQuery } from "~/lib/session-actions";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 // ---------------------------------------------------------------------------
@@ -204,14 +205,15 @@ export function PromptCard({ title, prompt }: PromptBlock) {
     ctx?.startPrompt(title, prompt);
   }, [ctx, title, prompt]);
 
+  const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.slug ?? "");
   const handleNav = useCallback(() => {
-    if (sessionId && projectId) {
+    if (sessionId && projectSlug) {
       navigate({
-        to: "/project/$projectId/session/$sessionId",
-        params: { projectId, sessionId },
+        to: "/project/$projectSlug/session/$sessionShortId",
+        params: { projectSlug, sessionShortId: sessionId.split("-")[0] },
       });
     }
-  }, [sessionId, projectId, navigate]);
+  }, [sessionId, projectSlug, navigate]);
 
   const isLong = prompt.split("\n").length > 6 || prompt.length > 400;
   const shown = !isLong || expanded ? prompt : `${prompt.slice(0, 250)}...`;

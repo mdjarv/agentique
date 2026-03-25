@@ -6,7 +6,8 @@ import { parseServerEvent } from "~/lib/events";
 import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
-import { copyToClipboard } from "~/lib/utils";
+import { copyToClipboard, sessionShortId } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -169,14 +170,16 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
       if (wasActive && deletedSession) {
         const projectId = deletedSession.meta.projectId;
+        const projectSlug =
+          useAppStore.getState().projects.find((p) => p.id === projectId)?.slug ?? projectId;
         const sibling = findNearestActiveSession(store.sessions, deletedId, projectId);
         if (sibling) {
           navigate({
-            to: "/project/$projectId/session/$sessionId",
-            params: { projectId, sessionId: sibling },
+            to: "/project/$projectSlug/session/$sessionShortId",
+            params: { projectSlug, sessionShortId: sessionShortId(sibling) },
           });
         } else {
-          navigate({ to: "/project/$projectId", params: { projectId } });
+          navigate({ to: "/project/$projectSlug", params: { projectSlug } });
         }
       }
     });

@@ -10,17 +10,23 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (id, name, path) VALUES (?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at
+INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug
 `
 
 type CreateProjectParams struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Path string `json:"path"`
+	Slug string `json:"slug"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
-	row := q.db.QueryRowContext(ctx, createProject, arg.ID, arg.Name, arg.Path)
+	row := q.db.QueryRowContext(ctx, createProject,
+		arg.ID,
+		arg.Name,
+		arg.Path,
+		arg.Slug,
+	)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -31,6 +37,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.DefaultSystemPrompt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Slug,
 	)
 	return i, err
 }
@@ -45,7 +52,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at FROM projects WHERE id = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -60,12 +67,34 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.DefaultSystemPrompt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Slug,
+	)
+	return i, err
+}
+
+const getProjectBySlug = `-- name: GetProjectBySlug :one
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects WHERE slug = ?
+`
+
+func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProjectBySlug, slug)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at FROM projects ORDER BY updated_at DESC
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -86,6 +115,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.DefaultSystemPrompt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}
@@ -98,4 +128,30 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateProjectSlug = `-- name: UpdateProjectSlug :one
+UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug
+`
+
+type UpdateProjectSlugParams struct {
+	Slug string `json:"slug"`
+	ID   string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectSlug, arg.Slug, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+	)
+	return i, err
 }

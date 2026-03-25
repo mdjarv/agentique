@@ -44,6 +44,11 @@ export function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/** Returns the short 8-char ID used in URLs, derived from the first UUID segment. */
+export function sessionShortId(sessionId: string): string {
+  return sessionId.split("-")[0] ?? sessionId;
+}
+
 export function copyToClipboard(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));

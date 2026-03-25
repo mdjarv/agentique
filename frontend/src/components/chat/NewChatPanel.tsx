@@ -12,9 +12,10 @@ import type { Attachment } from "~/stores/chat-store";
 
 interface NewChatPanelProps {
   projectId: string;
+  projectSlug: string;
 }
 
-export function NewChatPanel({ projectId }: NewChatPanelProps) {
+export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
   const [worktree, setWorktree] = useState(true);
@@ -38,8 +39,8 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
       });
       await submitQuery(ws, sessionId, prompt, attachments);
       navigate({
-        to: "/project/$projectId/session/$sessionId",
-        params: { projectId, sessionId },
+        to: "/project/$projectSlug/session/$sessionShortId",
+        params: { projectSlug, sessionShortId: sessionId.split("-")[0] },
         replace: true,
       });
     } catch (err) {

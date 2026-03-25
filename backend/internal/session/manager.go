@@ -19,6 +19,7 @@ type Broadcaster interface {
 
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
+	ID              string // optional; generated if empty
 	ProjectID       string
 	Name            string
 	WorkDir         string
@@ -52,7 +53,10 @@ func NewManager(queries *store.Queries, broadcaster Broadcaster) *Manager {
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
 func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, error) {
-	id := uuid.New().String()
+	id := params.ID
+	if id == "" {
+		id = uuid.New().String()
+	}
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{

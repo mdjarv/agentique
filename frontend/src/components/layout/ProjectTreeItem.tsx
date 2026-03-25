@@ -216,7 +216,7 @@ export function ProjectTreeItem({
   const handleProjectClick = () => {
     onToggleExpand();
     if (!isActive) {
-      navigate({ to: "/project/$projectId", params: { projectId: project.id } });
+      navigate({ to: "/project/$projectSlug", params: { projectSlug: project.slug } });
     }
   };
 
@@ -255,8 +255,8 @@ export function ProjectTreeItem({
 
   const handleSessionClick = (sessionId: string) => {
     navigate({
-      to: "/project/$projectId/session/$sessionId",
-      params: { projectId: project.id, sessionId },
+      to: "/project/$projectSlug/session/$sessionShortId",
+      params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] },
     });
   };
 
@@ -291,8 +291,8 @@ export function ProjectTreeItem({
             onClick={(e) => {
               e.stopPropagation();
               navigate({
-                to: "/project/$projectId/settings",
-                params: { projectId: project.id },
+                to: "/project/$projectSlug/settings",
+                params: { projectSlug: project.slug },
               });
             }}
             className="text-sm font-medium shrink-0 text-foreground-bright hover:underline"
@@ -315,8 +315,8 @@ export function ProjectTreeItem({
             type="button"
             onClick={() => {
               navigate({
-                to: "/project/$projectId/session/new",
-                params: { projectId: project.id },
+                to: "/project/$projectSlug/session/new",
+                params: { projectSlug: project.slug },
               });
             }}
             className={cn(

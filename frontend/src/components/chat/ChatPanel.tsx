@@ -32,6 +32,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
+  const projectSlug = project?.slug ?? "";
   const session = useChatStore((s) => s.sessions[sessionId]);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
@@ -69,12 +70,12 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   useEffect(() => {
     if (sessionListLoaded && !session) {
       navigate({
-        to: "/project/$projectId",
-        params: { projectId },
+        to: "/project/$projectSlug",
+        params: { projectSlug },
         replace: true,
       });
     }
-  }, [sessionListLoaded, session, navigate, projectId]);
+  }, [sessionListLoaded, session, navigate, projectSlug]);
 
   const handlePlanModeChange = useCallback(
     (enabled: boolean) => {

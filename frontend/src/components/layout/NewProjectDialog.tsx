@@ -57,8 +57,8 @@ export function NewProjectDialog() {
       setNameManuallySet(false);
       setOpen(false);
       navigate({
-        to: "/project/$projectId",
-        params: { projectId: project.id },
+        to: "/project/$projectSlug",
+        params: { projectSlug: project.slug },
       });
     } catch {
       setError("Failed to create project. Check that the path exists.");
