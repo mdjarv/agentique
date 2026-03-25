@@ -552,6 +552,51 @@ func parseCommitMessage(text string) CommitMessageResult {
 	return CommitMessageResult{Title: title, Description: desc}
 }
 
+// RefreshGitStatus recomputes and broadcasts git status for a single session.
+func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) error {
+	ss, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+	project, err := g.queries.GetProject(ctx, ss.ProjectID)
+	if err != nil {
+		return fmt.Errorf("project not found: %w", err)
+	}
+
+	payload := map[string]any{
+		"sessionId": ss.ID,
+		"state":     ss.State,
+	}
+
+	branch := nullStr(ss.WorktreeBranch)
+	wtPath := nullStr(ss.WorktreePath)
+
+	if wtPath != "" {
+		if dirty, err := gitops.HasUncommittedChanges(wtPath); err == nil {
+			payload["hasDirtyWorktree"] = dirty
+			payload["hasUncommitted"] = dirty
+		}
+	}
+
+	if ss.WorktreeMerged != 0 {
+		payload["worktreeMerged"] = true
+	} else if branch != "" {
+		if !gitops.BranchExists(project.Path, branch) {
+			payload["branchMissing"] = true
+		} else {
+			if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
+				payload["commitsAhead"] = ahead
+			}
+			if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
+				payload["commitsBehind"] = behind
+			}
+		}
+	}
+
+	g.hub.Broadcast(ss.ProjectID, "session.state", payload)
+	return nil
+}
+
 // broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions
 // in the same project except excludeID. Called after operations that advance the main branch.
 func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, excludeID, projectPath string) {
