@@ -19,6 +19,18 @@ Conflict state properly scoped to component lifecycle; resets on session change.
 ### ~~[B/M] Plan mode — agent makes changes while Plan is still active~~ DONE
 Fixed in `2d0f393` — auto-approval bypass disabled when `permissionMode == "plan"`.
 
+### [B/S] ExitPlanMode approval banner says "enter plan mode"
+`ApprovalBanner.tsx:54-56` uses the same label for both `EnterPlanMode` and `ExitPlanMode`. Semantically inverted.
+Also: entering plan mode should auto-approve (safe direction); exiting may need confirmation.
+
+### [B/M] Merge cleanup unreliable — stale branches, loose objects
+Merge with cleanup doesn't delete remote tracking branches. `git gc --auto` is too conservative and may not reclaim loose objects. No standalone "clean" option for sessions merged manually or abandoned.
+**Fix:** Add remote branch deletion to merge cleanup. Consider `git gc` (not `--auto`) or `git prune`. Add a separate "clean" action for sessions without merge.
+
+### [I/M] Worktree removed externally while session has active agent
+If a user removes a worktree directory from a separate shell while the session's agent is still running, the session enters an undefined state. `resumeSession` handles missing worktrees on restart (fallback to project root), but mid-session removal while the CLI is active needs investigation.
+**Investigate:** What happens to the running CLI? Does it crash, error, or silently break? What should the session's state transition be? Should we detect this proactively (fs watch, poll)?
+
 ---
 
 ## P1 — Maintenance
@@ -40,6 +52,9 @@ No UI to mark a session done without deleting it. State machine already supports
 ### [F/S] Rebase conflict: button to have Claude resolve it
 When a rebase conflict is detected, show a button alongside the conflict panel that sends a pre-written message to Claude (e.g., "There are merge conflicts in the following files: X, Y, Z. Please resolve them.").
 **Note:** This is a convenience wrapper — it just sends a chat message. Keep it simple.
+
+### [F/S] Copy button: sticky in scroll + add to user messages
+Copy button on assistant messages disappears when the top of the message scrolls out of view (absolute positioned at `top-2 right-2`). Should remain visible while any part of the message is on screen. Also add copy to user/sent messages.
 
 ### [F/S] Chat overlay buttons: move and rethink icon
 "Scroll to bottom" and "toggle tool calls" buttons overlap chat content.
