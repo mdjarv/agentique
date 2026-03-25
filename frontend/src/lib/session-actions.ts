@@ -185,18 +185,15 @@ export async function interruptSession(ws: WsClient, sessionId: string): Promise
   await ws.request("session.interrupt", { sessionId });
 }
 
-export interface MergeResult {
-  status: string;
-  commitHash?: string;
-  conflictFiles?: string[];
-  error?: string;
-}
+export type MergeResult =
+  | { status: "merged"; commitHash: string }
+  | { status: "conflict"; conflictFiles: string[] }
+  | { status: "error"; error: string };
 
-export interface CreatePRResult {
-  status: string;
-  url?: string;
-  error?: string;
-}
+export type CreatePRResult =
+  | { status: "created"; url: string }
+  | { status: "existing"; url: string }
+  | { status: "error"; error: string };
 
 export async function mergeSession(
   ws: WsClient,
@@ -231,11 +228,10 @@ export async function commitSession(
   return ws.request<CommitResult>("session.commit", { sessionId, message });
 }
 
-export interface RebaseResult {
-  status: string;
-  conflictFiles?: string[];
-  error?: string;
-}
+export type RebaseResult =
+  | { status: "rebased" }
+  | { status: "conflict"; conflictFiles: string[] }
+  | { status: "error"; error: string };
 
 export async function rebaseSession(ws: WsClient, sessionId: string): Promise<RebaseResult> {
   return ws.request<RebaseResult>("session.rebase", { sessionId });
@@ -269,10 +265,7 @@ export async function markSessionDone(ws: WsClient, sessionId: string): Promise<
   await ws.request("session.mark-done", { sessionId });
 }
 
-export interface CleanResult {
-  status: string;
-  error?: string;
-}
+export type CleanResult = { status: "cleaned" } | { status: "error"; error: string };
 
 export async function cleanSession(ws: WsClient, sessionId: string): Promise<CleanResult> {
   return ws.request<CleanResult>("session.clean", { sessionId });
