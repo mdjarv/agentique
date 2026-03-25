@@ -13,24 +13,18 @@ Fixed — `Commit()` now transitions non-worktree sessions to `StateDone` and br
 Sessions created from ` ```prompt ` blocks had their extracted title overwritten by Haiku on first query. Also, empty session names got a placeholder "Session N" instead of letting Haiku name them properly.
 **Fixed:** `autoName` now checks DB for existing name and skips if non-empty. `CreateSession` no longer generates "Session N" fallback — empty names pass through and get auto-titled. Frontend shows italic "Untitled" placeholder for empty names.
 
-### [B/M] Rebase conflict warning visible on all sessions
-Conflict panel appears on every session you navigate to after a rebase conflict, not just the affected one.
-`SessionHeader.tsx` stores `conflictFiles` in local `useState` — should reset on session change. Component likely persists across navigations if it isn't unmounted.
-**Fix:** Reset conflict state in `useEffect` on `sessionId` change, or move conflict state into the per-session store slice.
+### ~~[B/M] Rebase conflict warning visible on all sessions~~ DONE
+Conflict state properly scoped to component lifecycle; resets on session change.
 
-### [B/M] Plan mode — agent makes changes while Plan is still active
-Session appears to accept edits and make file changes while Plan mode is still shown as active in the UI.
-Likely cause: we auto-approve all permission checks (`autoApprove` bypass in `session.go:handleToolPermission`), so the CLI never sends a mode-switch event back to the frontend. Frontend shows "Plan" but the agent has already transitioned.
-**Fix:** Needs investigation — either propagate permission mode state from CLI back to frontend, or disable auto-approve for plan/chat transitions.
+### ~~[B/M] Plan mode — agent makes changes while Plan is still active~~ DONE
+Fixed in `2d0f393` — auto-approval bypass disabled when `permissionMode == "plan"`.
 
 ---
 
 ## P1 — Maintenance
 
-### [I/S] claudecli-go module update available
-`backend/go.mod` pins `claudecli-go` at `v0.0.0-20260324082320-92fb882c72a6`.
-Check what changed, whether it's safe to update, and whether it fixes any known issues.
-**Action:** Review changelog/commits, update and run `go test ./... -short`.
+### ~~[I/S] claudecli-go module update available~~ DONE
+Already on latest (`v0.0.0-20260324082320-92fb882c72a6`, 2026-03-24).
 
 ---
 
