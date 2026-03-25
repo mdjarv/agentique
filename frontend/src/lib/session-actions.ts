@@ -6,6 +6,12 @@ import { useStreamingStore } from "~/stores/streaming-store";
 export const MODELS = ["haiku", "sonnet", "opus"] as const;
 export type ModelId = (typeof MODELS)[number];
 
+export const MODEL_LABELS: Record<ModelId, string> = {
+  haiku: "Haiku 4.5",
+  sonnet: "Sonnet 4.6",
+  opus: "Opus 4.6",
+};
+
 interface SessionCreateResult {
   sessionId: string;
   name: string;

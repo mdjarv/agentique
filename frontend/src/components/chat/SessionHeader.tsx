@@ -40,6 +40,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type DiffResult,
   MODELS,
+  MODEL_LABELS,
   type ModelId,
   commitSession,
   createPR,
@@ -56,12 +57,6 @@ import type { SessionData } from "~/stores/chat-store";
 interface SessionHeaderProps {
   session: SessionData;
 }
-
-const MODEL_LABELS: Record<ModelId, string> = {
-  haiku: "Haiku",
-  sonnet: "Sonnet",
-  opus: "Opus",
-};
 
 export function SessionHeader({ session }: SessionHeaderProps) {
   const { meta } = session;
