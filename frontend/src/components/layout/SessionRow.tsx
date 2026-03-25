@@ -19,6 +19,7 @@ interface SessionRowProps {
   branchMissing?: boolean;
   hasUncommitted?: boolean;
   prUrl?: string;
+  totalCost?: number;
   onClick: () => void;
   onStop: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -43,6 +44,7 @@ export function SessionRow({
   branchMissing,
   hasUncommitted,
   prUrl,
+  totalCost,
   onClick,
   onStop,
   onDelete,
@@ -88,6 +90,11 @@ export function SessionRow({
       {/* Right slot: git status by default, action buttons on hover */}
       <span className="relative ml-auto flex shrink-0 items-center">
         <span className="flex items-center gap-1.5 group-hover/session:invisible">
+          {!!totalCost && totalCost > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              ${totalCost.toFixed(2)}
+            </span>
+          )}
           <GitStatus
             worktreeMerged={worktreeMerged}
             branchMissing={branchMissing}

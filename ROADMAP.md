@@ -204,6 +204,8 @@ Frontend:
 - [ ] Desktop app via Tauri
 - [ ] Session templates / saved prompts
 - [ ] Split pane session layout
+- [ ] Use `/btw` (side query) for auto-naming and PR description generation — requires claudecli-go support for the `/btw` protocol, then replace `RunBlocking` Haiku calls with side queries on the existing session (full context, no pollution, no extra process spawn)
+- [ ] Todo/task checklist visualization — render `TodoWrite` tool inputs as a read-only checklist (pending/in_progress/completed) instead of raw JSON, matching CLI's task progress display
 
 ---
 

@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Loader2, User } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import type { EffortLevel } from "~/components/chat/MessageComposer";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -20,6 +21,7 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
   const [planMode, setPlanMode] = useState(false);
   const [autoApprove, setAutoApprove] = useState(true);
   const [model, setModel] = useState<ModelId>("opus");
+  const [effort, setEffort] = useState<EffortLevel>("");
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
@@ -32,6 +34,7 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
         model,
         planMode,
         autoApprove,
+        effort: effort || undefined,
       });
       await submitQuery(ws, sessionId, prompt, attachments);
       navigate({
@@ -83,6 +86,8 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
         onWorktreeChange={setWorktree}
         model={model}
         onModelChange={setModel}
+        effort={effort}
+        onEffortChange={setEffort}
       />
     </div>
   );

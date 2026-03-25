@@ -20,6 +20,9 @@ interface SessionCreateResult {
   model: string;
   permissionMode: string;
   autoApprove: boolean;
+  effort?: string;
+  maxBudget?: number;
+  maxTurns?: number;
   worktreePath?: string;
   worktreeBranch?: string;
   createdAt: string;
@@ -30,6 +33,9 @@ export interface CreateSessionOpts {
   model?: string;
   planMode?: boolean;
   autoApprove?: boolean;
+  effort?: string;
+  maxBudget?: number;
+  maxTurns?: number;
 }
 
 export async function createSession(
@@ -49,6 +55,9 @@ export async function createSession(
       model: opts?.model,
       planMode: opts?.planMode,
       autoApprove: opts?.autoApprove,
+      effort: opts?.effort,
+      maxBudget: opts?.maxBudget,
+      maxTurns: opts?.maxTurns,
     },
     120000,
   );
@@ -61,6 +70,9 @@ export async function createSession(
     model: result.model as ModelId,
     permissionMode: result.permissionMode,
     autoApprove: result.autoApprove,
+    effort: result.effort,
+    maxBudget: result.maxBudget,
+    maxTurns: result.maxTurns,
     worktreePath: result.worktreePath,
     worktreeBranch: result.worktreeBranch,
     createdAt: result.createdAt,

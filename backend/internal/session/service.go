@@ -23,23 +23,28 @@ var (
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	State           string `json:"state"`
-	Connected       bool   `json:"connected"`
-	Model           string `json:"model"`
-	PermissionMode  string `json:"permissionMode"`
-	AutoApprove     bool   `json:"autoApprove"`
-	WorktreePath    string `json:"worktreePath,omitempty"`
-	WorktreeBranch  string `json:"worktreeBranch,omitempty"`
-	WorktreeMerged  bool   `json:"worktreeMerged,omitempty"`
-	CommitsAhead    int    `json:"commitsAhead"`
-	CommitsBehind   int    `json:"commitsBehind"`
-	BranchMissing   bool   `json:"branchMissing,omitempty"`
-	HasUncommitted  bool   `json:"hasUncommitted,omitempty"`
-	PrUrl           string `json:"prUrl,omitempty"`
-	CreatedAt       string `json:"createdAt"`
-	UpdatedAt       string `json:"updatedAt"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	State           string  `json:"state"`
+	Connected       bool    `json:"connected"`
+	Model           string  `json:"model"`
+	PermissionMode  string  `json:"permissionMode"`
+	AutoApprove     bool    `json:"autoApprove"`
+	Effort          string  `json:"effort,omitempty"`
+	MaxBudget       float64 `json:"maxBudget,omitempty"`
+	MaxTurns        int     `json:"maxTurns,omitempty"`
+	TotalCost       float64 `json:"totalCost"`
+	TurnCount       int     `json:"turnCount"`
+	WorktreePath    string  `json:"worktreePath,omitempty"`
+	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
+	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
+	CommitsAhead    int     `json:"commitsAhead"`
+	CommitsBehind   int     `json:"commitsBehind"`
+	BranchMissing   bool    `json:"branchMissing,omitempty"`
+	HasUncommitted  bool    `json:"hasUncommitted,omitempty"`
+	PrUrl           string  `json:"prUrl,omitempty"`
+	CreatedAt       string  `json:"createdAt"`
+	UpdatedAt       string  `json:"updatedAt"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -52,20 +57,26 @@ type CreateSessionParams struct {
 	PlanMode    bool
 	AutoApprove bool
 	RequestID   string // used as fallback branch name suffix
+	Effort      string
+	MaxBudget   float64
+	MaxTurns    int
 }
 
 // CreateSessionResult is the wire type returned after session creation.
 type CreateSessionResult struct {
-	SessionID      string `json:"sessionId"`
-	Name           string `json:"name"`
-	State          string `json:"state"`
-	Connected      bool   `json:"connected"`
-	Model          string `json:"model"`
-	PermissionMode string `json:"permissionMode"`
-	AutoApprove    bool   `json:"autoApprove"`
-	WorktreePath   string `json:"worktreePath,omitempty"`
-	WorktreeBranch string `json:"worktreeBranch,omitempty"`
-	CreatedAt      string `json:"createdAt"`
+	SessionID      string  `json:"sessionId"`
+	Name           string  `json:"name"`
+	State          string  `json:"state"`
+	Connected      bool    `json:"connected"`
+	Model          string  `json:"model"`
+	PermissionMode string  `json:"permissionMode"`
+	AutoApprove    bool    `json:"autoApprove"`
+	Effort         string  `json:"effort,omitempty"`
+	MaxBudget      float64 `json:"maxBudget,omitempty"`
+	MaxTurns       int     `json:"maxTurns,omitempty"`
+	WorktreePath   string  `json:"worktreePath,omitempty"`
+	WorktreeBranch string  `json:"worktreeBranch,omitempty"`
+	CreatedAt      string  `json:"createdAt"`
 }
 
 // ListSessionsResult is the wire type for session list responses.
@@ -161,6 +172,9 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Model:           model,
 		PlanMode:        p.PlanMode,
 		AutoApprove:     p.AutoApprove,
+		Effort:          p.Effort,
+		MaxBudget:       p.MaxBudget,
+		MaxTurns:        p.MaxTurns,
 	})
 	if err != nil {
 		if worktreePath != "" {
@@ -185,6 +199,9 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Model:          model,
 		PermissionMode: sess.PermissionMode(),
 		AutoApprove:    sess.AutoApprove(),
+		Effort:         p.Effort,
+		MaxBudget:      p.MaxBudget,
+		MaxTurns:       p.MaxTurns,
 		WorktreePath:   worktreePath,
 		WorktreeBranch: worktreeBranch,
 		CreatedAt:      createdAt,
@@ -244,6 +261,14 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 
 	project, _ := s.queries.GetProject(ctx, projectID)
 
+	// Build cost/turn-count map from existing summary query.
+	costMap := make(map[string]store.SessionSummariesByProjectRow)
+	if summaries, err := s.queries.SessionSummariesByProject(ctx, projectID); err == nil {
+		for _, row := range summaries {
+			costMap[row.SessionID] = row
+		}
+	}
+
 	infos := make([]SessionInfo, 0, len(sessions))
 	for _, ss := range sessions {
 		info := SessionInfo{
@@ -254,12 +279,20 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			Model:          ss.Model,
 			PermissionMode: ss.PermissionMode,
 			AutoApprove:    ss.AutoApprove != 0,
+			Effort:         ss.Effort,
+			MaxBudget:      ss.MaxBudget,
+			MaxTurns:       int(ss.MaxTurns),
 			WorktreePath:   nullStr(ss.WorktreePath),
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
 			PrUrl:          ss.PrUrl,
 			CreatedAt:      ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
+		}
+
+		if summary, ok := costMap[ss.ID]; ok {
+			info.TotalCost = summary.TotalCost
+			info.TurnCount = int(summary.TurnCount)
 		}
 
 		if branch := nullStr(ss.WorktreeBranch); branch != "" && !info.WorktreeMerged {
@@ -440,6 +473,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		Model:           dbSess.Model,
 		PermissionMode:  dbSess.PermissionMode,
 		AutoApprove:     dbSess.AutoApprove != 0,
+		Effort:          dbSess.Effort,
+		MaxBudget:       dbSess.MaxBudget,
+		MaxTurns:        int(dbSess.MaxTurns),
 	})
 	if resumeErr != nil {
 		return nil, resumeErr

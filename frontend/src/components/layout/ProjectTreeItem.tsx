@@ -70,6 +70,7 @@ function renderSessionRow(
       branchMissing={session.branchMissing}
       hasUncommitted={session.hasUncommitted}
       prUrl={session.prUrl}
+      totalCost={session.totalCost}
       onClick={() => onSessionClick(id)}
       onStop={(e) => onStop(e, id, session.state)}
       onDelete={(e) => onDelete(e, id)}

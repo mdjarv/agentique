@@ -583,9 +583,14 @@ export function TurnBlock({
               )}
 
             {/* Result metadata */}
-            {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
-              <div className="text-xs text-muted-foreground">
-                {(resultEvent.duration / 1000).toFixed(1)}s
+            {resultEvent && (resultEvent.duration || resultEvent.cost) && (
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                {resultEvent.duration != null && resultEvent.duration > 0 && (
+                  <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
+                )}
+                {resultEvent.cost != null && resultEvent.cost > 0 && (
+                  <span className="tabular-nums">${resultEvent.cost.toFixed(2)}</span>
+                )}
               </div>
             )}
           </div>

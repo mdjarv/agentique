@@ -55,6 +55,11 @@ export interface SessionMetadata {
   model?: string;
   permissionMode?: string;
   autoApprove?: boolean;
+  effort?: string;
+  maxBudget?: number;
+  maxTurns?: number;
+  totalCost?: number;
+  turnCount?: number;
   worktreePath?: string;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
