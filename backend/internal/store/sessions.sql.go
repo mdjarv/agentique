@@ -208,6 +208,16 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 	return items, nil
 }
 
+const recoverStaleSessions = `-- name: RecoverStaleSessions :exec
+UPDATE sessions SET state = 'stopped', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE state IN ('running', 'merging')
+`
+
+func (q *Queries) RecoverStaleSessions(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, recoverStaleSessions)
+	return err
+}
+
 const setWorktreeMerged = `-- name: SetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

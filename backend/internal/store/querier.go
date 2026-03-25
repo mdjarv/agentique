@@ -23,6 +23,7 @@ type Querier interface {
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
+	RecoverStaleSessions(ctx context.Context) error
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error

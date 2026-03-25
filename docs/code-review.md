@@ -34,7 +34,7 @@ See `code-review-2026-03-25.html` for the full visual report.
 
 - [ ] **BE: Session package overloaded** — 5 concerns: lifecycle, git, streaming, state machine, broadcasting. `session/*.go`
 - [x] **BE: No query interfaces** — Consumer-scoped interfaces in session/queries.go (5 interfaces). sqlc Querier enabled. `*store.Queries` satisfies all implicitly.
-- [ ] **BE: Manager god object** — Registry + lifecycle + state repair + shutdown. fixStates() is a hack. `session/manager.go`
+- [x] **BE: Manager god object** — Partial: replaced fixStates() hack with RecoverStaleSessions (runs once at startup via sqlc query). List methods now only overlay live state, no more dead-session correction per call. Registry/lifecycle split deferred.
 - [x] **BE: WS handler boilerplate** — Generic handleRequest[P,R] with Validatable interface. 25 handlers reduced to one-liner closures. `ws/handle.go`
 - [ ] **BE: Implicit state machine** — Transitions scattered across setState, TryLockForMerge, Close, processEvent. `session/state.go, session.go`
 - [ ] **FE: Global WS singleton** — Untestable, no DI. `hooks/useWebSocket.ts`

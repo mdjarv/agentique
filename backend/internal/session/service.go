@@ -311,11 +311,9 @@ func (s *Service) GetSessionInfo(ctx context.Context, sessionID string) (Session
 		}
 	}
 
-	// Fix state like Manager.fixStates does.
+	// Prefer live in-memory state over DB (may lag due to async persistence).
 	if live := s.mgr.Get(sessionID); live != nil {
 		dbSess.State = string(live.State())
-	} else if dbSess.State == string(StateRunning) || dbSess.State == string(StateMerging) {
-		dbSess.State = string(StateStopped)
 	}
 
 	projectPaths := make(map[string]string)

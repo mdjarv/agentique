@@ -12,6 +12,7 @@ type managerQueries interface {
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]store.Session, error)
 	ListAllSessions(ctx context.Context) ([]store.Session, error)
+	RecoverStaleSessions(ctx context.Context) error
 }
 
 type serviceQueries interface {

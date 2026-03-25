@@ -301,7 +301,7 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	if err != nil {
 		return nil, err
 	}
-	m.fixStates(sessions)
+	m.overlayLiveStates(sessions)
 	return sessions, nil
 }
 
@@ -311,20 +311,27 @@ func (m *Manager) ListAll(ctx context.Context) ([]store.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.fixStates(sessions)
+	m.overlayLiveStates(sessions)
 	return sessions, nil
 }
 
-// fixStates corrects DB state for sessions based on live state.
-func (m *Manager) fixStates(sessions []store.Session) {
+// RecoverStaleSessions marks any sessions stuck in running/merging as stopped.
+// Call once at startup before accepting connections — these are leftovers from
+// a previous server run that didn't shut down cleanly.
+func (m *Manager) RecoverStaleSessions(ctx context.Context) {
+	if err := m.queries.RecoverStaleSessions(ctx); err != nil {
+		slog.Error("failed to recover stale sessions", "error", err)
+	}
+}
+
+// overlayLiveStates replaces DB state with in-memory state for live sessions.
+func (m *Manager) overlayLiveStates(sessions []store.Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for i := range sessions {
 		if live, ok := m.sessions[sessions[i].ID]; ok {
 			sessions[i].State = string(live.State())
-		} else if sessions[i].State == string(StateRunning) || sessions[i].State == string(StateMerging) {
-			sessions[i].State = string(StateStopped)
 		}
 	}
 }

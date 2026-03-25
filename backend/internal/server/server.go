@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -23,6 +24,7 @@ func New(queries *store.Queries) *Server {
 	mux := http.NewServeMux()
 	hub := ws.NewHub()
 	mgr := session.NewManager(queries, hub)
+	mgr.RecoverStaleSessions(context.Background())
 	svc := session.NewService(mgr, queries, hub)
 	gitSvc := session.NewGitService(mgr, queries, hub)
 
