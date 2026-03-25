@@ -22,13 +22,8 @@ Fixed in `2d0f393` — auto-approval bypass disabled when `permissionMode == "pl
 ### ~~[B/S] ExitPlanMode approval banner says "enter plan mode"~~ DONE
 Fixed in `c5896cc` — distinct labels for enter/exit, EnterPlanMode auto-approved.
 
-### [B/M] Merge cleanup unreliable — stale branches, loose objects
-Merge with cleanup doesn't delete remote tracking branches. `git gc --auto` is too conservative and may not reclaim loose objects. No standalone "clean" option for sessions merged manually or abandoned.
-**Fix:** Add remote branch deletion to merge cleanup. Consider `git gc` (not `--auto`) or `git prune`. Add a separate "clean" action for sessions without merge.
-
-### [I/M] Worktree removed externally while session has active agent
-If a user removes a worktree directory from a separate shell while the session's agent is still running, the session enters an undefined state. `resumeSession` handles missing worktrees on restart (fallback to project root), but mid-session removal while the CLI is active needs investigation.
-**Investigate:** What happens to the running CLI? Does it crash, error, or silently break? What should the session's state transition be? Should we detect this proactively (fs watch, poll)?
+### ~~[B/M] Merge cleanup unreliable — stale branches, loose objects~~ DONE
+Fixed — remote branch deletion, standalone clean action, improved gc.
 
 ---
 
