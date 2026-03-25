@@ -93,12 +93,12 @@ type HistoryResult struct {
 // Service encapsulates session lifecycle business logic.
 type Service struct {
 	mgr     *Manager
-	queries *store.Queries
+	queries serviceQueries
 	hub     Broadcaster
 }
 
 // NewService creates a new session Service.
-func NewService(mgr *Manager, queries *store.Queries, hub Broadcaster) *Service {
+func NewService(mgr *Manager, queries serviceQueries, hub Broadcaster) *Service {
 	return &Service{mgr: mgr, queries: queries, hub: hub}
 }
 

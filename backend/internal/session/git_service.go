@@ -117,12 +117,12 @@ func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) erro
 // GitService handles git operations (merge, PR, diff, commit) for sessions.
 type GitService struct {
 	mgr     *Manager
-	queries *store.Queries
+	queries gitServiceQueries
 	hub     Broadcaster
 }
 
 // NewGitService creates a new GitService.
-func NewGitService(mgr *Manager, queries *store.Queries, hub Broadcaster) *GitService {
+func NewGitService(mgr *Manager, queries gitServiceQueries, hub Broadcaster) *GitService {
 	return &GitService{mgr: mgr, queries: queries, hub: hub}
 }
 
