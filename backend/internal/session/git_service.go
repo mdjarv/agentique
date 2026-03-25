@@ -205,9 +205,15 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			"worktreeMerged": true,
 		})
 	} else {
+		// Use live state if available (UnlockMerge just set it to idle),
+		// fall back to DB snapshot for dead sessions.
+		state := dbSess.State
+		if live := g.mgr.Get(sessionID); live != nil {
+			state = string(live.State())
+		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
 			"sessionId":      sessionID,
-			"state":          dbSess.State,
+			"state":          state,
 			"worktreeMerged": true,
 		})
 	}
