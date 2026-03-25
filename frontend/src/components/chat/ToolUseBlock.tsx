@@ -102,8 +102,16 @@ export function formatSummary(
       return `${obj.pattern ?? ""}${obj.path ? ` in ${strip(String(obj.path))}` : ""}`;
     case "Bash":
       return String(obj.command ?? obj.description ?? "");
-    case "Agent":
-      return String(obj.description ?? obj.prompt ?? "").slice(0, 120);
+    case "Agent": {
+      const desc = String(obj.description ?? obj.prompt ?? "").slice(0, 120);
+      const agentType = obj.subagent_type ? `[${obj.subagent_type}] ` : "";
+      return `${agentType}${desc}`;
+    }
+    case "TodoWrite": {
+      const todos = Array.isArray(obj.todos) ? obj.todos : [];
+      const done = todos.filter((t: Record<string, unknown>) => t.status === "completed").length;
+      return `${done}/${todos.length} completed`;
+    }
     default:
       return JSON.stringify(input).slice(0, 120);
   }
@@ -143,6 +151,8 @@ function buildDetail(
     case "Read":
     case "Write":
     case "Glob":
+    case "TodoWrite":
+    case "TodoRead":
       return null;
 
     case "Bash":
@@ -159,7 +169,7 @@ function buildDetail(
       return null;
 
     case "Agent":
-      return { kind: "text", content: JSON.stringify(input, null, 2) };
+      return obj.prompt ? { kind: "text", content: String(obj.prompt) } : null;
 
     case "Grep":
       return { kind: "text", content: JSON.stringify(input, null, 2) };

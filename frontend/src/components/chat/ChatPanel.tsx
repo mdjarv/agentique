@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
@@ -8,6 +8,7 @@ import { MessageQueue } from "~/components/chat/MessageQueue";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
+import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { setAutoApprove, setPermissionMode, submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
@@ -43,6 +44,18 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const planMode = session?.planMode ?? false;
   const autoApprove = session?.autoApprove ?? false;
   const queuedMessages = session?.queuedMessages ?? [];
+  const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
+  const hasTodos = todos !== null && todos.length > 0;
+  const [todoPanelCollapsed, setTodoPanelCollapsed] = useState(false);
+
+  // Auto-expand panel when new todos arrive
+  const prevTodosRef = useRef(todos);
+  useEffect(() => {
+    if (todos && todos !== prevTodosRef.current) {
+      setTodoPanelCollapsed(false);
+    }
+    prevTodosRef.current = todos;
+  }, [todos]);
 
   // Set this session as active for unseen-completion tracking
   useEffect(() => {
@@ -153,50 +166,58 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }
 
   return (
-    <div className="flex flex-col h-full" data-project-id={projectId}>
-      <SessionHeader session={session} onSendMessage={handleSend} />
-      <MessageList
-        turns={session.turns}
-        sessionId={sessionId}
-        projectId={projectId}
-        currentAssistantText={currentAssistantText}
-        sessionState={sessionState}
-        projectPath={project?.path}
-        worktreePath={session.meta.worktreePath}
-        isLoadingHistory={isLoadingHistory}
-      />
-      {session.pendingApproval && (
-        <ApprovalBanner
+    <div className="flex h-full" data-project-id={projectId}>
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        <SessionHeader session={session} onSendMessage={handleSend} />
+        <MessageList
+          turns={session.turns}
           sessionId={sessionId}
-          approval={session.pendingApproval}
+          projectId={projectId}
+          currentAssistantText={currentAssistantText}
+          sessionState={sessionState}
           projectPath={project?.path}
           worktreePath={session.meta.worktreePath}
+          isLoadingHistory={isLoadingHistory}
         />
-      )}
-      {session.pendingQuestion && (
-        <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
-      )}
-      {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
-      {queuedMessages.length > 0 && (
-        <MessageQueue
-          messages={queuedMessages}
-          onCancel={(msg) => {
-            useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
-            composerRef.current?.setText(msg.prompt);
-          }}
+        {session.pendingApproval && (
+          <ApprovalBanner
+            sessionId={sessionId}
+            approval={session.pendingApproval}
+            projectPath={project?.path}
+            worktreePath={session.meta.worktreePath}
+          />
+        )}
+        {session.pendingQuestion && (
+          <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
+        )}
+        {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
+        {queuedMessages.length > 0 && (
+          <MessageQueue
+            messages={queuedMessages}
+            onCancel={(msg) => {
+              useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
+              composerRef.current?.setText(msg.prompt);
+            }}
+          />
+        )}
+        <MessageComposer
+          ref={composerRef}
+          onSend={handleSend}
+          isRunning={sessionState === "running"}
+          onInterrupt={handleInterrupt}
+          placeholder={resumePlaceholders[sessionState]}
+          planMode={planMode}
+          onPlanModeChange={handlePlanModeChange}
+          autoApprove={autoApprove}
+          onAutoApproveChange={handleAutoApproveChange}
         />
-      )}
-      <MessageComposer
-        ref={composerRef}
-        onSend={handleSend}
-        isRunning={sessionState === "running"}
-        onInterrupt={handleInterrupt}
-        placeholder={resumePlaceholders[sessionState]}
-        planMode={planMode}
-        onPlanModeChange={handlePlanModeChange}
-        autoApprove={autoApprove}
-        onAutoApproveChange={handleAutoApproveChange}
-      />
+      </div>
+      {hasTodos &&
+        (todoPanelCollapsed ? (
+          <CollapsedTodoStrip todos={todos} onExpand={() => setTodoPanelCollapsed(false)} />
+        ) : (
+          <TodoPanel todos={todos} onCollapse={() => setTodoPanelCollapsed(true)} />
+        ))}
     </div>
   );
 }
