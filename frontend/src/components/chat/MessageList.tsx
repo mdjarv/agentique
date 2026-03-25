@@ -34,6 +34,7 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
   const [following, setFollowing] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
 
@@ -46,13 +47,16 @@ export function MessageList({
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
   useEffect(() => {
     if (following) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      const behavior = scrollBehaviorRef.current;
+      bottomRef.current?.scrollIntoView({ behavior });
+      scrollBehaviorRef.current = "smooth";
     }
   }, [turns, currentAssistantText, following]);
 
-  // Reset to following when switching sessions
+  // Reset to following when switching sessions — instant jump, no smooth scroll
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on session change
   useEffect(() => {
+    scrollBehaviorRef.current = "instant";
     setFollowing(true);
   }, [sessionId]);
 
