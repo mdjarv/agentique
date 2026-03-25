@@ -355,11 +355,11 @@ function TextSegmentView({
 }) {
   return (
     <PromptGroupProvider content={content} projectId={projectId} isStreaming={isStreaming}>
-      <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
+      <div className="group/msg rounded-lg px-4 py-2 bg-muted">
         <button
           type="button"
           onClick={() => onCopy(content)}
-          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
+          className="sticky top-2 float-right ml-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity z-10"
           aria-label="Copy message"
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -455,7 +455,17 @@ export function TurnBlock({
             <User className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
+        <div className="group/usermsg max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
+          {turn.prompt && (
+            <button
+              type="button"
+              onClick={() => turn.prompt && handleCopy(turn.prompt)}
+              className="sticky top-2 float-left mr-2 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-primary-foreground/20 text-primary-foreground/70 transition-opacity z-10"
+              aria-label="Copy message"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          )}
           {turn.attachments && turn.attachments.length > 0 && (
             <div className="flex gap-1.5 flex-wrap mb-2">
               {turn.attachments.map((a) =>
@@ -498,7 +508,7 @@ export function TurnBlock({
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-hidden">
+          <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-x-clip">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && (seg.kind === "thinking" || seg.kind === "tool")) {

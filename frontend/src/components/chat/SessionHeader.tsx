@@ -2,6 +2,7 @@ import {
   ArrowDown,
   Check,
   ChevronDown,
+  Copy,
   ExternalLink,
   FileDiff,
   FolderOpen,
@@ -54,7 +55,7 @@ import {
   renameSession,
   setSessionModel,
 } from "~/lib/session-actions";
-import { cn } from "~/lib/utils";
+import { cn, copyToClipboard } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
@@ -84,6 +85,7 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
   const [refreshingGit, setRefreshingGit] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
+  const [nameCopied, setNameCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -262,16 +264,31 @@ export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
             className="font-medium truncate bg-transparent border-b border-border outline-none px-0 py-0 text-sm w-48"
           />
         ) : (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="group/name flex items-center gap-1 font-medium truncate hover:text-foreground"
-          >
-            <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
-              {meta.name || "Untitled"}
-            </span>
-            <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
-          </button>
+          <div className="group/name flex items-center gap-1 font-medium truncate">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1 truncate hover:text-foreground"
+            >
+              <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
+                {meta.name || "Untitled"}
+              </span>
+              <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                copyToClipboard(meta.name || "Untitled").then(() => {
+                  setNameCopied(true);
+                  setTimeout(() => setNameCopied(false), 1500);
+                });
+              }}
+              className="p-0.5 rounded opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
+              aria-label="Copy session name"
+            >
+              {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+            </button>
+          </div>
         )}
         {meta.worktreeBranch ? (
           <span
