@@ -11,6 +11,10 @@ After clicking Commit on a local (non-worktree) session, the session stays in it
 `session/git_service.go` `Commit()` returns only a hash — no state transition. `SessionHeader.tsx` `handleCommit` toasts success but never updates state.
 **Fix:** After commit succeeds, transition session to `StateDone` (or expose an explicit "mark done" step).
 
+### ~~[B/S] Prompt-block session titles overwritten by Haiku auto-naming~~
+Sessions created from ` ```prompt ` blocks had their extracted title overwritten by Haiku on first query. Also, empty session names got a placeholder "Session N" instead of letting Haiku name them properly.
+**Fixed:** `autoName` now checks DB for existing name and skips if non-empty. `CreateSession` no longer generates "Session N" fallback — empty names pass through and get auto-titled. Frontend shows italic "Untitled" placeholder for empty names.
+
 ### [B/M] Rebase conflict warning visible on all sessions
 Conflict panel appears on every session you navigate to after a rebase conflict, not just the affected one.
 `SessionHeader.tsx` stores `conflictFiles` in local `useState` — should reset on session change. Component likely persists across navigations if it isn't unmounted.
