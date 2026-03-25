@@ -28,6 +28,9 @@ type CreateParams struct {
 	Model           string
 	PlanMode        bool
 	AutoApprove     bool
+	Effort          string
+	MaxBudget       float64
+	MaxTurns        int
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -87,6 +90,15 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithAppendSystemPrompt(agentiquePreamble),
 	}
+	if effort := resolveEffort(params.Effort); effort != "" {
+		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
+	}
+	if params.MaxBudget > 0 {
+		connectOpts = append(connectOpts, claudecli.WithMaxBudget(params.MaxBudget))
+	}
+	if params.MaxTurns > 0 {
+		connectOpts = append(connectOpts, claudecli.WithMaxTurns(params.MaxTurns))
+	}
 	// Pass plan mode as CLI flag to avoid post-connect control request race.
 	if params.PlanMode {
 		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
@@ -119,6 +131,9 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		Model:          params.Model,
 		PermissionMode: permMode,
 		AutoApprove:    autoApproveInt,
+		Effort:         params.Effort,
+		MaxBudget:      params.MaxBudget,
+		MaxTurns:       int64(params.MaxTurns),
 	})
 	if dbErr != nil {
 		cliSess.Close()
@@ -143,6 +158,9 @@ type ResumeParams struct {
 	Model           string
 	PermissionMode  string
 	AutoApprove     bool
+	Effort          string
+	MaxBudget       float64
+	MaxTurns        int
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -177,6 +195,15 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
 		claudecli.WithAppendSystemPrompt(agentiquePreamble),
+	}
+	if effort := resolveEffort(p.Effort); effort != "" {
+		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
+	}
+	if p.MaxBudget > 0 {
+		connectOpts = append(connectOpts, claudecli.WithMaxBudget(p.MaxBudget))
+	}
+	if p.MaxTurns > 0 {
+		connectOpts = append(connectOpts, claudecli.WithMaxTurns(p.MaxTurns))
 	}
 	if p.PermissionMode == "plan" {
 		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
@@ -315,6 +342,21 @@ func (m *Manager) CloseAll() {
 func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	return func(pushType string, payload any) {
 		m.broadcaster.Broadcast(projectID, pushType, payload)
+	}
+}
+
+// resolveEffort maps a string effort level to a claudecli.EffortLevel constant.
+// Returns empty string for unknown/empty values (CLI default).
+func resolveEffort(level string) claudecli.EffortLevel {
+	switch level {
+	case "low":
+		return claudecli.EffortLow
+	case "medium":
+		return claudecli.EffortMedium
+	case "high":
+		return claudecli.EffortHigh
+	default:
+		return ""
 	}
 }
 

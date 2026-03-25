@@ -43,6 +43,9 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 		PlanMode:    payload.PlanMode,
 		AutoApprove: payload.AutoApprove,
 		RequestID:   msg.ID,
+		Effort:      payload.Effort,
+		MaxBudget:   payload.MaxBudget,
+		MaxTurns:    payload.MaxTurns,
 	})
 	if err != nil {
 		c.respond(msg.ID, nil, err.Error())

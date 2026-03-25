@@ -2,6 +2,7 @@ import {
   Check,
   ChevronDown,
   FileText,
+  Gauge,
   GitBranch,
   ListChecks,
   ListPlus,
@@ -40,6 +41,8 @@ export interface ComposerHandle {
   setText: (text: string) => void;
 }
 
+export type EffortLevel = "" | "low" | "medium" | "high";
+
 interface MessageComposerProps {
   onSend: (prompt: string, attachments?: Attachment[]) => void;
   disabled?: boolean;
@@ -57,6 +60,8 @@ interface MessageComposerProps {
   onWorktreeChange?: (value: boolean) => void;
   model?: ModelId;
   onModelChange?: (value: ModelId) => void;
+  effort?: EffortLevel;
+  onEffortChange?: (value: EffortLevel) => void;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -78,6 +83,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onWorktreeChange,
       model,
       onModelChange,
+      effort,
+      onEffortChange,
     },
     ref,
   ) {
@@ -392,6 +399,26 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+              )}
+              {isDraft && onEffortChange && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const levels: EffortLevel[] = ["", "low", "medium", "high"];
+                    const idx = levels.indexOf(effort ?? "");
+                    const next = levels[(idx + 1) % levels.length] ?? "";
+                    onEffortChange(next);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                    effort
+                      ? "bg-blue-500/10 text-blue-500"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                  )}
+                >
+                  <Gauge className="h-3 w-3" />
+                  {effort ? `Effort: ${effort}` : "Effort: auto"}
+                </button>
               )}
             </div>
 

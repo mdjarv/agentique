@@ -55,6 +55,11 @@ const (
 	eventLoopShutdownTimeout = 3 * time.Second
 	watchdogWarnAfter        = 2 * time.Minute
 	watchdogFailAfter        = 5 * time.Minute
+
+	// Tool result truncation thresholds for DB storage.
+	maxToolResultDBSize = 10_000
+	toolResultKeepHead  = 4_000
+	toolResultKeepTail  = 1_000
 )
 
 // Session wraps a single claudecli-go interactive session.
@@ -342,14 +347,21 @@ func (s *Session) processEvent(event claudecli.Event) {
 		return
 	}
 
-	// Persist to DB.
+	// Persist to DB. Truncate large tool results to keep DB lean —
+	// the full content is still broadcast to connected clients above.
 	s.mu.Lock()
 	seq := s.seqInTurn
 	turnIdx := s.turnIndex
 	s.seqInTurn++
 	s.mu.Unlock()
 
-	if data, err := json.Marshal(wireEvent); err == nil {
+	dbEvent := wireEvent
+	if tr, ok := wireEvent.(WireToolResultEvent); ok && len(tr.Content) > maxToolResultDBSize {
+		tr.Content = tr.Content[:toolResultKeepHead] + "\n...[truncated]...\n" + tr.Content[len(tr.Content)-toolResultKeepTail:]
+		dbEvent = tr
+	}
+
+	if data, err := json.Marshal(dbEvent); err == nil {
 		typed, _ := wireEvent.(interface{ WireType() string })
 		_ = s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 			SessionID: s.ID,

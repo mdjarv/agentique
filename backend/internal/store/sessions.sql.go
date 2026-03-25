@@ -11,8 +11,8 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve, effort, max_budget, max_turns)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns
 `
 
 type CreateSessionParams struct {
@@ -27,6 +27,9 @@ type CreateSessionParams struct {
 	Model           string         `json:"model"`
 	PermissionMode  string         `json:"permission_mode"`
 	AutoApprove     int64          `json:"auto_approve"`
+	Effort          string         `json:"effort"`
+	MaxBudget       float64        `json:"max_budget"`
+	MaxTurns        int64          `json:"max_turns"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -42,6 +45,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.Model,
 		arg.PermissionMode,
 		arg.AutoApprove,
+		arg.Effort,
+		arg.MaxBudget,
+		arg.MaxTurns,
 	)
 	var i Session
 	err := row.Scan(
@@ -61,6 +67,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.PermissionMode,
 		&i.AutoApprove,
 		&i.PrUrl,
+		&i.Effort,
+		&i.MaxBudget,
+		&i.MaxTurns,
 	)
 	return i, err
 }
@@ -75,7 +84,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -98,12 +107,15 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.PermissionMode,
 		&i.AutoApprove,
 		&i.PrUrl,
+		&i.Effort,
+		&i.MaxBudget,
+		&i.MaxTurns,
 	)
 	return i, err
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -132,6 +144,9 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.PermissionMode,
 			&i.AutoApprove,
 			&i.PrUrl,
+			&i.Effort,
+			&i.MaxBudget,
+			&i.MaxTurns,
 		); err != nil {
 			return nil, err
 		}

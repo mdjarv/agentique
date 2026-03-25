@@ -36,6 +36,9 @@ type Session struct {
 	PermissionMode  string         `json:"permission_mode"`
 	AutoApprove     int64          `json:"auto_approve"`
 	PrUrl           string         `json:"pr_url"`
+	Effort          string         `json:"effort"`
+	MaxBudget       float64        `json:"max_budget"`
+	MaxTurns        int64          `json:"max_turns"`
 }
 
 type SessionEvent struct {
