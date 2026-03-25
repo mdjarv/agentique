@@ -148,14 +148,6 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	name := p.Name
-	if name == "" {
-		sessions, listErr := s.mgr.ListByProject(ctx, p.ProjectID)
-		count := 0
-		if listErr == nil {
-			count = len(sessions)
-		}
-		name = fmt.Sprintf("Session %d", count+1)
-	}
 
 	model := p.Model
 	if model == "" {
@@ -506,7 +498,13 @@ func (s *Service) RenameSession(ctx context.Context, sessionID, name string) err
 }
 
 // autoName calls Haiku to generate a short title and broadcasts the rename.
+// Skips if the session already has a user-provided name (e.g. from a prompt block).
 func (s *Service) autoName(sessionID, projectID, prompt string) {
+	dbSess, err := s.queries.GetSession(context.Background(), sessionID)
+	if err == nil && dbSess.Name != "" {
+		return
+	}
+
 	name := generateSessionName(prompt)
 	if name == "" {
 		return

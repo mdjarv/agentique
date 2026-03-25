@@ -262,7 +262,9 @@ export function SessionHeader({ session }: SessionHeaderProps) {
             onClick={() => setEditing(true)}
             className="group/name flex items-center gap-1 font-medium truncate hover:text-foreground"
           >
-            <span className="truncate">{meta.name}</span>
+            <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
+              {meta.name || "Untitled"}
+            </span>
             <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
           </button>
         )}
@@ -481,8 +483,8 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete session</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete &quot;{meta.name}&quot;? This removes the worktree, branch, and all session
-              data.
+              Delete &quot;{meta.name || "Untitled"}&quot;? This removes the worktree, branch, and
+              all session data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

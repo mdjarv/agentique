@@ -80,12 +80,13 @@ export function SessionRow({
       <span
         className={cn(
           "truncate text-sidebar-foreground",
+          !name && "italic text-muted-foreground",
           faded && "text-muted-foreground line-through decoration-muted-foreground/50",
           hasAttention && "text-[#e0af68]",
         )}
-        title={worktreeBranch ? `${name}\n${worktreeBranch}` : name}
+        title={worktreeBranch ? `${name || "Untitled"}\n${worktreeBranch}` : name || "Untitled"}
       >
-        {name}
+        {name || "Untitled"}
       </span>
       {/* Right slot: git status by default, action buttons on hover */}
       <span className="relative ml-auto flex shrink-0 items-center">
