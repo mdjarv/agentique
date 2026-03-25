@@ -6,8 +6,6 @@ interface AppState {
   setProjects: (projects: Project[]) => void;
   addProject: (project: Project) => void;
   removeProject: (id: string) => void;
-  hideStoppedSessions: boolean;
-  toggleHideStoppedSessions: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -15,7 +13,4 @@ export const useAppStore = create<AppState>((set) => ({
   setProjects: (projects) => set({ projects }),
   addProject: (project) => set((state) => ({ projects: [...state.projects, project] })),
   removeProject: (id) => set((state) => ({ projects: state.projects.filter((p) => p.id !== id) })),
-  hideStoppedSessions: false,
-  toggleHideStoppedSessions: () =>
-    set((state) => ({ hideStoppedSessions: !state.hideStoppedSessions })),
 }));

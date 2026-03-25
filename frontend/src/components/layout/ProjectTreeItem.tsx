@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, EyeOff, FolderOpen, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -17,7 +17,6 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteSession, interruptSession, stopSession } from "~/lib/session-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
 import { type ChatState, useChatStore } from "~/stores/chat-store";
 import { SessionRow } from "./SessionRow";
 
@@ -82,7 +81,6 @@ function SessionGroups({
   sessionIds,
   sessions,
   activeSessionId,
-  hideStoppedSessions,
   onSessionClick,
   onStop,
   onDelete,
@@ -90,7 +88,6 @@ function SessionGroups({
   sessionIds: string[];
   sessions: ChatState["sessions"];
   activeSessionId: string | null;
-  hideStoppedSessions: boolean;
   onSessionClick: (id: string) => void;
   onStop: (e: React.MouseEvent, id: string, state: string) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
@@ -105,7 +102,6 @@ function SessionGroups({
     if (meta.worktreeMerged) {
       completed.push(id);
     } else {
-      if (hideStoppedSessions && meta.state === "stopped") continue;
       active.push(id);
     }
   }
@@ -213,9 +209,6 @@ export function ProjectTreeItem({
   );
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const hideStoppedSessions = useAppStore((s) => s.hideStoppedSessions);
-  const toggleHideStoppedSessions = useAppStore((s) => s.toggleHideStoppedSessions);
-
   const handleProjectClick = () => {
     onToggleExpand();
     if (!isActive) {
@@ -314,39 +307,23 @@ export function ProjectTreeItem({
       {/* Sessions + new chat */}
       {isExpanded && (
         <div className="ml-4 mt-0.5 space-y-0.5">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                navigate({
-                  to: "/project/$projectId/session/new",
-                  params: { projectId: project.id },
-                });
-              }}
-              className="flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>New chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={toggleHideStoppedSessions}
-              title={hideStoppedSessions ? "Show stopped sessions" : "Hide stopped sessions"}
-              className={cn(
-                "rounded-md p-1 transition-colors cursor-pointer",
-                hideStoppedSessions
-                  ? "text-sidebar-foreground bg-sidebar-accent/50"
-                  : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
-              )}
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigate({
+                to: "/project/$projectId/session/new",
+                params: { projectId: project.id },
+              });
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>New chat</span>
+          </button>
           <SessionGroups
             sessionIds={sessionIds}
             sessions={sessions}
             activeSessionId={activeSessionId}
-            hideStoppedSessions={hideStoppedSessions}
             onSessionClick={handleSessionClick}
             onStop={handleStopSession}
             onDelete={handleDeleteSession}
