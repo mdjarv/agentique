@@ -286,10 +286,6 @@ export async function deleteSession(ws: WsClient, sessionId: string): Promise<vo
   await ws.request("session.delete", { sessionId });
 }
 
-export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.refresh-git", { sessionId });
-}
-
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {
   try {
     await ws.request("session.stop", { sessionId });
