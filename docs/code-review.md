@@ -37,11 +37,11 @@ See `code-review-2026-03-25.html` for the full visual report.
 - [x] **BE: Manager god object** — Partial: replaced fixStates() hack with RecoverStaleSessions (runs once at startup via sqlc query). List methods now only overlay live state, no more dead-session correction per call. Registry/lifecycle split deferred.
 - [x] **BE: WS handler boilerplate** — Generic handleRequest[P,R] with Validatable interface. 25 handlers reduced to one-liner closures. `ws/handle.go`
 - [x] **BE: Implicit state machine** — All state methods now in state.go: State(), setState(), TryLockForMerge(), UnlockMerge(), validateTransition(). Close() bypass remains intentional (see P1 assessment).
-- [ ] **FE: Global WS singleton** — Untestable, no DI. `hooks/useWebSocket.ts`
-- [ ] **FE: Store mutations in lib/** — session-actions.ts and session-history.ts directly mutate stores. `lib/session-actions.ts, lib/session-history.ts`
+- [x] **FE: Global WS singleton** — Deferred. Works fine at runtime; testability concern only matters when FE tests exist. See `docs/frontend-state-sync.md` for broader state sync assessment.
+- [x] **FE: Store mutations in lib/** — Deferred. Command pattern (request + update store) is pragmatically fine. Would be addressed by any of the state sync options (A-D) in `docs/frontend-state-sync.md`.
 - [x] **FE: useGlobalSubscriptions god-hook** — Won't fix. Single effect is simpler for reconnection coordination. Splitting adds file sprawl and implicit ordering for minimal testability gain.
 - [x] **FE: useGitActions mega-hook** — Split into 7 focused hooks (useSessionDiff, useMergeSession, etc). useGitActions is now a thin facade.
-- [ ] **FE: Chat store mixes domain/UI** — SessionData contains domain, UI, derived, and transient state. `stores/chat-store.ts`
+- [x] **FE: Chat store mixes domain/UI** — Deferred. Would be naturally resolved by migrating server state to TanStack Query or DB (Options A/C/D), leaving Zustand for UI-only state.
 - [x] **FE: Weak result types** — MergeResult, RebaseResult, CreatePRResult, CleanResult now use discriminated unions with exhaustive narrowing.
 - [x] **FE: Streaming store fragile indexing** — Removed index indirection. appendToolInput takes toolId directly. Index tracking moved to module-scoped Map in useGlobalSubscriptions.
 
@@ -59,18 +59,15 @@ See `code-review-2026-03-25.html` for the full visual report.
 
 ## Remaining Work
 
-**P2 (3 FE items — interconnected store architecture):**
-1. FE: Global WS singleton — replace with context provider for DI/testability
-2. FE: Store mutations in lib/ — move mutations from session-actions/session-history into hooks
-3. FE: Chat store mixes domain/UI — separate domain state from transient UI state
+**P2 — all resolved or deferred.** See `docs/frontend-state-sync.md` for FE state architecture options.
 
 **P3 (9 items — low priority polish):**
-4. BE: Watchdog timer edge case
-5. BE: git GC error logging
-6. BE: Conflict file list cap
-7. FE: Object URL cleanup on unmount
-8. FE: Scroll thrashing during streaming
-9. FE: Error boundaries
-10. FE: Session sorting dedup
-11. BE: Magic constants → config
-12. BE: Hub/broadcast circular dep
+1. BE: Watchdog timer edge case
+2. BE: git GC error logging
+3. BE: Conflict file list cap
+4. FE: Object URL cleanup on unmount
+5. FE: Scroll thrashing during streaming
+6. FE: Error boundaries
+7. FE: Session sorting dedup
+8. BE: Magic constants → config
+9. BE: Hub/broadcast circular dep
