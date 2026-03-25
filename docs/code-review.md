@@ -1,15 +1,15 @@
-# Code Review — 2025-03-25
+# Code Review — 2026-03-25
 
 Consolidated findings from 4 parallel reviews (FE bugs, BE bugs, FE architecture, BE architecture).
 See `code-review-2026-03-25.html` for the full visual report.
 
 ## Cross-Cutting Themes
 
-1. **Disconnected state systems** — FE hook local state vs Zustand store vs BE broadcasts. Store mutations scattered across lib/, hooks/, components/.
-2. **Session package god object** — BE session/ handles lifecycle, git, streaming, state machine, broadcasting, approvals. 800+ lines in session.go.
+1. **Disconnected state systems** — FE hook local state vs Zustand store vs BE broadcasts. Store mutations still scattered in FE lib/. Rebase conflict fix was the first instance addressed.
+2. **~~Session package god object~~** — Partially resolved: state machine in state.go, message generation in internal/msggen, fixStates replaced with startup recovery. Event loop and broadcasting remain in session.go.
 3. **~~Concurrency gaps~~** — Investigated: WS write loop cleaned up (single goroutine, no real race), seqInTurn and broadcast-deadlock were false positives. TOCTOU tightened.
-4. **No interfaces = untestable** — BE: Manager, store.Queries, gitops all concrete. FE: global WS singleton, getState() in libs.
-5. **~~Silent failures everywhere~~** — BE DB errors all handled (PersistError type + logging). FE still swallows rejections with console.error. No error boundaries.
+4. **~~No interfaces = untestable~~** — BE resolved: consumer-scoped query interfaces + sqlc Querier. FE global WS singleton and getState() in libs remain.
+5. **~~Silent failures everywhere~~** — BE DB errors all handled (PersistError type + logging). FE still swallows some rejections with console.error. No error boundaries.
 
 ## P0 — Fix Now
 
@@ -57,14 +57,20 @@ See `code-review-2026-03-25.html` for the full visual report.
 - [ ] **BE: Hardcoded magic constants** — Timeouts, sizes not configurable. `session/session.go`
 - [ ] **BE: Hub/broadcast circular dep risk** — ws/ holds session.Service; session/ broadcasts via ws/Hub. `ws/handler.go, session/handler.go`
 
-## Attack Order
+## Remaining Work
 
-1. P0 concurrency bugs (WS write loop, seqInTurn, broadcast deadlock)
-2. P0 orphaned processes
-3. P1 state corruption (Close() bypass, TOCTOU, silent DB failures)
-4. P1 frontend UX gaps (silent failures, frozen buttons)
-5. P2 backend interfaces (start with SessionQueries)
-6. P2 session package split (extract GitService, split Session)
-7. P2 frontend WS provider (replace singleton with context)
-8. P2 frontend store cleanup (split hooks, move mutations, discriminated unions)
-9. P3 polish (error boundaries, scroll, config)
+**P2 (3 FE items — interconnected store architecture):**
+1. FE: Global WS singleton — replace with context provider for DI/testability
+2. FE: Store mutations in lib/ — move mutations from session-actions/session-history into hooks
+3. FE: Chat store mixes domain/UI — separate domain state from transient UI state
+
+**P3 (9 items — low priority polish):**
+4. BE: Watchdog timer edge case
+5. BE: git GC error logging
+6. BE: Conflict file list cap
+7. FE: Object URL cleanup on unmount
+8. FE: Scroll thrashing during streaming
+9. FE: Error boundaries
+10. FE: Session sorting dedup
+11. BE: Magic constants → config
+12. BE: Hub/broadcast circular dep
