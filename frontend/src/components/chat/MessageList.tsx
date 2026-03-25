@@ -1,4 +1,4 @@
-import { ArrowDown, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowDown, Loader2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { Button } from "~/components/ui/button";
@@ -103,16 +103,16 @@ export function MessageList({
         ))}
         <div ref={bottomRef} />
       </div>
-      <div className="sticky bottom-4 z-10 flex justify-center gap-2">
+      <div className="sticky bottom-3 right-3 z-10 flex justify-end gap-1.5 pr-3">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="secondary"
               size="icon"
               onClick={() => setShowEvents((v) => !v)}
-              className="rounded-full shadow-lg opacity-80 hover:opacity-100 transition-opacity h-8 w-8"
+              className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7"
             >
-              {showEvents ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              <Wrench className={`h-3.5 w-3.5 ${showEvents ? "" : "text-muted-foreground"}`} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{showEvents ? "Hide tool events" : "Show tool events"}</TooltipContent>
@@ -124,9 +124,9 @@ export function MessageList({
                 variant="secondary"
                 size="icon"
                 onClick={scrollToBottom}
-                className="rounded-full shadow-lg opacity-80 hover:opacity-100 transition-opacity h-8 w-8"
+                className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7"
               >
-                <ArrowDown className="h-4 w-4" />
+                <ArrowDown className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Scroll to bottom</TooltipContent>
