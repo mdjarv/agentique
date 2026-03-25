@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { createSession, submitQuery } from "~/lib/session-actions";
+import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
 
@@ -19,6 +19,7 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
   const [worktree, setWorktree] = useState(true);
   const [planMode, setPlanMode] = useState(false);
   const [autoApprove, setAutoApprove] = useState(true);
+  const [model, setModel] = useState<ModelId>("opus");
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
@@ -27,7 +28,11 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
     setSending(true);
     setPendingPrompt(prompt);
     try {
-      const sessionId = await createSession(ws, projectId, "", worktree, { planMode, autoApprove });
+      const sessionId = await createSession(ws, projectId, "", worktree, {
+        model,
+        planMode,
+        autoApprove,
+      });
       await submitQuery(ws, sessionId, prompt, attachments);
       navigate({
         to: "/project/$projectId/session/$sessionId",
@@ -76,6 +81,8 @@ export function NewChatPanel({ projectId }: NewChatPanelProps) {
         onAutoApproveChange={setAutoApprove}
         worktree={worktree}
         onWorktreeChange={setWorktree}
+        model={model}
+        onModelChange={setModel}
       />
     </div>
   );

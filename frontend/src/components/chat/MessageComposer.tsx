@@ -1,4 +1,6 @@
 import {
+  Check,
+  ChevronDown,
   FileText,
   GitBranch,
   ListChecks,
@@ -13,6 +15,13 @@ import {
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { MODELS, MODEL_LABELS, type ModelId } from "~/lib/session-actions";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
 
@@ -47,6 +56,8 @@ interface MessageComposerProps {
   onAutoApproveChange?: (value: boolean) => void;
   worktree?: boolean;
   onWorktreeChange?: (value: boolean) => void;
+  model?: ModelId;
+  onModelChange?: (value: ModelId) => void;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -66,6 +77,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onAutoApproveChange,
       worktree,
       onWorktreeChange,
+      model,
+      onModelChange,
     },
     ref,
   ) {
@@ -336,6 +349,31 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
               <ShieldCheck className="h-3 w-3" />
               {autoApprove ? "Auto-approve" : "Manual"}
             </button>
+          )}
+          {isDraft && onModelChange && model && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
+                  "bg-muted border-transparent text-muted-foreground hover:border-border",
+                )}
+              >
+                {MODEL_LABELS[model]}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {MODELS.map((m) => (
+                  <DropdownMenuItem
+                    key={m}
+                    onClick={() => onModelChange(m)}
+                    className="text-xs gap-2"
+                  >
+                    <Check className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")} />
+                    {MODEL_LABELS[m]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
