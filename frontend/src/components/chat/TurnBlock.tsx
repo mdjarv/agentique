@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
+import { PromptGroupProvider } from "~/components/chat/PromptCard";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock, formatSummary, getToolIcon } from "~/components/chat/ToolUseBlock";
@@ -139,6 +140,7 @@ interface TurnBlockProps {
   turn: Turn;
   isLast: boolean;
   sessionId: string;
+  projectId: string;
   currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
@@ -342,23 +344,29 @@ function TextSegmentView({
   content,
   onCopy,
   copied,
+  projectId,
+  isStreaming,
 }: {
   content: string;
   onCopy: (text: string) => void;
   copied: boolean;
+  projectId: string;
+  isStreaming: boolean;
 }) {
   return (
-    <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
-      <button
-        type="button"
-        onClick={() => onCopy(content)}
-        className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
-        aria-label="Copy message"
-      >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-      <Markdown content={content} />
-    </div>
+    <PromptGroupProvider content={content} projectId={projectId} isStreaming={isStreaming}>
+      <div className="relative group/msg rounded-lg px-4 py-2 bg-muted">
+        <button
+          type="button"
+          onClick={() => onCopy(content)}
+          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity"
+          aria-label="Copy message"
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+        <Markdown content={content} />
+      </div>
+    </PromptGroupProvider>
   );
 }
 
@@ -390,6 +398,7 @@ export function TurnBlock({
   turn,
   isLast,
   sessionId,
+  projectId,
   currentAssistantText,
   sessionState,
   projectPath,
@@ -531,6 +540,8 @@ export function TurnBlock({
                       content={seg.content}
                       onCopy={handleCopy}
                       copied={copied}
+                      projectId={projectId}
+                      isStreaming={false}
                     />
                   );
                 case "error":
@@ -540,7 +551,13 @@ export function TurnBlock({
 
             {/* Streaming text tail (not yet committed as an event) */}
             {streamingTail && (
-              <TextSegmentView content={streamingTail} onCopy={handleCopy} copied={copied} />
+              <TextSegmentView
+                content={streamingTail}
+                onCopy={handleCopy}
+                copied={copied}
+                projectId={projectId}
+                isStreaming
+              />
             )}
 
             {/* Streaming indicator — empty turn */}

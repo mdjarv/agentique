@@ -14,6 +14,7 @@ function isNearBottom(el: HTMLElement): boolean {
 interface MessageListProps {
   turns: Turn[];
   sessionId: string;
+  projectId: string;
   currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
@@ -24,6 +25,7 @@ interface MessageListProps {
 export function MessageList({
   turns,
   sessionId,
+  projectId,
   currentAssistantText,
   sessionState,
   projectPath,
@@ -87,6 +89,7 @@ export function MessageList({
             turn={turn}
             isLast={i === turns.length - 1}
             sessionId={sessionId}
+            projectId={projectId}
             currentAssistantText={currentAssistantText}
             sessionState={sessionState}
             projectPath={projectPath}
