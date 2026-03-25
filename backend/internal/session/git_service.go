@@ -417,6 +417,85 @@ func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string
 	return parsePRDescription(result.Text), nil
 }
 
+// CommitMessageResult holds generated commit title and description.
+type CommitMessageResult struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// GenerateCommitMessage uses Haiku to generate a commit title and description from the session diff.
+func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string) (CommitMessageResult, error) {
+	diff, err := g.Diff(ctx, sessionID)
+	if err != nil {
+		return CommitMessageResult{}, fmt.Errorf("failed to get diff: %w", err)
+	}
+	if !diff.HasDiff {
+		return CommitMessageResult{}, fmt.Errorf("no changes to describe")
+	}
+
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return CommitMessageResult{}, fmt.Errorf("session not found")
+	}
+
+	diffText := diff.Diff
+	const maxDiffChars = 8000
+	if len(diffText) > maxDiffChars {
+		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
+	}
+
+	prompt := fmt.Sprintf(
+		"Generate a git commit message for these changes.\n"+
+			"Session name: %s\n\n"+
+			"Diff summary:\n%s\n\n"+
+			"Full diff:\n%s\n\n"+
+			"Respond in EXACTLY this format with no other text:\n"+
+			"TITLE: <imperative mood, max 72 chars, no period>\n"+
+			"DESCRIPTION:\n<optional longer explanation, 1-4 lines, explain why not what>",
+		dbSess.Name, diff.Summary, diffText,
+	)
+
+	client := claudecli.New()
+	result, err := client.RunBlocking(ctx, prompt,
+		claudecli.WithModel(claudecli.ModelHaiku),
+		claudecli.WithMaxTurns(1),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+	)
+	if err != nil {
+		return CommitMessageResult{}, fmt.Errorf("haiku generation failed: %w", err)
+	}
+
+	return parseCommitMessage(result.Text), nil
+}
+
+// parseCommitMessage extracts title and description from Haiku's "TITLE: ...\nDESCRIPTION:\n..." response.
+func parseCommitMessage(text string) CommitMessageResult {
+	text = strings.TrimSpace(text)
+
+	titleIdx := strings.Index(text, "TITLE:")
+	descIdx := strings.Index(text, "DESCRIPTION:")
+
+	var title, desc string
+	if titleIdx >= 0 && descIdx > titleIdx {
+		title = strings.TrimSpace(text[titleIdx+len("TITLE:") : descIdx])
+		desc = strings.TrimSpace(text[descIdx+len("DESCRIPTION:"):])
+	} else if titleIdx >= 0 {
+		title = strings.TrimSpace(text[titleIdx+len("TITLE:"):])
+	} else {
+		lines := strings.SplitN(text, "\n", 2)
+		title = strings.TrimSpace(lines[0])
+		if len(lines) > 1 {
+			desc = strings.TrimSpace(lines[1])
+		}
+	}
+
+	if len(title) > 72 {
+		title = title[:72]
+	}
+
+	return CommitMessageResult{Title: title, Description: desc}
+}
+
 // parsePRDescription extracts title and body from Haiku's "TITLE: ...\nBODY:\n..." response.
 func parsePRDescription(text string) PRDescriptionResult {
 	text = strings.TrimSpace(text)
