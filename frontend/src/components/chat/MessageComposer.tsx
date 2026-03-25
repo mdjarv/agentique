@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,6 +83,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
   ) {
     const [text, setText] = useState(initialText ?? "");
     const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const submittingRef = useRef(false);
@@ -211,6 +211,23 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       e.target.value = "";
     };
 
+    const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) addFiles(files);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+      setIsDragging(false);
+    };
+
     const removeAttachment = (id: string) => {
       setAttachments((prev) => {
         const a = prev.find((i) => i.id === id);
@@ -219,10 +236,13 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
+    const hasToggles = isDraft || onPlanModeChange || onAutoApproveChange;
+
     return (
-      <div className="border-t p-4 space-y-2">
+      <div className="border-t p-3">
+        {/* Attachment previews */}
         {attachments.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap mb-2">
             {attachments.map((a) => (
               <div key={a.id} className="relative group">
                 {isImage(a.mimeType) ? (
@@ -250,25 +270,19 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             ))}
           </div>
         )}
-        <div className="flex gap-3 items-end">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPTED_TYPES}
-            multiple
-            className="hidden"
-            onChange={handleFileInput}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-            aria-label="Attach files"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
+
+        {/* Unified composer container */}
+        <div
+          className={cn(
+            "rounded-xl border bg-secondary/50 transition-all",
+            isDragging
+              ? "border-primary ring-2 ring-primary/30"
+              : "focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30",
+          )}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
           <textarea
             ref={textareaRef}
             autoFocus
@@ -280,102 +294,143 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
-            className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-y-auto"
+            className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
             rows={1}
             style={{ maxHeight: "200px" }}
             disabled={disabled}
           />
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={disabled || (!text.trim() && attachments.length === 0)}
-          >
-            {isRunning ? <ListPlus className="h-4 w-4" /> : <SendHorizonal className="h-4 w-4" />}
-          </Button>
-          {isRunning && (
-            <Button size="icon" variant="destructive" onClick={onInterrupt}>
-              <Square className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {isDraft && (
-            <button
-              type="button"
-              onClick={() => onWorktreeChange?.(!worktree)}
-              className={cn(
-                "flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-                worktree
-                  ? "bg-primary/10 border-primary/30 text-primary"
-                  : "bg-muted border-transparent text-muted-foreground hover:border-border",
-              )}
-            >
-              <GitBranch className="h-3 w-3" />
-              {worktree ? "Worktree" : "Local"}
-            </button>
-          )}
-          {onPlanModeChange && (
-            <button
-              type="button"
-              onClick={() => onPlanModeChange(!planMode)}
-              disabled={isRunning}
-              className={cn(
-                "flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-                planMode
-                  ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500"
-                  : "bg-muted border-transparent text-muted-foreground hover:border-border",
-                isRunning && "opacity-50 cursor-not-allowed",
-              )}
-            >
-              {planMode ? (
-                <ListChecks className="h-3 w-3" />
-              ) : (
-                <MessageSquare className="h-3 w-3" />
-              )}
-              {planMode ? "Plan" : "Chat"}
-            </button>
-          )}
-          {onAutoApproveChange && (
-            <button
-              type="button"
-              onClick={() => onAutoApproveChange(!autoApprove)}
-              className={cn(
-                "flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-                autoApprove
-                  ? "bg-green-500/10 border-green-500/30 text-green-500"
-                  : "bg-muted border-transparent text-muted-foreground hover:border-border",
-              )}
-            >
-              <ShieldCheck className="h-3 w-3" />
-              {autoApprove ? "Auto-approve" : "Manual"}
-            </button>
-          )}
-          {isDraft && onModelChange && model && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  "flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 border transition-colors",
-                  "bg-muted border-transparent text-muted-foreground hover:border-border",
-                )}
+
+          {/* Bottom bar */}
+          <div className="flex items-center justify-between px-2 pb-2">
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled}
+                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                aria-label="Attach files"
               >
-                {MODEL_LABELS[model]}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {MODELS.map((m) => (
-                  <DropdownMenuItem
-                    key={m}
-                    onClick={() => onModelChange(m)}
-                    className="text-xs gap-2"
+                <Paperclip className="h-3.5 w-3.5" />
+              </button>
+
+              {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
+
+              {isDraft && (
+                <button
+                  type="button"
+                  onClick={() => onWorktreeChange?.(!worktree)}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                    worktree
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                  )}
+                >
+                  <GitBranch className="h-3 w-3" />
+                  {worktree ? "Worktree" : "Local"}
+                </button>
+              )}
+              {onPlanModeChange && (
+                <button
+                  type="button"
+                  onClick={() => onPlanModeChange(!planMode)}
+                  disabled={isRunning}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                    planMode
+                      ? "bg-yellow-500/10 text-yellow-500"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                    isRunning && "opacity-40 cursor-not-allowed",
+                  )}
+                >
+                  {planMode ? (
+                    <ListChecks className="h-3 w-3" />
+                  ) : (
+                    <MessageSquare className="h-3 w-3" />
+                  )}
+                  {planMode ? "Plan" : "Chat"}
+                </button>
+              )}
+              {onAutoApproveChange && (
+                <button
+                  type="button"
+                  onClick={() => onAutoApproveChange(!autoApprove)}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                    autoApprove
+                      ? "bg-green-500/10 text-green-500"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                  )}
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  {autoApprove ? "Auto" : "Manual"}
+                </button>
+              )}
+              {isDraft && onModelChange && model && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                    )}
                   >
-                    <Check className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")} />
-                    {MODEL_LABELS[m]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                    {MODEL_LABELS[model]}
+                    <ChevronDown className="h-3 w-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {MODELS.map((m) => (
+                      <DropdownMenuItem
+                        key={m}
+                        onClick={() => onModelChange(m)}
+                        className="text-xs gap-2"
+                      >
+                        <Check
+                          className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
+                        />
+                        {MODEL_LABELS[m]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {isRunning && (
+                <button
+                  type="button"
+                  onClick={onInterrupt}
+                  className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
+                  aria-label="Stop"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={disabled || (!text.trim() && attachments.length === 0)}
+                className="h-7 w-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                aria-label={isRunning ? "Queue message" : "Send message"}
+              >
+                {isRunning ? (
+                  <ListPlus className="h-3.5 w-3.5" />
+                ) : (
+                  <SendHorizonal className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_TYPES}
+          multiple
+          className="hidden"
+          onChange={handleFileInput}
+        />
       </div>
     );
   },

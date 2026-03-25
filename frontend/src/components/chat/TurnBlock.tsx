@@ -475,7 +475,9 @@ export function TurnBlock({
               )}
             </div>
           )}
-          {turn.prompt && <p className="text-sm whitespace-pre-wrap">{turn.prompt}</p>}
+          {turn.prompt && (
+            <Markdown content={turn.prompt} className="prose-user" preserveNewlines />
+          )}
         </div>
       </div>
 
