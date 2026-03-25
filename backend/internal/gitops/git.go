@@ -136,6 +136,11 @@ func UncommittedDiff(dir string) (diff string, summary string, err error) {
 	return string(diffOut), summary, nil
 }
 
+// AutoGC runs git gc --auto to pack loose objects if thresholds are exceeded.
+func AutoGC(projectDir string) {
+	_, _ = gitRun(projectDir, "gc", "--auto", "--quiet")
+}
+
 // DeleteBranch safely deletes a local branch (uses -d, not -D).
 func DeleteBranch(projectDir, branch string) error {
 	out, err := gitRun(projectDir, "branch", "-d", branch)

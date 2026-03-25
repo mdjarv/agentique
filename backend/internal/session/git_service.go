@@ -181,6 +181,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
+	go gitops.AutoGC(project.Path)
 
 	_ = g.queries.SetWorktreeMerged(ctx, sessionID)
 	if live := g.mgr.Get(sessionID); live != nil {
