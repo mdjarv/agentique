@@ -41,9 +41,63 @@ type CommitResult struct {
 	CommitHash string `json:"commitHash"`
 }
 
-// autoCommitWorktree commits all uncommitted changes in a worktree directory.
-// Returns nil if the directory is empty, clean, or on check failure (logged, not fatal).
-func autoCommitWorktree(sessionID, wtPath, reason string) error {
+// haikuCommitMsg calls Haiku to generate a commit message from a diff.
+func haikuCommitMsg(ctx context.Context, sessionName, summary, diff string) (CommitMessageResult, error) {
+	diffText := diff
+	const maxDiffChars = 8000
+	if len(diffText) > maxDiffChars {
+		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
+	}
+
+	prompt := fmt.Sprintf(
+		"Generate a git commit message for these changes.\n"+
+			"Session name: %s\n\n"+
+			"Diff summary:\n%s\n\n"+
+			"Full diff:\n%s\n\n"+
+			"Respond in EXACTLY this format with no other text:\n"+
+			"TITLE: <imperative mood, max 72 chars, no period>\n"+
+			"DESCRIPTION:\n<optional longer explanation, 1-4 lines, explain why not what>",
+		sessionName, summary, diffText,
+	)
+
+	client := claudecli.New()
+	result, err := client.RunBlocking(ctx, prompt,
+		claudecli.WithModel(claudecli.ModelHaiku),
+		claudecli.WithMaxTurns(1),
+		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+	)
+	if err != nil {
+		return CommitMessageResult{}, fmt.Errorf("haiku generation failed: %w", err)
+	}
+
+	return parseCommitMessage(result.Text), nil
+}
+
+// generateAutoCommitMsg generates a commit message for uncommitted changes via Haiku,
+// falling back to a session-name-based message on failure.
+func generateAutoCommitMsg(ctx context.Context, sessionName, wtPath string) string {
+	fallback := sessionName + ": save changes"
+
+	diff, summary, err := gitops.UncommittedDiff(wtPath)
+	if err != nil || (diff == "" && summary == "") {
+		return fallback
+	}
+
+	result, err := haikuCommitMsg(ctx, sessionName, summary, diff)
+	if err != nil || result.Title == "" {
+		slog.Warn("haiku commit msg failed, using fallback", "error", err)
+		return fallback
+	}
+
+	if result.Description != "" {
+		return result.Title + "\n\n" + result.Description
+	}
+	return result.Title
+}
+
+// autoCommit commits all uncommitted changes in a worktree directory with a
+// Haiku-generated commit message. Returns nil if clean or on check failure.
+func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) error {
 	if wtPath == "" {
 		return nil
 	}
@@ -55,7 +109,9 @@ func autoCommitWorktree(sessionID, wtPath, reason string) error {
 	if !dirty {
 		return nil
 	}
-	return gitops.AutoCommitAll(wtPath, "agentique: auto-commit before "+reason)
+
+	msg := generateAutoCommitMsg(ctx, sessionName, wtPath)
+	return gitops.AutoCommitAll(wtPath, msg)
 }
 
 // GitService handles git operations (merge, PR, diff, commit) for sessions.
@@ -108,11 +164,11 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	wtPath := nullStr(dbSess.WorktreePath)
-	if err := autoCommitWorktree(sessionID, wtPath, "merge"); err != nil {
+	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
 		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
-	hash, mergeErr := gitops.MergeBranch(project.Path, branch)
+	hash, mergeErr := gitops.MergeBranch(project.Path, branch, "Merge: "+dbSess.Name)
 	if mergeErr != nil {
 		files, _ := gitops.MergeConflictFiles(project.Path)
 		_ = gitops.AbortMerge(project.Path)
@@ -195,7 +251,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		}()
 	}
 
-	if err := autoCommitWorktree(sessionID, wtPath, "rebase"); err != nil {
+	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
 		return RebaseResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
@@ -262,7 +318,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	}
 
 	wtPath := nullStr(dbSess.WorktreePath)
-	if err := autoCommitWorktree(p.SessionID, wtPath, "PR"); err != nil {
+	if err := autoCommit(ctx, p.SessionID, dbSess.Name, wtPath); err != nil {
 		return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
@@ -438,34 +494,7 @@ func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string
 		return CommitMessageResult{}, fmt.Errorf("session not found")
 	}
 
-	diffText := diff.Diff
-	const maxDiffChars = 8000
-	if len(diffText) > maxDiffChars {
-		diffText = diffText[:maxDiffChars] + "\n... (truncated)"
-	}
-
-	prompt := fmt.Sprintf(
-		"Generate a git commit message for these changes.\n"+
-			"Session name: %s\n\n"+
-			"Diff summary:\n%s\n\n"+
-			"Full diff:\n%s\n\n"+
-			"Respond in EXACTLY this format with no other text:\n"+
-			"TITLE: <imperative mood, max 72 chars, no period>\n"+
-			"DESCRIPTION:\n<optional longer explanation, 1-4 lines, explain why not what>",
-		dbSess.Name, diff.Summary, diffText,
-	)
-
-	client := claudecli.New()
-	result, err := client.RunBlocking(ctx, prompt,
-		claudecli.WithModel(claudecli.ModelHaiku),
-		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-	)
-	if err != nil {
-		return CommitMessageResult{}, fmt.Errorf("haiku generation failed: %w", err)
-	}
-
-	return parseCommitMessage(result.Text), nil
+	return haikuCommitMsg(ctx, dbSess.Name, diff.Summary, diff.Diff)
 }
 
 // parseCommitMessage extracts title and description from Haiku's "TITLE: ...\nDESCRIPTION:\n..." response.

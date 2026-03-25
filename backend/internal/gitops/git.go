@@ -51,8 +51,13 @@ func ghRun(dir string, args ...string) ([]byte, error) {
 
 // MergeBranch performs a --no-ff merge of branch into the current branch in projectDir.
 // Returns the merge commit hash on success.
-func MergeBranch(projectDir, branch string) (string, error) {
-	out, err := gitRun(projectDir, "merge", "--no-ff", branch)
+func MergeBranch(projectDir, branch, message string) (string, error) {
+	args := []string{"merge", "--no-ff"}
+	if message != "" {
+		args = append(args, "-m", message)
+	}
+	args = append(args, branch)
+	out, err := gitRun(projectDir, args...)
 	if err != nil {
 		return "", fmt.Errorf("git merge failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -113,6 +118,22 @@ func AutoCommitAll(dir, message string) error {
 		return fmt.Errorf("git commit failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// UncommittedDiff returns the diff of uncommitted changes (staged + unstaged vs HEAD)
+// and a short status summary. Used for generating commit messages.
+func UncommittedDiff(dir string) (diff string, summary string, err error) {
+	statusOut, sErr := gitStdout(dir, "status", "--short")
+	if sErr != nil {
+		return "", "", fmt.Errorf("git status failed: %w", sErr)
+	}
+	summary = strings.TrimSpace(string(statusOut))
+
+	diffOut, dErr := gitStdout(dir, "diff", "HEAD")
+	if dErr != nil {
+		return "", summary, fmt.Errorf("git diff HEAD failed: %w", dErr)
+	}
+	return string(diffOut), summary, nil
 }
 
 // DeleteBranch safely deletes a local branch (uses -d, not -D).
