@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/allbin/agentique/backend/internal/session"
 )
@@ -166,4 +167,194 @@ type SessionCleanPayload struct {
 
 type SessionRefreshGitPayload struct {
 	SessionID string `json:"sessionId"`
+}
+
+// --- Validate methods ---
+
+var (
+	errProjectIDRequired          = errors.New("projectId is required")
+	errSessionIDRequired          = errors.New("sessionId is required")
+	errSessionIDAndPromptRequired = errors.New("sessionId and prompt are required")
+	errSessionIDsRequired         = errors.New("sessionIds is required")
+	errSessionIDAndNameRequired   = errors.New("sessionId and name are required")
+	errSessionIDAndModelRequired  = errors.New("sessionId and model are required")
+	errSessionIDAndModeRequired   = errors.New("sessionId and mode are required")
+	errApprovalIDRequired         = errors.New("sessionId and approvalId are required")
+	errQuestionIDRequired         = errors.New("sessionId and questionId are required")
+	errSessionIDAndMsgRequired    = errors.New("sessionId and message are required")
+)
+
+func (p *ProjectSubscribePayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *SessionCreatePayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *SessionQueryPayload) Validate() error {
+	if p.SessionID == "" || p.Prompt == "" {
+		return errSessionIDAndPromptRequired
+	}
+	return nil
+}
+
+func (p *SessionListPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *SessionStopPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionHistoryPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionDiffPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionInterruptPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionMergePayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionCreatePRPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionDeletePayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionDeleteBulkPayload) Validate() error {
+	if len(p.SessionIDs) == 0 {
+		return errSessionIDsRequired
+	}
+	return nil
+}
+
+func (p *SessionRenamePayload) Validate() error {
+	if p.SessionID == "" || p.Name == "" {
+		return errSessionIDAndNameRequired
+	}
+	return nil
+}
+
+func (p *SessionSetModelPayload) Validate() error {
+	if p.SessionID == "" || p.Model == "" {
+		return errSessionIDAndModelRequired
+	}
+	return nil
+}
+
+func (p *SessionSetPermissionPayload) Validate() error {
+	if p.SessionID == "" || p.Mode == "" {
+		return errSessionIDAndModeRequired
+	}
+	return nil
+}
+
+func (p *SessionSetAutoApprovePayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionResolveApprovalPayload) Validate() error {
+	if p.SessionID == "" || p.ApprovalID == "" {
+		return errApprovalIDRequired
+	}
+	return nil
+}
+
+func (p *SessionResolveQuestionPayload) Validate() error {
+	if p.SessionID == "" || p.QuestionID == "" {
+		return errQuestionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionCommitPayload) Validate() error {
+	if p.SessionID == "" || p.Message == "" {
+		return errSessionIDAndMsgRequired
+	}
+	return nil
+}
+
+func (p *SessionRebasePayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionGeneratePRDescPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionGenerateCommitMsgPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionMarkDonePayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionCleanPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionRefreshGitPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
 }

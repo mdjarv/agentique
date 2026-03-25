@@ -1,484 +1,182 @@
 package ws
 
 import (
-	"encoding/json"
-
+	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/session"
 )
 
 func (c *conn) handleProjectSubscribe(msg ClientMessage) {
-	var payload ProjectSubscribePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.ProjectID == "" {
-		c.respond(msg.ID, nil, "projectId is required")
-		return
-	}
-
-	c.hub.Subscribe(payload.ProjectID, c)
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p ProjectSubscribePayload) (struct{}, error) {
+		c.hub.Subscribe(p.ProjectID, c)
+		return struct{}{}, nil
+	})
 }
 
 func (c *conn) handleSessionCreate(msg ClientMessage) {
-	var payload SessionCreatePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.ProjectID == "" {
-		c.respond(msg.ID, nil, "projectId is required")
-		return
-	}
-
-	result, err := c.svc.CreateSession(c.ctx, session.CreateSessionParams{
-		ProjectID:   payload.ProjectID,
-		Name:        payload.Name,
-		Worktree:    payload.Worktree,
-		Branch:      payload.Branch,
-		Model:       payload.Model,
-		PlanMode:    payload.PlanMode,
-		AutoApprove: payload.AutoApprove,
-		RequestID:   msg.ID,
-		Effort:      payload.Effort,
-		MaxBudget:   payload.MaxBudget,
-		MaxTurns:    payload.MaxTurns,
+	handleRequest(c, msg, func(p SessionCreatePayload) (session.CreateSessionResult, error) {
+		return c.svc.CreateSession(c.ctx, session.CreateSessionParams{
+			ProjectID:   p.ProjectID,
+			Name:        p.Name,
+			Worktree:    p.Worktree,
+			Branch:      p.Branch,
+			Model:       p.Model,
+			PlanMode:    p.PlanMode,
+			AutoApprove: p.AutoApprove,
+			RequestID:   msg.ID,
+			Effort:      p.Effort,
+			MaxBudget:   p.MaxBudget,
+			MaxTurns:    p.MaxTurns,
+		})
 	})
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-
-	c.respond(msg.ID, result, "")
 }
 
 func (c *conn) handleSessionQuery(msg ClientMessage) {
-	var payload SessionQueryPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" || payload.Prompt == "" {
-		c.respond(msg.ID, nil, "sessionId and prompt are required")
-		return
-	}
-
-	if err := c.svc.QuerySession(c.ctx, payload.SessionID, payload.Prompt, payload.Attachments); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionQueryPayload) (struct{}, error) {
+		return struct{}{}, c.svc.QuerySession(c.ctx, p.SessionID, p.Prompt, p.Attachments)
+	})
 }
 
 func (c *conn) handleSessionList(msg ClientMessage) {
-	var payload SessionListPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.ProjectID == "" {
-		c.respond(msg.ID, nil, "projectId is required")
-		return
-	}
-
-	result, err := c.svc.ListSessions(c.ctx, payload.ProjectID)
-	if err != nil {
-		c.respond(msg.ID, nil, "failed to list sessions: "+err.Error())
-		return
-	}
-
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionListPayload) (session.ListSessionsResult, error) {
+		return c.svc.ListSessions(c.ctx, p.ProjectID)
+	})
 }
 
 func (c *conn) handleSessionStop(msg ClientMessage) {
-	var payload SessionStopPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-
-	if err := c.svc.StopSession(c.ctx, payload.SessionID); err != nil {
-		c.respond(msg.ID, nil, "failed to stop session: "+err.Error())
-		return
-	}
-
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionStopPayload) (struct{}, error) {
+		return struct{}{}, c.svc.StopSession(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionDiff(msg ClientMessage) {
-	var payload SessionDiffPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-
-	result, err := c.gitSvc.Diff(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionDiffPayload) (gitops.DiffResult, error) {
+		return c.gitSvc.Diff(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionInterrupt(msg ClientMessage) {
-	var payload SessionInterruptPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-
-	if err := c.svc.InterruptSession(payload.SessionID); err != nil {
-		c.respond(msg.ID, nil, "interrupt failed: "+err.Error())
-		return
-	}
-
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionInterruptPayload) (struct{}, error) {
+		return struct{}{}, c.svc.InterruptSession(p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionMerge(msg ClientMessage) {
-	var payload SessionMergePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.Merge(c.ctx, payload.SessionID, payload.Cleanup)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionMergePayload) (session.MergeResult, error) {
+		return c.gitSvc.Merge(c.ctx, p.SessionID, p.Cleanup)
+	})
 }
 
 func (c *conn) handleSessionCreatePR(msg ClientMessage) {
-	var payload SessionCreatePRPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.CreatePR(c.ctx, session.CreatePRParams{
-		SessionID: payload.SessionID,
-		Title:     payload.Title,
-		Body:      payload.Body,
+	handleRequest(c, msg, func(p SessionCreatePRPayload) (session.CreatePRResult, error) {
+		return c.gitSvc.CreatePR(c.ctx, session.CreatePRParams{
+			SessionID: p.SessionID,
+			Title:     p.Title,
+			Body:      p.Body,
+		})
 	})
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
 }
 
 func (c *conn) handleSessionDeleteBulk(msg ClientMessage) {
-	var payload SessionDeleteBulkPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if len(payload.SessionIDs) == 0 {
-		c.respond(msg.ID, nil, "sessionIds is required")
-		return
-	}
-	results := make([]SessionDeleteBulkResultItem, 0, len(payload.SessionIDs))
-	for _, sid := range payload.SessionIDs {
-		item := SessionDeleteBulkResultItem{SessionID: sid, Success: true}
-		if err := c.svc.DeleteSession(c.ctx, sid); err != nil {
-			item.Success = false
-			item.Error = err.Error()
+	handleRequest(c, msg, func(p SessionDeleteBulkPayload) (SessionDeleteBulkResult, error) {
+		results := make([]SessionDeleteBulkResultItem, 0, len(p.SessionIDs))
+		for _, sid := range p.SessionIDs {
+			item := SessionDeleteBulkResultItem{SessionID: sid, Success: true}
+			if err := c.svc.DeleteSession(c.ctx, sid); err != nil {
+				item.Success = false
+				item.Error = err.Error()
+			}
+			results = append(results, item)
 		}
-		results = append(results, item)
-	}
-	c.respond(msg.ID, SessionDeleteBulkResult{Results: results}, "")
+		return SessionDeleteBulkResult{Results: results}, nil
+	})
 }
 
 func (c *conn) handleSessionDelete(msg ClientMessage) {
-	var payload SessionDeletePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	if err := c.svc.DeleteSession(c.ctx, payload.SessionID); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionDeletePayload) (struct{}, error) {
+		return struct{}{}, c.svc.DeleteSession(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionRename(msg ClientMessage) {
-	var payload SessionRenamePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.Name == "" {
-		c.respond(msg.ID, nil, "sessionId and name are required")
-		return
-	}
-	if err := c.svc.RenameSession(c.ctx, payload.SessionID, payload.Name); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionRenamePayload) (struct{}, error) {
+		return struct{}{}, c.svc.RenameSession(c.ctx, p.SessionID, p.Name)
+	})
 }
 
 func (c *conn) handleSessionSetModel(msg ClientMessage) {
-	var payload SessionSetModelPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.Model == "" {
-		c.respond(msg.ID, nil, "sessionId and model are required")
-		return
-	}
-	if err := c.svc.SetSessionModel(c.ctx, payload.SessionID, payload.Model); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionSetModelPayload) (struct{}, error) {
+		return struct{}{}, c.svc.SetSessionModel(c.ctx, p.SessionID, p.Model)
+	})
 }
 
 func (c *conn) handleSessionSetPermission(msg ClientMessage) {
-	var payload SessionSetPermissionPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.Mode == "" {
-		c.respond(msg.ID, nil, "sessionId and mode are required")
-		return
-	}
-	if err := c.svc.SetPermissionMode(payload.SessionID, payload.Mode); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionSetPermissionPayload) (struct{}, error) {
+		return struct{}{}, c.svc.SetPermissionMode(p.SessionID, p.Mode)
+	})
 }
 
 func (c *conn) handleSessionSetAutoApprove(msg ClientMessage) {
-	var payload SessionSetAutoApprovePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	if err := c.svc.SetAutoApprove(payload.SessionID, payload.Enabled); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionSetAutoApprovePayload) (struct{}, error) {
+		return struct{}{}, c.svc.SetAutoApprove(p.SessionID, p.Enabled)
+	})
 }
 
 func (c *conn) handleSessionResolveApproval(msg ClientMessage) {
-	var payload SessionResolveApprovalPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.ApprovalID == "" {
-		c.respond(msg.ID, nil, "sessionId and approvalId are required")
-		return
-	}
-	if err := c.svc.ResolveApproval(payload.SessionID, payload.ApprovalID, payload.Allow, payload.Message); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionResolveApprovalPayload) (struct{}, error) {
+		return struct{}{}, c.svc.ResolveApproval(p.SessionID, p.ApprovalID, p.Allow, p.Message)
+	})
 }
 
 func (c *conn) handleSessionResolveQuestion(msg ClientMessage) {
-	var payload SessionResolveQuestionPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.QuestionID == "" {
-		c.respond(msg.ID, nil, "sessionId and questionId are required")
-		return
-	}
-	if err := c.svc.ResolveQuestion(payload.SessionID, payload.QuestionID, payload.Answers); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionResolveQuestionPayload) (struct{}, error) {
+		return struct{}{}, c.svc.ResolveQuestion(p.SessionID, p.QuestionID, p.Answers)
+	})
 }
 
 func (c *conn) handleSessionCommit(msg ClientMessage) {
-	var payload SessionCommitPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" || payload.Message == "" {
-		c.respond(msg.ID, nil, "sessionId and message are required")
-		return
-	}
-	result, err := c.gitSvc.Commit(c.ctx, payload.SessionID, payload.Message)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionCommitPayload) (session.CommitResult, error) {
+		return c.gitSvc.Commit(c.ctx, p.SessionID, p.Message)
+	})
 }
 
 func (c *conn) handleSessionRebase(msg ClientMessage) {
-	var payload SessionRebasePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.Rebase(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionRebasePayload) (session.RebaseResult, error) {
+		return c.gitSvc.Rebase(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionHistory(msg ClientMessage) {
-	var payload SessionHistoryPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-
-	result, err := c.svc.GetHistory(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, "failed to load history: "+err.Error())
-		return
-	}
-
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionHistoryPayload) (session.HistoryResult, error) {
+		return c.svc.GetHistory(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
-	var payload SessionGeneratePRDescPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.GeneratePRDescription(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionGeneratePRDescPayload) (session.PRDescriptionResult, error) {
+		return c.gitSvc.GeneratePRDescription(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionMarkDone(msg ClientMessage) {
-	var payload SessionMarkDonePayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	if err := c.svc.MarkSessionDone(c.ctx, payload.SessionID); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionMarkDonePayload) (struct{}, error) {
+		return struct{}{}, c.svc.MarkSessionDone(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionClean(msg ClientMessage) {
-	var payload SessionCleanPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.Clean(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionCleanPayload) (session.CleanResult, error) {
+		return c.gitSvc.Clean(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionRefreshGit(msg ClientMessage) {
-	var payload SessionRefreshGitPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	if err := c.gitSvc.RefreshGitStatus(c.ctx, payload.SessionID); err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, struct{}{}, "")
+	handleRequest(c, msg, func(p SessionRefreshGitPayload) (struct{}, error) {
+		return struct{}{}, c.gitSvc.RefreshGitStatus(c.ctx, p.SessionID)
+	})
 }
 
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
-	var payload SessionGenerateCommitMsgPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.respond(msg.ID, nil, "invalid payload")
-		return
-	}
-	if payload.SessionID == "" {
-		c.respond(msg.ID, nil, "sessionId is required")
-		return
-	}
-	result, err := c.gitSvc.GenerateCommitMessage(c.ctx, payload.SessionID)
-	if err != nil {
-		c.respond(msg.ID, nil, err.Error())
-		return
-	}
-	c.respond(msg.ID, result, "")
+	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (session.CommitMessageResult, error) {
+		return c.gitSvc.GenerateCommitMessage(c.ctx, p.SessionID)
+	})
 }
