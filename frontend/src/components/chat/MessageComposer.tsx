@@ -2,7 +2,9 @@ import {
   Check,
   ChevronDown,
   FileText,
+  FolderOpen,
   Gauge,
+  GitBranch,
   ListChecks,
   ListPlus,
   MessageSquare,
@@ -50,6 +52,8 @@ interface MessageComposerProps {
   initialText?: string;
   onTextPersist?: (text: string) => void;
   placeholder?: string;
+  worktree?: boolean;
+  onWorktreeChange?: (value: boolean) => void;
   planMode?: boolean;
   onPlanModeChange?: (value: boolean) => void;
   autoApprove?: boolean;
@@ -57,6 +61,7 @@ interface MessageComposerProps {
   model?: ModelId;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
+  onEffortChange?: (value: EffortLevel) => void;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -69,6 +74,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onInterrupt,
       initialText,
       onTextPersist,
+      worktree,
+      onWorktreeChange,
       planMode,
       onPlanModeChange,
       autoApprove,
@@ -76,6 +83,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       model,
       onModelChange,
       effort,
+      onEffortChange,
     },
     ref,
   ) {
@@ -234,7 +242,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const hasToggles = onPlanModeChange || onAutoApproveChange;
+    const hasToggles = onWorktreeChange || onPlanModeChange || onAutoApproveChange;
 
     return (
       <div className="border-t p-3">
@@ -313,6 +321,23 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
               {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
 
+              {onWorktreeChange && (
+                <button
+                  type="button"
+                  onClick={() => onWorktreeChange(!worktree)}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                    worktree ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500",
+                  )}
+                >
+                  {worktree ? (
+                    <GitBranch className="h-3 w-3" />
+                  ) : (
+                    <FolderOpen className="h-3 w-3" />
+                  )}
+                  {worktree ? "Worktree" : "Local"}
+                </button>
+              )}
               {onPlanModeChange && (
                 <button
                   type="button"
@@ -354,17 +379,37 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 <div className="w-px h-4 bg-border mx-1" />
               )}
 
-              {effort !== undefined && (
-                <span
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
-                    effort ? "text-blue-500" : "text-muted-foreground",
-                  )}
-                >
-                  <Gauge className="h-3 w-3" />
-                  {effort ? `${effort}` : "auto"}
-                </span>
-              )}
+              {effort !== undefined &&
+                (onEffortChange ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const levels: EffortLevel[] = ["", "low", "medium", "high"];
+                      const idx = levels.indexOf(effort);
+                      const next = levels[(idx + 1) % levels.length] ?? "";
+                      onEffortChange(next);
+                    }}
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      effort
+                        ? "text-blue-500"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                    )}
+                  >
+                    <Gauge className="h-3 w-3" />
+                    {effort ? `${effort}` : "auto"}
+                  </button>
+                ) : (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                      effort ? "text-blue-500" : "text-muted-foreground",
+                    )}
+                  >
+                    <Gauge className="h-3 w-3" />
+                    {effort ? `${effort}` : "auto"}
+                  </span>
+                ))}
 
               {onModelChange && model && (
                 <DropdownMenu>
