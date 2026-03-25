@@ -299,7 +299,22 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 	if err != nil {
 		return nil, err
 	}
+	m.fixStates(sessions)
+	return sessions, nil
+}
 
+// ListAll returns all sessions across all projects from DB.
+func (m *Manager) ListAll(ctx context.Context) ([]store.Session, error) {
+	sessions, err := m.queries.ListAllSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m.fixStates(sessions)
+	return sessions, nil
+}
+
+// fixStates corrects DB state for sessions based on live state.
+func (m *Manager) fixStates(sessions []store.Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -310,8 +325,6 @@ func (m *Manager) ListByProject(ctx context.Context, projectID string) ([]store.
 			sessions[i].State = string(StateStopped)
 		}
 	}
-
-	return sessions, nil
 }
 
 // CloseAll gracefully closes all live sessions with a per-session timeout.

@@ -35,5 +35,8 @@ UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M
 -- name: UpdateSessionPRUrl :exec
 UPDATE sessions SET pr_url = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: ListAllSessions :many
+SELECT * FROM sessions ORDER BY updated_at DESC;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

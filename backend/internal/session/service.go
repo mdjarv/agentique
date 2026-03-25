@@ -24,6 +24,7 @@ var (
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
 	ID              string  `json:"id"`
+	ProjectID       string  `json:"projectId"`
 	Name            string  `json:"name"`
 	State           string  `json:"state"`
 	Connected       bool    `json:"connected"`
@@ -245,6 +246,12 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// costSummary holds cost/turn data for a session (unifies sqlc row types).
+type costSummary struct {
+	TurnCount int64
+	TotalCost float64
+}
+
 // ListSessions returns session info for a project.
 func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessionsResult, error) {
 	sessions, err := s.mgr.ListByProject(ctx, projectID)
@@ -252,20 +259,81 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 		return ListSessionsResult{}, err
 	}
 
-	project, _ := s.queries.GetProject(ctx, projectID)
-
-	// Build cost/turn-count map from existing summary query.
-	costMap := make(map[string]store.SessionSummariesByProjectRow)
+	costMap := make(map[string]costSummary)
 	if summaries, err := s.queries.SessionSummariesByProject(ctx, projectID); err == nil {
 		for _, row := range summaries {
-			costMap[row.SessionID] = row
+			costMap[row.SessionID] = costSummary{TurnCount: row.TurnCount, TotalCost: row.TotalCost}
 		}
 	}
 
+	projectPaths := make(map[string]string)
+	if project, err := s.queries.GetProject(ctx, projectID); err == nil {
+		projectPaths[projectID] = project.Path
+	}
+
+	infos := s.enrichSessions(sessions, costMap, projectPaths)
+	return ListSessionsResult{Sessions: infos}, nil
+}
+
+// ListAllSessions returns session info across all projects.
+func (s *Service) ListAllSessions(ctx context.Context) (ListSessionsResult, error) {
+	sessions, err := s.mgr.ListAll(ctx)
+	if err != nil {
+		return ListSessionsResult{}, err
+	}
+
+	costMap := make(map[string]costSummary)
+	if summaries, err := s.queries.AllSessionSummaries(ctx); err == nil {
+		for _, row := range summaries {
+			costMap[row.SessionID] = costSummary{TurnCount: row.TurnCount, TotalCost: row.TotalCost}
+		}
+	}
+
+	projectPaths := s.resolveProjectPaths(ctx, sessions)
+	infos := s.enrichSessions(sessions, costMap, projectPaths)
+	return ListSessionsResult{Sessions: infos}, nil
+}
+
+// GetSessionInfo returns info for a single session.
+func (s *Service) GetSessionInfo(ctx context.Context, sessionID string) (SessionInfo, error) {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return SessionInfo{}, ErrNotFound
+	}
+
+	costMap := make(map[string]costSummary)
+	if summaries, err := s.queries.SessionSummariesByProject(ctx, dbSess.ProjectID); err == nil {
+		for _, row := range summaries {
+			if row.SessionID == sessionID {
+				costMap[sessionID] = costSummary{TurnCount: row.TurnCount, TotalCost: row.TotalCost}
+				break
+			}
+		}
+	}
+
+	// Fix state like Manager.fixStates does.
+	if live := s.mgr.Get(sessionID); live != nil {
+		dbSess.State = string(live.State())
+	} else if dbSess.State == string(StateRunning) || dbSess.State == string(StateMerging) {
+		dbSess.State = string(StateStopped)
+	}
+
+	projectPaths := make(map[string]string)
+	if project, err := s.queries.GetProject(ctx, dbSess.ProjectID); err == nil {
+		projectPaths[dbSess.ProjectID] = project.Path
+	}
+
+	infos := s.enrichSessions([]store.Session{dbSess}, costMap, projectPaths)
+	return infos[0], nil
+}
+
+// enrichSessions converts store.Session rows into SessionInfo with cost and git data.
+func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]costSummary, projectPaths map[string]string) []SessionInfo {
 	infos := make([]SessionInfo, 0, len(sessions))
 	for _, ss := range sessions {
 		info := SessionInfo{
 			ID:             ss.ID,
+			ProjectID:      ss.ProjectID,
 			Name:           ss.Name,
 			State:          ss.State,
 			Connected:      s.mgr.IsLive(ss.ID),
@@ -288,22 +356,37 @@ func (s *Service) ListSessions(ctx context.Context, projectID string) (ListSessi
 			info.TurnCount = int(summary.TurnCount)
 		}
 
-		if branch := nullStr(ss.WorktreeBranch); branch != "" && !info.WorktreeMerged {
-			if gitops.BranchExists(project.Path, branch) {
-				info.CommitsAhead, _ = gitops.CommitsAhead(project.Path, branch)
-				info.CommitsBehind, _ = gitops.CommitsBehind(project.Path, branch)
-				if wtPath := nullStr(ss.WorktreePath); wtPath != "" {
-					info.HasUncommitted, _ = gitops.HasUncommittedChanges(wtPath)
+		if branch := info.WorktreeBranch; branch != "" && !info.WorktreeMerged {
+			if projectPath, ok := projectPaths[ss.ProjectID]; ok {
+				if gitops.BranchExists(projectPath, branch) {
+					info.CommitsAhead, _ = gitops.CommitsAhead(projectPath, branch)
+					info.CommitsBehind, _ = gitops.CommitsBehind(projectPath, branch)
+					if info.WorktreePath != "" {
+						info.HasUncommitted, _ = gitops.HasUncommittedChanges(info.WorktreePath)
+					}
+				} else {
+					info.BranchMissing = true
 				}
-			} else {
-				info.BranchMissing = true
 			}
 		}
 
 		infos = append(infos, info)
 	}
+	return infos
+}
 
-	return ListSessionsResult{Sessions: infos}, nil
+// resolveProjectPaths builds a projectID -> path map for sessions.
+func (s *Service) resolveProjectPaths(ctx context.Context, sessions []store.Session) map[string]string {
+	paths := make(map[string]string)
+	for _, ss := range sessions {
+		if _, ok := paths[ss.ProjectID]; ok {
+			continue
+		}
+		if project, err := s.queries.GetProject(ctx, ss.ProjectID); err == nil {
+			paths[ss.ProjectID] = project.Path
+		}
+	}
+	return paths
 }
 
 // GetHistory returns turn history for a session.

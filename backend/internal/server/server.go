@@ -36,6 +36,20 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("PATCH /api/projects/{id}", ph.HandleUpdate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 
+	subscribe := func() (<-chan session.SSEEvent, func()) {
+		ch := make(chan session.SSEEvent, 64)
+		listener := &sseListener{ch: ch}
+		hub.AddListener(listener)
+		return ch, func() {
+			hub.RemoveListener(listener)
+			close(ch)
+		}
+	}
+	sh := session.NewHandler(svc, subscribe)
+	mux.HandleFunc("GET /api/sessions", sh.HandleList)
+	mux.HandleFunc("GET /api/sessions/{id}", sh.HandleGet)
+	mux.HandleFunc("GET /api/sessions/events", sh.HandleEvents)
+
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, Hub: hub}
 	mux.Handle("GET /ws", wsh)
 
