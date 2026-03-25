@@ -243,7 +243,33 @@ Frontend:
 
 - **Batch spawning:** "Create sessions for all 5 items" — should this be a single action that creates multiple sessions at once?
 
-**Smallest useful slice:** Frontend parses ` ```prompt ` fenced blocks from assistant text, renders each as a card with the prompt text + a "Start Session" button. Button calls `session.create` + `session.query` with the prompt. No parent-child tracking, no backend changes.
+**Decided approach — tiered:**
+
+1. **Agentique preamble (DONE):** `WithAppendSystemPrompt` injects a runtime preamble into every session (`session/preamble.go`). Claude knows it's inside Agentique, knows parallel sessions and worktrees exist, and knows how to suggest session prompts via ` ```prompt title="..." ``` ` fenced blocks. This preamble is the foundation for all future runtime awareness features.
+
+2. **Frontend parsing (next):** Parse ` ```prompt ` fenced blocks from assistant text, render each as a card with the prompt text + a "Start Session" button. Button calls `session.create` + `session.query` with the prompt. No parent-child tracking.
+
+3. **Future:** Custom tool approach (`suggest_session` tool_use events) if markdown parsing proves fragile. Parent-child session tracking. Batch spawning. `/fan-out` skill for explicit invocation.
+
+---
+
+### Sibling Session Awareness
+
+**Status:** Future investigation — depends on preamble infrastructure.
+
+**Concept:** Sessions know about other active sessions in the same project. Enables coordination: avoiding duplicate work, aligning on shared interfaces, reporting sibling status.
+
+**How it'd work:** Build the preamble dynamically at connect time by querying active sessions for the project. Inject a summary like: *"Other active sessions: [B: 'refactor auth' (running), C: 'avatar upload' (idle)]"*.
+
+**Key challenge: session descriptors go stale.** A session's initial prompt doesn't reflect where it ends up after several turns of discussion. Needs a mechanism for sessions to self-describe their current focus — either:
+- Claude periodically emits a structured "status" (like a tool_use convention)
+- Backend infers a summary from recent assistant text
+- Session name gets updated as the conversation evolves
+
+**Other open questions:**
+- **Staleness during conversation:** Preamble is set at connect time. Sibling state changes mid-conversation won't be visible unless we can update the system prompt per-query (need to check claudecli-go support).
+- **Token cost:** Grows linearly with active sessions. May need to cap or summarize aggressively.
+- **Over-coordination:** Claude might spend tokens reasoning about siblings when it should just focus. Probably opt-in or only injected when >1 sibling exists.
 
 ## claudecli-go Notes
 
