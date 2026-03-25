@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Bot,
-  Brain,
   Check,
   ChevronDown,
   ChevronRight,
@@ -25,13 +24,13 @@ import { useStreamingStore } from "~/stores/streaming-store";
 
 // --- Segment types ---
 
-interface ThinkingSegment {
-  kind: "thinking";
-  events: ChatEvent[];
-}
-interface ToolSegment {
-  kind: "tool";
-  pairs: { use: ChatEvent; result?: ChatEvent }[];
+type ActivityItem =
+  | { kind: "thinking"; event: ChatEvent }
+  | { kind: "tool"; use: ChatEvent; result?: ChatEvent };
+
+interface ActivitySegment {
+  kind: "activity";
+  items: ActivityItem[];
 }
 interface TextSegment {
   kind: "text";
@@ -42,16 +41,15 @@ interface ErrorSegment {
   events: ChatEvent[];
 }
 
-type Segment = ThinkingSegment | ToolSegment | TextSegment | ErrorSegment;
+type Segment = ActivitySegment | TextSegment | ErrorSegment;
 type SegmentKind = Segment["kind"];
 
 function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
   switch (e.type) {
     case "thinking":
-      return "thinking";
     case "tool_use":
     case "tool_result":
-      return "tool";
+      return "activity";
     case "text":
       return "text";
     case "error":
@@ -79,15 +77,16 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
 
     if (last?.kind === kind) {
       switch (last.kind) {
-        case "thinking":
-          last.events.push(event);
-          break;
-        case "tool":
-          if (event.type === "tool_use") {
-            last.pairs.push({ use: event });
+        case "activity":
+          if (event.type === "thinking") {
+            last.items.push({ kind: "thinking", event });
+          } else if (event.type === "tool_use") {
+            last.items.push({ kind: "tool", use: event });
           } else {
-            const pair = last.pairs.find((p) => p.use.toolId === event.toolId);
-            if (pair) pair.result = event;
+            const item = last.items.find(
+              (it) => it.kind === "tool" && it.use.toolId === event.toolId,
+            );
+            if (item?.kind === "tool") item.result = event;
           }
           break;
         case "text":
@@ -99,14 +98,13 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
       }
     } else {
       switch (kind) {
-        case "thinking":
-          segments.push({ kind: "thinking", events: [event] });
-          break;
-        case "tool":
-          if (event.type === "tool_use") {
-            segments.push({ kind: "tool", pairs: [{ use: event }] });
+        case "activity":
+          if (event.type === "thinking") {
+            segments.push({ kind: "activity", items: [{ kind: "thinking", event }] });
+          } else if (event.type === "tool_use") {
+            segments.push({ kind: "activity", items: [{ kind: "tool", use: event }] });
           } else {
-            segments.push({ kind: "tool", pairs: [{ use: event }] });
+            segments.push({ kind: "activity", items: [{ kind: "tool", use: event }] });
           }
           break;
         case "text":
@@ -124,11 +122,13 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
 
 function segmentKey(seg: Segment, i: number): string {
   switch (seg.kind) {
-    case "thinking":
+    case "activity": {
+      const first = seg.items[0];
+      if (!first) return `seg-${i}`;
+      return (first.kind === "thinking" ? first.event.id : first.use.id) ?? `seg-${i}`;
+    }
     case "error":
       return seg.events[0]?.id ?? `seg-${i}`;
-    case "tool":
-      return seg.pairs[0]?.use.id ?? `seg-${i}`;
     case "text":
       return `text-${i}`;
   }
@@ -149,17 +149,15 @@ interface TurnBlockProps {
 }
 
 function CollapsibleGroup({
-  label,
+  title,
   icon,
-  count,
   defaultExpanded,
   activeHeader,
   trailingIcons,
   children,
 }: {
-  label: string;
+  title: string;
   icon: React.ReactNode;
-  count: number;
   defaultExpanded: boolean;
   activeHeader?: React.ReactNode;
   trailingIcons?: React.ReactNode;
@@ -183,9 +181,7 @@ function CollapsibleGroup({
         ) : (
           <>
             {icon}
-            <span>
-              {count} {label}
-            </span>
+            <span>{title}</span>
           </>
         )}
         {trailingIcons && (
@@ -261,60 +257,51 @@ function formatErrorMessage(event: ChatEvent): string {
 
 // --- Segment renderers ---
 
-function ThinkingSegmentView({ segment }: { segment: ThinkingSegment }) {
-  if (segment.events.length === 1) {
-    return <ThinkingBlock content={segment.events[0]?.content ?? ""} />;
-  }
-  return (
-    <CollapsibleGroup
-      label="thinking blocks"
-      icon={<Brain className="h-3 w-3" />}
-      count={segment.events.length}
-      defaultExpanded={false}
-    >
-      {segment.events.map((e) => (
-        <ThinkingBlock key={e.id} content={e.content ?? ""} />
-      ))}
-    </CollapsibleGroup>
-  );
+function activityTitle(items: ActivityItem[]): string {
+  const thoughts = items.filter((i) => i.kind === "thinking").length;
+  const tools = items.filter((i) => i.kind === "tool").length;
+  const parts: string[] = [];
+  if (thoughts > 0) parts.push(`${thoughts} ${thoughts === 1 ? "thought" : "thoughts"}`);
+  if (tools > 0) parts.push(`${tools} ${tools === 1 ? "tool call" : "tool calls"}`);
+  return parts.join(" and ");
 }
 
-function ToolSegmentView({
+function ActivitySegmentView({
   segment,
   isStreaming,
   sessionId,
   projectPath,
   worktreePath,
 }: {
-  segment: ToolSegment;
+  segment: ActivitySegment;
   isStreaming: boolean;
   sessionId: string;
   projectPath?: string;
   worktreePath?: string;
 }) {
-  const inFlightTool = isStreaming
-    ? [...segment.pairs].reverse().find((p) => !p.result)?.use
-    : undefined;
+  const toolItems = segment.items.filter(
+    (i): i is ActivityItem & { kind: "tool" } => i.kind === "tool",
+  );
+  const inFlightTool = isStreaming ? [...toolItems].reverse().find((i) => !i.result) : undefined;
 
-  const trailingIcons = segment.pairs
+  const trailingIcons = toolItems
     .slice(0, 12)
-    .map((pair) => (
-      <span key={pair.use.id}>
-        {getToolIcon(pair.use.toolName ?? "Unknown", pair.use.category)}
+    .map((item) => (
+      <span key={item.use.id}>
+        {getToolIcon(item.use.toolName ?? "Unknown", item.use.category)}
       </span>
     ));
 
   return (
     <CollapsibleGroup
-      label={segment.pairs.length === 1 ? "tool call" : "tool calls"}
+      title={activityTitle(segment.items)}
       icon={<Terminal className="h-3 w-3" />}
-      count={segment.pairs.length}
       defaultExpanded={false}
       trailingIcons={trailingIcons}
       activeHeader={
         inFlightTool ? (
           <InFlightToolContent
-            event={inFlightTool}
+            event={inFlightTool.use}
             sessionId={sessionId}
             projectPath={projectPath}
             worktreePath={worktreePath}
@@ -322,20 +309,24 @@ function ToolSegmentView({
         ) : undefined
       }
     >
-      {segment.pairs.map((pair) => (
-        <div key={pair.use.id} className="space-y-1">
-          <ToolUseBlock
-            name={pair.use.toolName ?? "Unknown"}
-            input={pair.use.toolInput}
-            category={pair.use.category}
-            toolId={pair.use.toolId}
-            sessionId={sessionId}
-            projectPath={projectPath}
-            worktreePath={worktreePath}
-          />
-          {pair.result && <ToolResultBlock content={pair.result.content ?? ""} />}
-        </div>
-      ))}
+      {segment.items.map((item) =>
+        item.kind === "thinking" ? (
+          <ThinkingBlock key={item.event.id} content={item.event.content ?? ""} />
+        ) : (
+          <div key={item.use.id} className="space-y-1">
+            <ToolUseBlock
+              name={item.use.toolName ?? "Unknown"}
+              input={item.use.toolInput}
+              category={item.use.category}
+              toolId={item.use.toolId}
+              sessionId={sessionId}
+              projectPath={projectPath}
+              worktreePath={worktreePath}
+            />
+            {item.result && <ToolResultBlock content={item.result.content ?? ""} />}
+          </div>
+        ),
+      )}
     </CollapsibleGroup>
   );
 }
@@ -443,7 +434,7 @@ export function TurnBlock({
 
   const visibleSegmentCount = showEvents
     ? segments.length
-    : segments.filter((s) => s.kind !== "thinking" && s.kind !== "tool").length;
+    : segments.filter((s) => s.kind !== "activity").length;
   const hasAssistantContent = visibleSegmentCount > 0 || streamingTail || isStreaming;
 
   return (
@@ -455,12 +446,12 @@ export function TurnBlock({
             <User className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
+        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
           {turn.prompt && (
             <button
               type="button"
               onClick={() => turn.prompt && handleCopy(turn.prompt)}
-              className="sticky top-2 float-left mr-2 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-primary-foreground/20 text-primary-foreground/70 transition-opacity z-10"
+              className="absolute -left-8 top-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10"
               aria-label="Copy message"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -511,15 +502,17 @@ export function TurnBlock({
           <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-x-clip">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
-              if (!showEvents && (seg.kind === "thinking" || seg.kind === "tool")) {
-                // In compact mode, show in-flight tool status for the last tool segment while streaming
-                if (seg.kind === "tool" && isStreaming && i === segments.length - 1) {
-                  const inFlightTool = [...seg.pairs].reverse().find((p) => !p.result)?.use;
+              if (!showEvents && seg.kind === "activity") {
+                if (isStreaming && i === segments.length - 1) {
+                  const toolItems = seg.items.filter(
+                    (it): it is ActivityItem & { kind: "tool" } => it.kind === "tool",
+                  );
+                  const inFlightTool = [...toolItems].reverse().find((t) => !t.result);
                   if (inFlightTool) {
                     return (
                       <InFlightToolStatus
                         key={segmentKey(seg, i)}
-                        event={inFlightTool}
+                        event={inFlightTool.use}
                         sessionId={sessionId}
                         projectPath={projectPath}
                         worktreePath={worktreePath}
@@ -530,11 +523,9 @@ export function TurnBlock({
                 return null;
               }
               switch (seg.kind) {
-                case "thinking":
-                  return <ThinkingSegmentView key={segmentKey(seg, i)} segment={seg} />;
-                case "tool":
+                case "activity":
                   return (
-                    <ToolSegmentView
+                    <ActivitySegmentView
                       key={segmentKey(seg, i)}
                       segment={seg}
                       isStreaming={isStreaming && i === segments.length - 1}
@@ -584,7 +575,8 @@ export function TurnBlock({
               (() => {
                 const last = segments[segments.length - 1];
                 const hasInFlightTool =
-                  last?.kind === "tool" && [...last.pairs].reverse().some((p) => !p.result);
+                  last?.kind === "activity" &&
+                  last.items.some((it) => it.kind === "tool" && !it.result);
                 return !hasInFlightTool;
               })() && (
                 <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
