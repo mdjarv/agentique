@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -12,6 +13,25 @@ import { useStreamingStore } from "~/stores/streaming-store";
 
 interface SessionListResult {
   sessions: SessionMetadata[];
+}
+
+/** Find the most recently created idle or running session in the same project. */
+function findNearestActiveSession(
+  sessions: Record<string, { meta: SessionMetadata }>,
+  excludeId: string,
+  projectId: string,
+): string | null {
+  let best: { id: string; createdAt: number } | null = null;
+  for (const [id, data] of Object.entries(sessions)) {
+    if (id === excludeId) continue;
+    if (data.meta.projectId !== projectId) continue;
+    if (data.meta.state !== "idle" && data.meta.state !== "running") continue;
+    const t = new Date(data.meta.createdAt).getTime();
+    if (!best || t > best.createdAt) {
+      best = { id, createdAt: t };
+    }
+  }
+  return best?.id ?? null;
 }
 
 /** Route raw Claude API stream deltas to the streaming store. */
@@ -63,6 +83,7 @@ function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string
  */
 export function useGlobalSubscriptions(projects: Project[]) {
   const ws = useWebSocket();
+  const navigate = useNavigate();
   const subscribedRef = useRef(new Set<string>());
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
@@ -139,7 +160,25 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubDeleted = ws.subscribe("session.deleted", (payload: any) => {
-      useChatStore.getState().removeSession(payload.sessionId);
+      const store = useChatStore.getState();
+      const deletedId: string = payload.sessionId;
+      const deletedSession = store.sessions[deletedId];
+      const wasActive = store.activeSessionId === deletedId;
+
+      store.removeSession(deletedId);
+
+      if (wasActive && deletedSession) {
+        const projectId = deletedSession.meta.projectId;
+        const sibling = findNearestActiveSession(store.sessions, deletedId, projectId);
+        if (sibling) {
+          navigate({
+            to: "/project/$projectId/session/$sessionId",
+            params: { projectId, sessionId: sibling },
+          });
+        } else {
+          navigate({ to: "/project/$projectId", params: { projectId } });
+        }
+      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -195,5 +234,5 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubQuestion();
       unsubReconnect();
     };
-  }, [ws]);
+  }, [ws, navigate]);
 }
