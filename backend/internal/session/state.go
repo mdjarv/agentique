@@ -1,6 +1,11 @@
 package session
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+
+	"github.com/allbin/agentique/backend/internal/store"
+)
 
 // State represents a session lifecycle state.
 type State string
@@ -40,4 +45,57 @@ func validateTransition(from, to State, sessionID string) error {
 		return nil
 	}
 	return fmt.Errorf("session %s: invalid state transition %s -> %s", sessionID, from, to)
+}
+
+// State returns the current session state.
+func (s *Session) State() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}
+
+func (s *Session) setState(state State) error {
+	s.mu.Lock()
+	if err := validateTransition(s.state, state, s.ID); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.state = state
+	s.mu.Unlock()
+	s.broadcastState(state)
+	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
+		State: string(state),
+		ID:    s.ID,
+	})
+	return nil
+}
+
+// TryLockForMerge atomically transitions to StateMerging if the session is not running.
+func (s *Session) TryLockForMerge() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state == StateRunning {
+		return fmt.Errorf("session is running")
+	}
+	if !s.state.CanTransitionTo(StateMerging) {
+		return fmt.Errorf("cannot merge from state %s", string(s.state))
+	}
+	s.state = StateMerging
+	return nil
+}
+
+// UnlockMerge transitions back from StateMerging to newState.
+func (s *Session) UnlockMerge(newState State) error {
+	s.mu.Lock()
+	if s.state != StateMerging {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: not in merging state", s.ID)
+	}
+	if err := validateTransition(s.state, newState, s.ID); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.state = newState
+	s.mu.Unlock()
+	return nil
 }

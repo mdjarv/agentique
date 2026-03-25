@@ -132,13 +132,6 @@ func (s *Session) setCLISession(cliSess *claudecli.Session) {
 	s.startEventLoop()
 }
 
-// State returns the current session state.
-func (s *Session) State() State {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state
-}
-
 // ClaudeSessionID returns the Claude CLI session ID, if available.
 func (s *Session) ClaudeSessionID() string {
 	s.mu.Lock()
@@ -416,22 +409,6 @@ func (s *Session) processEvent(event claudecli.Event) {
 			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
 	}
-}
-
-func (s *Session) setState(state State) error {
-	s.mu.Lock()
-	if err := validateTransition(s.state, state, s.ID); err != nil {
-		s.mu.Unlock()
-		return err
-	}
-	s.state = state
-	s.mu.Unlock()
-	s.broadcastState(state)
-	_ = s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
-		State: string(state),
-		ID:    s.ID,
-	})
-	return nil
 }
 
 func (s *Session) broadcastState(state State) {
@@ -771,34 +748,4 @@ func (s *Session) MarkMerged() {
 	s.mu.Lock()
 	s.worktreeMerged = true
 	s.mu.Unlock()
-}
-
-// TryLockForMerge atomically transitions to StateMerging if the session is not running.
-func (s *Session) TryLockForMerge() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.state == StateRunning {
-		return fmt.Errorf("session is running")
-	}
-	if !s.state.CanTransitionTo(StateMerging) {
-		return fmt.Errorf("cannot merge from state %s", string(s.state))
-	}
-	s.state = StateMerging
-	return nil
-}
-
-// UnlockMerge transitions back from StateMerging to newState.
-func (s *Session) UnlockMerge(newState State) error {
-	s.mu.Lock()
-	if s.state != StateMerging {
-		s.mu.Unlock()
-		return fmt.Errorf("session %s: not in merging state", s.ID)
-	}
-	if err := validateTransition(s.state, newState, s.ID); err != nil {
-		s.mu.Unlock()
-		return err
-	}
-	s.state = newState
-	s.mu.Unlock()
-	return nil
 }
