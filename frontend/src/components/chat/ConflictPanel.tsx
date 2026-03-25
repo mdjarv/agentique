@@ -1,12 +1,13 @@
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, MessageSquare, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 
 interface ConflictPanelProps {
   files: string[];
   onDismiss: () => void;
+  onAskResolve?: () => void;
 }
 
-export function ConflictPanel({ files, onDismiss }: ConflictPanelProps) {
+export function ConflictPanel({ files, onDismiss, onAskResolve }: ConflictPanelProps) {
   return (
     <div className="border-t border-amber-500/30 bg-amber-500/10 px-4 py-3">
       <div className="flex items-start gap-2">
@@ -20,6 +21,17 @@ export function ConflictPanel({ files, onDismiss }: ConflictPanelProps) {
               </li>
             ))}
           </ul>
+          {onAskResolve && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1.5 h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+              onClick={onAskResolve}
+            >
+              <MessageSquare className="h-3 w-3" />
+              Ask Claude to resolve
+            </Button>
+          )}
         </div>
         <Button
           variant="ghost"
