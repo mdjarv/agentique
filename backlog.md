@@ -50,13 +50,11 @@ Fixed in `6143c3a` — mark-done handler + UI option added.
 ### ~~[F/S] Rebase conflict: button to have Claude resolve it~~ DONE
 Fixed in `3904d5e` — resolve button sends conflict message to Claude.
 
-### [F/S] Copy button: sticky in scroll + add to user messages
-Copy button on assistant messages disappears when the top of the message scrolls out of view (absolute positioned at `top-2 right-2`). Should remain visible while any part of the message is on screen. Also add copy to user/sent messages.
+### ~~[F/S] Copy button: sticky in scroll + add to user messages~~ DONE
+Fixed in `be9ba6f` — sticky copy button + added to user messages.
 
-### [F/S] Chat overlay buttons: move and rethink icon
-"Scroll to bottom" and "toggle tool calls" buttons overlap chat content.
-The eye icon for toggling tool calls is too generic.
-**Fix:** Move buttons to a less obtrusive position (e.g., pinned to chat panel edge, not floating over messages). Pick a more specific icon for tool call toggle (e.g., wrench, terminal, or similar).
+### ~~[F/S] Chat overlay buttons: move and rethink icon~~ DONE
+Fixed in `53b2279` — repositioned to bottom-right.
 
 ### ~~[F/S] Smooth scroll: immediate jump on session select, smooth only on button press~~ DONE
 Fixed in `2e8db64` — instant scroll on load, smooth on follow.
@@ -65,9 +63,8 @@ Fixed in `2e8db64` — instant scroll on load, smooth on follow.
 When a draft is promoted to a real session, the layout shift is jarring because draft uses a different header/structure.
 **Fix:** Draft view should use the same `SessionHeader` and layout shell as a live session, just with disabled/hidden fields that don't apply yet.
 
-### [I/S] "Refresh git" button — manual git status update
-Users may want to force a refresh of git status (ahead/behind counts, dirty state) without waiting for the next poll cycle.
-**Investigate:** Current polling interval and trigger points. Where would the button live (session header next to rebase/merge)? Does the backend need a new handler or can the frontend just re-request session state?
+### ~~[I/S] "Refresh git" button — manual git status update~~ DONE
+Fixed in `4566cea` — refresh button added to session header.
 
 ---
 
