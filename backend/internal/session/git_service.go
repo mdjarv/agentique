@@ -379,18 +379,25 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffRes
 		return gitops.DiffResult{}, fmt.Errorf("session not found")
 	}
 
-	// Worktree session: diff worktree against base SHA.
+	noDiff := gitops.DiffResult{HasDiff: false, Files: []gitops.DiffStat{}}
+
+	// Merged sessions have no active worktree — nothing to diff.
+	if dbSess.WorktreeMerged != 0 {
+		return noDiff, nil
+	}
+
+	// Worktree session: diff against base SHA.
 	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
 		if _, statErr := os.Stat(wtPath); statErr != nil {
-			return gitops.DiffResult{}, fmt.Errorf("worktree directory not found")
+			return noDiff, nil
 		}
 		return gitops.WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha))
 	}
 
-	// Non-worktree session: diff work dir against HEAD.
+	// Local session: diff work dir against HEAD.
 	workDir := dbSess.WorkDir
 	if _, statErr := os.Stat(workDir); statErr != nil {
-		return gitops.DiffResult{}, fmt.Errorf("work directory not found")
+		return noDiff, nil
 	}
 	return gitops.WorktreeDiff(workDir, "HEAD")
 }
