@@ -408,6 +408,23 @@ func (c *conn) handleSessionMarkDone(msg ClientMessage) {
 	c.respond(msg.ID, struct{}{}, "")
 }
 
+func (c *conn) handleSessionRefreshGit(msg ClientMessage) {
+	var payload SessionRefreshGitPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	if err := c.gitSvc.RefreshGitStatus(c.ctx, payload.SessionID); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	var payload SessionGenerateCommitMsgPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
