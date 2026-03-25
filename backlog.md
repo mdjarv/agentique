@@ -54,9 +54,8 @@ Fixed in `53b2279` — repositioned to bottom-right.
 ### ~~[F/S] Smooth scroll: immediate jump on session select, smooth only on button press~~ DONE
 Fixed in `2e8db64` — instant scroll on load, smooth on follow.
 
-### [F/M] Draft UI should match session layout
-When a draft is promoted to a real session, the layout shift is jarring because draft uses a different header/structure.
-**Fix:** Draft view should use the same `SessionHeader` and layout shell as a live session, just with disabled/hidden fields that don't apply yet.
+### ~~[F/M] Draft UI should match session layout~~ DONE
+Fixed in `29ac2a1` — extracted DraftHeader, shared layout shell with live sessions.
 
 ### ~~[I/S] "Refresh git" button — manual git status update~~ DONE
 Fixed in `4566cea` — refresh button added to session header.
