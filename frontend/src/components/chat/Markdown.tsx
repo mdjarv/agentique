@@ -14,6 +14,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { PromptCard, parsePromptFromCode } from "~/components/chat/PromptCard";
 import { cn } from "~/lib/utils";
 
 interface MarkdownProps {
@@ -71,6 +72,11 @@ function PreBlock({
 
   const lang = /language-(\w+)/.exec(codeChild.props.className ?? "")?.[1];
   const code = nodeToPlainText(codeChild.props.children).replace(/\n$/, "");
+
+  if (lang === "prompt") {
+    const parsed = parsePromptFromCode(code);
+    if (parsed) return <PromptCard title={parsed.title} prompt={parsed.prompt} />;
+  }
 
   return (
     <div className="code-block-wrapper">

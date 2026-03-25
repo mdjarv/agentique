@@ -157,6 +157,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       <MessageList
         turns={session.turns}
         sessionId={sessionId}
+        projectId={projectId}
         currentAssistantText={currentAssistantText}
         sessionState={sessionState}
         projectPath={project?.path}
