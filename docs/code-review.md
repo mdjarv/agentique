@@ -35,15 +35,15 @@ See `code-review-2026-03-25.html` for the full visual report.
 - [ ] **BE: Session package overloaded** — 5 concerns: lifecycle, git, streaming, state machine, broadcasting. `session/*.go`
 - [ ] **BE: No query interfaces** — store.Queries concrete everywhere. Can't test without real DB. `manager.go, service.go, git_service.go`
 - [ ] **BE: Manager god object** — Registry + lifecycle + state repair + shutdown. fixStates() is a hack. `session/manager.go`
-- [ ] **BE: WS handler boilerplate** — 20+ handlers repeat unmarshal/validate/call/respond. ~80 lines duplicated. `ws/handlers.go`
+- [x] **BE: WS handler boilerplate** — Generic handleRequest[P,R] with Validatable interface. 25 handlers reduced to one-liner closures. `ws/handle.go`
 - [ ] **BE: Implicit state machine** — Transitions scattered across setState, TryLockForMerge, Close, processEvent. `session/state.go, session.go`
 - [ ] **FE: Global WS singleton** — Untestable, no DI. `hooks/useWebSocket.ts`
 - [ ] **FE: Store mutations in lib/** — session-actions.ts and session-history.ts directly mutate stores. `lib/session-actions.ts, lib/session-history.ts`
 - [ ] **FE: useGlobalSubscriptions god-hook** — 200+ lines, 7+ event types, mixes processing/mutations/navigation. `hooks/useGlobalSubscriptions.ts`
-- [ ] **FE: useGitActions mega-hook** — 8 unrelated state machines bundled. `hooks/useGitActions.ts`
+- [x] **FE: useGitActions mega-hook** — Split into 7 focused hooks (useSessionDiff, useMergeSession, etc). useGitActions is now a thin facade.
 - [ ] **FE: Chat store mixes domain/UI** — SessionData contains domain, UI, derived, and transient state. `stores/chat-store.ts`
-- [ ] **FE: Weak result types** — MergeResult.status is string, no discriminated union. `lib/session-actions.ts`
-- [ ] **FE: Streaming store fragile indexing** — content_block index to toolId lookup silently drops data. `stores/streaming-store.ts:35-57`
+- [x] **FE: Weak result types** — MergeResult, RebaseResult, CreatePRResult, CleanResult now use discriminated unions with exhaustive narrowing.
+- [x] **FE: Streaming store fragile indexing** — Removed index indirection. appendToolInput takes toolId directly. Index tracking moved to module-scoped Map in useGlobalSubscriptions.
 
 ## P3 — Polish
 
