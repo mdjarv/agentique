@@ -33,7 +33,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const session = useChatStore((s) => s.sessions[sessionId]);
-  const sessionListLoaded = useChatStore((s) => s.sessionListLoaded);
+  const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
   const currentAssistantText = useStreamingStore((s) => s.texts[sessionId] ?? "");
 
