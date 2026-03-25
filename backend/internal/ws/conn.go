@@ -154,6 +154,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionRebase(msg)
 	case "session.generate-pr-description":
 		c.handleSessionGeneratePRDesc(msg)
+	case "session.mark-done":
+		c.handleSessionMarkDone(msg)
 	case "session.generate-commit-message":
 		c.handleSessionGenerateCommitMsg(msg)
 	default:

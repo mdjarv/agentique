@@ -391,6 +391,23 @@ func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
 	c.respond(msg.ID, result, "")
 }
 
+func (c *conn) handleSessionMarkDone(msg ClientMessage) {
+	var payload SessionMarkDonePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		c.respond(msg.ID, nil, "invalid payload")
+		return
+	}
+	if payload.SessionID == "" {
+		c.respond(msg.ID, nil, "sessionId is required")
+		return
+	}
+	if err := c.svc.MarkSessionDone(c.ctx, payload.SessionID); err != nil {
+		c.respond(msg.ID, nil, err.Error())
+		return
+	}
+	c.respond(msg.ID, struct{}{}, "")
+}
+
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	var payload SessionGenerateCommitMsgPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {

@@ -761,6 +761,11 @@ func (s *Session) Close() {
 	s.broadcastState(finalState)
 }
 
+// MarkDone transitions the session to StateDone.
+func (s *Session) MarkDone() error {
+	return s.setState(StateDone)
+}
+
 // MarkMerged sets the worktreeMerged flag on a live session.
 func (s *Session) MarkMerged() {
 	s.mu.Lock()
