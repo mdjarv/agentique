@@ -205,6 +205,72 @@ Frontend:
 - [ ] Session templates / saved prompts
 - [ ] Split pane session layout
 
+---
+
+## Investigations
+
+### Prompt Handoff: Sessions Spawning Sessions
+
+**Status:** Open question — needs design exploration.
+
+**Concept:** A "planning" session can produce prompt suggestions that spawn new sessions with one click. Enables a workflow where you start broad ("review the roadmap"), then fan out into parallel execution sessions for individual items.
+
+**Example flow:**
+1. User starts a session: "review the roadmap and suggest what to work on next"
+2. Agent responds with analysis and prioritized items
+3. User: "help me create prompts for items 3 and 4"
+4. Agent responds with structured prompt suggestions, each rendered with a "Start Session" button
+5. Clicking the button creates a new session (with worktree) pre-filled with that prompt
+
+**Open questions:**
+
+- **Detection:** How does the frontend know a response contains a "spawn-able prompt"? Options:
+  - **Structured tool output:** Claude already emits tool_use events. Could we define a convention (e.g. a fenced block with a special marker like ` ```prompt `) that the frontend parses into a button? Fragile but zero backend work.
+  - **Custom tool:** Register a fake MCP tool (e.g. `suggest_session`) in the system prompt so Claude emits it as a tool_use event. Frontend intercepts and renders a button instead of a tool block. More reliable detection but couples to Claude's tool-use behavior.
+  - **Post-processing:** Backend scans assistant text for a known pattern and injects metadata into the event stream. Most robust detection but adds complexity.
+
+- **Prompt content:** Should the spawned session get just the prompt text, or also inherit context (project, worktree settings, CLAUDE.md references)? Probably: same project, auto-worktree, prompt only.
+
+- **Parent-child relationship:** Should we track which session spawned which? Useful for:
+  - Showing a "spawned from" breadcrumb
+  - Letting the parent session see child status ("items 3 and 4 are in progress")
+  - Potential future: parent waits for children, aggregates results
+
+- **UI affordance:** Where do spawn buttons live?
+  - Inline in the chat message (most natural)
+  - A dedicated "suggested sessions" panel
+  - Both — inline buttons + a collected list in the sidebar
+
+- **Batch spawning:** "Create sessions for all 5 items" — should this be a single action that creates multiple sessions at once?
+
+**Decided approach — tiered:**
+
+1. **Agentique preamble (DONE):** `WithAppendSystemPrompt` injects a runtime preamble into every session (`session/preamble.go`). Claude knows it's inside Agentique, knows parallel sessions and worktrees exist, and knows how to suggest session prompts via ` ```prompt title="..." ``` ` fenced blocks. This preamble is the foundation for all future runtime awareness features.
+
+2. **Frontend parsing (next):** Parse ` ```prompt ` fenced blocks from assistant text, render each as a card with the prompt text + a "Start Session" button. Button calls `session.create` + `session.query` with the prompt. No parent-child tracking.
+
+3. **Future:** Custom tool approach (`suggest_session` tool_use events) if markdown parsing proves fragile. Parent-child session tracking. Batch spawning. `/fan-out` skill for explicit invocation.
+
+---
+
+### Sibling Session Awareness
+
+**Status:** Future investigation — depends on preamble infrastructure.
+
+**Concept:** Sessions know about other active sessions in the same project. Enables coordination: avoiding duplicate work, aligning on shared interfaces, reporting sibling status.
+
+**How it'd work:** Build the preamble dynamically at connect time by querying active sessions for the project. Inject a summary like: *"Other active sessions: [B: 'refactor auth' (running), C: 'avatar upload' (idle)]"*.
+
+**Key challenge: session descriptors go stale.** A session's initial prompt doesn't reflect where it ends up after several turns of discussion. Needs a mechanism for sessions to self-describe their current focus — either:
+- Claude periodically emits a structured "status" (like a tool_use convention)
+- Backend infers a summary from recent assistant text
+- Session name gets updated as the conversation evolves
+
+**Other open questions:**
+- **Staleness during conversation:** Preamble is set at connect time. Sibling state changes mid-conversation won't be visible unless we can update the system prompt per-query (need to check claudecli-go support).
+- **Token cost:** Grows linearly with active sessions. May need to cap or summarize aggressively.
+- **Over-coordination:** Claude might spend tokens reasoning about siblings when it should just focus. Probably opt-in or only injected when >1 sibling exists.
+
 ## claudecli-go Notes
 
 - `Events()` is session-lifetime, not per-turn. Detect turn boundaries via `ResultEvent`.

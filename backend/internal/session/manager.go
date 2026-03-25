@@ -85,6 +85,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
+		claudecli.WithAppendSystemPrompt(agentiquePreamble),
 	}
 	// Pass plan mode as CLI flag to avoid post-connect control request race.
 	if params.PlanMode {
@@ -175,6 +176,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
+		claudecli.WithAppendSystemPrompt(agentiquePreamble),
 	}
 	if p.PermissionMode == "plan" {
 		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
