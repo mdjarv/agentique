@@ -153,7 +153,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full" data-project-id={projectId}>
-      <SessionHeader session={session} />
+      <SessionHeader session={session} onSendMessage={handleSend} />
       <MessageList
         turns={session.turns}
         sessionId={sessionId}

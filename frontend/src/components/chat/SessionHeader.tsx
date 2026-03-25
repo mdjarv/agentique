@@ -56,9 +56,10 @@ import type { SessionData } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
   session: SessionData;
+  onSendMessage?: (prompt: string) => void;
 }
 
-export function SessionHeader({ session }: SessionHeaderProps) {
+export function SessionHeader({ session, onSendMessage }: SessionHeaderProps) {
   const { meta } = session;
   const ws = useWebSocket();
   const isRunning = meta.state === "running";
@@ -461,7 +462,20 @@ export function SessionHeader({ session }: SessionHeaderProps) {
 
       {/* Conflict panel */}
       {conflictFiles && (
-        <ConflictPanel files={conflictFiles} onDismiss={() => setConflictFiles(null)} />
+        <ConflictPanel
+          files={conflictFiles}
+          onDismiss={() => setConflictFiles(null)}
+          onAskResolve={
+            onSendMessage
+              ? () => {
+                  const fileList = conflictFiles.join(", ");
+                  onSendMessage(
+                    `There are merge conflicts in the following files: ${fileList}. Please resolve them.`,
+                  );
+                }
+              : undefined
+          }
+        />
       )}
 
       {/* Create PR dialog */}
