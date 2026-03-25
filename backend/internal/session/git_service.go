@@ -211,6 +211,8 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		})
 	}
 
+	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
+
 	return MergeResult{Status: "merged", CommitHash: hash}, nil
 }
 
@@ -283,6 +285,8 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		"state":         dbSess.State,
 		"commitsBehind": 0,
 	})
+
+	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
 
 	return RebaseResult{Status: "rebased"}, nil
 }
@@ -523,6 +527,40 @@ func parseCommitMessage(text string) CommitMessageResult {
 	}
 
 	return CommitMessageResult{Title: title, Description: desc}
+}
+
+// broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions
+// in the same project except excludeID. Called after operations that advance the main branch.
+func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, excludeID, projectPath string) {
+	sessions, err := g.queries.ListSessionsByProject(ctx, projectID)
+	if err != nil {
+		return
+	}
+	for _, ss := range sessions {
+		if ss.ID == excludeID || ss.WorktreeMerged != 0 {
+			continue
+		}
+		branch := nullStr(ss.WorktreeBranch)
+		if branch == "" {
+			continue
+		}
+		payload := map[string]any{
+			"sessionId": ss.ID,
+			"state":     ss.State,
+		}
+		if !gitops.BranchExists(projectPath, branch) {
+			payload["branchMissing"] = true
+			g.hub.Broadcast(projectID, "session.state", payload)
+			continue
+		}
+		if ahead, err := gitops.CommitsAhead(projectPath, branch); err == nil {
+			payload["commitsAhead"] = ahead
+		}
+		if behind, err := gitops.CommitsBehind(projectPath, branch); err == nil {
+			payload["commitsBehind"] = behind
+		}
+		g.hub.Broadcast(projectID, "session.state", payload)
+	}
 }
 
 // parsePRDescription extracts title and body from Haiku's "TITLE: ...\nBODY:\n..." response.
