@@ -26,7 +26,7 @@ export function ToolResultBlock({ content }: ToolResultBlockProps) {
         )}
       </button>
       {expanded && (
-        <pre className="p-2 overflow-x-auto text-muted-foreground whitespace-pre-wrap border-t max-h-96 overflow-y-auto">
+        <pre className="p-2 overflow-x-auto text-foreground/80 whitespace-pre-wrap border-t max-h-96 overflow-y-auto">
           {content}
         </pre>
       )}
