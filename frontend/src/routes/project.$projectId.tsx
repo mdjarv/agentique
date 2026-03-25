@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useKeyboardShortcuts } from "~/hooks/useKeyboardShortcuts";
 
 export const Route = createFileRoute("/project/$projectId")({
@@ -7,6 +7,7 @@ export const Route = createFileRoute("/project/$projectId")({
 
 function ProjectLayout() {
   const { projectId } = Route.useParams();
+  const matchKey = useRouterState({ select: (s) => s.location.pathname });
   useKeyboardShortcuts(projectId);
-  return <Outlet />;
+  return <Outlet key={matchKey} />;
 }

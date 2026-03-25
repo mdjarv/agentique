@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
@@ -6,8 +6,12 @@ import { useProjects } from "~/hooks/useProjects";
 
 export function ProjectList() {
   const projects = useProjects();
-  const params = useParams({ strict: false });
-  const activeProjectId = (params as { projectId?: string }).projectId;
+  const params = useParams({ strict: false }) as { projectId?: string; sessionId?: string };
+  const activeProjectId = params.projectId;
+  const activeSessionId = params.sessionId;
+  const isNewChatRoute = useRouterState({
+    select: (s) => s.location.pathname.endsWith("/session/new"),
+  });
   useGlobalSubscriptions(projects);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
@@ -51,6 +55,8 @@ export function ProjectList() {
           isActive={project.id === activeProjectId}
           isExpanded={expandedIds.has(project.id)}
           onToggleExpand={() => toggleExpand(project.id)}
+          activeSessionId={activeSessionId}
+          isNewChatActive={project.id === activeProjectId && isNewChatRoute}
         />
       ))}
     </div>

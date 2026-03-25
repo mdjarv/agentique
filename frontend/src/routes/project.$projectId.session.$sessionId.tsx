@@ -7,5 +7,5 @@ export const Route = createFileRoute("/project/$projectId/session/$sessionId")({
 
 function SessionPage() {
   const { projectId, sessionId } = Route.useParams();
-  return <ChatPanel projectId={projectId} sessionId={sessionId} />;
+  return <ChatPanel key={sessionId} projectId={projectId} sessionId={sessionId} />;
 }

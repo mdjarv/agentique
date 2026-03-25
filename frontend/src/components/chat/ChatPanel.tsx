@@ -153,7 +153,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full" data-project-id={projectId}>
-      <SessionHeader key={sessionId} session={session} />
+      <SessionHeader session={session} />
       <MessageList
         turns={session.turns}
         sessionId={sessionId}
@@ -187,7 +187,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       )}
       <MessageComposer
         ref={composerRef}
-        key={sessionId}
         onSend={handleSend}
         isRunning={sessionState === "running"}
         onInterrupt={handleInterrupt}

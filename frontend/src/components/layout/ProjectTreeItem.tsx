@@ -45,7 +45,7 @@ function sortByPriorityThenDate(
 function renderSessionRow(
   id: string,
   sessions: ChatState["sessions"],
-  activeSessionId: string | null,
+  activeSessionId: string | undefined,
   onSessionClick: (id: string) => void,
   onStop: (e: React.MouseEvent, id: string, state: string) => void,
   onDelete: (e: React.MouseEvent, id: string) => void,
@@ -88,7 +88,7 @@ function SessionGroups({
 }: {
   sessionIds: string[];
   sessions: ChatState["sessions"];
-  activeSessionId: string | null;
+  activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
   onStop: (e: React.MouseEvent, id: string, state: string) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
@@ -148,7 +148,7 @@ function CompletedSection({
 }: {
   ids: string[];
   sessions: ChatState["sessions"];
-  activeSessionId: string | null;
+  activeSessionId: string | undefined;
   hasActiveSessions: boolean;
   onSessionClick: (id: string) => void;
   onStop: (e: React.MouseEvent, id: string, state: string) => void;
@@ -186,6 +186,8 @@ interface ProjectTreeItemProps {
   isActive: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  activeSessionId: string | undefined;
+  isNewChatActive: boolean;
 }
 
 function truncatePath(path: string): string {
@@ -197,6 +199,8 @@ export function ProjectTreeItem({
   isActive,
   isExpanded,
   onToggleExpand,
+  activeSessionId,
+  isNewChatActive,
 }: ProjectTreeItemProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
@@ -209,7 +213,6 @@ export function ProjectTreeItem({
     ),
   );
   const sessions = useChatStore((s) => s.sessions);
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
   const handleProjectClick = () => {
     onToggleExpand();
     if (!isActive) {
@@ -316,7 +319,10 @@ export function ProjectTreeItem({
                 params: { projectId: project.id },
               });
             }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
+              isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
+            )}
           >
             <Plus className="h-3.5 w-3.5" />
             <span>New chat</span>
