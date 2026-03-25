@@ -210,7 +210,7 @@ export function PromptCard({ title, prompt }: PromptBlock) {
     if (sessionId && projectSlug) {
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionId.split("-")[0] },
+        params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
       });
     }
   }, [sessionId, projectSlug, navigate]);

@@ -256,7 +256,7 @@ export function ProjectTreeItem({
   const handleSessionClick = (sessionId: string) => {
     navigate({
       to: "/project/$projectSlug/session/$sessionShortId",
-      params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] },
+      params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] ?? "" },
     });
   };
 

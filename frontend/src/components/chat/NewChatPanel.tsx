@@ -40,7 +40,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       await submitQuery(ws, sessionId, prompt, attachments);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionId.split("-")[0] },
+        params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
         replace: true,
       });
     } catch (err) {

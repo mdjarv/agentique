@@ -161,7 +161,8 @@ interface ProjectProjectSlugRouteChildren {
 
 const ProjectProjectSlugRouteChildren: ProjectProjectSlugRouteChildren = {
   ProjectProjectSlugIndexRoute: ProjectProjectSlugIndexRoute,
-  ProjectProjectSlugSessionSessionShortIdRoute: ProjectProjectSlugSessionSessionShortIdRoute,
+  ProjectProjectSlugSessionSessionShortIdRoute:
+    ProjectProjectSlugSessionSessionShortIdRoute,
   ProjectProjectSlugSessionNewRoute: ProjectProjectSlugSessionNewRoute,
 }
 
