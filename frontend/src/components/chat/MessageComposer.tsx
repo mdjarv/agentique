@@ -1,9 +1,5 @@
 import {
-  Check,
-  ChevronDown,
   FileText,
-  Gauge,
-  GitBranch,
   ListChecks,
   ListPlus,
   MessageSquare,
@@ -15,13 +11,6 @@ import {
 } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-import { MODELS, MODEL_LABELS, type ModelId } from "~/lib/session-actions";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
 
@@ -48,7 +37,6 @@ interface MessageComposerProps {
   disabled?: boolean;
   isRunning?: boolean;
   onInterrupt?: () => void;
-  isDraft?: boolean;
   initialText?: string;
   onTextPersist?: (text: string) => void;
   placeholder?: string;
@@ -56,12 +44,6 @@ interface MessageComposerProps {
   onPlanModeChange?: (value: boolean) => void;
   autoApprove?: boolean;
   onAutoApproveChange?: (value: boolean) => void;
-  worktree?: boolean;
-  onWorktreeChange?: (value: boolean) => void;
-  model?: ModelId;
-  onModelChange?: (value: ModelId) => void;
-  effort?: EffortLevel;
-  onEffortChange?: (value: EffortLevel) => void;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -72,19 +54,12 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       isRunning,
       placeholder,
       onInterrupt,
-      isDraft,
       initialText,
       onTextPersist,
       planMode,
       onPlanModeChange,
       autoApprove,
       onAutoApproveChange,
-      worktree,
-      onWorktreeChange,
-      model,
-      onModelChange,
-      effort,
-      onEffortChange,
     },
     ref,
   ) {
@@ -243,7 +218,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const hasToggles = isDraft || onPlanModeChange || onAutoApproveChange;
+    const hasToggles = onPlanModeChange || onAutoApproveChange;
 
     return (
       <div className="border-t p-3">
@@ -322,21 +297,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
               {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
 
-              {isDraft && (
-                <button
-                  type="button"
-                  onClick={() => onWorktreeChange?.(!worktree)}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                    worktree
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                  )}
-                >
-                  <GitBranch className="h-3 w-3" />
-                  {worktree ? "Worktree" : "Local"}
-                </button>
-              )}
               {onPlanModeChange && (
                 <button
                   type="button"
@@ -371,53 +331,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 >
                   <ShieldCheck className="h-3 w-3" />
                   {autoApprove ? "Auto" : "Manual"}
-                </button>
-              )}
-              {isDraft && onModelChange && model && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                      "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                    )}
-                  >
-                    {MODEL_LABELS[model]}
-                    <ChevronDown className="h-3 w-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {MODELS.map((m) => (
-                      <DropdownMenuItem
-                        key={m}
-                        onClick={() => onModelChange(m)}
-                        className="text-xs gap-2"
-                      >
-                        <Check
-                          className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
-                        />
-                        {MODEL_LABELS[m]}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-              {isDraft && onEffortChange && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const levels: EffortLevel[] = ["", "low", "medium", "high"];
-                    const idx = levels.indexOf(effort ?? "");
-                    const next = levels[(idx + 1) % levels.length] ?? "";
-                    onEffortChange(next);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                    effort
-                      ? "bg-blue-500/10 text-blue-500"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                  )}
-                >
-                  <Gauge className="h-3 w-3" />
-                  {effort ? `Effort: ${effort}` : "Effort: auto"}
                 </button>
               )}
             </div>

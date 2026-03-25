@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Loader2, User } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { DraftHeader } from "~/components/chat/DraftHeader";
 import type { EffortLevel } from "~/components/chat/MessageComposer";
 import { MessageComposer } from "~/components/chat/MessageComposer";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
@@ -55,6 +56,14 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
+      <DraftHeader
+        worktree={worktree}
+        onWorktreeChange={setWorktree}
+        model={model}
+        onModelChange={setModel}
+        effort={effort}
+        onEffortChange={setEffort}
+      />
       <div className="flex-1 overflow-y-auto">
         {pendingPrompt && (
           <div className="max-w-3xl mx-auto p-4 space-y-4">
@@ -78,17 +87,10 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       <MessageComposer
         onSend={handleSend}
         disabled={sending}
-        isDraft
         planMode={planMode}
         onPlanModeChange={setPlanMode}
         autoApprove={autoApprove}
         onAutoApproveChange={setAutoApprove}
-        worktree={worktree}
-        onWorktreeChange={setWorktree}
-        model={model}
-        onModelChange={setModel}
-        effort={effort}
-        onEffortChange={setEffort}
       />
     </div>
   );
