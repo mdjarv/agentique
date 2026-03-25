@@ -106,9 +106,9 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const handleCreatePR = async () => {
     try {
       const result = await createPR(ws, sessionId);
-      if (result.url) {
+      if (result.status === "created" || result.status === "existing") {
         toast.success("PR created");
-      } else if (result.error) {
+      } else {
         toast.error(result.error);
       }
     } catch (err) {
@@ -125,7 +125,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
       const result = await mergeSession(ws, sessionId, true);
       if (result.status === "merged") {
         toast.success("Merged successfully");
-      } else if (result.error) {
+      } else if (result.status === "error") {
         toast.error(result.error);
       }
     } catch (err) {
@@ -138,7 +138,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
       const result = await rebaseSession(ws, sessionId);
       if (result.status === "rebased") {
         toast.success("Rebased successfully");
-      } else if (result.error) {
+      } else if (result.status === "error") {
         toast.error(result.error);
       }
     } catch (err) {
