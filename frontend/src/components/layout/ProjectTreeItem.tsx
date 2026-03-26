@@ -182,6 +182,11 @@ function truncatePath(path: string): string {
   return path.replace(/^\/home\/[^/]+/, "~").replace(/^\/Users\/[^/]+/, "~");
 }
 
+function shouldShowPath(name: string, path: string): boolean {
+  const lastSegment = path.split("/").filter(Boolean).pop() ?? "";
+  return lastSegment !== name;
+}
+
 // --- Project git status row ---
 
 function ProjectGitStatusRow({
@@ -235,14 +240,18 @@ function ProjectGitStatusRow({
 
   return (
     <div className="flex items-center gap-1.5 pl-7 pr-2 pb-1 text-xs text-muted-foreground">
-      <GitBranch className="h-3 w-3 shrink-0" />
-      <span className="font-mono truncate">{gitStatus.branch}</span>
+      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
 
       {hasAnything && (
         <span className="flex items-center gap-1.5 ml-auto shrink-0">
           {dirty && (
-            <span className="text-[#e0af68]/80" title={`${gitStatus.uncommittedCount} uncommitted`}>
-              {gitStatus.uncommittedCount}M
+            <span
+              className="flex items-center gap-0.5 text-[#e0af68]/80"
+              title={`${gitStatus.uncommittedCount} uncommitted`}
+            >
+              <span className="text-[0.5rem] leading-none">&#9679;</span>
+              {gitStatus.uncommittedCount}
             </span>
           )}
           {ahead && (
@@ -375,12 +384,11 @@ export function ProjectTreeItem({
           >
             {project.name}
           </button>
-          <span
-            className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1"
-            dir="rtl"
-          >
-            {truncatePath(project.path)}
-          </span>
+          {shouldShowPath(project.name, project.path) && (
+            <span className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+              {truncatePath(project.path)}
+            </span>
+          )}
         </div>
       </div>
 
