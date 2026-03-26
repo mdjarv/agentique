@@ -83,6 +83,7 @@ type Session struct {
 	autoApprove    bool
 	permissionMode string
 	worktreeMerged bool
+	gitOperation   string
 	workDir        string
 	eventLoopDone    chan struct{}
 }
@@ -435,6 +436,9 @@ func (s *Session) broadcastState(state State) {
 	s.mu.Lock()
 	if s.worktreeMerged {
 		payload["worktreeMerged"] = true
+	}
+	if s.gitOperation != "" {
+		payload["gitOperation"] = s.gitOperation
 	}
 	s.mu.Unlock()
 	s.broadcast("session.state", payload)

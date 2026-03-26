@@ -67,6 +67,7 @@ function renderSessionRow(
         branchMissing={session.branchMissing}
         hasUncommitted={session.hasUncommitted}
         mergeStatus={session.mergeStatus}
+        gitOperation={session.gitOperation}
         prUrl={session.prUrl}
         onClick={() => onSessionClick(id)}
       />

@@ -26,6 +26,7 @@ interface SessionRowProps {
   branchMissing?: boolean;
   hasUncommitted?: boolean;
   mergeStatus?: "clean" | "conflicts" | "unknown";
+  gitOperation?: string;
   prUrl?: string;
   onClick: () => void;
 }
@@ -48,6 +49,7 @@ export function SessionRow({
   hasUncommitted,
   hasDirtyWorktree,
   mergeStatus,
+  gitOperation,
   prUrl,
   worktreeBranch,
   onClick,
@@ -78,6 +80,7 @@ export function SessionRow({
         hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingApproval}
         isPlanning={isPlanning}
+        gitOperation={gitOperation}
       />
       <span
         className={cn(

@@ -249,9 +249,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         <MessageComposer
           ref={composerRef}
           onSend={handleSend}
+          disabled={sessionState === "merging"}
           isRunning={sessionState === "running"}
           onInterrupt={handleInterrupt}
-          placeholder={resumePlaceholders[sessionState]}
+          placeholder={
+            sessionState === "merging"
+              ? "Git operation in progress..."
+              : resumePlaceholders[sessionState]
+          }
           worktree={isWorktree}
           planMode={planMode}
           onPlanModeChange={handlePlanModeChange}
