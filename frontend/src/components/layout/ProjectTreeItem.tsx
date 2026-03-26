@@ -11,11 +11,12 @@ import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
 
-function sessionSortKey(data: SessionData): [number, number, number] {
+function sessionSortKey(data: SessionData): [number, number, number, number] {
   const needsInput = data.pendingApproval || data.pendingQuestion ? 0 : 1;
+  const isRunning = data.meta.state === "running" ? 0 : 1;
   const unseen = data.hasUnseenCompletion ? 0 : 1;
   const recency = -new Date(data.meta.lastQueryAt ?? data.meta.createdAt).getTime();
-  return [needsInput, unseen, recency];
+  return [needsInput, unseen, isRunning, recency];
 }
 
 function sortActiveSessions(ids: string[], sessions: ChatState["sessions"]): string[] {
@@ -23,9 +24,9 @@ function sortActiveSessions(ids: string[], sessions: ChatState["sessions"]): str
     const da = sessions[a];
     const db = sessions[b];
     if (!da || !db) return 0;
-    const [a0, a1, a2] = sessionSortKey(da);
-    const [b0, b1, b2] = sessionSortKey(db);
-    return a0 - b0 || a1 - b1 || a2 - b2;
+    const [a0, a1, a2, a3] = sessionSortKey(da);
+    const [b0, b1, b2, b3] = sessionSortKey(db);
+    return a0 - b0 || a1 - b1 || a2 - b2 || a3 - b3;
   });
 }
 
