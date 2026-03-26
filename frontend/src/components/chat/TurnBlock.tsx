@@ -1,23 +1,13 @@
-import {
-  AlertTriangle,
-  Bot,
-  Brain,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  FileText,
-  Loader2,
-  Terminal,
-  User,
-} from "lucide-react";
+import { AlertTriangle, Bot, Check, Copy, FileText, Loader2, User, Wrench } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
 import { PromptGroupProvider } from "~/components/chat/PromptCard";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
+import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
-import { ToolUseBlock, formatSummary, getToolIcon } from "~/components/chat/ToolUseBlock";
+import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { copyToClipboard } from "~/lib/utils";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
@@ -165,19 +155,21 @@ function CollapsibleGroup({
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const showActiveHeader = !!activeHeader && !expanded;
+
   return (
     <div className="border rounded-md bg-muted/30 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground w-full text-left hover:bg-muted/50 cursor-pointer transition-colors min-w-0"
+      <ExpandableRow
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        className="hover:bg-muted/50"
+        trailing={
+          trailingIcons && !showActiveHeader ? (
+            <span className="flex items-center gap-1.5 text-[#7aa2f7]/40">{trailingIcons}</span>
+          ) : undefined
+        }
       >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
-        )}
-        {activeHeader && !expanded ? (
+        {showActiveHeader ? (
           activeHeader
         ) : (
           <>
@@ -185,13 +177,8 @@ function CollapsibleGroup({
             <span>{title}</span>
           </>
         )}
-        {trailingIcons && (
-          <span className="ml-auto flex items-center gap-0.5 text-muted-foreground/70 shrink-0">
-            {trailingIcons}
-          </span>
-        )}
-      </button>
-      {expanded && <div className="space-y-1 p-1 pt-0">{children}</div>}
+      </ExpandableRow>
+      {expanded && <div className="space-y-2 p-1.5 pt-1">{children}</div>}
     </div>
   );
 }
@@ -218,7 +205,6 @@ function InFlightToolContent({
   return (
     <>
       <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-      {getToolIcon(event.toolName ?? "Unknown", event.category)}
       <span className="font-medium shrink-0">{event.toolName}</span>
       {hasInput ? (
         <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
@@ -291,13 +277,13 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
     if (item.kind === "thinking") {
       return (
         <span key={item.event.id}>
-          <Brain className="h-3 w-3" />
+          <ThinkingIcon />
         </span>
       );
     }
     return (
       <span key={item.use.id}>
-        {getToolIcon(item.use.toolName ?? "Unknown", item.use.category)}
+        <ToolIcon name={item.use.toolName ?? "Unknown"} category={item.use.category} />
       </span>
     );
   });
@@ -305,7 +291,7 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
   return (
     <CollapsibleGroup
       title={activityTitle(segment.items)}
-      icon={<Terminal className="h-3 w-3" />}
+      icon={<Wrench className="h-3 w-3" />}
       defaultExpanded={false}
       trailingIcons={trailingIcons}
       activeHeader={
@@ -323,7 +309,7 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
         item.kind === "thinking" ? (
           <ThinkingBlock key={item.event.id} content={item.event.content ?? ""} />
         ) : (
-          <div key={item.use.id} className="space-y-1">
+          <div key={item.use.id} className="space-y-1.5">
             <ToolUseBlock
               name={item.use.toolName ?? "Unknown"}
               input={item.use.toolInput}
@@ -453,15 +439,15 @@ export const TurnBlock = memo(function TurnBlock({
   const hasAssistantContent = visibleSegmentCount > 0 || streamingTail || isStreaming;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* User message */}
       <div className="flex gap-3 flex-row-reverse">
         <Avatar className="h-8 w-8 shrink-0">
-          <AvatarFallback className="bg-primary text-primary-foreground">
+          <AvatarFallback className="bg-[#7aa2f7]/20 text-[#7aa2f7]">
             <User className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
+        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-[#7aa2f7]/18 text-foreground">
           {turn.prompt && (
             <button
               type="button"
@@ -510,11 +496,11 @@ export const TurnBlock = memo(function TurnBlock({
       {hasAssistantContent && (
         <div className="flex gap-3">
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className="bg-muted">
+            <AvatarFallback className="bg-[#bb9af7]/15 text-[#bb9af7]">
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-2 max-w-[85%] min-w-0 overflow-x-clip">
+          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && seg.kind === "activity") {
