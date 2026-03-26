@@ -2,9 +2,13 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { Toaster } from "sonner";
 import { AppSidebar } from "~/components/layout/AppSidebar";
+import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
+import { useProjects } from "~/hooks/useProjects";
 import { useAppStore } from "~/stores/app-store";
 
 export const Route = createRootRoute({
@@ -12,13 +16,17 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
+  const projects = useProjects();
+  useGlobalSubscriptions(projects);
+  useProjectGitPolling(projects);
+
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen">
+      <div className="flex h-dvh">
         {isMobile ? (
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <SheetContent side="left" className="w-72 p-0" showCloseButton={false}>
@@ -44,6 +52,9 @@ function RootLayout() {
                 <Menu className="h-5 w-5" />
               </button>
               <span className="text-sm font-semibold">Agentique</span>
+              <div className="ml-auto">
+                <ConnectionIndicator />
+              </div>
             </div>
           )}
           <Outlet />

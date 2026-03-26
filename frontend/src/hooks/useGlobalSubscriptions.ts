@@ -245,6 +245,22 @@ export function useGlobalSubscriptions(projects: Project[]) {
       useAppStore.getState().setProjectGitStatus(payload);
     });
 
+    // Reload active session when returning from background (catches missed events on mobile)
+    let hiddenAt = 0;
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      // Only reload if hidden for >2s (avoids desktop tab-switch churn)
+      if (Date.now() - hiddenAt < 2000) return;
+      const activeId = useChatStore.getState().activeSessionId;
+      if (activeId && ws.connectionState === "connected") {
+        loadSessionHistory(ws, activeId);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     const unsubReconnect = ws.onConnect(() => {
       // Re-subscribe all known projects on reconnect
       subscribedRef.current.clear();
@@ -270,6 +286,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubQuestion();
       unsubProjectGit();
       unsubReconnect();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [ws, navigate]);
 }

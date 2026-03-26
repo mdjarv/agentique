@@ -22,6 +22,8 @@ export class WsClient {
   private disconnectListeners = new Set<() => void>();
   private _connectionState: ConnectionState = "disconnected";
   private connectionStateListeners = new Set<() => void>();
+  private visibilityBound = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(url: string) {
     this.url = url;
@@ -44,6 +46,7 @@ export class WsClient {
 
   connect(): void {
     if (this.ws) return;
+    this.setupVisibilityHandler();
     console.log("[WsClient] connecting to", this.url);
     this.ws = new WebSocket(this.url);
 
@@ -70,7 +73,10 @@ export class WsClient {
       }
       if (this.shouldReconnect) {
         this.setConnectionState("reconnecting");
-        setTimeout(() => this.connect(), this.reconnectDelay);
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.connect();
+        }, this.reconnectDelay);
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
       } else {
         this.setConnectionState("disconnected");
@@ -146,6 +152,27 @@ export class WsClient {
     this.disconnectListeners.add(fn);
     return () => this.disconnectListeners.delete(fn);
   }
+
+  private setupVisibilityHandler(): void {
+    if (this.visibilityBound) return;
+    this.visibilityBound = true;
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+  }
+
+  private handleVisibilityChange = (): void => {
+    if (document.visibilityState !== "visible" || !this.shouldReconnect) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+
+    // Page became visible with a dead/missing socket — reconnect immediately
+    this.reconnectDelay = 500;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (!this.ws) {
+      this.connect();
+    }
+  };
 
   private handleMessage(data: string): void {
     try {

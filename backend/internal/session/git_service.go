@@ -584,20 +584,35 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	return CleanResult{Status: "cleaned"}, nil
 }
 
-// RefreshGitStatus recomputes and broadcasts git status for a single session.
-func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) error {
+// GitState is the response payload for RefreshGitStatus.
+// Fields match the session.state push event so the frontend can apply either.
+type GitState struct {
+	SessionID          string   `json:"sessionId"`
+	State              string   `json:"state"`
+	HasDirtyWorktree   bool     `json:"hasDirtyWorktree"`
+	HasUncommitted     bool     `json:"hasUncommitted"`
+	WorktreeMerged     bool     `json:"worktreeMerged"`
+	CommitsAhead       int      `json:"commitsAhead"`
+	CommitsBehind      int      `json:"commitsBehind"`
+	BranchMissing      bool     `json:"branchMissing"`
+	MergeStatus        string   `json:"mergeStatus,omitempty"`
+	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
+}
+
+// RefreshGitStatus recomputes, broadcasts, and returns git status for a session.
+func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) (GitState, error) {
 	ss, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
+		return GitState{}, fmt.Errorf("session not found: %w", err)
 	}
 	project, err := g.queries.GetProject(ctx, ss.ProjectID)
 	if err != nil {
-		return fmt.Errorf("project not found: %w", err)
+		return GitState{}, fmt.Errorf("project not found: %w", err)
 	}
 
-	payload := map[string]any{
-		"sessionId": ss.ID,
-		"state":     ss.State,
+	gs := GitState{
+		SessionID: ss.ID,
+		State:     ss.State,
 	}
 
 	branch := nullStr(ss.WorktreeBranch)
@@ -605,29 +620,37 @@ func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) err
 
 	if wtPath != "" {
 		if dirty, err := gitops.HasUncommittedChanges(wtPath); err == nil {
-			payload["hasDirtyWorktree"] = dirty
-			payload["hasUncommitted"] = dirty
+			gs.HasDirtyWorktree = dirty
+			gs.HasUncommitted = dirty
 		}
 	}
 
 	if ss.WorktreeMerged != 0 {
-		payload["worktreeMerged"] = true
+		gs.WorktreeMerged = true
 	} else if branch != "" {
 		if !gitops.BranchExists(project.Path, branch) {
-			payload["branchMissing"] = true
+			gs.BranchMissing = true
 		} else {
 			if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
-				payload["commitsAhead"] = ahead
+				gs.CommitsAhead = ahead
 			}
 			if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
-				payload["commitsBehind"] = behind
+				gs.CommitsBehind = behind
 			}
-			appendMergeStatus(payload, project.Path, branch)
+			result, mergeErr := gitops.MergeTreeCheck(project.Path, branch)
+			if mergeErr != nil {
+				gs.MergeStatus = "unknown"
+			} else if result.Clean {
+				gs.MergeStatus = "clean"
+			} else {
+				gs.MergeStatus = "conflicts"
+				gs.MergeConflictFiles = result.ConflictFiles
+			}
 		}
 	}
 
-	g.hub.Broadcast(ss.ProjectID, "session.state", payload)
-	return nil
+	g.hub.Broadcast(ss.ProjectID, "session.state", gs)
+	return gs, nil
 }
 
 // broadcastProjectGitStatus computes and broadcasts the project-level git status.
