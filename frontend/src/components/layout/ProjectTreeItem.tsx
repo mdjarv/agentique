@@ -152,7 +152,7 @@ function CompletedSection({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="group mt-2 mb-0.5 flex w-full items-center gap-1 px-2 pt-1.5 text-left cursor-pointer border-t border-sidebar-border/30"
+        className="group mt-2 mb-1.5 flex w-full items-center gap-1 px-2 pt-1.5 text-left cursor-pointer border-t border-sidebar-border/30"
       >
         {expanded ? (
           <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform" />
@@ -162,7 +162,7 @@ function CompletedSection({
         <span className="text-xs font-semibold tracking-widest text-muted-foreground/70 uppercase group-hover:text-muted-foreground">
           Completed
         </span>
-        <span className="text-xs text-muted-foreground/60">{ids.length}</span>
+        <span className="text-xs text-muted-foreground/60 ml-auto">{ids.length}</span>
       </button>
       {expanded && ids.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
     </>
@@ -239,7 +239,7 @@ function ProjectGitStatusRow({
   const hasAnything = ahead || behind || dirty;
 
   return (
-    <div className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1.5 pl-5.5 text-xs text-muted-foreground">
       <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
 
@@ -345,7 +345,7 @@ export function ProjectTreeItem({
   };
 
   return (
-    <div>
+    <div className={cn("border-l-2 border-transparent", isActive && "border-l-sidebar-primary")}>
       {/* Project header — row 1: name + path, row 2: git status */}
       {/* biome-ignore lint/a11y/useSemanticElements: div with role=button avoids nested button HTML issues */}
       <div
@@ -359,42 +359,50 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 pt-1.5 pb-1.5 max-md:pt-2.5 max-md:pb-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer border-l-2 border-transparent",
-          isActive && "bg-sidebar-accent border-l-sidebar-primary",
+          "w-full text-left px-3 py-1.5 max-md:py-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer",
+          isActive && "bg-sidebar-accent",
         )}
       >
-        <div className="flex items-center gap-1.5">
-          {isExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          )}
-          <FolderOpen className="h-4 w-4 shrink-0" />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate({
-                to: "/project/$projectSlug/settings",
-                params: { projectSlug: project.slug },
-              });
-            }}
-            className="text-sm font-medium shrink-0 text-foreground-bright hover:underline"
-          >
-            {project.name}
-          </button>
-          {shouldShowPath(project.name, project.path) && (
-            <span className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1">
-              {truncatePath(project.path)}
-            </span>
-          )}
+        <div className="flex gap-1.5">
+          <div className="flex items-center shrink-0">
+            {isExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <FolderOpen className="h-4 w-4 shrink-0" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate({
+                    to: "/project/$projectSlug/settings",
+                    params: { projectSlug: project.slug },
+                  });
+                }}
+                className="text-base font-medium shrink-0 text-foreground-bright hover:underline"
+              >
+                {project.name}
+              </button>
+              {shouldShowPath(project.name, project.path) && (
+                <span className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+                  {truncatePath(project.path)}
+                </span>
+              )}
+            </div>
+            {gitStatus?.branch && (
+              <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />
+            )}
+          </div>
         </div>
-        {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />}
       </div>
 
       {/* Sessions + new chat */}
       {isExpanded && (
-        <div className="ml-4 mt-1 space-y-0.5">
+        <div className="ml-4 mr-2 mt-1 space-y-0.5">
           <SessionGroups
             sessionIds={sessionIds}
             sessions={sessions}

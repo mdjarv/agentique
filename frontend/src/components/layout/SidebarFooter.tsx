@@ -1,3 +1,5 @@
+import { BellDot, Check, Circle, CircleHelp, Loader, Pause, TriangleAlert } from "lucide-react";
+import type { ComponentType } from "react";
 import { useMemo } from "react";
 import { cn } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
@@ -13,15 +15,23 @@ type DisplayState =
   | "stopped"
   | "failed";
 
-const stateConfig: Record<DisplayState, { color: string; pulse?: boolean; label: string }> = {
-  approval: { color: "bg-[#ff9e64]", pulse: true, label: "waiting for approval" },
-  unseen: { color: "bg-[#e0af68]", label: "new response" },
-  running: { color: "bg-[#73daca]", label: "running" },
-  merging: { color: "bg-[#7aa2f7]", label: "merging" },
-  idle: { color: "bg-[#9ece6a]", label: "idle" },
-  done: { color: "bg-[#7dcfff]", label: "done" },
-  stopped: { color: "bg-[#a9b1d6]", label: "stopped" },
-  failed: { color: "bg-[#f7768e]", label: "failed" },
+const stateConfig: Record<
+  DisplayState,
+  { icon: ComponentType<{ className?: string }>; color: string; pulse?: boolean; label: string }
+> = {
+  approval: {
+    icon: CircleHelp,
+    color: "text-[#ff9e64]",
+    pulse: true,
+    label: "waiting for approval",
+  },
+  unseen: { icon: BellDot, color: "text-[#e0af68]", label: "new response" },
+  running: { icon: Loader, color: "text-[#73daca]", label: "running" },
+  merging: { icon: Loader, color: "text-[#7aa2f7]", label: "merging" },
+  idle: { icon: Circle, color: "text-[#9ece6a]", label: "idle" },
+  done: { icon: Check, color: "text-emerald-500", label: "done" },
+  stopped: { icon: Pause, color: "text-[#a9b1d6]/80", label: "stopped" },
+  failed: { icon: TriangleAlert, color: "text-[#f7768e]", label: "failed" },
 };
 
 const displayOrder: DisplayState[] = [
@@ -76,17 +86,18 @@ export function SidebarFooter() {
             const count = counts[state];
             if (count === 0) return null;
             const cfg = stateConfig[state];
+            const Icon = cfg.icon;
             return (
               <span
                 key={state}
-                className="flex items-center gap-1 text-xs"
+                className={cn("flex items-center gap-1 text-xs", cfg.color)}
                 title={`${count} ${cfg.label}`}
               >
-                <span
+                <Icon
                   className={cn(
-                    "inline-block size-2 rounded-full",
-                    cfg.color,
+                    "size-3 shrink-0",
                     cfg.pulse && "animate-pulse",
+                    (state === "running" || state === "merging") && "animate-spin",
                   )}
                 />
                 <span className="text-muted-foreground">{count}</span>
