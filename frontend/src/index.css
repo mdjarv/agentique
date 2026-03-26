@@ -406,6 +406,13 @@
   pointer-events: auto;
 }
 
+@media (hover: none) {
+  .code-copy-btn {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
 .code-copy-btn:hover {
   color: var(--foreground-bright);
 }

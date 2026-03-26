@@ -268,7 +268,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
-                  className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center max-md:opacity-100 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -308,12 +308,12 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
           {/* Bottom bar */}
           <div className="flex items-center justify-between px-2 pb-2">
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5 max-md:gap-1 flex-wrap min-w-0">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
-                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
                 aria-label="Attach files"
               >
                 <Paperclip className="h-3.5 w-3.5" />
@@ -464,7 +464,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 <button
                   type="button"
                   onClick={onInterrupt}
-                  className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
+                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
                   aria-label="Stop"
                 >
                   <Square className="h-3.5 w-3.5" />
@@ -474,7 +474,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 type="button"
                 onClick={handleSend}
                 disabled={disabled || (!text.trim() && attachments.length === 0)}
-                className="h-7 w-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
                 aria-label={isRunning ? "Queue message" : "Send message"}
               >
                 {isRunning ? (

@@ -20,7 +20,7 @@ export function MessageQueue({ messages, onCancel }: MessageQueueProps) {
             <button
               type="button"
               onClick={() => onCancel(msg)}
-              className="shrink-0 h-4 w-4 rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-opacity"
+              className="shrink-0 h-4 w-4 rounded-sm flex items-center justify-center max-md:opacity-100 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-opacity"
             >
               <X className="h-3 w-3" />
             </button>

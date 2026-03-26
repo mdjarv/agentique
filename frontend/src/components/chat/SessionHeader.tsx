@@ -1,4 +1,13 @@
-import { Check, Copy, Eraser, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eraser,
+  Loader2,
+  MoreHorizontal,
+  PanelRightOpen,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
@@ -26,9 +35,11 @@ import type { SessionData } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
   session: SessionData;
+  showPanelButton?: boolean;
+  onOpenPanel?: () => void;
 }
 
-export function SessionHeader({ session }: SessionHeaderProps) {
+export function SessionHeader({ session, showPanelButton, onOpenPanel }: SessionHeaderProps) {
   const { meta } = session;
   const ws = useWebSocket();
   const isRunning = meta.state === "running";
@@ -129,7 +140,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
                 {meta.name || "Untitled"}
               </span>
-              <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
+              <Pencil className="h-3 w-3 max-md:opacity-50 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
             </button>
             <button
               type="button"
@@ -139,7 +150,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
                   setTimeout(() => setNameCopied(false), 1500);
                 });
               }}
-              className="p-0.5 rounded opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
+              className="p-0.5 rounded max-md:opacity-50 opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
               aria-label="Copy session name"
             >
               {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -148,6 +159,19 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Session panel toggle (mobile) */}
+          {showPanelButton && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1.5 text-xs text-muted-foreground"
+              title="Session panel"
+              onClick={onOpenPanel}
+            >
+              <PanelRightOpen className="h-3.5 w-3.5" />
+            </Button>
+          )}
+
           {/* Mark done */}
           {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
             <Button

@@ -113,7 +113,7 @@ export function ApprovalBanner({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="h-7 max-md:h-10 px-2 max-md:px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={handleDeny}
             disabled={submitting}
           >
@@ -122,7 +122,7 @@ export function ApprovalBanner({
           </Button>
           <Button
             size="sm"
-            className="h-7 px-2 bg-green-600 hover:bg-green-700 text-white"
+            className="h-7 max-md:h-10 px-2 max-md:px-3 bg-green-600 hover:bg-green-700 text-white"
             onClick={handleAllow}
             disabled={submitting}
           >
@@ -132,7 +132,7 @@ export function ApprovalBanner({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+            className="h-7 max-md:h-10 px-2 max-md:px-3 text-muted-foreground hover:text-foreground"
             onClick={handleAllowAll}
             disabled={submitting}
           >
