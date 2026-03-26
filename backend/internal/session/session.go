@@ -295,8 +295,9 @@ func (s *Session) startEventLoop() {
 			case <-watchdog.C:
 				s.mu.Lock()
 				st := s.state
+				waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
 				s.mu.Unlock()
-				if st != StateRunning {
+				if st != StateRunning || waitingForUser {
 					watchdog.Reset(watchdogWarnAfter)
 					continue
 				}
@@ -611,6 +612,28 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	select {
 	case resp := <-ch:
 		slog.Debug("tool permission resolved", "session_id", s.ID, "tool", toolName, "approval_id", approvalID, "allow", resp.Allow)
+
+		// When ExitPlanMode is approved, transition out of plan mode so
+		// autoApprove works for subsequent tools. Don't call cli.SetPermissionMode
+		// — the CLI handles its own mode transition when processing ExitPlanMode.
+		if toolName == "ExitPlanMode" && resp.Allow {
+			s.mu.Lock()
+			s.permissionMode = "default"
+			s.mu.Unlock()
+
+			if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
+				PermissionMode: "default",
+				ID:             s.ID,
+			}); err != nil {
+				slog.Warn("failed to persist permission mode after ExitPlanMode", "session_id", s.ID, "error", err)
+			}
+
+			s.broadcast("session.permission-mode-changed", map[string]any{
+				"sessionId":      s.ID,
+				"permissionMode": "default",
+			})
+		}
+
 		return resp, nil
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil

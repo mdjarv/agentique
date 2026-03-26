@@ -241,6 +241,13 @@ export function useGlobalSubscriptions(projects: Project[]) {
       },
     );
 
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubPermMode = ws.subscribe("session.permission-mode-changed", (payload: any) => {
+      useChatStore
+        .getState()
+        .setSessionPlanMode(payload.sessionId, payload.permissionMode === "plan");
+    });
+
     const unsubProjectGit = ws.subscribe("project.git-status", (payload: ProjectGitStatus) => {
       useAppStore.getState().setProjectGitStatus(payload);
     });
@@ -284,6 +291,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPrUpdated();
       unsubPermission();
       unsubQuestion();
+      unsubPermMode();
       unsubProjectGit();
       unsubReconnect();
       document.removeEventListener("visibilitychange", handleVisibility);
