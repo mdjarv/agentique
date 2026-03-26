@@ -157,6 +157,11 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 		s.mu.Unlock()
 		return err
 	}
+	cli := s.cliSess
+	if cli == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: CLI session not connected", s.ID)
+	}
 	s.state = StateRunning
 	s.queryCount++
 	s.turnIndex++
@@ -183,7 +188,10 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	if len(attachments) > 0 {
 		promptPayload["attachments"] = attachments
 	}
-	promptData, _ := json.Marshal(promptPayload)
+	promptData, err := json.Marshal(promptPayload)
+	if err != nil {
+		slog.Error("marshal prompt failed", "session_id", s.ID, "error", err)
+	}
 	if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 		SessionID: s.ID,
 		TurnIndex: int64(s.turnIndex),
@@ -200,7 +208,7 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	s.broadcastState(StateRunning)
 
 	if len(attachments) == 0 {
-		if err := s.cliSess.Query(prompt); err != nil {
+		if err := cli.Query(prompt); err != nil {
 			if stErr := s.setState(StateFailed); stErr != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 			}
@@ -216,7 +224,7 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 		}
 		return fmt.Errorf("parse attachments: %w", err)
 	}
-	if err := s.cliSess.QueryWithContent(prompt, blocks...); err != nil {
+	if err := cli.QueryWithContent(prompt, blocks...); err != nil {
 		if stErr := s.setState(StateFailed); stErr != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
@@ -270,10 +278,13 @@ func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
 // to the database, and broadcasts them to all project WebSocket clients.
 // Signals eventLoopDone on exit. Exits on context cancellation or channel close.
 func (s *Session) startEventLoop() {
+	s.mu.Lock()
+	cli := s.cliSess
+	s.mu.Unlock()
+	events := cli.Events()
+
 	go func() {
 		defer close(s.eventLoopDone)
-
-		events := s.cliSess.Events()
 		watchdog := time.NewTimer(watchdogWarnAfter)
 		defer watchdog.Stop()
 		var warned bool
