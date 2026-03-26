@@ -266,9 +266,6 @@ export function ProjectTreeItem({
 
   const handleProjectClick = () => {
     onToggleExpand();
-    if (!isActive) {
-      navigate({ to: "/project/$projectSlug", params: { projectSlug: project.slug } });
-    }
   };
 
   const handleSessionClick = (sessionId: string) => {
@@ -281,7 +278,11 @@ export function ProjectTreeItem({
 
   return (
     <div
-      className={cn("border-l-2 border-transparent pb-2", isActive && "border-l-sidebar-primary")}
+      className={cn(
+        "border-l-2 border-transparent",
+        isExpanded && "pb-2",
+        isActive && isExpanded && "border-l-sidebar-primary",
+      )}
     >
       {/* Project header — row 1: name + path, row 2: git status */}
       <ProjectHoverCard projectId={project.id} projectPath={project.path} gitStatus={gitStatus}>
@@ -328,7 +329,7 @@ export function ProjectTreeItem({
                 </button>
                 <ActiveSessionIndicators counts={sessionCounts} />
               </div>
-              {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}
+              {isExpanded && gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}
             </div>
           </div>
         </div>
