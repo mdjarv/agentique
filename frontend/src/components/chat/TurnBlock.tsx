@@ -540,7 +540,7 @@ export const TurnBlock = memo(function TurnBlock({
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip pr-2">
+          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-hidden pr-2">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && seg.kind === "activity") {

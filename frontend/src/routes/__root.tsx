@@ -1,7 +1,6 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { Toaster } from "sonner";
-import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
@@ -11,7 +10,6 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
 import { useProjects } from "~/hooks/useProjects";
 import { useAppStore } from "~/stores/app-store";
-import { useChatStore } from "~/stores/chat-store";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -25,8 +23,6 @@ function RootLayout() {
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
-  const rateLimit = useChatStore((s) => s.rateLimit);
-
   return (
     <TooltipProvider>
       <div className="flex h-dvh">
@@ -60,7 +56,6 @@ function RootLayout() {
               </div>
             </div>
           )}
-          {rateLimit && <RateLimitBanner rateLimit={rateLimit} />}
           <Outlet />
         </main>
         <Toaster

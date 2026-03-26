@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { uuid } from "~/lib/utils";
 
+// Debounce timer for rate-limit "allowed" → clear transition.
+// Prevents flickering when multiple sessions alternate between warning and allowed.
+let rateLimitClearTimer: ReturnType<typeof setTimeout> | null = null;
+
 export interface ToolContentBlock {
   type: "text" | "image";
   text?: string;
@@ -530,7 +534,17 @@ export const useChatStore = create<ChatState>((set) => ({
       // Transient events: update session state without appending to turns
       if (event.type === "rate_limit") {
         const status = event.status ?? "";
-        if (status === "allowed") return { rateLimit: null };
+        if (rateLimitClearTimer) {
+          clearTimeout(rateLimitClearTimer);
+          rateLimitClearTimer = null;
+        }
+        if (status === "allowed") {
+          rateLimitClearTimer = setTimeout(() => {
+            rateLimitClearTimer = null;
+            useChatStore.setState({ rateLimit: null });
+          }, 5_000);
+          return s;
+        }
         return {
           rateLimit: {
             status,

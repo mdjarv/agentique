@@ -64,16 +64,38 @@ export function ProjectList() {
     select: (s) => s.location.pathname.endsWith("/session/new"),
   });
 
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(projects.map((p) => p.id)),
+  const STORAGE_KEY = "agentique:collapsed-projects";
+
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    let collapsed = new Set<string>();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) collapsed = new Set(JSON.parse(raw) as string[]);
+    } catch {}
+    return new Set(projects.filter((p) => !collapsed.has(p.id)).map((p) => p.id));
+  });
+
+  const persistCollapsed = useCallback(
+    (expanded: Set<string>) => {
+      const collapsed = projects.filter((p) => !expanded.has(p.id)).map((p) => p.id);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(collapsed));
+      } catch {}
+    },
+    [projects],
   );
 
   useEffect(() => {
     setExpandedIds((prev) => {
+      let collapsed = new Set<string>();
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) collapsed = new Set(JSON.parse(raw) as string[]);
+      } catch {}
       const next = new Set(prev);
       let changed = false;
       for (const p of projects) {
-        if (!next.has(p.id)) {
+        if (!next.has(p.id) && !collapsed.has(p.id)) {
           next.add(p.id);
           changed = true;
         }
@@ -82,14 +104,18 @@ export function ProjectList() {
     });
   }, [projects]);
 
-  const toggleExpand = useCallback((id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleExpand = useCallback(
+    (id: string) => {
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        persistCollapsed(next);
+        return next;
+      });
+    },
+    [persistCollapsed],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
