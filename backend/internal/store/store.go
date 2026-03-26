@@ -25,5 +25,17 @@ func Open(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	// Retry on lock contention for up to 5s instead of failing immediately.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	// NORMAL is safe with WAL and skips a redundant fsync per transaction.
+	if _, err := db.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return db, nil
 }
