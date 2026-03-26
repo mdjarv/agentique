@@ -84,7 +84,12 @@ export function AutocompletePopup({
                 ) : (
                   <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
                 )}
-                <span className="truncate">{item.label}</span>
+                <span className={item.category === "command" ? "shrink-0" : "truncate"}>
+                  {item.label}
+                </span>
+                {item.description && (
+                  <span className="truncate text-xs text-muted-foreground">{item.description}</span>
+                )}
                 {item.source && <SourceBadge source={item.source} />}
               </button>
             );

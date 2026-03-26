@@ -14,6 +14,7 @@ export interface AutocompleteItem {
   value: string;
   category: "file" | "command";
   source?: "project" | "user";
+  description?: string;
 }
 
 interface AutocompleteState {
@@ -270,7 +271,13 @@ function filterCommands(commands: CommandFile[], query: string): AutocompleteIte
   const items: AutocompleteItem[] = [];
   for (const cmd of commands) {
     if (q && !cmd.name.toLowerCase().startsWith(q)) continue;
-    items.push({ label: cmd.name, value: cmd.name, category: "command", source: cmd.source });
+    items.push({
+      label: cmd.name,
+      value: cmd.name,
+      category: "command",
+      source: cmd.source,
+      description: cmd.description,
+    });
     if (items.length >= MAX_RESULTS) break;
   }
   return items;

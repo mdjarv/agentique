@@ -42,6 +42,7 @@ export async function getTrackedFiles(
 export interface CommandFile {
   name: string;
   source: "project" | "user";
+  description?: string;
 }
 
 export interface CommandsResult {
