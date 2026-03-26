@@ -47,6 +47,7 @@ type sessionQueries interface {
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
 	InsertEvent(ctx context.Context, arg store.InsertEventParams) error
 	UpdateClaudeSessionID(ctx context.Context, arg store.UpdateClaudeSessionIDParams) error
+	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	GetSession(ctx context.Context, id string) (store.Session, error)
 	GetProject(ctx context.Context, id string) (store.Project, error)
 }

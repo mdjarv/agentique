@@ -187,7 +187,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     async (plan: string) => {
       try {
         const meta = session?.meta;
-        const newId = await createSession(ws, projectId, "Plan execution", !!meta?.worktreeBranch, {
+        const newId = await createSession(ws, projectId, "", !!meta?.worktreeBranch, {
           model: meta?.model,
           autoApprove: meta?.autoApprove,
         });
