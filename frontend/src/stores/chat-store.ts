@@ -92,6 +92,7 @@ export interface SessionMetadata {
   mergeStatus?: "clean" | "conflicts" | "unknown";
   mergeConflictFiles?: string[];
   gitOperation?: string;
+  gitVersion?: number;
   prUrl?: string;
   createdAt: string;
   updatedAt?: string;
@@ -296,6 +297,7 @@ export interface ChatState {
         | "mergeStatus"
         | "mergeConflictFiles"
         | "gitOperation"
+        | "gitVersion"
       >
     >,
   ) => void;
@@ -394,12 +396,30 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionState: (sessionId, state, extras) =>
     set((s) => {
-      const patch: Partial<SessionMetadata> = { state };
-      if (extras) {
-        for (const [k, v] of Object.entries(extras)) {
-          if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
-        }
-      }
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+
+      // Reject stale updates via monotonic version.
+      const incoming = extras?.gitVersion ?? 0;
+      const current = session.meta.gitVersion ?? 0;
+      if (incoming > 0 && current > 0 && incoming < current) return s;
+
+      // Replace ALL git fields atomically — no partial merge.
+      const patch: Partial<SessionMetadata> = {
+        state,
+        connected: extras?.connected ?? session.meta.connected,
+        hasDirtyWorktree: extras?.hasDirtyWorktree ?? false,
+        hasUncommitted: extras?.hasUncommitted ?? false,
+        worktreeMerged: extras?.worktreeMerged ?? false,
+        completedAt: extras?.completedAt,
+        commitsAhead: extras?.commitsAhead ?? 0,
+        commitsBehind: extras?.commitsBehind ?? 0,
+        branchMissing: extras?.branchMissing ?? false,
+        mergeStatus: extras?.mergeStatus,
+        mergeConflictFiles: extras?.mergeConflictFiles,
+        gitOperation: extras?.gitOperation ?? "",
+        gitVersion: incoming || current,
+      };
       return updateMeta(s, sessionId, patch);
     }),
 

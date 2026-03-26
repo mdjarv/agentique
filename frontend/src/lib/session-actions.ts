@@ -291,31 +291,39 @@ export async function getUncommittedDiff(ws: WsClient, sessionId: string): Promi
   return ws.request<DiffResult>("session.uncommitted-diff", { sessionId });
 }
 
-interface GitStateResponse {
+interface GitSnapshotResponse {
   sessionId: string;
   state: string;
+  connected: boolean;
   hasDirtyWorktree: boolean;
   hasUncommitted: boolean;
   worktreeMerged: boolean;
+  completedAt?: string;
   commitsAhead: number;
   commitsBehind: number;
   branchMissing: boolean;
   mergeStatus?: "clean" | "conflicts" | "unknown";
   mergeConflictFiles?: string[];
+  gitOperation?: string;
+  version: number;
 }
 
 /** Refresh git status and apply the response directly to the store (push-independent). */
 export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
-  const gs = await ws.request<GitStateResponse>("session.refresh-git", { sessionId });
+  const gs = await ws.request<GitSnapshotResponse>("session.refresh-git", { sessionId });
   useChatStore.getState().setSessionState(sessionId, gs.state as SessionState, {
+    connected: gs.connected,
     hasDirtyWorktree: gs.hasDirtyWorktree,
     hasUncommitted: gs.hasUncommitted,
     worktreeMerged: gs.worktreeMerged,
+    completedAt: gs.completedAt,
     commitsAhead: gs.commitsAhead,
     commitsBehind: gs.commitsBehind,
     branchMissing: gs.branchMissing,
     mergeStatus: gs.mergeStatus,
     mergeConflictFiles: gs.mergeConflictFiles,
+    gitOperation: gs.gitOperation ?? "",
+    gitVersion: gs.version,
   });
 }
 

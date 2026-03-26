@@ -216,12 +216,14 @@ index abc1234..def5678 100644
       respond(client, msg.id, {
         sessionId: sid,
         state: session?.state ?? "idle",
+        connected: true,
         hasDirtyWorktree: session?.hasDirtyWorktree ?? false,
         hasUncommitted: session?.hasUncommitted ?? false,
         worktreeMerged: session?.worktreeMerged ?? false,
         commitsAhead: session?.commitsAhead ?? 0,
         commitsBehind: session?.commitsBehind ?? 0,
         branchMissing: session?.branchMissing ?? false,
+        version: 1,
       });
       break;
     }

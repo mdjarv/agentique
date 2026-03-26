@@ -9,6 +9,7 @@ export function useUncommittedDiff(sessionId: string) {
   const meta = useChatStore((s) => s.sessions[sessionId]?.meta);
   const isRunning = meta?.state === "running";
   const isDirty = meta?.hasUncommitted || meta?.hasDirtyWorktree;
+  const gitVersion = meta?.gitVersion ?? 0;
 
   const [uncommittedDiffResult, setUncommittedDiffResult] = useState<DiffResult | null>(null);
   const [loadingUncommittedDiff, setLoadingUncommittedDiff] = useState(false);
@@ -16,26 +17,37 @@ export function useUncommittedDiff(sessionId: string) {
   // Reset on session switch.
   const prevSessionId = useRef(sessionId);
   const wasRunning = useRef(isRunning);
+  const prevVersion = useRef(gitVersion);
   if (prevSessionId.current !== sessionId) {
     prevSessionId.current = sessionId;
     wasRunning.current = isRunning;
+    prevVersion.current = gitVersion;
     setUncommittedDiffResult(null);
     setLoadingUncommittedDiff(false);
   }
 
   const fetchUncommittedDiff = useCallback(async () => {
+    if (!isDirty) {
+      setUncommittedDiffResult(null);
+      return null;
+    }
     setLoadingUncommittedDiff(true);
     try {
       const result = await getUncommittedDiff(ws, sessionId);
+      if (prevSessionId.current !== sessionId) return null;
       setUncommittedDiffResult(result);
       return result;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load uncommitted diff");
+      if (prevSessionId.current === sessionId) {
+        toast.error(err instanceof Error ? err.message : "Failed to load uncommitted diff");
+      }
       return null;
     } finally {
-      setLoadingUncommittedDiff(false);
+      if (prevSessionId.current === sessionId) {
+        setLoadingUncommittedDiff(false);
+      }
     }
-  }, [ws, sessionId]);
+  }, [ws, sessionId, isDirty]);
 
   // Fetch when session stops running and has dirty files.
   useEffect(() => {
@@ -47,6 +59,18 @@ export function useUncommittedDiff(sessionId: string) {
     }
     wasRunning.current = isRunning;
   }, [isRunning, isDirty, fetchUncommittedDiff]);
+
+  // Re-fetch when gitVersion changes (covers commit, merge, rebase, clean).
+  useEffect(() => {
+    if (gitVersion !== prevVersion.current && !isRunning) {
+      prevVersion.current = gitVersion;
+      if (!isDirty) {
+        setUncommittedDiffResult(null);
+      } else {
+        fetchUncommittedDiff();
+      }
+    }
+  }, [gitVersion, isRunning, isDirty, fetchUncommittedDiff]);
 
   const uncommittedDiffTotals = uncommittedDiffResult?.files.reduce<{ add: number; del: number }>(
     (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),

@@ -86,17 +86,19 @@ type Session struct {
 	completedAt    string // ISO8601 timestamp or "" if not completed
 	gitOperation   string
 	workDir        string
-	eventLoopDone    chan struct{}
+	gitVersion     int64
+	eventLoopDone  chan struct{}
 }
 
 type sessionParams struct {
-	id        string
-	projectID string
-	cliSess   *claudecli.Session
-	queries   sessionQueries
-	broadcast func(pushType string, payload any)
-	turnIndex int
-	workDir   string
+	id                string
+	projectID         string
+	cliSess           *claudecli.Session
+	queries           sessionQueries
+	broadcast         func(pushType string, payload any)
+	turnIndex         int
+	workDir           string
+	initialGitVersion int64
 }
 
 func newSession(p sessionParams) *Session {
@@ -115,6 +117,7 @@ func newSession(p sessionParams) *Session {
 		pendingQuestions: make(map[string]*pendingQuestion),
 		permissionMode:   "default",
 		workDir:          p.workDir,
+		gitVersion:       p.initialGitVersion,
 		eventLoopDone:    make(chan struct{}),
 	}
 	s.broadcastState(StateIdle)
@@ -146,6 +149,13 @@ func (s *Session) QueryCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.queryCount
+}
+
+// GitVersion returns the current git version counter.
+func (s *Session) GitVersion() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gitVersion
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
@@ -456,34 +466,40 @@ func (s *Session) processEvent(event claudecli.Event) {
 }
 
 func (s *Session) broadcastState(state State) {
-	payload := map[string]any{
-		"sessionId": s.ID,
-		"state":     string(state),
-		"connected": true,
-	}
-	if s.workDir != "" && (state == StateIdle || state == StateDone) {
-		if dirty, err := gitops.HasUncommittedChanges(s.workDir); err == nil {
-			payload["hasDirtyWorktree"] = dirty
-			payload["hasUncommitted"] = dirty
-		}
-		s.enrichGitStatus(payload)
-	}
-	s.mu.Lock()
-	if s.worktreeMerged {
-		payload["worktreeMerged"] = true
-	}
-	if s.completedAt != "" {
-		payload["completedAt"] = s.completedAt
-	}
-	if s.gitOperation != "" {
-		payload["gitOperation"] = s.gitOperation
-	}
-	s.mu.Unlock()
-	s.broadcast("session.state", payload)
+	snap := s.buildLocalSnapshot(state)
+	s.broadcast("session.state", snap)
 }
 
-// enrichGitStatus adds commitsAhead and branchMissing to a broadcast payload.
-func (s *Session) enrichGitStatus(payload map[string]any) {
+// buildLocalSnapshot constructs a GitSnapshot from the session's own state.
+// Used by the Session itself (e.g. on running→idle transitions).
+func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
+	snap := GitSnapshot{
+		SessionID: s.ID,
+		State:     string(state),
+		Connected: true,
+	}
+
+	s.mu.Lock()
+	snap.WorktreeMerged = s.worktreeMerged
+	snap.CompletedAt = s.completedAt
+	snap.GitOperation = s.gitOperation
+	s.gitVersion++
+	snap.Version = s.gitVersion
+	s.mu.Unlock()
+
+	if s.workDir != "" && !snap.WorktreeMerged && (state == StateIdle || state == StateDone) {
+		if dirty, err := gitops.HasUncommittedChanges(s.workDir); err == nil {
+			snap.HasDirtyWorktree = dirty
+			snap.HasUncommitted = dirty
+		}
+		s.enrichSnapshot(&snap)
+	}
+
+	return snap
+}
+
+// enrichSnapshot adds branch-level git info (ahead/behind, merge status) to a snapshot.
+func (s *Session) enrichSnapshot(snap *GitSnapshot) {
 	ctx := context.Background()
 	row, err := s.queries.GetSession(ctx, s.ID)
 	if err != nil {
@@ -498,16 +514,24 @@ func (s *Session) enrichGitStatus(payload map[string]any) {
 		return
 	}
 	if !gitops.BranchExists(project.Path, branch) {
-		payload["branchMissing"] = true
+		snap.BranchMissing = true
 		return
 	}
 	if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
-		payload["commitsAhead"] = ahead
+		snap.CommitsAhead = ahead
 	}
 	if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
-		payload["commitsBehind"] = behind
+		snap.CommitsBehind = behind
 	}
-	appendMergeStatus(payload, project.Path, branch)
+	result, mergeErr := gitops.MergeTreeCheck(project.Path, branch)
+	if mergeErr != nil {
+		snap.MergeStatus = "unknown"
+	} else if result.Clean {
+		snap.MergeStatus = "clean"
+	} else {
+		snap.MergeStatus = "conflicts"
+		snap.MergeConflictFiles = result.ConflictFiles
+	}
 }
 
 // PermissionMode returns the current permission mode string.
@@ -836,4 +860,20 @@ func (s *Session) MarkCompleted() {
 	s.mu.Lock()
 	s.completedAt = time.Now().UTC().Format(time.RFC3339)
 	s.mu.Unlock()
+}
+
+// nextGitVersion returns a monotonically increasing version for this session.
+// Must NOT be called under s.mu.
+func (s *Session) nextGitVersion() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gitVersion++
+	return s.gitVersion
+}
+
+// liveState returns the current in-memory state fields needed for a GitSnapshot.
+func (s *Session) liveState() (state State, connected bool, worktreeMerged bool, completedAt string, gitOperation string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state, s.cliSess != nil, s.worktreeMerged, s.completedAt, s.gitOperation
 }

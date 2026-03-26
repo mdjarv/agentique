@@ -6,7 +6,10 @@ import { useChatStore } from "~/stores/chat-store";
 
 export function useSessionDiff(sessionId: string) {
   const ws = useWebSocket();
-  const isRunning = useChatStore((s) => s.sessions[sessionId]?.meta.state === "running");
+  const meta = useChatStore((s) => s.sessions[sessionId]?.meta);
+  const isRunning = meta?.state === "running";
+  const gitVersion = meta?.gitVersion ?? 0;
+  const isMerged = meta?.worktreeMerged ?? false;
 
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
@@ -14,26 +17,37 @@ export function useSessionDiff(sessionId: string) {
   // Reset state on session switch
   const prevSessionId = useRef(sessionId);
   const wasRunning = useRef(isRunning);
+  const prevVersion = useRef(gitVersion);
   if (prevSessionId.current !== sessionId) {
     prevSessionId.current = sessionId;
     wasRunning.current = isRunning;
+    prevVersion.current = gitVersion;
     setDiffResult(null);
     setLoadingDiff(false);
   }
 
   const fetchDiff = useCallback(async () => {
+    if (isMerged) {
+      setDiffResult(null);
+      return null;
+    }
     setLoadingDiff(true);
     try {
       const result = await getSessionDiff(ws, sessionId);
+      if (prevSessionId.current !== sessionId) return null;
       setDiffResult(result);
       return result;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load diff");
+      if (prevSessionId.current === sessionId) {
+        toast.error(err instanceof Error ? err.message : "Failed to load diff");
+      }
       return null;
     } finally {
-      setLoadingDiff(false);
+      if (prevSessionId.current === sessionId) {
+        setLoadingDiff(false);
+      }
     }
-  }, [ws, sessionId]);
+  }, [ws, sessionId, isMerged]);
 
   // Fetch diff when session transitions from running to idle (not on every mount)
   useEffect(() => {
@@ -42,6 +56,18 @@ export function useSessionDiff(sessionId: string) {
     }
     wasRunning.current = isRunning;
   }, [isRunning, fetchDiff]);
+
+  // Re-fetch when gitVersion changes (covers commit, merge, rebase, clean).
+  useEffect(() => {
+    if (gitVersion !== prevVersion.current && !isRunning) {
+      prevVersion.current = gitVersion;
+      if (isMerged) {
+        setDiffResult(null);
+      } else {
+        fetchDiff();
+      }
+    }
+  }, [gitVersion, isRunning, isMerged, fetchDiff]);
 
   const diffTotals = diffResult?.files.reduce<{ add: number; del: number }>(
     (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),

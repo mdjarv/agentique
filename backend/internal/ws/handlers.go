@@ -175,7 +175,7 @@ func (c *conn) handleSessionClean(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionRefreshGit(msg ClientMessage) {
-	handleRequest(c, msg, func(p SessionRefreshGitPayload) (session.GitState, error) {
+	handleRequest(c, msg, func(p SessionRefreshGitPayload) (session.GitSnapshot, error) {
 		return c.gitSvc.RefreshGitStatus(c.ctx, p.SessionID)
 	})
 }

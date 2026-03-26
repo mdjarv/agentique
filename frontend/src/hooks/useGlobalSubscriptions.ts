@@ -202,6 +202,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         mergeStatus: payload.mergeStatus,
         mergeConflictFiles: payload.mergeConflictFiles,
         gitOperation: payload.gitOperation ?? "",
+        gitVersion: payload.version,
       });
     });
 

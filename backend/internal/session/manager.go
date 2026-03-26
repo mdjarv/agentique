@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -158,32 +159,41 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 
 // ResumeParams holds the parameters for resuming an existing session.
 type ResumeParams struct {
-	SessionID       string
-	ClaudeSessionID string
-	ProjectID       string
-	WorkDir         string
-	Model           string
-	PermissionMode  string
-	AutoApprove     bool
-	Effort          string
-	MaxBudget       float64
-	MaxTurns        int
+	SessionID         string
+	ClaudeSessionID   string
+	ProjectID         string
+	WorkDir           string
+	Model             string
+	PermissionMode    string
+	AutoApprove       bool
+	Effort            string
+	MaxBudget         float64
+	MaxTurns          int
+	InitialGitVersion int64
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
 func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
+	m.mu.Lock()
+	if _, ok := m.sessions[p.SessionID]; ok {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("session %s is already live", p.SessionID)
+	}
+	m.mu.Unlock()
+
 	// Continue turn numbering from where we left off.
 	maxTurn, _ := m.queries.MaxTurnIndex(context.Background(), p.SessionID)
 	turnIndex := int(maxTurn)
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
-		id:        p.SessionID,
-		projectID: p.ProjectID,
-		queries:   m.queries,
-		broadcast: m.broadcastFunc(p.ProjectID),
-		turnIndex: turnIndex,
-		workDir:   p.WorkDir,
+		id:                p.SessionID,
+		projectID:         p.ProjectID,
+		queries:           m.queries,
+		broadcast:         m.broadcastFunc(p.ProjectID),
+		turnIndex:         turnIndex,
+		workDir:           p.WorkDir,
+		initialGitVersion: p.InitialGitVersion,
 	})
 	sess.mu.Lock()
 	sess.queryCount = turnIndex + 1

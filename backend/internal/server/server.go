@@ -38,6 +38,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mgr.RecoverStaleSessions(context.Background())
 	svc := session.NewService(mgr, queries, hub)
 	gitSvc := session.NewGitService(mgr, queries, hub)
+	svc.SetGitService(gitSvc)
 
 	ph := &project.Handler{Queries: queries}
 
