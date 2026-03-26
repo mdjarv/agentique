@@ -1,12 +1,6 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  FileMinus,
-  FilePlus,
-  FileSymlink,
-  FileText,
-} from "lucide-react";
+import { FileMinus, FilePlus, FileSymlink, FileText } from "lucide-react";
 import { useState } from "react";
+import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import type { DiffResult } from "~/lib/session-actions";
 
 interface DiffViewProps {
@@ -89,27 +83,21 @@ export function FileEntry({
 
   return (
     <div className="border-b last:border-b-0">
-      <button
-        type="button"
-        onClick={() => hasDiff && setExpanded(!expanded)}
-        className={`flex items-center gap-2 px-3 py-1.5 text-xs w-full text-left ${hasDiff ? "hover:bg-muted/80 cursor-pointer" : ""} transition-colors`}
+      <ExpandableRow
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        expandable={hasDiff}
+        className="px-3"
+        trailing={
+          <span className="flex items-center gap-2 text-xs">
+            {insertions > 0 && <span className="text-green-500">+{insertions}</span>}
+            {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
+          </span>
+        }
       >
-        {hasDiff ? (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-          )
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
         {statusIcon(status)}
         <span className="font-mono truncate min-w-0">{path}</span>
-        <span className="ml-auto flex items-center gap-2 shrink-0 text-xs">
-          {insertions > 0 && <span className="text-green-500">+{insertions}</span>}
-          {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
-        </span>
-      </button>
+      </ExpandableRow>
       {expanded && (
         <div className="border-t bg-muted/30 max-h-80 overflow-y-auto">
           <DiffLines text={diff} />

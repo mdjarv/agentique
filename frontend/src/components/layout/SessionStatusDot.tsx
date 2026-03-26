@@ -3,7 +3,7 @@ import type { SessionState } from "~/stores/chat-store";
 
 const stateColors: Record<SessionState, string> = {
   idle: "bg-[#9ece6a]",
-  running: "bg-[#e0af68]",
+  running: "bg-[#73daca]",
   failed: "bg-[#f7768e]",
   stopped: "bg-[#a9b1d6]",
   done: "bg-[#7dcfff]",
@@ -13,21 +13,18 @@ const stateColors: Record<SessionState, string> = {
 interface SessionStatusDotProps {
   state: SessionState;
   connected?: boolean;
-  hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
 }
 
 export function SessionStatusDot({
   state,
   connected = true,
-  hasUnseenCompletion,
   hasPendingApproval,
 }: SessionStatusDotProps) {
-  const showAttention = hasUnseenCompletion && state === "idle";
   const waiting = hasPendingApproval;
-  const color = waiting ? "bg-[#bb9af7]" : showAttention ? "bg-[#73daca]" : stateColors[state];
-  const pulse = waiting || state === "running" || state === "merging" || showAttention;
-  const title = waiting ? "waiting for approval" : showAttention ? "completed" : state;
+  const color = waiting ? "bg-[#ff9e64]" : stateColors[state];
+  const pulse = waiting;
+  const title = waiting ? "waiting for approval" : state;
   return (
     <span
       className={cn(

@@ -1,5 +1,6 @@
-import { CheckCircle, ChevronDown, ChevronRight, Image } from "lucide-react";
+import { CheckCircle, Image } from "lucide-react";
 import { useState } from "react";
+import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import type { ToolContentBlock } from "~/stores/chat-store";
 
 interface ToolResultBlockProps {
@@ -22,19 +23,19 @@ export function ToolResultBlock({ content, onImageClick }: ToolResultBlockProps)
 
   return (
     <div className="border rounded-md bg-muted/50 text-xs">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground w-full text-left hover:bg-muted/80 transition-colors"
+      <ExpandableRow
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        trailing={
+          <span className="flex items-center gap-1.5 text-muted-foreground/50">
+            {hasImages && <Image className="h-3 w-3" />}
+            {!expanded && lineCount > 1 && <span>{lineCount} lines</span>}
+          </span>
+        }
       >
-        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        <CheckCircle className="h-3 w-3" />
+        <CheckCircle className="h-3 w-3 text-[#9ece6a]/70" />
         <span className="truncate">{expanded ? "Result" : preview || "Result"}</span>
-        <span className="ml-auto flex items-center gap-1.5 text-muted-foreground/50 shrink-0">
-          {hasImages && <Image className="h-3 w-3" />}
-          {!expanded && lineCount > 1 && <span>{lineCount} lines</span>}
-        </span>
-      </button>
+      </ExpandableRow>
       {expanded && (
         <div className="border-t">
           {hasImages && (

@@ -435,7 +435,7 @@
 .prose-user h5,
 .prose-user h6 {
   color: inherit;
-  border-color: color-mix(in srgb, var(--primary-foreground) 20%, transparent);
+  border-color: color-mix(in srgb, #7aa2f7 20%, transparent);
 }
 
 .prose-user strong {
@@ -443,26 +443,25 @@
 }
 
 .prose-user a {
-  color: inherit;
+  color: #7aa2f7;
   text-decoration: underline;
-  opacity: 0.9;
 }
 
 .prose-user :not(pre) > code {
-  background: color-mix(in srgb, var(--primary-foreground) 15%, transparent);
-  border-color: color-mix(in srgb, var(--primary-foreground) 10%, transparent);
+  background: color-mix(in srgb, #7aa2f7 12%, transparent);
+  border-color: color-mix(in srgb, #7aa2f7 10%, transparent);
   color: inherit;
 }
 
 .prose-user blockquote {
-  border-color: color-mix(in srgb, var(--primary-foreground) 30%, transparent);
-  background: color-mix(in srgb, var(--primary-foreground) 8%, transparent);
+  border-color: color-mix(in srgb, #7aa2f7 30%, transparent);
+  background: color-mix(in srgb, #7aa2f7 8%, transparent);
   color: inherit;
 }
 
 .prose-user pre {
-  border-color: color-mix(in srgb, var(--primary-foreground) 15%, transparent);
-  background: color-mix(in srgb, var(--primary-foreground) 12%, transparent);
+  border-color: color-mix(in srgb, #7aa2f7 15%, transparent);
+  background: color-mix(in srgb, #7aa2f7 12%, transparent);
 }
 
 .prose-user del {
@@ -471,7 +470,7 @@
 }
 
 .prose-user hr {
-  border-color: color-mix(in srgb, var(--primary-foreground) 20%, transparent);
+  border-color: color-mix(in srgb, #7aa2f7 20%, transparent);
 }
 
 @layer base {

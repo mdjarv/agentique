@@ -120,7 +120,7 @@ export function MessageList({
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative"
     >
-      <div className="p-4 space-y-6 min-w-0">
+      <div className="p-4 space-y-8 min-w-0">
         {turns.map((turn, i) => {
           const eager = i >= turns.length - EAGER_TURN_COUNT;
           const block = (

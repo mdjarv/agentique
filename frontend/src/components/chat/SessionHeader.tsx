@@ -110,7 +110,6 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
         <SessionStatusDot
           state={meta.state}
           connected={meta.connected}
-          hasUnseenCompletion={session.hasUnseenCompletion}
           hasPendingApproval={!!session.pendingApproval || !!session.pendingQuestion}
         />
 

@@ -1,13 +1,7 @@
-import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-  CheckCircle2,
-  GitBranch,
-  GitPullRequest,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, GitPullRequest } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
+import { GitIndicators } from "./GitIndicators";
 import { SessionStatusBadge } from "./SessionStatusBadge";
 
 interface SessionRowProps {
@@ -77,7 +71,6 @@ export function SessionRow({
       <SessionStatusBadge
         state={state}
         connected={connected}
-        hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingApproval}
         isPlanning={isPlanning}
         gitOperation={gitOperation}
@@ -88,13 +81,14 @@ export function SessionRow({
           !name && "italic text-muted-foreground",
           faded && "text-muted-foreground line-through decoration-muted-foreground/50",
           hasAttention && "text-[#e0af68]",
+          hasUnseenCompletion && "font-semibold text-foreground-bright",
         )}
         title={worktreeBranch ? `${name || "Untitled"}\n${worktreeBranch}` : name || "Untitled"}
       >
         {name || "Untitled"}
       </span>
       <span className="ml-auto flex shrink-0 items-center">
-        <GitStatus
+        <SessionGitStatus
           worktreeMerged={worktreeMerged}
           branchMissing={branchMissing}
           commitsAhead={commitsAhead}
@@ -109,7 +103,7 @@ export function SessionRow({
   );
 }
 
-function GitStatus({
+function SessionGitStatus({
   worktreeMerged,
   branchMissing,
   commitsAhead,
@@ -137,7 +131,6 @@ function GitStatus({
 
   const hasPr = !!prUrl;
   const ahead = !!commitsAhead && commitsAhead > 0;
-  const behind = !!commitsBehind && commitsBehind > 0;
   const dirty = hasUncommitted || hasDirtyWorktree;
   const hasConflicts = mergeStatus === "conflicts";
   const readyToMerge = mergeStatus === "clean" && ahead;
@@ -148,19 +141,7 @@ function GitStatus({
       {hasConflicts && <AlertTriangle className="size-3 text-amber-500/80" />}
       {!hasConflicts && readyToMerge && <CheckCircle2 className="size-3 text-[#9ece6a]/70" />}
       {hasPr && <GitPullRequest className="size-3 text-[#7aa2f7]" />}
-      {ahead && (
-        <span className="flex items-center gap-0.5">
-          <ArrowUp className="size-2.5" />
-          {commitsAhead}
-        </span>
-      )}
-      {behind && (
-        <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
-          <ArrowDown className="size-2.5" />
-          {commitsBehind}
-        </span>
-      )}
-      {dirty && <GitBranch className="size-3 text-[#e0af68]/80" />}
+      <GitIndicators dirty={dirty} aheadCount={commitsAhead} behindCount={commitsBehind} />
     </span>
   );
 }

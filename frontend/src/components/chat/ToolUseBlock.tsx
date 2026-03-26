@@ -1,23 +1,9 @@
-import {
-  Bot,
-  ChevronDown,
-  ChevronRight,
-  ClipboardList,
-  FileSearch,
-  FileText,
-  Globe,
-  ListTodo,
-  Pencil,
-  PencilLine,
-  Plug,
-  Search,
-  Terminal,
-  Wrench,
-} from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
+import { ToolIcon } from "~/components/chat/ToolIcons";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ToolUseBlockProps {
@@ -38,50 +24,6 @@ function stripPrefix(path: string, projectPath?: string, worktreePath?: string):
     }
   }
   return path;
-}
-
-export function getCategoryIcon(category: string) {
-  switch (category) {
-    case "command":
-      return <Terminal className="h-3 w-3" />;
-    case "file_write":
-      return <PencilLine className="h-3 w-3" />;
-    case "file_read":
-      return <FileSearch className="h-3 w-3" />;
-    case "web":
-      return <Globe className="h-3 w-3" />;
-    case "agent":
-      return <Bot className="h-3 w-3" />;
-    case "mcp":
-      return <Plug className="h-3 w-3" />;
-    case "task":
-      return <ListTodo className="h-3 w-3" />;
-    case "plan":
-      return <ClipboardList className="h-3 w-3" />;
-    default:
-      return <Wrench className="h-3 w-3" />;
-  }
-}
-
-export function getToolIcon(name: string, category?: string) {
-  switch (name) {
-    case "Read":
-      return <FileText className="h-3 w-3" />;
-    case "Write":
-    case "Edit":
-      return <Pencil className="h-3 w-3" />;
-    case "Glob":
-    case "Grep":
-      return <Search className="h-3 w-3" />;
-    case "WebFetch":
-    case "WebSearch":
-      return <Globe className="h-3 w-3" />;
-    case "EnterPlanMode":
-    case "ExitPlanMode":
-      return <ClipboardList className="h-3 w-3" />;
-    default:
-      return category ? getCategoryIcon(category) : <Terminal className="h-3 w-3" />;
-  }
 }
 
 export function formatSummary(
@@ -282,21 +224,12 @@ export function ToolUseBlock({
 
   return (
     <div className="border rounded-md bg-muted/50 text-xs overflow-hidden">
-      <button
-        type="button"
-        onClick={() => hasDetail && setExpanded(!expanded)}
-        className={`flex items-center gap-2 px-2 py-1.5 text-muted-foreground w-full text-left min-w-0 ${hasDetail ? "hover:bg-muted/80 cursor-pointer" : ""} transition-colors`}
+      <ExpandableRow
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        expandable={hasDetail}
       >
-        {hasDetail ? (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" />
-          )
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        {getToolIcon(name, category)}
+        <ToolIcon name={name} category={category} />
         <span className="font-medium shrink-0">{name}</span>
         {isStreaming ? (
           <span className="text-muted-foreground/50 font-mono truncate min-w-0">
@@ -305,7 +238,7 @@ export function ToolUseBlock({
         ) : (
           <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
         )}
-      </button>
+      </ExpandableRow>
       {expanded && detail && <DetailView detail={detail} />}
     </div>
   );
