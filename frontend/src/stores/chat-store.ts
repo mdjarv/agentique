@@ -28,6 +28,9 @@ export interface ChatEvent {
   duration?: number;
   usage?: { inputTokens: number; outputTokens: number };
   stopReason?: string;
+  contextWindow?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   fatal?: boolean;
   status?: string;
   utilization?: number;
@@ -124,6 +127,12 @@ export interface TodoItem {
   status: "completed" | "in_progress" | "pending";
 }
 
+export interface ContextUsage {
+  contextWindow: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
@@ -135,6 +144,7 @@ export interface SessionData {
   rateLimit: RateLimitInfo | null;
   queuedMessages: QueuedMessage[];
   todos: TodoItem[] | null;
+  contextUsage: ContextUsage | null;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -148,6 +158,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   rateLimit: null,
   queuedMessages: [],
   todos: null,
+  contextUsage: null,
 });
 
 // --- Todo extraction helpers ---
@@ -184,6 +195,24 @@ function extractTodosFromTurns(turns: Turn[]): TodoItem[] | null {
       if (!event) continue;
       const todos = extractTodosFromEvent(event);
       if (todos) return todos;
+    }
+  }
+  return null;
+}
+
+function extractContextUsageFromTurns(turns: Turn[]): ContextUsage | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const events = turns[i]?.events;
+    if (!events) continue;
+    for (let j = events.length - 1; j >= 0; j--) {
+      const event = events[j];
+      if (event?.type === "result" && event.contextWindow && event.contextWindow > 0) {
+        return {
+          contextWindow: event.contextWindow,
+          inputTokens: event.inputTokens ?? 0,
+          outputTokens: event.outputTokens ?? 0,
+        };
+      }
     }
   }
   return null;
@@ -386,9 +415,10 @@ export const useChatStore = create<ChatState>((set) => ({
       const session = s.sessions[sessionId];
       if (!session) return { historyLoading: nextLoading };
       const todos = extractTodosFromTurns(turns);
+      const contextUsage = extractContextUsageFromTurns(turns);
       return {
         historyLoading: nextLoading,
-        ...updateSession(s, sessionId, { turns, todos }),
+        ...updateSession(s, sessionId, { turns, todos, contextUsage }),
       };
     }),
 
@@ -484,6 +514,13 @@ export const useChatStore = create<ChatState>((set) => ({
         patch.meta = { ...session.meta, state: "idle" };
         patch.hasUnseenCompletion = !isViewing;
         patch.rateLimit = null;
+        if (event.contextWindow && event.contextWindow > 0) {
+          patch.contextUsage = {
+            contextWindow: event.contextWindow,
+            inputTokens: event.inputTokens ?? 0,
+            outputTokens: event.outputTokens ?? 0,
+          };
+        }
       }
 
       return updateSession(s, sessionId, patch);

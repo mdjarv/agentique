@@ -43,11 +43,14 @@ type WireToolResultEvent struct {
 }
 
 type WireResultEvent struct {
-	Type       string  `json:"type"`
-	Cost       float64 `json:"cost"`
-	Duration   int64   `json:"duration"`
-	Usage      any     `json:"usage"`
-	StopReason string  `json:"stopReason"`
+	Type          string `json:"type"`
+	Cost          float64 `json:"cost"`
+	Duration      int64   `json:"duration"`
+	Usage         any     `json:"usage"`
+	StopReason    string  `json:"stopReason"`
+	ContextWindow int     `json:"contextWindow,omitempty"`
+	InputTokens   int     `json:"inputTokens,omitempty"`
+	OutputTokens  int     `json:"outputTokens,omitempty"`
 }
 
 type WireErrorEvent struct {
@@ -101,13 +104,21 @@ func ToWireEvent(event claudecli.Event) any {
 			Content: convertToolContent(e.Content),
 		}
 	case *claudecli.ResultEvent:
-		return WireResultEvent{
+		wire := WireResultEvent{
 			Type:       "result",
 			Cost:       e.CostUSD,
 			Duration:   e.Duration.Milliseconds(),
 			Usage:      e.Usage,
 			StopReason: e.StopReason,
 		}
+		for _, mu := range e.ModelUsage {
+			wire.InputTokens += mu.InputTokens
+			wire.OutputTokens += mu.OutputTokens
+			if mu.ContextWindow > wire.ContextWindow {
+				wire.ContextWindow = mu.ContextWindow
+			}
+		}
+		return wire
 	case *claudecli.ErrorEvent:
 		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
 		if errors.Is(e.Err, claudecli.ErrRateLimit) {
