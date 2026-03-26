@@ -174,6 +174,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         branchMissing: payload.branchMissing,
         mergeStatus: payload.mergeStatus,
         mergeConflictFiles: payload.mergeConflictFiles,
+        gitOperation: payload.gitOperation ?? "",
       });
     });
 

@@ -90,12 +90,12 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	live := g.mgr.Get(sessionID)
 	if live != nil {
-		if err := live.TryLockForMerge(); err != nil {
+		if err := live.TryLockForGitOp("merging"); err != nil {
 			return MergeResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockMerge(StateIdle); err != nil {
-				slog.Error("unlock merge failed", "session_id", sessionID, "error", err)
+			if err := live.UnlockGitOp(StateIdle); err != nil {
+				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
 			}
 		}()
 	}
@@ -111,6 +111,10 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	wtPath := nullStr(dbSess.WorktreePath)
 	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
 		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
+	}
+
+	if live != nil {
+		live.broadcastState(StateMerging)
 	}
 
 	hash, mergeErr := gitops.MergeBranch(project.Path, branch, "Merge: "+dbSess.Name)
@@ -161,7 +165,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			"worktreeMerged": true,
 		})
 	} else {
-		// Use live state if available (UnlockMerge just set it to idle),
+		// Use live state if available (UnlockGitOp just set it to idle),
 		// fall back to DB snapshot for dead sessions.
 		state := dbSess.State
 		if live != nil {
@@ -205,17 +209,17 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 
 	slog.Info("rebase started", "session_id", sessionID, "branch", branch)
 
-	if live := g.mgr.Get(sessionID); live != nil {
-		if err := live.TryLockForMerge(); err != nil {
+	live := g.mgr.Get(sessionID)
+	if live != nil {
+		if err := live.TryLockForGitOp("rebasing"); err != nil {
 			return RebaseResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockMerge(StateIdle); err != nil {
-				slog.Error("unlock merge failed", "session_id", sessionID, "error", err)
+			if err := live.UnlockGitOp(StateIdle); err != nil {
+				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
 			}
 		}()
 	}
-
 
 	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
 		return RebaseResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
@@ -224,6 +228,10 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 	mainHead, err := gitops.HeadCommitHash(project.Path)
 	if err != nil {
 		return RebaseResult{Status: "error", Error: "failed to get main HEAD: " + err.Error()}, nil
+	}
+
+	if live != nil {
+		live.broadcastState(StateMerging)
 	}
 
 	if rebaseErr := gitops.RebaseBranch(wtPath, mainHead); rebaseErr != nil {
@@ -252,11 +260,16 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 
 	slog.Info("rebase completed", "session_id", sessionID, "branch", branch, "newBase", mainHead)
 
-	g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
+	rebasePayload := map[string]any{
 		"sessionId":     sessionID,
 		"state":         dbSess.State,
 		"commitsBehind": 0,
-	})
+	}
+	if ahead, aErr := gitops.CommitsAhead(project.Path, branch); aErr == nil {
+		rebasePayload["commitsAhead"] = ahead
+	}
+	appendMergeStatus(rebasePayload, project.Path, branch)
+	g.hub.Broadcast(dbSess.ProjectID, "session.state", rebasePayload)
 
 	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
 

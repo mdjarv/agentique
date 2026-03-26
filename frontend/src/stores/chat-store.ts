@@ -70,6 +70,7 @@ export interface SessionMetadata {
   hasUncommitted?: boolean;
   mergeStatus?: "clean" | "conflicts" | "unknown";
   mergeConflictFiles?: string[];
+  gitOperation?: string;
   prUrl?: string;
   createdAt: string;
   updatedAt?: string;
@@ -240,6 +241,7 @@ export interface ChatState {
         | "branchMissing"
         | "mergeStatus"
         | "mergeConflictFiles"
+        | "gitOperation"
       >
     >,
   ) => void;

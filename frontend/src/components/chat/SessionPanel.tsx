@@ -129,7 +129,7 @@ function BranchStatus({
             onClick={() => {
               const files = meta.mergeConflictFiles?.join(", ") ?? "";
               onSendMessage?.(
-                `Rebase your branch onto main and resolve any merge conflicts. The following files have conflicts: ${files}. After resolving, stage each file and continue the rebase with \`git rebase --continue\`.`,
+                `This is a git worktree. Rebase onto the local project HEAD (not origin). Get it via: main_wt=$(git worktree list --porcelain | head -1 | sed 's/worktree //') && git rebase $(git -C "$main_wt" rev-parse HEAD). Resolve conflicts in: ${files}`,
               );
             }}
           >

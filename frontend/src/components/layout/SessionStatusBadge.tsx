@@ -1,4 +1,15 @@
-import { Check, Circle, Loader, MessageSquare, Pause, PenLine, XCircle, Zap } from "lucide-react";
+import {
+  Check,
+  Circle,
+  GitMerge,
+  Loader,
+  MessageSquare,
+  Pause,
+  PenLine,
+  RefreshCw,
+  XCircle,
+  Zap,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 
@@ -8,6 +19,7 @@ interface SessionStatusBadgeProps {
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
+  gitOperation?: string;
 }
 
 export function SessionStatusBadge({
@@ -16,6 +28,7 @@ export function SessionStatusBadge({
   hasUnseenCompletion,
   hasPendingApproval,
   isPlanning,
+  gitOperation,
 }: SessionStatusBadgeProps) {
   // Attention overrides
   if (hasPendingApproval) {
@@ -79,12 +92,21 @@ export function SessionStatusBadge({
           <XCircle className="size-3" />
         </Badge>
       );
-    case "merging":
+    case "merging": {
+      const opLabel =
+        gitOperation === "rebasing"
+          ? "Rebasing"
+          : gitOperation === "creating_pr"
+            ? "Creating PR"
+            : "Merging";
+      const OpIcon =
+        gitOperation === "rebasing" ? RefreshCw : gitOperation === "merging" ? GitMerge : Loader;
       return (
-        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title="Merging" dim={dim}>
-          <Loader className="size-3 animate-spin" />
+        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title={opLabel} dim={dim}>
+          <OpIcon className="size-3 animate-spin" />
         </Badge>
       );
+    }
   }
 }
 

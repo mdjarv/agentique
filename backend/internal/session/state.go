@@ -73,8 +73,11 @@ func (s *Session) setState(state State) error {
 	return nil
 }
 
-// TryLockForMerge atomically transitions to StateMerging if the session is not running.
-func (s *Session) TryLockForMerge() error {
+// TryLockForGitOp atomically transitions to StateMerging if the session is not running
+// and records which git operation is in progress (e.g. "rebasing", "merging", "creating_pr").
+// Does NOT broadcast — callers should broadcast explicitly right before the long-running
+// operation so that early validation failures don't leave the frontend stuck on "merging".
+func (s *Session) TryLockForGitOp(operation string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state == StateRunning {
@@ -84,11 +87,12 @@ func (s *Session) TryLockForMerge() error {
 		return fmt.Errorf("cannot merge from state %s", string(s.state))
 	}
 	s.state = StateMerging
+	s.gitOperation = operation
 	return nil
 }
 
-// UnlockMerge transitions back from StateMerging to newState.
-func (s *Session) UnlockMerge(newState State) error {
+// UnlockGitOp transitions back from StateMerging to newState and clears the git operation.
+func (s *Session) UnlockGitOp(newState State) error {
 	s.mu.Lock()
 	if s.state != StateMerging {
 		s.mu.Unlock()
@@ -99,6 +103,7 @@ func (s *Session) UnlockMerge(newState State) error {
 		return err
 	}
 	s.state = newState
+	s.gitOperation = ""
 	s.mu.Unlock()
 	return nil
 }
