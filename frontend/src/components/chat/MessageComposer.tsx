@@ -22,9 +22,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useAutocomplete } from "~/hooks/useAutocomplete";
 import { MODELS, MODEL_LABELS, type ModelId } from "~/lib/session-actions";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
+import { AutocompletePopup } from "./AutocompletePopup";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_ATTACHMENTS = 8;
@@ -45,6 +47,7 @@ export interface ComposerHandle {
 export type EffortLevel = "" | "low" | "medium" | "high";
 
 interface MessageComposerProps {
+  projectId: string;
   onSend: (prompt: string, attachments?: Attachment[]) => void;
   disabled?: boolean;
   isRunning?: boolean;
@@ -67,6 +70,7 @@ interface MessageComposerProps {
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
   function MessageComposer(
     {
+      projectId,
       onSend,
       disabled,
       isRunning,
@@ -101,6 +105,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     const attachmentsRef = useRef(attachments);
     attachmentsRef.current = attachments;
 
+    const autocomplete = useAutocomplete({ projectId, textareaRef, text, onTextChange: setText });
+
     useImperativeHandle(ref, () => ({
       setText: (value: string) => {
         setText(value);
@@ -133,6 +139,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       const trimmed = text.trim();
       if ((!trimmed && attachments.length === 0) || disabled || submittingRef.current) return;
       submittingRef.current = true;
+      autocomplete.close();
       onSend(trimmed, attachments.length > 0 ? attachments : undefined);
       setText("");
       setAttachments((prev) => {
@@ -149,7 +156,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      autocomplete.onKeyDown(e);
+      if (e.defaultPrevented) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
@@ -278,211 +287,225 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         )}
 
         {/* Unified composer container */}
-        <div
-          className={cn(
-            "rounded-xl border bg-secondary/50 transition-all",
-            isDragging
-              ? "border-primary ring-2 ring-primary/30"
-              : "focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30",
+        <div className="relative">
+          {autocomplete.isOpen && autocomplete.triggerType && (
+            <AutocompletePopup
+              items={autocomplete.items}
+              selectedIndex={autocomplete.selectedIndex}
+              triggerType={autocomplete.triggerType}
+              onSelect={autocomplete.accept}
+            />
           )}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
-          <textarea
-            ref={textareaRef}
-            autoFocus
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              handleInput();
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
-            className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
-            rows={1}
-            style={{ maxHeight: "200px" }}
-            disabled={disabled}
-          />
+          <div
+            className={cn(
+              "rounded-xl border bg-secondary/50 transition-all",
+              isDragging
+                ? "border-primary ring-2 ring-primary/30"
+                : "focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30",
+            )}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <textarea
+              ref={textareaRef}
+              autoFocus
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                handleInput();
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={
+                placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")
+              }
+              className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
+              rows={1}
+              style={{ maxHeight: "200px" }}
+              disabled={disabled}
+            />
 
-          {/* Bottom bar */}
-          <div className="flex items-center justify-between px-2 pb-2">
-            <div className="flex items-center gap-0.5 max-md:gap-1 flex-wrap min-w-0">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={disabled}
-                className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
-                aria-label="Attach files"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-              </button>
-
-              {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
-
-              {worktree !== undefined &&
-                (onWorktreeChange ? (
-                  <button
-                    type="button"
-                    onClick={() => onWorktreeChange(!worktree)}
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                      worktree ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500",
-                    )}
-                  >
-                    {worktree ? (
-                      <GitBranch className="h-3 w-3" />
-                    ) : (
-                      <FolderOpen className="h-3 w-3" />
-                    )}
-                    {worktree ? "Worktree" : "Local"}
-                  </button>
-                ) : (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
-                      worktree ? "text-primary" : "text-orange-500",
-                    )}
-                  >
-                    {worktree ? (
-                      <GitBranch className="h-3 w-3" />
-                    ) : (
-                      <FolderOpen className="h-3 w-3" />
-                    )}
-                    {worktree ? "Worktree" : "Local"}
-                  </span>
-                ))}
-              {onPlanModeChange && (
+            {/* Bottom bar */}
+            <div className="flex items-center justify-between px-2 pb-2">
+              <div className="flex items-center gap-0.5 max-md:gap-1 flex-wrap min-w-0">
                 <button
                   type="button"
-                  onClick={() => onPlanModeChange(!planMode)}
-                  disabled={isRunning}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                    planMode
-                      ? "bg-yellow-500/10 text-yellow-500"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                    isRunning && "opacity-40 cursor-not-allowed",
-                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={disabled}
+                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                  aria-label="Attach files"
                 >
-                  {planMode ? (
-                    <ListChecks className="h-3 w-3" />
+                  <Paperclip className="h-3.5 w-3.5" />
+                </button>
+
+                {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
+
+                {worktree !== undefined &&
+                  (onWorktreeChange ? (
+                    <button
+                      type="button"
+                      onClick={() => onWorktreeChange(!worktree)}
+                      className={cn(
+                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                        worktree
+                          ? "bg-primary/10 text-primary"
+                          : "bg-orange-500/10 text-orange-500",
+                      )}
+                    >
+                      {worktree ? (
+                        <GitBranch className="h-3 w-3" />
+                      ) : (
+                        <FolderOpen className="h-3 w-3" />
+                      )}
+                      {worktree ? "Worktree" : "Local"}
+                    </button>
                   ) : (
-                    <MessageSquare className="h-3 w-3" />
-                  )}
-                  {planMode ? "Plan" : "Chat"}
-                </button>
-              )}
-              {onAutoApproveChange && (
-                <button
-                  type="button"
-                  onClick={() => onAutoApproveChange(!autoApprove)}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                    autoApprove
-                      ? "bg-green-500/10 text-green-500"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                  )}
-                >
-                  <ShieldCheck className="h-3 w-3" />
-                  {autoApprove ? "Auto" : "Manual"}
-                </button>
-              )}
-
-              {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1" />}
-
-              {effort !== undefined &&
-                (onEffortChange ? (
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                        worktree ? "text-primary" : "text-orange-500",
+                      )}
+                    >
+                      {worktree ? (
+                        <GitBranch className="h-3 w-3" />
+                      ) : (
+                        <FolderOpen className="h-3 w-3" />
+                      )}
+                      {worktree ? "Worktree" : "Local"}
+                    </span>
+                  ))}
+                {onPlanModeChange && (
                   <button
                     type="button"
-                    onClick={() => {
-                      const levels: EffortLevel[] = ["", "low", "medium", "high"];
-                      const idx = levels.indexOf(effort);
-                      const next = levels[(idx + 1) % levels.length] ?? "";
-                      onEffortChange(next);
-                    }}
+                    onClick={() => onPlanModeChange(!planMode)}
+                    disabled={isRunning}
                     className={cn(
                       "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                      effort
-                        ? "text-blue-500"
+                      planMode
+                        ? "bg-yellow-500/10 text-yellow-500"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                      isRunning && "opacity-40 cursor-not-allowed",
+                    )}
+                  >
+                    {planMode ? (
+                      <ListChecks className="h-3 w-3" />
+                    ) : (
+                      <MessageSquare className="h-3 w-3" />
+                    )}
+                    {planMode ? "Plan" : "Chat"}
+                  </button>
+                )}
+                {onAutoApproveChange && (
+                  <button
+                    type="button"
+                    onClick={() => onAutoApproveChange(!autoApprove)}
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      autoApprove
+                        ? "bg-green-500/10 text-green-500"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                     )}
                   >
-                    <Gauge className="h-3 w-3" />
-                    {effort ? `${effort}` : "auto"}
+                    <ShieldCheck className="h-3 w-3" />
+                    {autoApprove ? "Auto" : "Manual"}
                   </button>
-                ) : (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
-                      effort ? "text-blue-500" : "text-muted-foreground",
-                    )}
-                  >
-                    <Gauge className="h-3 w-3" />
-                    {effort ? `${effort}` : "auto"}
-                  </span>
-                ))}
+                )}
 
-              {model &&
-                (onModelChange ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
+                {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1" />}
+
+                {effort !== undefined &&
+                  (onEffortChange ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const levels: EffortLevel[] = ["", "low", "medium", "high"];
+                        const idx = levels.indexOf(effort);
+                        const next = levels[(idx + 1) % levels.length] ?? "";
+                        onEffortChange(next);
+                      }}
                       className={cn(
                         "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                        "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                        "focus-visible:outline-none",
+                        effort
+                          ? "text-blue-500"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                       )}
                     >
-                      {MODEL_LABELS[model]}
-                      <ChevronDown className="h-3 w-3" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      {MODELS.map((m) => (
-                        <DropdownMenuItem
-                          key={m}
-                          onClick={() => onModelChange(m)}
-                          className="text-xs gap-2"
-                        >
-                          <Check
-                            className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
-                          />
-                          {MODEL_LABELS[m]}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
-                  <span className="flex items-center gap-1 text-[11px] rounded-md px-2 py-1 text-muted-foreground">
-                    {MODEL_LABELS[model]}
-                  </span>
-                ))}
-            </div>
+                      <Gauge className="h-3 w-3" />
+                      {effort ? `${effort}` : "auto"}
+                    </button>
+                  ) : (
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                        effort ? "text-blue-500" : "text-muted-foreground",
+                      )}
+                    >
+                      <Gauge className="h-3 w-3" />
+                      {effort ? `${effort}` : "auto"}
+                    </span>
+                  ))}
 
-            <div className="flex items-center gap-1">
-              {isRunning && (
+                {model &&
+                  (onModelChange ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className={cn(
+                          "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                          "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                          "focus-visible:outline-none",
+                        )}
+                      >
+                        {MODEL_LABELS[model]}
+                        <ChevronDown className="h-3 w-3" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {MODELS.map((m) => (
+                          <DropdownMenuItem
+                            key={m}
+                            onClick={() => onModelChange(m)}
+                            className="text-xs gap-2"
+                          >
+                            <Check
+                              className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
+                            />
+                            {MODEL_LABELS[m]}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] rounded-md px-2 py-1 text-muted-foreground">
+                      {MODEL_LABELS[model]}
+                    </span>
+                  ))}
+              </div>
+
+              <div className="flex items-center gap-1">
+                {isRunning && (
+                  <button
+                    type="button"
+                    onClick={onInterrupt}
+                    className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
+                    aria-label="Stop"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={onInterrupt}
-                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
-                  aria-label="Stop"
+                  onClick={handleSend}
+                  disabled={disabled || (!text.trim() && attachments.length === 0)}
+                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label={isRunning ? "Queue message" : "Send message"}
                 >
-                  <Square className="h-3.5 w-3.5" />
+                  {isRunning ? (
+                    <ListPlus className="h-3.5 w-3.5" />
+                  ) : (
+                    <SendHorizonal className="h-3.5 w-3.5" />
+                  )}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={disabled || (!text.trim() && attachments.length === 0)}
-                className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
-                aria-label={isRunning ? "Queue message" : "Send message"}
-              >
-                {isRunning ? (
-                  <ListPlus className="h-3.5 w-3.5" />
-                ) : (
-                  <SendHorizonal className="h-3.5 w-3.5" />
-                )}
-              </button>
+              </div>
             </div>
           </div>
         </div>

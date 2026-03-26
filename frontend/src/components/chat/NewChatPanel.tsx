@@ -77,6 +77,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
         )}
       </div>
       <MessageComposer
+        projectId={projectId}
         onSend={handleSend}
         disabled={sending}
         worktree={worktree}

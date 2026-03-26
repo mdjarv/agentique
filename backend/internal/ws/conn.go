@@ -180,6 +180,10 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleProjectPush(msg)
 	case "project.commit":
 		c.handleProjectCommit(msg)
+	case "project.tracked-files":
+		c.handleProjectTrackedFiles(msg)
+	case "project.commands":
+		c.handleProjectCommands(msg)
 	case "project.reorder":
 		c.handleProjectReorder(msg)
 	default:

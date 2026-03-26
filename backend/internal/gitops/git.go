@@ -343,6 +343,25 @@ func AbortRebase(dir string) error {
 	return nil
 }
 
+// ListTrackedFiles returns all tracked files via git ls-files, capped at 10,000.
+func ListTrackedFiles(dir string) ([]string, error) {
+	out, err := gitStdout(dir, "ls-files")
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	files := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if l != "" {
+			files = append(files, l)
+		}
+		if len(files) >= 10000 {
+			break
+		}
+	}
+	return files, nil
+}
+
 // MergeTreeResult describes whether a merge would be clean or have conflicts.
 type MergeTreeResult struct {
 	Clean         bool

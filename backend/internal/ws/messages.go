@@ -196,6 +196,14 @@ type ProjectCommitPayload struct {
 	Message   string `json:"message"`
 }
 
+type ProjectTrackedFilesPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectCommandsPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
 type ProjectReorderPayload struct {
 	ProjectIDs []string `json:"projectIds"`
 }
@@ -432,6 +440,20 @@ var errProjectIDAndMsgRequired = errors.New("projectId and message are required"
 func (p *ProjectCommitPayload) Validate() error {
 	if p.ProjectID == "" || p.Message == "" {
 		return errProjectIDAndMsgRequired
+	}
+	return nil
+}
+
+func (p *ProjectTrackedFilesPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectCommandsPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
 	}
 	return nil
 }
