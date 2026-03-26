@@ -3,6 +3,7 @@ package ws
 import (
 	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/msggen"
+	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 )
 
@@ -185,5 +186,31 @@ func (c *conn) handleSessionUncommittedFiles(msg ClientMessage) {
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(c.ctx, p.SessionID)
+	})
+}
+
+// --- Project git handlers ---
+
+func (c *conn) handleProjectGitStatus(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectGitStatusPayload) (project.ProjectGitStatus, error) {
+		return c.projectGitSvc.Status(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleProjectFetch(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectFetchPayload) (project.ProjectGitStatus, error) {
+		return c.projectGitSvc.Fetch(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleProjectPush(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectPushPayload) (project.ProjectGitStatus, error) {
+		return c.projectGitSvc.Push(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleProjectCommit(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectCommitPayload) (project.CommitResult, error) {
+		return c.projectGitSvc.Commit(c.ctx, p.ProjectID, p.Message)
 	})
 }

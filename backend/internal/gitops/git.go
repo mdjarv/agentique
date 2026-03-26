@@ -298,6 +298,28 @@ func CommitsBehind(dir, branch string) (int, error) {
 	return n, nil
 }
 
+// Fetch runs git fetch for the default remote (origin).
+func Fetch(dir string) error {
+	out, err := gitRun(dir, "fetch")
+	if err != nil {
+		return fmt.Errorf("git fetch failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// AheadBehindRemote returns how many commits the current branch is ahead of and
+// behind its upstream tracking branch. Returns (0, 0, nil) if no upstream is set.
+func AheadBehindRemote(dir string) (ahead int, behind int, err error) {
+	out, err := gitRun(dir, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+	if err != nil {
+		// No upstream configured — not an error, just no remote tracking.
+		return 0, 0, nil
+	}
+	s := strings.TrimSpace(string(out))
+	fmt.Sscanf(s, "%d\t%d", &ahead, &behind)
+	return ahead, behind, nil
+}
+
 // RebaseBranch rebases the current branch in dir onto the given commit/ref.
 func RebaseBranch(dir, onto string) error {
 	out, err := gitRun(dir, "rebase", onto)

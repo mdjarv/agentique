@@ -173,6 +173,25 @@ type SessionRefreshGitPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// --- Project git payloads ---
+
+type ProjectGitStatusPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectFetchPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectPushPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectCommitPayload struct {
+	ProjectID string `json:"projectId"`
+	Message   string `json:"message"`
+}
+
 // --- Validate methods ---
 
 var (
@@ -366,6 +385,36 @@ func (p *SessionUncommittedFilesPayload) Validate() error {
 func (p *SessionRefreshGitPayload) Validate() error {
 	if p.SessionID == "" {
 		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectGitStatusPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectFetchPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectPushPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+var errProjectIDAndMsgRequired = errors.New("projectId and message are required")
+
+func (p *ProjectCommitPayload) Validate() error {
+	if p.ProjectID == "" || p.Message == "" {
+		return errProjectIDAndMsgRequired
 	}
 	return nil
 }

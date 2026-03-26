@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 )
 
@@ -14,9 +15,10 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket connections.
 type Handler struct {
-	Service    *session.Service
-	GitService *session.GitService
-	Hub        *Hub
+	Service           *session.Service
+	GitService        *session.GitService
+	ProjectGitService *project.GitService
+	Hub               *Hub
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +29,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("ws connected", "remote", r.RemoteAddr)
-	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.Hub)
+	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Hub)
 	c.run()
 	slog.Info("ws disconnected", "remote", r.RemoteAddr)
 }
