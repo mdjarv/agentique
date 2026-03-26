@@ -370,7 +370,7 @@ const TextSegmentView = memo(function TextSegmentView({
 }) {
   return (
     <PromptGroupProvider content={content} projectId={projectId} isStreaming={isStreaming}>
-      <div className="group/msg rounded-lg px-4 py-2 bg-muted">
+      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-[#bb9af7]/12 to-[#bb9af7]/6 shadow-lg shadow-black/30 border border-[#bb9af7]/10">
         <button
           type="button"
           onClick={() => onCopy(content)}
@@ -487,7 +487,7 @@ export const TurnBlock = memo(function TurnBlock({
             <User className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-[#7aa2f7]/18 text-foreground">
+        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-[#7aa2f7]/20 to-[#7aa2f7]/10 text-foreground shadow-lg shadow-black/30 border border-[#7aa2f7]/10">
           {turn.prompt && (
             <button
               type="button"
@@ -540,7 +540,7 @@ export const TurnBlock = memo(function TurnBlock({
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip">
+          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip pr-2">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && seg.kind === "activity") {
