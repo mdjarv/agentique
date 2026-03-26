@@ -9,7 +9,6 @@ export function useSessionDiff(sessionId: string) {
   const isRunning = useChatStore((s) => s.sessions[sessionId]?.meta.state === "running");
 
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
-  const [showDiff, setShowDiff] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
 
   // Reset state on session switch
@@ -19,7 +18,6 @@ export function useSessionDiff(sessionId: string) {
     prevSessionId.current = sessionId;
     wasRunning.current = isRunning;
     setDiffResult(null);
-    setShowDiff(false);
     setLoadingDiff(false);
   }
 
@@ -45,19 +43,10 @@ export function useSessionDiff(sessionId: string) {
     wasRunning.current = isRunning;
   }, [isRunning, fetchDiff]);
 
-  const toggleDiff = useCallback(async () => {
-    if (showDiff) {
-      setShowDiff(false);
-      return;
-    }
-    const result = diffResult ?? (await fetchDiff());
-    if (result) setShowDiff(true);
-  }, [showDiff, diffResult, fetchDiff]);
-
   const diffTotals = diffResult?.files.reduce<{ add: number; del: number }>(
     (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
     { add: 0, del: 0 },
   );
 
-  return { diffResult, showDiff, loadingDiff, fetchDiff, toggleDiff, diffTotals };
+  return { diffResult, loadingDiff, fetchDiff, diffTotals };
 }

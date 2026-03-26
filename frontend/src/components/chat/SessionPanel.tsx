@@ -39,6 +39,7 @@ interface SessionPanelProps {
   onCollapse: () => void;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
+  onShowChanges?: () => void;
 }
 
 // --- Merge dropdown (shared between ready-to-merge and has-ahead states) ---
@@ -211,15 +212,27 @@ function UncommittedFileIcon({ status }: { status: string }) {
 function UncommittedSection({
   meta,
   git,
+  onSendMessage,
   onOpenDialog,
 }: {
   meta: SessionMetadata;
   git: ReturnType<typeof useGitActions>;
+  onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
 }) {
   const isBusy = meta.state === "running";
 
   if (!git.uncommittedFiles || git.uncommittedFiles.length === 0) return null;
+
+  const handleCommit = () => {
+    if (onSendMessage) {
+      onSendMessage(
+        "Commit all changes. Stage everything and write a clear commit message based on what you changed.",
+      );
+    } else {
+      onOpenDialog?.("commit");
+    }
+  };
 
   return (
     <div className="space-y-1.5">
@@ -241,7 +254,7 @@ function UncommittedSection({
             variant="ghost"
             size="sm"
             className="h-5 px-1.5 text-[11px] ml-auto shrink-0"
-            onClick={() => onOpenDialog?.("commit")}
+            onClick={handleCommit}
             disabled={git.committing}
           >
             {git.committing ? (
@@ -274,11 +287,13 @@ function GitSection({
   git,
   onSendMessage,
   onOpenDialog,
+  onShowChanges,
 }: {
   meta: SessionMetadata;
   git: ReturnType<typeof useGitActions>;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
+  onShowChanges?: () => void;
 }) {
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = meta.state === "running";
@@ -315,7 +330,12 @@ function GitSection({
       {meta.branchMissing && <div className="text-xs text-[#f7768e]/80">Branch missing</div>}
 
       {/* 1. Uncommitted changes — highest priority, blocks other operations */}
-      <UncommittedSection meta={meta} git={git} onOpenDialog={onOpenDialog} />
+      <UncommittedSection
+        meta={meta}
+        git={git}
+        onSendMessage={onSendMessage}
+        onOpenDialog={onOpenDialog}
+      />
 
       {/* 2. Branch status: ahead/behind + merge/rebase */}
       {isWorktree && !meta.branchMissing && (
@@ -326,11 +346,8 @@ function GitSection({
       {git.diffTotals && (git.diffTotals.add > 0 || git.diffTotals.del > 0) && (
         <button
           type="button"
-          onClick={git.toggleDiff}
-          className={cn(
-            "flex items-center gap-1.5 text-xs transition-colors w-full text-left",
-            git.showDiff ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-          )}
+          onClick={onShowChanges}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
         >
           <FileDiff className="h-3 w-3 shrink-0" />
           <span className="text-green-500">+{git.diffTotals.add}</span>
@@ -354,7 +371,7 @@ function GitSection({
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-xs w-full justify-start"
+          className="h-5 px-1.5 text-[11px] w-full justify-start"
           onClick={() => onOpenDialog?.("pr")}
           disabled={git.creatingPR}
         >
@@ -403,6 +420,7 @@ export function SessionPanel({
   onCollapse,
   onSendMessage,
   onOpenDialog,
+  onShowChanges,
 }: SessionPanelProps) {
   const isWorktree = !!meta.worktreeBranch;
   const hasTodos = todos !== null && todos.length > 0;
@@ -431,6 +449,7 @@ export function SessionPanel({
             git={git}
             onSendMessage={onSendMessage}
             onOpenDialog={onOpenDialog}
+            onShowChanges={onShowChanges}
           />
         )}
 

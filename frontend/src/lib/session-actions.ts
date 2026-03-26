@@ -287,6 +287,10 @@ export async function getUncommittedFiles(
   return ws.request<UncommittedFilesResult>("session.uncommitted-files", { sessionId });
 }
 
+export async function getUncommittedDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
+  return ws.request<DiffResult>("session.uncommitted-diff", { sessionId });
+}
+
 interface GitStateResponse {
   sessionId: string;
   state: string;

@@ -384,6 +384,27 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffRes
 	return gitops.WorktreeDiff(workDir, "HEAD")
 }
 
+// UncommittedDiff returns the diff of uncommitted changes (working tree vs HEAD).
+func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (gitops.DiffResult, error) {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return gitops.DiffResult{}, fmt.Errorf("session not found")
+	}
+
+	noDiff := gitops.DiffResult{HasDiff: false, Files: []gitops.DiffStat{}}
+
+	dir := dbSess.WorkDir
+	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+		dir = wtPath
+	}
+
+	if _, statErr := os.Stat(dir); statErr != nil {
+		return noDiff, nil
+	}
+
+	return gitops.WorktreeDiff(dir, "HEAD")
+}
+
 // Commit stages all changes and commits in the session's work directory.
 // For non-worktree (local) sessions, transitions to StateDone after a successful commit.
 func (g *GitService) Commit(ctx context.Context, sessionID, message string) (CommitResult, error) {

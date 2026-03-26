@@ -13,7 +13,7 @@ interface DiffViewProps {
   result: DiffResult;
 }
 
-function statusIcon(status: string) {
+export function statusIcon(status: string) {
   switch (status) {
     case "added":
       return <FilePlus className="h-3.5 w-3.5 text-green-500" />;
@@ -36,7 +36,7 @@ function totalStats(result: DiffResult) {
   return { ins, del };
 }
 
-function extractFileDiff(fullDiff: string, path: string): string {
+export function extractFileDiff(fullDiff: string, path: string): string {
   const marker = `diff --git a/${path} b/${path}`;
   const start = fullDiff.indexOf(marker);
   if (start === -1) return "";
@@ -45,7 +45,7 @@ function extractFileDiff(fullDiff: string, path: string): string {
   return fullDiff.slice(start, nextDiff);
 }
 
-function classifyLine(line: string): string {
+export function classifyLine(line: string): string {
   if (line.startsWith("+") && !line.startsWith("+++")) {
     return "px-3 bg-green-500/10 text-green-400";
   }
@@ -58,7 +58,7 @@ function classifyLine(line: string): string {
   return "px-3 text-muted-foreground";
 }
 
-function DiffLines({ text }: { text: string }) {
+export function DiffLines({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
     <pre className="text-xs leading-relaxed overflow-x-auto">
@@ -71,7 +71,7 @@ function DiffLines({ text }: { text: string }) {
   );
 }
 
-function FileEntry({
+export function FileEntry({
   path,
   insertions,
   deletions,

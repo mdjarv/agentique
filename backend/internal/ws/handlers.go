@@ -183,6 +183,12 @@ func (c *conn) handleSessionUncommittedFiles(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionUncommittedDiff(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionUncommittedDiffPayload) (gitops.DiffResult, error) {
+		return c.gitSvc.UncommittedDiff(c.ctx, p.SessionID)
+	})
+}
+
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(c.ctx, p.SessionID)

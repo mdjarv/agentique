@@ -169,6 +169,10 @@ type SessionUncommittedFilesPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionUncommittedDiffPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionRefreshGitPayload struct {
 	SessionID string `json:"sessionId"`
 }
@@ -376,6 +380,13 @@ func (p *SessionCleanPayload) Validate() error {
 }
 
 func (p *SessionUncommittedFilesPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionUncommittedDiffPayload) Validate() error {
 	if p.SessionID == "" {
 		return errSessionIDRequired
 	}
