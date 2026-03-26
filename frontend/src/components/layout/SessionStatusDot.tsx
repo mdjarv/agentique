@@ -25,8 +25,8 @@ export function SessionStatusDot({
 }: SessionStatusDotProps) {
   const showAttention = hasUnseenCompletion && state === "idle";
   const waiting = hasPendingApproval;
-  const color = waiting ? "bg-[#bb9af7]" : showAttention ? "bg-[#73daca]" : stateColors[state];
-  const pulse = waiting || state === "running" || state === "merging" || showAttention;
+  const color = waiting ? "bg-[#bb9af7]" : showAttention ? "bg-[#e0af68]" : stateColors[state];
+  const pulse = waiting || showAttention;
   const title = waiting ? "waiting for approval" : showAttention ? "completed" : state;
   return (
     <span

@@ -1,6 +1,7 @@
 import {
+  BellDot,
   Check,
-  Circle,
+  CircleDot,
   ClipboardList,
   GitMerge,
   Loader,
@@ -9,7 +10,6 @@ import {
   PenLine,
   RefreshCw,
   XCircle,
-  Zap,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
@@ -43,15 +43,15 @@ export function SessionStatusBadge({
   }
   if (isPlanning && state === "running") {
     return (
-      <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Planning">
+      <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" title="Planning">
         <PenLine className="size-3" />
       </Badge>
     );
   }
   if (hasUnseenCompletion && state === "idle") {
     return (
-      <Badge bg="bg-[#73daca]/15" text="text-[#73daca]" title="New response">
-        <Zap className="size-3" />
+      <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="New response">
+        <BellDot className="size-3" />
       </Badge>
     );
   }
@@ -62,7 +62,7 @@ export function SessionStatusBadge({
   switch (state) {
     case "running":
       return (
-        <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" pulse title="Running" dim={dim}>
+        <Badge bg="bg-[#e0af68]/15" text="text-[#e0af68]" title="Running" dim={dim}>
           <Loader className="size-3 animate-spin" />
         </Badge>
       );
@@ -74,7 +74,7 @@ export function SessionStatusBadge({
           title={connected ? "Idle" : "Idle (disconnected)"}
           dim={dim}
         >
-          <Circle className="size-2.5" />
+          <CircleDot className="size-2.5" />
         </Badge>
       );
     case "done":
@@ -105,7 +105,7 @@ export function SessionStatusBadge({
       const OpIcon =
         gitOperation === "rebasing" ? RefreshCw : gitOperation === "merging" ? GitMerge : Loader;
       return (
-        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" pulse title={opLabel} dim={dim}>
+        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" title={opLabel} dim={dim}>
           <OpIcon className="size-3 animate-spin" />
         </Badge>
       );

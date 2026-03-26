@@ -152,7 +152,7 @@ function CompletedSection({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="group mt-2 mb-0.5 flex w-full items-center gap-1 px-2 text-left cursor-pointer"
+        className="group mt-2 mb-0.5 flex w-full items-center gap-1 px-2 pt-1.5 text-left cursor-pointer border-t border-sidebar-border/30"
       >
         {expanded ? (
           <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform" />
@@ -359,9 +359,9 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 pt-1.5 max-md:pt-2.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
+          "w-full text-left rounded-md px-2 pt-1.5 max-md:pt-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer border-l-2 border-transparent",
           gitStatus?.branch ? "pb-0.5" : "pb-1.5 max-md:pb-2.5",
-          isActive && "bg-sidebar-accent",
+          isActive && "bg-sidebar-accent border-l-sidebar-primary",
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -397,7 +397,7 @@ export function ProjectTreeItem({
 
       {/* Sessions + new chat */}
       {isExpanded && (
-        <div className="ml-4 mt-0.5 space-y-0.5">
+        <div className="ml-4 mt-1 space-y-0.5">
           <SessionGroups
             sessionIds={sessionIds}
             sessions={sessions}
@@ -414,9 +414,8 @@ export function ProjectTreeItem({
                   });
                 }}
                 className={cn(
-                  "flex w-full items-center gap-1.5 rounded-md border border-dashed border-sidebar-foreground/15 px-2 py-1.5 max-md:py-2.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:border-sidebar-foreground/30 hover:bg-sidebar-accent/40 transition-colors cursor-pointer",
-                  isNewChatActive &&
-                    "border-solid border-[#7aa2f7]/40 bg-[#7aa2f7]/10 text-sidebar-foreground",
+                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
+                  isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
                 )}
               >
                 <Plus className="h-3.5 w-3.5" />

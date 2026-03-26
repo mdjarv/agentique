@@ -1,6 +1,6 @@
-import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { NewProjectDialog } from "~/components/layout/NewProjectDialog";
 import { ProjectList } from "~/components/layout/ProjectList";
+import { SidebarFooter } from "~/components/layout/SidebarFooter";
 import { cn } from "~/lib/utils";
 
 interface AppSidebarProps {
@@ -17,9 +17,7 @@ export function AppSidebar({ className }: AppSidebarProps) {
       <div className="flex-1 overflow-y-auto">
         <ProjectList />
       </div>
-      <div className="p-3 border-t">
-        <ConnectionIndicator />
-      </div>
+      <SidebarFooter />
     </div>
   );
 }
