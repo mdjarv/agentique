@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import { type ChatState, useChatStore } from "~/stores/chat-store";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
@@ -186,6 +187,8 @@ export function ProjectTreeItem({
   );
   const sessions = useChatStore((s) => s.sessions);
 
+  const closeSidebar = () => useAppStore.getState().setSidebarOpen(false);
+
   const handleProjectClick = () => {
     onToggleExpand();
     if (!isActive) {
@@ -194,6 +197,7 @@ export function ProjectTreeItem({
   };
 
   const handleSessionClick = (sessionId: string) => {
+    closeSidebar();
     navigate({
       to: "/project/$projectSlug/session/$sessionShortId",
       params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] ?? "" },
@@ -215,7 +219,7 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 py-1.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
+          "w-full text-left rounded-md px-2 py-1.5 max-md:py-2.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
           isActive && "bg-sidebar-accent",
         )}
       >
@@ -260,13 +264,14 @@ export function ProjectTreeItem({
               <button
                 type="button"
                 onClick={() => {
+                  closeSidebar();
                   navigate({
                     to: "/project/$projectSlug/session/new",
                     params: { projectSlug: project.slug },
                   });
                 }}
                 className={cn(
-                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
+                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
                   isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
                 )}
               >

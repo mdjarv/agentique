@@ -16,7 +16,9 @@ import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
+import { Sheet, SheetContent } from "~/components/ui/sheet";
 import { useGitActions } from "~/hooks/useGitActions";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
@@ -65,7 +67,9 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const isDirty = session?.meta.hasUncommitted || session?.meta.hasDirtyWorktree;
   const showPanel = isWorktree || hasTodos || isDirty;
 
+  const isMobile = useIsMobile();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
 
   const git = useGitActions(sessionId);
@@ -202,7 +206,11 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   return (
     <div className="flex h-full" data-project-id={projectId}>
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        <SessionHeader session={session} />
+        <SessionHeader
+          session={session}
+          showPanelButton={isMobile && showPanel}
+          onOpenPanel={() => setMobileSessionOpen(true)}
+        />
 
         {/* DiffView — full width in main column, triggered from panel */}
         {git.showDiff && git.diffResult && <DiffView result={git.diffResult} />}
@@ -257,21 +265,36 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
       {/* Right panel — git + todos */}
       {showPanel &&
-        (panelCollapsed ? (
+        (isMobile ? (
+          <Sheet open={mobileSessionOpen} onOpenChange={setMobileSessionOpen}>
+            <SheetContent side="right" className="p-0" showCloseButton={false}>
+              <SessionPanel
+                meta={session.meta}
+                todos={todos}
+                git={git}
+                onCollapse={() => setMobileSessionOpen(false)}
+                onSendMessage={handleSend}
+                onOpenDialog={(d) => setActiveDialog(d)}
+              />
+            </SheetContent>
+          </Sheet>
+        ) : panelCollapsed ? (
           <CollapsedSessionStrip
             meta={session.meta}
             todos={todos}
             onExpand={() => setPanelCollapsed(false)}
           />
         ) : (
-          <SessionPanel
-            meta={session.meta}
-            todos={todos}
-            git={git}
-            onCollapse={() => setPanelCollapsed(true)}
-            onSendMessage={handleSend}
-            onOpenDialog={(d) => setActiveDialog(d)}
-          />
+          <div className="w-72 border-l shrink-0">
+            <SessionPanel
+              meta={session.meta}
+              todos={todos}
+              git={git}
+              onCollapse={() => setPanelCollapsed(true)}
+              onSendMessage={handleSend}
+              onOpenDialog={(d) => setActiveDialog(d)}
+            />
+          </div>
         ))}
 
       {/* Dialogs */}

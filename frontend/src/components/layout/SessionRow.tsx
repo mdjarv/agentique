@@ -68,7 +68,7 @@ export function SessionRow({
         }
       }}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
+        "flex items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
         isActive && "bg-sidebar-accent/70",
       )}
     >

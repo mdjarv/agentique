@@ -4,10 +4,12 @@ import type { Project } from "~/lib/types";
 interface AppState {
   projects: Project[];
   projectsLoaded: boolean;
+  sidebarOpen: boolean;
   setProjects: (projects: Project[]) => void;
   addProject: (project: Project) => void;
   updateProject: (project: Project) => void;
   removeProject: (id: string) => void;
+  setSidebarOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -18,4 +20,6 @@ export const useAppStore = create<AppState>((set) => ({
   updateProject: (project) =>
     set((state) => ({ projects: state.projects.map((p) => (p.id === project.id ? project : p)) })),
   removeProject: (id) => set((state) => ({ projects: state.projects.filter((p) => p.id !== id) })),
+  sidebarOpen: false,
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
 }));
