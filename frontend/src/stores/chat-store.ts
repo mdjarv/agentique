@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { uuid } from "~/lib/utils";
 
+export interface ToolContentBlock {
+  type: "text" | "image";
+  text?: string;
+  mediaType?: string;
+  url?: string;
+}
+
 export interface ChatEvent {
   id: string;
   type:
@@ -13,6 +20,7 @@ export interface ChatEvent {
     | "rate_limit"
     | "stream";
   content?: string;
+  contentBlocks?: ToolContentBlock[];
   toolId?: string;
   toolName?: string;
   toolInput?: unknown;

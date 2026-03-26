@@ -28,10 +28,18 @@ type WireToolUseEvent struct {
 	Category  string          `json:"category"`
 }
 
+// WireContentBlock represents a single block of tool result content.
+type WireContentBlock struct {
+	Type      string `json:"type"`                // "text" or "image"
+	Text      string `json:"text,omitempty"`       // populated for text blocks
+	MediaType string `json:"mediaType,omitempty"`  // e.g. "image/png"; image blocks only
+	URL       string `json:"url,omitempty"`        // data: URL; image blocks only
+}
+
 type WireToolResultEvent struct {
-	Type    string `json:"type"`
-	ToolID  string `json:"toolId"`
-	Content string `json:"content"`
+	Type    string             `json:"type"`
+	ToolID  string             `json:"toolId"`
+	Content []WireContentBlock `json:"content"`
 }
 
 type WireResultEvent struct {
@@ -87,7 +95,11 @@ func ToWireEvent(event claudecli.Event) any {
 			Category:  classifyTool(e.Name),
 		}
 	case *claudecli.ToolResultEvent:
-		return WireToolResultEvent{Type: "tool_result", ToolID: e.ToolUseID, Content: e.Content}
+		return WireToolResultEvent{
+			Type:    "tool_result",
+			ToolID:  e.ToolUseID,
+			Content: convertToolContent(e.Content),
+		}
 	case *claudecli.ResultEvent:
 		return WireResultEvent{
 			Type:       "result",
@@ -124,6 +136,36 @@ func ToWireEvent(event claudecli.Event) any {
 	default:
 		return nil
 	}
+}
+
+// convertToolContent converts claudecli-go content blocks to wire format.
+// Image blocks are encoded as data: URLs so the frontend can render them directly.
+func convertToolContent(blocks []claudecli.ToolContent) []WireContentBlock {
+	out := make([]WireContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			out = append(out, WireContentBlock{Type: "text", Text: b.Text})
+		case "image":
+			out = append(out, WireContentBlock{
+				Type:      "image",
+				MediaType: b.MediaType,
+				URL:       "data:" + b.MediaType + ";base64," + b.Data,
+			})
+		}
+	}
+	return out
+}
+
+// toolResultText concatenates all text blocks from a tool result.
+func toolResultText(blocks []WireContentBlock) string {
+	var parts []string
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 func classifyTool(name string) string {

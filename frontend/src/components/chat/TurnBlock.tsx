@@ -273,12 +273,14 @@ function ActivitySegmentView({
   sessionId,
   projectPath,
   worktreePath,
+  onImageClick,
 }: {
   segment: ActivitySegment;
   isStreaming: boolean;
   sessionId: string;
   projectPath?: string;
   worktreePath?: string;
+  onImageClick?: (src: string) => void;
 }) {
   const toolItems = segment.items.filter(
     (i): i is ActivityItem & { kind: "tool" } => i.kind === "tool",
@@ -331,7 +333,12 @@ function ActivitySegmentView({
               projectPath={projectPath}
               worktreePath={worktreePath}
             />
-            {item.result && <ToolResultBlock content={item.result.content ?? ""} />}
+            {item.result && (
+              <ToolResultBlock
+                content={item.result.contentBlocks ?? []}
+                onImageClick={onImageClick}
+              />
+            )}
           </div>
         ),
       )}
@@ -540,6 +547,7 @@ export function TurnBlock({
                       sessionId={sessionId}
                       projectPath={projectPath}
                       worktreePath={worktreePath}
+                      onImageClick={setLightboxSrc}
                     />
                   );
                 case "text":

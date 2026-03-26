@@ -383,9 +383,24 @@ func (s *Session) processEvent(event claudecli.Event) {
 	s.mu.Unlock()
 
 	dbEvent := wireEvent
-	if tr, ok := wireEvent.(WireToolResultEvent); ok && len(tr.Content) > maxToolResultDBSize {
-		tr.Content = tr.Content[:toolResultKeepHead] + "\n...[truncated]...\n" + tr.Content[len(tr.Content)-toolResultKeepTail:]
-		dbEvent = tr
+	if tr, ok := wireEvent.(WireToolResultEvent); ok {
+		// Truncate large text blocks for DB; image blocks pass through.
+		text := toolResultText(tr.Content)
+		if len(text) > maxToolResultDBSize {
+			truncated := text[:toolResultKeepHead] + "\n...[truncated]...\n" + text[len(text)-toolResultKeepTail:]
+			blocks := make([]WireContentBlock, 0, len(tr.Content))
+			replaced := false
+			for _, b := range tr.Content {
+				if b.Type == "text" && !replaced {
+					blocks = append(blocks, WireContentBlock{Type: "text", Text: truncated})
+					replaced = true
+				} else if b.Type != "text" {
+					blocks = append(blocks, b)
+				}
+			}
+			tr.Content = blocks
+			dbEvent = tr
+		}
 	}
 
 	if data, err := json.Marshal(dbEvent); err == nil {
