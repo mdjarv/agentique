@@ -224,6 +224,18 @@ func (c *conn) handleProjectCommit(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleProjectTrackedFiles(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectTrackedFilesPayload) (project.TrackedFilesResult, error) {
+		return c.projectGitSvc.TrackedFiles(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleProjectCommands(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectCommandsPayload) (project.CommandsResult, error) {
+		return c.projectGitSvc.Commands(c.ctx, p.ProjectID)
+	})
+}
+
 func (c *conn) handleProjectReorder(msg ClientMessage) {
 	handleRequest(c, msg, func(p ProjectReorderPayload) (struct{}, error) {
 		for i, id := range p.ProjectIDs {

@@ -337,6 +337,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             )}
             {contextUsage && <ContextBar usage={contextUsage} />}
             <MessageComposer
+              projectId={projectId}
               ref={composerRef}
               onSend={handleSend}
               initialText={draft}

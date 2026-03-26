@@ -27,3 +27,27 @@ export async function commitProject(
 ): Promise<ProjectCommitResult> {
   return ws.request<ProjectCommitResult>("project.commit", { projectId, message });
 }
+
+export interface TrackedFilesResult {
+  files: string[];
+}
+
+export async function getTrackedFiles(
+  ws: WsClient,
+  projectId: string,
+): Promise<TrackedFilesResult> {
+  return ws.request<TrackedFilesResult>("project.tracked-files", { projectId });
+}
+
+export interface CommandFile {
+  name: string;
+  source: "project" | "user";
+}
+
+export interface CommandsResult {
+  commands: CommandFile[];
+}
+
+export async function getCommands(ws: WsClient, projectId: string): Promise<CommandsResult> {
+  return ws.request<CommandsResult>("project.commands", { projectId });
+}

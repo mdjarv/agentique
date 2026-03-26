@@ -152,6 +152,42 @@ func (g *GitService) Commit(ctx context.Context, projectID, message string) (Com
 	return CommitResult{CommitHash: hash}, nil
 }
 
+// TrackedFilesResult contains the list of git-tracked files.
+type TrackedFilesResult struct {
+	Files []string `json:"files"`
+}
+
+// TrackedFiles returns all git-tracked files for a project.
+func (g *GitService) TrackedFiles(ctx context.Context, projectID string) (TrackedFilesResult, error) {
+	project, err := g.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return TrackedFilesResult{}, fmt.Errorf("project not found")
+	}
+	files, err := gitops.ListTrackedFiles(project.Path)
+	if err != nil {
+		return TrackedFilesResult{}, fmt.Errorf("list tracked files: %w", err)
+	}
+	return TrackedFilesResult{Files: files}, nil
+}
+
+// CommandsResult contains the list of custom slash commands.
+type CommandsResult struct {
+	Commands []gitops.CommandFile `json:"commands"`
+}
+
+// Commands returns custom slash commands from .claude/commands/ dirs.
+func (g *GitService) Commands(ctx context.Context, projectID string) (CommandsResult, error) {
+	project, err := g.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return CommandsResult{}, fmt.Errorf("project not found")
+	}
+	cmds, err := gitops.ListCommandFiles(project.Path)
+	if err != nil {
+		return CommandsResult{}, fmt.Errorf("list commands: %w", err)
+	}
+	return CommandsResult{Commands: cmds}, nil
+}
+
 // BroadcastStatus computes and broadcasts the project git status.
 // Safe to call from goroutines.
 func (g *GitService) BroadcastStatus(ctx context.Context, projectID string) {
