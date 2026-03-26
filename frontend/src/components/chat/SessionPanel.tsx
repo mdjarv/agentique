@@ -57,13 +57,13 @@ function MergeDropdown({
         <Button
           variant="ghost"
           size="sm"
-          className={cn("h-5 px-1.5 text-[11px]", className)}
+          className={cn("h-6 px-2 text-xs", className)}
           disabled={git.merging}
         >
           {git.merging ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <GitMerge className="h-3 w-3" />
+            <GitMerge className="h-3.5 w-3.5" />
           )}
           Merge
         </Button>
@@ -73,7 +73,7 @@ function MergeDropdown({
           Merge
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => git.handleMerge(true)} className="text-xs">
-          Merge & clean up
+          Merge & delete branch
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -126,7 +126,7 @@ function BranchStatus({
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 px-1.5 text-[11px] text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+            className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
             onClick={() => {
               const files = meta.mergeConflictFiles?.join(", ") ?? "";
               onSendMessage?.(
@@ -172,7 +172,7 @@ function BranchStatus({
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 px-1.5 text-[11px] text-[#7aa2f7] hover:bg-[#7aa2f7]/10"
+              className="h-6 px-2 text-xs text-[#7aa2f7] hover:bg-[#7aa2f7]/10"
               onClick={git.handleRebase}
               disabled={git.rebasing}
             >
@@ -253,14 +253,14 @@ function UncommittedSection({
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 px-1.5 text-[11px] ml-auto shrink-0"
+            className="h-6 px-2 text-xs ml-auto shrink-0"
             onClick={handleCommit}
             disabled={git.committing}
           >
             {git.committing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <GitCommitHorizontal className="h-3 w-3" />
+              <GitCommitHorizontal className="h-3.5 w-3.5" />
             )}
             Commit
           </Button>
@@ -371,14 +371,14 @@ function GitSection({
         <Button
           variant="ghost"
           size="sm"
-          className="h-5 px-1.5 text-[11px] w-full justify-start"
+          className="h-6 px-2 text-xs w-full justify-start"
           onClick={() => onOpenDialog?.("pr")}
           disabled={git.creatingPR}
         >
           {git.creatingPR ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <ExternalLink className="h-3 w-3" />
+            <ExternalLink className="h-3.5 w-3.5" />
           )}
           Create PR
         </Button>
