@@ -2,6 +2,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   FileSearch,
   FileText,
   Globe,
@@ -16,6 +17,7 @@ import {
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Markdown } from "~/components/chat/Markdown";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ToolUseBlockProps {
@@ -54,6 +56,8 @@ export function getCategoryIcon(category: string) {
       return <Plug className="h-3 w-3" />;
     case "task":
       return <ListTodo className="h-3 w-3" />;
+    case "plan":
+      return <ClipboardList className="h-3 w-3" />;
     default:
       return <Wrench className="h-3 w-3" />;
   }
@@ -72,6 +76,9 @@ export function getToolIcon(name: string, category?: string) {
     case "WebFetch":
     case "WebSearch":
       return <Globe className="h-3 w-3" />;
+    case "EnterPlanMode":
+    case "ExitPlanMode":
+      return <ClipboardList className="h-3 w-3" />;
     default:
       return category ? getCategoryIcon(category) : <Terminal className="h-3 w-3" />;
   }
@@ -112,6 +119,10 @@ export function formatSummary(
       const done = todos.filter((t: Record<string, unknown>) => t.status === "completed").length;
       return `${done}/${todos.length} completed`;
     }
+    case "EnterPlanMode":
+      return "Entering plan mode";
+    case "ExitPlanMode":
+      return "Plan submitted";
     default:
       return JSON.stringify(input).slice(0, 120);
   }
@@ -134,8 +145,12 @@ interface TextDetail {
   kind: "text";
   content: string;
 }
+interface MarkdownDetail {
+  kind: "markdown";
+  content: string;
+}
 
-type Detail = EditDetail | BashDetail | TextDetail;
+type Detail = EditDetail | BashDetail | TextDetail | MarkdownDetail;
 
 function buildDetail(
   name: string,
@@ -153,6 +168,7 @@ function buildDetail(
     case "Glob":
     case "TodoWrite":
     case "TodoRead":
+    case "EnterPlanMode":
       return null;
 
     case "Bash":
@@ -173,6 +189,9 @@ function buildDetail(
 
     case "Grep":
       return { kind: "text", content: JSON.stringify(input, null, 2) };
+
+    case "ExitPlanMode":
+      return obj.plan ? { kind: "markdown", content: String(obj.plan) } : null;
 
     default: {
       const json = JSON.stringify(input, null, 2);
@@ -231,6 +250,12 @@ function DetailView({ detail }: { detail: Detail }) {
         <pre className="p-2 overflow-x-auto text-foreground/80 whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
           {detail.content}
         </pre>
+      );
+    case "markdown":
+      return (
+        <div className="border-t max-h-96 overflow-y-auto px-3 py-2 text-sm">
+          <Markdown content={detail.content} />
+        </div>
       );
   }
 }

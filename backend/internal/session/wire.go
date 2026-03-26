@@ -193,6 +193,8 @@ func classifyTool(name string) string {
 		return "agent"
 	case "TodoWrite", "TodoRead":
 		return "task"
+	case "EnterPlanMode", "ExitPlanMode":
+		return "plan"
 	}
 	if strings.HasPrefix(name, "mcp__") {
 		return "mcp"

@@ -13,6 +13,7 @@ import {
 } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { MessageQueue } from "~/components/chat/MessageQueue";
+import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
@@ -23,14 +24,16 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
+  createSession,
   refreshGitStatus,
   setAutoApprove,
   setPermissionMode,
   setSessionModel,
+  stopSession,
   submitQuery,
 } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
-import { copyToClipboard } from "~/lib/utils";
+import { copyToClipboard, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -180,6 +183,27 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     [ws, sessionId, sessionState],
   );
 
+  const handleStartFresh = useCallback(
+    async (plan: string) => {
+      try {
+        const meta = session?.meta;
+        const newId = await createSession(ws, projectId, "Plan execution", !!meta?.worktreeBranch, {
+          model: meta?.model,
+          autoApprove: meta?.autoApprove,
+        });
+        await stopSession(ws, sessionId);
+        await submitQuery(ws, newId, plan);
+        navigate({
+          to: "/project/$projectSlug/session/$sessionShortId",
+          params: { projectSlug, sessionShortId: sessionShortId(newId) },
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to start fresh session");
+      }
+    },
+    [ws, projectId, sessionId, session?.meta, navigate, projectSlug],
+  );
+
   const handleInterrupt = useCallback(async () => {
     if (queuedMessages.length > 0) {
       const text = queuedMessages.map((m) => m.prompt).join("\n\n");
@@ -237,14 +261,21 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           worktreePath={session.meta.worktreePath}
           isLoadingHistory={isLoadingHistory}
         />
-        {session.pendingApproval && (
-          <ApprovalBanner
-            sessionId={sessionId}
-            approval={session.pendingApproval}
-            projectPath={project?.path}
-            worktreePath={session.meta.worktreePath}
-          />
-        )}
+        {session.pendingApproval &&
+          (session.pendingApproval.toolName === "ExitPlanMode" ? (
+            <PlanReviewBanner
+              sessionId={sessionId}
+              approval={session.pendingApproval}
+              onStartFresh={handleStartFresh}
+            />
+          ) : (
+            <ApprovalBanner
+              sessionId={sessionId}
+              approval={session.pendingApproval}
+              projectPath={project?.path}
+              worktreePath={session.meta.worktreePath}
+            />
+          ))}
         {session.pendingQuestion && (
           <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
         )}
