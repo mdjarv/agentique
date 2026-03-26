@@ -120,14 +120,13 @@ function SessionGroups({
 
   return (
     <>
-      {sortedActive.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
       {newChatButton}
+      {sortedActive.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
       {sortedCompleted.length > 0 && (
         <CompletedSection
           ids={sortedCompleted}
           sessions={sessions}
           activeSessionId={activeSessionId}
-          hasActiveSessions={sortedActive.length > 0}
           onSessionClick={onSessionClick}
         />
       )}
@@ -139,16 +138,14 @@ function CompletedSection({
   ids,
   sessions,
   activeSessionId,
-  hasActiveSessions,
   onSessionClick,
 }: {
   ids: string[];
   sessions: ChatState["sessions"];
   activeSessionId: string | undefined;
-  hasActiveSessions: boolean;
   onSessionClick: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(!hasActiveSessions);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <>
@@ -409,8 +406,9 @@ export function ProjectTreeItem({
                   });
                 }}
                 className={cn(
-                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
-                  isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
+                  "flex w-full items-center gap-1.5 rounded-md border border-dashed border-sidebar-foreground/15 px-2 py-1.5 max-md:py-2.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:border-sidebar-foreground/30 hover:bg-sidebar-accent/40 transition-colors cursor-pointer",
+                  isNewChatActive &&
+                    "border-solid border-[#7aa2f7]/40 bg-[#7aa2f7]/10 text-sidebar-foreground",
                 )}
               >
                 <Plus className="h-3.5 w-3.5" />
