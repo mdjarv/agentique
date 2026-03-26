@@ -1,0 +1,328 @@
+import { ws } from "msw";
+import {
+  MOCK_PENDING_APPROVALS,
+  MOCK_PENDING_QUESTIONS,
+  MOCK_PROJECT_GIT_STATUS,
+  MOCK_SESSIONS,
+  MOCK_TURNS,
+  PROJECT_IDS,
+  SESSION_IDS,
+} from "./data";
+
+const wsLink = ws.link(/wss?:\/\/.*\/ws$/);
+
+interface ClientMessage {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+type WsClientConnection = Parameters<
+  Parameters<ReturnType<typeof ws.link>["addEventListener"]>[1]
+>[0]["client"];
+
+function respond(client: WsClientConnection, id: string, payload: unknown = {}) {
+  client.send(JSON.stringify({ id, type: "response", payload }));
+}
+
+function respondError(client: WsClientConnection, id: string, message: string) {
+  client.send(JSON.stringify({ id, type: "response", error: { message } }));
+}
+
+function push(client: WsClientConnection, type: string, payload: unknown) {
+  client.send(JSON.stringify({ type, payload }));
+}
+
+/** Schedule push events that simulate async server behavior after project subscription. */
+function schedulePushEvents(client: WsClientConnection, projectId: string) {
+  const sessions = MOCK_SESSIONS[projectId] ?? [];
+
+  for (const session of sessions) {
+    const approval = MOCK_PENDING_APPROVALS[session.id];
+    if (approval) {
+      setTimeout(() => {
+        push(client, "session.tool-permission", {
+          sessionId: session.id,
+          ...approval,
+        });
+      }, 400);
+    }
+
+    const question = MOCK_PENDING_QUESTIONS[session.id];
+    if (question) {
+      setTimeout(() => {
+        push(client, "session.user-question", {
+          sessionId: session.id,
+          ...question,
+        });
+      }, 500);
+    }
+  }
+}
+
+let sessionCounter = 0;
+
+/** Dispatch a WS request to the appropriate mock handler. */
+function dispatch(client: WsClientConnection, msg: ClientMessage) {
+  const p = msg.payload;
+
+  switch (msg.type) {
+    case "project.subscribe":
+      respond(client, msg.id);
+      schedulePushEvents(client, p.projectId as string);
+      break;
+
+    case "session.list": {
+      const sessions = MOCK_SESSIONS[p.projectId as string] ?? [];
+      respond(client, msg.id, { sessions });
+      break;
+    }
+
+    case "session.history": {
+      const turns = MOCK_TURNS[p.sessionId as string] ?? [];
+      respond(client, msg.id, { turns });
+      break;
+    }
+
+    case "project.git-status": {
+      const status = MOCK_PROJECT_GIT_STATUS[p.projectId as string] ?? {
+        projectId: p.projectId,
+        branch: "main",
+        hasRemote: true,
+        aheadRemote: 0,
+        behindRemote: 0,
+        uncommittedCount: 0,
+      };
+      respond(client, msg.id, status);
+      break;
+    }
+
+    case "session.create": {
+      const id = `mock-created-${++sessionCounter}`;
+      respond(client, msg.id, {
+        sessionId: id,
+        name: (p.name as string) || `Session ${sessionCounter}`,
+        state: "idle",
+        connected: true,
+        model: p.model ?? "sonnet",
+        permissionMode: p.planMode ? "plan" : "default",
+        autoApprove: p.autoApprove ?? false,
+        effort: p.effort,
+        maxBudget: p.maxBudget,
+        maxTurns: p.maxTurns,
+        createdAt: new Date().toISOString(),
+      });
+      break;
+    }
+
+    case "session.query":
+      // Ack immediately. In future: schedule streaming push events here.
+      respond(client, msg.id);
+      // Send a state change to "running", then simulate a simple response
+      push(client, "session.state", {
+        sessionId: p.sessionId,
+        state: "running",
+        connected: true,
+      });
+      setTimeout(() => {
+        push(client, "session.event", {
+          sessionId: p.sessionId,
+          event: {
+            type: "text",
+            content:
+              "[Mock mode] This is a simulated response. The MSW mock backend does not run real Claude sessions.",
+          },
+        });
+      }, 300);
+      setTimeout(() => {
+        push(client, "session.event", {
+          sessionId: p.sessionId,
+          event: {
+            type: "result",
+            cost: 0,
+            duration: 500,
+            usage: { inputTokens: 100, outputTokens: 50 },
+            stopReason: "end_turn",
+          },
+        });
+        push(client, "session.state", {
+          sessionId: p.sessionId,
+          state: "idle",
+          connected: true,
+        });
+      }, 600);
+      break;
+
+    case "session.rename":
+      respond(client, msg.id);
+      push(client, "session.renamed", {
+        sessionId: p.sessionId,
+        name: p.name,
+      });
+      break;
+
+    case "session.delete":
+      respond(client, msg.id);
+      push(client, "session.deleted", { sessionId: p.sessionId });
+      break;
+
+    case "session.delete-bulk": {
+      const ids = (p.sessionIds as string[]) ?? [];
+      respond(client, msg.id, {
+        results: ids.map((id) => ({ sessionId: id, success: true })),
+      });
+      for (const id of ids) {
+        push(client, "session.deleted", { sessionId: id });
+      }
+      break;
+    }
+
+    case "session.diff":
+      respond(client, msg.id, {
+        hasDiff: true,
+        summary: "2 files changed, 15 insertions(+), 3 deletions(-)",
+        files: [
+          { path: "src/lib/ws-client.ts", insertions: 12, deletions: 3, status: "modified" },
+          { path: "src/lib/ws-client.test.ts", insertions: 3, deletions: 0, status: "added" },
+        ],
+        diff: `diff --git a/src/lib/ws-client.ts b/src/lib/ws-client.ts
+index abc1234..def5678 100644
+--- a/src/lib/ws-client.ts
++++ b/src/lib/ws-client.ts
+@@ -74,6 +74,15 @@ export class WsClient {
++      const jitter = Math.random() * 1000;
++      const delay = ev.code === 1013
++        ? Math.max(5000, this.reconnectDelay)
++        : this.reconnectDelay;`,
+        truncated: false,
+      });
+      break;
+
+    case "session.refresh-git": {
+      const sid = p.sessionId as string;
+      // Find the session metadata for realistic git state
+      const allSessions = Object.values(MOCK_SESSIONS).flat();
+      const session = allSessions.find((s) => s.id === sid);
+      respond(client, msg.id, {
+        sessionId: sid,
+        state: session?.state ?? "idle",
+        hasDirtyWorktree: session?.hasDirtyWorktree ?? false,
+        hasUncommitted: session?.hasUncommitted ?? false,
+        worktreeMerged: session?.worktreeMerged ?? false,
+        commitsAhead: session?.commitsAhead ?? 0,
+        commitsBehind: session?.commitsBehind ?? 0,
+        branchMissing: session?.branchMissing ?? false,
+      });
+      break;
+    }
+
+    case "session.uncommitted-files":
+      respond(client, msg.id, {
+        files: [
+          { path: "backend/internal/auth/middleware.go", status: "modified" },
+          { path: "backend/internal/auth/middleware_test.go", status: "modified" },
+        ],
+      });
+      break;
+
+    case "session.generate-commit-message":
+      respond(client, msg.id, {
+        title: "refactor: migrate auth middleware to jwt.Verify API",
+        description:
+          "Replace deprecated ValidateToken with jwt.Verify, add structured error handling for expired/malformed tokens, update integration tests.",
+      });
+      break;
+
+    case "session.generate-pr-description":
+      respond(client, msg.id, {
+        title: "Refactor auth middleware to use new JWT validation",
+        body: "## Summary\n- Replaced deprecated `ValidateToken` with `jwt.Verify`\n- Added structured error handling (expired, malformed, revoked)\n- Added 3 new integration tests\n\n## Test plan\n- [x] Unit tests pass\n- [x] Integration tests cover new error paths\n- [ ] Manual test with expired token",
+      });
+      break;
+
+    case "session.commit":
+      respond(client, msg.id, { commitHash: "abc1234" });
+      break;
+
+    case "session.merge":
+      respond(client, msg.id, { status: "merged", commitHash: "def5678" });
+      push(client, "session.state", {
+        sessionId: p.sessionId,
+        state: "idle",
+        worktreeMerged: true,
+        commitsAhead: 0,
+      });
+      break;
+
+    case "session.create-pr":
+      respond(client, msg.id, {
+        status: "created",
+        url: "https://github.com/example/repo/pull/99",
+      });
+      push(client, "session.pr-updated", {
+        sessionId: p.sessionId,
+        prUrl: "https://github.com/example/repo/pull/99",
+      });
+      break;
+
+    case "session.rebase":
+      respond(client, msg.id, { status: "rebased" });
+      break;
+
+    case "session.mark-done":
+      respond(client, msg.id);
+      push(client, "session.state", {
+        sessionId: p.sessionId,
+        state: "done",
+        connected: false,
+      });
+      break;
+
+    case "session.clean":
+      respond(client, msg.id, { status: "cleaned" });
+      push(client, "session.deleted", { sessionId: p.sessionId });
+      break;
+
+    case "session.stop":
+      respond(client, msg.id);
+      push(client, "session.state", {
+        sessionId: p.sessionId,
+        state: "stopped",
+        connected: false,
+      });
+      break;
+
+    case "session.set-model":
+    case "session.set-permission":
+    case "session.set-auto-approve":
+    case "session.resolve-approval":
+    case "session.resolve-question":
+    case "session.interrupt":
+    case "project.fetch":
+    case "project.push":
+    case "project.commit":
+      respond(client, msg.id);
+      break;
+
+    default:
+      respondError(client, msg.id, `[Mock] Unhandled message type: ${msg.type}`);
+  }
+}
+
+// --- Exported MSW handler ---
+
+export const wsHandler = wsLink.addEventListener("connection", ({ client }) => {
+  console.log("[MSW] WebSocket connection intercepted");
+
+  client.addEventListener("message", (event) => {
+    try {
+      const msg = JSON.parse(event.data as string) as ClientMessage;
+      dispatch(client, msg);
+    } catch (err) {
+      console.error("[MSW] Failed to handle WS message:", err);
+    }
+  });
+});
+
+// Export for use in scenarios/tests that need to send push events to an active connection
+export { wsLink, SESSION_IDS, PROJECT_IDS };
