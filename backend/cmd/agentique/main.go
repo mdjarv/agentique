@@ -44,29 +44,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Agentique running at %s\n\n", addr)
 
 	// Fetch projects.
-	type projectInfo struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	projects, err := fetchJSON[[]projectInfo](client, base+"/api/projects")
+	projects, err := fetchJSON[[]projectBrief](client, base+"/api/projects")
 	if err != nil {
 		return fmt.Errorf("failed to fetch projects: %w", err)
 	}
 
-	projectNames := make(map[string]string)
+	projectByID := make(map[string]projectBrief)
 	for _, p := range projects {
-		projectNames[p.ID] = p.Name
+		projectByID[p.ID] = p
 	}
 
 	// Fetch all sessions.
-	type sessionInfo struct {
-		ID        string `json:"id"`
-		ProjectID string `json:"projectId"`
-		Name      string `json:"name"`
-		State     string `json:"state"`
-		Connected bool   `json:"connected"`
-	}
-	sessions, err := fetchJSON[[]sessionInfo](client, base+"/api/sessions")
+	sessions, err := fetchJSON[[]sessionBrief](client, base+"/api/sessions")
 	if err != nil {
 		return fmt.Errorf("failed to fetch sessions: %w", err)
 	}
@@ -77,15 +66,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Group by project.
-	byProject := make(map[string][]sessionInfo)
+	byProject := make(map[string][]sessionBrief)
 	for _, s := range sessions {
 		byProject[s.ProjectID] = append(byProject[s.ProjectID], s)
 	}
 
 	for projectID, ss := range byProject {
-		name := projectNames[projectID]
+		p := projectByID[projectID]
+		name := p.Name
 		if name == "" {
 			name = projectID[:8]
+		}
+		slug := p.Slug
+		if slug == "" {
+			slug = "-"
 		}
 
 		stateCounts := make(map[string]int)
@@ -105,7 +99,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			label = "session"
 		}
 
-		fmt.Printf("  %-16s %d %s (%s)\n", name, len(ss), label, strings.Join(parts, ", "))
+		fmt.Printf("  %-16s %-12s %d %s (%s)\n", name, slug, len(ss), label, strings.Join(parts, ", "))
 	}
 
 	return nil

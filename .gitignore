@@ -12,8 +12,9 @@ frontend/.tanstack/
 backend/internal/server/frontend_dist/assets/
 backend/internal/server/frontend_dist/index.html
 !backend/internal/server/frontend_dist/.gitkeep
-agentique
-agentique.exe
+# Compiled binary (bare name matches the source dir, so anchor it)
+/agentique
+/backend/agentique
 
 # SQLite
 *.db
