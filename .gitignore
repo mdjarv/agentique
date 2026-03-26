@@ -38,3 +38,4 @@ frontend/playwright-report/
 
 # Claude Code
 .claude/
+backend/internal/server/frontend_dist/
