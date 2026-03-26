@@ -15,6 +15,10 @@ dev-backend:
 dev-frontend:
     cd frontend && npm run dev
 
+# Frontend with MSW mock backend (no real backend needed)
+dev-mock:
+    cd frontend && VITE_MSW=true npm run dev
+
 # Stop dev servers
 stop:
     -lsof -ti:9200 | xargs kill 2>/dev/null

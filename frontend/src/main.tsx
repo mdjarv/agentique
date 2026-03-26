@@ -7,8 +7,16 @@ import "./index.css";
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-);
+async function enableMocking() {
+  if (import.meta.env.VITE_MSW !== "true") return;
+  const { worker } = await import("./mocks/browser");
+  return worker.start({ onUnhandledRequest: "bypass" });
+}
+
+enableMocking().then(() => {
+  createRoot(rootElement).render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
+});
