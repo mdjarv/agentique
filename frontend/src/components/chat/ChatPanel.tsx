@@ -65,6 +65,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const planMode = session?.planMode ?? false;
   const autoApprove = session?.autoApprove ?? false;
   const queuedMessages = session?.queuedMessages ?? [];
+  const draft = useChatStore((s) => s.sessions[sessionId]?.draft ?? "");
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const hasTodos = todos !== null && todos.length > 0;
@@ -170,8 +171,16 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     [ws, sessionId],
   );
 
+  const handleTextPersist = useCallback(
+    (text: string) => {
+      useChatStore.getState().setDraft(sessionId, text);
+    },
+    [sessionId],
+  );
+
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
+      useChatStore.getState().clearDraft(sessionId);
       if (sessionState === "running") {
         useChatStore.getState().enqueueMessage(sessionId, prompt, attachments);
         return;
@@ -330,6 +339,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             <MessageComposer
               ref={composerRef}
               onSend={handleSend}
+              initialText={draft}
+              onTextPersist={handleTextPersist}
               disabled={sessionState === "merging"}
               isRunning={sessionState === "running"}
               onInterrupt={handleInterrupt}
