@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
@@ -78,11 +78,13 @@ function SessionGroups({
   sessions,
   activeSessionId,
   onSessionClick,
+  newChatButton,
 }: {
   sessionIds: string[];
   sessions: ChatState["sessions"];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
+  newChatButton: ReactNode;
 }) {
   const active: string[] = [];
   const completed: string[] = [];
@@ -103,6 +105,7 @@ function SessionGroups({
   return (
     <>
       {sortedActive.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {newChatButton}
       {sortedCompleted.length > 0 && (
         <CompletedSection
           ids={sortedCompleted}
@@ -248,27 +251,29 @@ export function ProjectTreeItem({
       {/* Sessions + new chat */}
       {isExpanded && (
         <div className="ml-4 mt-0.5 space-y-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              navigate({
-                to: "/project/$projectSlug/session/new",
-                params: { projectSlug: project.slug },
-              });
-            }}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
-              isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
-            )}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New chat</span>
-          </button>
           <SessionGroups
             sessionIds={sessionIds}
             sessions={sessions}
             activeSessionId={activeSessionId}
             onSessionClick={handleSessionClick}
+            newChatButton={
+              <button
+                type="button"
+                onClick={() => {
+                  navigate({
+                    to: "/project/$projectSlug/session/new",
+                    params: { projectSlug: project.slug },
+                  });
+                }}
+                className={cn(
+                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
+                  isNewChatActive && "bg-sidebar-accent/70 text-sidebar-foreground",
+                )}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New chat</span>
+              </button>
+            }
           />
         </div>
       )}

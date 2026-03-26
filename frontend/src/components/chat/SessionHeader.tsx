@@ -1,14 +1,4 @@
-import {
-  Check,
-  Copy,
-  Eraser,
-  FolderOpen,
-  GitBranch,
-  Loader2,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Check, Copy, Eraser, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
@@ -155,35 +145,6 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </button>
           </div>
-        )}
-
-        {/* Branch badge */}
-        {meta.worktreeBranch ? (
-          <span
-            className={cn(
-              "flex items-center gap-1 text-xs shrink-0",
-              meta.hasDirtyWorktree
-                ? "text-[#e0af68]/80"
-                : meta.worktreeMerged
-                  ? "text-[#9ece6a]/80"
-                  : "text-muted-foreground",
-            )}
-            title={
-              meta.hasDirtyWorktree
-                ? `${meta.worktreeBranch} (dirty)`
-                : meta.worktreeMerged
-                  ? `${meta.worktreeBranch} (merged)`
-                  : meta.worktreeBranch
-            }
-          >
-            <GitBranch className="h-3 w-3" />
-            {meta.worktreeBranch}
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-            <FolderOpen className="h-3 w-3" />
-            Local
-          </span>
         )}
 
         <div className="ml-auto flex items-center gap-1.5">

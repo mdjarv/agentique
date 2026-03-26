@@ -242,7 +242,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const hasToggles = onWorktreeChange || onPlanModeChange || onAutoApproveChange;
+    const hasToggles = worktree !== undefined || onPlanModeChange || onAutoApproveChange;
 
     return (
       <div className="border-t p-3">
@@ -321,23 +321,38 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
               {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
 
-              {onWorktreeChange && (
-                <button
-                  type="button"
-                  onClick={() => onWorktreeChange(!worktree)}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                    worktree ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500",
-                  )}
-                >
-                  {worktree ? (
-                    <GitBranch className="h-3 w-3" />
-                  ) : (
-                    <FolderOpen className="h-3 w-3" />
-                  )}
-                  {worktree ? "Worktree" : "Local"}
-                </button>
-              )}
+              {worktree !== undefined &&
+                (onWorktreeChange ? (
+                  <button
+                    type="button"
+                    onClick={() => onWorktreeChange(!worktree)}
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      worktree ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500",
+                    )}
+                  >
+                    {worktree ? (
+                      <GitBranch className="h-3 w-3" />
+                    ) : (
+                      <FolderOpen className="h-3 w-3" />
+                    )}
+                    {worktree ? "Worktree" : "Local"}
+                  </button>
+                ) : (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                      worktree ? "text-primary" : "text-orange-500",
+                    )}
+                  >
+                    {worktree ? (
+                      <GitBranch className="h-3 w-3" />
+                    ) : (
+                      <FolderOpen className="h-3 w-3" />
+                    )}
+                    {worktree ? "Worktree" : "Local"}
+                  </span>
+                ))}
               {onPlanModeChange && (
                 <button
                   type="button"
@@ -375,9 +390,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 </button>
               )}
 
-              {(effort !== undefined || onModelChange) && (
-                <div className="w-px h-4 bg-border mx-1" />
-              )}
+              {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1" />}
 
               {effort !== undefined &&
                 (onEffortChange ? (
@@ -411,34 +424,39 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   </span>
                 ))}
 
-              {onModelChange && model && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                      "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                      "focus-visible:outline-none",
-                    )}
-                  >
+              {model &&
+                (onModelChange ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      className={cn(
+                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                        "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                        "focus-visible:outline-none",
+                      )}
+                    >
+                      {MODEL_LABELS[model]}
+                      <ChevronDown className="h-3 w-3" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {MODELS.map((m) => (
+                        <DropdownMenuItem
+                          key={m}
+                          onClick={() => onModelChange(m)}
+                          className="text-xs gap-2"
+                        >
+                          <Check
+                            className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
+                          />
+                          {MODEL_LABELS[m]}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] rounded-md px-2 py-1 text-muted-foreground">
                     {MODEL_LABELS[model]}
-                    <ChevronDown className="h-3 w-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {MODELS.map((m) => (
-                      <DropdownMenuItem
-                        key={m}
-                        onClick={() => onModelChange(m)}
-                        className="text-xs gap-2"
-                      >
-                        <Check
-                          className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
-                        />
-                        {MODEL_LABELS[m]}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                  </span>
+                ))}
             </div>
 
             <div className="flex items-center gap-1">
