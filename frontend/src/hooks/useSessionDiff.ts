@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type DiffResult, getSessionDiff } from "~/lib/session-actions";
@@ -11,6 +11,17 @@ export function useSessionDiff(sessionId: string) {
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
+
+  // Reset state on session switch
+  const prevSessionId = useRef(sessionId);
+  const wasRunning = useRef(isRunning);
+  if (prevSessionId.current !== sessionId) {
+    prevSessionId.current = sessionId;
+    wasRunning.current = isRunning;
+    setDiffResult(null);
+    setShowDiff(false);
+    setLoadingDiff(false);
+  }
 
   const fetchDiff = useCallback(async () => {
     setLoadingDiff(true);
@@ -26,8 +37,12 @@ export function useSessionDiff(sessionId: string) {
     }
   }, [ws, sessionId]);
 
+  // Fetch diff when session transitions from running to idle (not on every mount)
   useEffect(() => {
-    if (!isRunning) fetchDiff();
+    if (wasRunning.current && !isRunning) {
+      fetchDiff();
+    }
+    wasRunning.current = isRunning;
   }, [isRunning, fetchDiff]);
 
   const toggleDiff = useCallback(async () => {

@@ -76,6 +76,16 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   const git = useGitActions(sessionId);
 
+  // Reset transient UI state on session switch
+  const prevSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId;
+      setMobileSessionOpen(false);
+      setActiveDialog("none");
+    }
+  }, [sessionId]);
+
   // Auto-expand panel when new todos arrive
   const prevTodosRef = useRef(todos);
   useEffect(() => {
