@@ -496,6 +496,7 @@ func (s *Session) enrichGitStatus(payload map[string]any) {
 	if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
 		payload["commitsBehind"] = behind
 	}
+	appendMergeStatus(payload, project.Path, branch)
 }
 
 // PermissionMode returns the current permission mode string.
