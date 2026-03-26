@@ -50,8 +50,8 @@ import {
   rebaseSession,
   renameSession,
 } from "~/lib/session-actions";
-import { cn } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
+import { ActionItem } from "./ActionItem";
 
 interface SessionHoverCardProps {
   sessionId: string;
@@ -304,36 +304,5 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function ActionItem({
-  icon: Icon,
-  label,
-  onClick,
-  destructive,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={cn(
-        "flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer",
-        destructive
-          ? "text-destructive hover:bg-destructive/10"
-          : "text-popover-foreground hover:bg-accent",
-      )}
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </button>
   );
 }

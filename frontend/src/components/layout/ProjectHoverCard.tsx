@@ -9,8 +9,8 @@ import {
 } from "~/components/ui/hover-card";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { fetchProject, pushProject } from "~/lib/project-actions";
-import { cn } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
+import { ActionItem } from "./ActionItem";
 
 interface ProjectHoverCardProps {
   projectId: string;
@@ -112,35 +112,5 @@ export function ProjectHoverCard({ projectId, gitStatus, children }: ProjectHove
         </div>
       </HoverCardContent>
     </HoverCard>
-  );
-}
-
-function ActionItem({
-  icon: Icon,
-  label,
-  onClick,
-  disabled,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={cn(
-        "flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground transition-colors cursor-pointer",
-        disabled ? "opacity-50 cursor-default" : "hover:bg-accent",
-      )}
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </button>
   );
 }

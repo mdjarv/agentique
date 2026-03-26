@@ -1,19 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronDown,
-  ChevronRight,
-  FolderOpen,
-  GitBranch,
-  Plus,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type ChatState, useChatStore } from "~/stores/chat-store";
+import { GitIndicators } from "./GitIndicators";
 import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
@@ -185,42 +178,15 @@ function shouldShowPath(name: string, path: string): boolean {
 // --- Project git status row ---
 
 function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
-  const ahead = gitStatus.aheadRemote > 0;
-  const behind = gitStatus.behindRemote > 0;
-  const dirty = gitStatus.uncommittedCount > 0;
-
   return (
     <div className="flex items-center gap-1.5 pl-5.5 text-xs text-muted-foreground">
       <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
-      {(ahead || behind || dirty) && (
-        <span className="flex items-center gap-1.5 shrink-0">
-          {dirty && (
-            <span
-              className="flex items-center gap-0.5 text-[#e0af68]/80"
-              title={`${gitStatus.uncommittedCount} uncommitted`}
-            >
-              <span className="text-[0.5rem] leading-none">&#9679;</span>
-              {gitStatus.uncommittedCount}
-            </span>
-          )}
-          {ahead && (
-            <span className="flex items-center gap-0.5" title={`${gitStatus.aheadRemote} ahead`}>
-              <ArrowUp className="size-2.5" />
-              {gitStatus.aheadRemote}
-            </span>
-          )}
-          {behind && (
-            <span
-              className="flex items-center gap-0.5 text-[#7aa2f7]/80"
-              title={`${gitStatus.behindRemote} behind`}
-            >
-              <ArrowDown className="size-2.5" />
-              {gitStatus.behindRemote}
-            </span>
-          )}
-        </span>
-      )}
+      <GitIndicators
+        uncommittedCount={gitStatus.uncommittedCount}
+        aheadCount={gitStatus.aheadRemote}
+        behindCount={gitStatus.behindRemote}
+      />
     </div>
   );
 }
