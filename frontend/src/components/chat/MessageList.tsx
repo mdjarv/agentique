@@ -1,14 +1,48 @@
 import { ArrowDown, Loader2, Wrench } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { Turn } from "~/stores/chat-store";
 
 const SCROLL_THRESHOLD = 48;
+const EAGER_TURN_COUNT = 6;
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+}
+
+/** Defers rendering of children until the element scrolls near the viewport. */
+function LazyTurn({
+  children,
+  scrollRoot,
+}: {
+  children: ReactNode;
+  scrollRoot: React.RefObject<HTMLDivElement | null>;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const el = ref.current;
+    const root = scrollRoot.current;
+    if (!el || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { root, rootMargin: "400px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible, scrollRoot]);
+
+  if (!visible) return <div ref={ref} className="min-h-[4rem]" />;
+  return <>{children}</>;
 }
 
 interface MessageListProps {
@@ -87,20 +121,29 @@ export function MessageList({
       className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative"
     >
       <div className="p-4 space-y-6 min-w-0">
-        {turns.map((turn, i) => (
-          <TurnBlock
-            key={turn.id}
-            turn={turn}
-            isLast={i === turns.length - 1}
-            sessionId={sessionId}
-            projectId={projectId}
-            currentAssistantText={currentAssistantText}
-            sessionState={sessionState}
-            projectPath={projectPath}
-            worktreePath={worktreePath}
-            showEvents={showEvents}
-          />
-        ))}
+        {turns.map((turn, i) => {
+          const eager = i >= turns.length - EAGER_TURN_COUNT;
+          const block = (
+            <TurnBlock
+              key={turn.id}
+              turn={turn}
+              isLast={i === turns.length - 1}
+              sessionId={sessionId}
+              projectId={projectId}
+              currentAssistantText={currentAssistantText}
+              sessionState={sessionState}
+              projectPath={projectPath}
+              worktreePath={worktreePath}
+              showEvents={showEvents}
+            />
+          );
+          if (eager) return block;
+          return (
+            <LazyTurn key={turn.id} scrollRoot={scrollRef}>
+              {block}
+            </LazyTurn>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
       <div className="sticky bottom-3 right-3 z-10 flex justify-end gap-1.5 pr-3">

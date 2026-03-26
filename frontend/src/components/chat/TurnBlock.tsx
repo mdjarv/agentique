@@ -11,7 +11,7 @@ import {
   Terminal,
   User,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
 import { PromptGroupProvider } from "~/components/chat/PromptCard";
@@ -267,7 +267,7 @@ function activityTitle(items: ActivityItem[]): string {
   return parts.join(" and ");
 }
 
-function ActivitySegmentView({
+const ActivitySegmentView = memo(function ActivitySegmentView({
   segment,
   isStreaming,
   sessionId,
@@ -344,9 +344,9 @@ function ActivitySegmentView({
       )}
     </CollapsibleGroup>
   );
-}
+});
 
-function TextSegmentView({
+const TextSegmentView = memo(function TextSegmentView({
   content,
   onCopy,
   copied,
@@ -374,7 +374,7 @@ function TextSegmentView({
       </div>
     </PromptGroupProvider>
   );
-}
+});
 
 function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
   return (
@@ -400,7 +400,7 @@ function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
 
 // --- Main component ---
 
-export function TurnBlock({
+export const TurnBlock = memo(function TurnBlock({
   turn,
   isLast,
   sessionId,
@@ -431,7 +431,7 @@ export function TurnBlock({
     return () => document.removeEventListener("keydown", handleKey);
   }, [lightboxSrc]);
 
-  const { segments, resultEvent } = buildSegments(turn.events);
+  const { segments, resultEvent } = useMemo(() => buildSegments(turn.events), [turn.events]);
 
   // Compute streaming tail: text being actively streamed that hasn't been committed as an event yet
   let streamingTail = "";
@@ -636,4 +636,4 @@ export function TurnBlock({
         )}
     </div>
   );
-}
+});

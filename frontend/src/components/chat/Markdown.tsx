@@ -4,7 +4,9 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
   isValidElement,
+  memo,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -55,6 +57,31 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+const CODE_STYLE = { margin: 0, fontSize: "0.75rem", borderRadius: "0.5rem" } as const;
+
+function DeferredHighlighter({ code, language }: { code: string; language: string }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setReady(true), 0);
+    return () => clearTimeout(id);
+  }, []);
+
+  if (!ready) {
+    return (
+      <pre style={{ ...CODE_STYLE, background: "#282c34", padding: "1em", overflow: "auto" }}>
+        <code>{code}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <SyntaxHighlighter style={oneDark} language={language} customStyle={CODE_STYLE}>
+      {code}
+    </SyntaxHighlighter>
+  );
+}
+
 function PreBlock({
   children,
   node: _,
@@ -82,13 +109,7 @@ function PreBlock({
     <div className="code-block-wrapper">
       <CopyButton text={code} />
       {lang ? (
-        <SyntaxHighlighter
-          style={oneDark}
-          language={lang}
-          customStyle={{ margin: 0, fontSize: "0.75rem", borderRadius: "0.5rem" }}
-        >
-          {code}
-        </SyntaxHighlighter>
+        <DeferredHighlighter code={code} language={lang} />
       ) : (
         <pre {...rest}>
           <code>{code}</code>
@@ -103,7 +124,11 @@ const BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
 
 const COMPONENTS: Components = { pre: PreBlock };
 
-export function Markdown({ content, className, preserveNewlines }: MarkdownProps) {
+export const Markdown = memo(function Markdown({
+  content,
+  className,
+  preserveNewlines,
+}: MarkdownProps) {
   const plugins = preserveNewlines ? BREAKS_PLUGINS : STANDARD_PLUGINS;
 
   return (
@@ -113,4 +138,4 @@ export function Markdown({ content, className, preserveNewlines }: MarkdownProps
       </ReactMarkdown>
     </div>
   );
-}
+});

@@ -45,5 +45,5 @@ function SessionPage() {
     );
   }
 
-  return <ChatPanel key={sessionShortId} projectId={project.id} sessionId={sessionId} />;
+  return <ChatPanel projectId={project.id} sessionId={sessionId} />;
 }
