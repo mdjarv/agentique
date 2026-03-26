@@ -296,6 +296,10 @@ export interface ChatState {
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
   setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
   setSessionPrUrl: (sessionId: string, prUrl: string) => void;
+  updateStreamingContextUsage: (
+    sessionId: string,
+    patch: { inputTokens?: number; outputTokens?: number },
+  ) => void;
 
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
@@ -408,6 +412,22 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => updateSession(s, sessionId, { autoApprove })),
 
   setSessionPrUrl: (sessionId, prUrl) => set((s) => updateMeta(s, sessionId, { prUrl })),
+
+  updateStreamingContextUsage: (sessionId, patch) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      const prev = session.contextUsage;
+      // All current Claude models: 200k context window
+      const contextWindow = prev?.contextWindow ?? 200_000;
+      return updateSession(s, sessionId, {
+        contextUsage: {
+          contextWindow,
+          inputTokens: patch.inputTokens ?? prev?.inputTokens ?? 0,
+          outputTokens: patch.outputTokens ?? prev?.outputTokens ?? 0,
+        },
+      });
+    }),
 
   setHistoryLoading: (sessionId, loading) =>
     set((s) => {

@@ -47,6 +47,27 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
     if (!inner || typeof inner !== "object") return;
 
     const type: string = inner.type;
+
+    if (type === "message_start") {
+      const usage = inner.message?.usage;
+      if (usage && typeof usage.input_tokens === "number") {
+        useChatStore.getState().updateStreamingContextUsage(sessionId, {
+          inputTokens: usage.input_tokens,
+        });
+      }
+      return;
+    }
+
+    if (type === "message_delta") {
+      const usage = inner.usage;
+      if (usage && typeof usage.output_tokens === "number") {
+        useChatStore.getState().updateStreamingContextUsage(sessionId, {
+          outputTokens: usage.output_tokens,
+        });
+      }
+      return;
+    }
+
     if (type === "content_block_start") {
       if (inner.content_block?.type === "tool_use") {
         let sessionMap = toolBlockIndex.get(sessionId);
