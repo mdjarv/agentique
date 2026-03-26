@@ -320,6 +320,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         open={activeDialog === "commit"}
         onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
         sessionId={sessionId}
+        defaultTitle={session.meta.name}
         onSubmit={async (message) => {
           const ok = await git.handleCommit(message);
           if (ok) setActiveDialog("none");

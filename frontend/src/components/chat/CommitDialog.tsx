@@ -17,6 +17,7 @@ interface CommitDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string;
+  defaultTitle?: string;
   onSubmit: (message: string) => void;
   loading: boolean;
 }
@@ -25,6 +26,7 @@ export function CommitDialog({
   open,
   onOpenChange,
   sessionId,
+  defaultTitle,
   onSubmit,
   loading,
 }: CommitDialogProps) {
@@ -35,10 +37,10 @@ export function CommitDialog({
 
   useEffect(() => {
     if (open) {
-      setTitle("");
+      setTitle(defaultTitle ?? "");
       setDescription("");
     }
-  }, [open]);
+  }, [open, defaultTitle]);
 
   const handleGenerate = () => {
     setGenerating(true);
