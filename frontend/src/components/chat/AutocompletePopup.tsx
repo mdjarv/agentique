@@ -23,7 +23,7 @@ export function AutocompletePopup({
 
   return (
     <div className="absolute bottom-full left-0 right-0 z-50 mb-1">
-      <div className="rounded-lg border bg-popover text-popover-foreground shadow-md">
+      <div className="overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md">
         <ScrollArea className="max-h-60">
           <div className="p-1">
             {items.map((item, i) => (

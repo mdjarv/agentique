@@ -80,6 +80,7 @@ Frontend connects WebSocket directly to :9201 (avoids Vite proxy flakiness).
 |---------|---------|
 | `just dev-frontend` | Vite dev server (:9200) |
 | `just dev-backend` | Go backend (:9201) |
+| `just dev-mock` | Frontend with MSW mocks (:9210, no backend needed) |
 | `just build` | Full production build (single binary) |
 | `just check` | Biome lint + tsc typecheck |
 | `just test-backend` | Go tests |
