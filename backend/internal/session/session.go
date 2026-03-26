@@ -83,6 +83,7 @@ type Session struct {
 	autoApprove    bool
 	permissionMode string
 	worktreeMerged bool
+	completedAt    string // ISO8601 timestamp or "" if not completed
 	gitOperation   string
 	workDir        string
 	eventLoopDone    chan struct{}
@@ -160,6 +161,8 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	s.queryCount++
 	s.turnIndex++
 	s.seqInTurn = 0
+	wasCompleted := s.completedAt != ""
+	s.completedAt = ""
 	s.mu.Unlock()
 
 	// Persist running state to DB so it survives server restarts.
@@ -168,6 +171,11 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 		ID:    s.ID,
 	}); err != nil {
 		slog.Error("persist running state failed", "session_id", s.ID, "error", err)
+	}
+	if wasCompleted {
+		if err := s.queries.UnsetSessionCompleted(context.Background(), s.ID); err != nil {
+			slog.Error("persist session uncompleted failed", "session_id", s.ID, "error", err)
+		}
 	}
 
 	// Persist prompt (and images) as seq 0 of the new turn.
@@ -452,6 +460,9 @@ func (s *Session) broadcastState(state State) {
 	s.mu.Lock()
 	if s.worktreeMerged {
 		payload["worktreeMerged"] = true
+	}
+	if s.completedAt != "" {
+		payload["completedAt"] = s.completedAt
 	}
 	if s.gitOperation != "" {
 		payload["gitOperation"] = s.gitOperation
@@ -790,8 +801,14 @@ func (s *Session) Close() {
 	s.broadcastState(finalState)
 }
 
-// MarkDone transitions the session to StateDone.
+// MarkDone transitions the session to StateDone and marks it completed.
 func (s *Session) MarkDone() error {
+	s.mu.Lock()
+	s.completedAt = time.Now().UTC().Format(time.RFC3339)
+	s.mu.Unlock()
+	if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
+		slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
+	}
 	return s.setState(StateDone)
 }
 
@@ -799,5 +816,12 @@ func (s *Session) MarkDone() error {
 func (s *Session) MarkMerged() {
 	s.mu.Lock()
 	s.worktreeMerged = true
+	s.mu.Unlock()
+}
+
+// MarkCompleted sets the completedAt timestamp on a live session.
+func (s *Session) MarkCompleted() {
+	s.mu.Lock()
+	s.completedAt = time.Now().UTC().Format(time.RFC3339)
 	s.mu.Unlock()
 }

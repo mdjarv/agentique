@@ -29,6 +29,12 @@ UPDATE sessions SET auto_approve = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ'
 -- name: SetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: SetSessionCompleted :exec
+UPDATE sessions SET completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
+-- name: UnsetSessionCompleted :exec
+UPDATE sessions SET completed_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UpdateWorktreeBaseSHA :exec
 UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

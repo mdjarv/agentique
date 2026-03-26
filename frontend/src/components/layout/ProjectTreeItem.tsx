@@ -31,10 +31,8 @@ function sortActiveSessions(ids: string[], sessions: ChatState["sessions"]): str
 
 function sortCompletedByDate(ids: string[], sessions: ChatState["sessions"]): string[] {
   return [...ids].sort((a, b) => {
-    const ma = sessions[a]?.meta;
-    const mb = sessions[b]?.meta;
-    const ta = new Date(ma?.updatedAt ?? ma?.createdAt ?? 0).getTime();
-    const tb = new Date(mb?.updatedAt ?? mb?.createdAt ?? 0).getTime();
+    const ta = new Date(sessions[a]?.meta?.completedAt ?? 0).getTime();
+    const tb = new Date(sessions[b]?.meta?.completedAt ?? 0).getTime();
     return tb - ta;
   });
 }
@@ -92,7 +90,7 @@ function SessionGroups({
   for (const id of sessionIds) {
     const meta = sessions[id]?.meta;
     if (!meta) continue;
-    if (meta.worktreeMerged) {
+    if (meta.completedAt) {
       completed.push(id);
     } else {
       active.push(id);
