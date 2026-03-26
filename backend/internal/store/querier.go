@@ -21,6 +21,7 @@ type Querier interface {
 	DeleteExpiredAuthSessions(ctx context.Context) error
 	DeleteProject(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
+	DeleteUser(ctx context.Context, id string) error
 	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
 	GetInviteToken(ctx context.Context, token string) (InviteToken, error)
@@ -35,6 +36,7 @@ type Querier interface {
 	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
+	ListUsers(ctx context.Context) ([]User, error)
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
 	RecoverStaleSessions(ctx context.Context) error
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
@@ -42,7 +44,7 @@ type Querier interface {
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
-	UpdateCredentialSignCount(ctx context.Context, arg UpdateCredentialSignCountParams) error
+	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdateSessionAutoApprove(ctx context.Context, arg UpdateSessionAutoApproveParams) error

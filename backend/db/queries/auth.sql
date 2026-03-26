@@ -7,9 +7,15 @@ INSERT INTO users (id, display_name, is_admin) VALUES (?, ?, ?) RETURNING *;
 -- name: GetUser :one
 SELECT * FROM users WHERE id = ?;
 
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY created_at;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;
+
 -- name: CreateWebAuthnCredential :exec
-INSERT INTO webauthn_credentials (id, user_id, public_key, attestation_type, aaguid, sign_count, transport)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO webauthn_credentials (id, user_id, public_key, attestation_type, aaguid, sign_count, transport, backup_eligible, backup_state)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListCredentialsByUser :many
 SELECT * FROM webauthn_credentials WHERE user_id = ?;
@@ -17,8 +23,8 @@ SELECT * FROM webauthn_credentials WHERE user_id = ?;
 -- name: GetCredentialByID :one
 SELECT * FROM webauthn_credentials WHERE id = ?;
 
--- name: UpdateCredentialSignCount :exec
-UPDATE webauthn_credentials SET sign_count = ? WHERE id = ?;
+-- name: UpdateCredentialAfterLogin :exec
+UPDATE webauthn_credentials SET sign_count = ?, backup_eligible = ?, backup_state = ? WHERE id = ?;
 
 -- name: CreateAuthSession :exec
 INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?);

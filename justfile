@@ -1,3 +1,6 @@
+# TLS hostname — override per-machine: just --set tls-host myhost.ts.net dev-tls
+tls-host := env("AGENTIQUE_TLS_HOST", "localhost")
+
 # List available tasks
 default:
     @just --list
@@ -7,9 +10,20 @@ dev:
     just stop
     just dev-backend & just dev-frontend & wait
 
+# Run both servers with TLS (requires certs/server.{crt,key})
+dev-tls:
+    just stop
+    just dev-backend-tls & just dev-frontend & wait
+
 # Go backend
 dev-backend:
     cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth
+
+# Go backend with TLS
+dev-backend-tls:
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 \
+        --tls-cert ../certs/server.crt --tls-key ../certs/server.key \
+        --rp-id {{tls-host}} --rp-origin https://{{tls-host}}:9200
 
 # React frontend
 dev-frontend:

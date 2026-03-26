@@ -48,11 +48,22 @@ func credentialFromStore(c store.WebauthnCredential) webauthn.Credential {
 		PublicKey:       c.PublicKey,
 		AttestationType: c.AttestationType,
 		Transport:       transports,
+		Flags: webauthn.CredentialFlags{
+			BackupEligible: c.BackupEligible != 0,
+			BackupState:    c.BackupState != 0,
+		},
 		Authenticator: webauthn.Authenticator{
 			AAGUID:    c.Aaguid,
 			SignCount: uint32(c.SignCount),
 		},
 	}
+}
+
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // credentialsFromStore converts a slice of store credentials.

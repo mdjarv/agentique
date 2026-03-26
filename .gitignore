@@ -36,6 +36,9 @@ frontend/test-results/
 frontend/playwright-report/
 .playwright-mcp/
 
+# TLS certs
+certs/
+
 # Claude Code
 .claude/
 backend/internal/server/frontend_dist/

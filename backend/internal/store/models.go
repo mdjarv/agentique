@@ -57,8 +57,8 @@ type Session struct {
 	Effort          string         `json:"effort"`
 	MaxBudget       float64        `json:"max_budget"`
 	MaxTurns        int64          `json:"max_turns"`
-	CompletedAt     sql.NullString `json:"completed_at"`
 	LastQueryAt     sql.NullString `json:"last_query_at"`
+	CompletedAt     sql.NullString `json:"completed_at"`
 }
 
 type SessionEvent struct {
@@ -87,4 +87,6 @@ type WebauthnCredential struct {
 	SignCount       int64  `json:"sign_count"`
 	Transport       string `json:"transport"`
 	CreatedAt       string `json:"created_at"`
+	BackupEligible  int64  `json:"backup_eligible"`
+	BackupState     int64  `json:"backup_state"`
 }

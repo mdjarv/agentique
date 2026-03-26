@@ -242,11 +242,13 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update sign count.
+	// Update sign count and flags.
 	credID := validatedCred.ID
-	_ = s.queries.UpdateCredentialSignCount(r.Context(), store.UpdateCredentialSignCountParams{
-		SignCount: int64(validatedCred.Authenticator.SignCount),
-		ID:        encodeCredentialID(credID),
+	_ = s.queries.UpdateCredentialAfterLogin(r.Context(), store.UpdateCredentialAfterLoginParams{
+		SignCount:      int64(validatedCred.Authenticator.SignCount),
+		BackupEligible: boolToInt(validatedCred.Flags.BackupEligible),
+		BackupState:    boolToInt(validatedCred.Flags.BackupState),
+		ID:             encodeCredentialID(credID),
 	})
 
 	user := validatedUser.(*User)

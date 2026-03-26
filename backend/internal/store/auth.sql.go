@@ -74,8 +74,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const createWebAuthnCredential = `-- name: CreateWebAuthnCredential :exec
-INSERT INTO webauthn_credentials (id, user_id, public_key, attestation_type, aaguid, sign_count, transport)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO webauthn_credentials (id, user_id, public_key, attestation_type, aaguid, sign_count, transport, backup_eligible, backup_state)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateWebAuthnCredentialParams struct {
@@ -86,6 +86,8 @@ type CreateWebAuthnCredentialParams struct {
 	Aaguid          []byte `json:"aaguid"`
 	SignCount       int64  `json:"sign_count"`
 	Transport       string `json:"transport"`
+	BackupEligible  int64  `json:"backup_eligible"`
+	BackupState     int64  `json:"backup_state"`
 }
 
 func (q *Queries) CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error {
@@ -97,6 +99,8 @@ func (q *Queries) CreateWebAuthnCredential(ctx context.Context, arg CreateWebAut
 		arg.Aaguid,
 		arg.SignCount,
 		arg.Transport,
+		arg.BackupEligible,
+		arg.BackupState,
 	)
 	return err
 }
@@ -116,6 +120,15 @@ DELETE FROM auth_sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'no
 
 func (q *Queries) DeleteExpiredAuthSessions(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, deleteExpiredAuthSessions)
+	return err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
 	return err
 }
 
@@ -151,7 +164,7 @@ func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSess
 }
 
 const getCredentialByID = `-- name: GetCredentialByID :one
-SELECT id, user_id, public_key, attestation_type, aaguid, sign_count, transport, created_at FROM webauthn_credentials WHERE id = ?
+SELECT id, user_id, public_key, attestation_type, aaguid, sign_count, transport, created_at, backup_eligible, backup_state FROM webauthn_credentials WHERE id = ?
 `
 
 func (q *Queries) GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error) {
@@ -166,6 +179,8 @@ func (q *Queries) GetCredentialByID(ctx context.Context, id string) (WebauthnCre
 		&i.SignCount,
 		&i.Transport,
 		&i.CreatedAt,
+		&i.BackupEligible,
+		&i.BackupState,
 	)
 	return i, err
 }
@@ -205,7 +220,7 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 }
 
 const listCredentialsByUser = `-- name: ListCredentialsByUser :many
-SELECT id, user_id, public_key, attestation_type, aaguid, sign_count, transport, created_at FROM webauthn_credentials WHERE user_id = ?
+SELECT id, user_id, public_key, attestation_type, aaguid, sign_count, transport, created_at, backup_eligible, backup_state FROM webauthn_credentials WHERE user_id = ?
 `
 
 func (q *Queries) ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error) {
@@ -226,6 +241,8 @@ func (q *Queries) ListCredentialsByUser(ctx context.Context, userID string) ([]W
 			&i.SignCount,
 			&i.Transport,
 			&i.CreatedAt,
+			&i.BackupEligible,
+			&i.BackupState,
 		); err != nil {
 			return nil, err
 		}
@@ -274,17 +291,56 @@ func (q *Queries) ListInviteTokens(ctx context.Context, createdBy string) ([]Inv
 	return items, nil
 }
 
-const updateCredentialSignCount = `-- name: UpdateCredentialSignCount :exec
-UPDATE webauthn_credentials SET sign_count = ? WHERE id = ?
+const listUsers = `-- name: ListUsers :many
+SELECT id, display_name, is_admin, created_at FROM users ORDER BY created_at
 `
 
-type UpdateCredentialSignCountParams struct {
-	SignCount int64  `json:"sign_count"`
-	ID        string `json:"id"`
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.DisplayName,
+			&i.IsAdmin,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-func (q *Queries) UpdateCredentialSignCount(ctx context.Context, arg UpdateCredentialSignCountParams) error {
-	_, err := q.db.ExecContext(ctx, updateCredentialSignCount, arg.SignCount, arg.ID)
+const updateCredentialAfterLogin = `-- name: UpdateCredentialAfterLogin :exec
+UPDATE webauthn_credentials SET sign_count = ?, backup_eligible = ?, backup_state = ? WHERE id = ?
+`
+
+type UpdateCredentialAfterLoginParams struct {
+	SignCount      int64  `json:"sign_count"`
+	BackupEligible int64  `json:"backup_eligible"`
+	BackupState    int64  `json:"backup_state"`
+	ID             string `json:"id"`
+}
+
+func (q *Queries) UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error {
+	_, err := q.db.ExecContext(ctx, updateCredentialAfterLogin,
+		arg.SignCount,
+		arg.BackupEligible,
+		arg.BackupState,
+		arg.ID,
+	)
 	return err
 }
 

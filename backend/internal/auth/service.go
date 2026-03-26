@@ -180,6 +180,8 @@ func (s *Service) storeCredential(ctx context.Context, userID string, cred *weba
 		Aaguid:          cred.Authenticator.AAGUID,
 		SignCount:       int64(cred.Authenticator.SignCount),
 		Transport:       strings.Join(transports, ","),
+		BackupEligible:  boolToInt(cred.Flags.BackupEligible),
+		BackupState:     boolToInt(cred.Flags.BackupState),
 	})
 }
 
