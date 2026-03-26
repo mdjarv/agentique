@@ -1,13 +1,11 @@
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
-import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
-import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
-import { useProjects } from "~/hooks/useProjects";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 export function ProjectList() {
-  const projects = useProjects();
+  const projects = useAppStore((s) => s.projects);
   const params = useParams({ strict: false }) as {
     projectSlug?: string;
     sessionShortId?: string;
@@ -22,8 +20,6 @@ export function ProjectList() {
   const isNewChatRoute = useRouterState({
     select: (s) => s.location.pathname.endsWith("/session/new"),
   });
-  useGlobalSubscriptions(projects);
-  useProjectGitPolling(projects);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.id)),

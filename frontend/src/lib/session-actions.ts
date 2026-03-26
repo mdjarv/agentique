@@ -1,5 +1,5 @@
 import type { WsClient } from "~/lib/ws-client";
-import type { Attachment, SessionMetadata } from "~/stores/chat-store";
+import type { Attachment, SessionMetadata, SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -287,8 +287,32 @@ export async function getUncommittedFiles(
   return ws.request<UncommittedFilesResult>("session.uncommitted-files", { sessionId });
 }
 
+interface GitStateResponse {
+  sessionId: string;
+  state: string;
+  hasDirtyWorktree: boolean;
+  hasUncommitted: boolean;
+  worktreeMerged: boolean;
+  commitsAhead: number;
+  commitsBehind: number;
+  branchMissing: boolean;
+  mergeStatus?: "clean" | "conflicts" | "unknown";
+  mergeConflictFiles?: string[];
+}
+
+/** Refresh git status and apply the response directly to the store (push-independent). */
 export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.refresh-git", { sessionId });
+  const gs = await ws.request<GitStateResponse>("session.refresh-git", { sessionId });
+  useChatStore.getState().setSessionState(sessionId, gs.state as SessionState, {
+    hasDirtyWorktree: gs.hasDirtyWorktree,
+    hasUncommitted: gs.hasUncommitted,
+    worktreeMerged: gs.worktreeMerged,
+    commitsAhead: gs.commitsAhead,
+    commitsBehind: gs.commitsBehind,
+    branchMissing: gs.branchMissing,
+    mergeStatus: gs.mergeStatus,
+    mergeConflictFiles: gs.mergeConflictFiles,
+  });
 }
 
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { mergeSession } from "~/lib/session-actions";
+import { mergeSession, refreshGitStatus } from "~/lib/session-actions";
 
 export function useMergeSession(sessionId: string) {
   const ws = useWebSocket();
@@ -23,6 +23,8 @@ export function useMergeSession(sessionId: string) {
             toast.error(result.error);
             break;
         }
+        // Sync state from response in case push event was lost
+        refreshGitStatus(ws, sessionId).catch(() => {});
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Merge failed");
       } finally {
