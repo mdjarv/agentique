@@ -1,6 +1,7 @@
 import {
   Check,
   Circle,
+  ClipboardList,
   GitMerge,
   Loader,
   MessageSquare,
@@ -32,9 +33,11 @@ export function SessionStatusBadge({
 }: SessionStatusBadgeProps) {
   // Attention overrides
   if (hasPendingApproval) {
+    const Icon = isPlanning ? ClipboardList : MessageSquare;
+    const title = isPlanning ? "Plan ready for review" : "Waiting for approval";
     return (
-      <Badge bg="bg-[#bb9af7]/15" text="text-[#bb9af7]" pulse title="Waiting for approval">
-        <MessageSquare className="size-3" />
+      <Badge bg="bg-[#bb9af7]/15" text="text-[#bb9af7]" pulse title={title}>
+        <Icon className="size-3" />
       </Badge>
     );
   }
