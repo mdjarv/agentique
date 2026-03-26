@@ -14,9 +14,9 @@ type DisplayState =
   | "failed";
 
 const stateConfig: Record<DisplayState, { color: string; pulse?: boolean; label: string }> = {
-  approval: { color: "bg-[#bb9af7]", pulse: true, label: "waiting for approval" },
-  unseen: { color: "bg-[#e0af68]", pulse: true, label: "new response" },
-  running: { color: "bg-[#e0af68]", label: "running" },
+  approval: { color: "bg-[#ff9e64]", pulse: true, label: "waiting for approval" },
+  unseen: { color: "bg-[#e0af68]", label: "new response" },
+  running: { color: "bg-[#73daca]", label: "running" },
   merging: { color: "bg-[#7aa2f7]", label: "merging" },
   idle: { color: "bg-[#9ece6a]", label: "idle" },
   done: { color: "bg-[#7dcfff]", label: "done" },

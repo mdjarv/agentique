@@ -21,7 +21,6 @@ import {
 import type { ComponentType } from "react";
 import { cn } from "~/lib/utils";
 
-// @ts-expect-error dev-only route, not in generated route tree
 export const Route = createFileRoute("/dev/badges")({
   component: BadgesDevPage,
 });

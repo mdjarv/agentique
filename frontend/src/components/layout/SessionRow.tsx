@@ -77,7 +77,6 @@ export function SessionRow({
       <SessionStatusBadge
         state={state}
         connected={connected}
-        hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingApproval}
         isPlanning={isPlanning}
         gitOperation={gitOperation}
@@ -88,6 +87,7 @@ export function SessionRow({
           !name && "italic text-muted-foreground",
           faded && "text-muted-foreground line-through decoration-muted-foreground/50",
           hasAttention && "text-[#e0af68]",
+          hasUnseenCompletion && "font-semibold text-foreground-bright",
         )}
         title={worktreeBranch ? `${name || "Untitled"}\n${worktreeBranch}` : name || "Untitled"}
       >

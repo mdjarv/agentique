@@ -239,7 +239,7 @@ function ProjectGitStatusRow({
   const hasAnything = ahead || behind || dirty;
 
   return (
-    <div className="flex items-center gap-1.5 pl-7 pr-2 pb-1 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground">
       <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
 
@@ -359,8 +359,7 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 pt-1.5 max-md:pt-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer border-l-2 border-transparent",
-          gitStatus?.branch ? "pb-0.5" : "pb-1.5 max-md:pb-2.5",
+          "w-full text-left rounded-md px-2 pt-1.5 pb-1.5 max-md:pt-2.5 max-md:pb-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer border-l-2 border-transparent",
           isActive && "bg-sidebar-accent border-l-sidebar-primary",
         )}
       >
@@ -390,10 +389,8 @@ export function ProjectTreeItem({
             </span>
           )}
         </div>
+        {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />}
       </div>
-
-      {/* Git status row */}
-      {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />}
 
       {/* Sessions + new chat */}
       {isExpanded && (

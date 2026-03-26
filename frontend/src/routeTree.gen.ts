@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug"
+import { Route as DevBadgesRouteImport } from "./routes/dev.badges"
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index"
 import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings"
 import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/project.$projectSlug.session.new"
@@ -24,6 +25,11 @@ const IndexRoute = IndexRouteImport.update({
 const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
   id: "/project/$projectSlug",
   path: "/project/$projectSlug",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevBadgesRoute = DevBadgesRouteImport.update({
+  id: "/dev/badges",
+  path: "/dev/badges",
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
@@ -52,6 +58,7 @@ const ProjectProjectSlugSessionSessionShortIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/dev/badges": typeof DevBadgesRoute
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
@@ -60,6 +67,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
+  "/dev/badges": typeof DevBadgesRoute
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug": typeof ProjectProjectSlugIndexRoute
   "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
@@ -68,6 +76,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/dev/badges": typeof DevBadgesRoute
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
   "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
+    | "/dev/badges"
     | "/project/$projectSlug"
     | "/project/$projectSlug/settings"
     | "/project/$projectSlug/"
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
+    | "/dev/badges"
     | "/project/$projectSlug/settings"
     | "/project/$projectSlug"
     | "/project/$projectSlug/session/$sessionShortId"
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/dev/badges"
     | "/project/$projectSlug"
     | "/project/$projectSlug_/settings"
     | "/project/$projectSlug/"
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DevBadgesRoute: typeof DevBadgesRoute
   ProjectProjectSlugRoute: typeof ProjectProjectSlugRouteWithChildren
   ProjectProjectSlugSettingsRoute: typeof ProjectProjectSlugSettingsRoute
 }
@@ -120,6 +133,13 @@ declare module "@tanstack/react-router" {
       path: "/project/$projectSlug"
       fullPath: "/project/$projectSlug"
       preLoaderRoute: typeof ProjectProjectSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/dev/badges": {
+      id: "/dev/badges"
+      path: "/dev/badges"
+      fullPath: "/dev/badges"
+      preLoaderRoute: typeof DevBadgesRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/project/$projectSlug/": {
@@ -171,6 +191,7 @@ const ProjectProjectSlugRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevBadgesRoute: DevBadgesRoute,
   ProjectProjectSlugRoute: ProjectProjectSlugRouteWithChildren,
   ProjectProjectSlugSettingsRoute: ProjectProjectSlugSettingsRoute,
 }
