@@ -81,10 +81,11 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
 
   const canInterrupt = meta.state === "running";
   const canMarkDone = meta.state === "idle";
-  const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl;
+  const branchMissing = !!meta.branchMissing;
+  const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
-  const canMerge = terminal && hasWorktree && !merged && ahead && !hasConflicts;
-  const canRebase = hasWorktree && !merged && behind;
+  const canMerge = terminal && hasWorktree && !merged && ahead && !hasConflicts && !branchMissing;
+  const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
   const hasStateActions = canInterrupt || canMarkDone;
   const hasGitActions = canCreatePR || hasOpenPR || canMerge || canRebase;

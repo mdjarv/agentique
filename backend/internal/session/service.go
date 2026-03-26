@@ -47,6 +47,7 @@ type SessionInfo struct {
 	BranchMissing      bool     `json:"branchMissing,omitempty"`
 	MergeStatus        string   `json:"mergeStatus,omitempty"`
 	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
+	GitOperation       string   `json:"gitOperation,omitempty"`
 	GitVersion         int64    `json:"gitVersion"`
 	PrUrl              string   `json:"prUrl,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
@@ -377,9 +378,11 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			info.TurnCount = int(summary.TurnCount)
 		}
 
-		// Stamp a version so the frontend can gate subsequent pushes.
+		// Stamp live session fields so the frontend has current state.
 		if live := s.mgr.Get(ss.ID); live != nil {
 			info.GitVersion = live.GitVersion()
+			_, _, _, _, gitOp := live.liveState()
+			info.GitOperation = gitOp
 		} else if s.gitSvc != nil {
 			info.GitVersion = s.gitSvc.LastVersion(ss.ID)
 		}

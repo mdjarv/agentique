@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type DiffResult, getSessionDiff } from "~/lib/session-actions";
@@ -69,9 +69,13 @@ export function useSessionDiff(sessionId: string) {
     }
   }, [gitVersion, isRunning, isMerged, fetchDiff]);
 
-  const diffTotals = diffResult?.files.reduce<{ add: number; del: number }>(
-    (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
-    { add: 0, del: 0 },
+  const diffTotals = useMemo(
+    () =>
+      diffResult?.files.reduce<{ add: number; del: number }>(
+        (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
+        { add: 0, del: 0 },
+      ),
+    [diffResult],
   );
 
   return { diffResult, loadingDiff, fetchDiff, diffTotals };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type DiffResult, getUncommittedDiff } from "~/lib/session-actions";
@@ -72,9 +72,13 @@ export function useUncommittedDiff(sessionId: string) {
     }
   }, [gitVersion, isRunning, isDirty, fetchUncommittedDiff]);
 
-  const uncommittedDiffTotals = uncommittedDiffResult?.files.reduce<{ add: number; del: number }>(
-    (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
-    { add: 0, del: 0 },
+  const uncommittedDiffTotals = useMemo(
+    () =>
+      uncommittedDiffResult?.files.reduce<{ add: number; del: number }>(
+        (acc, f) => ({ add: acc.add + f.insertions, del: acc.del + f.deletions }),
+        { add: 0, del: 0 },
+      ),
+    [uncommittedDiffResult],
   );
 
   return {

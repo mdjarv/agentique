@@ -133,7 +133,7 @@ function SessionGitStatus({
   const ahead = !!commitsAhead && commitsAhead > 0;
   const dirty = hasUncommitted || hasDirtyWorktree;
   const hasConflicts = mergeStatus === "conflicts";
-  const readyToMerge = !worktreeMerged && mergeStatus === "clean" && ahead;
+  const readyToMerge = !worktreeMerged && mergeStatus === "clean" && ahead && !branchMissing;
   if (!ahead && !dirty && !hasPr && !hasConflicts) return null;
 
   return (

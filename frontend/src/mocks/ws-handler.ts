@@ -133,6 +133,7 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
         sessionId: p.sessionId,
         state: "running",
         connected: true,
+        version: Date.now(),
       });
       setTimeout(() => {
         push(client, "session.event", {
@@ -159,6 +160,13 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
           sessionId: p.sessionId,
           state: "idle",
           connected: true,
+          hasDirtyWorktree: false,
+          hasUncommitted: false,
+          worktreeMerged: false,
+          commitsAhead: 0,
+          commitsBehind: 0,
+          branchMissing: false,
+          version: Date.now(),
         });
       }, 600);
       break;
@@ -223,7 +231,7 @@ index abc1234..def5678 100644
         commitsAhead: session?.commitsAhead ?? 0,
         commitsBehind: session?.commitsBehind ?? 0,
         branchMissing: session?.branchMissing ?? false,
-        version: 1,
+        version: Date.now(),
       });
       break;
     }
@@ -261,8 +269,14 @@ index abc1234..def5678 100644
       push(client, "session.state", {
         sessionId: p.sessionId,
         state: "idle",
+        connected: true,
+        hasDirtyWorktree: false,
+        hasUncommitted: false,
         worktreeMerged: true,
         commitsAhead: 0,
+        commitsBehind: 0,
+        branchMissing: false,
+        version: Date.now(),
       });
       break;
 
@@ -287,6 +301,13 @@ index abc1234..def5678 100644
         sessionId: p.sessionId,
         state: "done",
         connected: false,
+        hasDirtyWorktree: false,
+        hasUncommitted: false,
+        worktreeMerged: false,
+        commitsAhead: 0,
+        commitsBehind: 0,
+        branchMissing: false,
+        version: Date.now(),
       });
       break;
 
@@ -301,6 +322,13 @@ index abc1234..def5678 100644
         sessionId: p.sessionId,
         state: "stopped",
         connected: false,
+        hasDirtyWorktree: false,
+        hasUncommitted: false,
+        worktreeMerged: false,
+        commitsAhead: 0,
+        commitsBehind: 0,
+        branchMissing: false,
+        version: Date.now(),
       });
       break;
 

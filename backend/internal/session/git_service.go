@@ -207,9 +207,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			return MergeResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockGitOp(StateIdle); err != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
-			}
+			_ = live.UnlockGitOp(StateIdle) // safety net for early returns
 		}()
 	}
 
@@ -236,10 +234,17 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		_ = gitops.AbortMerge(project.Path)
 		if len(files) > 0 {
 			slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+			if live != nil {
+				_ = live.UnlockGitOp(StateIdle)
+			}
 			g.broadcastSnapshot(dbSess, project)
 			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
+		if live != nil {
+			_ = live.UnlockGitOp(StateIdle)
+		}
+		g.broadcastSnapshot(dbSess, project)
 		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
 	}
 
@@ -273,6 +278,13 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		}
 	}
 
+	if live != nil {
+		unlockState := StateIdle
+		if cleanup {
+			unlockState = StateStopped
+		}
+		_ = live.UnlockGitOp(unlockState)
+	}
 	g.broadcastSnapshot(dbSess, project)
 
 	go func() {
@@ -315,9 +327,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 			return RebaseResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockGitOp(StateIdle); err != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
-			}
+			_ = live.UnlockGitOp(StateIdle) // safety net for early returns
 		}()
 	}
 
@@ -339,10 +349,17 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		_ = gitops.AbortRebase(wtPath)
 		if len(files) > 0 {
 			slog.Warn("rebase conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+			if live != nil {
+				_ = live.UnlockGitOp(StateIdle)
+			}
 			g.broadcastSnapshot(dbSess, project)
 			return RebaseResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("rebase failed", "session_id", sessionID, "branch", branch, "error", rebaseErr)
+		if live != nil {
+			_ = live.UnlockGitOp(StateIdle)
+		}
+		g.broadcastSnapshot(dbSess, project)
 		return RebaseResult{Status: "error", Error: rebaseErr.Error()}, nil
 	}
 
@@ -355,6 +372,9 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 
 	slog.Info("rebase completed", "session_id", sessionID, "branch", branch, "newBase", mainHead)
 
+	if live != nil {
+		_ = live.UnlockGitOp(StateIdle)
+	}
 	g.broadcastSnapshot(dbSess, project)
 
 	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
@@ -383,9 +403,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 			return CreatePRResult{}, err
 		}
 		defer func() {
-			if unlockErr := live.UnlockGitOp(StateIdle); unlockErr != nil {
-				slog.Error("unlock git op failed", "session_id", p.SessionID, "error", unlockErr)
-			}
+			_ = live.UnlockGitOp(StateIdle)
 		}()
 	}
 
@@ -509,7 +527,8 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	isWorktree := nullStr(dbSess.WorktreePath) != ""
 
-	if live := g.mgr.Get(sessionID); live != nil {
+	live := g.mgr.Get(sessionID)
+	if live != nil {
 		if err := live.TryLockForGitOp("committing"); err != nil {
 			return CommitResult{}, err
 		}
@@ -518,9 +537,7 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 			if !isWorktree {
 				unlockState = StateDone
 			}
-			if unlockErr := live.UnlockGitOp(unlockState); unlockErr != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", unlockErr)
-			}
+			_ = live.UnlockGitOp(unlockState) // safety net for early returns
 		}()
 	}
 
@@ -572,6 +589,13 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 	}
 
 	if projErr == nil {
+		if live != nil {
+			unlockState := StateIdle
+			if !isWorktree {
+				unlockState = StateDone
+			}
+			_ = live.UnlockGitOp(unlockState)
+		}
 		g.broadcastSnapshot(dbSess, project)
 	}
 
@@ -667,14 +691,13 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 		return CleanResult{}, fmt.Errorf("project not found")
 	}
 
-	if live := g.mgr.Get(sessionID); live != nil {
+	live := g.mgr.Get(sessionID)
+	if live != nil {
 		if err := live.TryLockForGitOp("cleaning"); err != nil {
 			return CleanResult{}, err
 		}
 		defer func() {
-			if unlockErr := live.UnlockGitOp(StateIdle); unlockErr != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", unlockErr)
-			}
+			_ = live.UnlockGitOp(StateStopped) // safety net for early returns
 		}()
 	}
 
@@ -696,6 +719,9 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 		ID:    sessionID,
 	}); err != nil {
 		slog.Warn("persist session state after clean failed", "session_id", sessionID, "error", err)
+	}
+	if live != nil {
+		_ = live.UnlockGitOp(StateStopped)
 	}
 	g.broadcastSnapshot(dbSess, project)
 

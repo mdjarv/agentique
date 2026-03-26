@@ -404,21 +404,24 @@ export const useChatStore = create<ChatState>((set) => ({
       const current = session.meta.gitVersion ?? 0;
       if (incoming > 0 && current > 0 && incoming < current) return s;
 
-      // Replace ALL git fields atomically — no partial merge.
+      // Transient states (running, merging) don't compute git fields on the
+      // backend — preserve the frontend's cached values instead of zeroing them.
+      const transient = state === "running" || state === "merging";
+      const m = session.meta;
       const patch: Partial<SessionMetadata> = {
         state,
-        connected: extras?.connected ?? session.meta.connected,
-        hasDirtyWorktree: extras?.hasDirtyWorktree ?? false,
-        hasUncommitted: extras?.hasUncommitted ?? false,
-        worktreeMerged: extras?.worktreeMerged ?? false,
-        completedAt: extras?.completedAt,
-        commitsAhead: extras?.commitsAhead ?? 0,
-        commitsBehind: extras?.commitsBehind ?? 0,
-        branchMissing: extras?.branchMissing ?? false,
-        mergeStatus: extras?.mergeStatus,
-        mergeConflictFiles: extras?.mergeConflictFiles,
+        connected: extras?.connected ?? m.connected,
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
+        completedAt: transient ? m.completedAt : extras?.completedAt,
+        hasDirtyWorktree: transient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
+        hasUncommitted: transient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
+        worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
+        commitsAhead: transient ? m.commitsAhead : (extras?.commitsAhead ?? 0),
+        commitsBehind: transient ? m.commitsBehind : (extras?.commitsBehind ?? 0),
+        branchMissing: transient ? m.branchMissing : (extras?.branchMissing ?? false),
+        mergeStatus: transient ? m.mergeStatus : extras?.mergeStatus,
+        mergeConflictFiles: transient ? m.mergeConflictFiles : extras?.mergeConflictFiles,
       };
       return updateMeta(s, sessionId, patch);
     }),
