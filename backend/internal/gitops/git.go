@@ -137,6 +137,52 @@ func UncommittedDiff(dir string) (diff string, summary string, err error) {
 	return string(diffOut), summary, nil
 }
 
+// FileStatus describes a single file's status from git status --porcelain.
+type FileStatus struct {
+	Path   string `json:"path"`
+	Status string `json:"status"` // "modified", "added", "deleted", "renamed", "untracked"
+}
+
+// UncommittedFiles returns the list of uncommitted (tracked + untracked) files.
+func UncommittedFiles(dir string) ([]FileStatus, error) {
+	out, err := gitRun(dir, "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("git status failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	raw := strings.TrimSpace(string(out))
+	if raw == "" {
+		return nil, nil
+	}
+	var files []FileStatus
+	for _, line := range strings.Split(raw, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		xy := line[:2]
+		path := line[3:]
+		files = append(files, FileStatus{
+			Path:   path,
+			Status: porcelainStatus(xy),
+		})
+	}
+	return files, nil
+}
+
+func porcelainStatus(xy string) string {
+	switch {
+	case xy == "??":
+		return "untracked"
+	case xy[0] == 'A' || xy[1] == 'A':
+		return "added"
+	case xy[0] == 'D' || xy[1] == 'D':
+		return "deleted"
+	case xy[0] == 'R' || xy[1] == 'R':
+		return "renamed"
+	default:
+		return "modified"
+	}
+}
+
 // GC runs a full git gc to pack loose objects and prune unreachable data.
 func GC(projectDir string) {
 	_, _ = gitRun(projectDir, "gc", "--quiet")

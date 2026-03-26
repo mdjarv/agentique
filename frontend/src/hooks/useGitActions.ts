@@ -5,6 +5,7 @@ import { useMergeSession } from "~/hooks/useMergeSession";
 import { useRebaseSession } from "~/hooks/useRebaseSession";
 import { useRefreshGit } from "~/hooks/useRefreshGit";
 import { useSessionDiff } from "~/hooks/useSessionDiff";
+import { useUncommittedFiles } from "~/hooks/useUncommittedFiles";
 
 export function useGitActions(sessionId: string) {
   const diff = useSessionDiff(sessionId);
@@ -14,6 +15,7 @@ export function useGitActions(sessionId: string) {
   const pr = useCreatePR(sessionId);
   const refresh = useRefreshGit(sessionId, diff.fetchDiff);
   const clean = useCleanSession(sessionId);
+  const uncommitted = useUncommittedFiles(sessionId);
 
   return {
     ...diff,
@@ -23,5 +25,6 @@ export function useGitActions(sessionId: string) {
     ...pr,
     ...refresh,
     ...clean,
+    ...uncommitted,
   };
 }

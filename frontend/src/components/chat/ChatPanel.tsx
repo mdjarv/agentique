@@ -20,6 +20,7 @@ import { useGitActions } from "~/hooks/useGitActions";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
+  refreshGitStatus,
   setAutoApprove,
   setPermissionMode,
   setSessionModel,
@@ -61,7 +62,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const hasTodos = todos !== null && todos.length > 0;
   const isWorktree = !!session?.meta.worktreeBranch;
-  const showPanel = isWorktree || hasTodos;
+  const isDirty = session?.meta.hasUncommitted || session?.meta.hasDirtyWorktree;
+  const showPanel = isWorktree || hasTodos || isDirty;
 
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
@@ -87,6 +89,11 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       }
     };
   }, [sessionId]);
+
+  // Refresh git status on session navigation (so panel data is fresh)
+  useEffect(() => {
+    refreshGitStatus(ws, sessionId).catch(() => {});
+  }, [ws, sessionId]);
 
   // Load history on mount or session switch
   const sessionExists = !!session;

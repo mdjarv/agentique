@@ -162,6 +162,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionRefreshGit(msg)
 	case "session.generate-commit-message":
 		c.handleSessionGenerateCommitMsg(msg)
+	case "session.uncommitted-files":
+		c.handleSessionUncommittedFiles(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
