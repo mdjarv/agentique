@@ -28,7 +28,7 @@ var validTransitions = map[State]map[State]bool{
 	StateFailed:  {StateIdle: true, StateStopped: true, StateDone: true},
 	StateDone:    {StateIdle: true, StateStopped: true},
 	StateStopped: {StateDone: true},
-	StateMerging: {StateIdle: true, StateFailed: true, StateDone: true},
+	StateMerging: {StateIdle: true, StateFailed: true, StateDone: true, StateStopped: true},
 }
 
 // CanTransitionTo returns true if transitioning from s to next is valid.
@@ -84,7 +84,7 @@ func (s *Session) TryLockForGitOp(operation string) error {
 		return fmt.Errorf("session is running")
 	}
 	if !s.state.CanTransitionTo(StateMerging) {
-		return fmt.Errorf("cannot merge from state %s", string(s.state))
+		return fmt.Errorf("cannot start %s from state %s", operation, string(s.state))
 	}
 	s.state = StateMerging
 	s.gitOperation = operation

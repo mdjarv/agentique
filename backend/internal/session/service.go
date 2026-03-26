@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/gitops"
@@ -41,11 +40,16 @@ type SessionInfo struct {
 	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
 	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
 	CompletedAt     string  `json:"completedAt,omitempty"`
-	CommitsAhead    int     `json:"commitsAhead"`
-	CommitsBehind   int     `json:"commitsBehind"`
-	BranchMissing   bool    `json:"branchMissing,omitempty"`
-	HasUncommitted  bool    `json:"hasUncommitted,omitempty"`
-	PrUrl           string  `json:"prUrl,omitempty"`
+	HasDirtyWorktree   bool     `json:"hasDirtyWorktree,omitempty"`
+	HasUncommitted     bool     `json:"hasUncommitted,omitempty"`
+	CommitsAhead       int      `json:"commitsAhead"`
+	CommitsBehind      int      `json:"commitsBehind"`
+	BranchMissing      bool     `json:"branchMissing,omitempty"`
+	MergeStatus        string   `json:"mergeStatus,omitempty"`
+	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
+	GitOperation       string   `json:"gitOperation,omitempty"`
+	GitVersion         int64    `json:"gitVersion"`
+	PrUrl              string   `json:"prUrl,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	UpdatedAt       string  `json:"updatedAt"`
 	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
@@ -98,11 +102,18 @@ type Service struct {
 	mgr     *Manager
 	queries serviceQueries
 	hub     Broadcaster
+	gitSvc  *GitService
 }
 
 // NewService creates a new session Service.
 func NewService(mgr *Manager, queries serviceQueries, hub Broadcaster) *Service {
 	return &Service{mgr: mgr, queries: queries, hub: hub}
+}
+
+// SetGitService injects the GitService for snapshot broadcasts.
+// Called after both Service and GitService are constructed.
+func (s *Service) SetGitService(gs *GitService) {
+	s.gitSvc = gs
 }
 
 // Manager returns the underlying Manager (needed for CloseAll on shutdown).
@@ -245,6 +256,12 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	slog.Info("stopping session", "session_id", sessionID)
 
+	// Preserve the git version counter so a future resume continues from
+	// the correct version instead of resetting to 0.
+	if live := s.mgr.Get(sessionID); live != nil && s.gitSvc != nil {
+		s.gitSvc.SeedVersion(sessionID, live.GitVersion())
+	}
+
 	if err := s.mgr.Stop(ctx, sessionID); err != nil {
 		return fmt.Errorf("stop failed: %w", err)
 	}
@@ -361,13 +378,33 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			info.TurnCount = int(summary.TurnCount)
 		}
 
+		// Stamp live session fields so the frontend has current state.
+		if live := s.mgr.Get(ss.ID); live != nil {
+			info.GitVersion = live.GitVersion()
+			_, _, _, _, gitOp := live.liveState()
+			info.GitOperation = gitOp
+		} else if s.gitSvc != nil {
+			info.GitVersion = s.gitSvc.LastVersion(ss.ID)
+		}
+
 		if branch := info.WorktreeBranch; branch != "" && !info.WorktreeMerged {
 			if projectPath, ok := projectPaths[ss.ProjectID]; ok {
 				if gitops.BranchExists(projectPath, branch) {
 					info.CommitsAhead, _ = gitops.CommitsAhead(projectPath, branch)
 					info.CommitsBehind, _ = gitops.CommitsBehind(projectPath, branch)
 					if info.WorktreePath != "" {
-						info.HasUncommitted, _ = gitops.HasUncommittedChanges(info.WorktreePath)
+						dirty, _ := gitops.HasUncommittedChanges(info.WorktreePath)
+						info.HasUncommitted = dirty
+						info.HasDirtyWorktree = dirty
+					}
+					result, mergeErr := gitops.MergeTreeCheck(projectPath, branch)
+					if mergeErr != nil {
+						info.MergeStatus = "unknown"
+					} else if result.Clean {
+						info.MergeStatus = "clean"
+					} else {
+						info.MergeStatus = "conflicts"
+						info.MergeConflictFiles = result.ConflictFiles
 					}
 				} else {
 					info.BranchMissing = true
@@ -433,6 +470,10 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	if err := s.queries.DeleteSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("db delete failed: %w", err)
+	}
+
+	if s.gitSvc != nil {
+		s.gitSvc.CleanupVersion(sessionID)
 	}
 
 	s.hub.Broadcast(dbSess.ProjectID, "session.deleted", map[string]any{
@@ -544,13 +585,11 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 		slog.Warn("persist session completed failed", "session_id", sessionID, "error", err)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	s.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-		"sessionId":   sessionID,
-		"state":       string(StateDone),
-		"connected":   false,
-		"completedAt": now,
-	})
+	if s.gitSvc != nil {
+		if snap, err := s.gitSvc.computeGitSnapshot(ctx, sessionID); err == nil {
+			s.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+		}
+	}
 
 	return nil
 }
@@ -592,17 +631,23 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		}
 	}
 
+	var initialVersion int64
+	if s.gitSvc != nil {
+		initialVersion = s.gitSvc.LastVersion(sessionID)
+	}
+
 	sess, resumeErr := s.mgr.Resume(ctx, ResumeParams{
-		SessionID:       sessionID,
-		ClaudeSessionID: claudeSessID,
-		ProjectID:       dbSess.ProjectID,
-		WorkDir:         workDir,
-		Model:           dbSess.Model,
-		PermissionMode:  dbSess.PermissionMode,
-		AutoApprove:     dbSess.AutoApprove != 0,
-		Effort:          dbSess.Effort,
-		MaxBudget:       dbSess.MaxBudget,
-		MaxTurns:        int(dbSess.MaxTurns),
+		SessionID:         sessionID,
+		ClaudeSessionID:   claudeSessID,
+		ProjectID:         dbSess.ProjectID,
+		WorkDir:           workDir,
+		Model:             dbSess.Model,
+		PermissionMode:    dbSess.PermissionMode,
+		AutoApprove:       dbSess.AutoApprove != 0,
+		Effort:            dbSess.Effort,
+		MaxBudget:         dbSess.MaxBudget,
+		MaxTurns:          int(dbSess.MaxTurns),
+		InitialGitVersion: initialVersion,
 	})
 	if resumeErr != nil {
 		return nil, resumeErr

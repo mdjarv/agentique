@@ -76,12 +76,16 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const behind = !!meta.commitsBehind && meta.commitsBehind > 0;
   const dirty = meta.hasUncommitted || meta.hasDirtyWorktree;
 
+  const merged = !!meta.worktreeMerged;
+  const hasConflicts = meta.mergeStatus === "conflicts";
+
   const canInterrupt = meta.state === "running";
   const canMarkDone = meta.state === "idle";
-  const canCreatePR = hasWorktree && ahead && !meta.prUrl;
+  const branchMissing = !!meta.branchMissing;
+  const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
-  const canMerge = terminal && hasWorktree && ahead;
-  const canRebase = hasWorktree && behind;
+  const canMerge = terminal && hasWorktree && !merged && ahead && !hasConflicts && !branchMissing;
+  const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
   const hasStateActions = canInterrupt || canMarkDone;
   const hasGitActions = canCreatePR || hasOpenPR || canMerge || canRebase;

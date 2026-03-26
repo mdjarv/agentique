@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"time"
+	"sync"
+	"sync/atomic"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/msggen"
@@ -61,14 +62,125 @@ func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) erro
 
 // GitService handles git operations (merge, PR, diff, commit) for sessions.
 type GitService struct {
-	mgr     *Manager
-	queries gitServiceQueries
-	hub     Broadcaster
+	mgr         *Manager
+	queries     gitServiceQueries
+	hub         Broadcaster
+	gitVersions sync.Map // sessionID → *atomic.Int64
 }
 
 // NewGitService creates a new GitService.
 func NewGitService(mgr *Manager, queries gitServiceQueries, hub Broadcaster) *GitService {
 	return &GitService{mgr: mgr, queries: queries, hub: hub}
+}
+
+// nextVersion returns a monotonically increasing version number for a session.
+// Uses live session counter when available, falls back to an atomic counter per session.
+func (g *GitService) nextVersion(sessionID string) int64 {
+	if live := g.mgr.Get(sessionID); live != nil {
+		return live.nextGitVersion()
+	}
+	val, _ := g.gitVersions.LoadOrStore(sessionID, &atomic.Int64{})
+	return val.(*atomic.Int64).Add(1)
+}
+
+// SeedVersion stores a version baseline for a session that is no longer live.
+// Called when a session is stopped so that subsequent broadcasts (or a future
+// resume) continue from the correct version instead of resetting to 0.
+func (g *GitService) SeedVersion(sessionID string, version int64) {
+	v := &atomic.Int64{}
+	v.Store(version)
+	g.gitVersions.Store(sessionID, v)
+}
+
+// LastVersion returns the last known version for a session (from the fallback map).
+// Returns 0 if no version is stored.
+func (g *GitService) LastVersion(sessionID string) int64 {
+	if val, ok := g.gitVersions.Load(sessionID); ok {
+		return val.(*atomic.Int64).Load()
+	}
+	return 0
+}
+
+// CleanupVersion removes the version counter for a deleted session.
+func (g *GitService) CleanupVersion(sessionID string) {
+	g.gitVersions.Delete(sessionID)
+}
+
+// computeGitSnapshot builds a complete, versioned snapshot of a session's git state.
+// It checks the live session for state/connected/merged flags and falls back to DB.
+func (g *GitService) computeGitSnapshot(ctx context.Context, sessionID string) (GitSnapshot, error) {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return GitSnapshot{}, fmt.Errorf("session not found: %w", err)
+	}
+	project, err := g.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return GitSnapshot{}, fmt.Errorf("project not found: %w", err)
+	}
+	return g.buildSnapshot(dbSess, project), nil
+}
+
+// buildSnapshot constructs a GitSnapshot from pre-loaded DB session + project.
+// Avoids redundant DB lookups when the caller already has these values.
+func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) GitSnapshot {
+	snap := GitSnapshot{SessionID: dbSess.ID}
+
+	// Use live session state when available, fall back to DB.
+	if live := g.mgr.Get(dbSess.ID); live != nil {
+		state, connected, merged, completedAt, gitOp := live.liveState()
+		snap.State = string(state)
+		snap.Connected = connected
+		snap.WorktreeMerged = merged
+		snap.CompletedAt = completedAt
+		snap.GitOperation = gitOp
+	} else {
+		snap.State = dbSess.State
+		snap.WorktreeMerged = dbSess.WorktreeMerged != 0
+		snap.CompletedAt = nullStr(dbSess.CompletedAt)
+	}
+
+	branch := nullStr(dbSess.WorktreeBranch)
+	wtPath := nullStr(dbSess.WorktreePath)
+
+	// Check dirty/uncommitted state.
+	if wtPath != "" && !snap.WorktreeMerged {
+		if dirty, err := gitops.HasUncommittedChanges(wtPath); err == nil {
+			snap.HasDirtyWorktree = dirty
+			snap.HasUncommitted = dirty
+		}
+	}
+
+	// Branch-level checks: ahead/behind, merge status.
+	if branch != "" && !snap.WorktreeMerged {
+		if !gitops.BranchExists(project.Path, branch) {
+			snap.BranchMissing = true
+		} else {
+			if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
+				snap.CommitsAhead = ahead
+			}
+			if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
+				snap.CommitsBehind = behind
+			}
+			result, mergeErr := gitops.MergeTreeCheck(project.Path, branch)
+			if mergeErr != nil {
+				snap.MergeStatus = "unknown"
+			} else if result.Clean {
+				snap.MergeStatus = "clean"
+			} else {
+				snap.MergeStatus = "conflicts"
+				snap.MergeConflictFiles = result.ConflictFiles
+			}
+		}
+	}
+
+	snap.Version = g.nextVersion(dbSess.ID)
+	return snap
+}
+
+// broadcastSnapshot computes and broadcasts a full git snapshot for a session.
+func (g *GitService) broadcastSnapshot(dbSess store.Session, project store.Project) {
+	snap := g.buildSnapshot(dbSess, project)
+	g.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
 }
 
 // Merge merges a worktree session's branch into the project's main branch.
@@ -95,9 +207,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			return MergeResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockGitOp(StateIdle); err != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
-			}
+			_ = live.UnlockGitOp(StateIdle) // safety net for early returns
 		}()
 	}
 
@@ -124,15 +234,17 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		_ = gitops.AbortMerge(project.Path)
 		if len(files) > 0 {
 			slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
-			g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-				"sessionId":          sessionID,
-				"state":              dbSess.State,
-				"mergeStatus":        "conflicts",
-				"mergeConflictFiles": files,
-			})
+			if live != nil {
+				_ = live.UnlockGitOp(StateIdle)
+			}
+			g.broadcastSnapshot(dbSess, project)
 			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
+		if live != nil {
+			_ = live.UnlockGitOp(StateIdle)
+		}
+		g.broadcastSnapshot(dbSess, project)
 		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
 	}
 
@@ -149,8 +261,6 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		live.MarkCompleted()
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-
 	if cleanup {
 		if wtPath != "" {
 			gitops.RemoveWorktree(project.Path, wtPath)
@@ -166,26 +276,16 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		}); err != nil {
 			slog.Warn("persist session state after merge cleanup failed", "session_id", sessionID, "error", err)
 		}
-		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId":      sessionID,
-			"state":          string(StateStopped),
-			"worktreeMerged": true,
-			"completedAt":    now,
-		})
-	} else {
-		// Use live state if available (UnlockGitOp just set it to idle),
-		// fall back to DB snapshot for dead sessions.
-		state := dbSess.State
-		if live != nil {
-			state = string(live.State())
-		}
-		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId":      sessionID,
-			"state":          state,
-			"worktreeMerged": true,
-			"completedAt":    now,
-		})
 	}
+
+	if live != nil {
+		unlockState := StateIdle
+		if cleanup {
+			unlockState = StateStopped
+		}
+		_ = live.UnlockGitOp(unlockState)
+	}
+	g.broadcastSnapshot(dbSess, project)
 
 	go func() {
 		g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
@@ -227,9 +327,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 			return RebaseResult{}, err
 		}
 		defer func() {
-			if err := live.UnlockGitOp(StateIdle); err != nil {
-				slog.Error("unlock git op failed", "session_id", sessionID, "error", err)
-			}
+			_ = live.UnlockGitOp(StateIdle) // safety net for early returns
 		}()
 	}
 
@@ -251,15 +349,17 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		_ = gitops.AbortRebase(wtPath)
 		if len(files) > 0 {
 			slog.Warn("rebase conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
-			g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-				"sessionId":          sessionID,
-				"state":              dbSess.State,
-				"mergeStatus":        "conflicts",
-				"mergeConflictFiles": files,
-			})
+			if live != nil {
+				_ = live.UnlockGitOp(StateIdle)
+			}
+			g.broadcastSnapshot(dbSess, project)
 			return RebaseResult{Status: "conflict", ConflictFiles: files}, nil
 		}
 		slog.Error("rebase failed", "session_id", sessionID, "branch", branch, "error", rebaseErr)
+		if live != nil {
+			_ = live.UnlockGitOp(StateIdle)
+		}
+		g.broadcastSnapshot(dbSess, project)
 		return RebaseResult{Status: "error", Error: rebaseErr.Error()}, nil
 	}
 
@@ -272,16 +372,10 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 
 	slog.Info("rebase completed", "session_id", sessionID, "branch", branch, "newBase", mainHead)
 
-	rebasePayload := map[string]any{
-		"sessionId":     sessionID,
-		"state":         dbSess.State,
-		"commitsBehind": 0,
+	if live != nil {
+		_ = live.UnlockGitOp(StateIdle)
 	}
-	if ahead, aErr := gitops.CommitsAhead(project.Path, branch); aErr == nil {
-		rebasePayload["commitsAhead"] = ahead
-	}
-	appendMergeStatus(rebasePayload, project.Path, branch)
-	g.hub.Broadcast(dbSess.ProjectID, "session.state", rebasePayload)
+	g.broadcastSnapshot(dbSess, project)
 
 	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
 
@@ -302,6 +396,15 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	project, err := g.queries.GetProject(ctx, dbSess.ProjectID)
 	if err != nil {
 		return CreatePRResult{}, fmt.Errorf("project not found")
+	}
+
+	if live := g.mgr.Get(p.SessionID); live != nil {
+		if err := live.TryLockForGitOp("creating_pr"); err != nil {
+			return CreatePRResult{}, err
+		}
+		defer func() {
+			_ = live.UnlockGitOp(StateIdle)
+		}()
 	}
 
 	slog.Info("creating PR", "session_id", p.SessionID, "branch", branch)
@@ -424,6 +527,20 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	isWorktree := nullStr(dbSess.WorktreePath) != ""
 
+	live := g.mgr.Get(sessionID)
+	if live != nil {
+		if err := live.TryLockForGitOp("committing"); err != nil {
+			return CommitResult{}, err
+		}
+		defer func() {
+			unlockState := StateIdle
+			if !isWorktree {
+				unlockState = StateDone
+			}
+			_ = live.UnlockGitOp(unlockState) // safety net for early returns
+		}()
+	}
+
 	// Use worktree path if available, otherwise work dir.
 	dir := dbSess.WorkDir
 	if isWorktree {
@@ -453,23 +570,9 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	slog.Info("commit created", "session_id", sessionID, "commit", hash)
 
-	if isWorktree {
-		// Broadcast updated dirty state + new commits-ahead count.
-		payload := map[string]any{
-			"sessionId":        sessionID,
-			"state":            dbSess.State,
-			"hasDirtyWorktree": false,
-			"hasUncommitted":   false,
-		}
-		project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
-		if projErr == nil {
-			if ahead, aErr := gitops.CommitsAhead(project.Path, nullStr(dbSess.WorktreeBranch)); aErr == nil {
-				payload["commitsAhead"] = ahead
-			}
-			appendMergeStatus(payload, project.Path, nullStr(dbSess.WorktreeBranch))
-		}
-		g.hub.Broadcast(dbSess.ProjectID, "session.state", payload)
-	} else {
+	project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
+
+	if !isWorktree {
 		// Local sessions are done after commit — their changes are on the main branch.
 		if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateDone),
@@ -480,16 +583,20 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
 			slog.Warn("persist session completed after commit failed", "session_id", sessionID, "error", err)
 		}
-		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId":      sessionID,
-			"state":          string(StateDone),
-			"hasUncommitted": false,
-			"completedAt":    time.Now().UTC().Format(time.RFC3339),
-		})
-		project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr == nil {
 			go g.broadcastProjectGitStatus(dbSess.ProjectID, project.Path)
 		}
+	}
+
+	if projErr == nil {
+		if live != nil {
+			unlockState := StateIdle
+			if !isWorktree {
+				unlockState = StateDone
+			}
+			_ = live.UnlockGitOp(unlockState)
+		}
+		g.broadcastSnapshot(dbSess, project)
 	}
 
 	return CommitResult{CommitHash: hash}, nil
@@ -584,10 +691,14 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 		return CleanResult{}, fmt.Errorf("project not found")
 	}
 
-	if live := g.mgr.Get(sessionID); live != nil {
-		if state := live.State(); state == StateRunning {
-			return CleanResult{}, fmt.Errorf("session is running")
+	live := g.mgr.Get(sessionID)
+	if live != nil {
+		if err := live.TryLockForGitOp("cleaning"); err != nil {
+			return CleanResult{}, err
 		}
+		defer func() {
+			_ = live.UnlockGitOp(StateStopped) // safety net for early returns
+		}()
 	}
 
 	slog.Info("clean started", "session_id", sessionID, "branch", branch)
@@ -609,83 +720,45 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	}); err != nil {
 		slog.Warn("persist session state after clean failed", "session_id", sessionID, "error", err)
 	}
-	g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-		"sessionId": sessionID,
-		"state":     string(StateStopped),
-	})
+	if live != nil {
+		_ = live.UnlockGitOp(StateStopped)
+	}
+	g.broadcastSnapshot(dbSess, project)
 
 	slog.Info("clean completed", "session_id", sessionID, "branch", branch)
 	return CleanResult{Status: "cleaned"}, nil
 }
 
-// GitState is the response payload for RefreshGitStatus.
-// Fields match the session.state push event so the frontend can apply either.
-type GitState struct {
+// GitSnapshot is a complete, versioned snapshot of a session's git state.
+// Every session.state broadcast uses this struct — no partial payloads.
+// The Version field is monotonically increasing per session; the frontend
+// discards any snapshot with a version lower than what it already has.
+type GitSnapshot struct {
 	SessionID          string   `json:"sessionId"`
 	State              string   `json:"state"`
+	Connected          bool     `json:"connected"`
 	HasDirtyWorktree   bool     `json:"hasDirtyWorktree"`
 	HasUncommitted     bool     `json:"hasUncommitted"`
 	WorktreeMerged     bool     `json:"worktreeMerged"`
+	CompletedAt        string   `json:"completedAt,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`
 	MergeStatus        string   `json:"mergeStatus,omitempty"`
 	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
+	GitOperation       string   `json:"gitOperation,omitempty"`
+	Version            int64    `json:"version"`
 }
 
 // RefreshGitStatus recomputes, broadcasts, and returns git status for a session.
-func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) (GitState, error) {
-	ss, err := g.queries.GetSession(ctx, sessionID)
+func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) (GitSnapshot, error) {
+	snap, err := g.computeGitSnapshot(ctx, sessionID)
 	if err != nil {
-		return GitState{}, fmt.Errorf("session not found: %w", err)
+		return GitSnapshot{}, err
 	}
-	project, err := g.queries.GetProject(ctx, ss.ProjectID)
-	if err != nil {
-		return GitState{}, fmt.Errorf("project not found: %w", err)
-	}
-
-	gs := GitState{
-		SessionID: ss.ID,
-		State:     ss.State,
-	}
-
-	branch := nullStr(ss.WorktreeBranch)
-	wtPath := nullStr(ss.WorktreePath)
-
-	if wtPath != "" {
-		if dirty, err := gitops.HasUncommittedChanges(wtPath); err == nil {
-			gs.HasDirtyWorktree = dirty
-			gs.HasUncommitted = dirty
-		}
-	}
-
-	if ss.WorktreeMerged != 0 {
-		gs.WorktreeMerged = true
-	}
-	if branch != "" {
-		if !gitops.BranchExists(project.Path, branch) {
-			gs.BranchMissing = true
-		} else {
-			if ahead, err := gitops.CommitsAhead(project.Path, branch); err == nil {
-				gs.CommitsAhead = ahead
-			}
-			if behind, err := gitops.CommitsBehind(project.Path, branch); err == nil {
-				gs.CommitsBehind = behind
-			}
-			result, mergeErr := gitops.MergeTreeCheck(project.Path, branch)
-			if mergeErr != nil {
-				gs.MergeStatus = "unknown"
-			} else if result.Clean {
-				gs.MergeStatus = "clean"
-			} else {
-				gs.MergeStatus = "conflicts"
-				gs.MergeConflictFiles = result.ConflictFiles
-			}
-		}
-	}
-
-	g.hub.Broadcast(ss.ProjectID, "session.state", gs)
-	return gs, nil
+	dbSess, _ := g.queries.GetSession(ctx, sessionID)
+	g.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+	return snap, nil
 }
 
 // broadcastProjectGitStatus computes and broadcasts the project-level git status.
@@ -721,8 +794,12 @@ func (g *GitService) broadcastProjectGitStatus(projectID, projectPath string) {
 
 // broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions
 // in the same project except excludeID. Called after operations that advance the main branch.
-func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, excludeID, projectPath string) {
+func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, excludeID, _ string) {
 	sessions, err := g.queries.ListSessionsByProject(ctx, projectID)
+	if err != nil {
+		return
+	}
+	project, err := g.queries.GetProject(ctx, projectID)
 	if err != nil {
 		return
 	}
@@ -730,42 +807,9 @@ func (g *GitService) broadcastSiblingGitStatus(ctx context.Context, projectID, e
 		if ss.ID == excludeID || ss.WorktreeMerged != 0 {
 			continue
 		}
-		branch := nullStr(ss.WorktreeBranch)
-		if branch == "" {
+		if nullStr(ss.WorktreeBranch) == "" {
 			continue
 		}
-		payload := map[string]any{
-			"sessionId": ss.ID,
-			"state":     ss.State,
-		}
-		if !gitops.BranchExists(projectPath, branch) {
-			payload["branchMissing"] = true
-			g.hub.Broadcast(projectID, "session.state", payload)
-			continue
-		}
-		if ahead, err := gitops.CommitsAhead(projectPath, branch); err == nil {
-			payload["commitsAhead"] = ahead
-		}
-		if behind, err := gitops.CommitsBehind(projectPath, branch); err == nil {
-			payload["commitsBehind"] = behind
-		}
-		appendMergeStatus(payload, projectPath, branch)
-		g.hub.Broadcast(projectID, "session.state", payload)
-	}
-}
-
-// appendMergeStatus runs an in-memory merge-tree check and adds mergeStatus +
-// mergeConflictFiles to the broadcast payload. Failures are treated as "unknown".
-func appendMergeStatus(payload map[string]any, projectDir, branch string) {
-	result, err := gitops.MergeTreeCheck(projectDir, branch)
-	if err != nil {
-		payload["mergeStatus"] = "unknown"
-		return
-	}
-	if result.Clean {
-		payload["mergeStatus"] = "clean"
-	} else {
-		payload["mergeStatus"] = "conflicts"
-		payload["mergeConflictFiles"] = result.ConflictFiles
+		g.broadcastSnapshot(ss, project)
 	}
 }

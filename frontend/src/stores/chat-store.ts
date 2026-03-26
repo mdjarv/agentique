@@ -92,6 +92,7 @@ export interface SessionMetadata {
   mergeStatus?: "clean" | "conflicts" | "unknown";
   mergeConflictFiles?: string[];
   gitOperation?: string;
+  gitVersion?: number;
   prUrl?: string;
   createdAt: string;
   updatedAt?: string;
@@ -296,6 +297,7 @@ export interface ChatState {
         | "mergeStatus"
         | "mergeConflictFiles"
         | "gitOperation"
+        | "gitVersion"
       >
     >,
   ) => void;
@@ -394,12 +396,33 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionState: (sessionId, state, extras) =>
     set((s) => {
-      const patch: Partial<SessionMetadata> = { state };
-      if (extras) {
-        for (const [k, v] of Object.entries(extras)) {
-          if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
-        }
-      }
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+
+      // Reject stale updates via monotonic version.
+      const incoming = extras?.gitVersion ?? 0;
+      const current = session.meta.gitVersion ?? 0;
+      if (incoming > 0 && current > 0 && incoming < current) return s;
+
+      // Transient states (running, merging) don't compute git fields on the
+      // backend — preserve the frontend's cached values instead of zeroing them.
+      const transient = state === "running" || state === "merging";
+      const m = session.meta;
+      const patch: Partial<SessionMetadata> = {
+        state,
+        connected: extras?.connected ?? m.connected,
+        gitOperation: extras?.gitOperation ?? "",
+        gitVersion: incoming || current,
+        completedAt: transient ? m.completedAt : extras?.completedAt,
+        hasDirtyWorktree: transient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
+        hasUncommitted: transient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
+        worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
+        commitsAhead: transient ? m.commitsAhead : (extras?.commitsAhead ?? 0),
+        commitsBehind: transient ? m.commitsBehind : (extras?.commitsBehind ?? 0),
+        branchMissing: transient ? m.branchMissing : (extras?.branchMissing ?? false),
+        mergeStatus: transient ? m.mergeStatus : extras?.mergeStatus,
+        mergeConflictFiles: transient ? m.mergeConflictFiles : extras?.mergeConflictFiles,
+      };
       return updateMeta(s, sessionId, patch);
     }),
 
