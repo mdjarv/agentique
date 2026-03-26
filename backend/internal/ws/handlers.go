@@ -176,6 +176,12 @@ func (c *conn) handleSessionRefreshGit(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionUncommittedFiles(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionUncommittedFilesPayload) (session.UncommittedFilesResult, error) {
+		return c.gitSvc.UncommittedFiles(c.ctx, p.SessionID)
+	})
+}
+
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(c.ctx, p.SessionID)

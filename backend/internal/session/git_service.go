@@ -407,8 +407,24 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	slog.Info("commit created", "session_id", sessionID, "commit", hash)
 
-	// Local sessions are done after commit — their changes are on the main branch.
-	if !isWorktree {
+	if isWorktree {
+		// Broadcast updated dirty state + new commits-ahead count.
+		payload := map[string]any{
+			"sessionId":        sessionID,
+			"state":            dbSess.State,
+			"hasDirtyWorktree": false,
+			"hasUncommitted":   false,
+		}
+		project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
+		if projErr == nil {
+			if ahead, aErr := gitops.CommitsAhead(project.Path, nullStr(dbSess.WorktreeBranch)); aErr == nil {
+				payload["commitsAhead"] = ahead
+			}
+			appendMergeStatus(payload, project.Path, nullStr(dbSess.WorktreeBranch))
+		}
+		g.hub.Broadcast(dbSess.ProjectID, "session.state", payload)
+	} else {
+		// Local sessions are done after commit — their changes are on the main branch.
 		if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
 			State: string(StateDone),
 			ID:    sessionID,
@@ -416,12 +432,44 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 			slog.Warn("persist session state after commit failed", "session_id", sessionID, "error", err)
 		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-			"sessionId": sessionID,
-			"state":     string(StateDone),
+			"sessionId":      sessionID,
+			"state":          string(StateDone),
+			"hasUncommitted": false,
 		})
 	}
 
 	return CommitResult{CommitHash: hash}, nil
+}
+
+// UncommittedFilesResult describes the uncommitted files in a session's working directory.
+type UncommittedFilesResult struct {
+	Files []gitops.FileStatus `json:"files"`
+}
+
+// UncommittedFiles returns the list of uncommitted files for a session.
+func (g *GitService) UncommittedFiles(ctx context.Context, sessionID string) (UncommittedFilesResult, error) {
+	dbSess, err := g.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return UncommittedFilesResult{}, fmt.Errorf("session not found")
+	}
+
+	dir := dbSess.WorkDir
+	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+		dir = wtPath
+	}
+
+	if _, statErr := os.Stat(dir); statErr != nil {
+		return UncommittedFilesResult{Files: []gitops.FileStatus{}}, nil
+	}
+
+	files, err := gitops.UncommittedFiles(dir)
+	if err != nil {
+		return UncommittedFilesResult{}, fmt.Errorf("failed to get uncommitted files: %w", err)
+	}
+	if files == nil {
+		files = []gitops.FileStatus{}
+	}
+	return UncommittedFilesResult{Files: files}, nil
 }
 
 func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string) (msggen.PRDescriptionResult, error) {

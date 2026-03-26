@@ -271,6 +271,22 @@ export async function cleanSession(ws: WsClient, sessionId: string): Promise<Cle
   return ws.request<CleanResult>("session.clean", { sessionId });
 }
 
+export interface FileStatus {
+  path: string;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+}
+
+export interface UncommittedFilesResult {
+  files: FileStatus[];
+}
+
+export async function getUncommittedFiles(
+  ws: WsClient,
+  sessionId: string,
+): Promise<UncommittedFilesResult> {
+  return ws.request<UncommittedFilesResult>("session.uncommitted-files", { sessionId });
+}
+
 export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.refresh-git", { sessionId });
 }

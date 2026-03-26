@@ -4,14 +4,19 @@ import {
   ArrowRight,
   ArrowUp,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   FileDiff,
+  FileMinus,
+  FilePlus,
+  FileQuestion,
+  FileText,
   GitBranch,
   GitCommitHorizontal,
   GitMerge,
   ListTodo,
   Loader2,
-  Minus,
   PanelRightClose,
   RefreshCw,
 } from "lucide-react";
@@ -36,7 +41,48 @@ interface SessionPanelProps {
   onOpenDialog?: (dialog: "pr" | "commit") => void;
 }
 
-function MergeStatusBanner({
+// --- Merge dropdown (shared between ready-to-merge and has-ahead states) ---
+
+function MergeDropdown({
+  git,
+  className,
+}: {
+  git: ReturnType<typeof useGitActions>;
+  className?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("h-5 px-1.5 text-[11px]", className)}
+          disabled={git.merging}
+        >
+          {git.merging ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <GitMerge className="h-3 w-3" />
+          )}
+          Merge
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onClick={() => git.handleMerge(false)} className="text-xs">
+          Merge
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => git.handleMerge(true)} className="text-xs">
+          Merge & clean up
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// --- Branch status: ahead/behind + merge readiness + actions ---
+// Replaces the old separate ahead/behind row + MergeStatusBanner.
+
+function BranchStatus({
   meta,
   git,
   onSendMessage,
@@ -46,24 +92,25 @@ function MergeStatusBanner({
   onSendMessage?: (prompt: string) => void;
 }) {
   const isBusy = meta.state === "running";
+  const ahead = meta.commitsAhead ?? 0;
+  const behind = meta.commitsBehind ?? 0;
 
   if (meta.worktreeMerged) {
     return (
-      <div className="rounded-md border border-[#9ece6a]/20 bg-[#9ece6a]/5 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-[#9ece6a]/80">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Merged
-        </div>
+      <div className="flex items-center gap-2 text-xs text-[#9ece6a]/80">
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+        Merged
       </div>
     );
   }
 
+  // Conflicts — needs attention
   if (meta.mergeStatus === "conflicts") {
     return (
-      <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-amber-500">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          {meta.mergeConflictFiles?.length ?? 0} file(s) have conflicts
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2 text-xs text-amber-500">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>{meta.mergeConflictFiles?.length ?? 0} conflicting files</span>
         </div>
         {meta.mergeConflictFiles && meta.mergeConflictFiles.length > 0 && (
           <ul className="text-[11px] text-amber-400/70 space-y-0.5 pl-5.5">
@@ -78,7 +125,7 @@ function MergeStatusBanner({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+            className="h-5 px-1.5 text-[11px] text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
             onClick={() => {
               const files = meta.mergeConflictFiles?.join(", ") ?? "";
               onSendMessage?.(
@@ -93,105 +140,134 @@ function MergeStatusBanner({
     );
   }
 
-  const hasAhead = (meta.commitsAhead ?? 0) > 0;
-  const hasBehind = (meta.commitsBehind ?? 0) > 0;
+  // No commits ahead — nothing interesting to show
+  if (ahead === 0 && behind === 0) return null;
 
-  if (meta.mergeStatus === "clean" && hasAhead) {
-    return (
-      <div className="rounded-md border border-[#9ece6a]/20 bg-[#9ece6a]/5 px-3 py-2 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-[#9ece6a]">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Ready to merge
-        </div>
-        {!isBusy && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-[#9ece6a] hover:bg-[#9ece6a]/10"
-                disabled={git.merging}
-              >
-                {git.merging ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <GitMerge className="h-3 w-3" />
-                )}
-                Merge
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => git.handleMerge(false)} className="text-xs">
-                Merge
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => git.handleMerge(true)} className="text-xs">
-                Merge & clean up
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+  // Build compact status line: "↑2 ahead  ↓1 behind" with action
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-3 text-xs">
+        {ahead > 0 && (
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <ArrowUp className="h-3 w-3" />
+            {ahead} ahead
+          </span>
+        )}
+        {behind > 0 && (
+          <span className="flex items-center gap-1 text-[#7aa2f7]/80">
+            <ArrowDown className="h-3 w-3" />
+            {behind} behind
+          </span>
+        )}
+        {meta.mergeStatus === "clean" && ahead > 0 && (
+          <CheckCircle2 className="h-3 w-3 text-[#9ece6a]/70 ml-auto shrink-0" />
         )}
       </div>
-    );
-  }
 
-  if (hasBehind) {
-    return (
-      <div className="rounded-md border border-[#7aa2f7]/20 bg-[#7aa2f7]/5 px-3 py-2 space-y-2">
-        <div className="flex items-center gap-2 text-xs text-[#7aa2f7]">
-          <ArrowDown className="h-3.5 w-3.5" />
-          Behind by {meta.commitsBehind} commit(s)
+      {/* Actions based on state */}
+      {!isBusy && (
+        <div className="flex items-center gap-1.5">
+          {behind > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[11px] text-[#7aa2f7] hover:bg-[#7aa2f7]/10"
+              onClick={git.handleRebase}
+              disabled={git.rebasing}
+            >
+              {git.rebasing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              Rebase
+            </Button>
+          )}
+          {ahead > 0 && (
+            <MergeDropdown
+              git={git}
+              className={
+                meta.mergeStatus === "clean" ? "text-[#9ece6a] hover:bg-[#9ece6a]/10" : undefined
+              }
+            />
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// --- Uncommitted files section ---
+
+const uncommittedFileIconMap = {
+  modified: FileText,
+  added: FilePlus,
+  deleted: FileMinus,
+  renamed: FileText,
+  untracked: FileQuestion,
+} as const;
+
+function UncommittedFileIcon({ status }: { status: string }) {
+  const Icon = uncommittedFileIconMap[status as keyof typeof uncommittedFileIconMap] ?? FileText;
+  return <Icon className="h-3 w-3 shrink-0" />;
+}
+
+function UncommittedSection({
+  meta,
+  git,
+  onOpenDialog,
+}: {
+  meta: SessionMetadata;
+  git: ReturnType<typeof useGitActions>;
+  onOpenDialog?: (dialog: "pr" | "commit") => void;
+}) {
+  const isBusy = meta.state === "running";
+
+  if (!git.uncommittedFiles || git.uncommittedFiles.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={git.toggleUncommittedExpanded}
+          className="flex items-center gap-1.5 text-xs text-amber-500/80 hover:text-amber-500 transition-colors min-w-0"
+        >
+          {git.uncommittedExpanded ? (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0" />
+          )}
+          <span>{git.uncommittedFiles.length} uncommitted</span>
+        </button>
         {!isBusy && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs text-[#7aa2f7] hover:bg-[#7aa2f7]/10"
-            onClick={git.handleRebase}
-            disabled={git.rebasing}
+            className="h-5 px-1.5 text-[11px] ml-auto shrink-0"
+            onClick={() => onOpenDialog?.("commit")}
+            disabled={git.committing}
           >
-            {git.rebasing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            Rebase
+            {git.committing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <GitCommitHorizontal className="h-3 w-3" />
+            )}
+            Commit
           </Button>
         )}
       </div>
-    );
-  }
-
-  if (hasAhead) {
-    return (
-      <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 space-y-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Minus className="h-3.5 w-3.5" />
-          Up to date
-        </div>
-        {!isBusy && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" disabled={git.merging}>
-                {git.merging ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <GitMerge className="h-3 w-3" />
-                )}
-                Merge
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => git.handleMerge(false)} className="text-xs">
-                Merge
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => git.handleMerge(true)} className="text-xs">
-                Merge & clean up
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-    );
-  }
-
-  return null;
+      {git.uncommittedExpanded && (
+        <ul className="text-[11px] space-y-0.5 pl-5">
+          {git.uncommittedFiles.map((f) => (
+            <li key={f.path} className="flex items-center gap-1.5 text-muted-foreground">
+              <UncommittedFileIcon status={f.status} />
+              <span className="font-mono truncate">{f.path}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
+
+// --- Main git section ---
 
 function GitSection({
   meta,
@@ -214,7 +290,7 @@ function GitSection({
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Git
         </span>
-        {isWorktree && !isBusy && (
+        {isWorktree && (
           <button
             type="button"
             onClick={git.handleRefreshGit}
@@ -236,32 +312,17 @@ function GitSection({
         </div>
       )}
 
-      {/* Commits ahead/behind */}
-      {isWorktree && !meta.worktreeMerged && !meta.branchMissing && (
-        <div className="flex items-center gap-3 text-xs">
-          {(meta.commitsAhead ?? 0) > 0 && (
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <ArrowUp className="h-3 w-3" />
-              {meta.commitsAhead} ahead
-            </span>
-          )}
-          {(meta.commitsBehind ?? 0) > 0 && (
-            <span className="flex items-center gap-1 text-[#7aa2f7]/80">
-              <ArrowDown className="h-3 w-3" />
-              {meta.commitsBehind} behind
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Merge status banner */}
-      {isWorktree && !meta.branchMissing && (
-        <MergeStatusBanner meta={meta} git={git} onSendMessage={onSendMessage} />
-      )}
-
       {meta.branchMissing && <div className="text-xs text-[#f7768e]/80">Branch missing</div>}
 
-      {/* Diff summary */}
+      {/* 1. Uncommitted changes — highest priority, blocks other operations */}
+      <UncommittedSection meta={meta} git={git} onOpenDialog={onOpenDialog} />
+
+      {/* 2. Branch status: ahead/behind + merge/rebase */}
+      {isWorktree && !meta.branchMissing && (
+        <BranchStatus meta={meta} git={git} onSendMessage={onSendMessage} />
+      )}
+
+      {/* 3. Diff summary (committed changes vs base) */}
       {git.diffTotals && (git.diffTotals.add > 0 || git.diffTotals.del > 0) && (
         <button
           type="button"
@@ -278,7 +339,7 @@ function GitSection({
         </button>
       )}
 
-      {/* PR */}
+      {/* 4. PR */}
       {meta.prUrl ? (
         <a
           href={meta.prUrl}
@@ -305,27 +366,11 @@ function GitSection({
           Create PR
         </Button>
       ) : null}
-
-      {/* Commit for non-worktree sessions */}
-      {!isWorktree && !isBusy && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs w-full justify-start"
-          onClick={() => onOpenDialog?.("commit")}
-          disabled={git.committing}
-        >
-          {git.committing ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <GitCommitHorizontal className="h-3 w-3" />
-          )}
-          Commit
-        </Button>
-      )}
     </div>
   );
 }
+
+// --- Todos ---
 
 function TodoSection({ todos }: { todos: TodoItem[] }) {
   const completed = todos.filter((t) => t.status === "completed").length;
@@ -349,6 +394,8 @@ function TodoSection({ todos }: { todos: TodoItem[] }) {
   );
 }
 
+// --- Panel container ---
+
 export function SessionPanel({
   meta,
   todos,
@@ -359,6 +406,8 @@ export function SessionPanel({
 }: SessionPanelProps) {
   const isWorktree = !!meta.worktreeBranch;
   const hasTodos = todos !== null && todos.length > 0;
+  const isDirty = meta.hasUncommitted || meta.hasDirtyWorktree;
+  const showGit = isWorktree || isDirty || !hasTodos;
 
   return (
     <div className="w-72 border-l flex flex-col h-full bg-background shrink-0">
@@ -376,7 +425,7 @@ export function SessionPanel({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-        {(isWorktree || !hasTodos) && (
+        {showGit && (
           <GitSection
             meta={meta}
             git={git}
@@ -387,7 +436,7 @@ export function SessionPanel({
 
         {hasTodos && (
           <>
-            {isWorktree && <div className="border-t" />}
+            {showGit && <div className="border-t" />}
             <TodoSection todos={todos} />
           </>
         )}
@@ -395,6 +444,8 @@ export function SessionPanel({
     </div>
   );
 }
+
+// --- Collapsed strip ---
 
 interface CollapsedSessionStripProps {
   meta: SessionMetadata;
