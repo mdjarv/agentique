@@ -30,7 +30,10 @@ func setupTestServer(t *testing.T) (*httptest.Server, func()) {
 	}
 
 	queries := store.New(db)
-	srv := server.New(queries)
+	srv, err := server.New(queries, server.Config{})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 	ts := httptest.NewServer(srv)
 
 	cleanup := func() {

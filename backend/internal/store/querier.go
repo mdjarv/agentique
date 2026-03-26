@@ -10,16 +10,29 @@ import (
 
 type Querier interface {
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
+	CountUsers(ctx context.Context) (int64, error)
+	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
+	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error
+	DeleteAuthSession(ctx context.Context, token string) error
+	DeleteExpiredAuthSessions(ctx context.Context) error
 	DeleteProject(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
+	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
+	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
+	GetInviteToken(ctx context.Context, token string) (InviteToken, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
+	GetUser(ctx context.Context, id string) (User, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	ListAllSessions(ctx context.Context) ([]Session, error)
+	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error)
+	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
@@ -29,6 +42,7 @@ type Querier interface {
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
+	UpdateCredentialSignCount(ctx context.Context, arg UpdateCredentialSignCountParams) error
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdateSessionAutoApprove(ctx context.Context, arg UpdateSessionAutoApproveParams) error
@@ -39,6 +53,7 @@ type Querier interface {
 	UpdateSessionPermissionMode(ctx context.Context, arg UpdateSessionPermissionModeParams) error
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
+	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }
 
 var _ Querier = (*Queries)(nil)

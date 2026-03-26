@@ -1,6 +1,8 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
+import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { LoginPage } from "~/components/auth/LoginPage";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
@@ -10,12 +12,35 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
 import { useProjects } from "~/hooks/useProjects";
 import { useAppStore } from "~/stores/app-store";
+import { useAuthStore } from "~/stores/auth-store";
 
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
 function RootLayout() {
+  const { authEnabled, authenticated, loading, checkAuth } = useAuthStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (authEnabled && !authenticated) {
+    return <LoginPage />;
+  }
+
+  return <AuthenticatedLayout />;
+}
+
+function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
   useProjectGitPolling(projects);

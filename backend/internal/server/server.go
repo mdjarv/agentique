@@ -2,25 +2,36 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/allbin/agentique/backend/internal/auth"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/ws"
 )
 
+// Config holds server configuration.
+type Config struct {
+	AuthEnabled bool
+	RPID        string
+	RPOrigins   []string
+}
+
 // Server is the main HTTP server for the Agentique backend.
 type Server struct {
-	mux *http.ServeMux
-	mgr *session.Manager
+	mux            *http.ServeMux
+	mgr            *session.Manager
+	authSvc        *auth.Service
+	allowedOrigins map[string]bool
 }
 
 // New creates a new Server with all routes registered.
-func New(queries *store.Queries) *Server {
+func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	hub := ws.NewHub()
 	mgr := session.NewManager(queries, hub)
@@ -64,7 +75,30 @@ func New(queries *store.Queries) *Server {
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})
 
 	s := &Server{mux: mux, mgr: mgr}
-	return s
+
+	if cfg.AuthEnabled {
+		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
+		if err != nil {
+			return nil, fmt.Errorf("auth service: %w", err)
+		}
+		authSvc.RegisterRoutes(mux)
+		s.authSvc = authSvc
+		s.allowedOrigins = make(map[string]bool, len(cfg.RPOrigins))
+		for _, o := range cfg.RPOrigins {
+			s.allowedOrigins[o] = true
+		}
+	} else {
+		// When auth is disabled, serve a static status endpoint.
+		mux.HandleFunc("GET /api/auth/status", func(w http.ResponseWriter, r *http.Request) {
+			respondJSON(w, http.StatusOK, map[string]any{
+				"authEnabled":   false,
+				"authenticated": true,
+				"userCount":     0,
+			})
+		})
+	}
+
+	return s, nil
 }
 
 // Shutdown gracefully closes all live sessions.
@@ -76,17 +110,32 @@ func (s *Server) Shutdown() {
 
 // ServeHTTP implements the http.Handler interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(requestLogger(s.mux)).ServeHTTP(w, r)
+	var chain http.Handler = requestLogger(s.mux)
+	if s.authSvc != nil {
+		chain = s.authSvc.Middleware(chain)
+	}
+	s.corsMiddleware(chain).ServeHTTP(w, r)
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			// When auth is enabled, only allow configured origins.
+			if len(s.allowedOrigins) > 0 && !s.allowedOrigins[origin] {
+				http.Error(w, "origin not allowed", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
