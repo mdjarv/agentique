@@ -1,10 +1,24 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpToLine,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
+import { type ReactNode, useCallback, useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { fetchProject, pushProject } from "~/lib/project-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
+import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type ChatState, useChatStore } from "~/stores/chat-store";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
@@ -171,6 +185,124 @@ function truncatePath(path: string): string {
   return path.replace(/^\/home\/[^/]+/, "~").replace(/^\/Users\/[^/]+/, "~");
 }
 
+// --- Project git status row ---
+
+function ProjectGitStatusRow({
+  gitStatus,
+  projectId,
+}: {
+  gitStatus: ProjectGitStatus;
+  projectId: string;
+}) {
+  const ws = useWebSocket();
+  const [pushing, setPushing] = useState(false);
+  const [fetching, setFetching] = useState(false);
+
+  const handlePush = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setPushing(true);
+      try {
+        const status = await pushProject(ws, projectId);
+        useAppStore.getState().setProjectGitStatus(status);
+        toast.success("Pushed");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Push failed");
+      } finally {
+        setPushing(false);
+      }
+    },
+    [ws, projectId],
+  );
+
+  const handleFetch = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setFetching(true);
+      try {
+        const status = await fetchProject(ws, projectId);
+        useAppStore.getState().setProjectGitStatus(status);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Fetch failed");
+      } finally {
+        setFetching(false);
+      }
+    },
+    [ws, projectId],
+  );
+
+  const ahead = gitStatus.aheadRemote > 0;
+  const behind = gitStatus.behindRemote > 0;
+  const dirty = gitStatus.uncommittedCount > 0;
+  const hasAnything = ahead || behind || dirty;
+
+  return (
+    <div className="flex items-center gap-1.5 pl-7 pr-2 pb-1 text-xs text-muted-foreground">
+      <GitBranch className="h-3 w-3 shrink-0" />
+      <span className="font-mono truncate">{gitStatus.branch}</span>
+
+      {hasAnything && (
+        <span className="flex items-center gap-1.5 ml-auto shrink-0">
+          {dirty && (
+            <span className="text-[#e0af68]/80" title={`${gitStatus.uncommittedCount} uncommitted`}>
+              {gitStatus.uncommittedCount}M
+            </span>
+          )}
+          {ahead && (
+            <span className="flex items-center gap-0.5" title={`${gitStatus.aheadRemote} ahead`}>
+              <ArrowUp className="size-2.5" />
+              {gitStatus.aheadRemote}
+            </span>
+          )}
+          {behind && (
+            <span
+              className="flex items-center gap-0.5 text-[#7aa2f7]/80"
+              title={`${gitStatus.behindRemote} behind`}
+            >
+              <ArrowDown className="size-2.5" />
+              {gitStatus.behindRemote}
+            </span>
+          )}
+        </span>
+      )}
+
+      {/* Action buttons — always visible when relevant */}
+      {gitStatus.hasRemote && (
+        <span className={cn("flex items-center gap-0.5 shrink-0", !hasAnything && "ml-auto")}>
+          {ahead && (
+            <button
+              type="button"
+              onClick={handlePush}
+              disabled={pushing}
+              className="p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
+              title="Push"
+            >
+              {pushing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ArrowUpToLine className="h-3 w-3" />
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleFetch}
+            disabled={fetching}
+            className="p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
+            title="Fetch"
+          >
+            {fetching ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function ProjectTreeItem({
   project,
   isActive,
@@ -180,6 +312,7 @@ export function ProjectTreeItem({
   isNewChatActive,
 }: ProjectTreeItemProps) {
   const navigate = useNavigate();
+  const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
 
   const sessionIds = useChatStore(
     useShallow((s) =>
@@ -207,7 +340,7 @@ export function ProjectTreeItem({
 
   return (
     <div>
-      {/* Project row */}
+      {/* Project header — row 1: name + path, row 2: git status */}
       {/* biome-ignore lint/a11y/useSemanticElements: div with role=button avoids nested button HTML issues */}
       <div
         role="button"
@@ -220,7 +353,8 @@ export function ProjectTreeItem({
           }
         }}
         className={cn(
-          "w-full text-left rounded-md px-2 py-1.5 max-md:py-2.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
+          "w-full text-left rounded-md px-2 pt-1.5 max-md:pt-2.5 group hover:bg-sidebar-accent transition-colors cursor-pointer",
+          gitStatus?.branch ? "pb-0.5" : "pb-1.5 max-md:pb-2.5",
           isActive && "bg-sidebar-accent",
         )}
       >
@@ -252,6 +386,9 @@ export function ProjectTreeItem({
           </span>
         </div>
       </div>
+
+      {/* Git status row */}
+      {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />}
 
       {/* Sessions + new chat */}
       {isExpanded && (

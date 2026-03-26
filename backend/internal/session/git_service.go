@@ -178,7 +178,10 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		})
 	}
 
-	go g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
+	go func() {
+		g.broadcastSiblingGitStatus(ctx, dbSess.ProjectID, sessionID, project.Path)
+		g.broadcastProjectGitStatus(dbSess.ProjectID, project.Path)
+	}()
 
 	return MergeResult{Status: "merged", CommitHash: hash}, nil
 }
@@ -449,6 +452,10 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 			"state":          string(StateDone),
 			"hasUncommitted": false,
 		})
+		project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
+		if projErr == nil {
+			go g.broadcastProjectGitStatus(dbSess.ProjectID, project.Path)
+		}
 	}
 
 	return CommitResult{CommitHash: hash}, nil
@@ -621,6 +628,37 @@ func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) err
 
 	g.hub.Broadcast(ss.ProjectID, "session.state", payload)
 	return nil
+}
+
+// broadcastProjectGitStatus computes and broadcasts the project-level git status.
+// Called after operations that change the main branch (merge, commit).
+func (g *GitService) broadcastProjectGitStatus(projectID, projectPath string) {
+	status := map[string]any{"projectId": projectID}
+
+	branch, err := gitops.CurrentBranch(projectPath)
+	if err != nil {
+		return // not a git repo
+	}
+	status["branch"] = branch
+
+	if files, err := gitops.UncommittedFiles(projectPath); err == nil {
+		status["uncommittedCount"] = len(files)
+	}
+
+	hasRemote, err := gitops.HasRemote(projectPath, "origin")
+	if err != nil || !hasRemote {
+		status["hasRemote"] = false
+		g.hub.Broadcast(projectID, "project.git-status", status)
+		return
+	}
+	status["hasRemote"] = true
+
+	if ahead, behind, err := gitops.AheadBehindRemote(projectPath); err == nil {
+		status["aheadRemote"] = ahead
+		status["behindRemote"] = behind
+	}
+
+	g.hub.Broadcast(projectID, "project.git-status", status)
 }
 
 // broadcastSiblingGitStatus recomputes and broadcasts git status for all worktree sessions

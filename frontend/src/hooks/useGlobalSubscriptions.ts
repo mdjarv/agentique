@@ -3,10 +3,12 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
+import { getProjectGitStatus } from "~/lib/project-actions";
 import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
 import { copyToClipboard, sessionShortId } from "~/lib/utils";
+import type { ProjectGitStatus } from "~/stores/app-store";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -96,6 +98,9 @@ function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string
       console.error("session.list failed", err);
       toast.error("Failed to load sessions");
     });
+  getProjectGitStatus(ws, projectId)
+    .then((status) => useAppStore.getState().setProjectGitStatus(status))
+    .catch(() => {}); // silent — project may not be a git repo
 }
 
 /**
@@ -236,6 +241,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
       },
     );
 
+    const unsubProjectGit = ws.subscribe("project.git-status", (payload: ProjectGitStatus) => {
+      useAppStore.getState().setProjectGitStatus(payload);
+    });
+
     const unsubReconnect = ws.onConnect(() => {
       // Re-subscribe all known projects on reconnect
       subscribedRef.current.clear();
@@ -259,6 +268,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPrUpdated();
       unsubPermission();
       unsubQuestion();
+      unsubProjectGit();
       unsubReconnect();
     };
   }, [ws, navigate]);

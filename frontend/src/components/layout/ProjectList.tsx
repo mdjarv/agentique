@@ -2,6 +2,7 @@ import { useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTreeItem } from "~/components/layout/ProjectTreeItem";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
+import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
 import { useProjects } from "~/hooks/useProjects";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -22,6 +23,7 @@ export function ProjectList() {
     select: (s) => s.location.pathname.endsWith("/session/new"),
   });
   useGlobalSubscriptions(projects);
+  useProjectGitPolling(projects);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.id)),

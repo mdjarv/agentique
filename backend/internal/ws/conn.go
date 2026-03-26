@@ -6,8 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -18,26 +19,28 @@ const (
 )
 
 type conn struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	ws     *websocket.Conn
-	svc    *session.Service
-	gitSvc *session.GitService
-	hub    *Hub
-	sendCh chan any
-	mu     sync.Mutex
+	ctx           context.Context
+	cancel        context.CancelFunc
+	ws            *websocket.Conn
+	svc           *session.Service
+	gitSvc        *session.GitService
+	projectGitSvc *project.GitService
+	hub           *Hub
+	sendCh        chan any
+	mu            sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, hub *Hub) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, hub *Hub) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
-		ctx:    ctx,
-		cancel: cancel,
-		ws:     ws,
-		svc:    svc,
-		gitSvc: gitSvc,
-		hub:    hub,
-		sendCh: make(chan any, sendBufSize),
+		ctx:           ctx,
+		cancel:        cancel,
+		ws:            ws,
+		svc:           svc,
+		gitSvc:        gitSvc,
+		projectGitSvc: projectGitSvc,
+		hub:           hub,
+		sendCh:        make(chan any, sendBufSize),
 	}
 }
 
@@ -164,6 +167,14 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionGenerateCommitMsg(msg)
 	case "session.uncommitted-files":
 		c.handleSessionUncommittedFiles(msg)
+	case "project.git-status":
+		c.handleProjectGitStatus(msg)
+	case "project.fetch":
+		c.handleProjectFetch(msg)
+	case "project.push":
+		c.handleProjectPush(msg)
+	case "project.commit":
+		c.handleProjectCommit(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
