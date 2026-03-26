@@ -24,43 +24,18 @@ var followCmd = &cobra.Command{
 }
 
 func runFollow(cmd *cobra.Command, args []string) error {
-	base := baseURL()
-	prefix := args[0]
-
-	// Resolve short ID to full ID + get project ID.
 	client := &http.Client{}
-	sessions, err := fetchJSON[[]sessionBrief](client, base+"/api/sessions")
+	target, err := resolveSession(client, args[0])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to fetch sessions: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return nil
 	}
 
-	var target sessionBrief
-	var matches []sessionBrief
-	for _, s := range sessions {
-		if strings.HasPrefix(s.ID, prefix) {
-			matches = append(matches, s)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		fmt.Fprintf(os.Stderr, "no session matching %q\n", prefix)
-		return nil
-	case 1:
-		target = matches[0]
-	default:
-		fmt.Fprintf(os.Stderr, "ambiguous prefix %q matches %d sessions:\n", prefix, len(matches))
-		for _, m := range matches {
-			fmt.Fprintf(os.Stderr, "  %s  %s\n", m.ID[:8], m.Name)
-		}
-		return nil
-	}
-
-	fmt.Printf("following %s (%s) [%s]\n\n", target.Name, target.ID[:8], target.State)
+	fmt.Printf("following %s (%s) [%s]\n\n", target.Name, shortID(target.ID), target.State)
 
 	// Connect to SSE.
-	endpoint := base + "/api/sessions/events?project=" + target.ProjectID
-	resp, err := client.Get(endpoint)
+	base := baseURL()
+	resp, err := client.Get(base + "/api/sessions/events?project=" + target.ProjectID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to connect to event stream: %v\n", err)
 		return nil
@@ -112,7 +87,6 @@ func printSSEEvent(eventType, data, sessionID string) {
 		return
 	}
 
-	// All payloads have sessionId — filter.
 	var header struct {
 		SessionID string `json:"sessionId"`
 	}
@@ -139,7 +113,7 @@ func printSSEEvent(eventType, data, sessionID string) {
 		if err := json.Unmarshal(envelope.Payload, &p); err != nil {
 			return
 		}
-		printSessionEvent(p.Event)
+		renderEvent(p.Event)
 
 	case "session.renamed":
 		var p struct {
@@ -153,62 +127,5 @@ func printSSEEvent(eventType, data, sessionID string) {
 
 	default:
 		fmt.Printf("[%s]\n", eventType)
-	}
-}
-
-func printSessionEvent(raw json.RawMessage) {
-	var typed struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		return
-	}
-
-	switch typed.Type {
-	case "text":
-		var e struct {
-			Content string `json:"content"`
-		}
-		json.Unmarshal(raw, &e)
-		fmt.Print(e.Content)
-
-	case "thinking":
-		// Skip thinking blocks — too verbose for follow.
-
-	case "tool_use":
-		var e struct {
-			ToolName string `json:"toolName"`
-			Category string `json:"category"`
-		}
-		json.Unmarshal(raw, &e)
-		fmt.Printf("\n[tool] %s\n", e.ToolName)
-
-	case "tool_result":
-		// Skip tool results — too verbose.
-
-	case "result":
-		var e struct {
-			StopReason string `json:"stopReason"`
-		}
-		json.Unmarshal(raw, &e)
-		fmt.Printf("\n[result] stop=%s\n", e.StopReason)
-
-	case "error":
-		var e struct {
-			Message string `json:"message"`
-			Fatal   bool   `json:"fatal"`
-		}
-		json.Unmarshal(raw, &e)
-		label := "error"
-		if e.Fatal {
-			label = "FATAL"
-		}
-		fmt.Printf("[%s] %s\n", label, e.Message)
-
-	case "rate_limit":
-		// Skip rate limit events.
-
-	case "stream":
-		// Skip raw stream events.
 	}
 }

@@ -114,6 +114,83 @@ func (h *Handler) HandleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleHistory returns the turn history for a session.
+func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	result, err := h.svc.GetHistory(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// HandleStop stops a running session.
+func (h *Handler) HandleStop(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	if err := h.svc.StopSession(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+// HandleQuery sends a prompt to a session.
+func (h *Handler) HandleQuery(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Prompt == "" {
+		respondError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+
+	if err := h.svc.QuerySession(r.Context(), id, body.Prompt, nil); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+// HandleDelete deletes a session and cleans up its worktree.
+func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	if err := h.svc.DeleteSession(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -128,4 +129,87 @@ func fetchJSON[T any](client *http.Client, url string) (T, error) {
 		return zero, err
 	}
 	return result, nil
+}
+
+func postJSON(client *http.Client, url string, body any) error {
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			return err
+		}
+	}
+	resp, err := client.Post(url, "application/json", &buf)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		if errResp.Error != "" {
+			return fmt.Errorf("%s", errResp.Error)
+		}
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func doRequest(client *http.Client, method, url string) error {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		if errResp.Error != "" {
+			return fmt.Errorf("%s", errResp.Error)
+		}
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func resolveSession(client *http.Client, prefix string) (sessionBrief, error) {
+	sessions, err := fetchJSON[[]sessionBrief](client, baseURL()+"/api/sessions")
+	if err != nil {
+		return sessionBrief{}, fmt.Errorf("failed to fetch sessions: %w", err)
+	}
+
+	var matches []sessionBrief
+	for _, s := range sessions {
+		if strings.HasPrefix(s.ID, prefix) {
+			matches = append(matches, s)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return sessionBrief{}, fmt.Errorf("no session matching %q", prefix)
+	case 1:
+		return matches[0], nil
+	default:
+		lines := make([]string, len(matches))
+		for i, m := range matches {
+			lines[i] = fmt.Sprintf("  %s  %s", m.ID[:8], m.Name)
+		}
+		return sessionBrief{}, fmt.Errorf("ambiguous prefix %q matches %d sessions:\n%s",
+			prefix, len(matches), strings.Join(lines, "\n"))
+	}
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
