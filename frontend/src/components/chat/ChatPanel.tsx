@@ -2,10 +2,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
+import { ChangesView } from "~/components/chat/ChangesView";
 import { CommitDialog } from "~/components/chat/CommitDialog";
 import { ContextBar } from "~/components/chat/ContextBar";
 import { CreatePRDialog } from "~/components/chat/CreatePRDialog";
-import { DiffView } from "~/components/chat/DiffView";
 import {
   type ComposerHandle,
   type EffortLevel,
@@ -33,7 +33,7 @@ import {
   submitQuery,
 } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
-import { copyToClipboard, sessionShortId } from "~/lib/utils";
+import { cn, copyToClipboard, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -76,8 +76,13 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
+  const [activeTab, setActiveTab] = useState<"chat" | "changes">("chat");
 
   const git = useGitActions(sessionId);
+
+  const totalChangedFiles =
+    (git.diffResult?.files.length ?? 0) + (git.uncommittedDiffResult?.files.length ?? 0);
+  const hasChanges = totalChangedFiles > 0;
 
   // Reset transient UI state on session switch
   const prevSessionIdRef = useRef(sessionId);
@@ -86,6 +91,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       prevSessionIdRef.current = sessionId;
       setMobileSessionOpen(false);
       setActiveDialog("none");
+      setActiveTab("chat");
     }
   }, [sessionId]);
 
@@ -248,68 +254,101 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           onOpenPanel={() => setMobileSessionOpen(true)}
         />
 
-        {/* DiffView — full width in main column, triggered from panel */}
-        {git.showDiff && git.diffResult && <DiffView result={git.diffResult} />}
+        {/* Tab bar — only when there are changes to view */}
+        {hasChanges && (
+          <div className="shrink-0 flex border-b text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab("chat")}
+              className={cn(
+                "px-3 py-1.5 transition-colors",
+                activeTab === "chat"
+                  ? "text-foreground border-b-2 border-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("changes")}
+              className={cn(
+                "px-3 py-1.5 transition-colors",
+                activeTab === "changes"
+                  ? "text-foreground border-b-2 border-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Changes
+            </button>
+          </div>
+        )}
 
-        <MessageList
-          turns={session.turns}
-          sessionId={sessionId}
-          projectId={projectId}
-          currentAssistantText={currentAssistantText}
-          sessionState={sessionState}
-          projectPath={project?.path}
-          worktreePath={session.meta.worktreePath}
-          isLoadingHistory={isLoadingHistory}
-        />
-        {session.pendingApproval &&
-          (session.pendingApproval.toolName === "ExitPlanMode" ? (
-            <PlanReviewBanner
+        {activeTab === "changes" && hasChanges ? (
+          <ChangesView committedDiff={git.diffResult} uncommittedDiff={git.uncommittedDiffResult} />
+        ) : (
+          <>
+            <MessageList
+              turns={session.turns}
               sessionId={sessionId}
-              approval={session.pendingApproval}
-              onStartFresh={handleStartFresh}
-            />
-          ) : (
-            <ApprovalBanner
-              sessionId={sessionId}
-              approval={session.pendingApproval}
+              projectId={projectId}
+              currentAssistantText={currentAssistantText}
+              sessionState={sessionState}
               projectPath={project?.path}
               worktreePath={session.meta.worktreePath}
+              isLoadingHistory={isLoadingHistory}
             />
-          ))}
-        {session.pendingQuestion && (
-          <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
+            {session.pendingApproval &&
+              (session.pendingApproval.toolName === "ExitPlanMode" ? (
+                <PlanReviewBanner
+                  sessionId={sessionId}
+                  approval={session.pendingApproval}
+                  onStartFresh={handleStartFresh}
+                />
+              ) : (
+                <ApprovalBanner
+                  sessionId={sessionId}
+                  approval={session.pendingApproval}
+                  projectPath={project?.path}
+                  worktreePath={session.meta.worktreePath}
+                />
+              ))}
+            {session.pendingQuestion && (
+              <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
+            )}
+            {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
+            {queuedMessages.length > 0 && (
+              <MessageQueue
+                messages={queuedMessages}
+                onCancel={(msg) => {
+                  useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
+                  composerRef.current?.setText(msg.prompt);
+                }}
+              />
+            )}
+            {contextUsage && <ContextBar usage={contextUsage} />}
+            <MessageComposer
+              ref={composerRef}
+              onSend={handleSend}
+              disabled={sessionState === "merging"}
+              isRunning={sessionState === "running"}
+              onInterrupt={handleInterrupt}
+              placeholder={
+                sessionState === "merging"
+                  ? "Git operation in progress..."
+                  : resumePlaceholders[sessionState]
+              }
+              worktree={isWorktree}
+              planMode={planMode}
+              onPlanModeChange={handlePlanModeChange}
+              autoApprove={autoApprove}
+              onAutoApproveChange={handleAutoApproveChange}
+              model={(session.meta.model as ModelId) ?? undefined}
+              onModelChange={handleModelChange}
+              effort={(session.meta.effort as EffortLevel) ?? ""}
+            />
+          </>
         )}
-        {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
-        {queuedMessages.length > 0 && (
-          <MessageQueue
-            messages={queuedMessages}
-            onCancel={(msg) => {
-              useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
-              composerRef.current?.setText(msg.prompt);
-            }}
-          />
-        )}
-        {contextUsage && <ContextBar usage={contextUsage} />}
-        <MessageComposer
-          ref={composerRef}
-          onSend={handleSend}
-          disabled={sessionState === "merging"}
-          isRunning={sessionState === "running"}
-          onInterrupt={handleInterrupt}
-          placeholder={
-            sessionState === "merging"
-              ? "Git operation in progress..."
-              : resumePlaceholders[sessionState]
-          }
-          worktree={isWorktree}
-          planMode={planMode}
-          onPlanModeChange={handlePlanModeChange}
-          autoApprove={autoApprove}
-          onAutoApproveChange={handleAutoApproveChange}
-          model={(session.meta.model as ModelId) ?? undefined}
-          onModelChange={handleModelChange}
-          effort={(session.meta.effort as EffortLevel) ?? ""}
-        />
       </div>
 
       {/* Right panel — git + todos */}
@@ -326,6 +365,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                 onCollapse={() => setMobileSessionOpen(false)}
                 onSendMessage={handleSend}
                 onOpenDialog={(d) => setActiveDialog(d)}
+                onShowChanges={() => setActiveTab("changes")}
               />
             </SheetContent>
           </Sheet>
@@ -344,6 +384,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               onCollapse={() => setPanelCollapsed(true)}
               onSendMessage={handleSend}
               onOpenDialog={(d) => setActiveDialog(d)}
+              onShowChanges={() => setActiveTab("changes")}
             />
           </div>
         ))}
