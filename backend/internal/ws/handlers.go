@@ -1,10 +1,13 @@
 package ws
 
 import (
+	"fmt"
+
 	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/msggen"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 func (c *conn) handleProjectSubscribe(msg ClientMessage) {
@@ -218,5 +221,20 @@ func (c *conn) handleProjectPush(msg ClientMessage) {
 func (c *conn) handleProjectCommit(msg ClientMessage) {
 	handleRequest(c, msg, func(p ProjectCommitPayload) (project.CommitResult, error) {
 		return c.projectGitSvc.Commit(c.ctx, p.ProjectID, p.Message)
+	})
+}
+
+func (c *conn) handleProjectReorder(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectReorderPayload) (struct{}, error) {
+		for i, id := range p.ProjectIDs {
+			err := c.queries.UpdateProjectSortOrder(c.ctx, store.UpdateProjectSortOrderParams{
+				SortOrder: int64(i + 1),
+				ID:        id,
+			})
+			if err != nil {
+				return struct{}{}, fmt.Errorf("update sort order: %w", err)
+			}
+		}
+		return struct{}{}, nil
 	})
 }

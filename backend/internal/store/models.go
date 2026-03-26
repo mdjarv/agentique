@@ -18,6 +18,7 @@ type Project struct {
 	CreatedAt             string `json:"created_at"`
 	UpdatedAt             string `json:"updated_at"`
 	Slug                  string `json:"slug"`
+	SortOrder             int64  `json:"sort_order"`
 }
 
 type Session struct {
@@ -40,6 +41,7 @@ type Session struct {
 	Effort          string         `json:"effort"`
 	MaxBudget       float64        `json:"max_budget"`
 	MaxTurns        int64          `json:"max_turns"`
+	LastQueryAt     sql.NullString `json:"last_query_at"`
 }
 
 type SessionEvent struct {

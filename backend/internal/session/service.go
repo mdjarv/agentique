@@ -46,6 +46,7 @@ type SessionInfo struct {
 	PrUrl           string  `json:"prUrl,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	UpdatedAt       string  `json:"updatedAt"`
+	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -227,6 +228,8 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 		return fmt.Errorf("query failed: %w", err)
 	}
 
+	_ = s.queries.UpdateSessionLastQueryAt(ctx, sessionID)
+
 	if sess.QueryCount() == 1 {
 		go s.autoName(sessionID, sess.ProjectID, prompt)
 	}
@@ -347,6 +350,7 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			PrUrl:          ss.PrUrl,
 			CreatedAt:      ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
+			LastQueryAt:    nullStr(ss.LastQueryAt),
 		}
 
 		if summary, ok := costMap[ss.ID]; ok {

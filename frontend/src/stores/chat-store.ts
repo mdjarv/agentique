@@ -85,6 +85,7 @@ export interface SessionMetadata {
   prUrl?: string;
   createdAt: string;
   updatedAt?: string;
+  lastQueryAt?: string;
 }
 
 export interface PendingApproval {

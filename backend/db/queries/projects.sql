@@ -1,5 +1,5 @@
 -- name: ListProjects :many
-SELECT * FROM projects ORDER BY updated_at DESC;
+SELECT * FROM projects ORDER BY sort_order ASC, updated_at DESC;
 
 -- name: GetProject :one
 SELECT * FROM projects WHERE id = ?;
@@ -12,6 +12,9 @@ INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING *;
 
 -- name: UpdateProjectSlug :one
 UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
+-- name: UpdateProjectSortOrder :exec
+UPDATE projects SET sort_order = ? WHERE id = ?;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?;

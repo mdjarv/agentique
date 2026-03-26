@@ -10,7 +10,7 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug
+INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order
 `
 
 type CreateProjectParams struct {
@@ -38,6 +38,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -52,7 +53,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects WHERE id = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -68,12 +69,13 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects WHERE slug = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -89,12 +91,13 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug FROM projects ORDER BY updated_at DESC
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects ORDER BY sort_order ASC, updated_at DESC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -116,6 +119,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -131,7 +135,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 const updateProjectSlug = `-- name: UpdateProjectSlug :one
-UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug
+UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order
 `
 
 type UpdateProjectSlugParams struct {
@@ -152,6 +156,21 @@ func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.SortOrder,
 	)
 	return i, err
+}
+
+const updateProjectSortOrder = `-- name: UpdateProjectSortOrder :exec
+UPDATE projects SET sort_order = ? WHERE id = ?
+`
+
+type UpdateProjectSortOrderParams struct {
+	SortOrder int64  `json:"sort_order"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateProjectSortOrder, arg.SortOrder, arg.ID)
+	return err
 }

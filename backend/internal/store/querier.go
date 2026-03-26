@@ -28,7 +28,9 @@ type Querier interface {
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
+	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdateSessionAutoApprove(ctx context.Context, arg UpdateSessionAutoApproveParams) error
+	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg UpdateSessionPRUrlParams) error
