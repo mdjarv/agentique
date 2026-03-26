@@ -118,7 +118,7 @@ export function MessageList({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative"
+      className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative [scrollbar-gutter:stable]"
     >
       <div className="p-4 space-y-8 min-w-0">
         {turns.map((turn, i) => {
