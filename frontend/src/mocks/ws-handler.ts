@@ -302,6 +302,60 @@ index abc1234..def5678 100644
       });
       break;
 
+    case "project.tracked-files":
+      respond(client, msg.id, {
+        files: [
+          "README.md",
+          "CLAUDE.md",
+          "justfile",
+          "backend/cmd/agentique/main.go",
+          "backend/internal/server/server.go",
+          "backend/internal/session/service.go",
+          "backend/internal/session/state.go",
+          "backend/internal/ws/hub.go",
+          "backend/internal/ws/handler.go",
+          "backend/internal/store/queries.sql.go",
+          "backend/db/queries/sessions.sql",
+          "backend/db/queries/projects.sql",
+          "backend/db/migrations/001_initial.sql",
+          "frontend/src/main.tsx",
+          "frontend/src/index.css",
+          "frontend/src/components/chat/MessageComposer.tsx",
+          "frontend/src/components/chat/AutocompletePopup.tsx",
+          "frontend/src/components/chat/TurnBlock.tsx",
+          "frontend/src/components/chat/MessageList.tsx",
+          "frontend/src/components/layout/ProjectList.tsx",
+          "frontend/src/hooks/useWebSocket.ts",
+          "frontend/src/hooks/useAutocomplete.ts",
+          "frontend/src/stores/chat-store.ts",
+          "frontend/src/stores/app-store.ts",
+          "frontend/src/lib/ws-client.ts",
+          "frontend/src/lib/project-actions.ts",
+          "frontend/vite.config.ts",
+          "frontend/package.json",
+          "docs/websocket-protocol.md",
+          "docs/database-schema.md",
+        ],
+      });
+      break;
+
+    case "project.commands":
+      respond(client, msg.id, {
+        commands: [
+          { name: "commit", source: "project" },
+          { name: "review-pr", source: "project" },
+          { name: "simplify", source: "user" },
+          { name: "got", source: "user" },
+          { name: "tdd", source: "user" },
+          { name: "challenge", source: "user" },
+          { name: "investigate", source: "project" },
+          { name: "reflect-session", source: "user" },
+          { name: "diff-review", source: "user" },
+          { name: "fact-check", source: "user" },
+        ],
+      });
+      break;
+
     case "session.set-model":
     case "session.set-permission":
     case "session.set-auto-approve":

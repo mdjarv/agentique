@@ -140,15 +140,25 @@ export function useAutocomplete({
         fetchFiles();
         return;
       }
-      const items = filterFiles(cachedFiles, query);
-      setState({ isOpen: items.length > 0, items, selectedIndex: 0, triggerType: "@" });
+      const items = filterFiles(cachedFiles, query).reverse();
+      setState({
+        isOpen: items.length > 0,
+        items,
+        selectedIndex: items.length - 1,
+        triggerType: "@",
+      });
     } else {
       if (cachedCommands === null) {
         fetchCommands();
         return;
       }
-      const items = filterCommands(cachedCommands, query);
-      setState({ isOpen: items.length > 0, items, selectedIndex: 0, triggerType: "/" });
+      const items = filterCommands(cachedCommands, query).reverse();
+      setState({
+        isOpen: items.length > 0,
+        items,
+        selectedIndex: items.length - 1,
+        triggerType: "/",
+      });
     }
   }, [text, cachedFiles, cachedCommands, textareaRef, fetchFiles, fetchCommands]);
 
