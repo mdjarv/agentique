@@ -431,7 +431,10 @@ export const useChatStore = create<ChatState>((set) => ({
         contextUsage: {
           contextWindow,
           inputTokens: patch.inputTokens ?? prev?.inputTokens ?? 0,
-          outputTokens: patch.outputTokens ?? prev?.outputTokens ?? 0,
+          outputTokens:
+          patch.outputTokens !== undefined
+            ? Math.max(patch.outputTokens, prev?.outputTokens ?? 0)
+            : (prev?.outputTokens ?? 0),
         },
       });
     }),
