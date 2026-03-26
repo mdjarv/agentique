@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
 import { CommitDialog } from "~/components/chat/CommitDialog";
+import { ContextBar } from "~/components/chat/ContextBar";
 import { CreatePRDialog } from "~/components/chat/CreatePRDialog";
 import { DiffView } from "~/components/chat/DiffView";
 import {
@@ -62,6 +63,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const autoApprove = session?.autoApprove ?? false;
   const queuedMessages = session?.queuedMessages ?? [];
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
+  const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const hasTodos = todos !== null && todos.length > 0;
   const isWorktree = !!session?.meta.worktreeBranch;
   const isDirty = session?.meta.hasUncommitted || session?.meta.hasDirtyWorktree;
@@ -246,6 +248,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             }}
           />
         )}
+        {contextUsage && <ContextBar usage={contextUsage} />}
         <MessageComposer
           ref={composerRef}
           onSend={handleSend}
