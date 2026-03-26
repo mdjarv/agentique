@@ -4,10 +4,11 @@ import { cn } from "~/lib/utils";
 import type { ContextUsage } from "~/stores/chat-store";
 
 interface ContextBarProps {
-  usage: ContextUsage;
+  usage?: ContextUsage | null;
+  compacting?: boolean;
 }
 
-function formatTokens(n: number): string {
+export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
   return String(n);
@@ -53,7 +54,18 @@ function getTier(pct: number): Tier {
   };
 }
 
-export function ContextBar({ usage }: ContextBarProps) {
+export function ContextBar({ usage, compacting }: ContextBarProps) {
+  if (compacting) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1">
+        <div className="h-1.5 flex-1 rounded-full overflow-hidden compact-stripes" />
+        <span className="text-[11px] text-blue-400 shrink-0">Compacting...</span>
+      </div>
+    );
+  }
+
+  if (!usage) return null;
+
   const used = usage.inputTokens + usage.outputTokens;
   const pct = Math.min(Math.round((used / usage.contextWindow) * 100), 100);
   const tier = getTier(pct);

@@ -52,12 +52,7 @@ export function SessionStatusBadge({
   switch (state) {
     case "running":
       return (
-        <Badge
-          bg="bg-[#73daca]/15"
-          text="text-[#73daca]"
-          title="Running"
-          dim={dim}
-        >
+        <Badge bg="bg-[#73daca]/15" text="text-[#73daca]" title="Running" dim={dim}>
           <Loader className="size-3 animate-spin" />
         </Badge>
       );
@@ -74,34 +69,19 @@ export function SessionStatusBadge({
       );
     case "done":
       return (
-        <Badge
-          bg="bg-emerald-500/15"
-          text="text-emerald-500"
-          title="Done"
-          dim={dim}
-        >
+        <Badge bg="bg-emerald-500/15" text="text-emerald-500" title="Done" dim={dim}>
           <Check className="size-3" />
         </Badge>
       );
     case "stopped":
       return (
-        <Badge
-          bg="bg-[#a9b1d6]/10"
-          text="text-[#a9b1d6]/80"
-          title="Stopped"
-          dim={dim}
-        >
+        <Badge bg="bg-[#a9b1d6]/10" text="text-[#a9b1d6]/80" title="Stopped" dim={dim}>
           <Pause className="size-3" />
         </Badge>
       );
     case "failed":
       return (
-        <Badge
-          bg="bg-[#f7768e]/15"
-          text="text-[#f7768e]"
-          title="Failed"
-          dim={dim}
-        >
+        <Badge bg="bg-[#f7768e]/15" text="text-[#f7768e]" title="Failed" dim={dim}>
           <TriangleAlert className="size-3" />
         </Badge>
       );
@@ -113,18 +93,9 @@ export function SessionStatusBadge({
             ? "Creating PR"
             : "Merging";
       const OpIcon =
-        gitOperation === "rebasing"
-          ? RefreshCw
-          : gitOperation === "merging"
-            ? GitMerge
-            : Loader;
+        gitOperation === "rebasing" ? RefreshCw : gitOperation === "merging" ? GitMerge : Loader;
       return (
-        <Badge
-          bg="bg-[#7aa2f7]/15"
-          text="text-[#7aa2f7]"
-          title={opLabel}
-          dim={dim}
-        >
+        <Badge bg="bg-[#7aa2f7]/15" text="text-[#7aa2f7]" title={opLabel} dim={dim}>
           <OpIcon className="size-3 animate-spin" />
         </Badge>
       );

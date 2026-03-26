@@ -26,5 +26,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     category: raw.category as string | undefined,
     errorType: raw.errorType as string | undefined,
     retryAfterSecs: raw.retryAfterSecs as number | undefined,
+    trigger: raw.trigger as string | undefined,
+    preTokens: raw.preTokens as number | undefined,
   };
 }

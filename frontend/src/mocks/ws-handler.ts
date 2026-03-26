@@ -57,6 +57,16 @@ function schedulePushEvents(client: WsClientConnection, projectId: string) {
         });
       }, 500);
     }
+
+    // Simulate mid-compaction state for the query optimizer session
+    if (session.id === SESSION_IDS.queryOptimizer) {
+      setTimeout(() => {
+        push(client, "session.event", {
+          sessionId: session.id,
+          event: { type: "compact_status", status: "compacting" },
+        });
+      }, 600);
+    }
   }
 }
 

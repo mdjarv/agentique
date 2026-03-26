@@ -1,6 +1,17 @@
-import { AlertTriangle, Bot, Check, Copy, FileText, Loader2, User, Wrench } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  Copy,
+  FileText,
+  Loader2,
+  Scissors,
+  User,
+  Wrench,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { formatTokens } from "~/components/chat/ContextBar";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
 import { PromptGroupProvider } from "~/components/chat/PromptCard";
@@ -31,8 +42,12 @@ interface ErrorSegment {
   kind: "error";
   events: ChatEvent[];
 }
+interface CompactSegment {
+  kind: "compact";
+  event: ChatEvent;
+}
 
-type Segment = ActivitySegment | TextSegment | ErrorSegment;
+type Segment = ActivitySegment | TextSegment | ErrorSegment | CompactSegment;
 type SegmentKind = Segment["kind"];
 
 function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
@@ -47,6 +62,8 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
       return "error";
     case "result":
       return "result";
+    case "compact_boundary":
+      return "compact";
     default:
       return "skip";
   }
@@ -104,6 +121,9 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
         case "error":
           segments.push({ kind: "error", events: [event] });
           break;
+        case "compact":
+          segments.push({ kind: "compact", event });
+          break;
       }
     }
   }
@@ -122,6 +142,8 @@ function segmentKey(seg: Segment, i: number): string {
       return seg.events[0]?.id ?? `seg-${i}`;
     case "text":
       return `text-${i}`;
+    case "compact":
+      return seg.event.id ?? `compact-${i}`;
   }
 }
 
@@ -137,6 +159,7 @@ interface TurnBlockProps {
   projectPath?: string;
   worktreePath?: string;
   showEvents?: boolean;
+  postCompactTokens?: number;
 }
 
 function CollapsibleGroup({
@@ -362,6 +385,22 @@ const TextSegmentView = memo(function TextSegmentView({
   );
 });
 
+function CompactDivider({ event, postTokens }: { event: ChatEvent; postTokens?: number }) {
+  const preTokens = event.preTokens ?? 0;
+  const label = event.trigger === "manual" ? "Manual compaction" : "Auto-compacted";
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground/80 py-2 -mx-4">
+      <div className="flex-1 border-t border-dashed border-blue-500/30" />
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-blue-400">
+        <Scissors className="size-3" />
+        {label} from {formatTokens(preTokens)}
+        {postTokens != null ? ` to ${formatTokens(postTokens)}` : ""} tokens
+      </span>
+      <div className="flex-1 border-t border-dashed border-blue-500/30" />
+    </div>
+  );
+}
+
 function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
   return (
     <>
@@ -396,6 +435,7 @@ export const TurnBlock = memo(function TurnBlock({
   projectPath,
   worktreePath,
   showEvents = true,
+  postCompactTokens,
 }: TurnBlockProps) {
   const [copied, setCopied] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -549,6 +589,14 @@ export const TurnBlock = memo(function TurnBlock({
                   );
                 case "error":
                   return <ErrorSegmentView key={segmentKey(seg, i)} segment={seg} />;
+                case "compact":
+                  return (
+                    <CompactDivider
+                      key={segmentKey(seg, i)}
+                      event={seg.event}
+                      postTokens={postCompactTokens}
+                    />
+                  );
               }
             })}
 
