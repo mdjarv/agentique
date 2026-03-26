@@ -72,6 +72,17 @@ type WireStreamEvent struct {
 	Event json.RawMessage `json:"event"`
 }
 
+type WireCompactStatusEvent struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+type WireCompactBoundaryEvent struct {
+	Type      string `json:"type"`
+	Trigger   string `json:"trigger"`
+	PreTokens int    `json:"preTokens"`
+}
+
 func (e WireTextEvent) WireType() string       { return e.Type }
 func (e WireThinkingEvent) WireType() string   { return e.Type }
 func (e WireToolUseEvent) WireType() string    { return e.Type }
@@ -79,7 +90,9 @@ func (e WireToolResultEvent) WireType() string { return e.Type }
 func (e WireResultEvent) WireType() string     { return e.Type }
 func (e WireErrorEvent) WireType() string      { return e.Type }
 func (e WireRateLimitEvent) WireType() string  { return e.Type }
-func (e WireStreamEvent) WireType() string     { return e.Type }
+func (e WireStreamEvent) WireType() string          { return e.Type }
+func (e WireCompactStatusEvent) WireType() string   { return e.Type }
+func (e WireCompactBoundaryEvent) WireType() string { return e.Type }
 
 // ToWireEvent converts a claudecli-go event to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
@@ -143,6 +156,17 @@ func ToWireEvent(event claudecli.Event) any {
 		return WireStreamEvent{
 			Type:  "stream",
 			Event: e.Event,
+		}
+	case *claudecli.CompactStatusEvent:
+		return WireCompactStatusEvent{
+			Type:   "compact_status",
+			Status: e.Status,
+		}
+	case *claudecli.CompactBoundaryEvent:
+		return WireCompactBoundaryEvent{
+			Type:      "compact_boundary",
+			Trigger:   e.Trigger,
+			PreTokens: e.PreTokens,
 		}
 	default:
 		return nil

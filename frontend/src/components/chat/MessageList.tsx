@@ -123,6 +123,18 @@ export function MessageList({
       <div className="p-4 space-y-8 min-w-0">
         {turns.map((turn, i) => {
           const eager = i >= turns.length - EAGER_TURN_COUNT;
+          // If this turn has a compact_boundary, find the post-compaction
+          // token count from the next turn's result event.
+          const hasCompact = turn.events.some((e) => e.type === "compact_boundary");
+          let postCompactTokens: number | undefined;
+          if (hasCompact) {
+            const nextResult = turns[i + 1]?.events.find(
+              (e) => e.type === "result" && e.contextWindow && e.contextWindow > 0,
+            );
+            if (nextResult) {
+              postCompactTokens = (nextResult.inputTokens ?? 0) + (nextResult.outputTokens ?? 0);
+            }
+          }
           const block = (
             <TurnBlock
               key={turn.id}
@@ -135,6 +147,7 @@ export function MessageList({
               projectPath={projectPath}
               worktreePath={worktreePath}
               showEvents={showEvents}
+              postCompactTokens={postCompactTokens}
             />
           );
           if (eager) return block;

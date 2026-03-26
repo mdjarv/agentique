@@ -26,6 +26,7 @@ const S = {
   paymentFlow: "ccc00001-0000-4000-8000-000000000001",
   imageGallery: "ccc00002-0000-4000-8000-000000000002",
   schedulerTests: "ddd00001-0000-4000-8000-000000000001",
+  queryOptimizer: "bbb00006-0000-4000-8000-000000000006",
 } as const;
 
 export { S as SESSION_IDS, P as PROJECT_IDS };
@@ -156,6 +157,24 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     turnCount: 1,
     createdAt: daysAgo(5),
     updatedAt: daysAgo(4),
+  },
+  {
+    id: S.queryOptimizer,
+    projectId: P.agentique,
+    name: "Optimize query planner",
+    state: "idle",
+    connected: true,
+    model: "opus",
+    permissionMode: "default",
+    autoApprove: true,
+    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
+    worktreeBranch: "session-query-optimizer",
+    commitsAhead: 5,
+    commitsBehind: 0,
+    hasUncommitted: false,
+    turnCount: 3,
+    createdAt: hoursAgo(4),
+    updatedAt: hoursAgo(0.5),
   },
 ];
 
@@ -355,14 +374,26 @@ function toolResult(toolId: string, content: string): WireEvent {
   };
 }
 
-function result(duration: number): WireEvent {
+function result(
+  duration: number,
+  ctx?: { contextWindow: number; inputTokens: number; outputTokens: number },
+): WireEvent {
   return {
     type: "result",
     cost: 0,
     duration,
     usage: { inputTokens: Math.floor(duration * 2.5), outputTokens: Math.floor(duration * 0.8) },
     stopReason: "end_turn",
+    ...(ctx && {
+      contextWindow: ctx.contextWindow,
+      inputTokens: ctx.inputTokens,
+      outputTokens: ctx.outputTokens,
+    }),
   };
+}
+
+function compactBoundary(trigger: "manual" | "auto", preTokens: number): WireEvent {
+  return { type: "compact_boundary", trigger, preTokens };
 }
 
 function errorEvent(message: string, fatal = false): WireEvent {
@@ -1000,6 +1031,181 @@ alltix-api/internal/scheduler/cron.go:67:\t\tNextRun\t\t\t66.7%`,
   },
 ];
 
+const queryOptimizerTurns: MockTurn[] = [
+  {
+    prompt:
+      "Refactor the SQL query planner to use a cost-based optimizer instead of the current heuristic approach",
+    events: [
+      thinking(
+        "This is a significant refactor. I need to understand the current query planner, the AST representation, and how queries flow through the system. Let me start by reading the existing code.",
+      ),
+      (() => {
+        const id = "mock-tool-qo-01";
+        return toolUse("Read", { file_path: "internal/planner/planner.go" }, "file_read", id);
+      })(),
+      toolResult(
+        "mock-tool-qo-01",
+        "package planner\n\n// Planner uses heuristic rules to choose join order and index selection.\ntype Planner struct {\n\ttables  map[string]*TableStats\n\tindexes map[string][]*Index\n}\n\nfunc (p *Planner) Plan(stmt *ast.SelectStmt) (*Plan, error) {\n\t// Current: always use left-deep join trees, pick first matching index\n\t...\n}",
+      ),
+      (() => {
+        const id = "mock-tool-qo-02";
+        return toolUse("Grep", { pattern: "func.*Plan\\(", path: "internal/" }, "file_read", id);
+      })(),
+      toolResult(
+        "mock-tool-qo-02",
+        "internal/planner/planner.go:45: func (p *Planner) Plan(stmt *ast.SelectStmt) (*Plan, error)\ninternal/planner/join.go:12: func (p *Planner) PlanJoin(tables []*Table) (*JoinPlan, error)\ninternal/planner/index.go:8: func (p *Planner) PlanIndexScan(t *Table, pred *ast.Predicate) (*IndexPlan, error)\ninternal/executor/executor.go:23: func (e *Executor) Execute(plan *Plan) (*Result, error)",
+      ),
+      (() => {
+        const id = "mock-tool-qo-03";
+        return toolUse("Read", { file_path: "internal/planner/join.go" }, "file_read", id);
+      })(),
+      toolResult(
+        "mock-tool-qo-03",
+        "package planner\n\n// PlanJoin picks join order using a fixed left-to-right strategy.\nfunc (p *Planner) PlanJoin(tables []*Table) (*JoinPlan, error) {\n\tvar plan JoinPlan\n\tfor i, t := range tables {\n\t\tif i == 0 {\n\t\t\tplan.Root = &ScanNode{Table: t}\n\t\t\tcontinue\n\t\t}\n\t\tplan.Root = &JoinNode{\n\t\t\tLeft:  plan.Root,\n\t\t\tRight: &ScanNode{Table: t},\n\t\t\tType:  NestedLoopJoin,\n\t\t}\n\t}\n\treturn &plan, nil\n}",
+      ),
+      text(
+        "I see the current planner uses a naive left-to-right join ordering and always picks nested loop joins. I'll implement a cost-based optimizer using dynamic programming for join ordering (like System R) and a cost model based on table statistics.\n\nHere's my plan:\n1. Add a `CostModel` that estimates row counts and I/O costs\n2. Implement DP-based join enumeration\n3. Add index selection based on selectivity estimates\n4. Keep the heuristic path as a fallback for queries with >8 tables",
+      ),
+      (() => {
+        const id = "mock-tool-qo-04";
+        return toolUse(
+          "Write",
+          {
+            file_path: "internal/planner/cost.go",
+            content:
+              "package planner\n\n// CostModel estimates the cost of query plan operators.\ntype CostModel struct {\n\tstats map[string]*TableStats\n}\n\nfunc (c *CostModel) ScanCost(t *Table) float64 { ... }\nfunc (c *CostModel) JoinCost(left, right PlanNode, jtype JoinType) float64 { ... }\nfunc (c *CostModel) IndexScanCost(t *Table, idx *Index, selectivity float64) float64 { ... }",
+          },
+          "file_write",
+          id,
+        );
+      })(),
+      toolResult("mock-tool-qo-04", "File written successfully."),
+      (() => {
+        const id = "mock-tool-qo-05";
+        return toolUse(
+          "Write",
+          {
+            file_path: "internal/planner/dp_join.go",
+            content:
+              "package planner\n\n// DPJoinEnumerator uses dynamic programming to find optimal join orders.\n// Based on the System R algorithm with pruning for large join graphs.\ntype DPJoinEnumerator struct {\n\tcost  *CostModel\n\tmemo  map[tableSet]*dpEntry\n}\n\nfunc (d *DPJoinEnumerator) Enumerate(tables []*Table, preds []*JoinPred) (*JoinPlan, error) { ... }",
+          },
+          "file_write",
+          id,
+        );
+      })(),
+      toolResult("mock-tool-qo-05", "File written successfully."),
+      result(65000, { contextWindow: 200000, inputTokens: 142000, outputTokens: 28000 }),
+    ],
+  },
+  {
+    prompt: "Continue — implement the cost estimation and wire it into the existing executor",
+    events: [
+      thinking(
+        "Now I need to implement the actual cost estimation logic, update the planner to use it, and make sure the executor can handle the new plan types. This involves touching several files.",
+      ),
+      (() => {
+        const id = "mock-tool-qo-06";
+        return toolUse("Read", { file_path: "internal/planner/stats.go" }, "file_read", id);
+      })(),
+      toolResult(
+        "mock-tool-qo-06",
+        "package planner\n\ntype TableStats struct {\n\tRowCount    int64\n\tAvgRowSize  int\n\tDistinct    map[string]int64  // column -> distinct value count\n\tHistograms  map[string]*Histogram\n}\n\ntype Histogram struct {\n\tBuckets []Bucket\n}\n\ntype Bucket struct {\n\tLower, Upper interface{}\n\tCount        int64\n\tDistinct     int64\n}",
+      ),
+      (() => {
+        const id = "mock-tool-qo-07";
+        return toolUse(
+          "Edit",
+          {
+            file_path: "internal/planner/cost.go",
+            old_string: "func (c *CostModel) ScanCost(t *Table) float64 { ... }",
+            new_string:
+              "func (c *CostModel) ScanCost(t *Table) float64 {\n\ts := c.stats[t.Name]\n\tif s == nil { return 1000 }\n\treturn float64(s.RowCount) * float64(s.AvgRowSize) / pageSize\n}",
+          },
+          "file_write",
+          id,
+        );
+      })(),
+      toolResult("mock-tool-qo-07", "File edited successfully."),
+      (() => {
+        const id = "mock-tool-qo-08";
+        return toolUse(
+          "Edit",
+          {
+            file_path: "internal/planner/planner.go",
+            old_string: "// Current: always use left-deep join trees",
+            new_string: "// Use cost-based optimizer with DP join enumeration",
+          },
+          "file_write",
+          id,
+        );
+      })(),
+      toolResult("mock-tool-qo-08", "File edited successfully."),
+      (() => {
+        const id = "mock-tool-qo-09";
+        return toolUse(
+          "Bash",
+          {
+            command: "cd /home/user/git/agentique && go test ./internal/planner/... -v -count=1",
+            description: "Run planner tests",
+          },
+          "command",
+          id,
+        );
+      })(),
+      toolResult(
+        "mock-tool-qo-09",
+        "=== RUN   TestCostModelScan\n--- PASS: TestCostModelScan (0.00s)\n=== RUN   TestDPJoinTwoTables\n--- PASS: TestDPJoinTwoTables (0.00s)\n=== RUN   TestDPJoinThreeTables\n--- PASS: TestDPJoinThreeTables (0.01s)\n=== RUN   TestPlannerEndToEnd\n--- PASS: TestPlannerEndToEnd (0.02s)\nok  \tagentique/internal/planner\t0.089s",
+      ),
+      text(
+        "All planner tests pass. The cost-based optimizer is wired in and producing better join orders for the test queries. The 3-table join test now correctly chooses hash join for the large table pair instead of nested loop.",
+      ),
+      result(78000, { contextWindow: 200000, inputTokens: 185000, outputTokens: 7000 }),
+      compactBoundary("auto", 192000),
+    ],
+  },
+  {
+    prompt: "Add benchmarks comparing the old heuristic planner vs the new cost-based optimizer",
+    events: [
+      thinking("Context was compacted. I'll add benchmarks to quantify the improvement."),
+      (() => {
+        const id = "mock-tool-qo-10";
+        return toolUse(
+          "Write",
+          {
+            file_path: "internal/planner/bench_test.go",
+            content:
+              'package planner_test\n\nimport "testing"\n\nfunc BenchmarkHeuristicPlanner(b *testing.B) {\n\tfor i := 0; i < b.N; i++ {\n\t\tp := NewHeuristicPlanner(testStats)\n\t\tp.Plan(fiveTableJoin)\n\t}\n}\n\nfunc BenchmarkCostBasedPlanner(b *testing.B) {\n\tfor i := 0; i < b.N; i++ {\n\t\tp := NewCostPlanner(testStats)\n\t\tp.Plan(fiveTableJoin)\n\t}\n}',
+          },
+          "file_write",
+          id,
+        );
+      })(),
+      toolResult("mock-tool-qo-10", "File written successfully."),
+      (() => {
+        const id = "mock-tool-qo-11";
+        return toolUse(
+          "Bash",
+          {
+            command:
+              "cd /home/user/git/agentique && go test ./internal/planner/... -bench=. -benchmem -count=3",
+            description: "Run planner benchmarks",
+          },
+          "command",
+          id,
+        );
+      })(),
+      toolResult(
+        "mock-tool-qo-11",
+        "goos: linux\ngoarch: amd64\npkg: agentique/internal/planner\nBenchmarkHeuristicPlanner-16    \t  125834\t      9487 ns/op\t    4096 B/op\t      52 allocs/op\nBenchmarkCostBasedPlanner-16    \t   89245\t     13421 ns/op\t    8192 B/op\t      78 allocs/op\nPASS\nok  \tagentique/internal/planner\t4.231s",
+      ),
+      text(
+        "Benchmarks show the cost-based planner is ~40% slower in planning time (13.4us vs 9.5us) but this is negligible compared to query execution time. The real win is in execution — the cost-based planner picks significantly better join orders:\n\n| Query | Heuristic | Cost-based | Speedup |\n|-------|-----------|------------|--------|\n| 3-table join | 45ms | 12ms | 3.7x |\n| 5-table join | 890ms | 95ms | 9.4x |\n| Star schema | 2.1s | 180ms | 11.7x |\n\nThe DP enumeration adds memory overhead (8KB vs 4KB) but this is trivial. For queries with >8 tables, we fall back to the heuristic to keep planning time bounded.",
+      ),
+      result(42000, { contextWindow: 200000, inputTokens: 58000, outputTokens: 12000 }),
+    ],
+  },
+];
+
 export const MOCK_TURNS: Record<string, MockTurn[]> = {
   [S.authRefactor]: authRefactorTurns,
   [S.wsReconnect]: wsReconnectTurns,
@@ -1009,4 +1215,5 @@ export const MOCK_TURNS: Record<string, MockTurn[]> = {
   [S.paymentFlow]: paymentFlowTurns,
   [S.imageGallery]: imageGalleryTurns,
   [S.schedulerTests]: schedulerTestsTurns,
+  [S.queryOptimizer]: queryOptimizerTurns,
 };

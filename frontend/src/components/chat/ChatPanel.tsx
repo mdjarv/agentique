@@ -68,6 +68,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const draft = useChatStore((s) => s.sessions[sessionId]?.draft ?? "");
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
+  const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
   const hasTodos = todos !== null && todos.length > 0;
   const isWorktree = !!session?.meta.worktreeBranch;
   const isDirty = session?.meta.hasUncommitted || session?.meta.hasDirtyWorktree;
@@ -335,20 +336,24 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                 }}
               />
             )}
-            {contextUsage && <ContextBar usage={contextUsage} />}
+            {(contextUsage || compacting) && (
+              <ContextBar usage={contextUsage} compacting={compacting} />
+            )}
             <MessageComposer
               projectId={projectId}
               ref={composerRef}
               onSend={handleSend}
               initialText={draft}
               onTextPersist={handleTextPersist}
-              disabled={sessionState === "merging"}
+              disabled={sessionState === "merging" || compacting}
               isRunning={sessionState === "running"}
               onInterrupt={handleInterrupt}
               placeholder={
-                sessionState === "merging"
-                  ? "Git operation in progress..."
-                  : resumePlaceholders[sessionState]
+                compacting
+                  ? "Compacting context..."
+                  : sessionState === "merging"
+                    ? "Git operation in progress..."
+                    : resumePlaceholders[sessionState]
               }
               worktree={isWorktree}
               planMode={planMode}

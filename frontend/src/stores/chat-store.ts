@@ -18,7 +18,9 @@ export interface ChatEvent {
     | "result"
     | "error"
     | "rate_limit"
-    | "stream";
+    | "stream"
+    | "compact_status"
+    | "compact_boundary";
   content?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
@@ -37,6 +39,8 @@ export interface ChatEvent {
   category?: string;
   errorType?: string;
   retryAfterSecs?: number;
+  trigger?: string;
+  preTokens?: number;
 }
 
 export interface Attachment {
@@ -148,6 +152,7 @@ export interface SessionData {
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
   draft: string;
+  compacting: boolean;
 }
 
 const emptySessionData = (meta: SessionMetadata): SessionData => ({
@@ -163,6 +168,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   todos: null,
   contextUsage: null,
   draft: "",
+  compacting: false,
 });
 
 // --- Todo extraction helpers ---
@@ -210,6 +216,7 @@ function extractContextUsageFromTurns(turns: Turn[]): ContextUsage | null {
     if (!events) continue;
     for (let j = events.length - 1; j >= 0; j--) {
       const event = events[j];
+      if (event?.type === "compact_boundary") return null;
       if (event?.type === "result" && event.contextWindow && event.contextWindow > 0) {
         return {
           contextWindow: event.contextWindow,
@@ -524,6 +531,11 @@ export const useChatStore = create<ChatState>((set) => ({
         });
       }
       if (event.type === "stream") return s;
+      if (event.type === "compact_status") {
+        return updateSession(s, sessionId, {
+          compacting: event.status === "compacting",
+        });
+      }
 
       const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
@@ -554,6 +566,10 @@ export const useChatStore = create<ChatState>((set) => ({
             outputTokens: event.outputTokens ?? 0,
           };
         }
+      }
+      if (event.type === "compact_boundary") {
+        patch.contextUsage = null;
+        patch.compacting = false;
       }
 
       return updateSession(s, sessionId, patch);
