@@ -75,6 +75,7 @@ export interface SessionMetadata {
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
+  completedAt?: string;
   commitsAhead?: number;
   commitsBehind?: number;
   branchMissing?: boolean;
@@ -275,6 +276,7 @@ export interface ChatState {
         | "connected"
         | "hasDirtyWorktree"
         | "worktreeMerged"
+        | "completedAt"
         | "hasUncommitted"
         | "commitsAhead"
         | "commitsBehind"

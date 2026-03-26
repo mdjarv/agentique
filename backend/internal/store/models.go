@@ -41,6 +41,7 @@ type Session struct {
 	Effort          string         `json:"effort"`
 	MaxBudget       float64        `json:"max_budget"`
 	MaxTurns        int64          `json:"max_turns"`
+	CompletedAt     sql.NullString `json:"completed_at"`
 	LastQueryAt     sql.NullString `json:"last_query_at"`
 }
 

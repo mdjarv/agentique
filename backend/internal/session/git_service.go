@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/msggen"
@@ -140,9 +141,15 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	if err := g.queries.SetWorktreeMerged(ctx, sessionID); err != nil {
 		slog.Warn("persist worktree merged failed", "session_id", sessionID, "error", err)
 	}
+	if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
+		slog.Warn("persist session completed on merge failed", "session_id", sessionID, "error", err)
+	}
 	if live != nil {
 		live.MarkMerged()
+		live.MarkCompleted()
 	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	if cleanup {
 		if wtPath != "" {
@@ -163,6 +170,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			"sessionId":      sessionID,
 			"state":          string(StateStopped),
 			"worktreeMerged": true,
+			"completedAt":    now,
 		})
 	} else {
 		// Use live state if available (UnlockGitOp just set it to idle),
@@ -175,6 +183,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 			"sessionId":      sessionID,
 			"state":          state,
 			"worktreeMerged": true,
+			"completedAt":    now,
 		})
 	}
 
@@ -468,10 +477,14 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		}); err != nil {
 			slog.Warn("persist session state after commit failed", "session_id", sessionID, "error", err)
 		}
+		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
+			slog.Warn("persist session completed after commit failed", "session_id", sessionID, "error", err)
+		}
 		g.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
 			"sessionId":      sessionID,
 			"state":          string(StateDone),
 			"hasUncommitted": false,
+			"completedAt":    time.Now().UTC().Format(time.RFC3339),
 		})
 		project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr == nil {

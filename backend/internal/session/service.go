@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/gitops"
@@ -39,6 +40,7 @@ type SessionInfo struct {
 	WorktreePath    string  `json:"worktreePath,omitempty"`
 	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
 	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
+	CompletedAt     string  `json:"completedAt,omitempty"`
 	CommitsAhead    int     `json:"commitsAhead"`
 	CommitsBehind   int     `json:"commitsBehind"`
 	BranchMissing   bool    `json:"branchMissing,omitempty"`
@@ -347,6 +349,7 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			WorktreePath:   nullStr(ss.WorktreePath),
 			WorktreeBranch: nullStr(ss.WorktreeBranch),
 			WorktreeMerged: ss.WorktreeMerged != 0,
+			CompletedAt:    nullStr(ss.CompletedAt),
 			PrUrl:          ss.PrUrl,
 			CreatedAt:      ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
@@ -537,11 +540,16 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 	}); err != nil {
 		return fmt.Errorf("update state failed: %w", err)
 	}
+	if err := s.queries.SetSessionCompleted(ctx, sessionID); err != nil {
+		slog.Warn("persist session completed failed", "session_id", sessionID, "error", err)
+	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	s.hub.Broadcast(dbSess.ProjectID, "session.state", map[string]any{
-		"sessionId": sessionID,
-		"state":     string(StateDone),
-		"connected": false,
+		"sessionId":   sessionID,
+		"state":       string(StateDone),
+		"connected":   false,
+		"completedAt": now,
 	})
 
 	return nil
@@ -601,6 +609,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	}
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
+	}
+	if dbSess.CompletedAt.Valid {
+		sess.MarkCompleted()
 	}
 	return sess, nil
 }

@@ -173,6 +173,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
+        completedAt: payload.completedAt,
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,

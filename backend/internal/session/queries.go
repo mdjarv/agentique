@@ -28,12 +28,14 @@ type serviceQueries interface {
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)
+	SetSessionCompleted(ctx context.Context, id string) error
 }
 
 type gitServiceQueries interface {
 	GetSession(ctx context.Context, id string) (store.Session, error)
 	GetProject(ctx context.Context, id string) (store.Project, error)
 	SetWorktreeMerged(ctx context.Context, id string) error
+	SetSessionCompleted(ctx context.Context, id string) error
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg store.UpdateWorktreeBaseSHAParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg store.UpdateSessionPRUrlParams) error
@@ -51,4 +53,6 @@ type sessionQueries interface {
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	GetSession(ctx context.Context, id string) (store.Session, error)
 	GetProject(ctx context.Context, id string) (store.Project, error)
+	SetSessionCompleted(ctx context.Context, id string) error
+	UnsetSessionCompleted(ctx context.Context, id string) error
 }
