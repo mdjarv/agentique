@@ -15,9 +15,9 @@ dev-backend:
 dev-frontend:
     cd frontend && npm run dev
 
-# Frontend with MSW mock backend (no real backend needed)
+# Frontend with MSW mock backend (port 9210, no real backend needed)
 dev-mock:
-    cd frontend && VITE_MSW=true npm run dev
+    cd frontend && VITE_MSW=true npx vite --port 9210
 
 # Stop dev servers
 stop:
