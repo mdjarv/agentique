@@ -44,7 +44,23 @@ export interface ComposerHandle {
   setText: (text: string) => void;
 }
 
-export type EffortLevel = "" | "low" | "medium" | "high";
+export type EffortLevel = "" | "low" | "medium" | "high" | "max";
+
+const EFFORT_LEVELS: EffortLevel[] = ["max", "high", "medium", "low", ""];
+const EFFORT_LABELS: Record<EffortLevel, string> = {
+  "": "Auto",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  max: "Max",
+};
+const EFFORT_COLORS: Record<EffortLevel, string> = {
+  "": "text-muted-foreground",
+  low: "text-sky-500",
+  medium: "text-blue-500",
+  high: "text-orange-500",
+  max: "text-red-500",
+};
 
 interface MessageComposerProps {
   projectId: string;
@@ -416,33 +432,45 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
                 {effort !== undefined &&
                   (onEffortChange ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const levels: EffortLevel[] = ["", "low", "medium", "high"];
-                        const idx = levels.indexOf(effort);
-                        const next = levels[(idx + 1) % levels.length] ?? "";
-                        onEffortChange(next);
-                      }}
-                      className={cn(
-                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                        effort
-                          ? "text-blue-500"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                      )}
-                    >
-                      <Gauge className="h-3 w-3" />
-                      {effort ? `${effort}` : "auto"}
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className={cn(
+                          "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                          "hover:text-foreground hover:bg-muted/80 focus-visible:outline-none",
+                          EFFORT_COLORS[effort],
+                        )}
+                      >
+                        <Gauge className="h-3 w-3" />
+                        {EFFORT_LABELS[effort]}
+                        <ChevronDown className="h-3 w-3" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {EFFORT_LEVELS.map((lvl) => (
+                          <DropdownMenuItem
+                            key={lvl || "auto"}
+                            onClick={() => onEffortChange(lvl)}
+                            className="text-xs gap-2"
+                          >
+                            <Check
+                              className={cn(
+                                "h-3 w-3",
+                                lvl === effort ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                            <span className={EFFORT_COLORS[lvl]}>{EFFORT_LABELS[lvl]}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : (
                     <span
                       className={cn(
                         "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
-                        effort ? "text-blue-500" : "text-muted-foreground",
+                        EFFORT_COLORS[effort],
                       )}
                     >
                       <Gauge className="h-3 w-3" />
-                      {effort ? `${effort}` : "auto"}
+                      {EFFORT_LABELS[effort]}
                     </span>
                   ))}
 

@@ -386,6 +386,8 @@ func resolveEffort(level string) claudecli.EffortLevel {
 		return claudecli.EffortMedium
 	case "high":
 		return claudecli.EffortHigh
+	case "max":
+		return claudecli.EffortMax
 	default:
 		return ""
 	}
