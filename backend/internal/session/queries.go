@@ -26,6 +26,7 @@ type serviceQueries interface {
 	UpdateSessionAutoApprove(ctx context.Context, arg store.UpdateSessionAutoApproveParams) error
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
+	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)
 }
 

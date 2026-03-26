@@ -42,5 +42,8 @@ WHERE state IN ('running', 'merging');
 -- name: ListAllSessions :many
 SELECT * FROM sessions ORDER BY updated_at DESC;
 
+-- name: UpdateSessionLastQueryAt :exec
+UPDATE sessions SET last_query_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

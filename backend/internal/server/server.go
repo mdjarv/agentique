@@ -53,7 +53,7 @@ func New(queries *store.Queries) *Server {
 	mux.HandleFunc("GET /api/sessions/events", sh.HandleEvents)
 
 	projectGitSvc := project.NewGitService(queries, hub)
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Hub: hub}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Hub: hub}
 	mux.Handle("GET /ws", wsh)
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")

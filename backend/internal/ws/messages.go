@@ -196,6 +196,10 @@ type ProjectCommitPayload struct {
 	Message   string `json:"message"`
 }
 
+type ProjectReorderPayload struct {
+	ProjectIDs []string `json:"projectIds"`
+}
+
 // --- Validate methods ---
 
 var (
@@ -421,11 +425,20 @@ func (p *ProjectPushPayload) Validate() error {
 	return nil
 }
 
+var errProjectIDsRequired = errors.New("projectIds is required")
+
 var errProjectIDAndMsgRequired = errors.New("projectId and message are required")
 
 func (p *ProjectCommitPayload) Validate() error {
 	if p.ProjectID == "" || p.Message == "" {
 		return errProjectIDAndMsgRequired
+	}
+	return nil
+}
+
+func (p *ProjectReorderPayload) Validate() error {
+	if len(p.ProjectIDs) == 0 {
+		return errProjectIDsRequired
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/gorilla/websocket"
 )
 
@@ -25,12 +26,13 @@ type conn struct {
 	svc           *session.Service
 	gitSvc        *session.GitService
 	projectGitSvc *project.GitService
+	queries       *store.Queries
 	hub           *Hub
 	sendCh        chan any
 	mu            sync.Mutex
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, hub *Hub) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, hub *Hub) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
 		ctx:           ctx,
@@ -39,6 +41,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		svc:           svc,
 		gitSvc:        gitSvc,
 		projectGitSvc: projectGitSvc,
+		queries:       queries,
 		hub:           hub,
 		sendCh:        make(chan any, sendBufSize),
 	}
@@ -177,6 +180,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleProjectPush(msg)
 	case "project.commit":
 		c.handleProjectCommit(msg)
+	case "project.reorder":
+		c.handleProjectReorder(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)

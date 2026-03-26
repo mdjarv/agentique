@@ -19,6 +19,7 @@ interface AppState {
   addProject: (project: Project) => void;
   updateProject: (project: Project) => void;
   removeProject: (id: string) => void;
+  reorderProjects: (orderedIds: string[]) => void;
   setSidebarOpen: (open: boolean) => void;
   setProjectGitStatus: (status: ProjectGitStatus) => void;
 }
@@ -33,6 +34,20 @@ export const useAppStore = create<AppState>((set) => ({
   updateProject: (project) =>
     set((state) => ({ projects: state.projects.map((p) => (p.id === project.id ? project : p)) })),
   removeProject: (id) => set((state) => ({ projects: state.projects.filter((p) => p.id !== id) })),
+  reorderProjects: (orderedIds) =>
+    set((state) => {
+      const byId = new Map(state.projects.map((p) => [p.id, p]));
+      const reordered: Project[] = [];
+      for (const id of orderedIds) {
+        const p = byId.get(id);
+        if (p) reordered.push(p);
+      }
+      for (const p of state.projects) {
+        if (!byId.has(p.id) || reordered.includes(p)) continue;
+        reordered.push(p);
+      }
+      return { projects: reordered };
+    }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setProjectGitStatus: (status) =>
     set((state) => ({

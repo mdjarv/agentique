@@ -14,11 +14,21 @@ import { ActionItem } from "./ActionItem";
 
 interface ProjectHoverCardProps {
   projectId: string;
+  projectPath: string;
   gitStatus: ProjectGitStatus | undefined;
   children: ReactNode;
 }
 
-export function ProjectHoverCard({ projectId, gitStatus, children }: ProjectHoverCardProps) {
+function truncatePath(path: string): string {
+  return path.replace(/^\/home\/[^/]+/, "~").replace(/^\/Users\/[^/]+/, "~");
+}
+
+export function ProjectHoverCard({
+  projectId,
+  projectPath,
+  gitStatus,
+  children,
+}: ProjectHoverCardProps) {
   const ws = useWebSocket();
   const [pushing, setPushing] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -48,13 +58,11 @@ export function ProjectHoverCard({ projectId, gitStatus, children }: ProjectHove
     }
   }, [ws, projectId]);
 
-  if (!gitStatus?.branch) return <>{children}</>;
-
-  const ahead = gitStatus.aheadRemote > 0;
-  const behind = gitStatus.behindRemote > 0;
-  const dirty = gitStatus.uncommittedCount > 0;
+  const ahead = gitStatus && gitStatus.aheadRemote > 0;
+  const behind = gitStatus && gitStatus.behindRemote > 0;
+  const dirty = gitStatus && gitStatus.uncommittedCount > 0;
   const canPush = ahead && gitStatus.hasRemote;
-  const canFetch = gitStatus.hasRemote;
+  const canFetch = gitStatus?.hasRemote;
 
   return (
     <HoverCard openDelay={300} closeDelay={150}>
@@ -64,52 +72,65 @@ export function ProjectHoverCard({ projectId, gitStatus, children }: ProjectHove
       <HoverCardContent side="right" align="start" sideOffset={4} className="w-52 p-0">
         <HoverCardArrow width={10} height={5} />
 
-        {/* Git info header */}
+        {/* Path */}
         <div className="px-3 py-2 border-b">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <GitBranch className="size-3 shrink-0" />
-            <span className="truncate font-mono">{gitStatus.branch}</span>
-          </div>
-          {(ahead || behind || dirty) && (
-            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-              {dirty && (
-                <span className="text-[#e0af68]/80">{gitStatus.uncommittedCount} uncommitted</span>
-              )}
-              {ahead && (
-                <span className="flex items-center gap-0.5">
-                  <ArrowUp className="size-2.5" />
-                  {gitStatus.aheadRemote} ahead
-                </span>
-              )}
-              {behind && (
-                <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
-                  <ArrowDown className="size-2.5" />
-                  {gitStatus.behindRemote} behind
-                </span>
-              )}
-            </div>
-          )}
+          <span className="text-xs text-muted-foreground truncate block">
+            {truncatePath(projectPath)}
+          </span>
         </div>
 
+        {/* Git info */}
+        {gitStatus?.branch && (
+          <div className="px-3 py-2 border-b">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <GitBranch className="size-3 shrink-0" />
+              <span className="truncate font-mono">{gitStatus.branch}</span>
+            </div>
+            {(ahead || behind || dirty) && (
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                {dirty && (
+                  <span className="text-[#e0af68]/80">
+                    {gitStatus.uncommittedCount} uncommitted
+                  </span>
+                )}
+                {ahead && (
+                  <span className="flex items-center gap-0.5">
+                    <ArrowUp className="size-2.5" />
+                    {gitStatus.aheadRemote} ahead
+                  </span>
+                )}
+                {behind && (
+                  <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
+                    <ArrowDown className="size-2.5" />
+                    {gitStatus.behindRemote} behind
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="py-1">
-          {canPush && (
-            <ActionItem
-              icon={ArrowUpToLine}
-              label={pushing ? "Pushing..." : "Push"}
-              onClick={handlePush}
-              disabled={pushing}
-            />
-          )}
-          {canFetch && (
-            <ActionItem
-              icon={RefreshCw}
-              label={fetching ? "Fetching..." : "Fetch"}
-              onClick={handleFetch}
-              disabled={fetching}
-            />
-          )}
-        </div>
+        {(canPush || canFetch) && (
+          <div className="py-1">
+            {canPush && (
+              <ActionItem
+                icon={ArrowUpToLine}
+                label={pushing ? "Pushing..." : "Push"}
+                onClick={handlePush}
+                disabled={pushing}
+              />
+            )}
+            {canFetch && (
+              <ActionItem
+                icon={RefreshCw}
+                label={fetching ? "Fetching..." : "Fetch"}
+                onClick={handleFetch}
+                disabled={fetching}
+              />
+            )}
+          </div>
+        )}
       </HoverCardContent>
     </HoverCard>
   );
