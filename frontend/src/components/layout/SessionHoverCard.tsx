@@ -72,17 +72,16 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const { meta } = session;
   const terminal = isTerminal(meta.state);
   const hasWorktree = !!meta.worktreePath;
-  const notMerged = hasWorktree && !meta.worktreeMerged;
   const ahead = !!meta.commitsAhead && meta.commitsAhead > 0;
   const behind = !!meta.commitsBehind && meta.commitsBehind > 0;
   const dirty = meta.hasUncommitted || meta.hasDirtyWorktree;
 
   const canInterrupt = meta.state === "running";
   const canMarkDone = meta.state === "idle";
-  const canCreatePR = notMerged && ahead && !meta.prUrl;
+  const canCreatePR = hasWorktree && ahead && !meta.prUrl;
   const hasOpenPR = !!meta.prUrl;
-  const canMerge = terminal && notMerged && ahead;
-  const canRebase = notMerged && behind;
+  const canMerge = terminal && hasWorktree && ahead;
+  const canRebase = hasWorktree && behind;
 
   const hasStateActions = canInterrupt || canMarkDone;
   const hasGitActions = canCreatePR || hasOpenPR || canMerge || canRebase;
@@ -120,9 +119,9 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     if (meta.prUrl) window.open(meta.prUrl, "_blank", "noopener");
   };
 
-  const handleMerge = async () => {
+  const handleMerge = async (cleanup: boolean) => {
     try {
-      const result = await mergeSession(ws, sessionId, true);
+      const result = await mergeSession(ws, sessionId, cleanup);
       if (result.status === "merged") {
         toast.success("Merged successfully");
       } else if (result.status === "error") {
@@ -218,7 +217,16 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
               <ActionItem icon={GitPullRequest} label="Create PR" onClick={handleCreatePR} />
             )}
             {hasOpenPR && <ActionItem icon={ExternalLink} label="Open PR" onClick={handleOpenPR} />}
-            {canMerge && <ActionItem icon={GitMerge} label="Merge" onClick={handleMerge} />}
+            {canMerge && (
+              <>
+                <ActionItem icon={GitMerge} label="Merge" onClick={() => handleMerge(false)} />
+                <ActionItem
+                  icon={GitMerge}
+                  label="Merge & delete branch"
+                  onClick={() => handleMerge(true)}
+                />
+              </>
+            )}
             {canRebase && <ActionItem icon={RefreshCw} label="Rebase" onClick={handleRebase} />}
 
             {(hasStateActions || hasGitActions) && <Separator className="my-1" />}

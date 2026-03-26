@@ -128,7 +128,7 @@ function GitStatus({
   mergeStatus?: "clean" | "conflicts" | "unknown";
   prUrl?: string;
 }) {
-  if (worktreeMerged) {
+  if (worktreeMerged && !(commitsAhead && commitsAhead > 0)) {
     return <span className="text-xs text-emerald-500/70">merged</span>;
   }
   if (branchMissing) {
