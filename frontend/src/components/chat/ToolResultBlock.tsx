@@ -4,9 +4,10 @@ import type { ToolContentBlock } from "~/stores/chat-store";
 
 interface ToolResultBlockProps {
   content: ToolContentBlock[];
+  onImageClick?: (src: string) => void;
 }
 
-export function ToolResultBlock({ content }: ToolResultBlockProps) {
+export function ToolResultBlock({ content, onImageClick }: ToolResultBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   const textContent = content
@@ -39,12 +40,18 @@ export function ToolResultBlock({ content }: ToolResultBlockProps) {
           {hasImages && (
             <div className="flex gap-2 flex-wrap p-2">
               {images.map((img) => (
-                <img
+                <button
                   key={img.url}
-                  src={img.url}
-                  alt="Tool result"
-                  className="max-h-64 max-w-full rounded border object-contain"
-                />
+                  type="button"
+                  className="p-0 border-none bg-transparent cursor-pointer"
+                  onClick={() => img.url && onImageClick?.(img.url)}
+                >
+                  <img
+                    src={img.url}
+                    alt="Tool result"
+                    className="max-h-64 max-w-full rounded border object-contain"
+                  />
+                </button>
               ))}
             </div>
           )}
