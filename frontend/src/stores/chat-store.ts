@@ -36,6 +36,7 @@ export interface ChatEvent {
   fatal?: boolean;
   status?: string;
   utilization?: number;
+  resetsAt?: number;
   category?: string;
   errorType?: string;
   retryAfterSecs?: number;
@@ -119,6 +120,7 @@ export interface PendingQuestion {
 export interface RateLimitInfo {
   status: string;
   utilization: number;
+  resetsAt: number | null;
 }
 
 export interface QueuedMessage {
@@ -147,7 +149,6 @@ export interface SessionData {
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
   autoApprove: boolean;
-  rateLimit: RateLimitInfo | null;
   queuedMessages: QueuedMessage[];
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
@@ -163,7 +164,6 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   pendingQuestion: null,
   planMode: meta.permissionMode === "plan",
   autoApprove: meta.autoApprove ?? false,
-  rateLimit: null,
   queuedMessages: [],
   todos: null,
   contextUsage: null,
@@ -268,6 +268,7 @@ export interface ChatState {
   activeSessionId: string | null;
   loadedProjects: Set<string>;
   historyLoading: Set<string>;
+  rateLimit: RateLimitInfo | null;
 
   // Session management
   setSessions: (sessions: SessionMetadata[], projectId: string) => void;
@@ -332,6 +333,7 @@ export const useChatStore = create<ChatState>((set) => ({
   activeSessionId: null,
   loadedProjects: new Set<string>(),
   historyLoading: new Set<string>(),
+  rateLimit: null,
 
   setSessions: (metas, projectId) =>
     set((s) => {
@@ -432,9 +434,9 @@ export const useChatStore = create<ChatState>((set) => ({
           contextWindow,
           inputTokens: patch.inputTokens ?? prev?.inputTokens ?? 0,
           outputTokens:
-          patch.outputTokens !== undefined
-            ? Math.max(patch.outputTokens, prev?.outputTokens ?? 0)
-            : (prev?.outputTokens ?? 0),
+            patch.outputTokens !== undefined
+              ? Math.max(patch.outputTokens, prev?.outputTokens ?? 0)
+              : (prev?.outputTokens ?? 0),
         },
       });
     }),
@@ -528,10 +530,14 @@ export const useChatStore = create<ChatState>((set) => ({
       // Transient events: update session state without appending to turns
       if (event.type === "rate_limit") {
         const status = event.status ?? "";
-        if (status === "allowed") return s;
-        return updateSession(s, sessionId, {
-          rateLimit: { status, utilization: event.utilization ?? 0 },
-        });
+        if (status === "allowed") return { rateLimit: null };
+        return {
+          rateLimit: {
+            status,
+            utilization: event.utilization ?? 0,
+            resetsAt: event.resetsAt ?? null,
+          },
+        };
       }
       if (event.type === "stream") return s;
       if (event.type === "compact_status") {
@@ -561,7 +567,6 @@ export const useChatStore = create<ChatState>((set) => ({
       if (isResult) {
         patch.meta = { ...session.meta, state: "idle" };
         patch.hasUnseenCompletion = !isViewing;
-        patch.rateLimit = null;
         if (event.contextWindow && event.contextWindow > 0) {
           patch.contextUsage = {
             contextWindow: event.contextWindow,
