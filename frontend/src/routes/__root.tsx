@@ -2,7 +2,7 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { Toaster } from "sonner";
 import { AppSidebar } from "~/components/layout/AppSidebar";
-import { Sheet, SheetContent } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useAppStore } from "~/stores/app-store";
@@ -22,6 +22,10 @@ function RootLayout() {
         {isMobile ? (
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <SheetContent side="left" className="w-72 p-0" showCloseButton={false}>
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <SheetDescription className="sr-only">
+                Project and session navigation
+              </SheetDescription>
               <AppSidebar />
             </SheetContent>
           </Sheet>

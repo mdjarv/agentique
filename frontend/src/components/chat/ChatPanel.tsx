@@ -16,7 +16,7 @@ import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
-import { Sheet, SheetContent } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { useGitActions } from "~/hooks/useGitActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -268,6 +268,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         (isMobile ? (
           <Sheet open={mobileSessionOpen} onOpenChange={setMobileSessionOpen}>
             <SheetContent side="right" className="p-0" showCloseButton={false}>
+              <SheetTitle className="sr-only">Session details</SheetTitle>
+              <SheetDescription className="sr-only">Git status and todos</SheetDescription>
               <SessionPanel
                 meta={session.meta}
                 todos={todos}

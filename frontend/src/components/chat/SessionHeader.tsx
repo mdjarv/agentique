@@ -1,4 +1,13 @@
-import { Check, Copy, Eraser, Loader2, MoreHorizontal, PanelRightOpen, Pencil, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eraser,
+  Loader2,
+  MoreHorizontal,
+  PanelRightOpen,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
