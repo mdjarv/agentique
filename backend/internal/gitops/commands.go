@@ -6,12 +6,17 @@ import (
 	"strings"
 )
 
-// extractDescription reads YAML frontmatter from a markdown file and returns
-// the description value, or "" if not found.
-func extractDescription(path string) string {
+// frontmatter holds parsed YAML frontmatter fields from a markdown file.
+type frontmatter struct {
+	description            string
+	disableModelInvocation bool
+}
+
+// parseFrontmatter reads YAML frontmatter from a markdown file.
+func parseFrontmatter(path string) frontmatter {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return frontmatter{}
 	}
 	defer f.Close()
 
@@ -21,62 +26,112 @@ func extractDescription(path string) string {
 
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	if !strings.HasPrefix(content, "---\n") {
-		return ""
+		return frontmatter{}
 	}
 	end := strings.Index(content[4:], "\n---")
 	if end < 0 {
-		return ""
+		return frontmatter{}
 	}
-	frontmatter := content[4 : 4+end]
+	block := content[4 : 4+end]
 
-	for _, line := range strings.Split(frontmatter, "\n") {
+	var fm frontmatter
+	for _, line := range strings.Split(block, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "description:") {
-			continue
+		if strings.HasPrefix(line, "description:") {
+			fm.description = unquote(strings.TrimSpace(line[len("description:"):]))
+		} else if strings.HasPrefix(line, "disable-model-invocation:") {
+			fm.disableModelInvocation = strings.TrimSpace(line[len("disable-model-invocation:"):]) == "true"
 		}
-		val := strings.TrimSpace(line[len("description:"):])
-		if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
-			val = val[1 : len(val)-1]
-		}
-		return val
 	}
-	return ""
+	return fm
 }
 
-// CommandFile represents a custom slash command from .claude/commands/.
+func unquote(val string) string {
+	if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
+		return val[1 : len(val)-1]
+	}
+	return val
+}
+
+// extractDescription reads YAML frontmatter from a markdown file and returns
+// the description value, or "" if not found.
+func extractDescription(path string) string {
+	return parseFrontmatter(path).description
+}
+
+// CommandFile represents a slash command or skill.
 type CommandFile struct {
-	Name        string `json:"name"`        // filename without .md
+	Name        string `json:"name"`        // filename without .md, or skill directory name
 	Source      string `json:"source"`      // "project" or "user"
 	Description string `json:"description"` // from YAML frontmatter
 }
 
-// ListCommandFiles scans project-local and user-global .claude/commands/ dirs
-// for .md files. Project commands shadow user commands on name collision.
+// ListCommandFiles scans project-local and user-global .claude/commands/ and
+// .claude/skills/ directories. Priority: project commands > project skills >
+// user commands > user skills. First-seen name wins on collision.
 func ListCommandFiles(projectDir string) ([]CommandFile, error) {
 	seen := make(map[string]struct{})
 	var result []CommandFile
 
-	// Project-local commands (higher priority).
-	projectCmds, _ := filepath.Glob(filepath.Join(projectDir, ".claude", "commands", "*.md"))
-	for _, p := range projectCmds {
-		name := strings.TrimSuffix(filepath.Base(p), ".md")
-		seen[name] = struct{}{}
-		result = append(result, CommandFile{Name: name, Source: "project", Description: extractDescription(p)})
-	}
+	projectBase := filepath.Join(projectDir, ".claude")
 
-	// User-global commands.
+	// Project-local commands (highest priority).
+	result = append(result, listCommands(filepath.Join(projectBase, "commands"), "project", seen)...)
+
+	// Project-local skills.
+	result = append(result, listSkills(filepath.Join(projectBase, "skills"), "project", seen)...)
+
+	// User-global.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return result, nil
 	}
-	userCmds, _ := filepath.Glob(filepath.Join(home, ".claude", "commands", "*.md"))
-	for _, p := range userCmds {
+	userBase := filepath.Join(home, ".claude")
+
+	// User commands.
+	result = append(result, listCommands(filepath.Join(userBase, "commands"), "user", seen)...)
+
+	// User skills.
+	result = append(result, listSkills(filepath.Join(userBase, "skills"), "user", seen)...)
+
+	return result, nil
+}
+
+func listCommands(dir, source string, seen map[string]struct{}) []CommandFile {
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.md"))
+	var result []CommandFile
+	for _, p := range matches {
 		name := strings.TrimSuffix(filepath.Base(p), ".md")
 		if _, exists := seen[name]; exists {
 			continue
 		}
-		result = append(result, CommandFile{Name: name, Source: "user", Description: extractDescription(p)})
+		seen[name] = struct{}{}
+		result = append(result, CommandFile{Name: name, Source: source, Description: extractDescription(p)})
 	}
+	return result
+}
 
-	return result, nil
+func listSkills(dir, source string, seen map[string]struct{}) []CommandFile {
+	entries, _ := os.ReadDir(dir)
+	var result []CommandFile
+	for _, e := range entries {
+		if !e.IsDir() && e.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		name := e.Name()
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		skillPath := filepath.Join(dir, name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			continue
+		}
+		fm := parseFrontmatter(skillPath)
+		if fm.disableModelInvocation {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, CommandFile{Name: name, Source: source, Description: fm.description})
+	}
+	return result
 }
