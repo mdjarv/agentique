@@ -49,8 +49,12 @@ func New(queries *store.Queries) *Server {
 	}
 	sh := session.NewHandler(svc, subscribe)
 	mux.HandleFunc("GET /api/sessions", sh.HandleList)
-	mux.HandleFunc("GET /api/sessions/{id}", sh.HandleGet)
 	mux.HandleFunc("GET /api/sessions/events", sh.HandleEvents)
+	mux.HandleFunc("GET /api/sessions/{id}", sh.HandleGet)
+	mux.HandleFunc("GET /api/sessions/{id}/history", sh.HandleHistory)
+	mux.HandleFunc("POST /api/sessions/{id}/stop", sh.HandleStop)
+	mux.HandleFunc("POST /api/sessions/{id}/query", sh.HandleQuery)
+	mux.HandleFunc("DELETE /api/sessions/{id}", sh.HandleDelete)
 
 	projectGitSvc := project.NewGitService(queries, hub)
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Hub: hub}
