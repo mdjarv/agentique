@@ -13,6 +13,15 @@ function getClient(): WsClient {
   return globalClient;
 }
 
+/** Force reconnect the global WS client (e.g. after auth changes). */
+export function reconnectWebSocket(): void {
+  if (globalClient) {
+    globalClient.disconnect();
+    globalClient = null;
+  }
+  getClient();
+}
+
 export function useWebSocket(): WsClient {
   const clientRef = useRef(getClient());
   return clientRef.current;

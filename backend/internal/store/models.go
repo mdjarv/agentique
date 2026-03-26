@@ -8,6 +8,22 @@ import (
 	"database/sql"
 )
 
+type AuthSession struct {
+	Token     string `json:"token"`
+	UserID    string `json:"user_id"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
+type InviteToken struct {
+	Token     string         `json:"token"`
+	CreatedBy string         `json:"created_by"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedBy    sql.NullString `json:"used_by"`
+	UsedAt    sql.NullString `json:"used_at"`
+	CreatedAt string         `json:"created_at"`
+}
+
 type Project struct {
 	ID                    string `json:"id"`
 	Name                  string `json:"name"`
@@ -53,4 +69,22 @@ type SessionEvent struct {
 	Type      string `json:"type"`
 	Data      string `json:"data"`
 	CreatedAt string `json:"created_at"`
+}
+
+type User struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	IsAdmin     int64  `json:"is_admin"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type WebauthnCredential struct {
+	ID              string `json:"id"`
+	UserID          string `json:"user_id"`
+	PublicKey       []byte `json:"public_key"`
+	AttestationType string `json:"attestation_type"`
+	Aaguid          []byte `json:"aaguid"`
+	SignCount       int64  `json:"sign_count"`
+	Transport       string `json:"transport"`
+	CreatedAt       string `json:"created_at"`
 }

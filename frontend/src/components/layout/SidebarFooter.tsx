@@ -1,7 +1,18 @@
-import { BellDot, Check, Circle, CircleHelp, Loader, Pause, TriangleAlert } from "lucide-react";
+import {
+  BellDot,
+  Check,
+  Circle,
+  CircleHelp,
+  Loader,
+  LogOut,
+  Pause,
+  TriangleAlert,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { useMemo } from "react";
+import { logout } from "~/lib/auth-api";
 import { cn } from "~/lib/utils";
+import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 
@@ -47,6 +58,7 @@ const displayOrder: DisplayState[] = [
 
 export function SidebarFooter() {
   const sessions = useChatStore((s) => s.sessions);
+  const { authEnabled, user, clearAuth } = useAuthStore();
 
   const counts = useMemo(() => {
     const c: Record<DisplayState, number> = {
@@ -106,7 +118,24 @@ export function SidebarFooter() {
           })}
         </div>
       )}
-      <ConnectionIndicator />
+      <div className="flex items-center justify-between">
+        <ConnectionIndicator />
+        {authEnabled && user && (
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              clearAuth();
+              window.location.reload();
+            }}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title={`Sign out ${user.displayName}`}
+          >
+            <span className="truncate max-w-24">{user.displayName}</span>
+            <LogOut className="size-3 shrink-0" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

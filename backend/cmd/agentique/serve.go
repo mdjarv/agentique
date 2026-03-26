@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,7 +22,20 @@ import (
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
+var (
+	disableAuth bool
+	rpID        string
+	rpOrigin    string
+	tlsCert     string
+	tlsKey      string
+)
+
 func init() {
+	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
+	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
+	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
+	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
+	serveCmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to TLS key file")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -47,7 +62,49 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	queries := store.New(db)
 	ensureDefaultProject(queries)
-	srv := server.New(queries)
+
+	tlsEnabled := tlsCert != "" && tlsKey != ""
+	if (tlsCert != "") != (tlsKey != "") {
+		slog.Error("--tls-cert and --tls-key must both be provided")
+		os.Exit(1)
+	}
+
+	scheme := "http"
+	if tlsEnabled {
+		scheme = "https"
+	}
+
+	cfg := server.Config{
+		AuthEnabled: !disableAuth,
+	}
+	if cfg.AuthEnabled {
+		cfg.RPID = rpID
+		cfg.RPOrigins = []string{rpOrigin}
+		if cfg.RPID == "" {
+			host, _, _ := net.SplitHostPort(addr)
+			if host == "" || host == "0.0.0.0" {
+				host = "localhost"
+			}
+			cfg.RPID = host
+		}
+		if rpOrigin == "" {
+			host, port, _ := net.SplitHostPort(addr)
+			if host == "" || host == "0.0.0.0" {
+				host = "localhost"
+			}
+			cfg.RPOrigins = []string{fmt.Sprintf("%s://%s:%s", scheme, host, port)}
+		}
+	}
+	srv, err := server.New(queries, cfg)
+	if err != nil {
+		slog.Error("failed to create server", "error", err)
+		os.Exit(1)
+	}
+
+	authStatus := "enabled"
+	if disableAuth {
+		authStatus = "disabled"
+	}
 
 	listenAddr := addr
 	if listenAddr == "localhost:9201" {
@@ -65,8 +122,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", listenAddr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Info("server listening", "addr", listenAddr, "tls", tlsEnabled, "auth", authStatus)
+		var err error
+		if tlsEnabled {
+			err = httpServer.ListenAndServeTLS(tlsCert, tlsKey)
+		} else {
+			err = httpServer.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			listenErr <- err
 		}
 	}()
