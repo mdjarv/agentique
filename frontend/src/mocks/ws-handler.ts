@@ -342,16 +342,45 @@ index abc1234..def5678 100644
     case "project.commands":
       respond(client, msg.id, {
         commands: [
-          { name: "commit", source: "project" },
-          { name: "review-pr", source: "project" },
-          { name: "simplify", source: "user" },
-          { name: "got", source: "user" },
-          { name: "tdd", source: "user" },
+          {
+            name: "commit",
+            source: "project",
+            description: "Smart commit with conventional messages",
+          },
+          {
+            name: "review-pr",
+            source: "project",
+            description: "Review a pull request with detailed feedback",
+          },
+          { name: "simplify", source: "user", description: "Simplify and refactor selected code" },
+          { name: "got", source: "user", description: "Run and analyze tests" },
+          {
+            name: "tdd",
+            source: "user",
+            description: "Test-driven development with red-green-refactor",
+          },
           { name: "challenge", source: "user" },
-          { name: "investigate", source: "project" },
-          { name: "reflect-session", source: "user" },
-          { name: "diff-review", source: "user" },
-          { name: "fact-check", source: "user" },
+          {
+            name: "investigate",
+            source: "project",
+            description:
+              "Investigate a YouTrack issue with team deep dives, producing an actionable work document",
+          },
+          {
+            name: "reflect-session",
+            source: "user",
+            description: "Analyze current session and update CLAUDE.md",
+          },
+          {
+            name: "diff-review",
+            source: "user",
+            description: "Visual HTML diff review with code analysis",
+          },
+          {
+            name: "fact-check",
+            source: "user",
+            description: "Verify document accuracy against the codebase",
+          },
         ],
       });
       break;
