@@ -648,7 +648,8 @@ func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) (Gi
 
 	if ss.WorktreeMerged != 0 {
 		gs.WorktreeMerged = true
-	} else if branch != "" {
+	}
+	if branch != "" {
 		if !gitops.BranchExists(project.Path, branch) {
 			gs.BranchMissing = true
 		} else {

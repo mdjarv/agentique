@@ -96,7 +96,7 @@ function BranchStatus({
   const ahead = meta.commitsAhead ?? 0;
   const behind = meta.commitsBehind ?? 0;
 
-  if (meta.worktreeMerged) {
+  if (meta.worktreeMerged && ahead === 0 && behind === 0) {
     return (
       <div className="flex items-center gap-2 text-xs text-[#9ece6a]/80">
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -477,7 +477,7 @@ export function CollapsedSessionStrip({ meta, todos, onExpand }: CollapsedSessio
   const completed = hasTodos ? todos.filter((t) => t.status === "completed").length : 0;
 
   let mergeIcon = null;
-  if (meta.worktreeMerged) {
+  if (meta.worktreeMerged && (meta.commitsAhead ?? 0) === 0) {
     mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-[#9ece6a]/70" />;
   } else if (meta.mergeStatus === "conflicts") {
     mergeIcon = <AlertTriangle className="h-3.5 w-3.5 text-amber-500/70" />;
