@@ -383,8 +383,13 @@ func (s *Session) processEvent(event claudecli.Event) {
 	s.mu.Unlock()
 
 	dbEvent := wireEvent
-	if tr, ok := wireEvent.(WireToolResultEvent); ok && len(tr.Content) > maxToolResultDBSize {
-		tr.Content = tr.Content[:toolResultKeepHead] + "\n...[truncated]...\n" + tr.Content[len(tr.Content)-toolResultKeepTail:]
+	if tr, ok := wireEvent.(WireToolResultEvent); ok {
+		// Strip image blocks (data URLs are huge) and truncate text for DB.
+		text := toolResultText(tr.Content)
+		if len(text) > maxToolResultDBSize {
+			text = text[:toolResultKeepHead] + "\n...[truncated]...\n" + text[len(text)-toolResultKeepTail:]
+		}
+		tr.Content = []WireContentBlock{{Type: "text", Text: text}}
 		dbEvent = tr
 	}
 

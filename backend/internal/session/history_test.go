@@ -45,8 +45,17 @@ func TestNormalizeEventJSON_OldToolResult(t *testing.T) {
 	if got["toolId"] != "1" {
 		t.Errorf("toolId = %v, want 1", got["toolId"])
 	}
-	if got["content"] != "ok" {
-		t.Errorf("content = %v, want ok", got["content"])
+	// String content should be migrated to array format.
+	blocks, ok := got["content"].([]any)
+	if !ok {
+		t.Fatalf("content is %T, want []any", got["content"])
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("content has %d blocks, want 1", len(blocks))
+	}
+	block := blocks[0].(map[string]any)
+	if block["type"] != "text" || block["text"] != "ok" {
+		t.Errorf("content block = %v, want {type:text, text:ok}", block)
 	}
 	if _, ok := got["toolUseId"]; ok {
 		t.Error("old key 'toolUseId' still present")
@@ -60,10 +69,19 @@ func TestNormalizeEventJSON_AlreadyNormalized(t *testing.T) {
 		t.Errorf("tool_use modified: %s", got)
 	}
 
+	// tool_result with string content should be migrated to array format.
 	toolResult := `{"type":"tool_result","toolId":"1","content":"ok"}`
-	got = normalizeEventJSON("tool_result", []byte(toolResult))
-	if string(got) != toolResult {
-		t.Errorf("tool_result modified: %s", got)
+	trGot := mustUnmarshal(t, normalizeEventJSON("tool_result", []byte(toolResult)))
+	blocks, ok := trGot["content"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Errorf("tool_result content not migrated to array: %v", trGot["content"])
+	}
+
+	// tool_result with array content should pass through.
+	arrayContent := `{"type":"tool_result","toolId":"1","content":[{"type":"text","text":"ok"}]}`
+	got = normalizeEventJSON("tool_result", []byte(arrayContent))
+	if string(got) != arrayContent {
+		t.Errorf("tool_result with array content modified: %s", got)
 	}
 }
 

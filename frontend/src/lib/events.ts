@@ -1,12 +1,15 @@
 import { uuid } from "~/lib/utils";
-import type { ChatEvent } from "~/stores/chat-store";
+import type { ChatEvent, ToolContentBlock } from "~/stores/chat-store";
 
 /** Parse a raw server event (wire format) into a ChatEvent. */
 export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
+  const type = raw.type as ChatEvent["type"];
   return {
     id: uuid(),
-    type: raw.type as ChatEvent["type"],
-    content: raw.content as string | undefined,
+    type,
+    content: type !== "tool_result" ? (raw.content as string | undefined) : undefined,
+    contentBlocks:
+      type === "tool_result" ? (raw.content as ToolContentBlock[] | undefined) : undefined,
     toolId: raw.toolId as string | undefined,
     toolName: raw.toolName as string | undefined,
     toolInput: raw.toolInput,

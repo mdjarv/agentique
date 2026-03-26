@@ -40,12 +40,14 @@ func normalizeEventJSON(eventType string, data []byte) json.RawMessage {
 			changed = true
 		}
 	case "tool_result":
-		if _, ok := m["toolId"]; ok {
-			break
-		}
 		if v, ok := m["toolUseId"]; ok {
 			m["toolId"] = v
 			delete(m, "toolUseId")
+			changed = true
+		}
+		// Migrate string content to array of content blocks.
+		if s, ok := m["content"].(string); ok {
+			m["content"] = []map[string]string{{"type": "text", "text": s}}
 			changed = true
 		}
 	}

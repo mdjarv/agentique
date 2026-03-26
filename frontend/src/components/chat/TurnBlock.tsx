@@ -331,7 +331,7 @@ function ActivitySegmentView({
               projectPath={projectPath}
               worktreePath={worktreePath}
             />
-            {item.result && <ToolResultBlock content={item.result.content ?? ""} />}
+            {item.result && <ToolResultBlock content={item.result.contentBlocks ?? []} />}
           </div>
         ),
       )}

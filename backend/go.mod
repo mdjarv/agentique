@@ -2,6 +2,8 @@ module github.com/allbin/agentique/backend
 
 go 1.26.1
 
+replace github.com/allbin/claudecli-go => /home/mdjarv/git/claudecli-go
+
 require (
 	github.com/allbin/claudecli-go v0.0.0-20260324082320-92fb882c72a6
 	github.com/google/uuid v1.6.0
