@@ -244,13 +244,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           isRunning={sessionState === "running"}
           onInterrupt={handleInterrupt}
           placeholder={resumePlaceholders[sessionState]}
+          worktree={isWorktree}
           planMode={planMode}
           onPlanModeChange={handlePlanModeChange}
           autoApprove={autoApprove}
           onAutoApproveChange={handleAutoApproveChange}
           model={(session.meta.model as ModelId) ?? undefined}
           onModelChange={handleModelChange}
-          effort={(session.meta.effort as EffortLevel) ?? undefined}
+          effort={(session.meta.effort as EffortLevel) ?? ""}
         />
       </div>
 
