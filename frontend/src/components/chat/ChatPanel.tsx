@@ -15,7 +15,7 @@ import { MessageList } from "~/components/chat/MessageList";
 import { MessageQueue } from "~/components/chat/MessageQueue";
 import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
-import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
+
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
@@ -326,7 +326,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             {session.pendingQuestion && (
               <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
             )}
-            {session.rateLimit && <RateLimitBanner rateLimit={session.rateLimit} />}
+
             {queuedMessages.length > 0 && (
               <MessageQueue
                 messages={queuedMessages}
