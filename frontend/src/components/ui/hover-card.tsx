@@ -40,7 +40,10 @@ function HoverCardArrow({
   return (
     <HoverCardPrimitive.Arrow
       data-slot="hover-card-arrow"
-      className={cn("fill-popover", className)}
+      className={cn(
+        "fill-popover [filter:drop-shadow(0_1px_0_var(--color-border))_drop-shadow(0_-1px_0_var(--color-border))_drop-shadow(1px_0_0_var(--color-border))_drop-shadow(-1px_0_0_var(--color-border))]",
+        className,
+      )}
       {...props}
     />
   );

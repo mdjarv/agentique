@@ -172,7 +172,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
         <HoverCardTrigger asChild>
           <div>{children}</div>
         </HoverCardTrigger>
-        <HoverCardContent side="right" align="start" sideOffset={8} className="w-52 p-0">
+        <HoverCardContent side="right" align="start" sideOffset={12} className="w-52 p-0">
           <HoverCardArrow width={10} height={5} />
 
           {/* Git info header */}

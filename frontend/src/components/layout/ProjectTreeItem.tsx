@@ -2,24 +2,19 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
   GitBranch,
-  Loader2,
   Plus,
-  RefreshCw,
 } from "lucide-react";
-import { type ReactNode, useCallback, useState } from "react";
-import { toast } from "sonner";
+import { type ReactNode, useState } from "react";
 import { useShallow } from "zustand/shallow";
-import { useWebSocket } from "~/hooks/useWebSocket";
-import { fetchProject, pushProject } from "~/lib/project-actions";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type ChatState, useChatStore } from "~/stores/chat-store";
+import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
 
@@ -189,62 +184,17 @@ function shouldShowPath(name: string, path: string): boolean {
 
 // --- Project git status row ---
 
-function ProjectGitStatusRow({
-  gitStatus,
-  projectId,
-}: {
-  gitStatus: ProjectGitStatus;
-  projectId: string;
-}) {
-  const ws = useWebSocket();
-  const [pushing, setPushing] = useState(false);
-  const [fetching, setFetching] = useState(false);
-
-  const handlePush = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setPushing(true);
-      try {
-        const status = await pushProject(ws, projectId);
-        useAppStore.getState().setProjectGitStatus(status);
-        toast.success("Pushed");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Push failed");
-      } finally {
-        setPushing(false);
-      }
-    },
-    [ws, projectId],
-  );
-
-  const handleFetch = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setFetching(true);
-      try {
-        const status = await fetchProject(ws, projectId);
-        useAppStore.getState().setProjectGitStatus(status);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Fetch failed");
-      } finally {
-        setFetching(false);
-      }
-    },
-    [ws, projectId],
-  );
-
+function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
   const ahead = gitStatus.aheadRemote > 0;
   const behind = gitStatus.behindRemote > 0;
   const dirty = gitStatus.uncommittedCount > 0;
-  const hasAnything = ahead || behind || dirty;
 
   return (
     <div className="flex items-center gap-1.5 pl-5.5 text-xs text-muted-foreground">
       <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
-
-      {hasAnything && (
-        <span className="flex items-center gap-1.5 ml-auto shrink-0">
+      {(ahead || behind || dirty) && (
+        <span className="flex items-center gap-1.5 shrink-0">
           {dirty && (
             <span
               className="flex items-center gap-0.5 text-[#e0af68]/80"
@@ -269,40 +219,6 @@ function ProjectGitStatusRow({
               {gitStatus.behindRemote}
             </span>
           )}
-        </span>
-      )}
-
-      {/* Action buttons — always visible when relevant */}
-      {gitStatus.hasRemote && (
-        <span className={cn("flex items-center gap-0.5 shrink-0", !hasAnything && "ml-auto")}>
-          {ahead && (
-            <button
-              type="button"
-              onClick={handlePush}
-              disabled={pushing}
-              className="p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
-              title="Push"
-            >
-              {pushing ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <ArrowUpToLine className="h-3 w-3" />
-              )}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleFetch}
-            disabled={fetching}
-            className="p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
-            title="Fetch"
-          >
-            {fetching ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-          </button>
         </span>
       )}
     </div>
@@ -345,60 +261,62 @@ export function ProjectTreeItem({
   };
 
   return (
-    <div className={cn("border-l-2 border-transparent", isActive && "border-l-sidebar-primary")}>
+    <div
+      className={cn("border-l-2 border-transparent pb-2", isActive && "border-l-sidebar-primary")}
+    >
       {/* Project header — row 1: name + path, row 2: git status */}
-      {/* biome-ignore lint/a11y/useSemanticElements: div with role=button avoids nested button HTML issues */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleProjectClick}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleProjectClick();
-          }
-        }}
-        className={cn(
-          "w-full text-left px-3 py-1.5 max-md:py-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer",
-          isActive && "bg-sidebar-accent",
-        )}
-      >
-        <div className="flex gap-1.5">
-          <div className="flex items-center shrink-0">
-            {isExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <FolderOpen className="h-4 w-4 shrink-0" />
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate({
-                    to: "/project/$projectSlug/settings",
-                    params: { projectSlug: project.slug },
-                  });
-                }}
-                className="text-base font-medium shrink-0 text-foreground-bright hover:underline"
-              >
-                {project.name}
-              </button>
-              {shouldShowPath(project.name, project.path) && (
-                <span className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1">
-                  {truncatePath(project.path)}
-                </span>
+      <ProjectHoverCard projectId={project.id} gitStatus={gitStatus}>
+        {/* biome-ignore lint/a11y/useSemanticElements: div with role=button avoids nested button HTML issues */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleProjectClick}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleProjectClick();
+            }
+          }}
+          className={cn(
+            "w-full text-left px-3 py-1.5 max-md:py-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer",
+            isActive && "bg-sidebar-accent",
+          )}
+        >
+          <div className="flex gap-1.5">
+            <div className="flex items-center shrink-0">
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
               )}
             </div>
-            {gitStatus?.branch && (
-              <ProjectGitStatusRow gitStatus={gitStatus} projectId={project.id} />
-            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <FolderOpen className="h-4 w-4 shrink-0" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate({
+                      to: "/project/$projectSlug/settings",
+                      params: { projectSlug: project.slug },
+                    });
+                  }}
+                  className="text-base font-medium shrink-0 text-foreground-bright hover:underline"
+                >
+                  {project.name}
+                </button>
+                {shouldShowPath(project.name, project.path) && (
+                  <span className="text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+                    {truncatePath(project.path)}
+                  </span>
+                )}
+              </div>
+              {gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}
+            </div>
           </div>
         </div>
-      </div>
+      </ProjectHoverCard>
 
       {/* Sessions + new chat */}
       {isExpanded && (
