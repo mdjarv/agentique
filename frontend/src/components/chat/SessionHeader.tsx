@@ -28,9 +28,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
-import { cn, copyToClipboard } from "~/lib/utils";
+import { cn } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
@@ -51,7 +52,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
   const [cleaning, setCleaning] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
-  const [nameCopied, setNameCopied] = useState(false);
+  const { copied: nameCopied, copy: copyName } = useCopyToClipboard();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -143,12 +144,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
             </button>
             <button
               type="button"
-              onClick={() => {
-                copyToClipboard(meta.name || "Untitled").then(() => {
-                  setNameCopied(true);
-                  setTimeout(() => setNameCopied(false), 1500);
-                });
-              }}
+              onClick={() => copyName(meta.name || "Untitled")}
               className="p-0.5 rounded max-md:opacity-50 opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
               aria-label="Copy session name"
             >
@@ -176,7 +172,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-1.5 text-xs text-muted-foreground hover:text-[#9ece6a]"
+              className="h-7 px-1.5 text-xs text-muted-foreground hover:text-success"
               title="Mark done"
               onClick={() => {
                 markSessionDone(ws, meta.id).catch((err) => {

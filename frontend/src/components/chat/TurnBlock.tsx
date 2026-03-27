@@ -9,7 +9,7 @@ import {
   User,
   Wrench,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatTokens } from "~/components/chat/ContextBar";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
@@ -20,7 +20,7 @@ import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
-import { copyToClipboard } from "~/lib/utils";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -188,7 +188,7 @@ function CollapsibleGroup({
         className="hover:bg-muted/50"
         trailing={
           trailingIcons && !showActiveHeader ? (
-            <span className="flex items-center gap-1.5 text-[#7aa2f7]/40">{trailingIcons}</span>
+            <span className="flex items-center gap-1.5 text-primary/40">{trailingIcons}</span>
           ) : undefined
         }
       >
@@ -370,7 +370,7 @@ const TextSegmentView = memo(function TextSegmentView({
 }) {
   return (
     <PromptGroupProvider content={content} projectId={projectId} isStreaming={isStreaming}>
-      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-[#bb9af7]/12 to-[#bb9af7]/6 shadow-lg shadow-black/30 border border-[#bb9af7]/10">
+      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-agent/12 to-agent/6 shadow-lg shadow-black/30 border border-agent/10">
         <button
           type="button"
           onClick={() => onCopy(content)}
@@ -390,13 +390,13 @@ function CompactDivider({ event, postTokens }: { event: ChatEvent; postTokens?: 
   const label = event.trigger === "manual" ? "Manual compaction" : "Auto-compacted";
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground/80 py-2 -mx-4">
-      <div className="flex-1 border-t border-dashed border-blue-500/30" />
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-blue-400">
+      <div className="flex-1 border-t border-dashed border-primary/30" />
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-primary">
         <Scissors className="size-3" />
         {label} from {formatTokens(preTokens)}
         {postTokens != null ? ` to ${formatTokens(postTokens)}` : ""} tokens
       </span>
-      <div className="flex-1 border-t border-dashed border-blue-500/30" />
+      <div className="flex-1 border-t border-dashed border-primary/30" />
     </div>
   );
 }
@@ -409,7 +409,7 @@ function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
           key={e.id}
           className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
             e.errorType === "rate_limit" || e.errorType === "overloaded"
-              ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+              ? "bg-warning/10 text-warning"
               : "bg-destructive/10 text-destructive"
           }`}
         >
@@ -437,16 +437,9 @@ export const TurnBlock = memo(function TurnBlock({
   showEvents = true,
   postCompactTokens,
 }: TurnBlockProps) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const isStreaming = isLast && !turn.complete;
-
-  const handleCopy = useCallback((text: string) => {
-    copyToClipboard(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, []);
 
   useEffect(() => {
     if (!lightboxSrc) return;
@@ -483,11 +476,11 @@ export const TurnBlock = memo(function TurnBlock({
       {/* User message */}
       <div className="flex gap-3 flex-row-reverse">
         <Avatar className="h-8 w-8 shrink-0">
-          <AvatarFallback className="bg-[#7aa2f7]/20 text-[#7aa2f7]">
+          <AvatarFallback className="bg-primary/20 text-primary">
             <User className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-[#7aa2f7]/20 to-[#7aa2f7]/10 text-foreground shadow-lg shadow-black/30 border border-[#7aa2f7]/10">
+        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
           {turn.prompt && (
             <button
               type="button"
@@ -536,11 +529,11 @@ export const TurnBlock = memo(function TurnBlock({
       {hasAssistantContent && (
         <div className="flex gap-3">
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className="bg-[#bb9af7]/15 text-[#bb9af7]">
+            <AvatarFallback className="bg-agent/15 text-agent">
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-hidden pr-2">
+          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip pr-2">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && seg.kind === "activity") {

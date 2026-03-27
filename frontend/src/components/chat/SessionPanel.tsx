@@ -98,7 +98,7 @@ function BranchStatus({
 
   if (meta.worktreeMerged && ahead === 0 && behind === 0) {
     return (
-      <div className="flex items-center gap-2 text-xs text-[#9ece6a]/80">
+      <div className="flex items-center gap-2 text-xs text-success/80">
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
         Merged
       </div>
@@ -109,12 +109,12 @@ function BranchStatus({
   if (meta.mergeStatus === "conflicts") {
     return (
       <div className="space-y-1.5">
-        <div className="flex items-center gap-2 text-xs text-amber-500">
+        <div className="flex items-center gap-2 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           <span>{meta.mergeConflictFiles?.length ?? 0} conflicting files</span>
         </div>
         {meta.mergeConflictFiles && meta.mergeConflictFiles.length > 0 && (
-          <ul className="text-[11px] text-amber-400/70 space-y-0.5 pl-5.5">
+          <ul className="text-[11px] text-warning/70 space-y-0.5 pl-5.5">
             {meta.mergeConflictFiles.map((f) => (
               <li key={f} className="font-mono truncate">
                 {f}
@@ -126,7 +126,7 @@ function BranchStatus({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+            className="h-6 px-2 text-xs text-warning hover:text-warning hover:bg-warning/10"
             onClick={() => {
               const files = meta.mergeConflictFiles?.join(", ") ?? "";
               onSendMessage?.(
@@ -155,13 +155,13 @@ function BranchStatus({
           </span>
         )}
         {behind > 0 && (
-          <span className="flex items-center gap-1 text-[#7aa2f7]/80">
+          <span className="flex items-center gap-1 text-primary/80">
             <ArrowDown className="h-3 w-3" />
             {behind} behind
           </span>
         )}
         {meta.mergeStatus === "clean" && ahead > 0 && (
-          <CheckCircle2 className="h-3 w-3 text-[#9ece6a]/70 ml-auto shrink-0" />
+          <CheckCircle2 className="h-3 w-3 text-success/70 ml-auto shrink-0" />
         )}
       </div>
 
@@ -172,7 +172,7 @@ function BranchStatus({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-xs text-[#7aa2f7] hover:bg-[#7aa2f7]/10"
+              className="h-6 px-2 text-xs text-primary hover:bg-primary/10"
               onClick={git.handleRebase}
               disabled={git.rebasing}
             >
@@ -184,7 +184,7 @@ function BranchStatus({
             <MergeDropdown
               git={git}
               className={
-                meta.mergeStatus === "clean" ? "text-[#9ece6a] hover:bg-[#9ece6a]/10" : undefined
+                meta.mergeStatus === "clean" ? "text-success hover:bg-success/10" : undefined
               }
             />
           )}
@@ -240,7 +240,7 @@ function UncommittedSection({
         <button
           type="button"
           onClick={git.toggleUncommittedExpanded}
-          className="flex items-center gap-1.5 text-xs text-amber-500/80 hover:text-amber-500 transition-colors min-w-0"
+          className="flex items-center gap-1.5 text-xs text-warning/80 hover:text-warning transition-colors min-w-0"
         >
           {git.uncommittedExpanded ? (
             <ChevronDown className="h-3 w-3 shrink-0" />
@@ -327,7 +327,7 @@ function GitSection({
         </div>
       )}
 
-      {meta.branchMissing && <div className="text-xs text-[#f7768e]/80">Branch missing</div>}
+      {meta.branchMissing && <div className="text-xs text-destructive/80">Branch missing</div>}
 
       {/* 1. Uncommitted changes — highest priority, blocks other operations */}
       <UncommittedSection
@@ -350,8 +350,8 @@ function GitSection({
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
         >
           <FileDiff className="h-3 w-3 shrink-0" />
-          <span className="text-green-500">+{git.diffTotals.add}</span>
-          <span className="text-red-500">-{git.diffTotals.del}</span>
+          <span className="text-success">+{git.diffTotals.add}</span>
+          <span className="text-destructive">-{git.diffTotals.del}</span>
           <span>across {git.diffResult?.files.length ?? 0} files</span>
         </button>
       )}
@@ -362,7 +362,7 @@ function GitSection({
           href={meta.prUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1.5 text-xs text-[#7aa2f7]/80 hover:text-[#7aa2f7] transition-colors"
+          className="flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors"
         >
           <ExternalLink className="h-3 w-3" />
           Pull Request
@@ -478,11 +478,11 @@ export function CollapsedSessionStrip({ meta, todos, onExpand }: CollapsedSessio
 
   let mergeIcon = null;
   if (meta.worktreeMerged && (meta.commitsAhead ?? 0) === 0) {
-    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-[#9ece6a]/70" />;
+    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-success/70" />;
   } else if (meta.mergeStatus === "conflicts") {
-    mergeIcon = <AlertTriangle className="h-3.5 w-3.5 text-amber-500/70" />;
+    mergeIcon = <AlertTriangle className="h-3.5 w-3.5 text-warning/70" />;
   } else if (meta.mergeStatus === "clean" && (meta.commitsAhead ?? 0) > 0) {
-    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-[#9ece6a]/50" />;
+    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-success/50" />;
   } else if (meta.worktreeBranch) {
     mergeIcon = <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />;
   }

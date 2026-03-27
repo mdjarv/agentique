@@ -154,10 +154,10 @@ function prefixLines(text: string, prefix: string): string {
 function EditDiffView({ oldString, newString }: { oldString: string; newString: string }) {
   return (
     <div className="border-t max-h-64 overflow-y-auto font-mono text-xs leading-relaxed">
-      <pre className="bg-red-500/15 text-red-300 px-2 py-0.5 whitespace-pre-wrap m-0">
+      <pre className="bg-destructive/15 text-destructive/70 px-2 py-0.5 whitespace-pre-wrap m-0">
         {prefixLines(oldString, "-")}
       </pre>
-      <pre className="bg-green-500/15 text-green-300 px-2 py-0.5 whitespace-pre-wrap m-0">
+      <pre className="bg-success/15 text-success/70 px-2 py-0.5 whitespace-pre-wrap m-0">
         {prefixLines(newString, "+")}
       </pre>
     </div>

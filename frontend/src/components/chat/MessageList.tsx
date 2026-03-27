@@ -69,6 +69,8 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
+  const rafRef = useRef<number>(0);
+  const prevTextRef = useRef(currentAssistantText);
   const [following, setFollowing] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
 
@@ -78,19 +80,32 @@ export function MessageList({
     setFollowing(isNearBottom(el));
   }, []);
 
+  // Auto-scroll to bottom on content changes.
+  // Uses rAF to coalesce rapid streaming deltas into one scroll per frame,
+  // and instant behavior during streaming to avoid conflicting smooth animations.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
   useEffect(() => {
-    if (following) {
-      const behavior = scrollBehaviorRef.current;
+    if (!following) return;
+
+    const isStreamingUpdate = currentAssistantText !== prevTextRef.current;
+    prevTextRef.current = currentAssistantText;
+
+    const behavior: ScrollBehavior = isStreamingUpdate ? "instant" : scrollBehaviorRef.current;
+    scrollBehaviorRef.current = "smooth";
+
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior });
-      scrollBehaviorRef.current = "smooth";
-    }
+    });
   }, [turns, currentAssistantText, following]);
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   // Reset to following when switching sessions — instant jump, no smooth scroll
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on session change
   useEffect(() => {
     scrollBehaviorRef.current = "instant";
+    prevTextRef.current = "";
     setFollowing(true);
   }, [sessionId]);
 

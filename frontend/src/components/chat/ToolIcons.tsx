@@ -18,10 +18,10 @@ import { cn } from "~/lib/utils";
 type ToolColor = "safe" | "effect" | "info" | "agent";
 
 const colorClass: Record<ToolColor, string> = {
-  safe: "text-[#9ece6a]/70",
-  effect: "text-[#e0af68]/70",
-  info: "text-[#7aa2f7]/70",
-  agent: "text-[#bb9af7]/70",
+  safe: "text-success/70",
+  effect: "text-warning/70",
+  info: "text-primary/70",
+  agent: "text-agent/70",
 };
 
 function toolColor(name: string, category?: string): ToolColor {

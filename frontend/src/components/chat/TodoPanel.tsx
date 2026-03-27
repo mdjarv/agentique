@@ -9,9 +9,9 @@ interface TodoPanelProps {
 export function StatusIcon({ status }: { status: TodoItem["status"] }) {
   switch (status) {
     case "completed":
-      return <CircleCheckBig className="h-3.5 w-3.5 text-green-400 shrink-0" />;
+      return <CircleCheckBig className="h-3.5 w-3.5 text-success shrink-0" />;
     case "in_progress":
-      return <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin shrink-0" />;
+      return <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />;
     case "pending":
       return <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />;
   }

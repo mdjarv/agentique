@@ -80,7 +80,7 @@ export function SessionRow({
           "truncate text-sidebar-foreground",
           !name && "italic text-muted-foreground",
           faded && "text-muted-foreground line-through decoration-muted-foreground/50",
-          hasAttention && "text-[#e0af68]",
+          hasAttention && "text-warning",
           hasUnseenCompletion && "font-semibold text-foreground-bright",
         )}
         title={worktreeBranch ? `${name || "Untitled"}\n${worktreeBranch}` : name || "Untitled"}
@@ -123,10 +123,10 @@ function SessionGitStatus({
   prUrl?: string;
 }) {
   if (worktreeMerged && !(commitsAhead && commitsAhead > 0)) {
-    return <span className="text-xs text-emerald-500/70">merged</span>;
+    return <span className="text-xs text-success/70">merged</span>;
   }
   if (branchMissing) {
-    return <span className="text-xs text-[#f7768e]/80">missing</span>;
+    return <span className="text-xs text-destructive/80">missing</span>;
   }
 
   const hasPr = !!prUrl;
@@ -138,9 +138,9 @@ function SessionGitStatus({
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      {hasConflicts && <AlertTriangle className="size-3 text-amber-500/80" />}
-      {!hasConflicts && readyToMerge && <CheckCircle2 className="size-3 text-[#9ece6a]/70" />}
-      {hasPr && <GitPullRequest className="size-3 text-[#7aa2f7]" />}
+      {hasConflicts && <AlertTriangle className="size-3 text-warning/80" />}
+      {!hasConflicts && readyToMerge && <CheckCircle2 className="size-3 text-success/70" />}
+      {hasPr && <GitPullRequest className="size-3 text-primary" />}
       <GitIndicators dirty={dirty} aheadCount={commitsAhead} behindCount={commitsBehind} />
     </span>
   );

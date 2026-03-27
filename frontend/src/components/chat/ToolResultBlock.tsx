@@ -33,7 +33,7 @@ export function ToolResultBlock({ content, onImageClick }: ToolResultBlockProps)
           </span>
         }
       >
-        <CheckCircle className="h-3 w-3 text-[#9ece6a]/70" />
+        <CheckCircle className="h-3 w-3 text-success/70" />
         <span className="truncate">{expanded ? "Result" : preview || "Result"}</span>
       </ExpandableRow>
       {expanded && (

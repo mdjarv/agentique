@@ -195,12 +195,12 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
                     </span>
                   )}
                   {behind && (
-                    <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
+                    <span className="flex items-center gap-0.5 text-primary/80">
                       <ArrowDown className="size-2.5" />
                       {meta.commitsBehind}
                     </span>
                   )}
-                  {dirty && <span className="text-[#e0af68]/80">uncommitted</span>}
+                  {dirty && <span className="text-warning/80">uncommitted</span>}
                 </div>
               )}
             </div>
@@ -262,7 +262,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
               <div>
                 <p>This will remove the session and its data. This cannot be undone.</p>
                 {meta.worktreePath && !meta.worktreeMerged && (
-                  <p className="mt-2 font-medium text-[#e0af68]">
+                  <p className="mt-2 font-medium text-warning">
                     This session has a worktree that will be removed.
                   </p>
                 )}

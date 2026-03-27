@@ -32,17 +32,17 @@ const stateConfig: Record<
 > = {
   approval: {
     icon: CircleHelp,
-    color: "text-[#ff9e64]",
+    color: "text-orange",
     pulse: true,
     label: "waiting for approval",
   },
-  unseen: { icon: BellDot, color: "text-[#e0af68]", label: "new response" },
-  running: { icon: Loader, color: "text-[#73daca]", label: "running" },
-  merging: { icon: Loader, color: "text-[#7aa2f7]", label: "merging" },
-  idle: { icon: Circle, color: "text-[#9ece6a]", label: "idle" },
-  done: { icon: Check, color: "text-emerald-500", label: "done" },
-  stopped: { icon: Pause, color: "text-[#a9b1d6]/80", label: "stopped" },
-  failed: { icon: TriangleAlert, color: "text-[#f7768e]", label: "failed" },
+  unseen: { icon: BellDot, color: "text-warning", label: "new response" },
+  running: { icon: Loader, color: "text-teal", label: "running" },
+  merging: { icon: Loader, color: "text-primary", label: "merging" },
+  idle: { icon: Circle, color: "text-success", label: "idle" },
+  done: { icon: Check, color: "text-success", label: "done" },
+  stopped: { icon: Pause, color: "text-foreground/80", label: "stopped" },
+  failed: { icon: TriangleAlert, color: "text-destructive", label: "failed" },
 };
 
 const displayOrder: DisplayState[] = [
