@@ -402,7 +402,7 @@ func (s *Session) processEvent(event claudecli.Event) {
 
 	// Rate limit and stream events are transient — broadcast only, skip DB.
 	switch wireEvent.(type) {
-	case WireRateLimitEvent, WireStreamEvent, WireCompactStatusEvent:
+	case WireRateLimitEvent, WireStreamEvent, WireCompactStatusEvent, WireContextManagementEvent:
 		s.broadcast("session.event", map[string]any{
 			"sessionId": s.ID,
 			"event":     wireEvent,

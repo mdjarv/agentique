@@ -99,6 +99,11 @@ export const WireCompactBoundaryEventSchema = z.object({
   preTokens: z.number(),
 });
 
+export const WireContextManagementEventSchema = z.object({
+  type: z.literal("context_management"),
+  raw: z.unknown(),
+});
+
 export const SessionInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -445,4 +450,5 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireStreamEventSchema,
   WireCompactStatusEventSchema,
   WireCompactBoundaryEventSchema,
+  WireContextManagementEventSchema,
 ]);

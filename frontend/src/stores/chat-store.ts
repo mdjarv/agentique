@@ -25,7 +25,8 @@ export interface ChatEvent {
     | "rate_limit"
     | "stream"
     | "compact_status"
-    | "compact_boundary";
+    | "compact_boundary"
+    | "context_management";
   content?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
@@ -542,7 +543,7 @@ export const useChatStore = create<ChatState>((set) => ({
           },
         };
       }
-      if (event.type === "stream") return s;
+      if (event.type === "stream" || event.type === "context_management") return s;
       if (event.type === "compact_status") {
         return updateSession(s, sessionId, {
           compacting: event.status === "compacting",
