@@ -91,9 +91,10 @@ type Session struct {
 	workDir        string
 	gitVersion      int64
 	eventLoopDone   chan struct{}
-	toolCategories         map[string]string // ToolID → category for correlating results to writes
-	gitRefreshTimer        *time.Timer       // debounce timer for mid-turn git refresh
-	lastStreamInputTokens  int              // from latest message_start usage; enriches result events
+	toolCategories          map[string]string // ToolID → category for correlating results to writes
+	gitRefreshTimer         *time.Timer       // debounce timer for mid-turn git refresh
+	lastStreamContextTokens int               // from latest message_start: input + cache (per-API-call)
+	lastStreamOutputTokens  int               // from latest message_delta: output tokens (per-API-call)
 }
 
 
@@ -411,10 +412,16 @@ func (s *Session) processEvent(event claudecli.Event) {
 		})
 		return
 	case WireStreamEvent:
-		// Track message_start input_tokens for enriching result events.
-		if n := extractStreamInputTokens(we.Event); n > 0 {
+		// Track per-API-call token data for enriching result events.
+		if n := extractStreamContextTokens(we.Event); n > 0 {
 			s.mu.Lock()
-			s.lastStreamInputTokens = n
+			s.lastStreamContextTokens = n
+			s.lastStreamOutputTokens = 0 // reset output for new API call
+			s.mu.Unlock()
+		}
+		if n := extractStreamOutputTokens(we.Event); n > 0 {
+			s.mu.Lock()
+			s.lastStreamOutputTokens = n
 			s.mu.Unlock()
 		}
 		s.broadcast("session.event", map[string]any{
@@ -424,26 +431,28 @@ func (s *Session) processEvent(event claudecli.Event) {
 		return
 	}
 
-	// Enrich result events with streaming context data before persisting.
-	// Streaming message_start input_tokens (from the raw API) is the authoritative
-	// source for context window consumption. The CLI's modelUsage may underreport.
+	// Enrich result events with per-API-call stream data. ModelUsage values are
+	// cumulative across all API calls — only stream data reflects actual context.
 	if wire, ok := wireEvent.(WireResultEvent); ok {
 		s.mu.Lock()
-		streamInput := s.lastStreamInputTokens
-		s.lastStreamInputTokens = 0
+		streamContext := s.lastStreamContextTokens
+		streamOutput := s.lastStreamOutputTokens
+		s.lastStreamContextTokens = 0
+		s.lastStreamOutputTokens = 0
 		s.mu.Unlock()
-		if streamInput > wire.InputTokens {
-			wire.InputTokens = streamInput
+		if streamContext > 0 {
+			wire.InputTokens = streamContext
 		}
-		if wire.ContextWindow == 0 && wire.InputTokens > 0 {
-			wire.ContextWindow = 200_000
+		if streamOutput > 0 {
+			wire.OutputTokens = streamOutput
 		}
 		slog.Debug("result event context",
 			"session_id", s.ID,
-			"wire_context_window", wire.ContextWindow,
-			"wire_input_tokens", wire.InputTokens,
-			"wire_output_tokens", wire.OutputTokens,
-			"streaming_input_tokens", streamInput,
+			"context_window", wire.ContextWindow,
+			"input_tokens", wire.InputTokens,
+			"output_tokens", wire.OutputTokens,
+			"stream_context", streamContext,
+			"stream_output", streamOutput,
 		)
 		wireEvent = wire
 	}
