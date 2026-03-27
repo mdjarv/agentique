@@ -28,6 +28,7 @@ var (
 	rpOrigin    string
 	tlsCert     string
 	tlsKey      string
+	testMode    bool
 )
 
 func init() {
@@ -36,6 +37,7 @@ func init() {
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
 	serveCmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to TLS key file")
+	serveCmd.Flags().BoolVar(&testMode, "test-mode", false, "enable test mode (mock CLI, test endpoints, no auth)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -74,8 +76,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		scheme = "https"
 	}
 
+	if testMode {
+		disableAuth = true
+		slog.Info("test mode: auth disabled, mock CLI enabled")
+	}
+
 	cfg := server.Config{
 		AuthEnabled: !disableAuth,
+		TestMode:    testMode,
+		DB:          db,
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

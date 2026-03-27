@@ -11,6 +11,11 @@ import (
 	"github.com/allbin/agentique/backend/internal/gitops"
 )
 
+// Runner runs a single blocking Claude CLI invocation.
+type Runner interface {
+	RunBlocking(ctx context.Context, prompt string, opts ...claudecli.Option) (*claudecli.BlockingResult, error)
+}
+
 type CommitMessageResult struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -21,7 +26,7 @@ type PRDescriptionResult struct {
 	Body  string `json:"body"`
 }
 
-func CommitMsg(ctx context.Context, sessionName, summary, diff string) (CommitMessageResult, error) {
+func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff string) (CommitMessageResult, error) {
 	diffText := diff
 	const maxDiffChars = 8000
 	if len(diffText) > maxDiffChars {
@@ -39,8 +44,7 @@ func CommitMsg(ctx context.Context, sessionName, summary, diff string) (CommitMe
 		sessionName, summary, diffText,
 	)
 
-	client := claudecli.New()
-	result, err := client.RunBlocking(ctx, prompt,
+	result, err := runner.RunBlocking(ctx, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
@@ -52,7 +56,7 @@ func CommitMsg(ctx context.Context, sessionName, summary, diff string) (CommitMe
 	return parseCommitMessage(result.Text), nil
 }
 
-func AutoCommitMsg(ctx context.Context, sessionName, wtPath string) string {
+func AutoCommitMsg(ctx context.Context, runner Runner, sessionName, wtPath string) string {
 	fallback := sessionName + ": save changes"
 
 	diff, summary, err := gitops.UncommittedDiff(wtPath)
@@ -60,7 +64,7 @@ func AutoCommitMsg(ctx context.Context, sessionName, wtPath string) string {
 		return fallback
 	}
 
-	result, err := CommitMsg(ctx, sessionName, summary, diff)
+	result, err := CommitMsg(ctx, runner, sessionName, summary, diff)
 	if err != nil || result.Title == "" {
 		slog.Warn("haiku commit msg failed, using fallback", "error", err)
 		return fallback
@@ -72,7 +76,7 @@ func AutoCommitMsg(ctx context.Context, sessionName, wtPath string) string {
 	return result.Title
 }
 
-func PRDescription(ctx context.Context, sessionName, summary, diff string) (PRDescriptionResult, error) {
+func PRDescription(ctx context.Context, runner Runner, sessionName, summary, diff string) (PRDescriptionResult, error) {
 	diffText := diff
 	const maxDiffChars = 8000
 	if len(diffText) > maxDiffChars {
@@ -90,8 +94,7 @@ func PRDescription(ctx context.Context, sessionName, summary, diff string) (PRDe
 		sessionName, summary, diffText,
 	)
 
-	client := claudecli.New()
-	result, err := client.RunBlocking(ctx, prompt,
+	result, err := runner.RunBlocking(ctx, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),

@@ -1,5 +1,13 @@
 import { ws } from "msw";
 import {
+  CreatePRResultSchema,
+  CreateSessionResultSchema,
+  GitSnapshotSchema,
+  ListSessionsResultSchema,
+  MergeResultSchema,
+  WireEventSchema,
+} from "~/lib/generated-schemas";
+import {
   MOCK_PENDING_APPROVALS,
   MOCK_PENDING_QUESTIONS,
   MOCK_PROJECT_GIT_STATUS,
@@ -8,6 +16,7 @@ import {
   PROJECT_IDS,
   SESSION_IDS,
 } from "./data";
+import { validatePayload } from "./validate";
 
 const wsLink = ws.link(/wss?:\/\/.*\/ws$/);
 
@@ -30,6 +39,15 @@ function respondError(client: WsClientConnection, id: string, message: string) {
 }
 
 function push(client: WsClientConnection, type: string, payload: unknown) {
+  // Validate push payloads against generated schemas where applicable.
+  if (type === "session.state") {
+    validatePayload(GitSnapshotSchema, payload, "push session.state");
+  } else if (type === "session.event" && typeof payload === "object" && payload !== null) {
+    const p = payload as Record<string, unknown>;
+    if (p.event) {
+      validatePayload(WireEventSchema, p.event, "push session.event");
+    }
+  }
   client.send(JSON.stringify({ type, payload }));
 }
 
@@ -84,7 +102,9 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
 
     case "session.list": {
       const sessions = MOCK_SESSIONS[p.projectId as string] ?? [];
-      respond(client, msg.id, { sessions });
+      const payload = { sessions };
+      validatePayload(ListSessionsResultSchema, payload, "session.list response");
+      respond(client, msg.id, payload);
       break;
     }
 
@@ -109,19 +129,21 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
 
     case "session.create": {
       const id = `mock-created-${++sessionCounter}`;
-      respond(client, msg.id, {
+      const createResult = {
         sessionId: id,
         name: (p.name as string) || `Session ${sessionCounter}`,
         state: "idle",
         connected: true,
-        model: p.model ?? "sonnet",
+        model: (p.model as string) ?? "sonnet",
         permissionMode: p.planMode ? "plan" : "default",
-        autoApprove: p.autoApprove ?? false,
-        effort: p.effort,
-        maxBudget: p.maxBudget,
-        maxTurns: p.maxTurns,
+        autoApprove: (p.autoApprove as boolean) ?? false,
+        effort: p.effort as string,
+        maxBudget: p.maxBudget as number,
+        maxTurns: p.maxTurns as number,
         createdAt: new Date().toISOString(),
-      });
+      };
+      validatePayload(CreateSessionResultSchema, createResult, "session.create response");
+      respond(client, msg.id, createResult);
       break;
     }
 
@@ -264,8 +286,10 @@ index abc1234..def5678 100644
       respond(client, msg.id, { commitHash: "abc1234" });
       break;
 
-    case "session.merge":
-      respond(client, msg.id, { status: "merged", commitHash: "def5678" });
+    case "session.merge": {
+      const mergeResult = { status: "merged", commitHash: "def5678" };
+      validatePayload(MergeResultSchema, mergeResult, "session.merge response");
+      respond(client, msg.id, mergeResult);
       push(client, "session.state", {
         sessionId: p.sessionId,
         state: "idle",
@@ -279,17 +303,21 @@ index abc1234..def5678 100644
         version: Date.now(),
       });
       break;
+    }
 
-    case "session.create-pr":
-      respond(client, msg.id, {
+    case "session.create-pr": {
+      const prResult = {
         status: "created",
         url: "https://github.com/example/repo/pull/99",
-      });
+      };
+      validatePayload(CreatePRResultSchema, prResult, "session.create-pr response");
+      respond(client, msg.id, prResult);
       push(client, "session.pr-updated", {
         sessionId: p.sessionId,
         prUrl: "https://github.com/example/repo/pull/99",
       });
       break;
+    }
 
     case "session.rebase":
       respond(client, msg.id, { status: "rebased" });
