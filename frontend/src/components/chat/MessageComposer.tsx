@@ -151,6 +151,14 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       };
     }, []);
 
+    // Debounced draft persistence — save 500ms after typing stops
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        onTextPersistRef.current?.(text);
+      }, 500);
+      return () => clearTimeout(timer);
+    }, [text]);
+
     const handleSend = () => {
       const trimmed = text.trim();
       if ((!trimmed && attachments.length === 0) || disabled || submittingRef.current) return;
