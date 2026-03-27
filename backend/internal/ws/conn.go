@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentique/backend/internal/logging"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -72,7 +73,11 @@ func (c *conn) readLoop() {
 			}
 			return
 		}
-		slog.Debug("ws recv", "type", msg.Type, "id", msg.ID)
+		lvl := slog.LevelDebug
+		if isTraceType(msg.Type) {
+			lvl = logging.LevelTrace
+		}
+		slog.Log(context.Background(), lvl, "ws recv", "type", msg.Type, "id", msg.ID)
 		c.dispatch(msg)
 	}
 }
@@ -192,6 +197,14 @@ func (c *conn) dispatch(msg ClientMessage) {
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
 	}
+}
+
+var traceTypes = map[string]bool{
+	"project.git-status": true,
+}
+
+func isTraceType(t string) bool {
+	return traceTypes[t]
 }
 
 // send enqueues a message for writing. Non-blocking: if the buffer is full,
