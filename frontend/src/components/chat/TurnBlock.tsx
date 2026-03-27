@@ -321,13 +321,16 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 sessionId={sessionId}
                 projectPath={projectPath}
                 worktreePath={worktreePath}
+                resultContent={item.result?.contentBlocks}
               />
-              {item.result && (
-                <ToolResultBlock
-                  content={item.result.contentBlocks ?? []}
-                  onImageClick={setLightboxSrc}
-                />
-              )}
+              {item.result &&
+                item.use.toolName !== "Bash" &&
+                (item.result.contentBlocks ?? []).length > 0 && (
+                  <ToolResultBlock
+                    content={item.result.contentBlocks ?? []}
+                    onImageClick={setLightboxSrc}
+                  />
+                )}
             </div>
           ),
         )}
