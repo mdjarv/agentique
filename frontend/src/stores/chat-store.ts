@@ -552,23 +552,13 @@ export const useChatStore = create<ChatState>((set) => ({
         });
       }
 
-      const turns = [...session.turns];
-      const lastTurn = turns[turns.length - 1];
-      if (!lastTurn) {
-        console.warn("handleServerEvent: no turns for session", sessionId);
-        return s;
-      }
-
-      turns[turns.length - 1] = {
-        ...lastTurn,
-        events: [...lastTurn.events, event],
-        complete: lastTurn.complete || event.type === "result",
-      };
-
+      // Extract metadata from events regardless of whether turns are loaded.
+      // Turns may be empty for non-active sessions (loadSessionHistory is lazy).
+      // The events themselves are persisted server-side and loaded with history.
       const todos = extractTodosFromEvent(event);
       const isResult = event.type === "result";
       const isViewing = s.activeSessionId === sessionId;
-      const patch: Partial<SessionData> = { turns };
+      const patch: Partial<SessionData> = {};
       if (todos) patch.todos = todos;
       if (isResult) {
         patch.meta = { ...session.meta, state: "idle" };
@@ -589,6 +579,18 @@ export const useChatStore = create<ChatState>((set) => ({
         // replace it with post-compaction values. Clearing here causes a
         // flash of no-bar between compaction and the next message_start.
         patch.compacting = false;
+      }
+
+      // Append event to the last turn if turns are loaded
+      const turns = [...session.turns];
+      const lastTurn = turns[turns.length - 1];
+      if (lastTurn) {
+        turns[turns.length - 1] = {
+          ...lastTurn,
+          events: [...lastTurn.events, event],
+          complete: lastTurn.complete || isResult,
+        };
+        patch.turns = turns;
       }
 
       return updateSession(s, sessionId, patch);
