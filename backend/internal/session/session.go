@@ -654,13 +654,28 @@ func (s *Session) SetModel(model string) error {
 	return nil
 }
 
+// planSafeCategories lists tool categories that can be auto-approved in plan
+// mode. These are read-only tools that cannot mutate the filesystem or execute
+// arbitrary commands.
+var planSafeCategories = map[string]bool{
+	"file_read": true,
+	"web":       true,
+	"agent":     true,
+	"task":      true,
+}
+
+// isPlanSafeTool reports whether a tool can be auto-approved in plan mode.
+func isPlanSafeTool(toolName string) bool {
+	return planSafeCategories[classifyTool(toolName)]
+}
+
 // handleToolPermission is the callback for claudecli WithCanUseTool.
 // Blocks until the user resolves the approval or Close() cancels all pending approvals.
 // claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
 // this blocks, the SDK will unblock on context cancellation.
 func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
 	s.mu.Lock()
-	bypass := (s.autoApprove && s.permissionMode != "plan") || toolName == "EnterPlanMode"
+	bypass := (s.autoApprove && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
 	if bypass {
 		// When EnterPlanMode is auto-approved, transition into plan mode so
