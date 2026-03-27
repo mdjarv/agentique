@@ -18,6 +18,7 @@ import (
 
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/logging"
+	"github.com/allbin/agentique/backend/internal/paths"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/server"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -34,7 +35,7 @@ var (
 )
 
 func init() {
-	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: ~/.agentique/agentique.db)")
+	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: platform data dir)")
 	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
 	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
@@ -71,15 +72,11 @@ func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
+	p := paths.DBPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "agentique.db"
 	}
-	dir := filepath.Join(home, ".agentique")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "agentique.db"
-	}
-	return filepath.Join(dir, "agentique.db")
+	return p
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -91,6 +88,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	slog.Info("data directory", "path", paths.DataDir())
 	dbFile := resolveDBPath()
 	slog.Info("database", "path", dbFile)
 

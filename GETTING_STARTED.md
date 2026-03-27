@@ -21,14 +21,24 @@ A GUI for managing concurrent Claude Code agents across multiple projects.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--addr` | `localhost:9201` | Listen address |
-| `--db` | `~/.agentique/agentique.db` | Database path |
+| `--db` | (see Data below) | Database path |
 | `--disable-auth` | false | Skip WebAuthn authentication |
 | `--tls-cert` / `--tls-key` | -- | Enable HTTPS (both required) |
 
 ## Data
 
-- **Database:** `~/.agentique/agentique.db`
-- **Session worktrees:** `~/.agentique/worktrees/`
+All data lives under a single directory (the "data dir"):
+
+| Platform | Default |
+|----------|---------|
+| Linux | `~/.local/share/agentique` |
+| macOS | `~/Library/Application Support/agentique` |
+| Windows | `%LOCALAPPDATA%\agentique` |
+
+Override with `XDG_DATA_HOME` or `AGENTIQUE_HOME` (takes full precedence).
+
+- **Database:** `<data dir>/agentique.db`
+- **Session worktrees:** `<data dir>/worktrees/`
 
 ## Notes
 
