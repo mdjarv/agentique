@@ -67,7 +67,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       <DraftHeader />
       <div className="flex flex-1 overflow-y-auto">
         {pendingPrompt ? (
-          <div className="max-w-3xl mx-auto p-4 space-y-4">
+          <div className="p-4 space-y-4 min-w-0 w-full">
             <UserMessage prompt={pendingPrompt} attachments={pendingAttachments} />
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
