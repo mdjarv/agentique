@@ -71,6 +71,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("PATCH /api/projects/{id}", ph.HandleUpdate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
+	mux.HandleFunc("GET /api/preset-definitions", ph.HandleListPresetDefinitions)
 
 	subscribe := func() (<-chan session.SSEEvent, func()) {
 		ch := make(chan session.SSEEvent, 64)

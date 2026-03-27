@@ -133,6 +133,12 @@ export interface BehaviorPresets {
   customInstructions?: string;
 }
 
+export interface PresetDefinition {
+  key: string;
+  title: string;
+  description: string;
+}
+
 export interface SessionInfo {
   id: string;
   projectId: string;

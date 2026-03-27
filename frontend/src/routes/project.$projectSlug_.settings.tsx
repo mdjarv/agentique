@@ -16,8 +16,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
-import { deleteProject, updateProject } from "~/lib/api";
-import type { BehaviorPresets } from "~/lib/generated-types";
+import { deleteProject, listPresetDefinitions, updateProject } from "~/lib/api";
+import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
@@ -41,31 +41,6 @@ function parsePresets(raw: string): BehaviorPresets {
   }
 }
 
-const PRESET_TOGGLES: { key: keyof BehaviorPresets; label: string; description: string }[] = [
-  {
-    key: "autoCommit",
-    label: "Auto-commit at milestones",
-    description: "Commit proactively after each logical unit of work in worktree sessions.",
-  },
-  {
-    key: "suggestParallel",
-    label: "Suggest parallel sessions",
-    description:
-      "Suggest independent tasks as prompt blocks that can be launched as separate sessions.",
-  },
-  {
-    key: "planFirst",
-    label: "Plan before implementing",
-    description:
-      "Outline approach and wait for confirmation before writing code. Soft instruction, distinct from plan permission mode.",
-  },
-  {
-    key: "terse",
-    label: "Terse output",
-    description: "Minimize explanations. Show code changes directly without summaries.",
-  },
-];
-
 function ProjectSettingsPage() {
   const { projectSlug } = Route.useParams();
   const navigate = useNavigate();
@@ -82,6 +57,13 @@ function ProjectSettingsPage() {
   );
   const [presetsSaving, setPresetsSaving] = useState(false);
   const [presetsChanged, setPresetsChanged] = useState(false);
+  const [presetDefs, setPresetDefs] = useState<PresetDefinition[]>([]);
+
+  useEffect(() => {
+    listPresetDefinitions()
+      .then(setPresetDefs)
+      .catch(() => {});
+  }, []);
 
   // Reset presets when project's stored defaults change
   const projectPresetsRaw = project?.default_behavior_presets;
@@ -192,30 +174,33 @@ function ProjectSettingsPage() {
             </p>
           </div>
           <div className="space-y-3">
-            {PRESET_TOGGLES.map(({ key, label, description }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => togglePreset(key)}
-                className="flex items-start gap-3 w-full text-left rounded-lg border px-4 py-3 transition-colors hover:bg-muted/50"
-              >
-                <div
-                  className={`mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
-                    presets[key] ? "bg-primary" : "bg-muted-foreground/30"
-                  } relative`}
+            {presetDefs.map((def) => {
+              const key = def.key as keyof BehaviorPresets;
+              return (
+                <button
+                  key={def.key}
+                  type="button"
+                  onClick={() => togglePreset(key)}
+                  className="flex items-start gap-3 w-full text-left rounded-lg border px-4 py-3 transition-colors hover:bg-muted/50"
                 >
                   <div
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                      presets[key] ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{label}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
-                </div>
-              </button>
-            ))}
+                    className={`mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
+                      presets[key] ? "bg-primary" : "bg-muted-foreground/30"
+                    } relative`}
+                  >
+                    <div
+                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                        presets[key] ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{def.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{def.description}</div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
           <div className="space-y-2">
             <Label htmlFor="custom-instructions">Custom instructions</Label>

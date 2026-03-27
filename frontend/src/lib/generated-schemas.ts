@@ -135,6 +135,12 @@ export const BehaviorPresetsSchema = z.object({
   customInstructions: z.string().optional(),
 });
 
+export const PresetDefinitionSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  description: z.string(),
+});
+
 export const SessionInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),

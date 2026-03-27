@@ -182,6 +182,11 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, project)
 }
 
+// HandleListPresetDefinitions returns the curated preset definitions.
+func (h *Handler) HandleListPresetDefinitions(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, session.PresetRegistry)
+}
+
 // HandleDelete deletes a project by its ID extracted from the URL path.
 func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

@@ -33,6 +33,22 @@ func (bp BehaviorPresets) String() string {
 	return string(b)
 }
 
+// PresetDefinition describes a single toggleable behavior preset.
+// The frontend uses this to render toggle UI dynamically.
+type PresetDefinition struct {
+	Key         string `json:"key"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// PresetRegistry is the authoritative list of curated behavior presets.
+var PresetRegistry = []PresetDefinition{
+	{Key: "autoCommit", Title: "Auto-commit at milestones", Description: "Commit proactively after each logical unit of work in worktree sessions."},
+	{Key: "suggestParallel", Title: "Suggest parallel sessions", Description: "Suggest independent tasks as prompt blocks that can be launched as separate sessions."},
+	{Key: "planFirst", Title: "Plan before implementing", Description: "Outline approach and wait for confirmation before writing code. Soft instruction, distinct from plan permission mode."},
+	{Key: "terse", Title: "Terse output", Description: "Minimize explanations. Show code changes directly without summaries."},
+}
+
 // ParsePresets unmarshals JSON into BehaviorPresets.
 // Returns DefaultPresets() for empty, "{}", or invalid input.
 func ParsePresets(raw string) BehaviorPresets {
