@@ -38,6 +38,7 @@ import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
+import { useUIStore } from "~/stores/ui-store";
 
 interface ChatPanelProps {
   projectId: string;
@@ -65,7 +66,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const planMode = session?.planMode ?? false;
   const autoApprove = session?.autoApprove ?? false;
   const queuedMessages = session?.queuedMessages ?? [];
-  const draft = useChatStore((s) => s.sessions[sessionId]?.draft ?? "");
+  const draft = useUIStore((s) => s.drafts[sessionId] ?? "");
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
@@ -174,14 +175,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   const handleTextPersist = useCallback(
     (text: string) => {
-      useChatStore.getState().setDraft(sessionId, text);
+      useUIStore.getState().setDraft(sessionId, text);
     },
     [sessionId],
   );
 
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
-      useChatStore.getState().clearDraft(sessionId);
+      useUIStore.getState().clearDraft(sessionId);
       if (sessionState === "running") {
         useChatStore.getState().enqueueMessage(sessionId, prompt, attachments);
         return;

@@ -130,7 +130,6 @@ export interface SessionData {
   queuedMessages: QueuedMessage[];
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
-  draft: string;
   compacting: boolean;
 }
 
@@ -145,7 +144,6 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   queuedMessages: [],
   todos: null,
   contextUsage: null,
-  draft: "",
   compacting: false,
 });
 
@@ -291,10 +289,6 @@ export interface ChatState {
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
-
-  // Drafts
-  setDraft: (sessionId: string, text: string) => void;
-  clearDraft: (sessionId: string) => void;
 
   // Message queue
   enqueueMessage: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
@@ -465,10 +459,6 @@ export const useChatStore = create<ChatState>((set) => ({
         ...updateSession(s, sessionId, { turns, todos, contextUsage }),
       };
     }),
-
-  setDraft: (sessionId, text) => set((s) => updateSession(s, sessionId, { draft: text })),
-
-  clearDraft: (sessionId) => set((s) => updateSession(s, sessionId, { draft: "" })),
 
   enqueueMessage: (sessionId, prompt, attachments) =>
     set((s) => {
