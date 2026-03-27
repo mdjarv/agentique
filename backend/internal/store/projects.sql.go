@@ -10,7 +10,7 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order
+INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
 `
 
 type CreateProjectParams struct {
@@ -39,6 +39,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.UpdatedAt,
 		&i.Slug,
 		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
 	)
 	return i, err
 }
@@ -53,7 +54,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects WHERE id = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -70,12 +71,13 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.UpdatedAt,
 		&i.Slug,
 		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects WHERE slug = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -92,12 +94,13 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.UpdatedAt,
 		&i.Slug,
 		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order FROM projects ORDER BY sort_order ASC, updated_at DESC
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects ORDER BY sort_order ASC, updated_at DESC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -120,6 +123,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.UpdatedAt,
 			&i.Slug,
 			&i.SortOrder,
+			&i.DefaultBehaviorPresets,
 		); err != nil {
 			return nil, err
 		}
@@ -134,8 +138,36 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 	return items, nil
 }
 
+const updateProjectBehaviorPresets = `-- name: UpdateProjectBehaviorPresets :one
+UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
+`
+
+type UpdateProjectBehaviorPresetsParams struct {
+	DefaultBehaviorPresets string `json:"default_behavior_presets"`
+	ID                     string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectBehaviorPresets(ctx context.Context, arg UpdateProjectBehaviorPresetsParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectBehaviorPresets, arg.DefaultBehaviorPresets, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
+	)
+	return i, err
+}
+
 const updateProjectSlug = `-- name: UpdateProjectSlug :one
-UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order
+UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
 `
 
 type UpdateProjectSlugParams struct {
@@ -157,6 +189,7 @@ func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugPa
 		&i.UpdatedAt,
 		&i.Slug,
 		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
 	)
 	return i, err
 }

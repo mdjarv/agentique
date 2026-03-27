@@ -25,16 +25,17 @@ type InviteToken struct {
 }
 
 type Project struct {
-	ID                    string `json:"id"`
-	Name                  string `json:"name"`
-	Path                  string `json:"path"`
-	DefaultModel          string `json:"default_model"`
-	DefaultPermissionMode string `json:"default_permission_mode"`
-	DefaultSystemPrompt   string `json:"default_system_prompt"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at"`
-	Slug                  string `json:"slug"`
-	SortOrder             int64  `json:"sort_order"`
+	ID                     string `json:"id"`
+	Name                   string `json:"name"`
+	Path                   string `json:"path"`
+	DefaultModel           string `json:"default_model"`
+	DefaultPermissionMode  string `json:"default_permission_mode"`
+	DefaultSystemPrompt    string `json:"default_system_prompt"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+	Slug                   string `json:"slug"`
+	SortOrder              int64  `json:"sort_order"`
+	DefaultBehaviorPresets string `json:"default_behavior_presets"`
 }
 
 type Session struct {
@@ -59,6 +60,7 @@ type Session struct {
 	MaxTurns        int64          `json:"max_turns"`
 	LastQueryAt     sql.NullString `json:"last_query_at"`
 	CompletedAt     sql.NullString `json:"completed_at"`
+	BehaviorPresets string         `json:"behavior_presets"`
 }
 
 type SessionEvent struct {
