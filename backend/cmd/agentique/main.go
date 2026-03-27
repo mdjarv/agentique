@@ -46,6 +46,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	_, err := client.Get(base + "/api/health")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Agentique not running at %s\n", addr)
+		fmt.Fprintf(os.Stderr, "Start with: agentique serve\n")
 		return nil
 	}
 

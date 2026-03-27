@@ -159,14 +159,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		authStatus = "disabled"
 	}
 
-	listenAddr := addr
-	if listenAddr == "localhost:9201" {
-		// Default — use :9201 for binding (all interfaces in dev).
-		listenAddr = ":9201"
-	}
-
 	httpServer := &http.Server{
-		Addr:    listenAddr,
+		Addr:    addr,
 		Handler: srv,
 	}
 
@@ -175,7 +169,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", listenAddr, "tls", tlsEnabled, "auth", authStatus)
+		slog.Info("server listening", "addr", addr, "tls", tlsEnabled, "auth", authStatus)
 		var err error
 		if tlsEnabled {
 			err = httpServer.ListenAndServeTLS(tlsCert, tlsKey)
