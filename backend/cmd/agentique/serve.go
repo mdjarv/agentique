@@ -23,6 +23,7 @@ import (
 )
 
 var (
+	dbPath      string
 	disableAuth bool
 	rpID        string
 	rpOrigin    string
@@ -32,6 +33,7 @@ var (
 )
 
 func init() {
+	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: ~/.agentique/agentique.db)")
 	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
 	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
@@ -47,10 +49,28 @@ var serveCmd = &cobra.Command{
 	RunE:  runServe,
 }
 
+func resolveDBPath() string {
+	if dbPath != "" {
+		return dbPath
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "agentique.db"
+	}
+	dir := filepath.Join(home, ".agentique")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "agentique.db"
+	}
+	return filepath.Join(dir, "agentique.db")
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	logging.Init()
 
-	db, err := store.Open("agentique.db")
+	dbFile := resolveDBPath()
+	slog.Info("database", "path", dbFile)
+
+	db, err := store.Open(dbFile)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)

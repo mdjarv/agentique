@@ -17,11 +17,11 @@ dev-tls:
 
 # Go backend
 dev-backend:
-    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth --db agentique.db
 
 # Go backend with TLS
 dev-backend-tls:
-    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 \
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --db agentique.db \
         --tls-cert ../certs/server.crt --tls-key ../certs/server.key \
         --rp-id {{tls-host}} --rp-origin https://{{tls-host}}:9200
 
