@@ -524,6 +524,10 @@
     overflow: hidden;
     overscroll-behavior: none;
   }
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
   body {
     @apply bg-background text-foreground font-sans;
   }
