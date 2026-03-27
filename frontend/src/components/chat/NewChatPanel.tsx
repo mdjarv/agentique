@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { GitBranch, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DraftHeader } from "~/components/chat/DraftHeader";
@@ -8,6 +8,7 @@ import { UserMessage } from "~/components/chat/UserMessage";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard, getErrorMessage } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -19,6 +20,8 @@ interface NewChatPanelProps {
 export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
+  const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
+  const gitStatus = useAppStore((s) => s.projectGitStatus[projectId]);
   const [defaults] = useState(() => useUIStore.getState().sessionDefaults);
   const [worktree, setWorktree] = useState(defaults.worktree);
   const [planMode, setPlanMode] = useState(defaults.planMode);
@@ -62,13 +65,25 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   return (
     <div className="flex flex-col h-full">
       <DraftHeader />
-      <div className="flex-1 overflow-y-auto">
-        {pendingPrompt && (
+      <div className="flex flex-1 overflow-y-auto">
+        {pendingPrompt ? (
           <div className="max-w-3xl mx-auto p-4 space-y-4">
             <UserMessage prompt={pendingPrompt} attachments={pendingAttachments} />
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
               Creating session...
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <div className="text-center text-muted-foreground/60">
+              <div className="text-lg font-medium">{project?.name}</div>
+              {gitStatus?.branch && (
+                <div className="flex items-center justify-center gap-1.5 text-sm mt-1 font-mono">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  {gitStatus.branch}
+                </div>
+              )}
             </div>
           </div>
         )}
