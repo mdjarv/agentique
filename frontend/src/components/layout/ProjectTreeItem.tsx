@@ -197,28 +197,28 @@ function ActiveSessionIndicators({ counts }: { counts: ActiveSessionCounts }) {
     <span className="ml-auto flex items-center gap-1.5 shrink-0">
       {counts.pendingApproval > 0 && (
         <span
-          className="flex items-center gap-0.5 text-xs text-[#ff9e64]"
+          className="flex items-center gap-0.5 text-xs text-orange"
           title={`${counts.pendingApproval} awaiting approval`}
         >
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#ff9e64] animate-pulse" />
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-orange animate-pulse" />
           {counts.pendingApproval}
         </span>
       )}
       {counts.running > 0 && (
         <span
-          className="flex items-center gap-0.5 text-xs text-[#73daca]"
+          className="flex items-center gap-0.5 text-xs text-teal"
           title={`${counts.running} running`}
         >
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#73daca] animate-pulse" />
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-teal animate-pulse" />
           {counts.running}
         </span>
       )}
       {counts.idle > 0 && counts.running === 0 && counts.pendingApproval === 0 && (
         <span
-          className="flex items-center gap-0.5 text-xs text-[#9ece6a]/70"
+          className="flex items-center gap-0.5 text-xs text-success/70"
           title={`${counts.idle} idle`}
         >
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#9ece6a]" />
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
           {counts.idle}
         </span>
       )}

@@ -56,9 +56,9 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
   }, [ws, sessionId, approval.approvalId]);
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-blue-500/40 bg-blue-500/5 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 text-sm border-b border-blue-500/20">
-        <ClipboardList className="h-4 w-4 shrink-0 text-blue-500" />
+    <div className="mx-4 mb-2 rounded-md border border-primary/40 bg-primary/5 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm border-b border-primary/20">
+        <ClipboardList className="h-4 w-4 shrink-0 text-primary" />
         <span className="font-medium">Plan ready for review</span>
       </div>
 
@@ -68,7 +68,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
         </div>
       )}
 
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-blue-500/20 bg-blue-500/5">
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-primary/20 bg-primary/5">
         <Button
           size="sm"
           variant="ghost"
@@ -92,7 +92,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
           </Button>
           <Button
             size="sm"
-            className="h-8 px-3 bg-green-600 hover:bg-green-700 text-white"
+            className="h-8 px-3 bg-success hover:bg-success/90 text-background"
             onClick={handleContinue}
             disabled={submitting}
           >

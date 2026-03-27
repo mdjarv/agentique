@@ -56,10 +56,10 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
 };
 const EFFORT_COLORS: Record<EffortLevel, string> = {
   "": "text-muted-foreground",
-  low: "text-sky-500",
-  medium: "text-blue-500",
-  high: "text-orange-500",
-  max: "text-red-500",
+  low: "text-info",
+  medium: "text-primary",
+  high: "text-orange",
+  max: "text-destructive",
 };
 
 interface MessageComposerProps {
@@ -364,9 +364,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                       onClick={() => onWorktreeChange(!worktree)}
                       className={cn(
                         "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
-                        worktree
-                          ? "bg-primary/10 text-primary"
-                          : "bg-orange-500/10 text-orange-500",
+                        worktree ? "bg-primary/10 text-primary" : "bg-orange/10 text-orange",
                       )}
                     >
                       {worktree ? (
@@ -380,7 +378,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     <span
                       className={cn(
                         "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
-                        worktree ? "text-primary" : "text-orange-500",
+                        worktree ? "text-primary" : "text-orange",
                       )}
                     >
                       {worktree ? (
@@ -399,7 +397,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     className={cn(
                       "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
                       planMode
-                        ? "bg-yellow-500/10 text-yellow-500"
+                        ? "bg-warning/10 text-warning"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                       isRunning && "opacity-40 cursor-not-allowed",
                     )}
@@ -419,7 +417,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     className={cn(
                       "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
                       autoApprove
-                        ? "bg-green-500/10 text-green-500"
+                        ? "bg-success/10 text-success"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                     )}
                   >

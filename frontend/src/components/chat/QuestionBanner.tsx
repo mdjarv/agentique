@@ -32,7 +32,7 @@ function OptionsInput({
           >
             <input
               type="checkbox"
-              className="mt-0.5 accent-purple-500"
+              className="mt-0.5 accent-[var(--agent)]"
               checked={selected.has(opt.label)}
               onChange={(e) => {
                 const next = new Set(selected);
@@ -65,7 +65,7 @@ function OptionsInput({
         >
           <input
             type="radio"
-            className="mt-0.5 accent-purple-500"
+            className="mt-0.5 accent-[var(--agent)]"
             name={question.question}
             checked={value === opt.label}
             onChange={() => onChange(opt.label)}
@@ -119,7 +119,7 @@ function QuestionInput({
         />
         <button
           type="button"
-          className="self-start text-xs text-purple-400 hover:text-purple-300"
+          className="self-start text-xs text-agent hover:text-agent/80"
           onClick={() => {
             onChange("");
             setCustomMode(false);
@@ -136,7 +136,7 @@ function QuestionInput({
       <OptionsInput question={question} value={value} onChange={onChange} />
       <button
         type="button"
-        className="self-start text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+        className="self-start text-xs text-agent hover:text-agent/80 flex items-center gap-1"
         onClick={() => {
           onChange("");
           setCustomMode(true);
@@ -173,9 +173,9 @@ function StepDots({
             "h-2 w-2 rounded-full transition-colors",
             "p-0 before:content-[''] before:absolute before:inset-[-6px] relative",
             i === current
-              ? "bg-purple-400"
+              ? "bg-agent"
               : answeredSteps.has(i)
-                ? "bg-purple-400/50"
+                ? "bg-agent/50"
                 : "bg-muted-foreground/30",
           )}
           onClick={() => onNavigate(i)}
@@ -201,11 +201,11 @@ function SingleQuestionBanner({
   answered: boolean;
 }) {
   return (
-    <div className="mx-4 mb-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           {question.header && (
-            <span className="text-xs font-semibold uppercase tracking-wide text-purple-400">
+            <span className="text-xs font-semibold uppercase tracking-wide text-agent">
               {question.header}
             </span>
           )}
@@ -215,7 +215,7 @@ function SingleQuestionBanner({
         <div className="flex justify-end">
           <Button
             size="sm"
-            className="h-7 px-3 bg-purple-600 hover:bg-purple-700 text-white"
+            className="h-7 px-3 bg-agent hover:bg-agent/90 text-background"
             disabled={!answered || submitting}
             onClick={onSubmit}
           >
@@ -259,7 +259,7 @@ function WizardQuestionBanner({
   );
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2">
       <div className="flex flex-col gap-2">
         {/* Header: step label + dots */}
         <div className="flex items-center justify-between">
@@ -277,7 +277,7 @@ function WizardQuestionBanner({
         {/* Current question */}
         <div className="flex flex-col gap-1.5">
           {q.header && (
-            <span className="text-xs font-semibold uppercase tracking-wide text-purple-400">
+            <span className="text-xs font-semibold uppercase tracking-wide text-agent">
               {q.header}
             </span>
           )}
@@ -306,7 +306,7 @@ function WizardQuestionBanner({
           {isLast ? (
             <Button
               size="sm"
-              className="h-8 px-3 bg-purple-600 hover:bg-purple-700 text-white"
+              className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
               disabled={!allAnswered || submitting}
               onClick={onSubmit}
             >
@@ -316,7 +316,7 @@ function WizardQuestionBanner({
           ) : (
             <Button
               size="sm"
-              className="h-8 px-3 bg-purple-600 hover:bg-purple-700 text-white"
+              className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
               disabled={!currentAnswered}
               onClick={() => setStep(step + 1)}
             >

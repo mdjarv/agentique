@@ -17,9 +17,9 @@ export function AppSidebar({ className }: AppSidebarProps) {
     <div className={cn("bg-sidebar flex flex-col h-full", className)}>
       <div className="px-4 py-3 border-b flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <Cpu className="size-5 text-[#7aa2f7]" />
+          <Cpu className="size-5 text-primary" />
           <span
-            className="text-lg font-semibold tracking-tight bg-gradient-to-r from-[#7aa2f7] to-[#bb9af7] bg-clip-text text-transparent"
+            className="text-lg font-semibold tracking-tight bg-gradient-to-r from-primary to-agent bg-clip-text text-transparent"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
             Agentique

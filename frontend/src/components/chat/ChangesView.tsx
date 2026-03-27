@@ -79,9 +79,9 @@ function FileRow({ file }: { file: MergedFile }) {
         {statusIcon(file.status)}
         <span className="font-mono truncate min-w-0">{file.path}</span>
         <span className="ml-auto flex items-center gap-2 shrink-0 text-xs">
-          {file.insertions > 0 && <span className="text-green-500">+{file.insertions}</span>}
-          {file.deletions > 0 && <span className="text-red-500">-{file.deletions}</span>}
-          {file.uncommitted && <Circle className="h-2 w-2 fill-amber-500 text-amber-500" />}
+          {file.insertions > 0 && <span className="text-success">+{file.insertions}</span>}
+          {file.deletions > 0 && <span className="text-destructive">-{file.deletions}</span>}
+          {file.uncommitted && <Circle className="h-2 w-2 fill-warning text-warning" />}
         </span>
       </button>
       {expanded && (
@@ -117,7 +117,7 @@ export function ChangesView({ committedDiff, uncommittedDiff }: ChangesViewProps
   return (
     <div className="flex-1 overflow-y-auto">
       {truncated && (
-        <div className="px-4 py-2 text-xs text-yellow-500 bg-yellow-500/10 border-b">
+        <div className="px-4 py-2 text-xs text-warning bg-warning/10 border-b">
           Diff too large, showing summary only.
         </div>
       )}
@@ -125,10 +125,10 @@ export function ChangesView({ committedDiff, uncommittedDiff }: ChangesViewProps
         <span>
           {files.length} file{files.length !== 1 ? "s" : ""} changed
         </span>
-        {totalIns > 0 && <span className="text-green-500">+{totalIns}</span>}
-        {totalDel > 0 && <span className="text-red-500">-{totalDel}</span>}
+        {totalIns > 0 && <span className="text-success">+{totalIns}</span>}
+        {totalDel > 0 && <span className="text-destructive">-{totalDel}</span>}
         {hasUncommitted && (
-          <span className="ml-auto flex items-center gap-1 text-amber-500/70">
+          <span className="ml-auto flex items-center gap-1 text-warning/70">
             <Circle className="h-2 w-2 fill-current" />
             uncommitted
           </span>

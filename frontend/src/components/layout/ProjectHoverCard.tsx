@@ -89,9 +89,7 @@ export function ProjectHoverCard({
             {(ahead || behind || dirty) && (
               <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                 {dirty && (
-                  <span className="text-[#e0af68]/80">
-                    {gitStatus.uncommittedCount} uncommitted
-                  </span>
+                  <span className="text-warning/80">{gitStatus.uncommittedCount} uncommitted</span>
                 )}
                 {ahead && (
                   <span className="flex items-center gap-0.5">
@@ -100,7 +98,7 @@ export function ProjectHoverCard({
                   </span>
                 )}
                 {behind && (
-                  <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
+                  <span className="flex items-center gap-0.5 text-primary/80">
                     <ArrowDown className="size-2.5" />
                     {gitStatus.behindRemote} behind
                   </span>

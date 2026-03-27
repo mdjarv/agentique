@@ -106,8 +106,8 @@ export function AutocompletePopup({
 // --- Source badges ---
 
 const SOURCE_STYLES: Record<string, string> = {
-  project: "border-[#7aa2f7]/40 text-[#7aa2f7]",
-  user: "border-[#bb9af7]/40 text-[#bb9af7]",
+  project: "border-primary/40 text-primary",
+  user: "border-agent/40 text-agent",
 };
 
 function SourceBadge({ source }: { source: string }) {
@@ -126,14 +126,14 @@ function SourceBadge({ source }: { source: string }) {
 // --- File icons with Tokyo Night colors ---
 
 const TN = {
-  blue: "#7aa2f7",
-  cyan: "#7dcfff",
-  green: "#9ece6a",
-  yellow: "#e0af68",
-  orange: "#ff9e64",
-  red: "#f7768e",
-  magenta: "#bb9af7",
-  muted: "#565f89",
+  blue: "var(--primary)",
+  cyan: "var(--info)",
+  green: "var(--success)",
+  yellow: "var(--warning)",
+  orange: "var(--orange)",
+  red: "var(--destructive)",
+  magenta: "var(--agent)",
+  muted: "var(--muted-foreground)",
 } as const;
 
 // biome-ignore lint/suspicious/noExplicitAny: union of lucide + simple-icons component types

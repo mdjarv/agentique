@@ -2,12 +2,12 @@ import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 
 const stateColors: Record<SessionState, string> = {
-  idle: "bg-[#9ece6a]",
-  running: "bg-[#73daca]",
-  failed: "bg-[#f7768e]",
-  stopped: "bg-[#a9b1d6]",
-  done: "bg-[#7dcfff]",
-  merging: "bg-[#7aa2f7]",
+  idle: "bg-success",
+  running: "bg-teal",
+  failed: "bg-destructive",
+  stopped: "bg-foreground",
+  done: "bg-info",
+  merging: "bg-primary",
 };
 
 interface SessionStatusDotProps {
@@ -22,7 +22,7 @@ export function SessionStatusDot({
   hasPendingApproval,
 }: SessionStatusDotProps) {
   const waiting = hasPendingApproval;
-  const color = waiting ? "bg-[#ff9e64]" : stateColors[state];
+  const color = waiting ? "bg-orange" : stateColors[state];
   const pulse = waiting;
   const title = waiting ? "waiting for approval" : state;
   return (

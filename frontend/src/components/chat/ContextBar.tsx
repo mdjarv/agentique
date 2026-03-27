@@ -59,7 +59,7 @@ export function ContextBar({ usage, compacting }: ContextBarProps) {
     return (
       <div className="flex items-center gap-2 px-4 py-1">
         <div className="h-1.5 flex-1 rounded-full overflow-hidden compact-stripes" />
-        <span className="text-[11px] text-blue-400 shrink-0">Compacting...</span>
+        <span className="text-[11px] text-primary shrink-0">Compacting...</span>
       </div>
     );
   }

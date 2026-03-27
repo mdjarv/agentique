@@ -104,9 +104,9 @@ export function ApprovalBanner({
   }, [ws, sessionId, approval.approvalId]);
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
-        <ShieldAlert className="h-4 w-4 shrink-0 text-yellow-500" />
+        <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
         <span className="font-medium shrink-0">{approval.toolName}</span>
         <span className="text-muted-foreground truncate min-w-0">{summary}</span>
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
@@ -122,7 +122,7 @@ export function ApprovalBanner({
           </Button>
           <Button
             size="sm"
-            className="h-7 max-md:h-10 px-2 max-md:px-3 bg-green-600 hover:bg-green-700 text-white"
+            className="h-7 max-md:h-10 px-2 max-md:px-3 bg-success hover:bg-success/90 text-background"
             onClick={handleAllow}
             disabled={submitting}
           >

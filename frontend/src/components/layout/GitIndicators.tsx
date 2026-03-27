@@ -22,7 +22,7 @@ export function GitIndicators({
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
       {dirty && (
-        <span className="flex items-center gap-0.5 text-[#e0af68]/80">
+        <span className="flex items-center gap-0.5 text-warning/80">
           <span className="text-[0.5rem] leading-none">&#9679;</span>
           {uncommittedCount}
         </span>
@@ -34,7 +34,7 @@ export function GitIndicators({
         </span>
       )}
       {behind && (
-        <span className="flex items-center gap-0.5 text-[#7aa2f7]/80">
+        <span className="flex items-center gap-0.5 text-primary/80">
           <ArrowDown className="size-2.5" />
           {behindCount}
         </span>

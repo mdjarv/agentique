@@ -5,9 +5,7 @@ import {
   type ReactNode,
   isValidElement,
   memo,
-  useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import type { Components } from "react-markdown";
@@ -17,6 +15,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { PromptCard, parsePromptFromCode } from "~/components/chat/PromptCard";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 
 interface MarkdownProps {
@@ -34,22 +33,13 @@ function nodeToPlainText(node: ReactNode): string {
 }
 
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
-
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(text).then(() => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      setCopied(true);
-      timerRef.current = setTimeout(() => setCopied(false), 1200);
-    });
-  }, [text]);
+  const { copied, copy } = useCopyToClipboard();
 
   return (
     <button
       type="button"
       className="code-copy-btn"
-      onClick={handleCopy}
+      onClick={() => copy(text)}
       aria-label={copied ? "Copied" : "Copy code"}
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -69,7 +59,7 @@ function DeferredHighlighter({ code, language }: { code: string; language: strin
 
   if (!ready) {
     return (
-      <pre style={{ ...CODE_STYLE, background: "#282c34", padding: "1em", overflow: "auto" }}>
+      <pre style={{ ...CODE_STYLE, background: "var(--muted)", padding: "1em", overflow: "auto" }}>
         <code>{code}</code>
       </pre>
     );

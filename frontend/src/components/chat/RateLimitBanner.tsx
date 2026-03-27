@@ -28,11 +28,11 @@ export function RateLimitBanner({ rateLimit }: RateLimitBannerProps) {
   const resetLabel = rateLimit.resetsAt ? formatResetsIn(rateLimit.resetsAt) : null;
 
   return (
-    <div className="mx-4 my-1 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 shrink-0">
-      <div className="flex items-center gap-2 text-xs text-yellow-700 dark:text-yellow-400">
+    <div className="mx-4 my-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-1.5 shrink-0">
+      <div className="flex items-center gap-2 text-xs text-warning">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
         <span className="font-medium">{label}</span>
-        <span className="text-yellow-600/70 dark:text-yellow-500/70">
+        <span className="text-warning/70">
           {pct}% utilization{resetLabel ? ` \u00b7 ${resetLabel}` : ""}
         </span>
       </div>
