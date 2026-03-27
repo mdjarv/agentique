@@ -9,6 +9,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
+import { useUIStore } from "~/stores/ui-store";
 
 interface NewChatPanelProps {
   projectId: string;
@@ -18,11 +19,12 @@ interface NewChatPanelProps {
 export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
-  const [worktree, setWorktree] = useState(true);
-  const [planMode, setPlanMode] = useState(false);
-  const [autoApprove, setAutoApprove] = useState(true);
-  const [model, setModel] = useState<ModelId>("opus");
-  const [effort, setEffort] = useState<EffortLevel>("");
+  const [defaults] = useState(() => useUIStore.getState().sessionDefaults);
+  const [worktree, setWorktree] = useState(defaults.worktree);
+  const [planMode, setPlanMode] = useState(defaults.planMode);
+  const [autoApprove, setAutoApprove] = useState(defaults.autoApprove);
+  const [model, setModel] = useState<ModelId>(defaults.model);
+  const [effort, setEffort] = useState<EffortLevel>(defaults.effort);
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
@@ -38,6 +40,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
         effort: effort || undefined,
       });
       await submitQuery(ws, sessionId, prompt, attachments);
+      useUIStore.getState().setSessionDefaults({ worktree, planMode, autoApprove, model, effort });
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
         params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },

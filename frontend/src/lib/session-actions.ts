@@ -268,6 +268,12 @@ export async function getUncommittedDiff(ws: WsClient, sessionId: string): Promi
   return ws.request<DiffResult>("session.uncommitted-diff", { sessionId });
 }
 
+/** Returns true if the session's git snapshot was refreshed within maxAgeMs. */
+export function isGitFresh(sessionId: string, maxAgeMs = 10_000): boolean {
+  const at = useChatStore.getState().sessions[sessionId]?.meta.gitRefreshedAt;
+  return at != null && Date.now() - at < maxAgeMs;
+}
+
 /** Refresh git status and apply the response directly to the store (push-independent). */
 export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
   const gs = await ws.request<GitSnapshot>("session.refresh-git", { sessionId });

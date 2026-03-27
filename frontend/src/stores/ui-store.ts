@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { EffortLevel } from "~/components/chat/MessageComposer";
+import type { ModelId } from "~/lib/session-actions";
 
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
 
@@ -11,13 +13,31 @@ function readLegacyCollapsedProjects(): string[] {
   return [];
 }
 
+export interface SessionDefaults {
+  worktree: boolean;
+  planMode: boolean;
+  autoApprove: boolean;
+  model: ModelId;
+  effort: EffortLevel;
+}
+
+const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
+  worktree: true,
+  planMode: false,
+  autoApprove: true,
+  model: "opus",
+  effort: "",
+};
+
 interface UIState {
   drafts: Record<string, string>;
   collapsedProjectIds: string[];
+  sessionDefaults: SessionDefaults;
 
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
+  setSessionDefaults: (partial: Partial<SessionDefaults>) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -25,6 +45,7 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       drafts: {},
       collapsedProjectIds: readLegacyCollapsedProjects(),
+      sessionDefaults: { ...DEFAULT_SESSION_DEFAULTS },
 
       setDraft: (sessionId, text) =>
         set((s) => {
@@ -53,6 +74,9 @@ export const useUIStore = create<UIState>()(
           }
           return s;
         }),
+
+      setSessionDefaults: (partial) =>
+        set((s) => ({ sessionDefaults: { ...s.sessionDefaults, ...partial } })),
     }),
     {
       name: "agentique:ui",
@@ -60,6 +84,7 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         drafts: state.drafts,
         collapsedProjectIds: state.collapsedProjectIds,
+        sessionDefaults: state.sessionDefaults,
       }),
       onRehydrateStorage: () => () => {
         try {
