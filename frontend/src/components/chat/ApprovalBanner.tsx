@@ -88,8 +88,8 @@ export function ApprovalBanner({
 
   const handleAllowAll = useCallback(() => {
     setSubmitting(true);
-    resolveApproval(ws, sessionId, approval.approvalId, true)
-      .then(() => setAutoApprove(ws, sessionId, true))
+    setAutoApprove(ws, sessionId, true)
+      .then(() => resolveApproval(ws, sessionId, approval.approvalId, true))
       .catch((err) => {
         setSubmitting(false);
         toast.error(getErrorMessage(err, "Failed to approve tool"));
