@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Circle } from "lucide-react";
 
 interface GitIndicatorsProps {
   dirty?: boolean;
@@ -20,21 +20,21 @@ export function GitIndicators({
   if (!dirty && !ahead && !behind) return null;
 
   return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <span className="flex items-center gap-1 text-[11px]">
       {dirty && (
-        <span className="flex items-center gap-0.5 text-warning/80">
-          <span className="text-[0.5rem] leading-none">&#9679;</span>
+        <span className="flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0.5 text-warning">
+          <Circle className="size-2 fill-current" />
           {uncommittedCount}
         </span>
       )}
       {ahead && (
-        <span className="flex items-center gap-0.5">
+        <span className="flex items-center gap-0.5 rounded-full bg-success/15 px-1.5 py-0.5 text-success">
           <ArrowUp className="size-2.5" />
           {aheadCount}
         </span>
       )}
       {behind && (
-        <span className="flex items-center gap-0.5 text-primary/80">
+        <span className="flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-primary">
           <ArrowDown className="size-2.5" />
           {behindCount}
         </span>
