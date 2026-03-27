@@ -1,10 +1,22 @@
 import { ws } from "msw";
 import {
+  CleanResultSchema,
+  CommandsResultSchema,
+  CommitMessageResultSchema,
   CreatePRResultSchema,
   CreateSessionResultSchema,
+  DiffResultSchema,
   GitSnapshotSchema,
+  HistoryResultSchema,
   ListSessionsResultSchema,
   MergeResultSchema,
+  PRDescriptionResultSchema,
+  ProjectCommitResultSchema,
+  ProjectGitStatusSchema,
+  RebaseResultSchema,
+  SessionCommitResultSchema,
+  TrackedFilesResultSchema,
+  UncommittedFilesResultSchema,
   WireEventSchema,
 } from "~/lib/generated-schemas";
 import {
