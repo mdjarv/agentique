@@ -122,7 +122,12 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
 
     case "session.history": {
       const turns = MOCK_TURNS[p.sessionId as string] ?? [];
-      respond(client, msg.id, { turns });
+      const payload = { turns };
+      respond(
+        client,
+        msg.id,
+        validatePayload(HistoryResultSchema, payload, "session.history response"),
+      );
       break;
     }
 
@@ -135,7 +140,11 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
         behindRemote: 0,
         uncommittedCount: 0,
       };
-      respond(client, msg.id, status);
+      respond(
+        client,
+        msg.id,
+        validatePayload(ProjectGitStatusSchema, status, "project.git-status response"),
+      );
       break;
     }
 
@@ -229,8 +238,8 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
       break;
     }
 
-    case "session.diff":
-      respond(client, msg.id, {
+    case "session.diff": {
+      const diffPayload = {
         hasDiff: true,
         summary: "2 files changed, 15 insertions(+), 3 deletions(-)",
         files: [
@@ -247,15 +256,21 @@ index abc1234..def5678 100644
 +        ? Math.max(5000, this.reconnectDelay)
 +        : this.reconnectDelay;`,
         truncated: false,
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(DiffResultSchema, diffPayload, "session.diff response"),
+      );
       break;
+    }
 
     case "session.refresh-git": {
       const sid = p.sessionId as string;
       // Find the session metadata for realistic git state
       const allSessions = Object.values(MOCK_SESSIONS).flat();
       const session = allSessions.find((s) => s.id === sid);
-      respond(client, msg.id, {
+      const gitPayload = {
         sessionId: sid,
         state: session?.state ?? "idle",
         connected: true,
@@ -266,37 +281,78 @@ index abc1234..def5678 100644
         commitsBehind: session?.commitsBehind ?? 0,
         branchMissing: session?.branchMissing ?? false,
         version: Date.now(),
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(GitSnapshotSchema, gitPayload, "session.refresh-git response"),
+      );
       break;
     }
 
-    case "session.uncommitted-files":
-      respond(client, msg.id, {
+    case "session.uncommitted-files": {
+      const filesPayload = {
         files: [
           { path: "backend/internal/auth/middleware.go", status: "modified" },
           { path: "backend/internal/auth/middleware_test.go", status: "modified" },
         ],
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(
+          UncommittedFilesResultSchema,
+          filesPayload,
+          "session.uncommitted-files response",
+        ),
+      );
       break;
+    }
 
-    case "session.generate-commit-message":
-      respond(client, msg.id, {
+    case "session.generate-commit-message": {
+      const commitMsgPayload = {
         title: "refactor: migrate auth middleware to jwt.Verify API",
         description:
           "Replace deprecated ValidateToken with jwt.Verify, add structured error handling for expired/malformed tokens, update integration tests.",
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(
+          CommitMessageResultSchema,
+          commitMsgPayload,
+          "session.generate-commit-message response",
+        ),
+      );
       break;
+    }
 
-    case "session.generate-pr-description":
-      respond(client, msg.id, {
+    case "session.generate-pr-description": {
+      const prDescPayload = {
         title: "Refactor auth middleware to use new JWT validation",
         body: "## Summary\n- Replaced deprecated `ValidateToken` with `jwt.Verify`\n- Added structured error handling (expired, malformed, revoked)\n- Added 3 new integration tests\n\n## Test plan\n- [x] Unit tests pass\n- [x] Integration tests cover new error paths\n- [ ] Manual test with expired token",
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(
+          PRDescriptionResultSchema,
+          prDescPayload,
+          "session.generate-pr-description response",
+        ),
+      );
       break;
+    }
 
-    case "session.commit":
-      respond(client, msg.id, { commitHash: "abc1234" });
+    case "session.commit": {
+      const commitPayload = { commitHash: "abc1234" };
+      respond(
+        client,
+        msg.id,
+        validatePayload(SessionCommitResultSchema, commitPayload, "session.commit response"),
+      );
       break;
+    }
 
     case "session.merge": {
       const mergeResult = { status: "merged", commitHash: "def5678" };
@@ -331,9 +387,15 @@ index abc1234..def5678 100644
       break;
     }
 
-    case "session.rebase":
-      respond(client, msg.id, { status: "rebased" });
+    case "session.rebase": {
+      const rebasePayload = { status: "rebased" };
+      respond(
+        client,
+        msg.id,
+        validatePayload(RebaseResultSchema, rebasePayload, "session.rebase response"),
+      );
       break;
+    }
 
     case "session.mark-done":
       respond(client, msg.id);
@@ -351,10 +413,16 @@ index abc1234..def5678 100644
       });
       break;
 
-    case "session.clean":
-      respond(client, msg.id, { status: "cleaned" });
+    case "session.clean": {
+      const cleanPayload = { status: "cleaned" };
+      respond(
+        client,
+        msg.id,
+        validatePayload(CleanResultSchema, cleanPayload, "session.clean response"),
+      );
       push(client, "session.deleted", { sessionId: p.sessionId });
       break;
+    }
 
     case "session.stop":
       respond(client, msg.id);
@@ -372,8 +440,8 @@ index abc1234..def5678 100644
       });
       break;
 
-    case "project.tracked-files":
-      respond(client, msg.id, {
+    case "project.tracked-files": {
+      const trackedPayload = {
         files: [
           "README.md",
           "CLAUDE.md",
@@ -406,11 +474,17 @@ index abc1234..def5678 100644
           "docs/websocket-protocol.md",
           "docs/database-schema.md",
         ],
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(TrackedFilesResultSchema, trackedPayload, "project.tracked-files response"),
+      );
       break;
+    }
 
-    case "project.commands":
-      respond(client, msg.id, {
+    case "project.commands": {
+      const commandsPayload = {
         commands: [
           {
             name: "commit",
@@ -429,7 +503,11 @@ index abc1234..def5678 100644
             source: "user",
             description: "Test-driven development with red-green-refactor",
           },
-          { name: "challenge", source: "user" },
+          {
+            name: "challenge",
+            source: "user",
+            description: "Apply critical self-review to plans and decisions",
+          },
           {
             name: "investigate",
             source: "project",
@@ -452,8 +530,24 @@ index abc1234..def5678 100644
             description: "Verify document accuracy against the codebase",
           },
         ],
-      });
+      };
+      respond(
+        client,
+        msg.id,
+        validatePayload(CommandsResultSchema, commandsPayload, "project.commands response"),
+      );
       break;
+    }
+
+    case "project.commit": {
+      const projectCommitPayload = { commitHash: "abc1234" };
+      respond(
+        client,
+        msg.id,
+        validatePayload(ProjectCommitResultSchema, projectCommitPayload, "project.commit response"),
+      );
+      break;
+    }
 
     case "session.set-model":
     case "session.set-permission":
@@ -463,7 +557,6 @@ index abc1234..def5678 100644
     case "session.interrupt":
     case "project.fetch":
     case "project.push":
-    case "project.commit":
       respond(client, msg.id);
       break;
 
