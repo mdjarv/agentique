@@ -110,6 +110,11 @@ function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string
   ws.request<ListSessionsResult>("session.list", { projectId })
     .then((result) => {
       useChatStore.getState().setSessions(result.sessions as SessionMetadata[], projectId);
+      for (const session of result.sessions) {
+        if (!session.completedAt) {
+          loadSessionHistory(ws, session.id);
+        }
+      }
     })
     .catch((err) => {
       console.error("session.list failed", err);
