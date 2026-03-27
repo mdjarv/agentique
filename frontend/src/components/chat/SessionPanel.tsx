@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  FileDiff,
   FileMinus,
   FilePlus,
   FileQuestion,
@@ -39,7 +38,6 @@ interface SessionPanelProps {
   onCollapse: () => void;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
-  onShowChanges?: () => void;
 }
 
 // --- Merge dropdown (shared between ready-to-merge and has-ahead states) ---
@@ -287,13 +285,11 @@ function GitSection({
   git,
   onSendMessage,
   onOpenDialog,
-  onShowChanges,
 }: {
   meta: SessionMetadata;
   git: ReturnType<typeof useGitActions>;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
-  onShowChanges?: () => void;
 }) {
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = meta.state === "running";
@@ -342,21 +338,7 @@ function GitSection({
         <BranchStatus meta={meta} git={git} onSendMessage={onSendMessage} />
       )}
 
-      {/* 3. Diff summary (committed changes vs base) */}
-      {git.diffTotals && (git.diffTotals.add > 0 || git.diffTotals.del > 0) && (
-        <button
-          type="button"
-          onClick={onShowChanges}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
-        >
-          <FileDiff className="h-3 w-3 shrink-0" />
-          <span className="text-success">+{git.diffTotals.add}</span>
-          <span className="text-destructive">-{git.diffTotals.del}</span>
-          <span>across {git.diffResult?.files.length ?? 0} files</span>
-        </button>
-      )}
-
-      {/* 4. PR */}
+      {/* 3. PR */}
       {meta.prUrl ? (
         <a
           href={meta.prUrl}
@@ -420,7 +402,6 @@ export function SessionPanel({
   onCollapse,
   onSendMessage,
   onOpenDialog,
-  onShowChanges,
 }: SessionPanelProps) {
   const isWorktree = !!meta.worktreeBranch;
   const hasTodos = todos !== null && todos.length > 0;
@@ -449,7 +430,6 @@ export function SessionPanel({
             git={git}
             onSendMessage={onSendMessage}
             onOpenDialog={onOpenDialog}
-            onShowChanges={onShowChanges}
           />
         )}
 

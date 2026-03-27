@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { FileDiff, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
@@ -92,6 +93,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const totalChangedFiles =
     (git.diffResult?.files.length ?? 0) + (git.uncommittedDiffResult?.files.length ?? 0);
   const hasChanges = totalChangedFiles > 0;
+  const totalAdd = (git.diffTotals?.add ?? 0) + (git.uncommittedDiffTotals?.add ?? 0);
+  const totalDel = (git.diffTotals?.del ?? 0) + (git.uncommittedDiffTotals?.del ?? 0);
 
   // Reset transient UI state on session switch
   const prevSessionIdRef = useRef(sessionId);
@@ -290,30 +293,38 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
         {/* Tab bar — only when there are changes to view */}
         {hasChanges && (
-          <div className="shrink-0 flex border-b text-xs">
+          <div className="shrink-0 flex gap-1 px-2 pt-1.5 pb-0 border-b text-xs">
             <button
               type="button"
               onClick={() => setActiveTab("chat")}
               className={cn(
-                "px-3 py-1.5 transition-colors",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
                 activeTab === "chat"
-                  ? "text-foreground border-b-2 border-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "text-foreground bg-muted/60 border-b-2 border-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
               )}
             >
+              <MessageSquare className="h-3.5 w-3.5" />
               Chat
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("changes")}
               className={cn(
-                "px-3 py-1.5 transition-colors",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
                 activeTab === "changes"
-                  ? "text-foreground border-b-2 border-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "text-foreground bg-muted/60 border-b-2 border-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
               )}
             >
+              <FileDiff className="h-3.5 w-3.5" />
               Changes
+              {(totalAdd > 0 || totalDel > 0) && (
+                <span className="flex items-center gap-1 ml-1 text-[11px]">
+                  {totalAdd > 0 && <span className="text-success">+{totalAdd}</span>}
+                  {totalDel > 0 && <span className="text-destructive">-{totalDel}</span>}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -415,7 +426,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                 onCollapse={() => setMobileSessionOpen(false)}
                 onSendMessage={handleSend}
                 onOpenDialog={(d) => setActiveDialog(d)}
-                onShowChanges={() => setActiveTab("changes")}
               />
             </SheetContent>
           </Sheet>
@@ -434,7 +444,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               onCollapse={() => setPanelCollapsed(true)}
               onSendMessage={handleSend}
               onOpenDialog={(d) => setActiveDialog(d)}
-              onShowChanges={() => setActiveTab("changes")}
             />
           </div>
         ))}
