@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -112,6 +113,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     const [text, setText] = useState(initialText ?? "");
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const submittingRef = useRef(false);
@@ -292,11 +294,17 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             {attachments.map((a) => (
               <div key={a.id} className="relative group">
                 {isImage(a.mimeType) ? (
-                  <img
-                    src={a.previewUrl ?? a.dataUrl}
-                    alt={a.name}
-                    className="h-16 w-16 object-cover rounded-md border"
-                  />
+                  <button
+                    type="button"
+                    className="p-0 border-none bg-transparent cursor-pointer"
+                    onClick={() => setLightboxSrc(a.previewUrl ?? a.dataUrl)}
+                  >
+                    <img
+                      src={a.previewUrl ?? a.dataUrl}
+                      alt={a.name}
+                      className="h-16 w-16 object-cover rounded-md border"
+                    />
+                  </button>
                 ) : (
                   <div className="h-16 w-16 rounded-md border bg-muted flex flex-col items-center justify-center gap-1 px-1">
                     <FileText className="h-5 w-5 text-muted-foreground" />
@@ -559,6 +567,26 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
           className="hidden"
           onChange={handleFileInput}
         />
+
+        {lightboxSrc &&
+          createPortal(
+            <dialog
+              open
+              className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
+              onClick={() => setLightboxSrc(null)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setLightboxSrc(null);
+              }}
+              aria-label="Image preview"
+            >
+              <img
+                src={lightboxSrc}
+                alt="Full-size preview"
+                className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+              />
+            </dialog>,
+            document.body,
+          )}
       </div>
     );
   },
