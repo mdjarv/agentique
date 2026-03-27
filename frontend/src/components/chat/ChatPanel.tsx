@@ -15,6 +15,7 @@ import { MessageList } from "~/components/chat/MessageList";
 import { MessageQueue } from "~/components/chat/MessageQueue";
 import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
+import { ResumeBanner } from "~/components/chat/ResumeBanner";
 
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
@@ -26,6 +27,7 @@ import {
   type ModelId,
   createSession,
   refreshGitStatus,
+  resumeSession,
   setAutoApprove,
   setPermissionMode,
   setSessionModel,
@@ -46,10 +48,12 @@ interface ChatPanelProps {
 }
 
 const resumePlaceholders: Record<string, string> = {
-  stopped: "Session stopped — send a message to resume...",
-  done: "Session complete — send a message to continue...",
-  failed: "Session failed — send a message to retry...",
+  stopped: "Send a message or press Enter to resume...",
+  done: "Send a message or press Enter to continue...",
+  failed: "Send a message or press Enter to retry...",
 };
+
+const resumableStates = new Set(["stopped", "failed", "done"]);
 
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
@@ -80,6 +84,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
   const [activeTab, setActiveTab] = useState<"chat" | "changes">("chat");
+  const [resuming, setResuming] = useState(false);
 
   const git = useGitActions(sessionId);
 
@@ -95,6 +100,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       setMobileSessionOpen(false);
       setActiveDialog("none");
       setActiveTab("chat");
+      setResuming(false);
     }
   }, [sessionId]);
 
@@ -231,6 +237,20 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId, queuedMessages]);
 
+  const handleResume = useCallback(async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      await resumeSession(ws, sessionId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume session");
+    } finally {
+      setResuming(false);
+    }
+  }, [ws, sessionId, resuming]);
+
+  const isResumable = resumableStates.has(sessionState);
+
   // Flush queued messages back to composer when session reaches a terminal state
   const prevStateRef = useRef(sessionState);
   useEffect(() => {
@@ -340,6 +360,13 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             {(contextUsage || compacting) && (
               <ContextBar usage={contextUsage} compacting={compacting} />
             )}
+            {isResumable && (
+              <ResumeBanner
+                state={sessionState as "stopped" | "failed" | "done"}
+                onResume={handleResume}
+                resuming={resuming}
+              />
+            )}
             <MessageComposer
               projectId={projectId}
               ref={composerRef}
@@ -364,6 +391,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               model={(session.meta.model as ModelId) ?? undefined}
               onModelChange={handleModelChange}
               effort={(session.meta.effort as EffortLevel) ?? ""}
+              onEmptySubmit={isResumable ? handleResume : undefined}
             />
           </>
         )}

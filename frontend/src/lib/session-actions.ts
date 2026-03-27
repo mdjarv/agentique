@@ -287,6 +287,38 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
   });
 }
 
+export async function resumeSession(ws: WsClient, sessionId: string): Promise<void> {
+  const info = await ws.request<{
+    state: string;
+    connected: boolean;
+    hasDirtyWorktree: boolean;
+    hasUncommitted: boolean;
+    worktreeMerged: boolean;
+    completedAt?: string;
+    commitsAhead: number;
+    commitsBehind: number;
+    branchMissing: boolean;
+    mergeStatus?: "clean" | "conflicts" | "unknown";
+    mergeConflictFiles?: string[];
+    gitOperation?: string;
+    gitVersion: number;
+  }>("session.resume", { sessionId }, 30000);
+  useChatStore.getState().setSessionState(sessionId, info.state as SessionState, {
+    connected: info.connected,
+    hasDirtyWorktree: info.hasDirtyWorktree,
+    hasUncommitted: info.hasUncommitted,
+    worktreeMerged: info.worktreeMerged,
+    completedAt: info.completedAt,
+    commitsAhead: info.commitsAhead,
+    commitsBehind: info.commitsBehind,
+    branchMissing: info.branchMissing,
+    mergeStatus: info.mergeStatus,
+    mergeConflictFiles: info.mergeConflictFiles,
+    gitOperation: info.gitOperation ?? "",
+    gitVersion: info.gitVersion,
+  });
+}
+
 export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.delete", { sessionId });
 }

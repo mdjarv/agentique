@@ -128,6 +128,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionList(msg)
 	case "session.stop":
 		c.handleSessionStop(msg)
+	case "session.resume":
+		c.handleSessionResume(msg)
 	case "session.history":
 		c.handleSessionHistory(msg)
 	case "session.diff":

@@ -53,6 +53,12 @@ func (c *conn) handleSessionStop(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionResume(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionResumePayload) (session.SessionInfo, error) {
+		return c.svc.ResumeSession(c.ctx, p.SessionID)
+	})
+}
+
 func (c *conn) handleSessionDiff(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionDiffPayload) (gitops.DiffResult, error) {
 		return c.gitSvc.Diff(c.ctx, p.SessionID)

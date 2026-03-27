@@ -66,6 +66,10 @@ type SessionStopPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionResumePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionHistoryPayload struct {
 	SessionID string `json:"sessionId"`
 }
@@ -252,6 +256,13 @@ func (p *SessionListPayload) Validate() error {
 }
 
 func (p *SessionStopPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+func (p *SessionResumePayload) Validate() error {
 	if p.SessionID == "" {
 		return errSessionIDRequired
 	}
