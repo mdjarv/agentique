@@ -39,7 +39,7 @@ import {
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment } from "~/stores/chat-store";
+import type { Attachment, QueuedMessage, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -56,27 +56,37 @@ const resumePlaceholders: Record<string, string> = {
 
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
+const EMPTY_TURNS: Turn[] = [];
+const EMPTY_QUEUE: QueuedMessage[] = [];
+
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const projectSlug = project?.slug ?? "";
-  const session = useChatStore((s) => s.sessions[sessionId]);
+
+  // Granular selectors — turns changes on every streaming event, meta changes
+  // only on state transitions and git refreshes. Splitting prevents cascading
+  // re-renders during streaming.
+  const turns = useChatStore((s) => s.sessions[sessionId]?.turns ?? EMPTY_TURNS);
+  const meta = useChatStore((s) => s.sessions[sessionId]?.meta);
+  const pendingApproval = useChatStore((s) => s.sessions[sessionId]?.pendingApproval ?? null);
+  const pendingQuestion = useChatStore((s) => s.sessions[sessionId]?.pendingQuestion ?? null);
+  const planMode = useChatStore((s) => s.sessions[sessionId]?.planMode ?? false);
+  const autoApprove = useChatStore((s) => s.sessions[sessionId]?.autoApprove ?? false);
+  const queuedMessages = useChatStore((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE);
+  const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
+  const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
+  const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
 
   const composerRef = useRef<ComposerHandle>(null);
-  const sessionState = session?.meta.state ?? "idle";
-  const planMode = session?.planMode ?? false;
-  const autoApprove = session?.autoApprove ?? false;
-  const queuedMessages = session?.queuedMessages ?? [];
+  const sessionState = meta?.state ?? "idle";
   const draft = useUIStore((s) => s.drafts[sessionId] ?? "");
-  const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
-  const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
-  const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
   const hasTodos = todos !== null && todos.length > 0;
-  const isWorktree = !!session?.meta.worktreeBranch;
-  const isDirty = session?.meta.hasUncommitted || session?.meta.hasDirtyWorktree;
+  const isWorktree = !!meta?.worktreeBranch;
+  const isDirty = meta?.hasUncommitted || meta?.hasDirtyWorktree;
   const showPanel = isWorktree || hasTodos || isDirty;
 
   const isMobile = useIsMobile();
@@ -134,8 +144,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [ws, sessionId]);
 
   // Load history on mount or session switch
-  const sessionExists = !!session;
-  const hasTurns = (session?.turns.length ?? 0) > 0;
+  const sessionExists = !!meta;
+  const hasTurns = turns.length > 0;
   useEffect(() => {
     if (sessionExists && !hasTurns) {
       loadSessionHistory(ws, sessionId);
@@ -144,14 +154,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   // Redirect if session was deleted or doesn't exist
   useEffect(() => {
-    if (sessionListLoaded && !session) {
+    if (sessionListLoaded && !meta) {
       navigate({
         to: "/project/$projectSlug",
         params: { projectSlug },
         replace: true,
       });
     }
-  }, [sessionListLoaded, session, navigate, projectSlug]);
+  }, [sessionListLoaded, meta, navigate, projectSlug]);
 
   const handlePlanModeChange = useCallback(
     (enabled: boolean) => {
@@ -213,7 +223,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const handleStartFresh = useCallback(
     async (plan: string) => {
       try {
-        const meta = session?.meta;
         const newId = await createSession(ws, projectId, "", !!meta?.worktreeBranch, {
           model: meta?.model,
           autoApprove: meta?.autoApprove,
@@ -228,7 +237,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         toast.error(getErrorMessage(err, "Failed to start fresh session"));
       }
     },
-    [ws, projectId, sessionId, session?.meta, navigate, projectSlug],
+    [ws, projectId, sessionId, meta, navigate, projectSlug],
   );
 
   const handleInterrupt = useCallback(async () => {
@@ -272,7 +281,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     }
   }, [sessionState, sessionId, queuedMessages]);
 
-  if (!session) {
+  if (!meta) {
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
         <p className="text-sm">Loading session...</p>
@@ -284,7 +293,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     <div className="flex h-full" data-project-id={projectId}>
       <div className="flex-1 flex flex-col min-w-0 h-full">
         <SessionHeader
-          session={session}
+          meta={meta}
+          hasPendingInput={!!pendingApproval || !!pendingQuestion}
           showPanelButton={isMobile && showPanel}
           onOpenPanel={() => setMobileSessionOpen(true)}
         />
@@ -332,31 +342,31 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         ) : (
           <>
             <MessageList
-              turns={session.turns}
+              turns={turns}
               sessionId={sessionId}
               projectId={projectId}
               sessionState={sessionState}
               projectPath={project?.path}
-              worktreePath={session.meta.worktreePath}
+              worktreePath={meta.worktreePath}
               isLoadingHistory={isLoadingHistory}
             />
-            {session.pendingApproval &&
-              (session.pendingApproval.toolName === "ExitPlanMode" ? (
+            {pendingApproval &&
+              (pendingApproval.toolName === "ExitPlanMode" ? (
                 <PlanReviewBanner
                   sessionId={sessionId}
-                  approval={session.pendingApproval}
+                  approval={pendingApproval}
                   onStartFresh={handleStartFresh}
                 />
               ) : (
                 <ApprovalBanner
                   sessionId={sessionId}
-                  approval={session.pendingApproval}
+                  approval={pendingApproval}
                   projectPath={project?.path}
-                  worktreePath={session.meta.worktreePath}
+                  worktreePath={meta.worktreePath}
                 />
               ))}
-            {session.pendingQuestion && (
-              <QuestionBanner sessionId={sessionId} pending={session.pendingQuestion} />
+            {pendingQuestion && (
+              <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
             )}
 
             {queuedMessages.length > 0 && (
@@ -400,9 +410,9 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               onPlanModeChange={handlePlanModeChange}
               autoApprove={autoApprove}
               onAutoApproveChange={handleAutoApproveChange}
-              model={(session.meta.model as ModelId) ?? undefined}
+              model={(meta.model as ModelId) ?? undefined}
               onModelChange={handleModelChange}
-              effort={(session.meta.effort as EffortLevel) ?? ""}
+              effort={(meta.effort as EffortLevel) ?? ""}
               onEmptySubmit={isResumable ? handleResume : undefined}
             />
           </>
@@ -417,7 +427,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               <SheetTitle className="sr-only">Session details</SheetTitle>
               <SheetDescription className="sr-only">Git status and todos</SheetDescription>
               <SessionPanel
-                meta={session.meta}
+                meta={meta}
                 todos={todos}
                 git={git}
                 onCollapse={() => setMobileSessionOpen(false)}
@@ -428,14 +438,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           </Sheet>
         ) : panelCollapsed ? (
           <CollapsedSessionStrip
-            meta={session.meta}
+            meta={meta}
             todos={todos}
             onExpand={() => setPanelCollapsed(false)}
           />
         ) : (
           <div className="w-72 border-l shrink-0">
             <SessionPanel
-              meta={session.meta}
+              meta={meta}
               todos={todos}
               git={git}
               onCollapse={() => setPanelCollapsed(true)}
@@ -450,7 +460,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         open={activeDialog === "pr"}
         onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
         sessionId={sessionId}
-        defaultTitle={session.meta.name}
+        defaultTitle={meta.name}
         onSubmit={async (title, body) => {
           const ok = await git.handlePRSubmit(title, body);
           if (ok) setActiveDialog("none");
@@ -461,7 +471,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
         open={activeDialog === "commit"}
         onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
         sessionId={sessionId}
-        defaultTitle={session.meta.name}
+        defaultTitle={meta.name}
         onSubmit={async (message) => {
           const ok = await git.handleCommit(message);
           if (ok) setActiveDialog("none");

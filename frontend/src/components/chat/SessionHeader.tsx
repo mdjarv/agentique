@@ -32,16 +32,21 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
-import type { SessionData } from "~/stores/chat-store";
+import type { SessionMetadata } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
-  session: SessionData;
+  meta: SessionMetadata;
+  hasPendingInput: boolean;
   showPanelButton?: boolean;
   onOpenPanel?: () => void;
 }
 
-export function SessionHeader({ session, showPanelButton, onOpenPanel }: SessionHeaderProps) {
-  const { meta } = session;
+export function SessionHeader({
+  meta,
+  hasPendingInput,
+  showPanelButton,
+  onOpenPanel,
+}: SessionHeaderProps) {
   const ws = useWebSocket();
   const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
@@ -111,7 +116,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
         <SessionStatusDot
           state={meta.state}
           connected={meta.connected}
-          hasPendingApproval={!!session.pendingApproval || !!session.pendingQuestion}
+          hasPendingApproval={hasPendingInput}
         />
 
         {/* Editable name */}
