@@ -104,6 +104,29 @@ export const WireContextManagementEventSchema = z.object({
   raw: z.unknown(),
 });
 
+export const WireQuestionOptionSchema = z.object({
+  label: z.string(),
+  description: z.string().optional(),
+});
+
+export const WireQuestionSchema = z.object({
+  question: z.string(),
+  header: z.string().optional(),
+  options: z.array(WireQuestionOptionSchema).optional(),
+  multiSelect: z.boolean().optional(),
+});
+
+export const WirePendingApprovalSchema = z.object({
+  approvalId: z.string(),
+  toolName: z.string(),
+  input: z.unknown(),
+});
+
+export const WirePendingQuestionSchema = z.object({
+  questionId: z.string(),
+  questions: z.array(WireQuestionSchema),
+});
+
 export const SessionInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -132,6 +155,8 @@ export const SessionInfoSchema = z.object({
   gitOperation: z.string().optional(),
   gitVersion: z.number(),
   prUrl: z.string().optional(),
+  pendingApproval: WirePendingApprovalSchema.optional(),
+  pendingQuestion: WirePendingQuestionSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),

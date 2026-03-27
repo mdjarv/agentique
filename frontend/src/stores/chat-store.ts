@@ -328,9 +328,14 @@ export const useChatStore = create<ChatState>((set) => ({
             meta: tagged,
             planMode: tagged.permissionMode === "plan",
             autoApprove: tagged.autoApprove ?? false,
+            pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
+            pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
           };
         } else {
-          sessions[meta.id] = emptySessionData(tagged);
+          const data = emptySessionData(tagged);
+          if (tagged.pendingApproval) data.pendingApproval = tagged.pendingApproval;
+          if (tagged.pendingQuestion) data.pendingQuestion = tagged.pendingQuestion;
+          sessions[meta.id] = data;
         }
       }
       const loadedProjects = new Set(s.loadedProjects);

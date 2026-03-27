@@ -102,6 +102,29 @@ export interface WireContextManagementEvent {
   raw: unknown;
 }
 
+export interface WireQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface WireQuestion {
+  question: string;
+  header?: string;
+  options?: WireQuestionOption[];
+  multiSelect?: boolean;
+}
+
+export interface WirePendingApproval {
+  approvalId: string;
+  toolName: string;
+  input: unknown;
+}
+
+export interface WirePendingQuestion {
+  questionId: string;
+  questions: WireQuestion[];
+}
+
 export interface SessionInfo {
   id: string;
   projectId: string;
@@ -130,6 +153,8 @@ export interface SessionInfo {
   gitOperation?: string;
   gitVersion: number;
   prUrl?: string;
+  pendingApproval?: WirePendingApproval;
+  pendingQuestion?: WirePendingQuestion;
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;

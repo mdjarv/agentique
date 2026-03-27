@@ -307,6 +307,13 @@ func main() {
 		{"context_management", ctxMgmtEvt},
 	})
 
+	// ── Pending state types (referenced by SessionInfo) ──
+
+	g.register(session.WireQuestionOption{}, "WireQuestionOption")
+	g.register(session.WireQuestion{}, "WireQuestion")
+	g.register(session.WirePendingApproval{}, "WirePendingApproval")
+	g.register(session.WirePendingQuestion{}, "WirePendingQuestion")
+
 	// ── Session response types ──
 
 	g.register(session.SessionInfo{}, "SessionInfo")
