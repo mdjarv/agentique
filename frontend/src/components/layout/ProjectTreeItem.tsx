@@ -6,6 +6,7 @@ import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type ChatState, type SessionData, useChatStore } from "~/stores/chat-store";
+import { useUIStore } from "~/stores/ui-store";
 import { GitIndicators } from "./GitIndicators";
 import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
@@ -53,6 +54,7 @@ function renderSessionRow(
   sessions: ChatState["sessions"],
   activeSessionId: string | undefined,
   onSessionClick: (id: string) => void,
+  drafts: Record<string, string>,
 ) {
   const session = sessions[id]?.meta;
   if (!session) return null;
@@ -61,6 +63,7 @@ function renderSessionRow(
       <SessionRow
         name={session.name}
         state={session.state}
+        hasDraft={!!drafts[id]}
         connected={session.connected}
         hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
         hasPendingApproval={!!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion}
@@ -95,6 +98,7 @@ function SessionGroups({
   onSessionClick: (id: string) => void;
   newChatButton: ReactNode;
 }) {
+  const drafts = useUIStore((s) => s.drafts);
   const active: string[] = [];
   const completed: string[] = [];
 
@@ -114,15 +118,18 @@ function SessionGroups({
   return (
     <>
       {newChatButton}
-      {promoted.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {promoted.map((id) =>
+        renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts),
+      )}
       {promoted.length > 0 && rest.length > 0 && <div className="h-2" aria-hidden="true" />}
-      {rest.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {rest.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts))}
       {sortedCompleted.length > 0 && (
         <CompletedSection
           ids={sortedCompleted}
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSessionClick={onSessionClick}
+          drafts={drafts}
         />
       )}
     </>
@@ -134,11 +141,13 @@ function CompletedSection({
   sessions,
   activeSessionId,
   onSessionClick,
+  drafts,
 }: {
   ids: string[];
   sessions: ChatState["sessions"];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
+  drafts: Record<string, string>;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -159,7 +168,8 @@ function CompletedSection({
         </span>
         <span className="text-xs text-muted-foreground/60 ml-auto">{ids.length}</span>
       </button>
-      {expanded && ids.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {expanded &&
+        ids.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts))}
     </>
   );
 }
