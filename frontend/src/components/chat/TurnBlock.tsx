@@ -178,7 +178,7 @@ function CollapsibleGroup({
         onToggle={() => setExpanded(!expanded)}
         className="hover:bg-muted/50"
         trailing={
-          trailingIcons && !showActiveHeader ? (
+          !expanded && trailingIcons ? (
             <span className="flex items-center gap-1.5 text-primary/40">{trailingIcons}</span>
           ) : undefined
         }
