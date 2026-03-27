@@ -368,6 +368,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               />
             )}
             <MessageComposer
+              key={sessionId}
               projectId={projectId}
               ref={composerRef}
               onSend={handleSend}
