@@ -146,7 +146,6 @@ interface TurnBlockProps {
   isLast: boolean;
   sessionId: string;
   projectId: string;
-  currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
@@ -427,7 +426,6 @@ export const TurnBlock = memo(function TurnBlock({
   isLast,
   sessionId,
   projectId,
-  currentAssistantText,
   sessionState,
   projectPath,
   worktreePath,
@@ -436,6 +434,11 @@ export const TurnBlock = memo(function TurnBlock({
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const isStreaming = isLast && !turn.complete;
+
+  // Subscribe to streaming text only when this is the active (last, incomplete) turn
+  const currentAssistantText = useStreamingStore((s) =>
+    isStreaming ? s.texts[sessionId] ?? "" : "",
+  );
 
   const { segments, resultEvent } = useMemo(() => buildSegments(turn.events), [turn.events]);
 

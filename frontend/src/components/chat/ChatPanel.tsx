@@ -41,7 +41,6 @@ import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/util
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
-import { useStreamingStore } from "~/stores/streaming-store";
 import { useUIStore } from "~/stores/ui-store";
 
 interface ChatPanelProps {
@@ -65,7 +64,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const session = useChatStore((s) => s.sessions[sessionId]);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
-  const currentAssistantText = useStreamingStore((s) => s.texts[sessionId] ?? "");
 
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = session?.meta.state ?? "idle";
@@ -337,7 +335,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               turns={session.turns}
               sessionId={sessionId}
               projectId={projectId}
-              currentAssistantText={currentAssistantText}
               sessionState={sessionState}
               projectPath={project?.path}
               worktreePath={session.meta.worktreePath}

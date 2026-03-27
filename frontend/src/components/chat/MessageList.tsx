@@ -1,9 +1,10 @@
 import { ArrowDown, Loader2, Wrench } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { Turn } from "~/stores/chat-store";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 const SCROLL_THRESHOLD = 48;
 const EAGER_TURN_COUNT = 6;
@@ -45,11 +46,51 @@ function LazyTurn({
   return <>{children}</>;
 }
 
+/** Manages auto-scroll: instant during streaming, smooth on new turns. */
+const ScrollAnchor = memo(function ScrollAnchor({
+  sessionId,
+  turns,
+  following,
+}: {
+  sessionId: string;
+  turns: Turn[];
+  following: boolean;
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const isStreaming = useStreamingStore((s) => sessionId in s.texts);
+  const prevStreamingRef = useRef(isStreaming);
+  const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
+  const rafRef = useRef<number>(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
+  useEffect(() => {
+    if (!following) return;
+    const wasStreaming = prevStreamingRef.current;
+    prevStreamingRef.current = isStreaming;
+    const behavior: ScrollBehavior = isStreaming || wasStreaming ? "instant" : scrollBehaviorRef.current;
+    scrollBehaviorRef.current = "smooth";
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior });
+    });
+  }, [turns, isStreaming, following]);
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  // Reset to instant on session switch
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on session change
+  useEffect(() => {
+    scrollBehaviorRef.current = "instant";
+    prevStreamingRef.current = false;
+  }, [sessionId]);
+
+  return <div ref={bottomRef} />;
+});
+
 interface MessageListProps {
   turns: Turn[];
   sessionId: string;
   projectId: string;
-  currentAssistantText: string;
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
@@ -60,7 +101,6 @@ export function MessageList({
   turns,
   sessionId,
   projectId,
-  currentAssistantText,
   sessionState,
   projectPath,
   worktreePath,
@@ -68,9 +108,6 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
-  const rafRef = useRef<number>(0);
-  const prevTextRef = useRef(currentAssistantText);
   const [following, setFollowing] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
 
@@ -79,35 +116,6 @@ export function MessageList({
     if (!el) return;
     setFollowing(isNearBottom(el));
   }, []);
-
-  // Auto-scroll to bottom on content changes.
-  // Uses rAF to coalesce rapid streaming deltas into one scroll per frame,
-  // and instant behavior during streaming to avoid conflicting smooth animations.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every content change
-  useEffect(() => {
-    if (!following) return;
-
-    const isStreamingUpdate = currentAssistantText !== prevTextRef.current;
-    prevTextRef.current = currentAssistantText;
-
-    const behavior: ScrollBehavior = isStreamingUpdate ? "instant" : scrollBehaviorRef.current;
-    scrollBehaviorRef.current = "smooth";
-
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior });
-    });
-  }, [turns, currentAssistantText, following]);
-
-  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
-
-  // Reset to following when switching sessions — instant jump, no smooth scroll
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on session change
-  useEffect(() => {
-    scrollBehaviorRef.current = "instant";
-    prevTextRef.current = "";
-    setFollowing(true);
-  }, [sessionId]);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,7 +165,6 @@ export function MessageList({
               isLast={i === turns.length - 1}
               sessionId={sessionId}
               projectId={projectId}
-              currentAssistantText={currentAssistantText}
               sessionState={sessionState}
               projectPath={projectPath}
               worktreePath={worktreePath}
@@ -172,6 +179,7 @@ export function MessageList({
             </LazyTurn>
           );
         })}
+        <ScrollAnchor sessionId={sessionId} turns={turns} following={following} />
         <div ref={bottomRef} />
       </div>
       <div className="sticky bottom-3 right-3 z-10 flex justify-end gap-1.5 pr-3">
