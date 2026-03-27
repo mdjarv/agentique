@@ -146,12 +146,19 @@ func ToWireEvent(event claudecli.Event) any {
 			Usage:      e.Usage,
 			StopReason: e.StopReason,
 		}
-		// Only extract ContextWindow from ModelUsage. InputTokens/OutputTokens
-		// are left at 0 — they'll be enriched from per-API-call stream data in
-		// session.go, since ModelUsage values are cumulative across all API calls.
-		for _, mu := range e.ModelUsage {
-			if mu.ContextWindow > wire.ContextWindow {
-				wire.ContextWindow = mu.ContextWindow
+		// Use ContextSnapshot (per-API-call usage from the last stream event pair)
+		// instead of ModelUsage (cumulative across all API calls in the run).
+		if cs := e.ContextSnapshot; cs != nil {
+			wire.InputTokens = cs.InputTokens + cs.CacheReadInputTokens + cs.CacheCreationInputTokens
+			wire.OutputTokens = cs.OutputTokens
+			wire.ContextWindow = cs.ContextWindow
+		}
+		// ContextWindow from ModelUsage as fallback (snapshot may lack it on model mismatch).
+		if wire.ContextWindow == 0 {
+			for _, mu := range e.ModelUsage {
+				if mu.ContextWindow > wire.ContextWindow {
+					wire.ContextWindow = mu.ContextWindow
+				}
 			}
 		}
 		if wire.ContextWindow == 0 {
@@ -218,43 +225,6 @@ func ToWireEvent(event claudecli.Event) any {
 	default:
 		return nil
 	}
-}
-
-// extractStreamContextTokens parses a message_start event and returns total
-// context consumption: input_tokens + cache_read + cache_create. This is the
-// per-API-call prompt size — the authoritative source for context window usage.
-func extractStreamContextTokens(raw json.RawMessage) int {
-	var ev struct {
-		Type    string `json:"type"`
-		Message struct {
-			Usage struct {
-				InputTokens              int `json:"input_tokens"`
-				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-			} `json:"usage"`
-		} `json:"message"`
-	}
-	if json.Unmarshal(raw, &ev) != nil || ev.Type != "message_start" {
-		return 0
-	}
-	return ev.Message.Usage.InputTokens +
-		ev.Message.Usage.CacheReadInputTokens +
-		ev.Message.Usage.CacheCreationInputTokens
-}
-
-// extractStreamOutputTokens parses a message_delta event and returns the
-// output_tokens count, or 0 if not applicable.
-func extractStreamOutputTokens(raw json.RawMessage) int {
-	var ev struct {
-		Type  string `json:"type"`
-		Usage struct {
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
-	if json.Unmarshal(raw, &ev) != nil || ev.Type != "message_delta" {
-		return 0
-	}
-	return ev.Usage.OutputTokens
 }
 
 // convertToolContent converts claudecli-go content blocks to wire format.

@@ -179,17 +179,25 @@ func TestToWireEvent_ErrorClassification(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_ResultContextWindowFromModelUsage(t *testing.T) {
+func TestToWireEvent_ResultUsesContextSnapshot(t *testing.T) {
 	event := &claudecli.ResultEvent{
 		CostUSD:    0.01,
 		Duration:   time.Second,
 		StopReason: "end_turn",
+		ContextSnapshot: &claudecli.ContextSnapshot{
+			InputTokens:              100,
+			CacheReadInputTokens:     50_000,
+			CacheCreationInputTokens: 5_000,
+			OutputTokens:             2_000,
+			ContextWindow:            200_000,
+		},
+		// ModelUsage has large cumulative values — should be ignored for tokens.
 		ModelUsage: map[string]claudecli.ModelUsage{
 			"claude-opus-4-6": {
-				InputTokens:       5_000,
-				OutputTokens:      2_000,
-				CacheReadTokens:   90_000,
-				CacheCreateTokens: 5_000,
+				InputTokens:       500_000,
+				OutputTokens:      100_000,
+				CacheReadTokens:   9_000_000,
+				CacheCreateTokens: 500_000,
 				ContextWindow:     200_000,
 			},
 		},
@@ -201,12 +209,39 @@ func TestToWireEvent_ResultContextWindowFromModelUsage(t *testing.T) {
 		t.Fatalf("expected WireResultEvent, got %T", wire)
 	}
 
-	// InputTokens/OutputTokens should be 0 — enriched from stream data, not ModelUsage.
-	if r.InputTokens != 0 {
-		t.Errorf("InputTokens = %d, want 0 (cumulative ModelUsage should not be used)", r.InputTokens)
+	wantInput := 100 + 50_000 + 5_000
+	if r.InputTokens != wantInput {
+		t.Errorf("InputTokens = %d, want %d (from ContextSnapshot, not cumulative ModelUsage)", r.InputTokens, wantInput)
 	}
-	if r.OutputTokens != 0 {
-		t.Errorf("OutputTokens = %d, want 0", r.OutputTokens)
+	if r.OutputTokens != 2_000 {
+		t.Errorf("OutputTokens = %d, want 2000", r.OutputTokens)
+	}
+	if r.ContextWindow != 200_000 {
+		t.Errorf("ContextWindow = %d, want 200000", r.ContextWindow)
+	}
+}
+
+func TestToWireEvent_ResultFallbackWithoutSnapshot(t *testing.T) {
+	event := &claudecli.ResultEvent{
+		CostUSD:    0.01,
+		Duration:   time.Second,
+		StopReason: "end_turn",
+		// No ContextSnapshot — fallback to ModelUsage for ContextWindow only.
+		ModelUsage: map[string]claudecli.ModelUsage{
+			"claude-opus-4-6": {
+				ContextWindow: 200_000,
+			},
+		},
+	}
+
+	wire := ToWireEvent(event)
+	r, ok := wire.(WireResultEvent)
+	if !ok {
+		t.Fatalf("expected WireResultEvent, got %T", wire)
+	}
+
+	if r.InputTokens != 0 {
+		t.Errorf("InputTokens = %d, want 0 (no snapshot)", r.InputTokens)
 	}
 	if r.ContextWindow != 200_000 {
 		t.Errorf("ContextWindow = %d, want 200000", r.ContextWindow)
@@ -218,11 +253,6 @@ func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
 		CostUSD:    0.01,
 		Duration:   time.Second,
 		StopReason: "end_turn",
-		Usage: claudecli.Usage{
-			InputTokens:  50_000,
-			OutputTokens: 3_000,
-		},
-		// ModelUsage is nil — should default to 200k
 	}
 
 	wire := ToWireEvent(event)
@@ -233,108 +263,6 @@ func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
 
 	if r.ContextWindow != 200_000 {
 		t.Errorf("ContextWindow = %d, want 200000 (default fallback)", r.ContextWindow)
-	}
-}
-
-func TestToWireEvent_ResultMultiModelMaxContextWindow(t *testing.T) {
-	event := &claudecli.ResultEvent{
-		CostUSD:    0.01,
-		Duration:   time.Second,
-		StopReason: "end_turn",
-		ModelUsage: map[string]claudecli.ModelUsage{
-			"claude-opus-4-6": {
-				ContextWindow: 200_000,
-			},
-			"claude-haiku-4-5": {
-				ContextWindow: 200_000,
-			},
-		},
-	}
-
-	wire := ToWireEvent(event)
-	r, ok := wire.(WireResultEvent)
-	if !ok {
-		t.Fatalf("expected WireResultEvent, got %T", wire)
-	}
-
-	if r.ContextWindow != 200_000 {
-		t.Errorf("ContextWindow = %d, want 200000 (max)", r.ContextWindow)
-	}
-}
-
-func TestExtractStreamContextTokens(t *testing.T) {
-	tests := []struct {
-		name string
-		json string
-		want int
-	}{
-		{
-			name: "message_start with all token types",
-			json: `{"type":"message_start","message":{"usage":{"input_tokens":9,"cache_read_input_tokens":23174,"cache_creation_input_tokens":4083}}}`,
-			want: 9 + 23174 + 4083,
-		},
-		{
-			name: "message_start without cache fields",
-			json: `{"type":"message_start","message":{"usage":{"input_tokens":150000}}}`,
-			want: 150_000,
-		},
-		{
-			name: "message_delta ignored",
-			json: `{"type":"message_delta","usage":{"output_tokens":500}}`,
-			want: 0,
-		},
-		{
-			name: "content_block_start ignored",
-			json: `{"type":"content_block_start","content_block":{"type":"text"}}`,
-			want: 0,
-		},
-		{
-			name: "invalid json",
-			json: `{invalid`,
-			want: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractStreamContextTokens(json.RawMessage(tt.json))
-			if got != tt.want {
-				t.Errorf("extractStreamContextTokens = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestExtractStreamOutputTokens(t *testing.T) {
-	tests := []struct {
-		name string
-		json string
-		want int
-	}{
-		{
-			name: "message_delta with output_tokens",
-			json: `{"type":"message_delta","usage":{"output_tokens":997}}`,
-			want: 997,
-		},
-		{
-			name: "message_start ignored",
-			json: `{"type":"message_start","message":{"usage":{"input_tokens":150000}}}`,
-			want: 0,
-		},
-		{
-			name: "invalid json",
-			json: `{invalid`,
-			want: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractStreamOutputTokens(json.RawMessage(tt.json))
-			if got != tt.want {
-				t.Errorf("extractStreamOutputTokens = %d, want %d", got, tt.want)
-			}
-		})
 	}
 }
 

@@ -91,10 +91,8 @@ type Session struct {
 	workDir        string
 	gitVersion      int64
 	eventLoopDone   chan struct{}
-	toolCategories          map[string]string // ToolID → category for correlating results to writes
-	gitRefreshTimer         *time.Timer       // debounce timer for mid-turn git refresh
-	lastStreamContextTokens int               // from latest message_start: input + cache (per-API-call)
-	lastStreamOutputTokens  int               // from latest message_delta: output tokens (per-API-call)
+	toolCategories  map[string]string // ToolID → category for correlating results to writes
+	gitRefreshTimer *time.Timer       // debounce timer for mid-turn git refresh
 }
 
 
@@ -404,57 +402,13 @@ func (s *Session) processEvent(event claudecli.Event) {
 	}
 
 	// Rate limit and stream events are transient — broadcast only, skip DB.
-	switch we := wireEvent.(type) {
-	case WireRateLimitEvent, WireCompactStatusEvent, WireContextManagementEvent:
+	switch wireEvent.(type) {
+	case WireRateLimitEvent, WireCompactStatusEvent, WireContextManagementEvent, WireStreamEvent:
 		s.broadcast("session.event", map[string]any{
 			"sessionId": s.ID,
 			"event":     wireEvent,
 		})
 		return
-	case WireStreamEvent:
-		// Track per-API-call token data for enriching result events.
-		if n := extractStreamContextTokens(we.Event); n > 0 {
-			s.mu.Lock()
-			s.lastStreamContextTokens = n
-			s.lastStreamOutputTokens = 0 // reset output for new API call
-			s.mu.Unlock()
-		}
-		if n := extractStreamOutputTokens(we.Event); n > 0 {
-			s.mu.Lock()
-			s.lastStreamOutputTokens = n
-			s.mu.Unlock()
-		}
-		s.broadcast("session.event", map[string]any{
-			"sessionId": s.ID,
-			"event":     wireEvent,
-		})
-		return
-	}
-
-	// Enrich result events with per-API-call stream data. ModelUsage values are
-	// cumulative across all API calls — only stream data reflects actual context.
-	if wire, ok := wireEvent.(WireResultEvent); ok {
-		s.mu.Lock()
-		streamContext := s.lastStreamContextTokens
-		streamOutput := s.lastStreamOutputTokens
-		s.lastStreamContextTokens = 0
-		s.lastStreamOutputTokens = 0
-		s.mu.Unlock()
-		if streamContext > 0 {
-			wire.InputTokens = streamContext
-		}
-		if streamOutput > 0 {
-			wire.OutputTokens = streamOutput
-		}
-		slog.Debug("result event context",
-			"session_id", s.ID,
-			"context_window", wire.ContextWindow,
-			"input_tokens", wire.InputTokens,
-			"output_tokens", wire.OutputTokens,
-			"stream_context", streamContext,
-			"stream_output", streamOutput,
-		)
-		wireEvent = wire
 	}
 
 	// Persist to DB. Truncate large tool results to keep DB lean —
