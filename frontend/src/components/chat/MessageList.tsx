@@ -139,58 +139,60 @@ export function MessageList({
   }
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative [scrollbar-gutter:stable]"
-    >
-      <div className="p-4 space-y-8 min-w-0">
-        {turns.map((turn, i) => {
-          const eager = i >= turns.length - EAGER_TURN_COUNT;
-          // If this turn has a compact_boundary, find the post-compaction
-          // token count from the next turn's result event.
-          const hasCompact = turn.events.some((e) => e.type === "compact_boundary");
-          let postCompactTokens: number | undefined;
-          if (hasCompact) {
-            const nextResult = turns[i + 1]?.events.find(
-              (e) => e.type === "result" && e.contextWindow && e.contextWindow > 0,
-            );
-            if (nextResult) {
-              postCompactTokens = (nextResult.inputTokens ?? 0) + (nextResult.outputTokens ?? 0);
+    <div className="relative flex-1 min-h-0">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
+      >
+        <div className="p-4 space-y-8 min-w-0">
+          {turns.map((turn, i) => {
+            const eager = i >= turns.length - EAGER_TURN_COUNT;
+            // If this turn has a compact_boundary, find the post-compaction
+            // token count from the next turn's result event.
+            const hasCompact = turn.events.some((e) => e.type === "compact_boundary");
+            let postCompactTokens: number | undefined;
+            if (hasCompact) {
+              const nextResult = turns[i + 1]?.events.find(
+                (e) => e.type === "result" && e.contextWindow && e.contextWindow > 0,
+              );
+              if (nextResult) {
+                postCompactTokens = (nextResult.inputTokens ?? 0) + (nextResult.outputTokens ?? 0);
+              }
             }
-          }
-          const block = (
-            <TurnBlock
-              key={turn.id}
-              turn={turn}
-              isLast={i === turns.length - 1}
-              sessionId={sessionId}
-              projectId={projectId}
-              sessionState={sessionState}
-              projectPath={projectPath}
-              worktreePath={worktreePath}
-              showEvents={showEvents}
-              postCompactTokens={postCompactTokens}
-            />
-          );
-          if (eager) return block;
-          return (
-            <LazyTurn key={turn.id} scrollRoot={scrollRef}>
-              {block}
-            </LazyTurn>
-          );
-        })}
-        <ScrollAnchor sessionId={sessionId} turns={turns} following={following} />
-        <div ref={bottomRef} />
+            const block = (
+              <TurnBlock
+                key={turn.id}
+                turn={turn}
+                isLast={i === turns.length - 1}
+                sessionId={sessionId}
+                projectId={projectId}
+                sessionState={sessionState}
+                projectPath={projectPath}
+                worktreePath={worktreePath}
+                showEvents={showEvents}
+                postCompactTokens={postCompactTokens}
+              />
+            );
+            if (eager) return block;
+            return (
+              <LazyTurn key={turn.id} scrollRoot={scrollRef}>
+                {block}
+              </LazyTurn>
+            );
+          })}
+          <ScrollAnchor sessionId={sessionId} turns={turns} following={following} />
+          <div ref={bottomRef} />
+        </div>
       </div>
-      <div className="sticky bottom-3 right-3 z-10 flex justify-end gap-1.5 pr-3">
+      <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5 pointer-events-none">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="secondary"
               size="icon"
               onClick={() => setShowEvents((v) => !v)}
-              className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7"
+              className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7 pointer-events-auto"
             >
               <Wrench className={`h-3.5 w-3.5 ${showEvents ? "" : "text-muted-foreground"}`} />
             </Button>
@@ -204,7 +206,7 @@ export function MessageList({
                 variant="secondary"
                 size="icon"
                 onClick={scrollToBottom}
-                className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7"
+                className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7 pointer-events-auto"
               >
                 <ArrowDown className="h-3.5 w-3.5" />
               </Button>
