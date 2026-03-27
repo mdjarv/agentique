@@ -12,6 +12,7 @@ interface SessionRowProps {
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
   isActive: boolean;
+  hasDraft?: boolean;
   worktreeBranch?: string;
   hasDirtyWorktree?: boolean;
   worktreeMerged?: boolean;
@@ -36,6 +37,7 @@ export function SessionRow({
   hasPendingApproval,
   isPlanning,
   isActive,
+  hasDraft,
   worktreeMerged,
   commitsAhead,
   commitsBehind,
@@ -79,6 +81,7 @@ export function SessionRow({
         className={cn(
           "truncate text-sidebar-foreground",
           !name && "italic text-muted-foreground",
+          hasDraft && name && "italic",
           faded && "text-muted-foreground line-through decoration-muted-foreground/50",
           hasAttention && "text-warning",
           hasUnseenCompletion && "font-semibold text-foreground-bright",

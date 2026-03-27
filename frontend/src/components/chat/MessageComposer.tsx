@@ -144,6 +144,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       if (el?.value) {
         el.style.height = "auto";
         el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+        el.selectionStart = el.selectionEnd = el.value.length;
       }
       return () => {
         onTextPersistRef.current?.(textRef.current);
