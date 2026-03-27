@@ -92,7 +92,10 @@ function PreBlock({
 
   if (lang === "prompt") {
     const parsed = parsePromptFromCode(code);
-    if (parsed) return <PromptCard title={parsed.title} prompt={parsed.prompt} />;
+    if (parsed)
+      return (
+        <PromptCard title={parsed.title} prompt={parsed.prompt} projectSlug={parsed.projectSlug} />
+      );
   }
 
   return (

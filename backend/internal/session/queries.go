@@ -18,6 +18,7 @@ type managerQueries interface {
 type serviceQueries interface {
 	GetProject(ctx context.Context, id string) (store.Project, error)
 	GetSession(ctx context.Context, id string) (store.Session, error)
+	ListProjects(ctx context.Context) ([]store.Project, error)
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]store.SessionSummariesByProjectRow, error)
 	AllSessionSummaries(ctx context.Context) ([]store.AllSessionSummariesRow, error)
 	DeleteSession(ctx context.Context, id string) error
