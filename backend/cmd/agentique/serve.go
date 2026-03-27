@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -17,12 +18,14 @@ import (
 
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/logging"
+	"github.com/allbin/agentique/backend/internal/paths"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/server"
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
 var (
+	dbPath      string
 	disableAuth bool
 	rpID        string
 	rpOrigin    string
@@ -32,6 +35,7 @@ var (
 )
 
 func init() {
+	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: platform data dir)")
 	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
 	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
@@ -47,10 +51,48 @@ var serveCmd = &cobra.Command{
 	RunE:  runServe,
 }
 
+func preflight() error {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return fmt.Errorf("claude CLI not found on PATH\n\n" +
+			"  Agentique requires Claude Code CLI (>= 2.0.0).\n" +
+			"  Install: npm install -g @anthropic-ai/claude-code\n" +
+			"  Verify:  claude --version")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git not found on PATH\n\n" +
+			"  Agentique requires git for worktree management.")
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		slog.Warn("gh (GitHub CLI) not found — PR creation will be unavailable")
+	}
+	return nil
+}
+
+func resolveDBPath() string {
+	if dbPath != "" {
+		return dbPath
+	}
+	p := paths.DBPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return "agentique.db"
+	}
+	return p
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	logging.Init()
 
-	db, err := store.Open("agentique.db")
+	if !testMode {
+		if err := preflight(); err != nil {
+			return err
+		}
+	}
+
+	slog.Info("data directory", "path", paths.DataDir())
+	dbFile := resolveDBPath()
+	slog.Info("database", "path", dbFile)
+
+	db, err := store.Open(dbFile)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
@@ -115,14 +157,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		authStatus = "disabled"
 	}
 
-	listenAddr := addr
-	if listenAddr == "localhost:9201" {
-		// Default — use :9201 for binding (all interfaces in dev).
-		listenAddr = ":9201"
-	}
-
 	httpServer := &http.Server{
-		Addr:    listenAddr,
+		Addr:    addr,
 		Handler: srv,
 	}
 
@@ -131,7 +167,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", listenAddr, "tls", tlsEnabled, "auth", authStatus)
+		slog.Info("server listening", "addr", addr, "tls", tlsEnabled, "auth", authStatus)
 		var err error
 		if tlsEnabled {
 			err = httpServer.ListenAndServeTLS(tlsCert, tlsKey)

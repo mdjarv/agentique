@@ -12,15 +12,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var addr string
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	addr    string
+)
 
 var rootCmd = &cobra.Command{
-	Use:   "agentique",
-	Short: "Agentique — manage concurrent Claude Code agents",
-	RunE:  runStatus,
+	Use:     "agentique",
+	Short:   "Agentique — manage concurrent Claude Code agents",
+	Version: version,
+	RunE:    runStatus,
 }
 
 func init() {
+	rootCmd.SetVersionTemplate("agentique {{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&addr, "addr", "localhost:9201", "server address")
 }
 
@@ -39,6 +46,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	_, err := client.Get(base + "/api/health")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Agentique not running at %s\n", addr)
+		fmt.Fprintf(os.Stderr, "Start with: agentique serve\n")
 		return nil
 	}
 

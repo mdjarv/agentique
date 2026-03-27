@@ -5,22 +5,19 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/allbin/agentique/backend/internal/paths"
 )
 
 const maxDiffBytes = 500 * 1024 // 500KB
 
 // WorktreeBasePath returns the base directory for storing git worktrees.
 func WorktreeBasePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".agentique", "worktrees")
+	return paths.WorktreeDir()
 }
 
 // WorktreePath returns the full path for a worktree given a project name and branch.
