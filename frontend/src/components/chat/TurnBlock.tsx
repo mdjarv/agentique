@@ -1,5 +1,5 @@
-import { Bot, Check, Copy, FileText, Loader2, Scissors, User, Wrench } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { Bot, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
+import { memo, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatTokens } from "~/components/chat/ContextBar";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
@@ -10,6 +10,7 @@ import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
+import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
@@ -262,15 +263,14 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
   sessionId,
   projectPath,
   worktreePath,
-  onImageClick,
 }: {
   segment: ActivitySegment;
   isStreaming: boolean;
   sessionId: string;
   projectPath?: string;
   worktreePath?: string;
-  onImageClick?: (src: string) => void;
 }) {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const toolItems = segment.items.filter(
     (i): i is ActivityItem & { kind: "tool" } => i.kind === "tool",
   );
@@ -292,46 +292,68 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
   });
 
   return (
-    <CollapsibleGroup
-      title={activityTitle(segment.items)}
-      icon={<Wrench className="h-3 w-3" />}
-      defaultExpanded={false}
-      trailingIcons={trailingIcons}
-      activeHeader={
-        inFlightTool ? (
-          <InFlightToolContent
-            event={inFlightTool.use}
-            sessionId={sessionId}
-            projectPath={projectPath}
-            worktreePath={worktreePath}
-          />
-        ) : undefined
-      }
-    >
-      {segment.items.map((item) =>
-        item.kind === "thinking" ? (
-          <ThinkingBlock key={item.event.id} content={item.event.content ?? ""} />
-        ) : (
-          <div key={item.use.id} className="space-y-1.5">
-            <ToolUseBlock
-              name={item.use.toolName ?? "Unknown"}
-              input={item.use.toolInput}
-              category={item.use.category}
-              toolId={item.use.toolId}
+    <>
+      <CollapsibleGroup
+        title={activityTitle(segment.items)}
+        icon={<Wrench className="h-3 w-3" />}
+        defaultExpanded={false}
+        trailingIcons={trailingIcons}
+        activeHeader={
+          inFlightTool ? (
+            <InFlightToolContent
+              event={inFlightTool.use}
               sessionId={sessionId}
               projectPath={projectPath}
               worktreePath={worktreePath}
             />
-            {item.result && (
-              <ToolResultBlock
-                content={item.result.contentBlocks ?? []}
-                onImageClick={onImageClick}
+          ) : undefined
+        }
+      >
+        {segment.items.map((item) =>
+          item.kind === "thinking" ? (
+            <ThinkingBlock key={item.event.id} content={item.event.content ?? ""} />
+          ) : (
+            <div key={item.use.id} className="space-y-1.5">
+              <ToolUseBlock
+                name={item.use.toolName ?? "Unknown"}
+                input={item.use.toolInput}
+                category={item.use.category}
+                toolId={item.use.toolId}
+                sessionId={sessionId}
+                projectPath={projectPath}
+                worktreePath={worktreePath}
               />
-            )}
-          </div>
-        ),
-      )}
-    </CollapsibleGroup>
+              {item.result && (
+                <ToolResultBlock
+                  content={item.result.contentBlocks ?? []}
+                  onImageClick={setLightboxSrc}
+                />
+              )}
+            </div>
+          ),
+        )}
+      </CollapsibleGroup>
+
+      {lightboxSrc &&
+        createPortal(
+          <dialog
+            open
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
+            onClick={() => setLightboxSrc(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setLightboxSrc(null);
+            }}
+            aria-label="Image preview"
+          >
+            <img
+              src={lightboxSrc}
+              alt="Full-size preview"
+              className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+            />
+          </dialog>,
+          document.body,
+        )}
+    </>
   );
 });
 
@@ -413,17 +435,7 @@ export const TurnBlock = memo(function TurnBlock({
   postCompactTokens,
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const isStreaming = isLast && !turn.complete;
-
-  useEffect(() => {
-    if (!lightboxSrc) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLightboxSrc(null);
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [lightboxSrc]);
 
   const { segments, resultEvent } = useMemo(() => buildSegments(turn.events), [turn.events]);
 
@@ -449,56 +461,7 @@ export const TurnBlock = memo(function TurnBlock({
   return (
     <div className="space-y-4">
       {/* User message */}
-      <div className="flex gap-3 flex-row-reverse">
-        <Avatar className="h-8 w-8 shrink-0">
-          <AvatarFallback className="bg-primary/20 text-primary">
-            <User className="h-4 w-4" />
-          </AvatarFallback>
-        </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
-          {turn.prompt && (
-            <button
-              type="button"
-              onClick={() => turn.prompt && handleCopy(turn.prompt)}
-              className="absolute -left-8 max-md:-top-6 max-md:left-auto max-md:right-0 top-1 p-1 rounded max-md:opacity-60 opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10"
-              aria-label="Copy message"
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          )}
-          {turn.attachments && turn.attachments.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap mb-2">
-              {turn.attachments.map((a) =>
-                a.mimeType.startsWith("image/") ? (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className="p-0 border-none bg-transparent cursor-pointer"
-                    onClick={() => setLightboxSrc(a.dataUrl)}
-                  >
-                    <img
-                      src={a.previewUrl ?? a.dataUrl}
-                      alt={a.name}
-                      className="h-20 max-w-[200px] object-cover rounded"
-                    />
-                  </button>
-                ) : (
-                  <div
-                    key={a.id}
-                    className="h-20 w-20 rounded bg-primary-foreground/10 flex flex-col items-center justify-center gap-1 px-1"
-                  >
-                    <FileText className="h-5 w-5" />
-                    <span className="text-[9px] truncate w-full text-center">{a.name}</span>
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-          {turn.prompt && (
-            <Markdown content={turn.prompt} className="prose-user" preserveNewlines />
-          )}
-        </div>
-      </div>
+      <UserMessage prompt={turn.prompt} attachments={turn.attachments} />
 
       {/* Assistant response */}
       {hasAssistantContent && (
@@ -541,7 +504,6 @@ export const TurnBlock = memo(function TurnBlock({
                       sessionId={sessionId}
                       projectPath={projectPath}
                       worktreePath={worktreePath}
-                      onImageClick={setLightboxSrc}
                     />
                   );
                 case "text":
@@ -618,26 +580,6 @@ export const TurnBlock = memo(function TurnBlock({
           </div>
         </div>
       )}
-
-      {lightboxSrc &&
-        createPortal(
-          <dialog
-            open
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
-            onClick={() => setLightboxSrc(null)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setLightboxSrc(null);
-            }}
-            aria-label="Image preview"
-          >
-            <img
-              src={lightboxSrc}
-              alt="Full-size preview"
-              className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
-            />
-          </dialog>,
-          document.body,
-        )}
     </div>
   );
 });

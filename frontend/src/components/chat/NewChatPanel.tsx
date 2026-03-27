@@ -1,10 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Loader2, User } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DraftHeader } from "~/components/chat/DraftHeader";
 import { type EffortLevel, MessageComposer } from "~/components/chat/MessageComposer";
-import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { UserMessage } from "~/components/chat/UserMessage";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard, getErrorMessage } from "~/lib/utils";
@@ -27,11 +27,13 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const [effort, setEffort] = useState<EffortLevel>(defaults.effort);
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
 
   const handleSend = async (prompt: string, attachments?: Attachment[]) => {
     if (sending) return;
     setSending(true);
     setPendingPrompt(prompt);
+    setPendingAttachments(attachments ?? []);
     try {
       const sessionId = await createSession(ws, projectId, "", worktree, {
         model,
@@ -52,6 +54,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
         action: { label: "Copy", onClick: () => copyToClipboard(msg) },
       });
       setPendingPrompt(null);
+      setPendingAttachments([]);
       setSending(false);
     }
   };
@@ -62,16 +65,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       <div className="flex-1 overflow-y-auto">
         {pendingPrompt && (
           <div className="max-w-3xl mx-auto p-4 space-y-4">
-            <div className="flex gap-3 flex-row-reverse">
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="bg-primary text-primary-foreground">
-                  <User className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="max-w-[75%] rounded-lg px-4 py-2 bg-primary text-primary-foreground">
-                <p className="text-sm whitespace-pre-wrap">{pendingPrompt}</p>
-              </div>
-            </div>
+            <UserMessage prompt={pendingPrompt} attachments={pendingAttachments} />
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
               Creating session...
