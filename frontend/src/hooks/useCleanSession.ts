@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 
 export function useCleanSession(sessionId: string) {
   const ws = useWebSocket();
@@ -17,7 +18,7 @@ export function useCleanSession(sessionId: string) {
         toast.error(r.error);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Clean failed");
+      toast.error(getErrorMessage(err, "Clean failed"));
     } finally {
       setCleaning(false);
     }

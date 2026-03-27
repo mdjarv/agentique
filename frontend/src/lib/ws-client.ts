@@ -185,7 +185,7 @@ export class WsClient {
           clearTimeout(pending.timer);
           this.pending.delete(msg.id);
           if (msg.error) {
-            pending.reject(new Error(msg.error.message));
+            pending.reject(new Error(msg.error.message || "Server error (no details)"));
           } else {
             pending.resolve(msg.payload);
           }

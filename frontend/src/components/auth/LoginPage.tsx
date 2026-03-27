@@ -4,6 +4,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { login, register } from "~/lib/auth-api";
+import { getErrorMessage } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
 
 export function LoginPage() {
@@ -37,7 +38,7 @@ function SetupForm() {
       const user = await register(displayName.trim());
       setAuthenticated(user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(getErrorMessage(err, "Registration failed"));
     } finally {
       setLoading(false);
     }
@@ -82,7 +83,7 @@ function LoginForm() {
       const user = await login();
       setAuthenticated(user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(getErrorMessage(err, "Login failed"));
     } finally {
       setLoading(false);
     }

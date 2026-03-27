@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -119,7 +120,7 @@ export function PromptGroupProvider({
           await submitQuery(ws, sid, prompt);
           setCardStates((prev) => ({ ...prev, [title]: { state: "started", sessionId: sid } }));
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Failed to create session";
+          const msg = getErrorMessage(err, "Failed to create session");
           toast.error(msg);
           setCardStates((prev) => ({ ...prev, [title]: { state: "error", error: msg } }));
         }

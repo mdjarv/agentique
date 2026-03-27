@@ -17,6 +17,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
 import { deleteProject, updateProject } from "~/lib/api";
+import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
 export const Route = createFileRoute("/project/$projectSlug_/settings")({
@@ -48,7 +49,7 @@ function ProjectSettingsPage() {
       removeProject(project.id);
       navigate({ to: "/" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete project");
+      toast.error(getErrorMessage(err, "Failed to delete project"));
     }
   };
 
@@ -73,7 +74,7 @@ function ProjectSettingsPage() {
         replace: true,
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update slug");
+      toast.error(getErrorMessage(err, "Failed to update slug"));
     } finally {
       setSlugSaving(false);
     }

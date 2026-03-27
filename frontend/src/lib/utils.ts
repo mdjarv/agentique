@@ -67,3 +67,10 @@ function fallbackCopy(text: string): Promise<void> {
   document.body.removeChild(ta);
   return Promise.resolve();
 }
+
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message || fallback;
+  if (typeof err === "string" && err.length > 0) return err;
+  console.error("Non-Error value caught:", err);
+  return fallback;
+}

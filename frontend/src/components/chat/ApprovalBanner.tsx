@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval, setAutoApprove } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 import type { PendingApproval } from "~/stores/chat-store";
 
 interface ApprovalBannerProps {
@@ -81,7 +82,7 @@ export function ApprovalBanner({
     setSubmitting(true);
     resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
       setSubmitting(false);
-      toast.error(err instanceof Error ? err.message : "Failed to approve tool");
+      toast.error(getErrorMessage(err, "Failed to approve tool"));
     });
   }, [ws, sessionId, approval.approvalId]);
 
@@ -91,7 +92,7 @@ export function ApprovalBanner({
       .then(() => setAutoApprove(ws, sessionId, true))
       .catch((err) => {
         setSubmitting(false);
-        toast.error(err instanceof Error ? err.message : "Failed to approve tool");
+        toast.error(getErrorMessage(err, "Failed to approve tool"));
       });
   }, [ws, sessionId, approval.approvalId]);
 
@@ -99,7 +100,7 @@ export function ApprovalBanner({
     setSubmitting(true);
     resolveApproval(ws, sessionId, approval.approvalId, false, "User denied").catch((err) => {
       setSubmitting(false);
-      toast.error(err instanceof Error ? err.message : "Failed to deny tool");
+      toast.error(getErrorMessage(err, "Failed to deny tool"));
     });
   }, [ws, sessionId, approval.approvalId]);
 
