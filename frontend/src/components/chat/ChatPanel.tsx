@@ -365,9 +365,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                   worktreePath={meta.worktreePath}
                 />
               ))}
-            {pendingQuestion && (
-              <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
-            )}
+            {pendingQuestion && <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />}
 
             {queuedMessages.length > 0 && (
               <MessageQueue

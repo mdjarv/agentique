@@ -67,7 +67,8 @@ const ScrollAnchor = memo(function ScrollAnchor({
     if (!following) return;
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
-    const behavior: ScrollBehavior = isStreaming || wasStreaming ? "instant" : scrollBehaviorRef.current;
+    const behavior: ScrollBehavior =
+      isStreaming || wasStreaming ? "instant" : scrollBehaviorRef.current;
     scrollBehaviorRef.current = "smooth";
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {

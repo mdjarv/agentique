@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, memo, useCallback, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
@@ -49,56 +49,69 @@ function sortCompletedByDate(ids: string[], sessions: ChatState["sessions"]): st
   });
 }
 
-function renderSessionRow(
-  id: string,
-  sessions: ChatState["sessions"],
-  activeSessionId: string | undefined,
-  onSessionClick: (id: string) => void,
-  drafts: Record<string, string>,
-) {
-  const session = sessions[id]?.meta;
-  if (!session) return null;
+/** Subscribes narrowly per-session so only the affected row re-renders. */
+const SidebarSessionRow = memo(function SidebarSessionRow({
+  id,
+  activeSessionId,
+  onSessionClick,
+}: {
+  id: string;
+  activeSessionId: string | undefined;
+  onSessionClick: (id: string) => void;
+}) {
+  const meta = useChatStore((s) => s.sessions[id]?.meta);
+  const hasUnseenCompletion = useChatStore((s) => s.sessions[id]?.hasUnseenCompletion ?? false);
+  const hasPendingInput = useChatStore(
+    (s) => !!(s.sessions[id]?.pendingApproval || s.sessions[id]?.pendingQuestion),
+  );
+  const isPlanning = useChatStore((s) => !!s.sessions[id]?.planMode);
+  const hasDraft = useUIStore((s) => !!s.drafts[id]);
+  const handleClick = useCallback(() => onSessionClick(id), [onSessionClick, id]);
+
+  if (!meta) return null;
+
   return (
-    <SessionHoverCard key={id} sessionId={id}>
+    <SessionHoverCard sessionId={id}>
       <SessionRow
-        name={session.name}
-        state={session.state}
-        hasDraft={!!drafts[id]}
-        connected={session.connected}
-        hasUnseenCompletion={sessions[id]?.hasUnseenCompletion}
-        hasPendingApproval={!!sessions[id]?.pendingApproval || !!sessions[id]?.pendingQuestion}
-        isPlanning={!!sessions[id]?.planMode}
+        name={meta.name}
+        state={meta.state}
+        connected={meta.connected}
+        hasUnseenCompletion={hasUnseenCompletion}
+        hasPendingApproval={hasPendingInput}
+        isPlanning={isPlanning}
         isActive={id === activeSessionId}
-        worktreeBranch={session.worktreeBranch}
-        hasDirtyWorktree={session.hasDirtyWorktree}
-        worktreeMerged={session.worktreeMerged}
-        commitsAhead={session.commitsAhead}
-        commitsBehind={session.commitsBehind}
-        branchMissing={session.branchMissing}
-        hasUncommitted={session.hasUncommitted}
-        mergeStatus={session.mergeStatus}
-        gitOperation={session.gitOperation}
-        prUrl={session.prUrl}
-        onClick={() => onSessionClick(id)}
+        hasDraft={hasDraft}
+        worktreeBranch={meta.worktreeBranch}
+        hasDirtyWorktree={meta.hasDirtyWorktree}
+        worktreeMerged={meta.worktreeMerged}
+        commitsAhead={meta.commitsAhead}
+        commitsBehind={meta.commitsBehind}
+        branchMissing={meta.branchMissing}
+        hasUncommitted={meta.hasUncommitted}
+        mergeStatus={meta.mergeStatus}
+        gitOperation={meta.gitOperation}
+        prUrl={meta.prUrl}
+        onClick={handleClick}
       />
     </SessionHoverCard>
   );
-}
+});
 
 function SessionGroups({
   sessionIds,
-  sessions,
   activeSessionId,
   onSessionClick,
   newChatButton,
 }: {
   sessionIds: string[];
-  sessions: ChatState["sessions"];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
   newChatButton: ReactNode;
 }) {
-  const drafts = useUIStore((s) => s.drafts);
+  // Subscribed here (not in ProjectTreeItem) so the parent doesn't re-render on turn events.
+  // Sorting is cheap; SidebarSessionRow is memo'd so rows only re-render on their own data changes.
+  const sessions = useChatStore((s) => s.sessions);
+
   const active: string[] = [];
   const completed: string[] = [];
 
@@ -118,18 +131,28 @@ function SessionGroups({
   return (
     <>
       {newChatButton}
-      {promoted.map((id) =>
-        renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts),
-      )}
+      {promoted.map((id) => (
+        <SidebarSessionRow
+          key={id}
+          id={id}
+          activeSessionId={activeSessionId}
+          onSessionClick={onSessionClick}
+        />
+      ))}
       {promoted.length > 0 && rest.length > 0 && <div className="h-2" aria-hidden="true" />}
-      {rest.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts))}
+      {rest.map((id) => (
+        <SidebarSessionRow
+          key={id}
+          id={id}
+          activeSessionId={activeSessionId}
+          onSessionClick={onSessionClick}
+        />
+      ))}
       {sortedCompleted.length > 0 && (
         <CompletedSection
           ids={sortedCompleted}
-          sessions={sessions}
           activeSessionId={activeSessionId}
           onSessionClick={onSessionClick}
-          drafts={drafts}
         />
       )}
     </>
@@ -138,16 +161,12 @@ function SessionGroups({
 
 function CompletedSection({
   ids,
-  sessions,
   activeSessionId,
   onSessionClick,
-  drafts,
 }: {
   ids: string[];
-  sessions: ChatState["sessions"];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
-  drafts: Record<string, string>;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -169,7 +188,14 @@ function CompletedSection({
         <span className="text-xs text-muted-foreground/60 ml-auto">{ids.length}</span>
       </button>
       {expanded &&
-        ids.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick, drafts))}
+        ids.map((id) => (
+          <SidebarSessionRow
+            key={id}
+            id={id}
+            activeSessionId={activeSessionId}
+            onSessionClick={onSessionClick}
+          />
+        ))}
     </>
   );
 }
@@ -282,7 +308,6 @@ export function ProjectTreeItem({
       Object.keys(s.sessions).filter((id) => s.sessions[id]?.meta.projectId === project.id),
     ),
   );
-  const sessions = useChatStore((s) => s.sessions);
 
   const closeSidebar = () => useAppStore.getState().setSidebarOpen(false);
 
@@ -290,13 +315,16 @@ export function ProjectTreeItem({
     onToggleExpand();
   };
 
-  const handleSessionClick = (sessionId: string) => {
-    closeSidebar();
-    navigate({
-      to: "/project/$projectSlug/session/$sessionShortId",
-      params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] ?? "" },
-    });
-  };
+  const handleSessionClick = useCallback(
+    (sessionId: string) => {
+      useAppStore.getState().setSidebarOpen(false);
+      navigate({
+        to: "/project/$projectSlug/session/$sessionShortId",
+        params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] ?? "" },
+      });
+    },
+    [navigate, project.slug],
+  );
 
   return (
     <div
@@ -362,7 +390,6 @@ export function ProjectTreeItem({
         <div className="ml-4 mr-2 mt-1 space-y-0.5">
           <SessionGroups
             sessionIds={sessionIds}
-            sessions={sessions}
             activeSessionId={activeSessionId}
             onSessionClick={handleSessionClick}
             newChatButton={

@@ -63,14 +63,13 @@ const isTerminal = (state: string) => state === "done" || state === "stopped" ||
 
 export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps) {
   const ws = useWebSocket();
-  const session = useChatStore((s) => s.sessions[sessionId]);
+  const meta = useChatStore((s) => s.sessions[sessionId]?.meta);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
-  if (!session) return <>{children}</>;
+  if (!meta) return <>{children}</>;
 
-  const { meta } = session;
   const terminal = isTerminal(meta.state);
   const hasWorktree = !!meta.worktreePath;
   const ahead = !!meta.commitsAhead && meta.commitsAhead > 0;

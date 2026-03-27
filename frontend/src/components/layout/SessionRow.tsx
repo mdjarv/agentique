@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, GitPullRequest } from "lucide-react";
+import { memo } from "react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { GitIndicators } from "./GitIndicators";
@@ -29,7 +30,7 @@ interface SessionRowProps {
 const isTerminal = (state: SessionState) =>
   state === "done" || state === "stopped" || state === "failed";
 
-export function SessionRow({
+export const SessionRow = memo(function SessionRow({
   name,
   state,
   connected,
@@ -104,7 +105,7 @@ export function SessionRow({
       </span>
     </div>
   );
-}
+});
 
 function SessionGitStatus({
   worktreeMerged,

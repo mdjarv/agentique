@@ -437,7 +437,7 @@ export const TurnBlock = memo(function TurnBlock({
 
   // Subscribe to streaming text only when this is the active (last, incomplete) turn
   const currentAssistantText = useStreamingStore((s) =>
-    isStreaming ? s.texts[sessionId] ?? "" : "",
+    isStreaming ? (s.texts[sessionId] ?? "") : "",
   );
 
   const { segments, resultEvent } = useMemo(() => buildSegments(turn.events), [turn.events]);
