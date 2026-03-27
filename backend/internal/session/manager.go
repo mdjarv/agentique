@@ -95,7 +95,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithAppendSystemPrompt(agentiquePreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch)),
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -164,6 +164,7 @@ type ResumeParams struct {
 	ClaudeSessionID   string
 	ProjectID         string
 	WorkDir           string
+	WorktreeBranch    string
 	Model             string
 	PermissionMode    string
 	AutoApprove       bool
@@ -212,7 +213,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(agentiquePreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch)),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
