@@ -6,10 +6,11 @@ import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 
 const certPath = path.resolve(__dirname, "../certs");
-const hasCerts = fs.existsSync(path.join(certPath, "server.crt"));
+const useTls =
+  process.env.VITE_TLS !== "false" && fs.existsSync(path.join(certPath, "server.crt"));
 
-const backendOrigin = hasCerts ? "https://localhost:9201" : "http://localhost:9201";
-const backendWs = hasCerts ? "wss://localhost:9201" : "ws://localhost:9201";
+const backendOrigin = useTls ? "https://localhost:9201" : "http://localhost:9201";
+const backendWs = useTls ? "wss://localhost:9201" : "ws://localhost:9201";
 
 export default defineConfig({
   plugins: [
@@ -25,7 +26,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 9200,
-    ...(hasCerts && {
+    ...(useTls && {
       https: {
         cert: path.join(certPath, "server.crt"),
         key: path.join(certPath, "server.key"),

@@ -13,7 +13,7 @@ dev:
 # Run both servers with TLS (requires certs/server.{crt,key})
 dev-tls:
     just stop
-    just dev-backend-tls & just dev-frontend & wait
+    just dev-backend-tls & just dev-frontend-tls & wait
 
 # Go backend
 dev-backend:
@@ -27,11 +27,15 @@ dev-backend-tls:
 
 # React frontend
 dev-frontend:
+    cd frontend && VITE_TLS=false npm run dev
+
+# React frontend with TLS
+dev-frontend-tls:
     cd frontend && npm run dev
 
 # Frontend with MSW mock backend (port 9210, no real backend needed)
 dev-mock:
-    cd frontend && VITE_MSW=true npx vite --port 9210
+    cd frontend && VITE_TLS=false VITE_MSW=true npx vite --port 9210
 
 # Stop dev servers
 stop:
