@@ -740,7 +740,7 @@ func generateSessionName(runner msggen.Runner, prompt string) string {
 	namePrompt := "Generate a short 2-4 word title for this coding task. " +
 		"Respond with ONLY the title, no quotes or punctuation:\n\n" + p
 
-	result, err := runner.RunBlocking(context.Background(), namePrompt,
+	result, err := msggen.RunWithRetry(context.Background(), runner, namePrompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
