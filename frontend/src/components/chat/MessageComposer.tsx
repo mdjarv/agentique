@@ -81,6 +81,7 @@ interface MessageComposerProps {
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  onEmptySubmit?: () => void;
 }
 
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
@@ -104,6 +105,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onModelChange,
       effort,
       onEffortChange,
+      onEmptySubmit,
     },
     ref,
   ) {
@@ -185,6 +187,10 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       if (e.defaultPrevented) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        if (!text.trim() && attachments.length === 0 && onEmptySubmit) {
+          onEmptySubmit();
+          return;
+        }
         handleSend();
       }
     };

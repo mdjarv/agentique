@@ -27,7 +27,7 @@ var validTransitions = map[State]map[State]bool{
 	StateRunning: {StateIdle: true, StateFailed: true, StateDone: true},
 	StateFailed:  {StateIdle: true, StateStopped: true, StateDone: true},
 	StateDone:    {StateIdle: true, StateStopped: true},
-	StateStopped: {StateDone: true},
+	StateStopped: {StateIdle: true, StateDone: true},
 	StateMerging: {StateIdle: true, StateFailed: true, StateDone: true, StateStopped: true},
 }
 

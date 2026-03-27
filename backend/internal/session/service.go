@@ -252,6 +252,29 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
+// ResumeSession reconnects a stopped/done/failed session without sending a query.
+// If the session is already live and healthy, returns its current info (idempotent).
+func (s *Service) ResumeSession(ctx context.Context, sessionID string) (SessionInfo, error) {
+	sess := s.mgr.Get(sessionID)
+
+	// CLI process dead — evict and resume with a fresh connection.
+	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
+		s.mgr.Evict(sessionID)
+		sess = nil
+	}
+
+	// Already live and healthy — return current info.
+	if sess != nil {
+		return s.GetSessionInfo(ctx, sessionID)
+	}
+
+	if _, err := s.resumeSession(ctx, sessionID); err != nil {
+		return SessionInfo{}, fmt.Errorf("resume failed: %w", err)
+	}
+
+	return s.GetSessionInfo(ctx, sessionID)
+}
+
 // StopSession stops a live session. The worktree is preserved so the session
 // can be resumed later. Worktree cleanup happens only on DeleteSession or
 // Merge with cleanup=true.

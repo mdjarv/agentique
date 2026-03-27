@@ -24,6 +24,7 @@ func TestValidTransitions(t *testing.T) {
 		{StateDone, StateIdle},
 		{StateDone, StateStopped},
 		// From stopped
+		{StateStopped, StateIdle},
 		{StateStopped, StateDone},
 		// From merging
 		{StateMerging, StateIdle},
@@ -50,8 +51,7 @@ func TestInvalidTransitions(t *testing.T) {
 		{StateDone, StateRunning},
 		{StateDone, StateFailed},
 		{StateDone, StateMerging},
-		// Stopped is terminal except for done
-		{StateStopped, StateIdle},
+		// Stopped can resume to idle or mark done
 		{StateStopped, StateRunning},
 		{StateStopped, StateFailed},
 		{StateStopped, StateMerging},
