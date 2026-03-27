@@ -291,6 +291,7 @@ func main() {
 	streamEvt := g.register(session.WireStreamEvent{}, "WireStreamEvent")
 	compactStatusEvt := g.register(session.WireCompactStatusEvent{}, "WireCompactStatusEvent")
 	compactBoundaryEvt := g.register(session.WireCompactBoundaryEvent{}, "WireCompactBoundaryEvent")
+	ctxMgmtEvt := g.register(session.WireContextManagementEvent{}, "WireContextManagementEvent")
 
 	g.addUnion("WireEvent", "type", []unionVariant{
 		{"text", textEvt},
@@ -303,6 +304,7 @@ func main() {
 		{"stream", streamEvt},
 		{"compact_status", compactStatusEvt},
 		{"compact_boundary", compactBoundaryEvt},
+		{"context_management", ctxMgmtEvt},
 	})
 
 	// ── Session response types ──

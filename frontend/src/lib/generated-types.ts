@@ -97,6 +97,11 @@ export interface WireCompactBoundaryEvent {
   preTokens: number;
 }
 
+export interface WireContextManagementEvent {
+  type: "context_management";
+  raw: unknown;
+}
+
 export interface SessionInfo {
   id: string;
   projectId: string;
@@ -442,4 +447,5 @@ export type WireEvent =
   | WireRateLimitEvent
   | WireStreamEvent
   | WireCompactStatusEvent
-  | WireCompactBoundaryEvent;
+  | WireCompactBoundaryEvent
+  | WireContextManagementEvent;

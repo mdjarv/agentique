@@ -2,8 +2,11 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 )
@@ -115,6 +118,64 @@ func TestToWireEvent_ToolResultJSON(t *testing.T) {
 	}
 	if b1["url"] != "data:image/png;base64,AAAA" {
 		t.Errorf("block[1].url = %v", b1["url"])
+	}
+}
+
+func TestToWireEvent_ErrorClassification(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		wantErrorType  string
+		wantRetryAfter int
+	}{
+		{
+			name:          "rate limit with retry",
+			err:           &claudecli.RateLimitError{RetryAfter: 30 * time.Second, Message: "slow down"},
+			wantErrorType: "rate_limit",
+			wantRetryAfter: 30,
+		},
+		{
+			name:          "rate limit without retry",
+			err:           &claudecli.RateLimitError{Message: "slow down"},
+			wantErrorType: "rate_limit",
+		},
+		{
+			name:          "auth error",
+			err:           claudecli.ErrAuth,
+			wantErrorType: "auth",
+		},
+		{
+			name:          "overloaded",
+			err:           claudecli.ErrOverloaded,
+			wantErrorType: "overloaded",
+		},
+		{
+			name:          "ErrAPI wrapped",
+			err:           fmt.Errorf("%w: billing_error: payment required", claudecli.ErrAPI),
+			wantErrorType: "api_error",
+		},
+		{
+			name:          "non-sentinel error",
+			err:           errors.New("connection reset"),
+			wantErrorType: "api_error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := &claudecli.ErrorEvent{Err: tt.err, Fatal: false}
+			wire := ToWireEvent(event)
+			we, ok := wire.(WireErrorEvent)
+			if !ok {
+				t.Fatalf("expected WireErrorEvent, got %T", wire)
+			}
+			if we.ErrorType != tt.wantErrorType {
+				t.Errorf("ErrorType = %q, want %q", we.ErrorType, tt.wantErrorType)
+			}
+			if we.RetryAfterSecs != tt.wantRetryAfter {
+				t.Errorf("RetryAfterSecs = %d, want %d", we.RetryAfterSecs, tt.wantRetryAfter)
+			}
+		})
 	}
 }
 

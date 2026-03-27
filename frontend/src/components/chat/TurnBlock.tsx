@@ -255,14 +255,32 @@ function InFlightToolStatus(props: {
 }
 
 function formatErrorMessage(event: ChatEvent): string {
-  if (event.errorType === "rate_limit") {
-    return event.retryAfterSecs
-      ? `Rate limited — retry in ${event.retryAfterSecs}s`
-      : "Rate limited";
-  }
+  if (event.errorType === "rate_limit") return "Rate limited";
   if (event.errorType === "auth") return "Authentication error";
   if (event.errorType === "overloaded") return "API overloaded — try again shortly";
+  if (event.errorType === "api_error") return event.content ?? "API error";
   return event.content ?? "Unknown error";
+}
+
+function RateLimitCountdown({ seconds }: { seconds: number }) {
+  const [remaining, setRemaining] = useState(seconds);
+
+  useEffect(() => {
+    setRemaining(seconds);
+    const id = setInterval(() => {
+      setRemaining((r) => {
+        if (r <= 1) {
+          clearInterval(id);
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [seconds]);
+
+  if (remaining <= 0) return <span>Retrying...</span>;
+  return <span>Rate limited — retrying in {remaining}s</span>;
 }
 
 // --- Segment renderers ---
@@ -411,21 +429,26 @@ function CompactDivider({ event, postTokens }: { event: ChatEvent; postTokens?: 
 function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
   return (
     <>
-      {segment.events.map((e) => (
-        <div
-          key={e.id}
-          className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
-            e.errorType === "rate_limit" || e.errorType === "overloaded"
-              ? "bg-warning/10 text-warning"
-              : "bg-destructive/10 text-destructive"
-          }`}
-        >
-          {(e.errorType === "rate_limit" || e.errorType === "overloaded") && (
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-          )}
-          <span>{formatErrorMessage(e)}</span>
-        </div>
-      ))}
+      {segment.events.map((e) => {
+        const isTransient = !e.fatal;
+        return (
+          <div
+            key={e.id}
+            className={`rounded-lg px-4 py-2 text-sm flex items-center gap-2 ${
+              isTransient ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
+            }`}
+          >
+            {isTransient && <AlertTriangle className="h-4 w-4 shrink-0" />}
+            <span>
+              {e.errorType === "rate_limit" && e.retryAfterSecs ? (
+                <RateLimitCountdown seconds={e.retryAfterSecs} />
+              ) : (
+                formatErrorMessage(e)
+              )}
+            </span>
+          </div>
+        );
+      })}
     </>
   );
 }
