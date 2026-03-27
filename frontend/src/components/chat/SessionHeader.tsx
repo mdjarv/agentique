@@ -31,7 +31,7 @@ import {
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
-import { cn } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
 
 interface SessionHeaderProps {
@@ -71,7 +71,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
     setEditing(false);
     if (trimmed && trimmed !== meta.name) {
       renameSession(ws, meta.id, trimmed).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Rename failed");
+        toast.error(getErrorMessage(err, "Rename failed"));
       });
     } else {
       setEditName(meta.name);
@@ -85,7 +85,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
       setActiveDialog("none");
     } catch (err) {
       setDeleting(false);
-      toast.error(err instanceof Error ? err.message : "Delete failed");
+      toast.error(getErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -99,7 +99,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
         toast.error(r.error ?? "Clean failed");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Clean failed");
+      toast.error(getErrorMessage(err, "Clean failed"));
     } finally {
       setCleaning(false);
     }
@@ -176,7 +176,7 @@ export function SessionHeader({ session, showPanelButton, onOpenPanel }: Session
               title="Mark done"
               onClick={() => {
                 markSessionDone(ws, meta.id).catch((err) => {
-                  toast.error(err instanceof Error ? err.message : "Failed to mark done");
+                  toast.error(getErrorMessage(err, "Failed to mark done"));
                 });
               }}
             >

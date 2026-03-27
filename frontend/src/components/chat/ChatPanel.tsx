@@ -36,7 +36,7 @@ import {
   submitQuery,
 } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
-import { cn, copyToClipboard, sessionShortId } from "~/lib/utils";
+import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -157,7 +157,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       useChatStore.getState().setSessionPlanMode(sessionId, enabled);
       const mode = enabled ? "plan" : "default";
       setPermissionMode(ws, sessionId, mode).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to set plan mode");
+        toast.error(getErrorMessage(err, "Failed to set plan mode"));
       });
     },
     [ws, sessionId],
@@ -167,7 +167,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     (enabled: boolean) => {
       useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
       setAutoApprove(ws, sessionId, enabled).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to set auto-approve");
+        toast.error(getErrorMessage(err, "Failed to set auto-approve"));
       });
     },
     [ws, sessionId],
@@ -176,7 +176,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const handleModelChange = useCallback(
     (model: ModelId) => {
       setSessionModel(ws, sessionId, model).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to set model");
+        toast.error(getErrorMessage(err, "Failed to set model"));
       });
     },
     [ws, sessionId],
@@ -199,7 +199,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       try {
         await submitQuery(ws, sessionId, prompt, attachments);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
+        const msg = getErrorMessage(err, "Failed to send message");
         toast.error(msg, {
           action: { label: "Copy", onClick: () => copyToClipboard(msg) },
         });
@@ -224,7 +224,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           params: { projectSlug, sessionShortId: sessionShortId(newId) },
         });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to start fresh session");
+        toast.error(getErrorMessage(err, "Failed to start fresh session"));
       }
     },
     [ws, projectId, sessionId, session?.meta, navigate, projectSlug],
@@ -246,7 +246,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     try {
       await resumeSession(ws, sessionId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to resume session");
+      toast.error(getErrorMessage(err, "Failed to resume session"));
     } finally {
       setResuming(false);
     }

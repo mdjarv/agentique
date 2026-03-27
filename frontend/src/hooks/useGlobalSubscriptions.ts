@@ -8,7 +8,7 @@ import { getProjectGitStatus } from "~/lib/project-actions";
 import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
-import { copyToClipboard, sessionShortId } from "~/lib/utils";
+import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -172,7 +172,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
             try {
               await submitQuery(ws, sid, next.prompt, next.attachments);
             } catch (err) {
-              const msg = err instanceof Error ? err.message : "Unknown error";
+              const msg = getErrorMessage(err, "Failed to send queued message");
               toast.error(msg, {
                 action: { label: "Copy", onClick: () => copyToClipboard(msg) },
               });

@@ -55,7 +55,7 @@ type WireResultEvent struct {
 
 type WireErrorEvent struct {
 	Type           string `json:"type"`
-	Message        string `json:"message"`
+	Content        string `json:"content"`
 	Fatal          bool   `json:"fatal"`
 	ErrorType      string `json:"errorType,omitempty"`
 	RetryAfterSecs int    `json:"retryAfterSecs,omitempty"`
@@ -101,6 +101,21 @@ func (e WireCompactStatusEvent) WireType() string   { return e.Type }
 func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
 
+// errorDetail extracts a clean human-readable message from a claudecli error,
+// stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."
+// becomes just "Your API key...").
+func errorDetail(err error) string {
+	var rlErr *claudecli.RateLimitError
+	if errors.As(err, &rlErr) {
+		return rlErr.Message
+	}
+	var cliErr *claudecli.Error
+	if errors.As(err, &cliErr) && cliErr.Message != "" {
+		return cliErr.Message
+	}
+	return err.Error()
+}
+
 // ToWireEvent converts a claudecli-go event to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
 func ToWireEvent(event claudecli.Event) any {
@@ -140,21 +155,31 @@ func ToWireEvent(event claudecli.Event) any {
 		}
 		return wire
 	case *claudecli.ErrorEvent:
-		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
-		// Classify by sentinel — most specific first.
-		// TODO: add ErrBilling, ErrPermission, ErrNotFound, ErrRequestTooLarge,
-		// ErrInvalidRequest checks here when claudecli-go adds those sentinels.
-		if errors.Is(e.Err, claudecli.ErrRateLimit) {
+		we := WireErrorEvent{Type: "error", Content: errorDetail(e.Err), Fatal: e.Fatal}
+		switch {
+		case errors.Is(e.Err, claudecli.ErrRateLimit):
 			we.ErrorType = "rate_limit"
 			var rlErr *claudecli.RateLimitError
 			if errors.As(e.Err, &rlErr) && rlErr.RetryAfter > 0 {
 				we.RetryAfterSecs = int(rlErr.RetryAfter.Seconds())
 			}
-		} else if errors.Is(e.Err, claudecli.ErrAuth) {
+		case errors.Is(e.Err, claudecli.ErrAuth):
 			we.ErrorType = "auth"
-		} else if errors.Is(e.Err, claudecli.ErrOverloaded) {
+		case errors.Is(e.Err, claudecli.ErrOverloaded):
 			we.ErrorType = "overloaded"
-		} else {
+		case errors.Is(e.Err, claudecli.ErrBilling):
+			we.ErrorType = "billing"
+		case errors.Is(e.Err, claudecli.ErrPermission):
+			we.ErrorType = "permission"
+		case errors.Is(e.Err, claudecli.ErrInvalidRequest):
+			we.ErrorType = "invalid_request"
+		case errors.Is(e.Err, claudecli.ErrNotFound):
+			we.ErrorType = "not_found"
+		case errors.Is(e.Err, claudecli.ErrRequestTooLarge):
+			we.ErrorType = "request_too_large"
+		case errors.Is(e.Err, claudecli.ErrAPI):
+			we.ErrorType = "api_error"
+		default:
 			we.ErrorType = "api_error"
 		}
 		return we

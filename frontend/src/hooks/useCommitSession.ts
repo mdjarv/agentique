@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { commitSession, refreshGitStatus } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 
 export function useCommitSession(sessionId: string) {
   const ws = useWebSocket();
@@ -16,7 +17,7 @@ export function useCommitSession(sessionId: string) {
         refreshGitStatus(ws, sessionId).catch(() => {});
         return true;
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Commit failed");
+        toast.error(getErrorMessage(err, "Commit failed"));
         return false;
       } finally {
         setCommitting(false);

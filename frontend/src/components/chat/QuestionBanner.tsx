@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveQuestion } from "~/lib/session-actions";
-import { cn } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import type { PendingQuestion, Question } from "~/stores/chat-store";
 
 interface QuestionBannerProps {
@@ -343,7 +343,7 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
     setSubmitting(true);
     resolveQuestion(ws, sessionId, pending.questionId, answers).catch((err) => {
       setSubmitting(false);
-      toast.error(err instanceof Error ? err.message : "Failed to submit answer");
+      toast.error(getErrorMessage(err, "Failed to submit answer"));
     });
   }, [ws, sessionId, pending.questionId, answers]);
 

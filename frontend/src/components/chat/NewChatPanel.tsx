@@ -7,7 +7,7 @@ import { type EffortLevel, MessageComposer } from "~/components/chat/MessageComp
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
-import { copyToClipboard } from "~/lib/utils";
+import { copyToClipboard, getErrorMessage } from "~/lib/utils";
 import type { Attachment } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -47,7 +47,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
         replace: true,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      const msg = getErrorMessage(err, "Failed to create session");
       toast.error(msg, {
         action: { label: "Copy", onClick: () => copyToClipboard(msg) },
       });

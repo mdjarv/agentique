@@ -5,6 +5,7 @@ import { Markdown } from "~/components/chat/Markdown";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 import type { PendingApproval } from "~/stores/chat-store";
 
 interface PlanReviewBannerProps {
@@ -27,7 +28,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
     setSubmitting(true);
     resolveApproval(ws, sessionId, approval.approvalId, true).catch((err) => {
       setSubmitting(false);
-      toast.error(err instanceof Error ? err.message : "Failed to approve");
+      toast.error(getErrorMessage(err, "Failed to approve"));
     });
   }, [ws, sessionId, approval.approvalId]);
 
@@ -37,7 +38,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
       .then(() => onStartFresh(plan))
       .catch((err) => {
         setSubmitting(false);
-        toast.error(err instanceof Error ? err.message : "Failed to start fresh session");
+        toast.error(getErrorMessage(err, "Failed to start fresh session"));
       });
   }, [ws, sessionId, approval.approvalId, onStartFresh, plan]);
 
@@ -51,7 +52,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
       "User wants to continue discussing the plan",
     ).catch((err) => {
       setSubmitting(false);
-      toast.error(err instanceof Error ? err.message : "Failed to deny");
+      toast.error(getErrorMessage(err, "Failed to deny"));
     });
   }, [ws, sessionId, approval.approvalId]);
 

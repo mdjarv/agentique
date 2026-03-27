@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createPR } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 
 export function useCreatePR(sessionId: string) {
   const ws = useWebSocket();
@@ -19,7 +20,7 @@ export function useCreatePR(sessionId: string) {
         toast.error(result.error);
         return false;
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "PR creation failed");
+        toast.error(getErrorMessage(err, "PR creation failed"));
         return false;
       } finally {
         setCreatingPR(false);

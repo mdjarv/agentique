@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type DiffResult, getSessionDiff } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
 
 export function useSessionDiff(sessionId: string) {
@@ -39,7 +40,7 @@ export function useSessionDiff(sessionId: string) {
       return result;
     } catch (err) {
       if (prevSessionId.current === sessionId) {
-        toast.error(err instanceof Error ? err.message : "Failed to load diff");
+        toast.error(getErrorMessage(err, "Failed to load diff"));
       }
       return null;
     } finally {

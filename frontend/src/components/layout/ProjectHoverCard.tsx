@@ -9,6 +9,7 @@ import {
 } from "~/components/ui/hover-card";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { fetchProject, pushProject } from "~/lib/project-actions";
+import { getErrorMessage } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { ActionItem } from "./ActionItem";
 
@@ -40,7 +41,7 @@ export function ProjectHoverCard({
       useAppStore.getState().setProjectGitStatus(status);
       toast.success("Pushed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Push failed");
+      toast.error(getErrorMessage(err, "Push failed"));
     } finally {
       setPushing(false);
     }
@@ -52,7 +53,7 @@ export function ProjectHoverCard({
       const status = await fetchProject(ws, projectId);
       useAppStore.getState().setProjectGitStatus(status);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Fetch failed");
+      toast.error(getErrorMessage(err, "Fetch failed"));
     } finally {
       setFetching(false);
     }

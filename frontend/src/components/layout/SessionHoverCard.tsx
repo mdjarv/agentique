@@ -50,6 +50,7 @@ import {
   rebaseSession,
   renameSession,
 } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
 import { ActionItem } from "./ActionItem";
 
@@ -94,7 +95,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     try {
       await interruptSession(ws, sessionId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to interrupt");
+      toast.error(getErrorMessage(err, "Failed to interrupt"));
     }
   };
 
@@ -102,7 +103,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     try {
       await markSessionDone(ws, sessionId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to mark done");
+      toast.error(getErrorMessage(err, "Failed to mark done"));
     }
   };
 
@@ -115,7 +116,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
         toast.error(result.error);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create PR");
+      toast.error(getErrorMessage(err, "Failed to create PR"));
     }
   };
 
@@ -132,7 +133,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
         toast.error(result.error);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to merge");
+      toast.error(getErrorMessage(err, "Failed to merge"));
     }
   };
 
@@ -145,7 +146,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
         toast.error(result.error);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to rebase");
+      toast.error(getErrorMessage(err, "Failed to rebase"));
     }
   };
 
@@ -156,7 +157,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
       await renameSession(ws, sessionId, trimmed);
       setRenameOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to rename");
+      toast.error(getErrorMessage(err, "Failed to rename"));
     }
   };
 
@@ -164,7 +165,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     try {
       await deleteSession(ws, sessionId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete");
+      toast.error(getErrorMessage(err, "Failed to delete"));
     } finally {
       setDeleteOpen(false);
     }

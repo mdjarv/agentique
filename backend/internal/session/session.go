@@ -342,7 +342,7 @@ func (s *Session) startEventLoop() {
 						"sessionId": s.ID,
 						"event": WireErrorEvent{
 							Type:    "error",
-							Message: "session may be unresponsive — no activity for 2 minutes",
+							Content: "session may be unresponsive — no activity for 2 minutes",
 							Fatal:   false,
 						},
 					})
@@ -367,7 +367,7 @@ func (s *Session) safeProcessEvent(event claudecli.Event) {
 				"sessionId": s.ID,
 				"event": WireErrorEvent{
 					Type:    "error",
-					Message: fmt.Sprintf("internal error processing event: %v", r),
+					Content: fmt.Sprintf("internal error processing event: %v", r),
 					Fatal:   false,
 				},
 			})

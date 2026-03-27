@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { refreshGitStatus } from "~/lib/session-actions";
+import { getErrorMessage } from "~/lib/utils";
 
 export function useRefreshGit(sessionId: string, fetchDiff: () => Promise<unknown>) {
   const ws = useWebSocket();
@@ -13,7 +14,7 @@ export function useRefreshGit(sessionId: string, fetchDiff: () => Promise<unknow
       await refreshGitStatus(ws, sessionId);
       await fetchDiff();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Refresh failed");
+      toast.error(getErrorMessage(err, "Refresh failed"));
     } finally {
       setRefreshingGit(false);
     }
