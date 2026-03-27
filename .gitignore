@@ -8,10 +8,8 @@ frontend/dist/
 frontend/.tanstack/
 *.tsbuildinfo
 
-# Build artifacts
+# Build artifacts (assets/ has hashed filenames; index.html stub is tracked for go:embed)
 backend/internal/server/frontend_dist/assets/
-backend/internal/server/frontend_dist/index.html
-!backend/internal/server/frontend_dist/.gitkeep
 # Compiled binary (bare name matches the source dir, so anchor it)
 /agentique
 /backend/agentique
@@ -41,4 +39,3 @@ certs/
 
 # Claude Code
 .claude/
-backend/internal/server/frontend_dist/

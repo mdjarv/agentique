@@ -1,14 +1,7 @@
 import { create } from "zustand";
-import type { Project } from "~/lib/types";
+import type { Project, ProjectGitStatus } from "~/lib/generated-types";
 
-export interface ProjectGitStatus {
-  projectId: string;
-  branch: string;
-  hasRemote: boolean;
-  aheadRemote: number;
-  behindRemote: number;
-  uncommittedCount: number;
-}
+export type { ProjectGitStatus } from "~/lib/generated-types";
 
 interface AppState {
   projects: Project[];

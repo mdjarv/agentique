@@ -8,7 +8,16 @@ function makeMeta(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
     name: "Test Session",
     state: "idle",
     connected: true,
+    model: "sonnet",
+    permissionMode: "default",
+    autoApprove: false,
+    totalCost: 0,
+    turnCount: 0,
+    commitsAhead: 0,
+    commitsBehind: 0,
+    gitVersion: 0,
     createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
     ...overrides,
   };
 }

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SessionInfo } from "~/lib/generated-types";
 import { uuid } from "~/lib/utils";
 
 // Debounce timer for rate-limit "allowed" → clear transition.
@@ -66,38 +67,10 @@ export interface Turn {
 
 export type SessionState = "idle" | "running" | "done" | "failed" | "stopped" | "merging";
 
-export interface SessionMetadata {
-  id: string;
-  projectId: string;
-  name: string;
+export type SessionMetadata = Omit<SessionInfo, "state" | "mergeStatus"> & {
   state: SessionState;
-  connected: boolean;
-  model?: string;
-  permissionMode?: string;
-  autoApprove?: boolean;
-  effort?: string;
-  maxBudget?: number;
-  maxTurns?: number;
-  totalCost?: number;
-  turnCount?: number;
-  worktreePath?: string;
-  worktreeBranch?: string;
-  hasDirtyWorktree?: boolean;
-  worktreeMerged?: boolean;
-  completedAt?: string;
-  commitsAhead?: number;
-  commitsBehind?: number;
-  branchMissing?: boolean;
-  hasUncommitted?: boolean;
   mergeStatus?: "clean" | "conflicts" | "unknown";
-  mergeConflictFiles?: string[];
-  gitOperation?: string;
-  gitVersion?: number;
-  prUrl?: string;
-  createdAt: string;
-  updatedAt?: string;
-  lastQueryAt?: string;
-}
+};
 
 export interface PendingApproval {
   approvalId: string;

@@ -1,5 +1,11 @@
+import type {
+  ProjectCommitResult,
+  ProjectGitStatus,
+  TrackedFilesResult,
+} from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
-import type { ProjectGitStatus } from "~/stores/app-store";
+
+export type { ProjectCommitResult, TrackedFilesResult };
 
 export async function getProjectGitStatus(
   ws: WsClient,
@@ -16,20 +22,12 @@ export async function pushProject(ws: WsClient, projectId: string): Promise<Proj
   return ws.request<ProjectGitStatus>("project.push", { projectId });
 }
 
-export interface ProjectCommitResult {
-  commitHash: string;
-}
-
 export async function commitProject(
   ws: WsClient,
   projectId: string,
   message: string,
 ): Promise<ProjectCommitResult> {
   return ws.request<ProjectCommitResult>("project.commit", { projectId, message });
-}
-
-export interface TrackedFilesResult {
-  files: string[];
 }
 
 export async function getTrackedFiles(

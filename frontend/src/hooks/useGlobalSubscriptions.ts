@@ -3,20 +3,16 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
+import type { ListSessionsResult, ProjectGitStatus } from "~/lib/generated-types";
 import { getProjectGitStatus } from "~/lib/project-actions";
 import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
 import { copyToClipboard, sessionShortId } from "~/lib/utils";
-import type { ProjectGitStatus } from "~/stores/app-store";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
-
-interface SessionListResult {
-  sessions: SessionMetadata[];
-}
 
 /** Find the most recently created idle or running session in the same project. */
 function findNearestActiveSession(
@@ -111,9 +107,9 @@ function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string
     console.error("project.subscribe failed", err);
     toast.error("Failed to subscribe to project updates");
   });
-  ws.request<SessionListResult>("session.list", { projectId })
+  ws.request<ListSessionsResult>("session.list", { projectId })
     .then((result) => {
-      useChatStore.getState().setSessions(result.sessions, projectId);
+      useChatStore.getState().setSessions(result.sessions as SessionMetadata[], projectId);
     })
     .catch((err) => {
       console.error("session.list failed", err);
