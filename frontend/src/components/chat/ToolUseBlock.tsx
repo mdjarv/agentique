@@ -4,6 +4,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
 import { ToolIcon } from "~/components/chat/ToolIcons";
+import type { ToolContentBlock } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 interface ToolUseBlockProps {
@@ -14,6 +15,7 @@ interface ToolUseBlockProps {
   sessionId?: string;
   projectPath?: string;
   worktreePath?: string;
+  resultContent?: ToolContentBlock[];
 }
 
 function stripPrefix(path: string, projectPath?: string, worktreePath?: string): string {
@@ -82,6 +84,7 @@ interface EditDetail {
 interface BashDetail {
   kind: "bash";
   command: string;
+  output?: string;
 }
 interface TextDetail {
   kind: "text";
@@ -99,6 +102,7 @@ function buildDetail(
   input: unknown,
   _projectPath?: string,
   _worktreePath?: string,
+  resultContent?: ToolContentBlock[],
 ): Detail | null {
   if (!input || typeof input !== "object") return null;
   const obj = input as Record<string, unknown>;
@@ -113,8 +117,14 @@ function buildDetail(
     case "EnterPlanMode":
       return null;
 
-    case "Bash":
-      return obj.command ? { kind: "bash", command: String(obj.command) } : null;
+    case "Bash": {
+      if (!obj.command) return null;
+      const output = resultContent
+        ?.filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("");
+      return { kind: "bash", command: String(obj.command), output: output || undefined };
+    }
 
     case "Edit":
       if (obj.old_string != null && obj.new_string != null) {
@@ -183,6 +193,11 @@ function DetailView({ detail }: { detail: Detail }) {
           >
             {detail.command}
           </SyntaxHighlighter>
+          {detail.output && (
+            <pre className="px-2 pb-2 overflow-x-auto text-foreground/70 whitespace-pre-wrap text-[0.7rem] leading-relaxed border-t border-border/50">
+              {detail.output}
+            </pre>
+          )}
         </div>
       );
     case "edit":
@@ -212,6 +227,7 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   sessionId,
   projectPath,
   worktreePath,
+  resultContent,
 }: ToolUseBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const streamingInput = useStreamingStore((s) =>
@@ -219,7 +235,9 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   );
   const isStreaming = !!streamingInput && !input;
   const summary = isStreaming ? "" : formatSummary(name, input, projectPath, worktreePath);
-  const detail = isStreaming ? null : buildDetail(name, input, projectPath, worktreePath);
+  const detail = isStreaming
+    ? null
+    : buildDetail(name, input, projectPath, worktreePath, resultContent);
   const hasDetail = detail !== null;
 
   return (
