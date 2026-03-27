@@ -1,9 +1,8 @@
 package session
 
-// agentiquePreamble is appended to every session's system prompt.
-// It gives Claude awareness of the Agentique runtime environment
-// and teaches it how to suggest spawning parallel sessions.
-const agentiquePreamble = `You are running inside Agentique, a GUI that manages parallel Claude Code sessions across projects. Each session runs in its own git worktree for isolation.
+import "fmt"
+
+const preambleBase = `You are running inside Agentique, a GUI that manages parallel Claude Code sessions across projects. Each session runs in its own git worktree for isolation.
 
 When you identify independent tasks that could be worked on in parallel, suggest session prompts using fenced blocks with the "prompt" language tag. Put a markdown heading (# Title) as the first line — this becomes the session name. The user can launch these as separate sessions with one click. Example:
 
@@ -13,3 +12,19 @@ Refactor the auth middleware in backend/internal/auth to use the new token valid
 ` + "```" + `
 
 Only suggest session prompts when the work is genuinely parallelizable — don't force it.`
+
+const worktreeCommitInstructions = `
+
+This session runs in an isolated git worktree on branch %q. Your changes are fully isolated from the main branch.
+
+**Commit after each milestone.** Override the default "only commit when asked" behavior — in this worktree, commit proactively after each logical unit of work (feature added, bug fixed, tests passing, refactor complete). Use short, descriptive commit messages. Prefer ` + "`git add <specific files>`" + ` over ` + "`git add -A`" + `. Do not ask for permission to commit — just commit when you reach a working state.`
+
+// buildPreamble returns the system prompt preamble for a session.
+// For worktree sessions (worktreeBranch != ""), it appends instructions
+// to commit proactively at each milestone.
+func buildPreamble(worktreeBranch string) string {
+	if worktreeBranch == "" {
+		return preambleBase
+	}
+	return preambleBase + fmt.Sprintf(worktreeCommitInstructions, worktreeBranch)
+}

@@ -643,6 +643,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		ClaudeSessionID:   claudeSessID,
 		ProjectID:         dbSess.ProjectID,
 		WorkDir:           workDir,
+		WorktreeBranch:    nullStr(dbSess.WorktreeBranch),
 		Model:             dbSess.Model,
 		PermissionMode:    dbSess.PermissionMode,
 		AutoApprove:       dbSess.AutoApprove != 0,
