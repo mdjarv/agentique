@@ -20,17 +20,18 @@ func (c *conn) handleProjectSubscribe(msg ClientMessage) {
 func (c *conn) handleSessionCreate(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionCreatePayload) (session.CreateSessionResult, error) {
 		return c.svc.CreateSession(c.ctx, session.CreateSessionParams{
-			ProjectID:   p.ProjectID,
-			Name:        p.Name,
-			Worktree:    p.Worktree,
-			Branch:      p.Branch,
-			Model:       p.Model,
-			PlanMode:    p.PlanMode,
-			AutoApprove: p.AutoApprove,
-			RequestID:   msg.ID,
-			Effort:      p.Effort,
-			MaxBudget:   p.MaxBudget,
-			MaxTurns:    p.MaxTurns,
+			ProjectID:       p.ProjectID,
+			Name:            p.Name,
+			Worktree:        p.Worktree,
+			Branch:          p.Branch,
+			Model:           p.Model,
+			PlanMode:        p.PlanMode,
+			AutoApprove:     p.AutoApprove,
+			RequestID:       msg.ID,
+			Effort:          p.Effort,
+			MaxBudget:       p.MaxBudget,
+			MaxTurns:        p.MaxTurns,
+			BehaviorPresets: p.BehaviorPresets,
 		})
 	})
 }
