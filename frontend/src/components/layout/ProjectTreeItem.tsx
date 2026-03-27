@@ -11,23 +11,33 @@ import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
 
-function sessionSortKey(data: SessionData): [number, number, number, number] {
-  const needsInput = data.pendingApproval || data.pendingQuestion ? 0 : 1;
-  const isRunning = data.meta.state === "running" ? 0 : 1;
-  const unseen = data.hasUnseenCompletion ? 0 : 1;
-  const recency = -new Date(data.meta.lastQueryAt ?? data.meta.createdAt).getTime();
-  return [needsInput, unseen, isRunning, recency];
+function sessionNeedsInput(data: SessionData): boolean {
+  return !!(data.pendingApproval || data.pendingQuestion);
 }
 
-function sortActiveSessions(ids: string[], sessions: ChatState["sessions"]): string[] {
-  return [...ids].sort((a, b) => {
-    const da = sessions[a];
-    const db = sessions[b];
-    if (!da || !db) return 0;
-    const [a0, a1, a2, a3] = sessionSortKey(da);
-    const [b0, b1, b2, b3] = sessionSortKey(db);
-    return a0 - b0 || a1 - b1 || a2 - b2 || a3 - b3;
-  });
+function partitionActiveSessions(
+  ids: string[],
+  sessions: ChatState["sessions"],
+): { promoted: string[]; rest: string[] } {
+  const promoted: string[] = [];
+  const rest: string[] = [];
+
+  for (const id of ids) {
+    const data = sessions[id];
+    if (!data) continue;
+    if (sessionNeedsInput(data)) promoted.push(id);
+    else rest.push(id);
+  }
+
+  const byCreatedDesc = (a: string, b: string) => {
+    const ta = new Date(sessions[a]?.meta.createdAt ?? 0).getTime();
+    const tb = new Date(sessions[b]?.meta.createdAt ?? 0).getTime();
+    return tb - ta;
+  };
+
+  promoted.sort(byCreatedDesc);
+  rest.sort(byCreatedDesc);
+  return { promoted, rest };
 }
 
 function sortCompletedByDate(ids: string[], sessions: ChatState["sessions"]): string[] {
@@ -98,13 +108,15 @@ function SessionGroups({
     }
   }
 
-  const sortedActive = sortActiveSessions(active, sessions);
+  const { promoted, rest } = partitionActiveSessions(active, sessions);
   const sortedCompleted = sortCompletedByDate(completed, sessions);
 
   return (
     <>
       {newChatButton}
-      {sortedActive.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {promoted.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
+      {promoted.length > 0 && rest.length > 0 && <div className="h-2" aria-hidden="true" />}
+      {rest.map((id) => renderSessionRow(id, sessions, activeSessionId, onSessionClick))}
       {sortedCompleted.length > 0 && (
         <CompletedSection
           ids={sortedCompleted}
