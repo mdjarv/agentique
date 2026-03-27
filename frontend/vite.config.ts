@@ -47,5 +47,14 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          markdown: ["react-markdown", "remark-gfm", "remark-breaks", "react-syntax-highlighter"],
+        },
+      },
+    },
   },
 });
