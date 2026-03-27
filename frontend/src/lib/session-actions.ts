@@ -1,4 +1,5 @@
 import type {
+  BehaviorPresets,
   CommitMessageResult,
   CreateSessionResult,
   DiffResult,
@@ -36,6 +37,7 @@ export interface CreateSessionOpts {
   effort?: string;
   maxBudget?: number;
   maxTurns?: number;
+  behaviorPresets?: BehaviorPresets;
 }
 
 export async function createSession(
@@ -58,6 +60,7 @@ export async function createSession(
       effort: opts?.effort,
       maxBudget: opts?.maxBudget,
       maxTurns: opts?.maxTurns,
+      behaviorPresets: opts?.behaviorPresets,
     },
     120000,
   );
@@ -75,6 +78,7 @@ export async function createSession(
     maxTurns: result.maxTurns,
     worktreePath: result.worktreePath,
     worktreeBranch: result.worktreeBranch,
+    behaviorPresets: result.behaviorPresets,
     totalCost: 0,
     turnCount: 0,
     commitsAhead: 0,

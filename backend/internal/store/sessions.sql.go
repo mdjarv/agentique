@@ -11,8 +11,8 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve, effort, max_budget, max_turns)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at
+INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve, effort, max_budget, max_turns, behavior_presets)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets
 `
 
 type CreateSessionParams struct {
@@ -30,6 +30,7 @@ type CreateSessionParams struct {
 	Effort          string         `json:"effort"`
 	MaxBudget       float64        `json:"max_budget"`
 	MaxTurns        int64          `json:"max_turns"`
+	BehaviorPresets string         `json:"behavior_presets"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -48,6 +49,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.Effort,
 		arg.MaxBudget,
 		arg.MaxTurns,
+		arg.BehaviorPresets,
 	)
 	var i Session
 	err := row.Scan(
@@ -72,6 +74,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.MaxTurns,
 		&i.LastQueryAt,
 		&i.CompletedAt,
+		&i.BehaviorPresets,
 	)
 	return i, err
 }
@@ -86,7 +89,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -114,12 +117,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.MaxTurns,
 		&i.LastQueryAt,
 		&i.CompletedAt,
+		&i.BehaviorPresets,
 	)
 	return i, err
 }
 
 const listAllSessions = `-- name: ListAllSessions :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at FROM sessions ORDER BY updated_at DESC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets FROM sessions ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
@@ -153,6 +157,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 			&i.MaxTurns,
 			&i.LastQueryAt,
 			&i.CompletedAt,
+			&i.BehaviorPresets,
 		); err != nil {
 			return nil, err
 		}
@@ -168,7 +173,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -202,6 +207,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.MaxTurns,
 			&i.LastQueryAt,
 			&i.CompletedAt,
+			&i.BehaviorPresets,
 		); err != nil {
 			return nil, err
 		}

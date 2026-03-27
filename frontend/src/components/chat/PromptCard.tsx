@@ -130,6 +130,7 @@ export function PromptGroupProvider({
         model: parent?.model,
         autoApprove: parent?.autoApprove,
         effort: parent?.effort,
+        behaviorPresets: parent?.behaviorPresets,
       };
 
       setCardStates((prev) => ({ ...prev, [title]: { state: "creating" } }));

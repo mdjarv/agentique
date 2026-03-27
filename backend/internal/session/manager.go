@@ -34,6 +34,7 @@ type CreateParams struct {
 	MaxBudget       float64
 	MaxTurns        int
 	Projects        []ProjectInfo
+	BehaviorPresets BehaviorPresets
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -96,7 +97,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets)),
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -141,9 +142,10 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		Model:          params.Model,
 		PermissionMode: permMode,
 		AutoApprove:    autoApproveInt,
-		Effort:         params.Effort,
-		MaxBudget:      params.MaxBudget,
-		MaxTurns:       int64(params.MaxTurns),
+		Effort:          params.Effort,
+		MaxBudget:       params.MaxBudget,
+		MaxTurns:        int64(params.MaxTurns),
+		BehaviorPresets: params.BehaviorPresets.String(),
 	})
 	if dbErr != nil {
 		cliSess.Close()
@@ -174,6 +176,7 @@ type ResumeParams struct {
 	MaxTurns          int
 	InitialGitVersion int64
 	Projects          []ProjectInfo
+	BehaviorPresets   BehaviorPresets
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -215,7 +218,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets)),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

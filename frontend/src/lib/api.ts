@@ -1,3 +1,4 @@
+import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
 import type { Project } from "~/lib/types";
 
 const BASE = "/api";
@@ -18,7 +19,10 @@ export async function createProject(name: string, path: string): Promise<Project
   return res.json();
 }
 
-export async function updateProject(id: string, updates: { slug: string }): Promise<Project> {
+export async function updateProject(
+  id: string,
+  updates: { slug?: string; behaviorPresets?: BehaviorPresets },
+): Promise<Project> {
   const res = await fetch(`${BASE}/projects/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -34,6 +38,12 @@ export async function updateProject(id: string, updates: { slug: string }): Prom
 export async function deleteProject(id: string): Promise<void> {
   const res = await fetch(`${BASE}/projects/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete project");
+}
+
+export async function listPresetDefinitions(): Promise<PresetDefinition[]> {
+  const res = await fetch(`${BASE}/preset-definitions`);
+  if (!res.ok) throw new Error("Failed to list preset definitions");
+  return res.json();
 }
 
 export async function healthCheck(): Promise<{ status: string }> {

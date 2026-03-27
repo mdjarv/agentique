@@ -40,16 +40,17 @@ type ProjectSubscribePayload struct {
 }
 
 type SessionCreatePayload struct {
-	ProjectID   string  `json:"projectId"`
-	Name        string  `json:"name"`
-	Worktree    bool    `json:"worktree"`
-	Branch      string  `json:"branch"`
-	Model       string  `json:"model"`
-	PlanMode    bool    `json:"planMode"`
-	AutoApprove bool    `json:"autoApprove"`
-	Effort      string  `json:"effort"`
-	MaxBudget   float64 `json:"maxBudget"`
-	MaxTurns    int     `json:"maxTurns"`
+	ProjectID       string                  `json:"projectId"`
+	Name            string                  `json:"name"`
+	Worktree        bool                    `json:"worktree"`
+	Branch          string                  `json:"branch"`
+	Model           string                  `json:"model"`
+	PlanMode        bool                    `json:"planMode"`
+	AutoApprove     bool                    `json:"autoApprove"`
+	Effort          string                  `json:"effort"`
+	MaxBudget       float64                 `json:"maxBudget"`
+	MaxTurns        int                     `json:"maxTurns"`
+	BehaviorPresets session.BehaviorPresets  `json:"behaviorPresets"`
 }
 
 type SessionQueryPayload struct {

@@ -1,7 +1,19 @@
-import type { Project, ProjectGitStatus, SessionInfo } from "~/lib/generated-types";
+import type {
+  BehaviorPresets,
+  Project,
+  ProjectGitStatus,
+  SessionInfo,
+} from "~/lib/generated-types";
 import type { PendingApproval, PendingQuestion } from "~/stores/chat-store";
 
 // --- Timestamp helpers ---
+
+const DEFAULT_PRESETS: BehaviorPresets = {
+  autoCommit: true,
+  suggestParallel: true,
+  planFirst: false,
+  terse: false,
+};
 
 const now = Date.now();
 const hoursAgo = (h: number) => new Date(now - h * 3600000).toISOString();
@@ -41,6 +53,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
+    default_behavior_presets: "{}",
     sort_order: 1,
     created_at: daysAgo(30),
     updated_at: hoursAgo(2),
@@ -53,6 +66,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
+    default_behavior_presets: "{}",
     sort_order: 2,
     created_at: daysAgo(60),
     updated_at: daysAgo(1),
@@ -65,6 +79,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
+    default_behavior_presets: "{}",
     sort_order: 3,
     created_at: daysAgo(90),
     updated_at: daysAgo(3),
@@ -83,6 +98,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "default",
     autoApprove: true,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-auth-refactor",
     worktreeBranch: "session-auth-refactor",
     gitVersion: 1,
@@ -103,6 +119,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "default",
     autoApprove: false,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-ws-reconnect",
     worktreeBranch: "session-ws-reconnect",
     gitVersion: 1,
@@ -123,6 +140,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "default",
     autoApprove: true,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-dark-mode",
     worktreeBranch: "session-dark-mode",
     worktreeMerged: true,
@@ -144,6 +162,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "sonnet",
     permissionMode: "default",
     autoApprove: false,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-migration-bug",
     worktreeBranch: "session-migration-bug",
     gitVersion: 1,
@@ -164,6 +183,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "haiku",
     permissionMode: "default",
     autoApprove: false,
+    behaviorPresets: DEFAULT_PRESETS,
     gitVersion: 1,
     commitsAhead: 0,
     commitsBehind: 0,
@@ -181,6 +201,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "default",
     autoApprove: true,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
     worktreeBranch: "session-query-optimizer",
     gitVersion: 1,
@@ -204,6 +225,7 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "plan",
     autoApprove: false,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-payment-flow",
     worktreeBranch: "session-payment-flow",
     gitVersion: 1,
@@ -224,6 +246,7 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
     model: "sonnet",
     permissionMode: "default",
     autoApprove: true,
+    behaviorPresets: DEFAULT_PRESETS,
     worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-image-gallery",
     worktreeBranch: "session-image-gallery",
     gitVersion: 1,
@@ -247,6 +270,7 @@ const ALLTIX_SESSIONS: SessionInfo[] = [
     model: "opus",
     permissionMode: "default",
     autoApprove: false,
+    behaviorPresets: DEFAULT_PRESETS,
     gitVersion: 1,
     commitsAhead: 0,
     commitsBehind: 0,

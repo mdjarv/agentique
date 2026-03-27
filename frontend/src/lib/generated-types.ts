@@ -125,6 +125,20 @@ export interface WirePendingQuestion {
   questions: WireQuestion[];
 }
 
+export interface BehaviorPresets {
+  autoCommit: boolean;
+  suggestParallel: boolean;
+  planFirst: boolean;
+  terse: boolean;
+  customInstructions?: string;
+}
+
+export interface PresetDefinition {
+  key: string;
+  title: string;
+  description: string;
+}
+
 export interface SessionInfo {
   id: string;
   projectId: string;
@@ -153,6 +167,7 @@ export interface SessionInfo {
   gitOperation?: string;
   gitVersion: number;
   prUrl?: string;
+  behaviorPresets: BehaviorPresets;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
   createdAt: string;
@@ -173,6 +188,7 @@ export interface CreateSessionResult {
   maxTurns?: number;
   worktreePath?: string;
   worktreeBranch?: string;
+  behaviorPresets: BehaviorPresets;
   createdAt: string;
 }
 
@@ -289,6 +305,7 @@ export interface Project {
   updated_at: string;
   slug: string;
   sort_order: number;
+  default_behavior_presets: string;
 }
 
 export interface ProjectSubscribePayload {
@@ -306,6 +323,7 @@ export interface SessionCreatePayload {
   effort: string;
   maxBudget: number;
   maxTurns: number;
+  behaviorPresets: BehaviorPresets;
 }
 
 export interface SessionQueryPayload {

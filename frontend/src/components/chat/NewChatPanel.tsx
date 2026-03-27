@@ -6,11 +6,28 @@ import { DraftHeader } from "~/components/chat/DraftHeader";
 import { type EffortLevel, MessageComposer } from "~/components/chat/MessageComposer";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import type { BehaviorPresets } from "~/lib/generated-types";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
+
+const DEFAULT_PRESETS: BehaviorPresets = {
+  autoCommit: true,
+  suggestParallel: true,
+  planFirst: false,
+  terse: false,
+};
+
+function parseProjectPresets(raw: string): BehaviorPresets | undefined {
+  if (!raw || raw === "{}") return undefined;
+  try {
+    return JSON.parse(raw) as BehaviorPresets;
+  } catch {
+    return undefined;
+  }
+}
 
 interface NewChatPanelProps {
   projectId: string;
@@ -38,11 +55,18 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
     setPendingPrompt(prompt);
     setPendingAttachments(attachments ?? []);
     try {
+      // Resolve behavior presets: project defaults > hardcoded defaults.
+      // Backend falls back to project defaults if presets are zero-value,
+      // but we resolve here so the frontend sends explicit values.
+      const projectPresets = parseProjectPresets(project?.default_behavior_presets ?? "");
+      const behaviorPresets = projectPresets ?? DEFAULT_PRESETS;
+
       const sessionId = await createSession(ws, projectId, "", worktree, {
         model,
         planMode,
         autoApprove,
         effort: effort || undefined,
+        behaviorPresets,
       });
       await submitQuery(ws, sessionId, prompt, attachments);
       useUIStore.getState().setSessionDefaults({ worktree, planMode, autoApprove, model, effort });

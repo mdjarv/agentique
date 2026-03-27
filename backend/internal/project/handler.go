@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -23,7 +24,8 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
-	Slug string `json:"slug"`
+	Slug            *string                  `json:"slug,omitempty"`
+	BehaviorPresets *session.BehaviorPresets  `json:"behaviorPresets,omitempty"`
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -119,7 +121,7 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, project)
 }
 
-// HandleUpdate updates mutable project fields (currently: slug).
+// HandleUpdate updates mutable project fields (slug, behaviorPresets).
 func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -132,32 +134,57 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if req.Slug == "" {
-		respondError(w, http.StatusBadRequest, "slug is required")
-		return
-	}
-	if !validSlugRe.MatchString(req.Slug) {
-		respondError(w, http.StatusBadRequest, "slug must be lowercase alphanumeric with dashes")
+
+	if req.Slug == nil && req.BehaviorPresets == nil {
+		respondError(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
 
-	// Check if slug is already taken by a different project.
-	existing, err := h.Queries.GetProjectBySlug(r.Context(), req.Slug)
-	if err == nil && existing.ID != id {
-		respondError(w, http.StatusConflict, "slug is already in use")
-		return
-	}
-
-	project, err := h.Queries.UpdateProjectSlug(r.Context(), store.UpdateProjectSlugParams{
-		ID:   id,
-		Slug: req.Slug,
-	})
+	// Start with current project state.
+	project, err := h.Queries.GetProject(r.Context(), id)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to update project")
+		respondError(w, http.StatusNotFound, "project not found")
 		return
+	}
+
+	if req.Slug != nil {
+		slug := *req.Slug
+		if !validSlugRe.MatchString(slug) {
+			respondError(w, http.StatusBadRequest, "slug must be lowercase alphanumeric with dashes")
+			return
+		}
+		existing, slugErr := h.Queries.GetProjectBySlug(r.Context(), slug)
+		if slugErr == nil && existing.ID != id {
+			respondError(w, http.StatusConflict, "slug is already in use")
+			return
+		}
+		project, err = h.Queries.UpdateProjectSlug(r.Context(), store.UpdateProjectSlugParams{
+			ID:   id,
+			Slug: slug,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to update slug")
+			return
+		}
+	}
+
+	if req.BehaviorPresets != nil {
+		project, err = h.Queries.UpdateProjectBehaviorPresets(r.Context(), store.UpdateProjectBehaviorPresetsParams{
+			ID:                     id,
+			DefaultBehaviorPresets: req.BehaviorPresets.String(),
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to update behavior presets")
+			return
+		}
 	}
 
 	respondJSON(w, http.StatusOK, project)
+}
+
+// HandleListPresetDefinitions returns the curated preset definitions.
+func (h *Handler) HandleListPresetDefinitions(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, session.PresetRegistry)
 }
 
 // HandleDelete deletes a project by its ID extracted from the URL path.

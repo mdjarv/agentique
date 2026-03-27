@@ -127,6 +127,20 @@ export const WirePendingQuestionSchema = z.object({
   questions: z.array(WireQuestionSchema),
 });
 
+export const BehaviorPresetsSchema = z.object({
+  autoCommit: z.boolean(),
+  suggestParallel: z.boolean(),
+  planFirst: z.boolean(),
+  terse: z.boolean(),
+  customInstructions: z.string().optional(),
+});
+
+export const PresetDefinitionSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  description: z.string(),
+});
+
 export const SessionInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -155,6 +169,7 @@ export const SessionInfoSchema = z.object({
   gitOperation: z.string().optional(),
   gitVersion: z.number(),
   prUrl: z.string().optional(),
+  behaviorPresets: BehaviorPresetsSchema,
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
   createdAt: z.string(),
@@ -175,6 +190,7 @@ export const CreateSessionResultSchema = z.object({
   maxTurns: z.number().optional(),
   worktreePath: z.string().optional(),
   worktreeBranch: z.string().optional(),
+  behaviorPresets: BehaviorPresetsSchema,
   createdAt: z.string(),
 });
 
@@ -291,6 +307,7 @@ export const ProjectSchema = z.object({
   updated_at: z.string(),
   slug: z.string(),
   sort_order: z.number(),
+  default_behavior_presets: z.string(),
 });
 
 export const ProjectSubscribePayloadSchema = z.object({
@@ -308,6 +325,7 @@ export const SessionCreatePayloadSchema = z.object({
   effort: z.string(),
   maxBudget: z.number(),
   maxTurns: z.number(),
+  behaviorPresets: BehaviorPresetsSchema,
 });
 
 export const SessionQueryPayloadSchema = z.object({
