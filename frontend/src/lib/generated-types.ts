@@ -68,7 +68,7 @@ export interface WireResultEvent {
 
 export interface WireErrorEvent {
   type: "error";
-  message: string;
+  content: string;
   fatal: boolean;
   errorType?: string;
   retryAfterSecs?: number;

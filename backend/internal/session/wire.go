@@ -55,7 +55,7 @@ type WireResultEvent struct {
 
 type WireErrorEvent struct {
 	Type           string `json:"type"`
-	Message        string `json:"message"`
+	Content        string `json:"content"`
 	Fatal          bool   `json:"fatal"`
 	ErrorType      string `json:"errorType,omitempty"`
 	RetryAfterSecs int    `json:"retryAfterSecs,omitempty"`
@@ -140,7 +140,7 @@ func ToWireEvent(event claudecli.Event) any {
 		}
 		return wire
 	case *claudecli.ErrorEvent:
-		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
+		we := WireErrorEvent{Type: "error", Content: e.Error(), Fatal: e.Fatal}
 		switch {
 		case errors.Is(e.Err, claudecli.ErrRateLimit):
 			we.ErrorType = "rate_limit"

@@ -70,7 +70,7 @@ export const WireResultEventSchema = z.object({
 
 export const WireErrorEventSchema = z.object({
   type: z.literal("error"),
-  message: z.string(),
+  content: z.string(),
   fatal: z.boolean(),
   errorType: z.string().optional(),
   retryAfterSecs: z.number().optional(),
