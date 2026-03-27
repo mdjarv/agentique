@@ -1,7 +1,23 @@
+import type {
+  CommitMessageResult,
+  CreateSessionResult,
+  DiffResult,
+  DiffStat,
+  GitSnapshot,
+  PRDescriptionResult,
+  SessionCommitResult,
+  SessionDeleteBulkResult,
+  SessionDeleteBulkResultItem,
+} from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
 import type { Attachment, SessionMetadata, SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
+
+export type { CommitMessageResult, DiffResult, DiffStat, PRDescriptionResult };
+export type CommitResult = SessionCommitResult;
+export type BulkDeleteResultItem = SessionDeleteBulkResultItem;
+export type BulkDeleteResult = SessionDeleteBulkResult;
 
 export const MODELS = ["haiku", "sonnet", "opus"] as const;
 export type ModelId = (typeof MODELS)[number];
@@ -11,22 +27,6 @@ export const MODEL_LABELS: Record<ModelId, string> = {
   sonnet: "Sonnet 4.6",
   opus: "Opus 4.6",
 };
-
-interface SessionCreateResult {
-  sessionId: string;
-  name: string;
-  state: string;
-  connected: boolean;
-  model: string;
-  permissionMode: string;
-  autoApprove: boolean;
-  effort?: string;
-  maxBudget?: number;
-  maxTurns?: number;
-  worktreePath?: string;
-  worktreeBranch?: string;
-  createdAt: string;
-}
 
 export interface CreateSessionOpts {
   branch?: string;
@@ -45,7 +45,7 @@ export async function createSession(
   worktree: boolean,
   opts?: CreateSessionOpts,
 ): Promise<string> {
-  const result = await ws.request<SessionCreateResult>(
+  const result = await ws.request<CreateSessionResult>(
     "session.create",
     {
       projectId,
@@ -75,6 +75,12 @@ export async function createSession(
     maxTurns: result.maxTurns,
     worktreePath: result.worktreePath,
     worktreeBranch: result.worktreeBranch,
+    totalCost: 0,
+    turnCount: 0,
+    commitsAhead: 0,
+    commitsBehind: 0,
+    gitVersion: 0,
+    updatedAt: result.createdAt,
     createdAt: result.createdAt,
   };
   useChatStore.getState().addSession(meta);
@@ -113,21 +119,6 @@ export async function setSessionModel(
 ): Promise<void> {
   await ws.request("session.set-model", { sessionId, model });
   useChatStore.getState().setSessionModel(sessionId, model);
-}
-
-export interface DiffStat {
-  path: string;
-  insertions: number;
-  deletions: number;
-  status: string;
-}
-
-export interface DiffResult {
-  hasDiff: boolean;
-  summary: string;
-  files: DiffStat[];
-  diff: string;
-  truncated: boolean;
 }
 
 export async function getSessionDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
@@ -216,16 +207,12 @@ export async function createPR(
   });
 }
 
-export interface CommitResult {
-  commitHash: string;
-}
-
 export async function commitSession(
   ws: WsClient,
   sessionId: string,
   message: string,
-): Promise<CommitResult> {
-  return ws.request<CommitResult>("session.commit", { sessionId, message });
+): Promise<SessionCommitResult> {
+  return ws.request<SessionCommitResult>("session.commit", { sessionId, message });
 }
 
 export type RebaseResult =
@@ -235,16 +222,6 @@ export type RebaseResult =
 
 export async function rebaseSession(ws: WsClient, sessionId: string): Promise<RebaseResult> {
   return ws.request<RebaseResult>("session.rebase", { sessionId });
-}
-
-export interface PRDescriptionResult {
-  title: string;
-  body: string;
-}
-
-export interface CommitMessageResult {
-  title: string;
-  description: string;
 }
 
 export async function generateCommitMessage(
@@ -291,26 +268,9 @@ export async function getUncommittedDiff(ws: WsClient, sessionId: string): Promi
   return ws.request<DiffResult>("session.uncommitted-diff", { sessionId });
 }
 
-interface GitSnapshotResponse {
-  sessionId: string;
-  state: string;
-  connected: boolean;
-  hasDirtyWorktree: boolean;
-  hasUncommitted: boolean;
-  worktreeMerged: boolean;
-  completedAt?: string;
-  commitsAhead: number;
-  commitsBehind: number;
-  branchMissing: boolean;
-  mergeStatus?: "clean" | "conflicts" | "unknown";
-  mergeConflictFiles?: string[];
-  gitOperation?: string;
-  version: number;
-}
-
 /** Refresh git status and apply the response directly to the store (push-independent). */
 export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise<void> {
-  const gs = await ws.request<GitSnapshotResponse>("session.refresh-git", { sessionId });
+  const gs = await ws.request<GitSnapshot>("session.refresh-git", { sessionId });
   useChatStore.getState().setSessionState(sessionId, gs.state as SessionState, {
     connected: gs.connected,
     hasDirtyWorktree: gs.hasDirtyWorktree,
@@ -320,7 +280,7 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
     commitsAhead: gs.commitsAhead,
     commitsBehind: gs.commitsBehind,
     branchMissing: gs.branchMissing,
-    mergeStatus: gs.mergeStatus,
+    mergeStatus: gs.mergeStatus as SessionMetadata["mergeStatus"],
     mergeConflictFiles: gs.mergeConflictFiles,
     gitOperation: gs.gitOperation ?? "",
     gitVersion: gs.version,
@@ -331,21 +291,11 @@ export async function deleteSession(ws: WsClient, sessionId: string): Promise<vo
   await ws.request("session.delete", { sessionId });
 }
 
-export interface BulkDeleteResultItem {
-  sessionId: string;
-  success: boolean;
-  error?: string;
-}
-
-export interface BulkDeleteResult {
-  results: BulkDeleteResultItem[];
-}
-
 export async function deleteSessionsBulk(
   ws: WsClient,
   sessionIds: string[],
-): Promise<BulkDeleteResult> {
-  return ws.request<BulkDeleteResult>("session.delete-bulk", { sessionIds });
+): Promise<SessionDeleteBulkResult> {
+  return ws.request<SessionDeleteBulkResult>("session.delete-bulk", { sessionIds });
 }
 
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {

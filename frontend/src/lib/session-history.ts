@@ -1,26 +1,17 @@
 import { parseServerEvent } from "~/lib/events";
+import type { HistoryResult, HistoryTurn } from "~/lib/generated-types";
 import { uuid } from "~/lib/utils";
 import type { WsClient } from "~/lib/ws-client";
-import type { Attachment, Turn } from "~/stores/chat-store";
+import type { Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
-
-interface HistoryTurn {
-  prompt: string;
-  attachments?: Attachment[];
-  events: Record<string, unknown>[];
-}
-
-interface SessionHistoryResult {
-  turns: HistoryTurn[];
-}
 
 function historyToTurns(history: HistoryTurn[]): Turn[] {
   return history.map((ht) => ({
     id: uuid(),
     prompt: ht.prompt,
-    attachments: ht.attachments ?? [],
-    events: ht.events.map(parseServerEvent),
-    complete: ht.events.some((e) => e.type === "result"),
+    attachments: (ht.attachments ?? []).map((a) => ({ ...a, id: uuid() })),
+    events: (ht.events as Record<string, unknown>[]).map(parseServerEvent),
+    complete: ht.events.some((e) => (e as Record<string, unknown>).type === "result"),
   }));
 }
 
@@ -31,7 +22,7 @@ export function loadSessionHistory(ws: WsClient, sessionId: string): void {
   if (store.historyLoading.has(sessionId)) return;
 
   store.setHistoryLoading(sessionId, true);
-  ws.request<SessionHistoryResult>("session.history", { sessionId })
+  ws.request<HistoryResult>("session.history", { sessionId })
     .then((hist) => {
       if (hist.turns.length > 0) {
         useChatStore.getState().setSessionHistory(sessionId, historyToTurns(hist.turns));
