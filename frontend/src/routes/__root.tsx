@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/
 import { TooltipProvider } from "~/components/ui/tooltip";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { usePreventViewportScroll } from "~/hooks/usePreventViewportScroll";
 import { useProjectGitPolling } from "~/hooks/useProjectGitPolling";
 import { useProjects } from "~/hooks/useProjects";
 import { useAppStore } from "~/stores/app-store";
@@ -44,6 +45,7 @@ function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
   useProjectGitPolling(projects);
+  usePreventViewportScroll();
 
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
