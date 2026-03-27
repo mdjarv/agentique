@@ -27,6 +27,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
   createSession,
+  interruptSession,
   isGitFresh,
   refreshGitStatus,
   resumeSession,
@@ -246,7 +247,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       useChatStore.getState().clearQueue(sessionId);
       composerRef.current?.setText(text);
     }
-    const { interruptSession } = await import("~/lib/session-actions");
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId, queuedMessages]);
 
