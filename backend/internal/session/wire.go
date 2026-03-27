@@ -101,6 +101,21 @@ func (e WireCompactStatusEvent) WireType() string   { return e.Type }
 func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
 
+// errorDetail extracts a clean human-readable message from a claudecli error,
+// stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."
+// becomes just "Your API key...").
+func errorDetail(err error) string {
+	var rlErr *claudecli.RateLimitError
+	if errors.As(err, &rlErr) {
+		return rlErr.Message
+	}
+	var cliErr *claudecli.Error
+	if errors.As(err, &cliErr) && cliErr.Message != "" {
+		return cliErr.Message
+	}
+	return err.Error()
+}
+
 // ToWireEvent converts a claudecli-go event to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
 func ToWireEvent(event claudecli.Event) any {
@@ -140,7 +155,7 @@ func ToWireEvent(event claudecli.Event) any {
 		}
 		return wire
 	case *claudecli.ErrorEvent:
-		we := WireErrorEvent{Type: "error", Content: e.Error(), Fatal: e.Fatal}
+		we := WireErrorEvent{Type: "error", Content: errorDetail(e.Err), Fatal: e.Fatal}
 		switch {
 		case errors.Is(e.Err, claudecli.ErrRateLimit):
 			we.ErrorType = "rate_limit"
