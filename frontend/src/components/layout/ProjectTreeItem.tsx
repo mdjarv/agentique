@@ -278,13 +278,14 @@ function ActiveSessionIndicators({ counts }: { counts: ActiveSessionCounts }) {
 
 function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
   return (
-    <div className="flex items-center gap-1.5 pl-5.5 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
       <GitIndicators
         uncommittedCount={gitStatus.uncommittedCount}
         aheadCount={gitStatus.aheadRemote}
         behindCount={gitStatus.behindRemote}
+        className="ml-auto"
       />
     </div>
   );
