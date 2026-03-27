@@ -1,11 +1,17 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ExternalLink, Loader2, Play, Rocket } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Loader2, Play, Rocket } from "lucide-react";
 import { type ReactNode, createContext, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session-actions";
-import { getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -215,9 +221,16 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
   const resolvedProject = useAppStore((s) =>
     slugOverride ? s.projects.find((p) => p.slug === slugOverride) : undefined,
   );
-  const targetProjectId = resolvedProject?.id ?? contextProjectId;
-  const isCrossProject = slugOverride !== undefined && targetProjectId !== contextProjectId;
-  const invalidSlug = slugOverride !== undefined && !resolvedProject;
+  const [overrideProjectId, setOverrideProjectId] = useState<string>();
+  const targetProjectId = overrideProjectId ?? resolvedProject?.id ?? contextProjectId;
+  const isCrossProject = targetProjectId !== contextProjectId;
+  const invalidSlug = slugOverride !== undefined && !resolvedProject && !overrideProjectId;
+
+  const allProjects = useAppStore((s) => s.projects);
+  const showProjectPicker = allProjects.length > 1;
+  const targetProject = isCrossProject
+    ? allProjects.find((p) => p.id === targetProjectId)
+    : undefined;
 
   // Persist "started" across remounts by checking the store for a matching session
   const existingSessionId = useChatStore((s) => {
@@ -243,6 +256,14 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
     ctx?.startPrompt(title, prompt, isCrossProject ? targetProjectId : undefined);
   }, [ctx, title, prompt, isCrossProject, targetProjectId]);
 
+  const handleStartInProject = useCallback(
+    (projectId: string) => {
+      setOverrideProjectId(projectId);
+      ctx?.startPrompt(title, prompt, projectId);
+    },
+    [ctx, title, prompt],
+  );
+
   const navSlug = useAppStore((s) => s.projects.find((p) => p.id === targetProjectId)?.slug ?? "");
   const handleNav = useCallback(() => {
     if (sessionId && navSlug) {
@@ -261,9 +282,9 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
       <div className="px-4 py-3 space-y-2">
         <div className="flex items-center gap-2">
           <div className="font-medium text-sm">{title}</div>
-          {isCrossProject && resolvedProject && (
+          {isCrossProject && targetProject && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
-              {resolvedProject.name}
+              {targetProject.name}
             </span>
           )}
           {invalidSlug && (
@@ -285,11 +306,60 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
           </button>
         )}
         <div className="flex items-center justify-end gap-2 pt-0.5">
-          {state === "idle" && (
+          {state === "idle" && !showProjectPicker && (
             <Button size="xs" disabled={isStreaming || !ctx || invalidSlug} onClick={handleStart}>
               <Play className="h-3 w-3" />
               Start Session
             </Button>
+          )}
+          {state === "idle" && showProjectPicker && (
+            <DropdownMenu>
+              <div
+                className={cn(
+                  "inline-flex items-center rounded-md text-xs font-medium",
+                  "bg-primary text-primary-foreground shadow-xs",
+                  (isStreaming || !ctx) && "opacity-50 pointer-events-none",
+                )}
+              >
+                <button
+                  type="button"
+                  disabled={isStreaming || !ctx || invalidSlug}
+                  onClick={handleStart}
+                  className="inline-flex items-center gap-1.5 h-6 px-2 rounded-l-md hover:bg-primary-foreground/10 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Play className="h-3 w-3" />
+                  Start Session
+                </button>
+                <div className="w-px h-4 bg-primary-foreground/25" />
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isStreaming || !ctx}
+                    className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors disabled:pointer-events-none"
+                    aria-label="Choose project"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+              </div>
+              <DropdownMenuContent align="end">
+                {allProjects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onClick={() => handleStartInProject(project.id)}
+                    className="text-xs gap-2"
+                  >
+                    <Check
+                      className={cn(
+                        "h-3 w-3",
+                        project.id === targetProjectId ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    {project.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {state === "creating" && (
             <Button size="xs" disabled>
