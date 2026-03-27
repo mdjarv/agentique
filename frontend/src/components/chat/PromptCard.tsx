@@ -4,7 +4,7 @@ import { type ReactNode, createContext, useCallback, useContext, useMemo, useSta
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { createSession, submitQuery } from "~/lib/session-actions";
+import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session-actions";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -55,6 +55,7 @@ interface CardEntry {
 
 interface PromptGroupCtx {
   projectId: string;
+  sessionId: string;
   isStreaming: boolean;
   cardStates: Record<string, CardEntry>;
   startPrompt: (title: string, prompt: string) => void;
@@ -73,11 +74,13 @@ export function usePromptGroup(): PromptGroupCtx | null {
 export function PromptGroupProvider({
   content,
   projectId,
+  sessionId,
   isStreaming,
   children,
 }: {
   content: string;
   projectId: string;
+  sessionId: string;
   isStreaming: boolean;
   children: ReactNode;
 }) {
@@ -100,10 +103,19 @@ export function PromptGroupProvider({
         return;
       }
 
+      // Inherit settings from parent session
+      const parent = sessions[sessionId]?.meta;
+      const opts: CreateSessionOpts = {
+        planMode: false,
+        model: parent?.model,
+        autoApprove: parent?.autoApprove,
+        effort: parent?.effort,
+      };
+
       setCardStates((prev) => ({ ...prev, [title]: { state: "creating" } }));
       void (async () => {
         try {
-          const sid = await createSession(ws, projectId, title, true);
+          const sid = await createSession(ws, projectId, title, true, opts);
           await submitQuery(ws, sid, prompt);
           setCardStates((prev) => ({ ...prev, [title]: { state: "started", sessionId: sid } }));
         } catch (err) {
@@ -113,7 +125,7 @@ export function PromptGroupProvider({
         }
       })();
     },
-    [ws, projectId],
+    [ws, projectId, sessionId],
   );
 
   const startAll = useCallback(() => {
@@ -126,8 +138,8 @@ export function PromptGroupProvider({
   }, [prompts, cardStates, startPrompt]);
 
   const value = useMemo<PromptGroupCtx>(
-    () => ({ projectId, isStreaming, cardStates, startPrompt }),
-    [projectId, isStreaming, cardStates, startPrompt],
+    () => ({ projectId, sessionId, isStreaming, cardStates, startPrompt }),
+    [projectId, sessionId, isStreaming, cardStates, startPrompt],
   );
 
   const anyCreating = prompts.some((p) => cardStates[p.title]?.state === "creating");

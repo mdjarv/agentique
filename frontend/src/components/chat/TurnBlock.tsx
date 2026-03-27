@@ -360,16 +360,23 @@ const TextSegmentView = memo(function TextSegmentView({
   onCopy,
   copied,
   projectId,
+  sessionId,
   isStreaming,
 }: {
   content: string;
   onCopy: (text: string) => void;
   copied: boolean;
   projectId: string;
+  sessionId: string;
   isStreaming: boolean;
 }) {
   return (
-    <PromptGroupProvider content={content} projectId={projectId} isStreaming={isStreaming}>
+    <PromptGroupProvider
+      content={content}
+      projectId={projectId}
+      sessionId={sessionId}
+      isStreaming={isStreaming}
+    >
       <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-agent/12 to-agent/6 shadow-lg shadow-black/30 border border-agent/10">
         <button
           type="button"
@@ -577,6 +584,7 @@ export const TurnBlock = memo(function TurnBlock({
                       onCopy={handleCopy}
                       copied={copied}
                       projectId={projectId}
+                      sessionId={sessionId}
                       isStreaming={false}
                     />
                   );
@@ -600,6 +608,7 @@ export const TurnBlock = memo(function TurnBlock({
                 onCopy={handleCopy}
                 copied={copied}
                 projectId={projectId}
+                sessionId={sessionId}
                 isStreaming
               />
             )}
