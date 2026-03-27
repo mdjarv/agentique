@@ -43,7 +43,7 @@ type CommitResult struct {
 
 // autoCommit commits all uncommitted changes in a worktree directory with a
 // Haiku-generated commit message. Returns nil if clean or on check failure.
-func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) error {
+func autoCommit(ctx context.Context, runner msggen.Runner, sessionID, sessionName, wtPath string) error {
 	if wtPath == "" {
 		return nil
 	}
@@ -56,7 +56,7 @@ func autoCommit(ctx context.Context, sessionID, sessionName, wtPath string) erro
 		return nil
 	}
 
-	msg := msggen.AutoCommitMsg(ctx, sessionName, wtPath)
+	msg := msggen.AutoCommitMsg(ctx, runner, sessionName, wtPath)
 	return gitops.AutoCommitAll(wtPath, msg)
 }
 
@@ -65,12 +65,13 @@ type GitService struct {
 	mgr         *Manager
 	queries     gitServiceQueries
 	hub         Broadcaster
+	runner      msggen.Runner
 	gitVersions sync.Map // sessionID → *atomic.Int64
 }
 
 // NewGitService creates a new GitService.
-func NewGitService(mgr *Manager, queries gitServiceQueries, hub Broadcaster) *GitService {
-	return &GitService{mgr: mgr, queries: queries, hub: hub}
+func NewGitService(mgr *Manager, queries gitServiceQueries, hub Broadcaster, runner msggen.Runner) *GitService {
+	return &GitService{mgr: mgr, queries: queries, hub: hub, runner: runner}
 }
 
 // nextVersion returns a monotonically increasing version number for a session.
@@ -220,7 +221,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	wtPath := nullStr(dbSess.WorktreePath)
-	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
+	if err := autoCommit(ctx, g.runner, sessionID, dbSess.Name, wtPath); err != nil {
 		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
@@ -331,7 +332,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 		}()
 	}
 
-	if err := autoCommit(ctx, sessionID, dbSess.Name, wtPath); err != nil {
+	if err := autoCommit(ctx, g.runner, sessionID, dbSess.Name, wtPath); err != nil {
 		return RebaseResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
@@ -422,7 +423,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	}
 
 	wtPath := nullStr(dbSess.WorktreePath)
-	if err := autoCommit(ctx, p.SessionID, dbSess.Name, wtPath); err != nil {
+	if err := autoCommit(ctx, g.runner, p.SessionID, dbSess.Name, wtPath); err != nil {
 		return CreatePRResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
 	}
 
@@ -647,7 +648,7 @@ func (g *GitService) GeneratePRDescription(ctx context.Context, sessionID string
 		return msggen.PRDescriptionResult{}, fmt.Errorf("session not found")
 	}
 
-	return msggen.PRDescription(ctx, dbSess.Name, diff.Summary, diff.Diff)
+	return msggen.PRDescription(ctx, g.runner, dbSess.Name, diff.Summary, diff.Diff)
 }
 
 func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string) (msggen.CommitMessageResult, error) {
@@ -664,7 +665,7 @@ func (g *GitService) GenerateCommitMessage(ctx context.Context, sessionID string
 		return msggen.CommitMessageResult{}, fmt.Errorf("session not found")
 	}
 
-	return msggen.CommitMsg(ctx, dbSess.Name, diff.Summary, diff.Diff)
+	return msggen.CommitMsg(ctx, g.runner, dbSess.Name, diff.Summary, diff.Diff)
 }
 
 // CleanResult describes the outcome of a clean operation.

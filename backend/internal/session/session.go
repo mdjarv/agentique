@@ -71,7 +71,7 @@ type Session struct {
 	cancelCtx        context.CancelFunc
 	mu               sync.Mutex
 	state            State
-	cliSess          *claudecli.Session
+	cliSess          CLISession
 	queryCount       int
 	claudeSessionID  string
 	turnIndex        int
@@ -93,7 +93,7 @@ type Session struct {
 type sessionParams struct {
 	id                string
 	projectID         string
-	cliSess           *claudecli.Session
+	cliSess           CLISession
 	queries           sessionQueries
 	broadcast         func(pushType string, payload any)
 	turnIndex         int
@@ -130,7 +130,7 @@ func newSession(p sessionParams) *Session {
 // setCLISession attaches a connected CLI session and starts the event loop.
 // Used when the Session must be created before Connect() so the permission callback
 // can capture the Session reference.
-func (s *Session) setCLISession(cliSess *claudecli.Session) {
+func (s *Session) setCLISession(cliSess CLISession) {
 	s.mu.Lock()
 	s.cliSess = cliSess
 	s.mu.Unlock()

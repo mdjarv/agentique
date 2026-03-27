@@ -1,6 +1,5 @@
-import type { Project } from "~/lib/types";
-import type { ProjectGitStatus } from "~/stores/app-store";
-import type { PendingApproval, PendingQuestion, SessionMetadata } from "~/stores/chat-store";
+import type { Project, ProjectGitStatus, SessionInfo } from "~/lib/generated-types";
+import type { PendingApproval, PendingQuestion } from "~/stores/chat-store";
 
 // --- Timestamp helpers ---
 
@@ -74,7 +73,7 @@ export const MOCK_PROJECTS: Project[] = [
 
 // --- Sessions ---
 
-const AGENTIQUE_SESSIONS: SessionMetadata[] = [
+const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.authRefactor,
     projectId: P.agentique,
@@ -86,10 +85,12 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     autoApprove: true,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-auth-refactor",
     worktreeBranch: "session-auth-refactor",
+    gitVersion: 1,
     commitsAhead: 3,
     commitsBehind: 0,
     hasUncommitted: true,
     turnCount: 2,
+    totalCost: 0,
     createdAt: hoursAgo(6),
     updatedAt: hoursAgo(1),
   },
@@ -101,12 +102,15 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     connected: true,
     model: "opus",
     permissionMode: "default",
+    autoApprove: false,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-ws-reconnect",
     worktreeBranch: "session-ws-reconnect",
+    gitVersion: 1,
     commitsAhead: 1,
     commitsBehind: 0,
     hasUncommitted: false,
     turnCount: 1,
+    totalCost: 0,
     createdAt: hoursAgo(2),
     updatedAt: hoursAgo(0.1),
   },
@@ -122,10 +126,12 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-dark-mode",
     worktreeBranch: "session-dark-mode",
     worktreeMerged: true,
+    gitVersion: 1,
     commitsAhead: 0,
     commitsBehind: 0,
     prUrl: "https://github.com/example/agentique/pull/42",
     turnCount: 1,
+    totalCost: 0,
     createdAt: daysAgo(2),
     updatedAt: daysAgo(1),
   },
@@ -137,12 +143,15 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     connected: false,
     model: "sonnet",
     permissionMode: "default",
+    autoApprove: false,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-migration-bug",
     worktreeBranch: "session-migration-bug",
+    gitVersion: 1,
     commitsAhead: 1,
     commitsBehind: 2,
     hasUncommitted: false,
     turnCount: 1,
+    totalCost: 0,
     createdAt: daysAgo(3),
     updatedAt: daysAgo(2),
   },
@@ -154,7 +163,12 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     connected: false,
     model: "haiku",
     permissionMode: "default",
+    autoApprove: false,
+    gitVersion: 1,
+    commitsAhead: 0,
+    commitsBehind: 0,
     turnCount: 1,
+    totalCost: 0,
     createdAt: daysAgo(5),
     updatedAt: daysAgo(4),
   },
@@ -169,16 +183,18 @@ const AGENTIQUE_SESSIONS: SessionMetadata[] = [
     autoApprove: true,
     worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
     worktreeBranch: "session-query-optimizer",
+    gitVersion: 1,
     commitsAhead: 5,
     commitsBehind: 0,
     hasUncommitted: false,
     turnCount: 3,
+    totalCost: 0,
     createdAt: hoursAgo(4),
     updatedAt: hoursAgo(0.5),
   },
 ];
 
-const THE_PINT_SESSIONS: SessionMetadata[] = [
+const THE_PINT_SESSIONS: SessionInfo[] = [
   {
     id: S.paymentFlow,
     projectId: P.thePint,
@@ -187,12 +203,15 @@ const THE_PINT_SESSIONS: SessionMetadata[] = [
     connected: true,
     model: "opus",
     permissionMode: "plan",
+    autoApprove: false,
     worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-payment-flow",
     worktreeBranch: "session-payment-flow",
+    gitVersion: 1,
     commitsAhead: 0,
     commitsBehind: 0,
     hasUncommitted: false,
     turnCount: 1,
+    totalCost: 0,
     createdAt: hoursAgo(1),
     updatedAt: hoursAgo(0.5),
   },
@@ -207,16 +226,18 @@ const THE_PINT_SESSIONS: SessionMetadata[] = [
     autoApprove: true,
     worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-image-gallery",
     worktreeBranch: "session-image-gallery",
+    gitVersion: 1,
     commitsAhead: 2,
     commitsBehind: 0,
     hasUncommitted: false,
     turnCount: 1,
+    totalCost: 0,
     createdAt: hoursAgo(4),
     updatedAt: hoursAgo(3),
   },
 ];
 
-const ALLTIX_SESSIONS: SessionMetadata[] = [
+const ALLTIX_SESSIONS: SessionInfo[] = [
   {
     id: S.schedulerTests,
     projectId: P.alltixApi,
@@ -225,13 +246,18 @@ const ALLTIX_SESSIONS: SessionMetadata[] = [
     connected: true,
     model: "opus",
     permissionMode: "default",
+    autoApprove: false,
+    gitVersion: 1,
+    commitsAhead: 0,
+    commitsBehind: 0,
     turnCount: 1,
+    totalCost: 0,
     createdAt: daysAgo(1),
     updatedAt: hoursAgo(12),
   },
 ];
 
-export const MOCK_SESSIONS: Record<string, SessionMetadata[]> = {
+export const MOCK_SESSIONS: Record<string, SessionInfo[]> = {
   [P.agentique]: AGENTIQUE_SESSIONS,
   [P.thePint]: THE_PINT_SESSIONS,
   [P.alltixApi]: ALLTIX_SESSIONS,

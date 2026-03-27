@@ -10,6 +10,7 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/allbin/agentique/backend/internal/msggen"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -103,11 +104,12 @@ type Service struct {
 	queries serviceQueries
 	hub     Broadcaster
 	gitSvc  *GitService
+	runner  msggen.Runner
 }
 
 // NewService creates a new session Service.
-func NewService(mgr *Manager, queries serviceQueries, hub Broadcaster) *Service {
-	return &Service{mgr: mgr, queries: queries, hub: hub}
+func NewService(mgr *Manager, queries serviceQueries, hub Broadcaster, runner msggen.Runner) *Service {
+	return &Service{mgr: mgr, queries: queries, hub: hub, runner: runner}
 }
 
 // SetGitService injects the GitService for snapshot broadcasts.
@@ -688,7 +690,7 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 		return
 	}
 
-	name := generateSessionName(prompt)
+	name := generateSessionName(s.runner, prompt)
 	if name == "" {
 		return
 	}
@@ -706,7 +708,7 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 }
 
 // generateSessionName calls Haiku to generate a short title from a prompt.
-func generateSessionName(prompt string) string {
+func generateSessionName(runner msggen.Runner, prompt string) string {
 	p := prompt
 	if len(p) > 500 {
 		p = p[:500]
@@ -714,8 +716,7 @@ func generateSessionName(prompt string) string {
 	namePrompt := "Generate a short 2-4 word title for this coding task. " +
 		"Respond with ONLY the title, no quotes or punctuation:\n\n" + p
 
-	client := claudecli.New()
-	result, err := client.RunBlocking(context.Background(), namePrompt,
+	result, err := runner.RunBlocking(context.Background(), namePrompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),

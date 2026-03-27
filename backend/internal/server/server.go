@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/testmode"
 	"github.com/allbin/agentique/backend/internal/ws"
 )
 
@@ -20,6 +22,11 @@ type Config struct {
 	AuthEnabled bool
 	RPID        string
 	RPOrigins   []string
+
+	// TestMode enables mock CLI connector and test-only HTTP routes.
+	TestMode bool
+	// DB is required when TestMode is true (for raw SQL in reset).
+	DB *sql.DB
 }
 
 // Server is the main HTTP server for the Agentique backend.
@@ -34,10 +41,25 @@ type Server struct {
 func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	hub := ws.NewHub()
-	mgr := session.NewManager(queries, hub)
+
+	var connector session.CLIConnector
+	var runner session.BlockingRunner
+	var testConnector *testmode.Connector
+
+	if cfg.TestMode {
+		testConnector = testmode.NewConnector()
+		connector = testConnector
+		runner = testmode.NewBlockingRunner()
+		slog.Info("test mode enabled: using mock CLI connector")
+	} else {
+		connector = session.RealConnector()
+		runner = session.RealBlockingRunner()
+	}
+
+	mgr := session.NewManager(queries, hub, connector)
 	mgr.RecoverStaleSessions(context.Background())
-	svc := session.NewService(mgr, queries, hub)
-	gitSvc := session.NewGitService(mgr, queries, hub)
+	svc := session.NewService(mgr, queries, hub, runner)
+	gitSvc := session.NewGitService(mgr, queries, hub, runner)
 	svc.SetGitService(gitSvc)
 
 	ph := &project.Handler{Queries: queries}
@@ -74,6 +96,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})
+
+	if cfg.TestMode && testConnector != nil {
+		th := &testmode.Handler{
+			Connector: testConnector,
+			Manager:   mgr,
+			Queries:   queries,
+			DB:        cfg.DB,
+		}
+		th.RegisterRoutes(mux)
+	}
 
 	s := &Server{mux: mux, mgr: mgr}
 

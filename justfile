@@ -58,10 +58,16 @@ backend-build: frontend-build
 test-backend:
     cd backend && go test ./... -count=1
 
+test-frontend:
+    cd frontend && npx vitest run
+
 test-e2e: backend-build
     cd frontend && npx playwright test
 
-test: test-backend test-e2e
+test-e2e-hybrid: backend-build
+    cd frontend && npx playwright test --config playwright-hybrid.config.ts
+
+test: test-backend test-frontend test-e2e
 
 # Run DB migrations
 migrate:
@@ -70,6 +76,9 @@ migrate:
 # Code generation
 sqlc:
     cd backend/db && sqlc generate
+
+typegen:
+    cd backend && go run ./cmd/typegen --out ../frontend/src/lib
 
 # Lint & typecheck
 check:

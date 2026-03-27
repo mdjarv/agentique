@@ -41,14 +41,16 @@ type Manager struct {
 	sessions    map[string]*Session
 	queries     managerQueries
 	broadcaster Broadcaster
+	connector   CLIConnector
 }
 
 // NewManager creates a new session manager.
-func NewManager(queries managerQueries, broadcaster Broadcaster) *Manager {
+func NewManager(queries managerQueries, broadcaster Broadcaster, connector CLIConnector) *Manager {
 	return &Manager{
 		sessions:    make(map[string]*Session),
 		queries:     queries,
 		broadcaster: broadcaster,
+		connector:   connector,
 	}
 }
 
@@ -109,11 +111,10 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
 	}
 
-	client := claudecli.New()
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered session creation. The WS conn context cancels on
 	// disconnect (e.g. page refresh), which would SIGTERM the CLI process.
-	cliSess, err := client.Connect(context.Background(), connectOpts...)
+	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -226,10 +227,9 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionPlan))
 	}
 
-	client := claudecli.New()
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered the resume. See Create() for rationale.
-	cliSess, err := client.Connect(context.Background(), connectOpts...)
+	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
 	if err != nil {
 		return nil, err
 	}
