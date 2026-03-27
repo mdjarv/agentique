@@ -244,7 +244,7 @@ describe("chat-store", () => {
       expect(useChatStore.getState().sessions["sess-1"]?.compacting).toBe(true);
     });
 
-    it("clears context usage on compact_boundary", () => {
+    it("preserves context usage on compact_boundary (avoids flash)", () => {
       // First set some context usage via result
       useChatStore.getState().handleServerEvent(
         "sess-1",
@@ -266,7 +266,8 @@ describe("chat-store", () => {
           "sess-1",
           makeEvent({ type: "compact_boundary", trigger: "auto", preTokens: 50000 }),
         );
-      expect(useChatStore.getState().sessions["sess-1"]?.contextUsage).toBeNull();
+      // contextUsage preserved — streaming data from the next turn replaces it
+      expect(useChatStore.getState().sessions["sess-1"]?.contextUsage).not.toBeNull();
       expect(useChatStore.getState().sessions["sess-1"]?.compacting).toBe(false);
     });
 

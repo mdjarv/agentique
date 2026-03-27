@@ -91,9 +91,8 @@ type Session struct {
 	workDir        string
 	gitVersion      int64
 	eventLoopDone   chan struct{}
-	toolCategories         map[string]string // ToolID → category for correlating results to writes
-	gitRefreshTimer        *time.Timer       // debounce timer for mid-turn git refresh
-	lastStreamInputTokens  int              // from latest message_start usage; enriches result events
+	toolCategories  map[string]string // ToolID → category for correlating results to writes
+	gitRefreshTimer *time.Timer       // debounce timer for mid-turn git refresh
 }
 
 
@@ -403,49 +402,13 @@ func (s *Session) processEvent(event claudecli.Event) {
 	}
 
 	// Rate limit and stream events are transient — broadcast only, skip DB.
-	switch we := wireEvent.(type) {
-	case WireRateLimitEvent, WireCompactStatusEvent, WireContextManagementEvent:
+	switch wireEvent.(type) {
+	case WireRateLimitEvent, WireCompactStatusEvent, WireContextManagementEvent, WireStreamEvent:
 		s.broadcast("session.event", map[string]any{
 			"sessionId": s.ID,
 			"event":     wireEvent,
 		})
 		return
-	case WireStreamEvent:
-		// Track message_start input_tokens for enriching result events.
-		if n := extractStreamInputTokens(we.Event); n > 0 {
-			s.mu.Lock()
-			s.lastStreamInputTokens = n
-			s.mu.Unlock()
-		}
-		s.broadcast("session.event", map[string]any{
-			"sessionId": s.ID,
-			"event":     wireEvent,
-		})
-		return
-	}
-
-	// Enrich result events with streaming context data before persisting.
-	// Streaming message_start input_tokens (from the raw API) is the authoritative
-	// source for context window consumption. The CLI's modelUsage may underreport.
-	if wire, ok := wireEvent.(WireResultEvent); ok {
-		s.mu.Lock()
-		streamInput := s.lastStreamInputTokens
-		s.lastStreamInputTokens = 0
-		s.mu.Unlock()
-		if streamInput > wire.InputTokens {
-			wire.InputTokens = streamInput
-		}
-		if wire.ContextWindow == 0 && wire.InputTokens > 0 {
-			wire.ContextWindow = 200_000
-		}
-		slog.Debug("result event context",
-			"session_id", s.ID,
-			"wire_context_window", wire.ContextWindow,
-			"wire_input_tokens", wire.InputTokens,
-			"wire_output_tokens", wire.OutputTokens,
-			"streaming_input_tokens", streamInput,
-		)
-		wireEvent = wire
 	}
 
 	// Persist to DB. Truncate large tool results to keep DB lean —

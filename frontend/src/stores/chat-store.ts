@@ -449,16 +449,12 @@ export const useChatStore = create<ChatState>((set) => ({
       const session = s.sessions[sessionId];
       if (!session) return s;
       const prev = session.contextUsage;
-      // All current Claude models: 200k context window
       const contextWindow = prev?.contextWindow ?? 200_000;
       return updateSession(s, sessionId, {
         contextUsage: {
           contextWindow,
           inputTokens: patch.inputTokens ?? prev?.inputTokens ?? 0,
-          outputTokens:
-            patch.outputTokens !== undefined
-              ? Math.max(patch.outputTokens, prev?.outputTokens ?? 0)
-              : (prev?.outputTokens ?? 0),
+          outputTokens: patch.outputTokens ?? prev?.outputTokens ?? 0,
         },
       });
     }),
@@ -586,13 +582,12 @@ export const useChatStore = create<ChatState>((set) => ({
         patch.meta = { ...session.meta, state: "idle" };
         patch.hasUnseenCompletion = !isViewing;
         if (event.contextWindow && event.contextWindow > 0) {
-          // Take max of streaming vs result values — streaming data comes from
-          // the raw API (message_start) and accurately reflects context consumption.
-          const prevInput = session.contextUsage?.inputTokens ?? 0;
+          // Result event now carries per-API-call values (enriched from stream
+          // data in the backend). Use them directly — no Math.max needed.
           patch.contextUsage = {
             contextWindow: event.contextWindow,
-            inputTokens: Math.max(event.inputTokens ?? 0, prevInput),
-            outputTokens: event.outputTokens ?? 0,
+            inputTokens: event.inputTokens ?? session.contextUsage?.inputTokens ?? 0,
+            outputTokens: event.outputTokens ?? session.contextUsage?.outputTokens ?? 0,
           };
         }
       }

@@ -47,8 +47,15 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
     if (type === "message_start") {
       const usage = inner.message?.usage;
       if (usage && typeof usage.input_tokens === "number") {
+        // Total context = input + cache_read + cache_create (per-API-call prompt size)
+        const contextTokens =
+          usage.input_tokens +
+          (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0) +
+          (typeof usage.cache_creation_input_tokens === "number"
+            ? usage.cache_creation_input_tokens
+            : 0);
         useChatStore.getState().updateStreamingContextUsage(sessionId, {
-          inputTokens: usage.input_tokens,
+          inputTokens: contextTokens,
         });
       }
       return;

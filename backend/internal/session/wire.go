@@ -146,20 +146,22 @@ func ToWireEvent(event claudecli.Event) any {
 			Usage:      e.Usage,
 			StopReason: e.StopReason,
 		}
-		for _, mu := range e.ModelUsage {
-			// Include cache tokens — modelUsage.inputTokens may exclude them,
-			// but they still consume the context window.
-			wire.InputTokens += mu.InputTokens + mu.CacheReadTokens + mu.CacheCreateTokens
-			wire.OutputTokens += mu.OutputTokens
-			if mu.ContextWindow > wire.ContextWindow {
-				wire.ContextWindow = mu.ContextWindow
+		// Use ContextSnapshot (per-API-call usage from the last stream event pair)
+		// instead of ModelUsage (cumulative across all API calls in the run).
+		if cs := e.ContextSnapshot; cs != nil {
+			wire.InputTokens = cs.InputTokens + cs.CacheReadInputTokens + cs.CacheCreationInputTokens
+			wire.OutputTokens = cs.OutputTokens
+			wire.ContextWindow = cs.ContextWindow
+		}
+		// ContextWindow from ModelUsage as fallback (snapshot may lack it on model mismatch).
+		if wire.ContextWindow == 0 {
+			for _, mu := range e.ModelUsage {
+				if mu.ContextWindow > wire.ContextWindow {
+					wire.ContextWindow = mu.ContextWindow
+				}
 			}
 		}
-		// When modelUsage is absent, fall back to top-level Usage (always populated,
-		// follows API convention where input_tokens includes cache).
-		if wire.ContextWindow == 0 && e.Usage.InputTokens > 0 {
-			wire.InputTokens = e.Usage.InputTokens + e.Usage.CacheReadTokens + e.Usage.CacheCreateTokens
-			wire.OutputTokens = e.Usage.OutputTokens
+		if wire.ContextWindow == 0 {
 			wire.ContextWindow = 200_000
 		}
 		return wire
@@ -223,24 +225,6 @@ func ToWireEvent(event claudecli.Event) any {
 	default:
 		return nil
 	}
-}
-
-// extractStreamInputTokens parses a raw Claude API streaming event and returns
-// the input_tokens from a message_start usage block, or 0 if not applicable.
-// The raw JSON is the inner event (e.g. {"type":"message_start","message":{...}}).
-func extractStreamInputTokens(raw json.RawMessage) int {
-	var ev struct {
-		Type    string `json:"type"`
-		Message struct {
-			Usage struct {
-				InputTokens int `json:"input_tokens"`
-			} `json:"usage"`
-		} `json:"message"`
-	}
-	if json.Unmarshal(raw, &ev) != nil || ev.Type != "message_start" {
-		return 0
-	}
-	return ev.Message.Usage.InputTokens
 }
 
 // convertToolContent converts claudecli-go content blocks to wire format.
