@@ -1020,3 +1020,43 @@ func (s *Session) liveState() (state State, connected bool, worktreeMerged bool,
 	defer s.mu.Unlock()
 	return s.state, s.cliSess != nil, s.worktreeMerged, s.completedAt, s.gitOperation
 }
+
+// PendingState returns a snapshot of any pending approval/question, or nil if none.
+func (s *Session) PendingState() (*WirePendingApproval, *WirePendingQuestion) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var approval *WirePendingApproval
+	for _, pa := range s.pendingApprovals {
+		approval = &WirePendingApproval{
+			ApprovalID: pa.id,
+			ToolName:   pa.toolName,
+			Input:      pa.input,
+		}
+		break
+	}
+
+	var question *WirePendingQuestion
+	for _, pq := range s.pendingQuestions {
+		qs := make([]WireQuestion, len(pq.questions))
+		for i, q := range pq.questions {
+			opts := make([]WireQuestionOption, len(q.Options))
+			for j, o := range q.Options {
+				opts[j] = WireQuestionOption{Label: o.Label, Description: o.Description}
+			}
+			qs[i] = WireQuestion{
+				Question:    q.Question,
+				Header:      q.Header,
+				Options:     opts,
+				MultiSelect: q.MultiSelect,
+			}
+		}
+		question = &WirePendingQuestion{
+			QuestionID: pq.id,
+			Questions:  qs,
+		}
+		break
+	}
+
+	return approval, question
+}

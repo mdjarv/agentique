@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,33 @@ var (
 	ErrNotLive    = errors.New("session not live")
 	ErrNoClaudeID = errors.New("session has no Claude session ID")
 )
+
+// WireQuestionOption is a selectable option within a question.
+type WireQuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// WireQuestion is a single question in an AskUserQuestion request.
+type WireQuestion struct {
+	Question    string             `json:"question"`
+	Header      string             `json:"header,omitempty"`
+	Options     []WireQuestionOption `json:"options,omitempty"`
+	MultiSelect bool               `json:"multiSelect,omitempty"`
+}
+
+// WirePendingApproval is a snapshot of a pending tool-permission request.
+type WirePendingApproval struct {
+	ApprovalID string          `json:"approvalId"`
+	ToolName   string          `json:"toolName"`
+	Input      json.RawMessage `json:"input"`
+}
+
+// WirePendingQuestion is a snapshot of a pending AskUserQuestion request.
+type WirePendingQuestion struct {
+	QuestionID string         `json:"questionId"`
+	Questions  []WireQuestion `json:"questions"`
+}
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
@@ -51,6 +79,8 @@ type SessionInfo struct {
 	GitOperation       string   `json:"gitOperation,omitempty"`
 	GitVersion         int64    `json:"gitVersion"`
 	PrUrl              string   `json:"prUrl,omitempty"`
+	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
+	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	UpdatedAt       string  `json:"updatedAt"`
 	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
@@ -412,6 +442,7 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			info.GitVersion = live.GitVersion()
 			_, _, _, _, gitOp := live.liveState()
 			info.GitOperation = gitOp
+			info.PendingApproval, info.PendingQuestion = live.PendingState()
 		} else if s.gitSvc != nil {
 			info.GitVersion = s.gitSvc.LastVersion(ss.ID)
 		}
