@@ -60,6 +60,9 @@ const (
 	maxToolResultDBSize = 10_000
 	toolResultKeepHead  = 4_000
 	toolResultKeepTail  = 1_000
+
+	// Debounce window for mid-turn git status refresh after write-tool results.
+	gitRefreshDebounce = 500 * time.Millisecond
 )
 
 // Session wraps a single claudecli-go interactive session.
@@ -86,8 +89,10 @@ type Session struct {
 	completedAt    string // ISO8601 timestamp or "" if not completed
 	gitOperation   string
 	workDir        string
-	gitVersion     int64
-	eventLoopDone  chan struct{}
+	gitVersion      int64
+	eventLoopDone   chan struct{}
+	toolCategories  map[string]string // ToolID → category for correlating results to writes
+	gitRefreshTimer *time.Timer       // debounce timer for mid-turn git refresh
 }
 
 type sessionParams struct {
@@ -119,6 +124,7 @@ func newSession(p sessionParams) *Session {
 		workDir:          p.workDir,
 		gitVersion:       p.initialGitVersion,
 		eventLoopDone:    make(chan struct{}),
+		toolCategories:   make(map[string]string),
 	}
 	s.broadcastState(StateIdle)
 	if s.cliSess != nil {
@@ -446,6 +452,24 @@ func (s *Session) processEvent(event claudecli.Event) {
 		}
 	}
 
+	// Track tool categories for correlating results to write operations.
+	if tue, ok := wireEvent.(WireToolUseEvent); ok {
+		s.mu.Lock()
+		s.toolCategories[tue.ToolID] = tue.Category
+		s.mu.Unlock()
+	}
+
+	// Schedule debounced git refresh after write-tool results.
+	if tr, ok := wireEvent.(WireToolResultEvent); ok {
+		s.mu.Lock()
+		cat := s.toolCategories[tr.ToolID]
+		delete(s.toolCategories, tr.ToolID)
+		s.mu.Unlock()
+		if cat == "command" || cat == "file_write" {
+			s.scheduleGitRefresh()
+		}
+	}
+
 	// Broadcast to all project clients.
 	s.broadcast("session.event", map[string]any{
 		"sessionId": s.ID,
@@ -453,6 +477,9 @@ func (s *Session) processEvent(event claudecli.Event) {
 	})
 
 	if _, ok := event.(*claudecli.ResultEvent); ok {
+		s.mu.Lock()
+		s.toolCategories = make(map[string]string)
+		s.mu.Unlock()
 		if err := s.setState(StateIdle); err != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
@@ -778,6 +805,7 @@ func (s *Session) Close() {
 	s.mu.Unlock()
 
 	s.cancelCtx()
+	s.stopGitRefreshTimer()
 
 	// Close CLI session to stop the process and close Events channel.
 	s.mu.Lock()
@@ -869,6 +897,72 @@ func (s *Session) nextGitVersion() int64 {
 	defer s.mu.Unlock()
 	s.gitVersion++
 	return s.gitVersion
+}
+
+// scheduleGitRefresh debounces a lightweight git status check during a running turn.
+// Each call resets the timer; the check fires once after gitRefreshDebounce of quiet.
+func (s *Session) scheduleGitRefresh() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.gitRefreshTimer != nil {
+		s.gitRefreshTimer.Stop()
+	}
+
+	s.gitRefreshTimer = time.AfterFunc(gitRefreshDebounce, func() {
+		s.mu.Lock()
+		s.gitRefreshTimer = nil
+		if s.state != StateRunning {
+			s.mu.Unlock()
+			return
+		}
+		workDir := s.workDir
+		merged := s.worktreeMerged
+		s.mu.Unlock()
+
+		if workDir == "" || merged {
+			return
+		}
+
+		dirty, err := gitops.HasUncommittedChanges(workDir)
+		if err != nil {
+			slog.Warn("mid-turn git status check failed", "session_id", s.ID, "error", err)
+			return
+		}
+
+		s.broadcastMidTurnGitStatus(dirty)
+	})
+}
+
+// broadcastMidTurnGitStatus sends a lightweight git snapshot with dirty/uncommitted
+// state. Skips expensive branch-level checks (ahead/behind, merge status).
+func (s *Session) broadcastMidTurnGitStatus(dirty bool) {
+	s.mu.Lock()
+	s.gitVersion++
+	snap := GitSnapshot{
+		SessionID:        s.ID,
+		State:            string(s.state),
+		Connected:        true,
+		HasDirtyWorktree: dirty,
+		HasUncommitted:   dirty,
+		WorktreeMerged:   s.worktreeMerged,
+		CompletedAt:      s.completedAt,
+		GitOperation:     s.gitOperation,
+		Version:          s.gitVersion,
+	}
+	s.mu.Unlock()
+
+	s.broadcast("session.state", snap)
+}
+
+// stopGitRefreshTimer cancels any pending mid-turn git refresh.
+func (s *Session) stopGitRefreshTimer() {
+	s.mu.Lock()
+	if s.gitRefreshTimer != nil {
+		s.gitRefreshTimer.Stop()
+		s.gitRefreshTimer = nil
+	}
+	s.mu.Unlock()
 }
 
 // liveState returns the current in-memory state fields needed for a GitSnapshot.

@@ -4,7 +4,7 @@ import { getProjectGitStatus } from "~/lib/project-actions";
 import type { Project } from "~/lib/types";
 import { useAppStore } from "~/stores/app-store";
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 10_000;
 
 /**
  * Polls project-level git status for all projects on an interval.

@@ -406,7 +406,10 @@ export const useChatStore = create<ChatState>((set) => ({
 
       // Transient states (running, merging) don't compute git fields on the
       // backend — preserve the frontend's cached values instead of zeroing them.
+      // Exception: mid-turn git refreshes send real dirty/uncommitted values
+      // during running state with a newer version — accept those.
       const transient = state === "running" || state === "merging";
+      const staleTransient = transient && incoming <= current;
       const m = session.meta;
       const patch: Partial<SessionMetadata> = {
         state,
@@ -414,8 +417,8 @@ export const useChatStore = create<ChatState>((set) => ({
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
         completedAt: transient ? m.completedAt : extras?.completedAt,
-        hasDirtyWorktree: transient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
-        hasUncommitted: transient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
+        hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
+        hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
         worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
         commitsAhead: transient ? m.commitsAhead : (extras?.commitsAhead ?? 0),
         commitsBehind: transient ? m.commitsBehind : (extras?.commitsBehind ?? 0),
