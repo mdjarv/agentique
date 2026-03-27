@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -49,6 +50,23 @@ var serveCmd = &cobra.Command{
 	RunE:  runServe,
 }
 
+func preflight() error {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return fmt.Errorf("claude CLI not found on PATH\n\n" +
+			"  Agentique requires Claude Code CLI (>= 2.0.0).\n" +
+			"  Install: npm install -g @anthropic-ai/claude-code\n" +
+			"  Verify:  claude --version")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git not found on PATH\n\n" +
+			"  Agentique requires git for worktree management.")
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		slog.Warn("gh (GitHub CLI) not found — PR creation will be unavailable")
+	}
+	return nil
+}
+
 func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
@@ -66,6 +84,12 @@ func resolveDBPath() string {
 
 func runServe(cmd *cobra.Command, args []string) error {
 	logging.Init()
+
+	if !testMode {
+		if err := preflight(); err != nil {
+			return err
+		}
+	}
 
 	dbFile := resolveDBPath()
 	slog.Info("database", "path", dbFile)
