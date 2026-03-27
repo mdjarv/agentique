@@ -141,20 +141,30 @@ func ToWireEvent(event claudecli.Event) any {
 		return wire
 	case *claudecli.ErrorEvent:
 		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
-		// Classify by sentinel — most specific first.
-		// TODO: add ErrBilling, ErrPermission, ErrNotFound, ErrRequestTooLarge,
-		// ErrInvalidRequest checks here when claudecli-go adds those sentinels.
-		if errors.Is(e.Err, claudecli.ErrRateLimit) {
+		switch {
+		case errors.Is(e.Err, claudecli.ErrRateLimit):
 			we.ErrorType = "rate_limit"
 			var rlErr *claudecli.RateLimitError
 			if errors.As(e.Err, &rlErr) && rlErr.RetryAfter > 0 {
 				we.RetryAfterSecs = int(rlErr.RetryAfter.Seconds())
 			}
-		} else if errors.Is(e.Err, claudecli.ErrAuth) {
+		case errors.Is(e.Err, claudecli.ErrAuth):
 			we.ErrorType = "auth"
-		} else if errors.Is(e.Err, claudecli.ErrOverloaded) {
+		case errors.Is(e.Err, claudecli.ErrOverloaded):
 			we.ErrorType = "overloaded"
-		} else {
+		case errors.Is(e.Err, claudecli.ErrBilling):
+			we.ErrorType = "billing"
+		case errors.Is(e.Err, claudecli.ErrPermission):
+			we.ErrorType = "permission"
+		case errors.Is(e.Err, claudecli.ErrInvalidRequest):
+			we.ErrorType = "invalid_request"
+		case errors.Is(e.Err, claudecli.ErrNotFound):
+			we.ErrorType = "not_found"
+		case errors.Is(e.Err, claudecli.ErrRequestTooLarge):
+			we.ErrorType = "request_too_large"
+		case errors.Is(e.Err, claudecli.ErrAPI):
+			we.ErrorType = "api_error"
+		default:
 			we.ErrorType = "api_error"
 		}
 		return we
