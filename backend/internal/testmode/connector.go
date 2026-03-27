@@ -302,6 +302,19 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 			Fatal: e.Fatal,
 		}, nil
 
+	case "compact_boundary":
+		var e struct {
+			Trigger   string `json:"trigger"`
+			PreTokens int    `json:"preTokens"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return nil, err
+		}
+		return &claudecli.CompactBoundaryEvent{
+			Trigger:   e.Trigger,
+			PreTokens: e.PreTokens,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown event type: %s", base.Type)
 	}
