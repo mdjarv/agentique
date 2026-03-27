@@ -663,6 +663,26 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	bypass := (s.autoApprove && s.permissionMode != "plan") || toolName == "EnterPlanMode"
 	s.mu.Unlock()
 	if bypass {
+		// When EnterPlanMode is auto-approved, transition into plan mode so
+		// subsequent tools require explicit approval. Don't call cli.SetPermissionMode
+		// — the CLI handles its own mode transition when processing EnterPlanMode.
+		if toolName == "EnterPlanMode" {
+			s.mu.Lock()
+			s.permissionMode = "plan"
+			s.mu.Unlock()
+
+			if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
+				PermissionMode: "plan",
+				ID:             s.ID,
+			}); err != nil {
+				slog.Warn("failed to persist permission mode after EnterPlanMode", "session_id", s.ID, "error", err)
+			}
+
+			s.broadcast("session.permission-mode-changed", map[string]any{
+				"sessionId":      s.ID,
+				"permissionMode": "plan",
+			})
+		}
 		return &claudecli.PermissionResponse{Allow: true}, nil
 	}
 
