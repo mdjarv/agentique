@@ -171,6 +171,9 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		model = "opus"
 	}
 
+	allProjects, _ := s.queries.ListProjects(ctx)
+	projectInfos := ProjectInfoFromStore(allProjects)
+
 	sess, err := s.mgr.Create(ctx, CreateParams{
 		ID:              sessionID,
 		ProjectID:       p.ProjectID,
@@ -185,6 +188,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Effort:          p.Effort,
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
+		Projects:        projectInfos,
 	})
 	if err != nil {
 		if worktreePath != "" {
@@ -661,6 +665,8 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		initialVersion = s.gitSvc.LastVersion(sessionID)
 	}
 
+	resumeProjects, _ := s.queries.ListProjects(ctx)
+
 	sess, resumeErr := s.mgr.Resume(ctx, ResumeParams{
 		SessionID:         sessionID,
 		ClaudeSessionID:   claudeSessID,
@@ -674,6 +680,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		MaxBudget:         dbSess.MaxBudget,
 		MaxTurns:          int(dbSess.MaxTurns),
 		InitialGitVersion: initialVersion,
+		Projects:          ProjectInfoFromStore(resumeProjects),
 	})
 	if resumeErr != nil {
 		return nil, resumeErr

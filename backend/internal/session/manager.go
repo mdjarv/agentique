@@ -33,6 +33,7 @@ type CreateParams struct {
 	Effort          string
 	MaxBudget       float64
 	MaxTurns        int
+	Projects        []ProjectInfo
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -95,7 +96,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects)),
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -172,6 +173,7 @@ type ResumeParams struct {
 	MaxBudget         float64
 	MaxTurns          int
 	InitialGitVersion int64
+	Projects          []ProjectInfo
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -213,7 +215,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects)),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

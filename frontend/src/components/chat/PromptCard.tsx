@@ -16,28 +16,40 @@ import { useChatStore } from "~/stores/chat-store";
 export interface PromptBlock {
   title: string;
   prompt: string;
+  projectSlug?: string;
 }
 
-/** Parse title + prompt from a code block's inner text. First line must be `# Title`. */
+/** Parse title + prompt from a code block's inner text. First line must be `# Title`.
+ *  Optional second line `project: <slug>` targets a different project. */
 export function parsePromptFromCode(code: string): PromptBlock | null {
   const nl = code.indexOf("\n");
   if (nl === -1) return null;
   const heading = code.slice(0, nl).trim();
   if (!heading.startsWith("# ")) return null;
   const title = heading.slice(2).trim();
-  const prompt = code.slice(nl + 1).trim();
+  let rest = code.slice(nl + 1);
+
+  let projectSlug: string | undefined;
+  const metaMatch = rest.match(/^project:\s*(\S+)\s*\n/);
+  if (metaMatch) {
+    projectSlug = metaMatch[1];
+    rest = rest.slice(metaMatch[0].length);
+  }
+
+  const prompt = rest.trim();
   if (!title || !prompt) return null;
-  return { title, prompt };
+  return { title, prompt, projectSlug };
 }
 
 /** Extract all prompt blocks from raw markdown content. */
 export function parsePromptBlocks(markdown: string): PromptBlock[] {
   const blocks: PromptBlock[] = [];
-  const re = /```prompt\s*\n#\s+([^\n]+)\n([\s\S]*?)```/g;
+  const re = /```prompt\s*\n#\s+([^\n]+)\n(?:project:\s*(\S+)\s*\n)?([\s\S]*?)```/g;
   for (const m of markdown.matchAll(re)) {
     const title = m[1]?.trim();
-    const prompt = m[2]?.trim();
-    if (title && prompt) blocks.push({ title, prompt });
+    const projectSlug = m[2]?.trim();
+    const prompt = m[3]?.trim();
+    if (title && prompt) blocks.push({ title, prompt, projectSlug });
   }
   return blocks;
 }
@@ -59,7 +71,7 @@ interface PromptGroupCtx {
   sessionId: string;
   isStreaming: boolean;
   cardStates: Record<string, CardEntry>;
-  startPrompt: (title: string, prompt: string) => void;
+  startPrompt: (title: string, prompt: string, targetProjectId?: string) => void;
 }
 
 const Ctx = createContext<PromptGroupCtx | null>(null);
@@ -90,11 +102,12 @@ export function PromptGroupProvider({
   const prompts = useMemo(() => parsePromptBlocks(content), [content]);
 
   const startPrompt = useCallback(
-    (title: string, prompt: string) => {
+    (title: string, prompt: string, targetProjectId?: string) => {
+      const pid = targetProjectId ?? projectId;
       // Deduplicate: skip if a session with this name already exists
       const sessions = useChatStore.getState().sessions;
       const dup = Object.values(sessions).find(
-        (s) => s.meta.projectId === projectId && s.meta.name === title,
+        (s) => s.meta.projectId === pid && s.meta.name === title,
       );
       if (dup) {
         setCardStates((prev) => ({
@@ -116,7 +129,7 @@ export function PromptGroupProvider({
       setCardStates((prev) => ({ ...prev, [title]: { state: "creating" } }));
       void (async () => {
         try {
-          const sid = await createSession(ws, projectId, title, true, opts);
+          const sid = await createSession(ws, pid, title, true, opts);
           await submitQuery(ws, sid, prompt);
           setCardStates((prev) => ({ ...prev, [title]: { state: "started", sessionId: sid } }));
         } catch (err) {
@@ -130,10 +143,14 @@ export function PromptGroupProvider({
   );
 
   const startAll = useCallback(() => {
+    const projects = useAppStore.getState().projects;
     for (const p of prompts) {
       const entry = cardStates[p.title];
       if (!entry || entry.state === "idle" || entry.state === "error") {
-        startPrompt(p.title, p.prompt);
+        const resolvedId = p.projectSlug
+          ? projects.find((proj) => proj.slug === p.projectSlug)?.id
+          : undefined;
+        startPrompt(p.title, p.prompt, resolvedId);
       }
     }
   }, [prompts, cardStates, startPrompt]);
@@ -185,20 +202,28 @@ export function PromptGroupProvider({
 // Card
 // ---------------------------------------------------------------------------
 
-export function PromptCard({ title, prompt }: PromptBlock) {
+export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptBlock) {
   const ctx = usePromptGroup();
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
-  const projectId = ctx?.projectId ?? "";
+  const contextProjectId = ctx?.projectId ?? "";
   const isStreaming = ctx?.isStreaming ?? false;
   const ctxEntry = ctx?.cardStates[title];
 
+  // Resolve slug override to a project ID; fall back to context project
+  const resolvedProject = useAppStore((s) =>
+    slugOverride ? s.projects.find((p) => p.slug === slugOverride) : undefined,
+  );
+  const targetProjectId = resolvedProject?.id ?? contextProjectId;
+  const isCrossProject = slugOverride !== undefined && targetProjectId !== contextProjectId;
+  const invalidSlug = slugOverride !== undefined && !resolvedProject;
+
   // Persist "started" across remounts by checking the store for a matching session
   const existingSessionId = useChatStore((s) => {
-    if (!projectId) return undefined;
+    if (!targetProjectId) return undefined;
     for (const data of Object.values(s.sessions)) {
-      if (data.meta.projectId === projectId && data.meta.name === title) return data.meta.id;
+      if (data.meta.projectId === targetProjectId && data.meta.name === title) return data.meta.id;
     }
     return undefined;
   });
@@ -215,18 +240,18 @@ export function PromptCard({ title, prompt }: PromptBlock) {
   const sessionId = ctxEntry?.sessionId ?? existingSessionId;
 
   const handleStart = useCallback(() => {
-    ctx?.startPrompt(title, prompt);
-  }, [ctx, title, prompt]);
+    ctx?.startPrompt(title, prompt, isCrossProject ? targetProjectId : undefined);
+  }, [ctx, title, prompt, isCrossProject, targetProjectId]);
 
-  const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.slug ?? "");
+  const navSlug = useAppStore((s) => s.projects.find((p) => p.id === targetProjectId)?.slug ?? "");
   const handleNav = useCallback(() => {
-    if (sessionId && projectSlug) {
+    if (sessionId && navSlug) {
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug: navSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
       });
     }
-  }, [sessionId, projectSlug, navigate]);
+  }, [sessionId, navSlug, navigate]);
 
   const isLong = prompt.split("\n").length > 6 || prompt.length > 400;
   const shown = !isLong || expanded ? prompt : `${prompt.slice(0, 250)}...`;
@@ -234,7 +259,19 @@ export function PromptCard({ title, prompt }: PromptBlock) {
   return (
     <div className="not-prose my-3 rounded-lg border border-border/40 border-l-[3px] border-l-primary bg-primary/[0.03]">
       <div className="px-4 py-3 space-y-2">
-        <div className="font-medium text-sm">{title}</div>
+        <div className="flex items-center gap-2">
+          <div className="font-medium text-sm">{title}</div>
+          {isCrossProject && resolvedProject && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+              {resolvedProject.name}
+            </span>
+          )}
+          {invalidSlug && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">
+              Unknown project: {slugOverride}
+            </span>
+          )}
+        </div>
         <div className="text-xs text-muted-foreground/80 leading-relaxed whitespace-pre-wrap">
           {shown}
         </div>
@@ -249,7 +286,7 @@ export function PromptCard({ title, prompt }: PromptBlock) {
         )}
         <div className="flex items-center justify-end gap-2 pt-0.5">
           {state === "idle" && (
-            <Button size="xs" disabled={isStreaming || !ctx} onClick={handleStart}>
+            <Button size="xs" disabled={isStreaming || !ctx || invalidSlug} onClick={handleStart}>
               <Play className="h-3 w-3" />
               Start Session
             </Button>
