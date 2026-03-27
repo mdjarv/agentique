@@ -316,6 +316,7 @@ func main() {
 
 	// ── Session response types ──
 
+	g.register(session.BehaviorPresets{}, "BehaviorPresets")
 	g.register(session.SessionInfo{}, "SessionInfo")
 	g.register(session.CreateSessionResult{}, "CreateSessionResult")
 	g.register(session.ListSessionsResult{}, "ListSessionsResult")

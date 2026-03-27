@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -17,12 +17,54 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
 import { deleteProject, updateProject } from "~/lib/api";
+import type { BehaviorPresets } from "~/lib/generated-types";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
 export const Route = createFileRoute("/project/$projectSlug_/settings")({
   component: ProjectSettingsPage,
 });
+
+const DEFAULT_PRESETS: BehaviorPresets = {
+  autoCommit: true,
+  suggestParallel: true,
+  planFirst: false,
+  terse: false,
+};
+
+function parsePresets(raw: string): BehaviorPresets {
+  if (!raw || raw === "{}") return { ...DEFAULT_PRESETS };
+  try {
+    return { ...DEFAULT_PRESETS, ...(JSON.parse(raw) as Partial<BehaviorPresets>) };
+  } catch {
+    return { ...DEFAULT_PRESETS };
+  }
+}
+
+const PRESET_TOGGLES: { key: keyof BehaviorPresets; label: string; description: string }[] = [
+  {
+    key: "autoCommit",
+    label: "Auto-commit at milestones",
+    description: "Commit proactively after each logical unit of work in worktree sessions.",
+  },
+  {
+    key: "suggestParallel",
+    label: "Suggest parallel sessions",
+    description:
+      "Suggest independent tasks as prompt blocks that can be launched as separate sessions.",
+  },
+  {
+    key: "planFirst",
+    label: "Plan before implementing",
+    description:
+      "Outline approach and wait for confirmation before writing code. Soft instruction, distinct from plan permission mode.",
+  },
+  {
+    key: "terse",
+    label: "Terse output",
+    description: "Minimize explanations. Show code changes directly without summaries.",
+  },
+];
 
 function ProjectSettingsPage() {
   const { projectSlug } = Route.useParams();
@@ -34,6 +76,31 @@ function ProjectSettingsPage() {
   const [slug, setSlug] = useState("");
   const [slugEditing, setSlugEditing] = useState(false);
   const [slugSaving, setSlugSaving] = useState(false);
+
+  const [presets, setPresets] = useState<BehaviorPresets>(() =>
+    parsePresets(project?.default_behavior_presets ?? ""),
+  );
+  const [presetsSaving, setPresetsSaving] = useState(false);
+  const [presetsChanged, setPresetsChanged] = useState(false);
+
+  // Reset presets when project's stored defaults change
+  const projectPresetsRaw = project?.default_behavior_presets;
+  useEffect(() => {
+    if (projectPresetsRaw != null) {
+      setPresets(parsePresets(projectPresetsRaw));
+      setPresetsChanged(false);
+    }
+  }, [projectPresetsRaw]);
+
+  const togglePreset = useCallback((key: keyof BehaviorPresets) => {
+    setPresets((prev) => ({ ...prev, [key]: !prev[key] }));
+    setPresetsChanged(true);
+  }, []);
+
+  const setCustomInstructions = useCallback((value: string) => {
+    setPresets((prev) => ({ ...prev, customInstructions: value }));
+    setPresetsChanged(true);
+  }, []);
 
   if (!project) {
     return (
@@ -80,6 +147,20 @@ function ProjectSettingsPage() {
     }
   };
 
+  const handlePresetsSave = async () => {
+    setPresetsSaving(true);
+    try {
+      const updated = await updateProject(project.id, { behaviorPresets: presets });
+      updateProjectStore(updated);
+      setPresetsChanged(false);
+      toast.success("Session behavior defaults saved");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to save behavior presets"));
+    } finally {
+      setPresetsSaving(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto p-8 space-y-8">
@@ -100,6 +181,59 @@ function ProjectSettingsPage() {
           <h1 className="text-2xl font-semibold">{project.name}</h1>
           <p className="text-sm text-muted-foreground">{project.path}</p>
         </div>
+
+        <Separator />
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium">Session behavior</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Default system prompt presets for new sessions in this project.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {PRESET_TOGGLES.map(({ key, label, description }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => togglePreset(key)}
+                className="flex items-start gap-3 w-full text-left rounded-lg border px-4 py-3 transition-colors hover:bg-muted/50"
+              >
+                <div
+                  className={`mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
+                    presets[key] ? "bg-primary" : "bg-muted-foreground/30"
+                  } relative`}
+                >
+                  <div
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                      presets[key] ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="custom-instructions">Custom instructions</Label>
+            <textarea
+              id="custom-instructions"
+              value={presets.customInstructions ?? ""}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="Additional instructions appended to the system prompt (e.g., 'only touch backend files', 'use conventional commits')..."
+              className="w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+              rows={3}
+            />
+          </div>
+          {presetsChanged && (
+            <Button onClick={handlePresetsSave} disabled={presetsSaving}>
+              {presetsSaving ? "Saving..." : "Save behavior defaults"}
+            </Button>
+          )}
+        </section>
 
         <Separator />
 

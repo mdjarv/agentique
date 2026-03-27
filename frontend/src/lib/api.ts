@@ -1,3 +1,4 @@
+import type { BehaviorPresets } from "~/lib/generated-types";
 import type { Project } from "~/lib/types";
 
 const BASE = "/api";
@@ -18,7 +19,10 @@ export async function createProject(name: string, path: string): Promise<Project
   return res.json();
 }
 
-export async function updateProject(id: string, updates: { slug: string }): Promise<Project> {
+export async function updateProject(
+  id: string,
+  updates: { slug?: string; behaviorPresets?: BehaviorPresets },
+): Promise<Project> {
   const res = await fetch(`${BASE}/projects/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
