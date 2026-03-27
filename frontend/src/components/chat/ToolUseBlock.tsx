@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
@@ -204,7 +204,7 @@ function DetailView({ detail }: { detail: Detail }) {
 
 // --- Main component ---
 
-export function ToolUseBlock({
+export const ToolUseBlock = memo(function ToolUseBlock({
   name,
   input,
   category,
@@ -242,4 +242,4 @@ export function ToolUseBlock({
       {expanded && detail && <DetailView detail={detail} />}
     </div>
   );
-}
+});

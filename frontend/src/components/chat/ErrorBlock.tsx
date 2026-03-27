@@ -1,5 +1,5 @@
 import { AlertCircle, AlertTriangle, Ban, ShieldAlert } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, memo, useEffect, useState } from "react";
 import type { ChatEvent } from "~/stores/chat-store";
 
 type ErrorStyle = "warning" | "destructive";
@@ -116,7 +116,7 @@ const styles: Record<ErrorStyle, string> = {
   destructive: "bg-destructive/10 text-destructive",
 };
 
-export function ErrorBlock({ event }: { event: ChatEvent }) {
+export const ErrorBlock = memo(function ErrorBlock({ event }: { event: ChatEvent }) {
   const info = classifyError(event);
   const Icon = info.icon;
 
@@ -129,4 +129,4 @@ export function ErrorBlock({ event }: { event: ChatEvent }) {
       {info.detail && <p className="mt-1 ml-6 text-xs opacity-80 leading-relaxed">{info.detail}</p>}
     </div>
   );
-}
+});
