@@ -485,9 +485,20 @@ func (s *Session) processEvent(event claudecli.Event) {
 		}
 	}
 
-	if errEv, ok := event.(*claudecli.ErrorEvent); ok && errEv.Fatal {
-		if err := s.setState(StateFailed); err != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", err)
+	if errEv, ok := event.(*claudecli.ErrorEvent); ok {
+		lvl := slog.LevelWarn
+		if errEv.Fatal {
+			lvl = slog.LevelError
+		}
+		slog.Log(context.Background(), lvl, "claude API error",
+			"session_id", s.ID,
+			"fatal", errEv.Fatal,
+			"error", errEv.Error(),
+		)
+		if errEv.Fatal {
+			if err := s.setState(StateFailed); err != nil {
+				slog.Error("state transition failed", "session_id", s.ID, "error", err)
+			}
 		}
 	}
 }
