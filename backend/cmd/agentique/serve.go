@@ -27,6 +27,7 @@ import (
 var (
 	dbPath      string
 	disableAuth bool
+	logLevel    string
 	rpID        string
 	rpOrigin    string
 	tlsCert     string
@@ -36,6 +37,7 @@ var (
 
 func init() {
 	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: platform data dir)")
+	serveCmd.Flags().StringVar(&logLevel, "log-level", "", "log level: trace, debug, info (default), warn, error")
 	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
 	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
@@ -80,7 +82,11 @@ func resolveDBPath() string {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	logging.Init()
+	lvl := logLevel
+	if lvl == "" {
+		lvl = os.Getenv("LOG_LEVEL")
+	}
+	logging.Init(lvl)
 
 	if !testMode {
 		if err := preflight(); err != nil {
