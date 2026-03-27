@@ -2,14 +2,18 @@ package msggen
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 
 	"github.com/allbin/agentique/backend/internal/gitops"
 )
+
+const maxRetries = 2 // 3 total attempts
 
 // Runner runs a single blocking Claude CLI invocation.
 type Runner interface {
@@ -24,6 +28,47 @@ type CommitMessageResult struct {
 type PRDescriptionResult struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
+}
+
+// RunWithRetry wraps RunBlocking with retry on retriable errors (rate limit, overloaded).
+// Non-retriable errors fail immediately.
+func RunWithRetry(ctx context.Context, runner Runner, prompt string, opts ...claudecli.Option) (*claudecli.BlockingResult, error) {
+	var lastErr error
+	for attempt := range maxRetries + 1 {
+		result, err := runner.RunBlocking(ctx, prompt, opts...)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+
+		delay := retryDelay(err, attempt)
+		if delay == 0 {
+			return nil, err
+		}
+		slog.Warn("retriable error, backing off", "attempt", attempt+1, "delay", delay, "error", err)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return nil, lastErr
+}
+
+// retryDelay returns the backoff duration for retriable errors, or 0 for non-retriable.
+func retryDelay(err error, attempt int) time.Duration {
+	if errors.Is(err, claudecli.ErrRateLimit) {
+		var rlErr *claudecli.RateLimitError
+		if errors.As(err, &rlErr) && rlErr.RetryAfter > 0 {
+			return rlErr.RetryAfter
+		}
+		return 30 * time.Second
+	}
+	if errors.Is(err, claudecli.ErrOverloaded) {
+		return time.Duration(5<<attempt) * time.Second // 5s, 10s
+	}
+	return 0
 }
 
 func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff string) (CommitMessageResult, error) {
@@ -44,7 +89,7 @@ func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff st
 		sessionName, summary, diffText,
 	)
 
-	result, err := runner.RunBlocking(ctx, prompt,
+	result, err := RunWithRetry(ctx, runner, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
@@ -94,7 +139,7 @@ func PRDescription(ctx context.Context, runner Runner, sessionName, summary, dif
 		sessionName, summary, diffText,
 	)
 
-	result, err := runner.RunBlocking(ctx, prompt,
+	result, err := RunWithRetry(ctx, runner, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
