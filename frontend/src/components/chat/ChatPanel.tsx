@@ -26,6 +26,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
   createSession,
+  isGitFresh,
   refreshGitStatus,
   resumeSession,
   setAutoApprove,
@@ -124,9 +125,11 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     };
   }, [sessionId]);
 
-  // Refresh git status on session navigation (so panel data is fresh)
+  // Refresh git status on session navigation (skip if already fresh)
   useEffect(() => {
-    refreshGitStatus(ws, sessionId).catch(() => {});
+    if (!isGitFresh(sessionId)) {
+      refreshGitStatus(ws, sessionId).catch(() => {});
+    }
   }, [ws, sessionId]);
 
   // Load history on mount or session switch

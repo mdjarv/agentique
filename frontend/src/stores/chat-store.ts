@@ -71,6 +71,7 @@ export type SessionState = "idle" | "running" | "done" | "failed" | "stopped" | 
 export type SessionMetadata = Omit<SessionInfo, "state" | "mergeStatus"> & {
   state: SessionState;
   mergeStatus?: "clean" | "conflicts" | "unknown";
+  gitRefreshedAt?: number;
 };
 
 export interface PendingApproval {
@@ -384,6 +385,7 @@ export const useChatStore = create<ChatState>((set) => ({
         connected: extras?.connected ?? m.connected,
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
+        gitRefreshedAt: incoming > current ? Date.now() : m.gitRefreshedAt,
         completedAt: transient ? m.completedAt : extras?.completedAt,
         hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
         hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
