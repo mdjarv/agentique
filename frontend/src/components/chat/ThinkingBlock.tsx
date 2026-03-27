@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { ThinkingIcon } from "~/components/chat/ToolIcons";
 
@@ -11,7 +11,7 @@ function previewLine(content: string): string {
   return line.length > 120 ? `${line.slice(0, 120)}...` : line;
 }
 
-export function ThinkingBlock({ content }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({ content }: ThinkingBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const preview = previewLine(content);
 
@@ -28,4 +28,4 @@ export function ThinkingBlock({ content }: ThinkingBlockProps) {
       )}
     </div>
   );
-}
+});

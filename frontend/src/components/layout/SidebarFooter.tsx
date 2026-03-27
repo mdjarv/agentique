@@ -9,7 +9,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type { ComponentType } from "react";
-import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { logout } from "~/lib/auth-api";
 import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
@@ -57,36 +57,34 @@ const displayOrder: DisplayState[] = [
 ];
 
 export function SidebarFooter() {
-  const sessions = useChatStore((s) => s.sessions);
-  const { authEnabled, user, clearAuth } = useAuthStore();
-
-  const counts = useMemo(() => {
-    const c: Record<DisplayState, number> = {
-      approval: 0,
-      unseen: 0,
-      running: 0,
-      merging: 0,
-      idle: 0,
-      done: 0,
-      stopped: 0,
-      failed: 0,
-    };
-
-    for (const session of Object.values(sessions)) {
-      if (session.meta.worktreeMerged) continue;
-
-      if (session.pendingApproval || session.pendingQuestion) {
-        c.approval++;
-      } else if (session.hasUnseenCompletion && session.meta.state === "idle") {
-        c.unseen++;
-      } else {
-        const state = session.meta.state as DisplayState;
-        if (state in c) c[state]++;
+  // Compute counts inside the selector — only re-renders when a count actually changes
+  const counts = useChatStore(
+    useShallow((s) => {
+      const c: Record<DisplayState, number> = {
+        approval: 0,
+        unseen: 0,
+        running: 0,
+        merging: 0,
+        idle: 0,
+        done: 0,
+        stopped: 0,
+        failed: 0,
+      };
+      for (const session of Object.values(s.sessions)) {
+        if (session.meta.worktreeMerged) continue;
+        if (session.pendingApproval || session.pendingQuestion) {
+          c.approval++;
+        } else if (session.hasUnseenCompletion && session.meta.state === "idle") {
+          c.unseen++;
+        } else {
+          const state = session.meta.state as DisplayState;
+          if (state in c) c[state]++;
+        }
       }
-    }
-
-    return c;
-  }, [sessions]);
+      return c;
+    }),
+  );
+  const { authEnabled, user, clearAuth } = useAuthStore();
 
   const hasAny = displayOrder.some((s) => counts[s] > 0);
 

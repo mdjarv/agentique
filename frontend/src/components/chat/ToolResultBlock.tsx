@@ -1,5 +1,5 @@
 import { CheckCircle, Image } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import type { ToolContentBlock } from "~/stores/chat-store";
 
@@ -8,7 +8,10 @@ interface ToolResultBlockProps {
   onImageClick?: (src: string) => void;
 }
 
-export function ToolResultBlock({ content, onImageClick }: ToolResultBlockProps) {
+export const ToolResultBlock = memo(function ToolResultBlock({
+  content,
+  onImageClick,
+}: ToolResultBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   const textContent = content
@@ -65,4 +68,4 @@ export function ToolResultBlock({ content, onImageClick }: ToolResultBlockProps)
       )}
     </div>
   );
-}
+});
