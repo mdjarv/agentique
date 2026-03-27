@@ -1,0 +1,99 @@
+import { Check, Copy, FileText, User } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Markdown } from "~/components/chat/Markdown";
+import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import type { Attachment } from "~/stores/chat-store";
+
+interface UserMessageProps {
+  prompt: string;
+  attachments?: Attachment[];
+}
+
+export const UserMessage = memo(function UserMessage({ prompt, attachments }: UserMessageProps) {
+  const { copied, copy: handleCopy } = useCopyToClipboard();
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxSrc(null);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [lightboxSrc]);
+
+  return (
+    <>
+      <div className="flex gap-3 flex-row-reverse">
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarFallback className="bg-primary/20 text-primary">
+            <User className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
+          {prompt && (
+            <button
+              type="button"
+              onClick={() => handleCopy(prompt)}
+              className="absolute -left-8 max-md:-top-6 max-md:left-auto max-md:right-0 top-1 p-1 rounded max-md:opacity-60 opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10"
+              aria-label="Copy message"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {attachments && attachments.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap mb-2">
+              {attachments.map((a) =>
+                a.mimeType.startsWith("image/") ? (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="p-0 border-none bg-transparent cursor-pointer"
+                    onClick={() => setLightboxSrc(a.dataUrl)}
+                  >
+                    <img
+                      src={a.previewUrl ?? a.dataUrl}
+                      alt={a.name}
+                      className="h-20 max-w-[200px] object-cover rounded"
+                    />
+                  </button>
+                ) : (
+                  <div
+                    key={a.id}
+                    className="h-20 w-20 rounded bg-primary-foreground/10 flex flex-col items-center justify-center gap-1 px-1"
+                  >
+                    <FileText className="h-5 w-5" />
+                    <span className="text-[9px] truncate w-full text-center">{a.name}</span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+          {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
+        </div>
+      </div>
+
+      {lightboxSrc &&
+        createPortal(
+          <dialog
+            open
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
+            onClick={() => setLightboxSrc(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setLightboxSrc(null);
+            }}
+            aria-label="Image preview"
+          >
+            <img
+              src={lightboxSrc}
+              alt="Full-size preview"
+              className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+            />
+          </dialog>,
+          document.body,
+        )}
+    </>
+  );
+});
