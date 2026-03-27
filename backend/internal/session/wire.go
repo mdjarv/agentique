@@ -141,6 +141,9 @@ func ToWireEvent(event claudecli.Event) any {
 		return wire
 	case *claudecli.ErrorEvent:
 		we := WireErrorEvent{Type: "error", Message: e.Error(), Fatal: e.Fatal}
+		// Classify by sentinel — most specific first.
+		// TODO: add ErrBilling, ErrPermission, ErrNotFound, ErrRequestTooLarge,
+		// ErrInvalidRequest checks here when claudecli-go adds those sentinels.
 		if errors.Is(e.Err, claudecli.ErrRateLimit) {
 			we.ErrorType = "rate_limit"
 			var rlErr *claudecli.RateLimitError
@@ -151,6 +154,8 @@ func ToWireEvent(event claudecli.Event) any {
 			we.ErrorType = "auth"
 		} else if errors.Is(e.Err, claudecli.ErrOverloaded) {
 			we.ErrorType = "overloaded"
+		} else {
+			we.ErrorType = "api_error"
 		}
 		return we
 	case *claudecli.RateLimitEvent:
