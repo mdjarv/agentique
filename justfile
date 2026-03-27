@@ -90,6 +90,29 @@ reset:
     rm -f backend/agentique.db backend/agentique.db-journal backend/agentique.db-wal backend/agentique.db-shm
     @echo "Reset complete. Restart server for fresh state."
 
+# Cross-compile release binaries for distribution
+release: frontend-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf dist
+    mkdir -p dist
+    rm -rf backend/internal/server/frontend_dist
+    mkdir -p backend/internal/server/frontend_dist
+    cp -r frontend/dist/* backend/internal/server/frontend_dist/
+    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+    COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
+    DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+    TARGETS=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64")
+    for target in "${TARGETS[@]}"; do
+        IFS='/' read -r os arch <<< "$target"
+        out="dist/agentique-${os}-${arch}"
+        echo "Building ${out}..."
+        cd backend && GOOS=$os GOARCH=$arch go build -ldflags "$LDFLAGS" -o "../${out}" ./cmd/agentique && cd ..
+    done
+    echo "Release binaries in dist/:"
+    ls -lh dist/
+
 # Clean build artifacts
 clean:
     rm -rf frontend/dist
