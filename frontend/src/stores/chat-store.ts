@@ -574,15 +574,20 @@ export const useChatStore = create<ChatState>((set) => ({
         patch.meta = { ...session.meta, state: "idle" };
         patch.hasUnseenCompletion = !isViewing;
         if (event.contextWindow && event.contextWindow > 0) {
+          // Take max of streaming vs result values — streaming data comes from
+          // the raw API (message_start) and accurately reflects context consumption.
+          const prevInput = session.contextUsage?.inputTokens ?? 0;
           patch.contextUsage = {
             contextWindow: event.contextWindow,
-            inputTokens: event.inputTokens ?? 0,
+            inputTokens: Math.max(event.inputTokens ?? 0, prevInput),
             outputTokens: event.outputTokens ?? 0,
           };
         }
       }
       if (event.type === "compact_boundary") {
-        patch.contextUsage = null;
+        // Don't clear contextUsage — streaming data from the next turn will
+        // replace it with post-compaction values. Clearing here causes a
+        // flash of no-bar between compaction and the next message_start.
         patch.compacting = false;
       }
 
