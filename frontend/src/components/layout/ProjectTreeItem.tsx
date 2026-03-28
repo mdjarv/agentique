@@ -95,6 +95,7 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
         mergeStatus={meta.mergeStatus}
         gitOperation={meta.gitOperation}
         prUrl={meta.prUrl}
+        teamId={meta.teamId}
         onClick={handleClick}
       />
     </SessionHoverCard>

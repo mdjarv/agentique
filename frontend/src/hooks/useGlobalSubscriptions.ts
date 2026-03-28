@@ -12,6 +12,7 @@ import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
+import { useTeamStore } from "~/stores/team-store";
 
 /** Find the most recently created idle or running session in the same project. */
 function findNearestActiveSession(
@@ -339,6 +340,27 @@ export function useGlobalSubscriptions(projects: Project[]) {
       useAppStore.getState().removeTag(payload.id);
     });
 
+    // Team events
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamCreated = ws.subscribe("team.created", (payload: any) => {
+      useTeamStore.getState().addTeam(payload);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamDeleted = ws.subscribe("team.deleted", (payload: any) => {
+      useTeamStore.getState().removeTeam(payload.teamId);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamJoined = ws.subscribe("team.member-joined", (payload: any) => {
+      useTeamStore.getState().addMember(payload.teamId, payload.member);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamLeft = ws.subscribe("team.member-left", (payload: any) => {
+      useTeamStore.getState().removeMember(payload.teamId, payload.sessionId);
+    });
+
     // Reload active session when returning from background (catches missed events on mobile)
     let hiddenAt = 0;
     const handleVisibility = () => {
@@ -395,6 +417,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubTagCreated();
       unsubTagUpdated();
       unsubTagDeleted();
+      unsubTeamCreated();
+      unsubTeamDeleted();
+      unsubTeamJoined();
+      unsubTeamLeft();
       unsubReconnect();
       document.removeEventListener("visibilitychange", handleVisibility);
     };

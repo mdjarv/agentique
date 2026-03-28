@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, GitPullRequest } from "lucide-react";
+import { AlertTriangle, CheckCircle2, GitPullRequest, Users } from "lucide-react";
 import { memo } from "react";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
@@ -24,6 +24,7 @@ interface SessionRowProps {
   mergeStatus?: "clean" | "conflicts" | "unknown";
   gitOperation?: string;
   prUrl?: string;
+  teamId?: string;
   onClick: () => void;
 }
 
@@ -48,6 +49,7 @@ export const SessionRow = memo(function SessionRow({
   mergeStatus,
   gitOperation,
   prUrl,
+  teamId,
   worktreeBranch,
   onClick,
 }: SessionRowProps) {
@@ -91,6 +93,7 @@ export const SessionRow = memo(function SessionRow({
       >
         {name || "Untitled"}
       </span>
+      {teamId && <Users className="size-3 shrink-0 text-muted-foreground/60" />}
       <span className="ml-auto flex shrink-0 items-center">
         <SessionGitStatus
           worktreeMerged={worktreeMerged}
