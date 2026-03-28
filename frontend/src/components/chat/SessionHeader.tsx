@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,7 @@ export function SessionHeader({
   onOpenPanel,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
+  const isMobile = useIsMobile();
   const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = isRunning;
@@ -139,22 +141,26 @@ export function SessionHeader({
           <div className="group/name flex items-center gap-1 font-medium truncate">
             <button
               type="button"
-              onClick={() => setEditing(true)}
+              onClick={() => (isMobile ? undefined : setEditing(true))}
               className="flex items-center gap-1 truncate hover:text-foreground"
             >
               <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
                 {meta.name || "Untitled"}
               </span>
-              <Pencil className="h-3 w-3 max-md:opacity-50 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
+              {!isMobile && (
+                <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
+              )}
             </button>
-            <button
-              type="button"
-              onClick={() => copyName(meta.name || "Untitled")}
-              className="p-0.5 rounded max-md:opacity-50 opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
-              aria-label="Copy session name"
-            >
-              {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            </button>
+            {!isMobile && (
+              <button
+                type="button"
+                onClick={() => copyName(meta.name || "Untitled")}
+                className="p-0.5 rounded opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
+                aria-label="Copy session name"
+              >
+                {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            )}
           </div>
         )}
 
@@ -201,6 +207,28 @@ export function SessionHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {isMobile && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => setEditing(true)}
+                    className="text-xs gap-2"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => copyName(meta.name || "Untitled")}
+                    className="text-xs gap-2"
+                  >
+                    {nameCopied ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    Copy name
+                  </DropdownMenuItem>
+                </>
+              )}
               {isWorktree && !isBusy && (
                 <DropdownMenuItem
                   onClick={handleClean}
@@ -225,8 +253,10 @@ export function SessionHeader({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* State label */}
-          <span className="text-xs text-muted-foreground capitalize">{meta.state}</span>
+          {/* State label — hidden on mobile where status dot suffices */}
+          {!isMobile && (
+            <span className="text-xs text-muted-foreground capitalize">{meta.state}</span>
+          )}
         </div>
       </div>
 
