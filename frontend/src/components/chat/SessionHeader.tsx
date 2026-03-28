@@ -3,6 +3,7 @@ import {
   Copy,
   Eraser,
   Loader2,
+  Menu,
   MoreHorizontal,
   PanelRightOpen,
   Pencil,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
 import {
   AlertDialog,
@@ -40,6 +42,7 @@ interface SessionHeaderProps {
   hasPendingInput: boolean;
   showPanelButton?: boolean;
   onOpenPanel?: () => void;
+  onOpenSidebar?: () => void;
 }
 
 export function SessionHeader({
@@ -47,6 +50,7 @@ export function SessionHeader({
   hasPendingInput,
   showPanelButton,
   onOpenPanel,
+  onOpenSidebar,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
@@ -115,6 +119,16 @@ export function SessionHeader({
   return (
     <>
       <div className="border-b px-4 py-2 flex items-center gap-2 text-sm shrink-0">
+        {isMobile && onOpenSidebar && (
+          <button
+            type="button"
+            onClick={onOpenSidebar}
+            className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors -ml-2 shrink-0"
+            aria-label="Open sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         <SessionStatusDot
           state={meta.state}
           connected={meta.connected}
@@ -165,6 +179,8 @@ export function SessionHeader({
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
+          {isMobile && onOpenSidebar && <ConnectionIndicator />}
+
           {/* Session panel toggle (mobile) */}
           {showPanelButton && (
             <Button

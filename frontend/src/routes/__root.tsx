@@ -71,6 +71,12 @@ function AuthenticatedLayout() {
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Session routes render their own merged header on mobile — skip the root one
+  const isSessionRoute = /^\/project\/[^/]+\/session\/[^/]+/.test(pathname);
+  const showMobileHeader = isMobile && !isSessionRoute;
+
   return (
     <TooltipProvider>
       <div className="flex h-dvh">
@@ -88,7 +94,7 @@ function AuthenticatedLayout() {
           <AppSidebar className="w-72 border-r" />
         )}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {isMobile && (
+          {showMobileHeader && (
             <div className="h-11 border-b px-3 flex items-center gap-2 shrink-0">
               <button
                 type="button"

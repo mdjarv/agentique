@@ -64,6 +64,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const projectSlug = project?.slug ?? "";
 
   // Granular selectors — turns changes on every streaming event, meta changes
@@ -297,6 +298,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           hasPendingInput={!!pendingApproval || !!pendingQuestion}
           showPanelButton={isMobile && showPanel}
           onOpenPanel={() => setMobileSessionOpen(true)}
+          onOpenSidebar={isMobile ? () => setSidebarOpen(true) : undefined}
         />
 
         {/* Tab bar — only when there are changes to view */}
