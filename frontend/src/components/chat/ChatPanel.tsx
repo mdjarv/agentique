@@ -13,7 +13,6 @@ import {
   MessageComposer,
 } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
-import { MessageQueue } from "~/components/chat/MessageQueue";
 import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { ResumeBanner } from "~/components/chat/ResumeBanner";
@@ -27,7 +26,6 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
-  cancelQueuedMessage,
   createSession,
   enqueueMessage,
   interruptSession,
@@ -42,7 +40,7 @@ import {
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment, QueuedMessage, Turn } from "~/stores/chat-store";
+import type { Attachment, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -60,7 +58,6 @@ const resumePlaceholders: Record<string, string> = {
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
 const EMPTY_TURNS: Turn[] = [];
-const EMPTY_QUEUE: QueuedMessage[] = [];
 
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
@@ -77,7 +74,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const pendingQuestion = useChatStore((s) => s.sessions[sessionId]?.pendingQuestion ?? null);
   const planMode = useChatStore((s) => s.sessions[sessionId]?.planMode ?? false);
   const autoApprove = useChatStore((s) => s.sessions[sessionId]?.autoApprove ?? false);
-  const queuedMessages = useChatStore((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE);
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
@@ -239,13 +235,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   );
 
   const handleInterrupt = useCallback(async () => {
-    if (queuedMessages.length > 0) {
-      const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-      composerRef.current?.setText(text);
-      // Backend clears queue on interrupt; frontend receives session.queue push.
-    }
     interruptSession(ws, sessionId).catch(console.error);
-  }, [ws, sessionId, queuedMessages]);
+  }, [ws, sessionId]);
 
   const handleResume = useCallback(async () => {
     if (resuming) return;
@@ -260,28 +251,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [ws, sessionId, resuming]);
 
   const isResumable = resumableStates.has(sessionState);
-
-  // Flush queued messages back to composer when session reaches a terminal state.
-  // Track previous queue in a ref because the backend clears it (session.queue push)
-  // before the state push arrives — by the time the state effect fires, queuedMessages is [].
-  const prevStateRef = useRef(sessionState);
-  const prevQueueRef = useRef(queuedMessages);
-  useEffect(() => {
-    prevQueueRef.current = queuedMessages;
-  }, [queuedMessages]);
-  useEffect(() => {
-    const prev = prevStateRef.current;
-    prevStateRef.current = sessionState;
-    if (
-      prev === "running" &&
-      (sessionState === "done" || sessionState === "failed" || sessionState === "stopped")
-    ) {
-      const pending = prevQueueRef.current;
-      if (pending.length > 0) {
-        composerRef.current?.setText(pending.map((m) => m.prompt).join("\n\n"));
-      }
-    }
-  }, [sessionState]);
 
   if (!meta) {
     return <StatusPage message="Loading session..." />;
@@ -365,15 +334,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               ))}
             {pendingQuestion && <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />}
 
-            {queuedMessages.length > 0 && (
-              <MessageQueue
-                messages={queuedMessages}
-                onCancel={(msg) => {
-                  cancelQueuedMessage(ws, sessionId, msg.id).catch(console.error);
-                  composerRef.current?.setText(msg.prompt);
-                }}
-              />
-            )}
             {(contextUsage || compacting) && (
               <ContextBar usage={contextUsage} compacting={compacting} />
             )}

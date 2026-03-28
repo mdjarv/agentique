@@ -289,29 +289,6 @@ describe("chat-store", () => {
     });
   });
 
-  // --- Message queue ---
-
-  describe("message queue", () => {
-    it("sets and clears queue from backend state", () => {
-      useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().setQueue("sess-1", [
-        { id: "q1", prompt: "msg1" },
-        { id: "q2", prompt: "msg2" },
-      ]);
-      const q = useChatStore.getState().sessions["sess-1"]?.queuedMessages;
-      expect(q).toHaveLength(2);
-      expect(q?.[0]?.prompt).toBe("msg1");
-
-      useChatStore.getState().setQueue("sess-1", [{ id: "q2", prompt: "msg2" }]);
-      const q2 = useChatStore.getState().sessions["sess-1"]?.queuedMessages;
-      expect(q2).toHaveLength(1);
-      expect(q2?.[0]?.prompt).toBe("msg2");
-
-      useChatStore.getState().setQueue("sess-1", []);
-      expect(useChatStore.getState().sessions["sess-1"]?.queuedMessages).toHaveLength(0);
-    });
-  });
-
   // --- setSessions (project-scoped) ---
 
   describe("setSessions", () => {

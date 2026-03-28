@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { QueuedMessage as GeneratedQueuedMessage, SessionInfo } from "~/lib/generated-types";
+import type { SessionInfo } from "~/lib/generated-types";
 import { uuid } from "~/lib/utils";
 
 // Debounce timer for rate-limit "allowed" → clear transition.
@@ -26,7 +26,8 @@ export interface ChatEvent {
     | "stream"
     | "compact_status"
     | "compact_boundary"
-    | "context_management";
+    | "context_management"
+    | "user_message";
   content?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
@@ -103,8 +104,6 @@ export interface RateLimitInfo {
   resetsAt: number | null;
 }
 
-export type QueuedMessage = GeneratedQueuedMessage;
-
 export interface TodoItem {
   content: string;
   activeForm?: string;
@@ -125,7 +124,6 @@ export interface SessionData {
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
   autoApprove: boolean;
-  queuedMessages: QueuedMessage[];
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
   compacting: boolean;
@@ -139,7 +137,6 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   pendingQuestion: null,
   planMode: meta.permissionMode === "plan",
   autoApprove: meta.autoApprove ?? false,
-  queuedMessages: [],
   todos: null,
   contextUsage: null,
   compacting: false,
@@ -288,9 +285,6 @@ export interface ChatState {
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
 
-  // Message queue (backend-authoritative, mirrored via session.queue pushes)
-  setQueue: (sessionId: string, queue: QueuedMessage[]) => void;
-
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
   handleServerEvent: (sessionId: string, event: ChatEvent) => void;
@@ -323,13 +317,11 @@ export const useChatStore = create<ChatState>((set) => ({
             autoApprove: tagged.autoApprove ?? false,
             pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
             pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
-            queuedMessages: tagged.queuedMessages ?? existing.queuedMessages,
           };
         } else {
           const data = emptySessionData(tagged);
           if (tagged.pendingApproval) data.pendingApproval = tagged.pendingApproval;
           if (tagged.pendingQuestion) data.pendingQuestion = tagged.pendingQuestion;
-          if (tagged.queuedMessages) data.queuedMessages = tagged.queuedMessages;
           sessions[meta.id] = data;
         }
       }
@@ -474,13 +466,6 @@ export const useChatStore = create<ChatState>((set) => ({
         historyLoading: nextLoading,
         ...updateSession(s, sessionId, { turns, todos, contextUsage }),
       };
-    }),
-
-  setQueue: (sessionId, queue) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return updateSession(s, sessionId, { queuedMessages: queue });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>

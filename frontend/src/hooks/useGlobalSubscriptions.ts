@@ -270,13 +270,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         .setSessionPlanMode(payload.sessionId, payload.permissionMode === "plan");
     });
 
-    // Backend-authoritative queue: mirror queue state from server pushes.
-    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
-    const unsubQueue = ws.subscribe("session.queue", (payload: any) => {
-      useChatStore.getState().setQueue(payload.sessionId, payload.queue ?? []);
-    });
-
-    // Backend-initiated turns (queue drain): create the turn entry in the store.
+    // Backend-initiated turns: create the turn entry in the store.
     // De-duplicates with optimistic creation from submitQuery() — if the last turn
     // already has the same prompt and no events, the frontend already created it.
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -341,7 +335,6 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPermission();
       unsubQuestion();
       unsubPermMode();
-      unsubQueue();
       unsubTurnStarted();
       unsubProjectGit();
       unsubReconnect();

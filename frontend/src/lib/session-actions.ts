@@ -134,18 +134,6 @@ export async function enqueueMessage(
   await ws.request("session.enqueue", payload);
 }
 
-export async function cancelQueuedMessage(
-  ws: WsClient,
-  sessionId: string,
-  messageId: string,
-): Promise<void> {
-  await ws.request("session.cancel-queued", { sessionId, messageId });
-}
-
-export async function clearSessionQueue(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.clear-queue", { sessionId });
-}
-
 export async function setSessionModel(
   ws: WsClient,
   sessionId: string,
