@@ -105,6 +105,7 @@ export interface WireContextManagementEvent {
 export interface WireUserMessageEvent {
   type: "user_message";
   content: string;
+  attachments?: QueryAttachment[];
 }
 
 export interface WireQuestionOption {

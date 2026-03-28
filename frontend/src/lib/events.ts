@@ -1,5 +1,15 @@
 import { uuid } from "~/lib/utils";
-import type { ChatEvent, ToolContentBlock } from "~/stores/chat-store";
+import type { Attachment, ChatEvent, ToolContentBlock } from "~/stores/chat-store";
+
+function parseAttachments(raw: unknown): Attachment[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((a) => ({
+    id: uuid(),
+    name: (a as Record<string, string>).name ?? "",
+    mimeType: (a as Record<string, string>).mimeType ?? "",
+    dataUrl: (a as Record<string, string>).dataUrl ?? "",
+  }));
+}
 
 /** Parse a raw server event (wire format) into a ChatEvent. */
 export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
@@ -28,5 +38,6 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     retryAfterSecs: raw.retryAfterSecs as number | undefined,
     trigger: raw.trigger as string | undefined,
     preTokens: raw.preTokens as number | undefined,
+    attachments: type === "user_message" ? parseAttachments(raw.attachments) : undefined,
   };
 }

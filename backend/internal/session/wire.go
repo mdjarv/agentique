@@ -91,8 +91,9 @@ type WireContextManagementEvent struct {
 
 // WireUserMessageEvent represents a user message injected mid-turn via SendMessage.
 type WireUserMessageEvent struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	Type        string            `json:"type"`
+	Content     string            `json:"content"`
+	Attachments []QueryAttachment `json:"attachments,omitempty"`
 }
 
 func (e WireTextEvent) WireType() string       { return e.Type }
