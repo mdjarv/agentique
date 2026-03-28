@@ -13,7 +13,6 @@ import {
   MessageComposer,
 } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
-import { MessageQueue } from "~/components/chat/MessageQueue";
 import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { ResumeBanner } from "~/components/chat/ResumeBanner";
@@ -28,6 +27,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
   createSession,
+  enqueueMessage,
   interruptSession,
   isGitFresh,
   refreshGitStatus,
@@ -36,12 +36,11 @@ import {
   setPermissionMode,
   setSessionModel,
   stopSession,
-  submitQuery,
 } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment, QueuedMessage, Turn } from "~/stores/chat-store";
+import type { Attachment, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -59,7 +58,6 @@ const resumePlaceholders: Record<string, string> = {
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
 const EMPTY_TURNS: Turn[] = [];
-const EMPTY_QUEUE: QueuedMessage[] = [];
 
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
@@ -76,7 +74,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const pendingQuestion = useChatStore((s) => s.sessions[sessionId]?.pendingQuestion ?? null);
   const planMode = useChatStore((s) => s.sessions[sessionId]?.planMode ?? false);
   const autoApprove = useChatStore((s) => s.sessions[sessionId]?.autoApprove ?? false);
-  const queuedMessages = useChatStore((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE);
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
@@ -205,21 +202,16 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
       useUIStore.getState().clearDraft(sessionId);
-      if (sessionState === "running") {
-        useChatStore.getState().enqueueMessage(sessionId, prompt, attachments);
-        return;
-      }
       try {
-        await submitQuery(ws, sessionId, prompt, attachments);
+        await enqueueMessage(ws, sessionId, prompt, attachments);
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to send message");
         toast.error(msg, {
           action: { label: "Copy", onClick: () => copyToClipboard(msg) },
         });
-        useChatStore.getState().setSessionState(sessionId, "idle");
       }
     },
-    [ws, sessionId, sessionState],
+    [ws, sessionId],
   );
 
   const handleStartFresh = useCallback(
@@ -230,7 +222,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           autoApprove: meta?.autoApprove,
         });
         await stopSession(ws, sessionId);
-        await submitQuery(ws, newId, plan);
+        await enqueueMessage(ws, newId, plan);
         navigate({
           to: "/project/$projectSlug/session/$sessionShortId",
           params: { projectSlug, sessionShortId: sessionShortId(newId) },
@@ -243,13 +235,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   );
 
   const handleInterrupt = useCallback(async () => {
-    if (queuedMessages.length > 0) {
-      const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-      useChatStore.getState().clearQueue(sessionId);
-      composerRef.current?.setText(text);
-    }
     interruptSession(ws, sessionId).catch(console.error);
-  }, [ws, sessionId, queuedMessages]);
+  }, [ws, sessionId]);
 
   const handleResume = useCallback(async () => {
     if (resuming) return;
@@ -264,23 +251,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [ws, sessionId, resuming]);
 
   const isResumable = resumableStates.has(sessionState);
-
-  // Flush queued messages back to composer when session reaches a terminal state
-  const prevStateRef = useRef(sessionState);
-  useEffect(() => {
-    const prev = prevStateRef.current;
-    prevStateRef.current = sessionState;
-    if (
-      prev === "running" &&
-      (sessionState === "done" || sessionState === "failed" || sessionState === "stopped")
-    ) {
-      if (queuedMessages.length > 0) {
-        const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-        useChatStore.getState().clearQueue(sessionId);
-        composerRef.current?.setText(text);
-      }
-    }
-  }, [sessionState, sessionId, queuedMessages]);
 
   if (!meta) {
     return <StatusPage message="Loading session..." />;
@@ -364,15 +334,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               ))}
             {pendingQuestion && <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />}
 
-            {queuedMessages.length > 0 && (
-              <MessageQueue
-                messages={queuedMessages}
-                onCancel={(msg) => {
-                  useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
-                  composerRef.current?.setText(msg.prompt);
-                }}
-              />
-            )}
             {(contextUsage || compacting) && (
               <ContextBar usage={contextUsage} compacting={compacting} />
             )}

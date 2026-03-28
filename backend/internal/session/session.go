@@ -165,6 +165,60 @@ func (s *Session) GitVersion() int64 {
 	return s.gitVersion
 }
 
+// SendMessage injects a user message mid-turn via the CLI's SendMessage API.
+// The CLI processes it at the next safe boundary (between tool calls) and folds
+// the response into the current turn's ResultEvent.
+func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) error {
+	s.mu.Lock()
+	if s.state != StateRunning {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: cannot send message in state %s", s.ID, string(s.state))
+	}
+	cli := s.cliSess
+	if cli == nil {
+		s.mu.Unlock()
+		return ErrNotLive
+	}
+	seq := s.seqInTurn
+	turnIdx := s.turnIndex
+	s.seqInTurn++
+	s.mu.Unlock()
+
+	// Send to CLI.
+	if len(attachments) > 0 {
+		blocks, err := toContentBlocks(attachments)
+		if err != nil {
+			return fmt.Errorf("parse attachments: %w", err)
+		}
+		if err := cli.SendMessageWithContent(prompt, blocks...); err != nil {
+			return err
+		}
+	} else {
+		if err := cli.SendMessage(prompt); err != nil {
+			return err
+		}
+	}
+
+	// Persist + broadcast as a user_message event within the current turn.
+	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt}
+	if data, err := json.Marshal(wireEvent); err == nil {
+		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+			SessionID: s.ID,
+			TurnIndex: int64(turnIdx),
+			Seq:       int64(seq),
+			Type:      "user_message",
+			Data:      string(data),
+		}); err != nil {
+			slog.Error("persist user_message event failed", "session_id", s.ID, "error", err)
+		}
+	}
+	s.broadcast("session.event", map[string]any{
+		"sessionId": s.ID,
+		"event":     wireEvent,
+	})
+	return nil
+}
+
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
 // The caller's ctx is NOT used — all DB writes and CLI operations use background
 // contexts so they complete even if the triggering WS connection disconnects.
@@ -223,6 +277,13 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	s.mu.Unlock()
 
 	s.broadcastState(StateRunning)
+
+	// Notify frontend to create the turn entry. Essential for backend-initiated
+	// turns (queue drain) where the frontend didn't call submitQuery locally.
+	s.broadcast("session.turn-started", map[string]any{
+		"sessionId": s.ID,
+		"prompt":    prompt,
+	})
 
 	if len(attachments) == 0 {
 		if err := cli.Query(prompt); err != nil {
@@ -627,16 +688,19 @@ func (s *Session) SetAutoApprove(enabled bool) {
 
 // Interrupt stops the current generation without killing the session.
 // The event loop will receive a ResultEvent and transition back to idle.
+// Any queued messages are cleared — the ResultEvent drain will find an empty queue.
 func (s *Session) Interrupt() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.state != StateRunning {
+		s.mu.Unlock()
 		return fmt.Errorf("session is %s, not %s", string(s.state), string(StateRunning))
 	}
 	if s.cliSess == nil {
+		s.mu.Unlock()
 		return ErrNotLive
 	}
 	s.cliSess.Interrupt()
+	s.mu.Unlock()
 	return nil
 }
 

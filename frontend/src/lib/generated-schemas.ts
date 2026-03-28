@@ -104,6 +104,11 @@ export const WireContextManagementEventSchema = z.object({
   raw: z.unknown(),
 });
 
+export const WireUserMessageEventSchema = z.object({
+  type: z.literal("user_message"),
+  content: z.string(),
+});
+
 export const WireQuestionOptionSchema = z.object({
   label: z.string(),
   description: z.string().optional(),
@@ -494,4 +499,5 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireCompactStatusEventSchema,
   WireCompactBoundaryEventSchema,
   WireContextManagementEventSchema,
+  WireUserMessageEventSchema,
 ]);

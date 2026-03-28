@@ -150,6 +150,16 @@ func (s *Session) QueryWithContent(prompt string, _ ...claudecli.ContentBlock) e
 	return s.Query(prompt)
 }
 
+func (s *Session) SendMessage(prompt string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return nil
+}
+
+func (s *Session) SendMessageWithContent(prompt string, _ ...claudecli.ContentBlock) error {
+	return s.SendMessage(prompt)
+}
+
 func (s *Session) SetPermissionMode(mode claudecli.PermissionMode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

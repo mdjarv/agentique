@@ -38,8 +38,12 @@ interface CompactSegment {
   kind: "compact";
   event: ChatEvent;
 }
+interface UserMessageSegment {
+  kind: "user_message";
+  content: string;
+}
 
-type Segment = ActivitySegment | TextSegment | ErrorSegment | CompactSegment;
+type Segment = ActivitySegment | TextSegment | ErrorSegment | CompactSegment | UserMessageSegment;
 type SegmentKind = Segment["kind"];
 
 function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
@@ -56,6 +60,8 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
       return "result";
     case "compact_boundary":
       return "compact";
+    case "user_message":
+      return "user_message";
     default:
       return "skip";
   }
@@ -116,6 +122,9 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
         case "compact":
           segments.push({ kind: "compact", event });
           break;
+        case "user_message":
+          segments.push({ kind: "user_message", content: event.content ?? "" });
+          break;
       }
     }
   }
@@ -136,6 +145,8 @@ function segmentKey(seg: Segment, i: number): string {
       return `text-${i}`;
     case "compact":
       return seg.event.id ?? `compact-${i}`;
+    case "user_message":
+      return `user-msg-${i}`;
   }
 }
 
@@ -534,6 +545,8 @@ export const TurnBlock = memo(function TurnBlock({
                       postTokens={postCompactTokens}
                     />
                   );
+                case "user_message":
+                  return <UserMessage key={segmentKey(seg, i)} prompt={seg.content} />;
               }
             })}
 

@@ -179,6 +179,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionUncommittedFiles(msg)
 	case "session.uncommitted-diff":
 		c.handleSessionUncommittedDiff(msg)
+	case "session.enqueue":
+		c.handleSessionEnqueue(msg)
 	case "project.git-status":
 		c.handleProjectGitStatus(msg)
 	case "project.fetch":

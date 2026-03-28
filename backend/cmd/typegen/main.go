@@ -292,6 +292,7 @@ func main() {
 	compactStatusEvt := g.register(session.WireCompactStatusEvent{}, "WireCompactStatusEvent")
 	compactBoundaryEvt := g.register(session.WireCompactBoundaryEvent{}, "WireCompactBoundaryEvent")
 	ctxMgmtEvt := g.register(session.WireContextManagementEvent{}, "WireContextManagementEvent")
+	userMsgEvt := g.register(session.WireUserMessageEvent{}, "WireUserMessageEvent")
 
 	g.addUnion("WireEvent", "type", []unionVariant{
 		{"text", textEvt},
@@ -305,6 +306,7 @@ func main() {
 		{"compact_status", compactStatusEvt},
 		{"compact_boundary", compactBoundaryEvt},
 		{"context_management", ctxMgmtEvt},
+		{"user_message", userMsgEvt},
 	})
 
 	// ── Pending state types (referenced by SessionInfo) ──

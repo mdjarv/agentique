@@ -205,6 +205,15 @@ func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	})
 }
 
+// --- Message injection handler ---
+
+func (c *conn) handleSessionEnqueue(msg ClientMessage) {
+	// Reuse SessionQueryPayload — same shape (sessionId, prompt, attachments).
+	handleRequest(c, msg, func(p SessionQueryPayload) (struct{}, error) {
+		return struct{}{}, c.svc.EnqueueMessage(c.ctx, p.SessionID, p.Prompt, p.Attachments)
+	})
+}
+
 // --- Project git handlers ---
 
 func (c *conn) handleProjectGitStatus(msg ClientMessage) {

@@ -316,6 +316,51 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
+// EnqueueMessage sends a prompt as a new turn if idle, or injects mid-turn if running.
+// Uses SendMessage for mid-turn injection so the CLI picks it up at the next safe
+// boundary (between tool calls) without waiting for the current turn to complete.
+// Performs lazy resume for dead/stopped sessions (same as QuerySession).
+func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) error {
+	sess := s.mgr.Get(sessionID)
+
+	// CLI process dead — evict and resume with a fresh connection.
+	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
+		slog.Debug("evicting dead session for resume", "session_id", sessionID, "state", string(sess.State()))
+		s.mgr.Evict(sessionID)
+		sess = nil
+	}
+
+	if sess == nil {
+		var err error
+		sess, err = s.resumeSession(ctx, sessionID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrNotFound, err)
+		}
+	}
+
+	// If running, inject mid-turn via SendMessage.
+	if sess.State() == StateRunning {
+		if err := sess.SendMessage(prompt, attachments); err != nil {
+			return fmt.Errorf("send message failed: %w", err)
+		}
+		return nil
+	}
+
+	// Not running — send as a new turn (same path as QuerySession).
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
+	if err := sess.Query(ctx, prompt, attachments); err != nil {
+		return fmt.Errorf("query failed: %w", err)
+	}
+
+	_ = s.queries.UpdateSessionLastQueryAt(ctx, sessionID)
+
+	if sess.QueryCount() == 1 {
+		go s.autoName(sessionID, sess.ProjectID, prompt)
+	}
+
+	return nil
+}
+
 // ResumeSession reconnects a stopped/done/failed session without sending a query.
 // If the session is already live and healthy, returns its current info (idempotent).
 func (s *Service) ResumeSession(ctx context.Context, sessionID string) (SessionInfo, error) {

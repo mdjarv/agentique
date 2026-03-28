@@ -12,6 +12,8 @@ type CLISession interface {
 	Events() <-chan claudecli.Event
 	Query(prompt string) error
 	QueryWithContent(prompt string, blocks ...claudecli.ContentBlock) error
+	SendMessage(prompt string) error
+	SendMessageWithContent(prompt string, blocks ...claudecli.ContentBlock) error
 	SetPermissionMode(mode claudecli.PermissionMode) error
 	SetModel(model claudecli.Model) error
 	Interrupt() error

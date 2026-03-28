@@ -26,7 +26,8 @@ export interface ChatEvent {
     | "stream"
     | "compact_status"
     | "compact_boundary"
-    | "context_management";
+    | "context_management"
+    | "user_message";
   content?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
@@ -103,12 +104,6 @@ export interface RateLimitInfo {
   resetsAt: number | null;
 }
 
-export interface QueuedMessage {
-  id: string;
-  prompt: string;
-  attachments?: Attachment[];
-}
-
 export interface TodoItem {
   content: string;
   activeForm?: string;
@@ -129,7 +124,6 @@ export interface SessionData {
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
   autoApprove: boolean;
-  queuedMessages: QueuedMessage[];
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
   compacting: boolean;
@@ -143,7 +137,6 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   pendingQuestion: null,
   planMode: meta.permissionMode === "plan",
   autoApprove: meta.autoApprove ?? false,
-  queuedMessages: [],
   todos: null,
   contextUsage: null,
   compacting: false,
@@ -291,12 +284,6 @@ export interface ChatState {
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
-
-  // Message queue
-  enqueueMessage: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
-  dequeueMessage: (sessionId: string) => void;
-  cancelQueuedMessage: (sessionId: string, messageId: string) => void;
-  clearQueue: (sessionId: string) => void;
 
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
@@ -479,40 +466,6 @@ export const useChatStore = create<ChatState>((set) => ({
         historyLoading: nextLoading,
         ...updateSession(s, sessionId, { turns, todos, contextUsage }),
       };
-    }),
-
-  enqueueMessage: (sessionId, prompt, attachments) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: [...session.queuedMessages, { id: uuid(), prompt, attachments }],
-      });
-    }),
-
-  dequeueMessage: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.queuedMessages.length === 0) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: session.queuedMessages.slice(1),
-      });
-    }),
-
-  cancelQueuedMessage: (sessionId, messageId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: session.queuedMessages.filter((m) => m.id !== messageId),
-      });
-    }),
-
-  clearQueue: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.queuedMessages.length === 0) return s;
-      return updateSession(s, sessionId, { queuedMessages: [] });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>

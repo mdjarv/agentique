@@ -102,6 +102,11 @@ export interface WireContextManagementEvent {
   raw: unknown;
 }
 
+export interface WireUserMessageEvent {
+  type: "user_message";
+  content: string;
+}
+
 export interface WireQuestionOption {
   label: string;
   description?: string;
@@ -491,4 +496,5 @@ export type WireEvent =
   | WireStreamEvent
   | WireCompactStatusEvent
   | WireCompactBoundaryEvent
-  | WireContextManagementEvent;
+  | WireContextManagementEvent
+  | WireUserMessageEvent;
