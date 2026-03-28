@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, Plus } from "lucide-react";
-import { useCallback, useState } from "react";
+import { FolderOpen, FolderPlus, Plus, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
 import { Button } from "~/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useIsMobile";
-import { createProject } from "~/lib/api";
+import { type PathValidation, createProject, validatePath } from "~/lib/api";
 import { useAppStore } from "~/stores/app-store";
 
 /** Extract the last directory component from a path (cross-platform). */
@@ -32,6 +32,8 @@ export function NewProjectDialog() {
   const [nameManuallySet, setNameManuallySet] = useState(false);
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
+  const [validation, setValidation] = useState<PathValidation | null>(null);
+  const validationController = useRef<AbortController | null>(null);
   const addProject = useAppStore((s) => s.addProject);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -47,6 +49,34 @@ export function NewProjectDialog() {
     },
     [nameManuallySet],
   );
+
+  // Debounced path validation
+  useEffect(() => {
+    setValidation(null);
+
+    const trimmed = path.trim();
+    if (!trimmed || !trimmed.startsWith("/")) return;
+
+    const timer = setTimeout(() => {
+      validationController.current?.abort();
+      const controller = new AbortController();
+      validationController.current = controller;
+
+      validatePath(trimmed)
+        .then((result) => {
+          if (!controller.signal.aborted) {
+            setValidation(result);
+          }
+        })
+        .catch(() => {
+          // Ignore abort/network errors
+        });
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [path]);
 
   const handleNameChange = (newName: string) => {
     setName(newName);
@@ -68,7 +98,7 @@ export function NewProjectDialog() {
         params: { projectSlug: project.slug },
       });
     } catch {
-      setError("Failed to create project. Check that the path exists.");
+      setError("Failed to create project.");
     }
   };
 
@@ -79,11 +109,14 @@ export function NewProjectDialog() {
       setPath("");
       setNameManuallySet(false);
       setError("");
+      setValidation(null);
       setShowBrowser(!isMobile);
     }
   };
 
-  const canCreate = path.trim() !== "";
+  const willCreate = validation !== null && !validation.exists && validation.parentExists;
+  const parentMissing = validation !== null && !validation.exists && !validation.parentExists;
+  const canCreate = path.trim() !== "" && !parentMissing;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -130,6 +163,18 @@ export function NewProjectDialog() {
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
+            {willCreate && (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <FolderPlus className="h-3.5 w-3.5 shrink-0" />
+                Directory will be created and initialized with git
+              </p>
+            )}
+            {parentMissing && (
+              <p className="flex items-center gap-1.5 text-sm text-destructive">
+                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                Parent directory does not exist
+              </p>
+            )}
           </div>
           {showBrowser && <DirectoryBrowser onSelect={handlePathChange} />}
           <div className="space-y-2">

@@ -64,6 +64,18 @@ export interface BrowseResult {
   entries: DirectoryEntry[];
 }
 
+export interface PathValidation {
+  exists: boolean;
+  isDirectory: boolean;
+  parentExists: boolean;
+}
+
+export async function validatePath(path: string): Promise<PathValidation> {
+  const res = await fetch(`${BASE}/filesystem/validate?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error("Failed to validate path");
+  return res.json();
+}
+
 export async function browseDirectory(path?: string): Promise<BrowseResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
   const res = await fetch(`${BASE}/filesystem/browse${params}`);
