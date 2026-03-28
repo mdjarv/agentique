@@ -13,6 +13,7 @@ import { createTag, deleteTag, updateTag } from "~/lib/project-actions";
 import { TAG_COLORS, getTagColor } from "~/lib/tag-colors";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
+import { TagEditForm } from "./TagEditForm";
 
 interface TagManagerDropdownProps {
   open: boolean;
@@ -24,22 +25,26 @@ export function TagManagerDropdown({ open, onOpenChange, children }: TagManagerD
   const tags = useAppStore((s) => s.tags);
   const ws = useWebSocket();
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
-  const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState<string>(TAG_COLORS[0].id);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [creating, setCreating] = useState(false);
 
-  const handleCreate = useCallback(async () => {
-    const name = newTagName.trim();
-    if (!name) return;
-    try {
-      const tag = await createTag(ws, name, newTagColor);
-      useAppStore.getState().addTag(tag);
-      setNewTagName("");
-      setShowNewForm(false);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to create tag"));
-    }
-  }, [ws, newTagName, newTagColor]);
+  const handleCreate = useCallback(
+    async (name: string, color: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setCreating(true);
+      try {
+        const tag = await createTag(ws, trimmed, color);
+        useAppStore.getState().addTag(tag);
+        setShowNewForm(false);
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to create tag"));
+      } finally {
+        setCreating(false);
+      }
+    },
+    [ws],
+  );
 
   const handleUpdate = useCallback(
     async (tag: Tag, name: string, color: string) => {
@@ -114,14 +119,11 @@ export function TagManagerDropdown({ open, onOpenChange, children }: TagManagerD
         {tags.length > 0 && <DropdownMenuSeparator />}
         {showNewForm ? (
           <TagEditForm
-            initialName={newTagName}
-            initialColor={newTagColor}
-            onSave={(name, color) => {
-              setNewTagName(name);
-              setNewTagColor(color);
-              handleCreate();
-            }}
+            initialName=""
+            initialColor={TAG_COLORS[0].id}
+            onSave={(name, color) => handleCreate(name, color)}
             onCancel={() => setShowNewForm(false)}
+            disabled={creating}
             autoFocus
           />
         ) : (
@@ -136,72 +138,5 @@ export function TagManagerDropdown({ open, onOpenChange, children }: TagManagerD
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function TagEditForm({
-  initialName,
-  initialColor,
-  onSave,
-  onCancel,
-  autoFocus,
-}: {
-  initialName: string;
-  initialColor: string;
-  onSave: (name: string, color: string) => void;
-  onCancel: () => void;
-  autoFocus?: boolean;
-}) {
-  const [name, setName] = useState(initialName);
-  const [color, setColor] = useState(initialColor);
-
-  return (
-    <div className="px-2 py-2 space-y-2">
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && name.trim()) onSave(name.trim(), color);
-          if (e.key === "Escape") onCancel();
-        }}
-        placeholder="Tag name"
-        className="w-full text-sm bg-input/50 border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring"
-        autoFocus={autoFocus}
-      />
-      <div className="flex gap-1">
-        {TAG_COLORS.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => setColor(c.id)}
-            className="size-5 rounded-full transition-all cursor-pointer"
-            style={{
-              backgroundColor: c.bg,
-              outline: color === c.id ? `2px solid ${c.bg}` : "none",
-              outlineOffset: "2px",
-            }}
-            title={c.label}
-          />
-        ))}
-      </div>
-      <div className="flex gap-1.5 justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-xs px-2 py-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() => name.trim() && onSave(name.trim(), color)}
-          disabled={!name.trim()}
-          className="text-xs px-2 py-0.5 bg-primary text-primary-foreground rounded disabled:opacity-50 cursor-pointer"
-        >
-          Save
-        </button>
-      </div>
-    </div>
   );
 }

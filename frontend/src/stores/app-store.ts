@@ -46,7 +46,11 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   setTags: (tags) => set({ tags }),
-  addTag: (tag) => set((state) => ({ tags: [...state.tags, tag] })),
+  addTag: (tag) =>
+    set((state) => {
+      if (state.tags.some((t) => t.id === tag.id)) return state;
+      return { tags: [...state.tags, tag] };
+    }),
   updateTag: (tag) =>
     set((state) => ({ tags: state.tags.map((t) => (t.id === tag.id ? tag : t)) })),
   removeTag: (id) =>
