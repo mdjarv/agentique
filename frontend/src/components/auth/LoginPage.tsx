@@ -1,4 +1,5 @@
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
+import { Cpu } from "lucide-react";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -47,7 +48,15 @@ function SetupForm() {
   return (
     <div className="space-y-6">
       <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Set up Agentique</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Set up{" "}
+          <span
+            className="bg-gradient-to-r from-primary to-agent bg-clip-text text-transparent"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            Agentique
+          </span>
+        </h1>
         <p className="text-sm text-muted-foreground">Create a passkey to secure your instance.</p>
       </div>
       <form onSubmit={handleRegister} className="space-y-4">
@@ -92,7 +101,12 @@ function LoginForm() {
   return (
     <div className="space-y-6">
       <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Agentique</h1>
+        <h1
+          className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-primary to-agent bg-clip-text text-transparent"
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+        >
+          Agentique
+        </h1>
         <p className="text-sm text-muted-foreground">Sign in with your passkey.</p>
       </div>
       <Button onClick={handleLogin} className="w-full" disabled={loading}>
@@ -106,7 +120,12 @@ function LoginForm() {
 function CenterLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm px-4">{children}</div>
+      <div className="w-full max-w-sm px-4">
+        <div className="flex justify-center mb-6">
+          <Cpu className="size-10 text-primary" />
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

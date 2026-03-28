@@ -17,11 +17,11 @@ dev-tls:
 
 # Go backend
 dev-backend:
-    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth --db agentique.db
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth
 
 # Go backend with TLS
 dev-backend-tls:
-    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --db agentique.db \
+    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 \
         --tls-cert ../certs/server.crt --tls-key ../certs/server.key \
         --rp-id {{tls-host}} --rp-origin https://{{tls-host}}:9200
 
@@ -103,14 +103,9 @@ release: frontend-build
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
-    TARGETS=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64")
-    for target in "${TARGETS[@]}"; do
-        IFS='/' read -r os arch <<< "$target"
-        out="dist/agentique-${os}-${arch}"
-        echo "Building ${out}..."
-        cd backend && GOOS=$os GOARCH=$arch go build -ldflags "$LDFLAGS" -o "../${out}" ./cmd/agentique && cd ..
-    done
-    echo "Release binaries in dist/:"
+    echo "Building dist/agentique-linux-amd64..."
+    cd backend && GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique && cd ..
+    echo "Release binary in dist/:"
     ls -lh dist/
 
 # Clean build artifacts

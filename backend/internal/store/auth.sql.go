@@ -219,6 +219,22 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 	return i, err
 }
 
+const getUserByDisplayName = `-- name: GetUserByDisplayName :one
+SELECT id, display_name, is_admin, created_at FROM users WHERE display_name = ? COLLATE NOCASE
+`
+
+func (q *Queries) GetUserByDisplayName(ctx context.Context, displayName string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByDisplayName, displayName)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.IsAdmin,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listCredentialsByUser = `-- name: ListCredentialsByUser :many
 SELECT id, user_id, public_key, attestation_type, aaguid, sign_count, transport, created_at, backup_eligible, backup_state FROM webauthn_credentials WHERE user_id = ?
 `

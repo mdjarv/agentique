@@ -173,7 +173,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", addr, "tls", tlsEnabled, "auth", authStatus)
+		host, port, _ := net.SplitHostPort(addr)
+		if host == "" || host == "0.0.0.0" {
+			host = "localhost"
+		}
+		slog.Info("server listening", "url", fmt.Sprintf("%s://%s:%s", scheme, host, port), "tls", tlsEnabled, "auth", authStatus)
 		var err error
 		if tlsEnabled {
 			err = httpServer.ListenAndServeTLS(tlsCert, tlsKey)

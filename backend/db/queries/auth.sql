@@ -7,6 +7,9 @@ INSERT INTO users (id, display_name, is_admin) VALUES (?, ?, ?) RETURNING *;
 -- name: GetUser :one
 SELECT * FROM users WHERE id = ?;
 
+-- name: GetUserByDisplayName :one
+SELECT * FROM users WHERE display_name = ? COLLATE NOCASE;
+
 -- name: ListUsers :many
 SELECT * FROM users ORDER BY created_at;
 

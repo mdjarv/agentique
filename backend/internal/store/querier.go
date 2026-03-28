@@ -29,6 +29,7 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
 	GetUser(ctx context.Context, id string) (User, error)
+	GetUserByDisplayName(ctx context.Context, displayName string) (User, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	ListAllSessions(ctx context.Context) ([]Session, error)
 	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
