@@ -57,7 +57,8 @@ const ScrollAnchor = memo(function ScrollAnchor({
   following: boolean;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const isStreaming = useStreamingStore((s) => sessionId in s.texts);
+  const streamingLen = useStreamingStore((s) => s.texts[sessionId]?.length ?? 0);
+  const isStreaming = streamingLen > 0;
   const prevStreamingRef = useRef(isStreaming);
   const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
   const rafRef = useRef<number>(0);
@@ -74,7 +75,7 @@ const ScrollAnchor = memo(function ScrollAnchor({
     rafRef.current = requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior });
     });
-  }, [turns, isStreaming, following]);
+  }, [turns, streamingLen, following]);
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
