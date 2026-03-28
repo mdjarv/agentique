@@ -27,8 +27,11 @@ export interface ChatEvent {
     | "compact_status"
     | "compact_boundary"
     | "context_management"
-    | "user_message";
+    | "user_message"
+    | "agent_message";
   content?: string;
+  senderSessionId?: string;
+  senderName?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
   toolName?: string;

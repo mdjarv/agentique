@@ -1,6 +1,7 @@
 import { Bot, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
@@ -43,8 +44,20 @@ interface UserMessageSegment {
   content: string;
   attachments?: Attachment[];
 }
+interface AgentMessageSegment {
+  kind: "agent_message";
+  content: string;
+  senderName: string;
+  senderSessionId: string;
+}
 
-type Segment = ActivitySegment | TextSegment | ErrorSegment | CompactSegment | UserMessageSegment;
+type Segment =
+  | ActivitySegment
+  | TextSegment
+  | ErrorSegment
+  | CompactSegment
+  | UserMessageSegment
+  | AgentMessageSegment;
 type SegmentKind = Segment["kind"];
 
 function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
@@ -63,6 +76,8 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
       return "compact";
     case "user_message":
       return "user_message";
+    case "agent_message":
+      return "agent_message";
     default:
       return "skip";
   }
@@ -130,6 +145,14 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
             attachments: event.attachments,
           });
           break;
+        case "agent_message":
+          segments.push({
+            kind: "agent_message",
+            content: event.content ?? "",
+            senderName: event.senderName ?? "",
+            senderSessionId: event.senderSessionId ?? "",
+          });
+          break;
       }
     }
   }
@@ -152,6 +175,8 @@ function segmentKey(seg: Segment, i: number): string {
       return seg.event.id ?? `compact-${i}`;
     case "user_message":
       return `user-msg-${i}`;
+    case "agent_message":
+      return `agent-msg-${i}`;
   }
 }
 
@@ -556,6 +581,15 @@ export const TurnBlock = memo(function TurnBlock({
                       key={segmentKey(seg, i)}
                       prompt={seg.content}
                       attachments={seg.attachments}
+                    />
+                  );
+                case "agent_message":
+                  return (
+                    <AgentMessage
+                      key={segmentKey(seg, i)}
+                      senderName={seg.senderName}
+                      senderSessionId={seg.senderSessionId}
+                      content={seg.content}
                     />
                   );
               }
