@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
-import { useState } from "react";
+import { FolderOpen, Plus } from "lucide-react";
+import { useCallback, useState } from "react";
+import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -34,14 +35,18 @@ export function NewProjectDialog() {
   const addProject = useAppStore((s) => s.addProject);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [showBrowser, setShowBrowser] = useState(!isMobile);
 
-  const handlePathChange = (newPath: string) => {
-    setPath(newPath);
-    setError("");
-    if (!nameManuallySet) {
-      setName(dirName(newPath));
-    }
-  };
+  const handlePathChange = useCallback(
+    (newPath: string) => {
+      setPath(newPath);
+      setError("");
+      if (!nameManuallySet) {
+        setName(dirName(newPath));
+      }
+    },
+    [nameManuallySet],
+  );
 
   const handleNameChange = (newName: string) => {
     setName(newName);
@@ -74,6 +79,7 @@ export function NewProjectDialog() {
       setPath("");
       setNameManuallySet(false);
       setError("");
+      setShowBrowser(!isMobile);
     }
   };
 
@@ -99,20 +105,33 @@ export function NewProjectDialog() {
           <TooltipContent>New project</TooltipContent>
         </Tooltip>
       )}
-      <DialogContent>
+      <DialogContent className={showBrowser ? "sm:max-w-2xl" : undefined}>
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="project-path">Directory</Label>
-            <Input
-              id="project-path"
-              value={path}
-              onChange={(e) => handlePathChange(e.target.value)}
-              placeholder="/home/user/my-project"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="project-path"
+                value={path}
+                onChange={(e) => handlePathChange(e.target.value)}
+                placeholder="/home/user/my-project"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setShowBrowser(!showBrowser)}
+                title={showBrowser ? "Hide browser" : "Browse"}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
+          {showBrowser && <DirectoryBrowser onSelect={handlePathChange} />}
           <div className="space-y-2">
             <Label htmlFor="project-name">Name</Label>
             <Input

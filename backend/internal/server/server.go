@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/allbin/agentique/backend/internal/auth"
+	"github.com/allbin/agentique/backend/internal/filesystem"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -72,6 +73,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("PATCH /api/projects/{id}", ph.HandleUpdate)
 	mux.HandleFunc("DELETE /api/projects/{id}", ph.HandleDelete)
 	mux.HandleFunc("GET /api/preset-definitions", ph.HandleListPresetDefinitions)
+
+	fsh := &filesystem.Handler{}
+	mux.HandleFunc("GET /api/filesystem/browse", fsh.HandleBrowse)
 
 	subscribe := func() (<-chan session.SSEEvent, func()) {
 		ch := make(chan session.SSEEvent, 64)
