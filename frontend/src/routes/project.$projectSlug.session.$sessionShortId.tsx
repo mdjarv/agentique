@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChatPanel } from "~/components/chat/ChatPanel";
+import { PageHeader } from "~/components/layout/PageHeader";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -23,24 +24,33 @@ function SessionPage() {
 
   if (!projectsLoaded || (project && !sessionListLoaded)) {
     return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Loading...</p>
+      <div className="flex flex-col h-full">
+        <PageHeader />
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <p className="text-sm">Loading...</p>
+        </div>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Project not found</p>
+      <div className="flex flex-col h-full">
+        <PageHeader />
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <p className="text-sm">Project not found</p>
+        </div>
       </div>
     );
   }
 
   if (!sessionId) {
     return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Session not found</p>
+      <div className="flex flex-col h-full">
+        <PageHeader />
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <p className="text-sm">Session not found</p>
+        </div>
       </div>
     );
   }

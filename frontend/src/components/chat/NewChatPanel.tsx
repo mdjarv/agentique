@@ -1,10 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { GitBranch, Loader2 } from "lucide-react";
+import { GitBranch, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { DraftHeader } from "~/components/chat/DraftHeader";
 import { type EffortLevel, MessageComposer } from "~/components/chat/MessageComposer";
 import { UserMessage } from "~/components/chat/UserMessage";
+import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
+import { PageHeader } from "~/components/layout/PageHeader";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { BehaviorPresets } from "~/lib/generated-types";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
@@ -37,6 +39,7 @@ interface NewChatPanelProps {
 export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const gitStatus = useAppStore((s) => s.projectGitStatus[projectId]);
   const [defaults] = useState(() => useUIStore.getState().sessionDefaults);
@@ -88,7 +91,15 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <DraftHeader />
+      <PageHeader>
+        <Plus className="h-4 w-4 text-muted-foreground" />
+        <span className="font-medium text-muted-foreground">New session</span>
+        {isMobile && (
+          <div className="ml-auto">
+            <ConnectionIndicator />
+          </div>
+        )}
+      </PageHeader>
       <div className="flex flex-1 overflow-y-auto">
         {pendingPrompt ? (
           <div className="p-4 space-y-4 min-w-0 w-full">
