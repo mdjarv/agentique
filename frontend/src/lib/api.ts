@@ -51,3 +51,22 @@ export async function healthCheck(): Promise<{ status: string }> {
   if (!res.ok) throw new Error("Health check failed");
   return res.json();
 }
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  isGitRepo: boolean;
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string;
+  entries: DirectoryEntry[];
+}
+
+export async function browseDirectory(path?: string): Promise<BrowseResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : "";
+  const res = await fetch(`${BASE}/filesystem/browse${params}`);
+  if (!res.ok) throw new Error("Failed to browse directory");
+  return res.json();
+}
