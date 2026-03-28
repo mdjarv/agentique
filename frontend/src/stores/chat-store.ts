@@ -49,6 +49,7 @@ export interface ChatEvent {
   retryAfterSecs?: number;
   trigger?: string;
   preTokens?: number;
+  attachments?: Attachment[];
 }
 
 export interface Attachment {

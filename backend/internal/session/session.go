@@ -200,7 +200,7 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 	}
 
 	// Persist + broadcast as a user_message event within the current turn.
-	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt}
+	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, Attachments: attachments}
 	if data, err := json.Marshal(wireEvent); err == nil {
 		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 			SessionID: s.ID,
@@ -280,10 +280,14 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 
 	// Notify frontend to create the turn entry. Essential for backend-initiated
 	// turns (queue drain) where the frontend didn't call submitQuery locally.
-	s.broadcast("session.turn-started", map[string]any{
+	turnPayload := map[string]any{
 		"sessionId": s.ID,
 		"prompt":    prompt,
-	})
+	}
+	if len(attachments) > 0 {
+		turnPayload["attachments"] = attachments
+	}
+	s.broadcast("session.turn-started", turnPayload)
 
 	if len(attachments) == 0 {
 		if err := cli.Query(prompt); err != nil {

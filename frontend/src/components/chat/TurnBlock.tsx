@@ -13,7 +13,7 @@ import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import type { ChatEvent, Turn } from "~/stores/chat-store";
+import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 // --- Segment types ---
@@ -41,6 +41,7 @@ interface CompactSegment {
 interface UserMessageSegment {
   kind: "user_message";
   content: string;
+  attachments?: Attachment[];
 }
 
 type Segment = ActivitySegment | TextSegment | ErrorSegment | CompactSegment | UserMessageSegment;
@@ -123,7 +124,7 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
           segments.push({ kind: "compact", event });
           break;
         case "user_message":
-          segments.push({ kind: "user_message", content: event.content ?? "" });
+          segments.push({ kind: "user_message", content: event.content ?? "", attachments: event.attachments });
           break;
       }
     }
@@ -546,7 +547,7 @@ export const TurnBlock = memo(function TurnBlock({
                     />
                   );
                 case "user_message":
-                  return <UserMessage key={segmentKey(seg, i)} prompt={seg.content} />;
+                  return <UserMessage key={segmentKey(seg, i)} prompt={seg.content} attachments={seg.attachments} />;
               }
             })}
 

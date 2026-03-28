@@ -107,6 +107,7 @@ export const WireContextManagementEventSchema = z.object({
 export const WireUserMessageEventSchema = z.object({
   type: z.literal("user_message"),
   content: z.string(),
+  attachments: z.array(QueryAttachmentSchema).optional(),
 });
 
 export const WireQuestionOptionSchema = z.object({

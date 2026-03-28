@@ -7,7 +7,7 @@ import type { ListSessionsResult, ProjectGitStatus, Tag } from "~/lib/generated-
 import { getProjectGitStatus, listTags } from "~/lib/project-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
-import { sessionShortId } from "~/lib/utils";
+import { sessionShortId, uuid } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -300,7 +300,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
       ) {
         return; // Already created optimistically
       }
-      useChatStore.getState().submitQuery(sid, payload.prompt);
+      const attachments = Array.isArray(payload.attachments)
+        ? payload.attachments.map((a: any) => ({ id: uuid(), name: a.name, mimeType: a.mimeType, dataUrl: a.dataUrl }))
+        : undefined;
+      useChatStore.getState().submitQuery(sid, payload.prompt, attachments);
     });
 
     const unsubProjectGit = ws.subscribe("project.git-status", (payload: ProjectGitStatus) => {
