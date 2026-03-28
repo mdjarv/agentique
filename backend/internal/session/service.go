@@ -82,6 +82,7 @@ type SessionInfo struct {
 	BehaviorPresets    BehaviorPresets      `json:"behaviorPresets"`
 	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
 	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
+	QueuedMessages     []QueuedMessage      `json:"queuedMessages,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	UpdatedAt       string  `json:"updatedAt"`
 	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
@@ -316,6 +317,72 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
+// EnqueueMessage sends a prompt immediately if idle, or queues it if running.
+// Performs lazy resume for dead/stopped sessions (same as QuerySession).
+func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) error {
+	sess := s.mgr.Get(sessionID)
+
+	// CLI process dead — evict and resume with a fresh connection.
+	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
+		slog.Debug("evicting dead session for resume", "session_id", sessionID, "state", string(sess.State()))
+		s.mgr.Evict(sessionID)
+		sess = nil
+	}
+
+	if sess == nil {
+		var err error
+		sess, err = s.resumeSession(ctx, sessionID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrNotFound, err)
+		}
+	}
+
+	// If running, queue it — the event loop will drain on ResultEvent.
+	if sess.State() == StateRunning {
+		sess.Enqueue(QueuedMessage{
+			ID:          uuid.New().String(),
+			Prompt:      prompt,
+			Attachments: attachments,
+		})
+		return nil
+	}
+
+	// Not running — send immediately (same path as QuerySession).
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
+	if err := sess.Query(ctx, prompt, attachments); err != nil {
+		return fmt.Errorf("query failed: %w", err)
+	}
+
+	_ = s.queries.UpdateSessionLastQueryAt(ctx, sessionID)
+
+	if sess.QueryCount() == 1 {
+		go s.autoName(sessionID, sess.ProjectID, prompt)
+	}
+
+	return nil
+}
+
+// CancelQueuedMessage removes a specific message from the session's queue.
+func (s *Service) CancelQueuedMessage(sessionID, messageID string) error {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return ErrNotFound
+	}
+	if !sess.CancelQueued(messageID) {
+		return fmt.Errorf("queued message %s not found", messageID)
+	}
+	return nil
+}
+
+// ClearSessionQueue removes all messages from the session's queue.
+func (s *Service) ClearSessionQueue(sessionID string) ([]QueuedMessage, error) {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return nil, ErrNotFound
+	}
+	return sess.ClearQueue(), nil
+}
+
 // ResumeSession reconnects a stopped/done/failed session without sending a query.
 // If the session is already live and healthy, returns its current info (idempotent).
 func (s *Service) ResumeSession(ctx context.Context, sessionID string) (SessionInfo, error) {
@@ -474,6 +541,7 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			_, _, _, _, gitOp := live.liveState()
 			info.GitOperation = gitOp
 			info.PendingApproval, info.PendingQuestion = live.PendingState()
+			info.QueuedMessages = live.QueueSnapshot()
 		} else if s.gitSvc != nil {
 			info.GitVersion = s.gitSvc.LastVersion(ss.ID)
 		}

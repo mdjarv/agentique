@@ -64,13 +64,31 @@ func (s *Session) setState(state State) error {
 	s.state = state
 	s.mu.Unlock()
 	s.broadcastState(state)
+	s.persistState(state)
+	return nil
+}
+
+// setStateQuiet transitions and persists but does NOT broadcast.
+// Used by queue drain to avoid a brief idle→running flicker between turns.
+func (s *Session) setStateQuiet(state State) error {
+	s.mu.Lock()
+	if err := validateTransition(s.state, state, s.ID); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.state = state
+	s.mu.Unlock()
+	s.persistState(state)
+	return nil
+}
+
+func (s *Session) persistState(state State) {
 	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(state),
 		ID:    s.ID,
 	}); err != nil {
 		slog.Error("persist session state failed", "session_id", s.ID, "state", state, "error", err)
 	}
-	return nil
 }
 
 // TryLockForGitOp atomically transitions to StateMerging if the session is not running

@@ -182,6 +182,15 @@ type SessionRefreshGitPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionCancelQueuedPayload struct {
+	SessionID string `json:"sessionId"`
+	MessageID string `json:"messageId"`
+}
+
+type SessionClearQueuePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 // --- Project git payloads ---
 
 type ProjectGitStatusPayload struct {
@@ -418,6 +427,22 @@ func (p *SessionUncommittedDiffPayload) Validate() error {
 }
 
 func (p *SessionRefreshGitPayload) Validate() error {
+	if p.SessionID == "" {
+		return errSessionIDRequired
+	}
+	return nil
+}
+
+var errMessageIDRequired = errors.New("sessionId and messageId are required")
+
+func (p *SessionCancelQueuedPayload) Validate() error {
+	if p.SessionID == "" || p.MessageID == "" {
+		return errMessageIDRequired
+	}
+	return nil
+}
+
+func (p *SessionClearQueuePayload) Validate() error {
 	if p.SessionID == "" {
 		return errSessionIDRequired
 	}

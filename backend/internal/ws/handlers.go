@@ -205,6 +205,28 @@ func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	})
 }
 
+// --- Queue handlers ---
+
+func (c *conn) handleSessionEnqueue(msg ClientMessage) {
+	// Reuse SessionQueryPayload — same shape (sessionId, prompt, attachments).
+	handleRequest(c, msg, func(p SessionQueryPayload) (struct{}, error) {
+		return struct{}{}, c.svc.EnqueueMessage(c.ctx, p.SessionID, p.Prompt, p.Attachments)
+	})
+}
+
+func (c *conn) handleSessionCancelQueued(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionCancelQueuedPayload) (struct{}, error) {
+		return struct{}{}, c.svc.CancelQueuedMessage(p.SessionID, p.MessageID)
+	})
+}
+
+func (c *conn) handleSessionClearQueue(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionClearQueuePayload) (struct{}, error) {
+		_, err := c.svc.ClearSessionQueue(p.SessionID)
+		return struct{}{}, err
+	})
+}
+
 // --- Project git handlers ---
 
 func (c *conn) handleProjectGitStatus(msg ClientMessage) {
