@@ -11,16 +11,23 @@ function useFilteredSortedProjects(): { favorites: Project[]; rest: Project[] } 
   const projectTags = useAppStore((s) => s.projectTags);
   const activeTagFilters = useUIStore((s) => s.activeTagFilters);
 
+  const tags = useAppStore((s) => s.tags);
+
   return useMemo(() => {
     let filtered = projects;
 
-    // Filter by tags (OR logic: show projects matching ANY selected tag)
+    // Filter by tags (OR logic: show projects matching ANY selected tag).
+    // Ignore stale filter IDs that reference tags no longer in the store.
     if (activeTagFilters.length > 0) {
-      const filterSet = new Set(activeTagFilters);
-      const projectsWithMatchingTag = new Set(
-        projectTags.filter((pt) => filterSet.has(pt.tag_id)).map((pt) => pt.project_id),
-      );
-      filtered = filtered.filter((p) => projectsWithMatchingTag.has(p.id));
+      const knownTagIds = new Set(tags.map((t) => t.id));
+      const validFilters = activeTagFilters.filter((id) => knownTagIds.has(id));
+      if (validFilters.length > 0) {
+        const filterSet = new Set(validFilters);
+        const projectsWithMatchingTag = new Set(
+          projectTags.filter((pt) => filterSet.has(pt.tag_id)).map((pt) => pt.project_id),
+        );
+        filtered = filtered.filter((p) => projectsWithMatchingTag.has(p.id));
+      }
     }
 
     // Sort: favorites first, then alphabetical by name
@@ -32,7 +39,7 @@ function useFilteredSortedProjects(): { favorites: Project[]; rest: Project[] } 
     const favorites = sorted.filter((p) => p.favorite === 1);
     const rest = sorted.filter((p) => p.favorite !== 1);
     return { favorites, rest };
-  }, [projects, projectTags, activeTagFilters]);
+  }, [projects, projectTags, activeTagFilters, tags]);
 }
 
 export function ProjectList() {

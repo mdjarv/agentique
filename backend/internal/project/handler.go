@@ -2,7 +2,9 @@ package project
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +15,8 @@ import (
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // Handler handles HTTP requests for project CRUD operations.
@@ -61,8 +65,10 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, map[string]string{"error": message})
+func respondError(w http.ResponseWriter, status int, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	slog.Error("http error", "status", status, "error", msg)
+	respondJSON(w, status, map[string]string{"error": msg})
 }
 
 // HandleList returns all projects as a JSON array.
@@ -106,11 +112,11 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := os.MkdirAll(cleanPath, 0o755); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create directory")
+			respondError(w, http.StatusInternalServerError, "failed to create directory: %v", err)
 			return
 		}
 		if out, err := exec.Command("git", "init", cleanPath).CombinedOutput(); err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("git init failed: %s", out))
+			respondError(w, http.StatusInternalServerError, "git init failed: %s", out)
 			return
 		}
 	} else if err != nil {
@@ -124,7 +130,7 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	slug, err := h.uniqueSlug(r, Slugify(req.Name))
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to generate slug")
+		respondError(w, http.StatusInternalServerError, "failed to generate slug: %v", err)
 		return
 	}
 
@@ -136,7 +142,12 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		Slug: slug,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create project")
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
+			respondError(w, http.StatusConflict, "project with this path already exists")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "create project: %v", err)
 		return
 	}
 
@@ -185,7 +196,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			Slug: slug,
 		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to update slug")
+			respondError(w, http.StatusInternalServerError, "update slug: %v", err)
 			return
 		}
 	}
@@ -196,7 +207,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			DefaultBehaviorPresets: req.BehaviorPresets.String(),
 		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to update behavior presets")
+			respondError(w, http.StatusInternalServerError, "update behavior presets: %v", err)
 			return
 		}
 	}
@@ -218,7 +229,7 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Queries.DeleteProject(r.Context(), id); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to delete project")
+		respondError(w, http.StatusInternalServerError, "delete project: %v", err)
 		return
 	}
 
