@@ -26,13 +26,13 @@ export const UserMessage = memo(function UserMessage({ prompt, attachments }: Us
 
   return (
     <>
-      <div className="flex gap-3 flex-row-reverse">
-        <Avatar className="h-8 w-8 shrink-0">
+      <div className="flex gap-3 flex-row-reverse max-md:flex-col max-md:items-end max-md:gap-1">
+        <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
           <AvatarFallback className="bg-primary/20 text-primary">
-            <User className="h-4 w-4" />
+            <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
+        <div className="group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
           {prompt && (
             <button
               type="button"
