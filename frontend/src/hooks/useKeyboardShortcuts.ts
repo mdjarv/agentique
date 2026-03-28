@@ -30,6 +30,16 @@ export function useKeyboardShortcuts(projectSlug: string, projectId: string) {
         return;
       }
 
+      // Ctrl/Cmd+E: open file browser
+      if (mod && e.key === "e") {
+        e.preventDefault();
+        navigate({
+          to: "/project/$projectSlug/files",
+          params: { projectSlug },
+        });
+        return;
+      }
+
       // Ctrl/Cmd+1-9: switch session by index
       if (mod && e.key >= "1" && e.key <= "9") {
         e.preventDefault();

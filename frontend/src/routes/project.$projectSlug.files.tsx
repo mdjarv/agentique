@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useCallback, useState } from "react";
 import { z } from "zod";
 import { FileBreadcrumbs } from "~/components/filebrowser/FileBreadcrumbs";
@@ -18,6 +19,11 @@ export const Route = createFileRoute("/project/$projectSlug/files")({
   validateSearch: searchSchema,
 });
 
+function fileBaseName(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1] ?? path;
+}
+
 function FileBrowserPage() {
   const { projectSlug } = Route.useParams();
   const { path, file } = Route.useSearch();
@@ -25,7 +31,6 @@ function FileBrowserPage() {
   const isMobile = useIsMobile();
   const project = useAppStore((s) => s.projects.find((p) => p.slug === projectSlug));
 
-  // Local hover/select state for non-URL-driven interactions.
   const [selectedFile, setSelectedFile] = useState<string | null>(file ?? null);
 
   const handleNavigateDir = useCallback(
@@ -69,7 +74,24 @@ function FileBrowserPage() {
   if (isMobile && selectedFile) {
     return (
       <div className="flex flex-col h-full">
-        <FilePreview projectId={project.id} filePath={selectedFile} onClose={handleClosePreview} />
+        <PageHeader>
+          <button
+            type="button"
+            onClick={handleClosePreview}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="text-sm">Files</span>
+          </button>
+          <span className="text-muted-foreground mx-1">/</span>
+          <span className="font-semibold truncate text-sm">{fileBaseName(selectedFile)}</span>
+        </PageHeader>
+        <FilePreview
+          projectId={project.id}
+          filePath={selectedFile}
+          onClose={handleClosePreview}
+          hideHeader
+        />
       </div>
     );
   }
