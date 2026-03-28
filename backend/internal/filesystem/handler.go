@@ -71,7 +71,7 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var entries []entry
+	entries := make([]entry, 0)
 	for _, de := range dirEntries {
 		name := de.Name()
 		if strings.HasPrefix(name, ".") {

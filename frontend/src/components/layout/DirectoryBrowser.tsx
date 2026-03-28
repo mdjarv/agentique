@@ -108,10 +108,10 @@ export function DirectoryBrowser({ initialPath, onSelect }: DirectoryBrowserProp
                 <span>..</span>
               </button>
             )}
-            {result.entries.length === 0 && !result.parent && (
+            {(result.entries ?? []).length === 0 && !result.parent && (
               <p className="p-3 text-center text-sm text-muted-foreground">No subdirectories</p>
             )}
-            {result.entries.map((entry) => (
+            {(result.entries ?? []).map((entry) => (
               <button
                 key={entry.path}
                 type="button"
@@ -125,7 +125,7 @@ export function DirectoryBrowser({ initialPath, onSelect }: DirectoryBrowserProp
                 )}
               </button>
             ))}
-            {result.entries.length === 0 && result.parent && (
+            {(result.entries ?? []).length === 0 && result.parent && (
               <p className="p-3 text-center text-sm text-muted-foreground">No subdirectories</p>
             )}
           </div>
