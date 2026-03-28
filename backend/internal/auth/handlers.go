@@ -12,6 +12,8 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
 	"github.com/allbin/agentique/backend/internal/store"
 )
 
@@ -31,7 +33,7 @@ func (s *Service) RegisterRoutes(mux *http.ServeMux) {
 func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 	count, err := s.queries.CountUsers(r.Context())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to count users")
+		respond.Error(w, httperr.Internal("count users", err))
 		return
 	}
 
@@ -52,7 +54,7 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 		resp["authenticated"] = false
 	}
 
-	respondJSON(w, http.StatusOK, resp)
+	respond.JSON(w, http.StatusOK, resp)
 }
 
 type registerBeginRequest struct {
@@ -64,19 +66,19 @@ type registerBeginRequest struct {
 func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	var req registerBeginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respond.Error(w, httperr.BadRequest("invalid request body"))
 		return
 	}
 
 	if req.DisplayName == "" {
-		respondError(w, http.StatusBadRequest, "displayName is required")
+		respond.Error(w, httperr.BadRequest("displayName is required"))
 		return
 	}
 
 	ctx := r.Context()
 	count, err := s.queries.CountUsers(ctx)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to count users")
+		respond.Error(w, httperr.Internal("count users", err))
 		return
 	}
 
@@ -94,12 +96,12 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Need invite token.
 			if req.InviteToken == "" {
-				respondError(w, http.StatusForbidden, "invite token required")
+				respond.Error(w, httperr.BadRequest("invite token required"))
 				return
 			}
 			_, err := s.queries.GetInviteToken(ctx, req.InviteToken)
 			if err != nil {
-				respondError(w, http.StatusForbidden, "invalid or expired invite token")
+				respond.Error(w, httperr.BadRequest("invalid or expired invite token"))
 				return
 			}
 			inviteToken = req.InviteToken
@@ -114,7 +116,7 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		IsAdmin:     isAdmin,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create user")
+		respond.Error(w, httperr.Internal("create user", err))
 		return
 	}
 
@@ -128,14 +130,14 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	creation, session, err := s.webauthn.BeginMediatedRegistration(authUser, protocol.MediationDefault, opts...)
 	if err != nil {
 		slog.Error("webauthn begin registration failed", "error", err)
-		respondError(w, http.StatusInternalServerError, "failed to start registration")
+		respond.Error(w, httperr.Internal("start registration", err))
 		return
 	}
 
 	ceremonyKey := "reg:" + userID
 	s.saveCeremony(ceremonyKey, session, userID)
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respond.JSON(w, http.StatusOK, map[string]any{
 		"options":     creation,
 		"ceremonyKey": ceremonyKey,
 		"inviteToken": inviteToken,
@@ -149,32 +151,32 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	inviteToken := r.URL.Query().Get("inviteToken")
 
 	if ceremonyKey == "" {
-		respondError(w, http.StatusBadRequest, "ceremonyKey is required")
+		respond.Error(w, httperr.BadRequest("ceremonyKey is required"))
 		return
 	}
 
 	entry, err := s.loadCeremony(ceremonyKey)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, httperr.BadRequest(err.Error()))
 		return
 	}
 
 	user, err := s.loadUser(r.Context(), entry.userID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to load user")
+		respond.Error(w, httperr.Internal("load user", err))
 		return
 	}
 
 	cred, err := s.webauthn.FinishRegistration(user, *entry.session, r)
 	if err != nil {
 		slog.Error("webauthn finish registration failed", "error", err)
-		respondError(w, http.StatusBadRequest, "registration verification failed")
+		respond.Error(w, httperr.BadRequest("registration verification failed"))
 		return
 	}
 
 	ctx := r.Context()
 	if err := s.storeCredential(ctx, user.ID, cred); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to store credential")
+		respond.Error(w, httperr.Internal("store credential", err))
 		return
 	}
 
@@ -189,12 +191,12 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	// Create auth session.
 	token, err := s.createSession(ctx, user.ID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create session")
+		respond.Error(w, httperr.Internal("create session", err))
 		return
 	}
 
 	s.setSessionCookie(w, r, token)
-	respondJSON(w, http.StatusOK, map[string]any{
+	respond.JSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
 			"id":          user.ID,
 			"displayName": user.DisplayName,
@@ -208,14 +210,14 @@ func (s *Service) handleLoginBegin(w http.ResponseWriter, r *http.Request) {
 	assertion, session, err := s.webauthn.BeginDiscoverableMediatedLogin(protocol.MediationDefault)
 	if err != nil {
 		slog.Error("webauthn begin login failed", "error", err)
-		respondError(w, http.StatusInternalServerError, "failed to start login")
+		respond.Error(w, httperr.Internal("start login", err))
 		return
 	}
 
 	ceremonyKey := "login:" + generateToken(16)
 	s.saveCeremony(ceremonyKey, session, "")
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respond.JSON(w, http.StatusOK, map[string]any{
 		"options":     assertion,
 		"ceremonyKey": ceremonyKey,
 	})
@@ -225,20 +227,20 @@ func (s *Service) handleLoginBegin(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 	ceremonyKey := r.URL.Query().Get("ceremonyKey")
 	if ceremonyKey == "" {
-		respondError(w, http.StatusBadRequest, "ceremonyKey is required")
+		respond.Error(w, httperr.BadRequest("ceremonyKey is required"))
 		return
 	}
 
 	entry, err := s.loadCeremony(ceremonyKey)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, httperr.BadRequest(err.Error()))
 		return
 	}
 
 	validatedUser, validatedCred, err := s.webauthn.FinishPasskeyLogin(s.loadUserByHandle, *entry.session, r)
 	if err != nil {
 		slog.Error("webauthn finish login failed", "error", err)
-		respondError(w, http.StatusUnauthorized, "login verification failed")
+		respond.Error(w, httperr.BadRequest("login verification failed"))
 		return
 	}
 
@@ -254,12 +256,12 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 	user := validatedUser.(*User)
 	token, err := s.createSession(r.Context(), user.ID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create session")
+		respond.Error(w, httperr.Internal("create session", err))
 		return
 	}
 
 	s.setSessionCookie(w, r, token)
-	respondJSON(w, http.StatusOK, map[string]any{
+	respond.JSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
 			"id":          user.ID,
 			"displayName": user.DisplayName,
@@ -283,7 +285,7 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	session := UserFromContext(r.Context())
 	if session == nil || session.IsAdmin == 0 {
-		respondError(w, http.StatusForbidden, "admin access required")
+		respond.Error(w, httperr.BadRequest("admin access required"))
 		return
 	}
 
@@ -296,11 +298,11 @@ func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create invite")
+		respond.Error(w, httperr.Internal("create invite", err))
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respond.JSON(w, http.StatusOK, map[string]any{
 		"token":     token,
 		"expiresAt": expiresAt,
 	})
@@ -312,24 +314,14 @@ func (s *Service) handleValidateInvite(w http.ResponseWriter, r *http.Request) {
 	_, err := s.queries.GetInviteToken(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			respondJSON(w, http.StatusOK, map[string]any{"valid": false})
+			respond.JSON(w, http.StatusOK, map[string]any{"valid": false})
 			return
 		}
-		respondError(w, http.StatusInternalServerError, "failed to validate token")
+		respond.Error(w, httperr.Internal("validate token", err))
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"valid": true})
-}
-
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respondJSON(w, status, map[string]string{"error": msg})
+	respond.JSON(w, http.StatusOK, map[string]any{"valid": true})
 }
 
 func encodeCredentialID(id []byte) string {

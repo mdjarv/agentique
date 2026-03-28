@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
@@ -50,8 +52,8 @@ type SeedSession struct {
 	ProjectID string     `json:"projectId"`
 	Name      string     `json:"name"`
 	WorkDir   string     `json:"workDir"`
-	Live      bool       `json:"live"`      // if true, create via Manager (starts event loop)
-	Behavior  []Scenario `json:"behavior"`  // scripted event sequences for mock
+	Live      bool       `json:"live"`     // if true, create via Manager (starts event loop)
+	Behavior  []Scenario `json:"behavior"` // scripted event sequences for mock
 }
 
 // SeedResult is returned from POST /api/test/seed.
@@ -64,7 +66,7 @@ type SeedResult struct {
 func (h *Handler) HandleSeed(w http.ResponseWriter, r *http.Request) {
 	var req SeedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON: %v", err)
+		respond.Error(w, httperr.BadRequest(fmt.Sprintf("invalid JSON: %v", err)))
 		return
 	}
 
@@ -83,7 +85,7 @@ func (h *Handler) HandleSeed(w http.ResponseWriter, r *http.Request) {
 			Path: p.Path,
 			Slug: p.Slug,
 		}); err != nil {
-			respondError(w, http.StatusInternalServerError, "create project %s: %v", p.ID, err)
+			respond.Error(w, httperr.Internal(fmt.Sprintf("create project %s", p.ID), err))
 			return
 		}
 	}
@@ -106,7 +108,7 @@ func (h *Handler) HandleSeed(w http.ResponseWriter, r *http.Request) {
 				WorkDir:   s.WorkDir,
 			})
 			if err != nil {
-				respondError(w, http.StatusInternalServerError, "create live session %s: %v", s.ID, err)
+				respond.Error(w, httperr.Internal(fmt.Sprintf("create live session %s", s.ID), err))
 				return
 			}
 			// Associate the mock session with this Agentique session ID.
@@ -122,13 +124,13 @@ func (h *Handler) HandleSeed(w http.ResponseWriter, r *http.Request) {
 				Model:          "opus",
 				PermissionMode: "default",
 			}); err != nil {
-				respondError(w, http.StatusInternalServerError, "create session %s: %v", s.ID, err)
+				respond.Error(w, httperr.Internal(fmt.Sprintf("create session %s", s.ID), err))
 				return
 			}
 		}
 	}
 
-	respondJSON(w, http.StatusOK, SeedResult{
+	respond.JSON(w, http.StatusOK, SeedResult{
 		Projects: len(req.Projects),
 		Sessions: len(req.Sessions),
 	})
@@ -144,28 +146,28 @@ type InjectEventRequest struct {
 func (h *Handler) HandleInjectEvent(w http.ResponseWriter, r *http.Request) {
 	var req InjectEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON: %v", err)
+		respond.Error(w, httperr.BadRequest(fmt.Sprintf("invalid JSON: %v", err)))
 		return
 	}
 
 	mockSess := h.Connector.Get(req.SessionID)
 	if mockSess == nil {
-		respondError(w, http.StatusNotFound, "no mock session for %s", req.SessionID)
+		respond.Error(w, httperr.NotFound(fmt.Sprintf("no mock session for %s", req.SessionID)))
 		return
 	}
 
 	event, err := parseWireToClaudeEvent(req.Event)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "parse event: %v", err)
+		respond.Error(w, httperr.BadRequest(fmt.Sprintf("parse event: %v", err)))
 		return
 	}
 
 	if err := mockSess.InjectEvent(event); err != nil {
-		respondError(w, http.StatusInternalServerError, "inject event: %v", err)
+		respond.Error(w, httperr.Internal("inject event", err))
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	respond.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // HandleReset clears all data and mock state.
@@ -182,7 +184,7 @@ func (h *Handler) HandleReset(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	respond.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // SessionState is a single session's state in the GET /api/test/state response.
@@ -197,7 +199,7 @@ func (h *Handler) HandleState(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	dbSessions, err := h.Queries.ListAllSessions(ctx)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "list sessions: %v", err)
+		respond.Error(w, httperr.Internal("list sessions", err))
 		return
 	}
 
@@ -210,17 +212,5 @@ func (h *Handler) HandleState(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, states)
-}
-
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Warn("test endpoint error", "status", status, "error", msg)
-	respondJSON(w, status, map[string]string{"error": msg})
+	respond.JSON(w, http.StatusOK, states)
 }

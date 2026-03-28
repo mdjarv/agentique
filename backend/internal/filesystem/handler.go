@@ -1,12 +1,14 @@
 package filesystem
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
 )
 
 // Handler handles filesystem browsing HTTP requests.
@@ -31,7 +33,7 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 	if dirPath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "cannot determine home directory")
+			respond.Error(w, httperr.Internal("determine home directory", err))
 			return
 		}
 		dirPath = home
@@ -39,35 +41,35 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 
 	dirPath = filepath.Clean(dirPath)
 	if !filepath.IsAbs(dirPath) {
-		respondError(w, http.StatusBadRequest, "path must be absolute")
+		respond.Error(w, httperr.BadRequest("path must be absolute"))
 		return
 	}
 
 	info, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
-		respondError(w, http.StatusNotFound, "path does not exist")
+		respond.Error(w, httperr.NotFound("path does not exist"))
 		return
 	}
 	if os.IsPermission(err) {
-		respondError(w, http.StatusForbidden, "permission denied")
+		respond.Error(w, httperr.BadRequest("permission denied"))
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "cannot stat path")
+		respond.Error(w, httperr.Internal("stat path", err))
 		return
 	}
 	if !info.IsDir() {
-		respondError(w, http.StatusBadRequest, "path is not a directory")
+		respond.Error(w, httperr.BadRequest("path is not a directory"))
 		return
 	}
 
 	dirEntries, err := os.ReadDir(dirPath)
 	if os.IsPermission(err) {
-		respondError(w, http.StatusForbidden, "permission denied")
+		respond.Error(w, httperr.BadRequest("permission denied"))
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "cannot read directory")
+		respond.Error(w, httperr.Internal("read directory", err))
 		return
 	}
 
@@ -107,7 +109,7 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 		parent = ""
 	}
 
-	respondJSON(w, http.StatusOK, browseResponse{
+	respond.JSON(w, http.StatusOK, browseResponse{
 		Path:    dirPath,
 		Parent:  parent,
 		Entries: entries,
@@ -124,19 +126,19 @@ type validateResponse struct {
 func (h *Handler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 	dirPath := r.URL.Query().Get("path")
 	if dirPath == "" {
-		respondError(w, http.StatusBadRequest, "path is required")
+		respond.Error(w, httperr.BadRequest("path is required"))
 		return
 	}
 
 	dirPath = filepath.Clean(dirPath)
 	if !filepath.IsAbs(dirPath) {
-		respondError(w, http.StatusBadRequest, "path must be absolute")
+		respond.Error(w, httperr.BadRequest("path must be absolute"))
 		return
 	}
 
 	info, err := os.Stat(dirPath)
 	if err == nil {
-		respondJSON(w, http.StatusOK, validateResponse{
+		respond.JSON(w, http.StatusOK, validateResponse{
 			Exists:       true,
 			IsDirectory:  info.IsDir(),
 			ParentExists: true,
@@ -145,19 +147,9 @@ func (h *Handler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parentInfo, parentErr := os.Stat(filepath.Dir(dirPath))
-	respondJSON(w, http.StatusOK, validateResponse{
+	respond.JSON(w, http.StatusOK, validateResponse{
 		Exists:       false,
 		IsDirectory:  false,
 		ParentExists: parentErr == nil && parentInfo.IsDir(),
 	})
-}
-
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, map[string]string{"error": message})
 }

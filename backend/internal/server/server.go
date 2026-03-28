@@ -12,6 +12,7 @@ import (
 	"github.com/allbin/agentique/backend/internal/auth"
 	"github.com/allbin/agentique/backend/internal/filesystem"
 	"github.com/allbin/agentique/backend/internal/project"
+	"github.com/allbin/agentique/backend/internal/respond"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/testmode"
@@ -66,7 +67,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	ph := &project.Handler{Queries: queries}
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		respond.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /api/projects", ph.HandleList)
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
@@ -129,7 +130,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	} else {
 		// When auth is disabled, serve a static status endpoint.
 		mux.HandleFunc("GET /api/auth/status", func(w http.ResponseWriter, r *http.Request) {
-			respondJSON(w, http.StatusOK, map[string]any{
+			respond.JSON(w, http.StatusOK, map[string]any{
 				"authEnabled":   false,
 				"authenticated": true,
 				"userCount":     0,
