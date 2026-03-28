@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { PageHeader } from "~/components/layout/PageHeader";
+import { PageHeader, StatusPage } from "~/components/layout/PageHeader";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -86,11 +86,7 @@ function ProjectSettingsPage() {
   }, []);
 
   if (!project) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Project not found</p>
-      </div>
-    );
+    return <StatusPage message="Project not found" />;
   }
 
   const handleDelete = async () => {

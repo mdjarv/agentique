@@ -27,3 +27,15 @@ export function PageHeader({ children }: PageHeaderProps) {
     </header>
   );
 }
+
+/** Full-page shell for loading/error/empty states — PageHeader + centered message. */
+export function StatusPage({ header, message }: { header?: ReactNode; message: string }) {
+  return (
+    <div className="flex flex-col h-full">
+      <PageHeader>{header}</PageHeader>
+      <div className="flex-1 flex items-center justify-center text-muted-foreground">
+        <p className="text-sm">{message}</p>
+      </div>
+    </div>
+  );
+}
