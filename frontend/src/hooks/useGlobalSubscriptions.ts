@@ -5,10 +5,9 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
 import type { ListSessionsResult, ProjectGitStatus } from "~/lib/generated-types";
 import { getProjectGitStatus } from "~/lib/project-actions";
-import { submitQuery } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
-import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
+import { sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -174,25 +173,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
         clearToolBlockIndex(sid);
-
-        const chatStore = useChatStore.getState();
-        const sess = chatStore.sessions[sid];
-        const next = sess?.queuedMessages[0];
-        if (next) {
-          chatStore.dequeueMessage(sid);
-          queueMicrotask(async () => {
-            try {
-              await submitQuery(ws, sid, next.prompt, next.attachments);
-            } catch (err) {
-              const msg = getErrorMessage(err, "Failed to send queued message");
-              toast.error(msg, {
-                action: { label: "Copy", onClick: () => copyToClipboard(msg) },
-              });
-              useChatStore.getState().setSessionState(sid, "idle");
-              useChatStore.getState().clearQueue(sid);
-            }
-          });
-        }
+        // Queue drain is handled by the backend — no frontend round-trip needed.
       }
     });
 
@@ -289,6 +270,32 @@ export function useGlobalSubscriptions(projects: Project[]) {
         .setSessionPlanMode(payload.sessionId, payload.permissionMode === "plan");
     });
 
+    // Backend-authoritative queue: mirror queue state from server pushes.
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubQueue = ws.subscribe("session.queue", (payload: any) => {
+      useChatStore.getState().setQueue(payload.sessionId, payload.queue ?? []);
+    });
+
+    // Backend-initiated turns (queue drain): create the turn entry in the store.
+    // De-duplicates with optimistic creation from submitQuery() — if the last turn
+    // already has the same prompt and no events, the frontend already created it.
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTurnStarted = ws.subscribe("session.turn-started", (payload: any) => {
+      const sid: string = payload.sessionId;
+      useStreamingStore.getState().clearText(sid);
+      const session = useChatStore.getState().sessions[sid];
+      const lastTurn = session?.turns[session.turns.length - 1];
+      if (
+        lastTurn &&
+        !lastTurn.complete &&
+        lastTurn.events.length === 0 &&
+        lastTurn.prompt === payload.prompt
+      ) {
+        return; // Already created optimistically
+      }
+      useChatStore.getState().submitQuery(sid, payload.prompt);
+    });
+
     const unsubProjectGit = ws.subscribe("project.git-status", (payload: ProjectGitStatus) => {
       useAppStore.getState().setProjectGitStatus(payload);
     });
@@ -334,6 +341,8 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPermission();
       unsubQuestion();
       unsubPermMode();
+      unsubQueue();
+      unsubTurnStarted();
       unsubProjectGit();
       unsubReconnect();
       document.removeEventListener("visibilitychange", handleVisibility);

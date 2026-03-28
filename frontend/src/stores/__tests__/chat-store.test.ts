@@ -292,29 +292,23 @@ describe("chat-store", () => {
   // --- Message queue ---
 
   describe("message queue", () => {
-    it("enqueues and dequeues messages", () => {
+    it("sets and clears queue from backend state", () => {
       useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().enqueueMessage("sess-1", "msg1");
-      useChatStore.getState().enqueueMessage("sess-1", "msg2");
+      useChatStore.getState().setQueue("sess-1", [
+        { id: "q1", prompt: "msg1" },
+        { id: "q2", prompt: "msg2" },
+      ]);
       const q = useChatStore.getState().sessions["sess-1"]?.queuedMessages;
       expect(q).toHaveLength(2);
       expect(q?.[0]?.prompt).toBe("msg1");
 
-      useChatStore.getState().dequeueMessage("sess-1");
+      useChatStore.getState().setQueue("sess-1", [{ id: "q2", prompt: "msg2" }]);
       const q2 = useChatStore.getState().sessions["sess-1"]?.queuedMessages;
       expect(q2).toHaveLength(1);
       expect(q2?.[0]?.prompt).toBe("msg2");
-    });
 
-    it("cancels specific queued message", () => {
-      useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().enqueueMessage("sess-1", "msg1");
-      useChatStore.getState().enqueueMessage("sess-1", "msg2");
-      const msgId = useChatStore.getState().sessions["sess-1"]?.queuedMessages[0]?.id ?? "";
-      useChatStore.getState().cancelQueuedMessage("sess-1", msgId);
-      const q = useChatStore.getState().sessions["sess-1"]?.queuedMessages;
-      expect(q).toHaveLength(1);
-      expect(q?.[0]?.prompt).toBe("msg2");
+      useChatStore.getState().setQueue("sess-1", []);
+      expect(useChatStore.getState().sessions["sess-1"]?.queuedMessages).toHaveLength(0);
     });
   });
 

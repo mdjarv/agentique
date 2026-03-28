@@ -116,6 +116,36 @@ export async function submitQuery(
   await ws.request("session.query", payload);
 }
 
+/** Send a message: executes immediately if idle, queues on the backend if running. */
+export async function enqueueMessage(
+  ws: WsClient,
+  sessionId: string,
+  prompt: string,
+  attachments?: Attachment[],
+): Promise<void> {
+  const payload: Record<string, unknown> = { sessionId, prompt };
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments.map((a) => ({
+      name: a.name,
+      mimeType: a.mimeType,
+      dataUrl: a.dataUrl,
+    }));
+  }
+  await ws.request("session.enqueue", payload);
+}
+
+export async function cancelQueuedMessage(
+  ws: WsClient,
+  sessionId: string,
+  messageId: string,
+): Promise<void> {
+  await ws.request("session.cancel-queued", { sessionId, messageId });
+}
+
+export async function clearSessionQueue(ws: WsClient, sessionId: string): Promise<void> {
+  await ws.request("session.clear-queue", { sessionId });
+}
+
 export async function setSessionModel(
   ws: WsClient,
   sessionId: string,

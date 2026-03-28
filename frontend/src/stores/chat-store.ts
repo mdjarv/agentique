@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionInfo } from "~/lib/generated-types";
+import type { QueuedMessage as GeneratedQueuedMessage, SessionInfo } from "~/lib/generated-types";
 import { uuid } from "~/lib/utils";
 
 // Debounce timer for rate-limit "allowed" → clear transition.
@@ -103,11 +103,7 @@ export interface RateLimitInfo {
   resetsAt: number | null;
 }
 
-export interface QueuedMessage {
-  id: string;
-  prompt: string;
-  attachments?: Attachment[];
-}
+export type QueuedMessage = GeneratedQueuedMessage;
 
 export interface TodoItem {
   content: string;
@@ -292,11 +288,8 @@ export interface ChatState {
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
   setSessionHistory: (sessionId: string, turns: Turn[]) => void;
 
-  // Message queue
-  enqueueMessage: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
-  dequeueMessage: (sessionId: string) => void;
-  cancelQueuedMessage: (sessionId: string, messageId: string) => void;
-  clearQueue: (sessionId: string) => void;
+  // Message queue (backend-authoritative, mirrored via session.queue pushes)
+  setQueue: (sessionId: string, queue: QueuedMessage[]) => void;
 
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
@@ -330,11 +323,13 @@ export const useChatStore = create<ChatState>((set) => ({
             autoApprove: tagged.autoApprove ?? false,
             pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
             pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
+            queuedMessages: tagged.queuedMessages ?? existing.queuedMessages,
           };
         } else {
           const data = emptySessionData(tagged);
           if (tagged.pendingApproval) data.pendingApproval = tagged.pendingApproval;
           if (tagged.pendingQuestion) data.pendingQuestion = tagged.pendingQuestion;
+          if (tagged.queuedMessages) data.queuedMessages = tagged.queuedMessages;
           sessions[meta.id] = data;
         }
       }
@@ -481,38 +476,11 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  enqueueMessage: (sessionId, prompt, attachments) =>
+  setQueue: (sessionId, queue) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: [...session.queuedMessages, { id: uuid(), prompt, attachments }],
-      });
-    }),
-
-  dequeueMessage: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.queuedMessages.length === 0) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: session.queuedMessages.slice(1),
-      });
-    }),
-
-  cancelQueuedMessage: (sessionId, messageId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      return updateSession(s, sessionId, {
-        queuedMessages: session.queuedMessages.filter((m) => m.id !== messageId),
-      });
-    }),
-
-  clearQueue: (sessionId) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session || session.queuedMessages.length === 0) return s;
-      return updateSession(s, sessionId, { queuedMessages: [] });
+      return updateSession(s, sessionId, { queuedMessages: queue });
     }),
 
   submitQuery: (sessionId, prompt, attachments) =>

@@ -15,6 +15,12 @@ export const QueryAttachmentSchema = z.object({
   dataUrl: z.string(),
 });
 
+export const QueuedMessageSchema = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  attachments: z.array(QueryAttachmentSchema).optional(),
+});
+
 export const DiffStatSchema = z.object({
   path: z.string(),
   insertions: z.number(),
@@ -172,6 +178,7 @@ export const SessionInfoSchema = z.object({
   behaviorPresets: BehaviorPresetsSchema,
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
+  queuedMessages: z.array(QueuedMessageSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),
@@ -450,6 +457,15 @@ export const SessionUncommittedDiffPayloadSchema = z.object({
 });
 
 export const SessionRefreshGitPayloadSchema = z.object({
+  sessionId: z.string(),
+});
+
+export const SessionCancelQueuedPayloadSchema = z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+});
+
+export const SessionClearQueuePayloadSchema = z.object({
   sessionId: z.string(),
 });
 

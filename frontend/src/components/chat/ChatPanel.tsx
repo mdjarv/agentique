@@ -27,7 +27,9 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type ModelId,
+  cancelQueuedMessage,
   createSession,
+  enqueueMessage,
   interruptSession,
   isGitFresh,
   refreshGitStatus,
@@ -36,7 +38,6 @@ import {
   setPermissionMode,
   setSessionModel,
   stopSession,
-  submitQuery,
 } from "~/lib/session-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
@@ -205,21 +206,16 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
       useUIStore.getState().clearDraft(sessionId);
-      if (sessionState === "running") {
-        useChatStore.getState().enqueueMessage(sessionId, prompt, attachments);
-        return;
-      }
       try {
-        await submitQuery(ws, sessionId, prompt, attachments);
+        await enqueueMessage(ws, sessionId, prompt, attachments);
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to send message");
         toast.error(msg, {
           action: { label: "Copy", onClick: () => copyToClipboard(msg) },
         });
-        useChatStore.getState().setSessionState(sessionId, "idle");
       }
     },
-    [ws, sessionId, sessionState],
+    [ws, sessionId],
   );
 
   const handleStartFresh = useCallback(
@@ -230,7 +226,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           autoApprove: meta?.autoApprove,
         });
         await stopSession(ws, sessionId);
-        await submitQuery(ws, newId, plan);
+        await enqueueMessage(ws, newId, plan);
         navigate({
           to: "/project/$projectSlug/session/$sessionShortId",
           params: { projectSlug, sessionShortId: sessionShortId(newId) },
@@ -245,8 +241,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const handleInterrupt = useCallback(async () => {
     if (queuedMessages.length > 0) {
       const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-      useChatStore.getState().clearQueue(sessionId);
       composerRef.current?.setText(text);
+      // Backend clears queue on interrupt; frontend receives session.queue push.
     }
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId, queuedMessages]);
@@ -265,8 +261,14 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   const isResumable = resumableStates.has(sessionState);
 
-  // Flush queued messages back to composer when session reaches a terminal state
+  // Flush queued messages back to composer when session reaches a terminal state.
+  // Track previous queue in a ref because the backend clears it (session.queue push)
+  // before the state push arrives — by the time the state effect fires, queuedMessages is [].
   const prevStateRef = useRef(sessionState);
+  const prevQueueRef = useRef(queuedMessages);
+  useEffect(() => {
+    prevQueueRef.current = queuedMessages;
+  }, [queuedMessages]);
   useEffect(() => {
     const prev = prevStateRef.current;
     prevStateRef.current = sessionState;
@@ -274,13 +276,12 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       prev === "running" &&
       (sessionState === "done" || sessionState === "failed" || sessionState === "stopped")
     ) {
-      if (queuedMessages.length > 0) {
-        const text = queuedMessages.map((m) => m.prompt).join("\n\n");
-        useChatStore.getState().clearQueue(sessionId);
-        composerRef.current?.setText(text);
+      const pending = prevQueueRef.current;
+      if (pending.length > 0) {
+        composerRef.current?.setText(pending.map((m) => m.prompt).join("\n\n"));
       }
     }
-  }, [sessionState, sessionId, queuedMessages]);
+  }, [sessionState]);
 
   if (!meta) {
     return <StatusPage message="Loading session..." />;
@@ -368,7 +369,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               <MessageQueue
                 messages={queuedMessages}
                 onCancel={(msg) => {
-                  useChatStore.getState().cancelQueuedMessage(sessionId, msg.id);
+                  cancelQueuedMessage(ws, sessionId, msg.id).catch(console.error);
                   composerRef.current?.setText(msg.prompt);
                 }}
               />

@@ -275,6 +275,7 @@ func main() {
 
 	g.register(session.WireContentBlock{}, "WireContentBlock")
 	g.register(session.QueryAttachment{}, "QueryAttachment")
+	g.register(session.QueuedMessage{}, "QueuedMessage")
 	g.register(gitops.DiffStat{}, "DiffStat")
 	g.register(gitops.FileStatus{}, "FileStatus")
 	g.register(gitops.CommandFile{}, "CommandFile")
@@ -382,6 +383,8 @@ func main() {
 	g.register(ws.SessionUncommittedFilesPayload{}, "SessionUncommittedFilesPayload")
 	g.register(ws.SessionUncommittedDiffPayload{}, "SessionUncommittedDiffPayload")
 	g.register(ws.SessionRefreshGitPayload{}, "SessionRefreshGitPayload")
+	g.register(ws.SessionCancelQueuedPayload{}, "SessionCancelQueuedPayload")
+	g.register(ws.SessionClearQueuePayload{}, "SessionClearQueuePayload")
 	g.register(ws.ProjectGitStatusPayload{}, "ProjectGitStatusPayload")
 	g.register(ws.ProjectFetchPayload{}, "ProjectFetchPayload")
 	g.register(ws.ProjectPushPayload{}, "ProjectPushPayload")

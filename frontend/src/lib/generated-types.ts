@@ -13,6 +13,12 @@ export interface QueryAttachment {
   dataUrl: string;
 }
 
+export interface QueuedMessage {
+  id: string;
+  prompt: string;
+  attachments?: QueryAttachment[];
+}
+
 export interface DiffStat {
   path: string;
   insertions: number;
@@ -170,6 +176,7 @@ export interface SessionInfo {
   behaviorPresets: BehaviorPresets;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
+  queuedMessages?: QueuedMessage[];
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;
@@ -448,6 +455,15 @@ export interface SessionUncommittedDiffPayload {
 }
 
 export interface SessionRefreshGitPayload {
+  sessionId: string;
+}
+
+export interface SessionCancelQueuedPayload {
+  sessionId: string;
+  messageId: string;
+}
+
+export interface SessionClearQueuePayload {
   sessionId: string;
 }
 
