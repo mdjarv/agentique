@@ -37,7 +37,7 @@ export const UserMessage = memo(function UserMessage({ prompt, attachments }: Us
             <button
               type="button"
               onClick={() => handleCopy(prompt)}
-              className="absolute -left-8 max-md:-top-6 max-md:left-auto max-md:right-0 top-1 p-1 rounded max-md:opacity-60 opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10"
+              className="absolute -left-8 top-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10 max-md:static max-md:float-right max-md:opacity-60 max-md:ml-2 max-md:-mr-1 max-md:-mt-0.5"
               aria-label="Copy message"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

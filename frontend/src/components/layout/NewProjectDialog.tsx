@@ -14,6 +14,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { createProject } from "~/lib/api";
 import { useAppStore } from "~/stores/app-store";
 
@@ -32,6 +33,7 @@ export function NewProjectDialog() {
   const [error, setError] = useState("");
   const addProject = useAppStore((s) => s.addProject);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const handlePathChange = (newPath: string) => {
     setPath(newPath);
@@ -79,16 +81,24 @@ export function NewProjectDialog() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="New project">
-              <Plus className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent>New project</TooltipContent>
-      </Tooltip>
+      {isMobile ? (
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label="New project">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </DialogTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="New project">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>New project</TooltipContent>
+        </Tooltip>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
