@@ -28,13 +28,6 @@ type QueryAttachment struct {
 	DataUrl  string `json:"dataUrl"`
 }
 
-// QueuedMessage is a prompt waiting to be sent when the current turn completes.
-type QueuedMessage struct {
-	ID          string            `json:"id"`
-	Prompt      string            `json:"prompt"`
-	Attachments []QueryAttachment `json:"attachments,omitempty"`
-}
-
 // nullStr extracts the string value from a sql.NullString, returning "" if null.
 func nullStr(ns sql.NullString) string {
 	if ns.Valid {
@@ -100,7 +93,6 @@ type Session struct {
 	eventLoopDone   chan struct{}
 	toolCategories  map[string]string // ToolID → category for correlating results to writes
 	gitRefreshTimer *time.Timer       // debounce timer for mid-turn git refresh
-	queue           []QueuedMessage   // messages waiting for current turn to complete
 }
 
 
@@ -173,73 +165,58 @@ func (s *Session) GitVersion() int64 {
 	return s.gitVersion
 }
 
-// Enqueue adds a message to the queue for sending after the current turn completes.
-func (s *Session) Enqueue(msg QueuedMessage) {
+// SendMessage injects a user message mid-turn via the CLI's SendMessage API.
+// The CLI processes it at the next safe boundary (between tool calls) and folds
+// the response into the current turn's ResultEvent.
+func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) error {
 	s.mu.Lock()
-	s.queue = append(s.queue, msg)
+	if s.state != StateRunning {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: cannot send message in state %s", s.ID, string(s.state))
+	}
+	cli := s.cliSess
+	if cli == nil {
+		s.mu.Unlock()
+		return ErrNotLive
+	}
+	seq := s.seqInTurn
+	turnIdx := s.turnIndex
+	s.seqInTurn++
 	s.mu.Unlock()
-	s.broadcastQueue()
-}
 
-// CancelQueued removes a specific message from the queue by ID.
-// Returns true if the message was found and removed.
-func (s *Session) CancelQueued(messageID string) bool {
-	s.mu.Lock()
-	found := false
-	for i, m := range s.queue {
-		if m.ID == messageID {
-			s.queue = append(s.queue[:i], s.queue[i+1:]...)
-			found = true
-			break
+	// Send to CLI.
+	if len(attachments) > 0 {
+		blocks, err := toContentBlocks(attachments)
+		if err != nil {
+			return fmt.Errorf("parse attachments: %w", err)
+		}
+		if err := cli.SendMessageWithContent(prompt, blocks...); err != nil {
+			return err
+		}
+	} else {
+		if err := cli.SendMessage(prompt); err != nil {
+			return err
 		}
 	}
-	s.mu.Unlock()
-	if found {
-		s.broadcastQueue()
-	}
-	return found
-}
 
-// ClearQueue removes all queued messages and returns them.
-func (s *Session) ClearQueue() []QueuedMessage {
-	s.mu.Lock()
-	cleared := s.queue
-	s.queue = nil
-	s.mu.Unlock()
-	if len(cleared) > 0 {
-		s.broadcastQueue()
+	// Persist + broadcast as a user_message event within the current turn.
+	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt}
+	if data, err := json.Marshal(wireEvent); err == nil {
+		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
+			SessionID: s.ID,
+			TurnIndex: int64(turnIdx),
+			Seq:       int64(seq),
+			Type:      "user_message",
+			Data:      string(data),
+		}); err != nil {
+			slog.Error("persist user_message event failed", "session_id", s.ID, "error", err)
+		}
 	}
-	return cleared
-}
-
-// QueueSnapshot returns a copy of the current queue.
-func (s *Session) QueueSnapshot() []QueuedMessage {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.queue) == 0 {
-		return nil
-	}
-	snap := make([]QueuedMessage, len(s.queue))
-	copy(snap, s.queue)
-	return snap
-}
-
-func (s *Session) broadcastQueue() {
-	s.broadcast("session.queue", map[string]any{
+	s.broadcast("session.event", map[string]any{
 		"sessionId": s.ID,
-		"queue":     s.QueueSnapshot(),
+		"event":     wireEvent,
 	})
-}
-
-// clearQueueInternal empties the queue and broadcasts if it was non-empty.
-func (s *Session) clearQueueInternal() {
-	s.mu.Lock()
-	had := len(s.queue) > 0
-	s.queue = nil
-	s.mu.Unlock()
-	if had {
-		s.broadcastQueue()
-	}
+	return nil
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
@@ -403,7 +380,6 @@ func (s *Session) startEventLoop() {
 					// Skip if already in a terminal state (failed/stopped/done)
 					// so we don't mask the real reason the session ended.
 					if st != StateDone && st != StateFailed && st != StateStopped {
-						s.clearQueueInternal()
 						if err := s.setState(StateDone); err != nil {
 							slog.Error("state transition failed", "session_id", s.ID, "error", err)
 						}
@@ -436,7 +412,6 @@ func (s *Session) startEventLoop() {
 					continue
 				}
 				slog.Error("watchdog timeout, marking session failed", "session_id", s.ID)
-				s.clearQueueInternal()
 				s.setState(StateFailed)
 				return
 			}
@@ -566,30 +541,9 @@ func (s *Session) processEvent(event claudecli.Event) {
 	if _, ok := event.(*claudecli.ResultEvent); ok {
 		s.mu.Lock()
 		s.toolCategories = make(map[string]string)
-		var next *QueuedMessage
-		if len(s.queue) > 0 {
-			msg := s.queue[0]
-			s.queue = s.queue[1:]
-			next = &msg
-		}
 		s.mu.Unlock()
-
-		if next != nil {
-			// Quiet transition satisfies Running→Idle state machine without broadcasting
-			// a flicker to the frontend. Query() will immediately broadcast Running.
-			if err := s.setStateQuiet(StateIdle); err != nil {
-				slog.Error("quiet idle transition failed", "session_id", s.ID, "error", err)
-			}
-			s.broadcastQueue()
-			if err := s.Query(context.Background(), next.Prompt, next.Attachments); err != nil {
-				slog.Error("queue drain failed", "session_id", s.ID, "error", err)
-				s.broadcastState(StateIdle)
-				s.clearQueueInternal()
-			}
-		} else {
-			if err := s.setState(StateIdle); err != nil {
-				slog.Error("state transition failed", "session_id", s.ID, "error", err)
-			}
+		if err := s.setState(StateIdle); err != nil {
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
 	}
 
@@ -604,7 +558,6 @@ func (s *Session) processEvent(event claudecli.Event) {
 			"error", errEv.Error(),
 		)
 		if errEv.Fatal {
-			s.clearQueueInternal()
 			if err := s.setState(StateFailed); err != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", err)
 			}
@@ -746,13 +699,8 @@ func (s *Session) Interrupt() error {
 		s.mu.Unlock()
 		return ErrNotLive
 	}
-	hadQueue := len(s.queue) > 0
-	s.queue = nil
 	s.cliSess.Interrupt()
 	s.mu.Unlock()
-	if hadQueue {
-		s.broadcastQueue()
-	}
 	return nil
 }
 
@@ -969,7 +917,6 @@ func (s *Session) Close() {
 
 	s.cancelCtx()
 	s.stopGitRefreshTimer()
-	s.clearQueueInternal()
 
 	// Close CLI session to stop the process and close Events channel.
 	s.mu.Lock()

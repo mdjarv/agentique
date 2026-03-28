@@ -275,7 +275,6 @@ func main() {
 
 	g.register(session.WireContentBlock{}, "WireContentBlock")
 	g.register(session.QueryAttachment{}, "QueryAttachment")
-	g.register(session.QueuedMessage{}, "QueuedMessage")
 	g.register(gitops.DiffStat{}, "DiffStat")
 	g.register(gitops.FileStatus{}, "FileStatus")
 	g.register(gitops.CommandFile{}, "CommandFile")
@@ -293,6 +292,7 @@ func main() {
 	compactStatusEvt := g.register(session.WireCompactStatusEvent{}, "WireCompactStatusEvent")
 	compactBoundaryEvt := g.register(session.WireCompactBoundaryEvent{}, "WireCompactBoundaryEvent")
 	ctxMgmtEvt := g.register(session.WireContextManagementEvent{}, "WireContextManagementEvent")
+	userMsgEvt := g.register(session.WireUserMessageEvent{}, "WireUserMessageEvent")
 
 	g.addUnion("WireEvent", "type", []unionVariant{
 		{"text", textEvt},
@@ -306,6 +306,7 @@ func main() {
 		{"compact_status", compactStatusEvt},
 		{"compact_boundary", compactBoundaryEvt},
 		{"context_management", ctxMgmtEvt},
+		{"user_message", userMsgEvt},
 	})
 
 	// ── Pending state types (referenced by SessionInfo) ──
@@ -383,8 +384,6 @@ func main() {
 	g.register(ws.SessionUncommittedFilesPayload{}, "SessionUncommittedFilesPayload")
 	g.register(ws.SessionUncommittedDiffPayload{}, "SessionUncommittedDiffPayload")
 	g.register(ws.SessionRefreshGitPayload{}, "SessionRefreshGitPayload")
-	g.register(ws.SessionCancelQueuedPayload{}, "SessionCancelQueuedPayload")
-	g.register(ws.SessionClearQueuePayload{}, "SessionClearQueuePayload")
 	g.register(ws.ProjectGitStatusPayload{}, "ProjectGitStatusPayload")
 	g.register(ws.ProjectFetchPayload{}, "ProjectFetchPayload")
 	g.register(ws.ProjectPushPayload{}, "ProjectPushPayload")

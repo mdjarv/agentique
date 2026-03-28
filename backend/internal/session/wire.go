@@ -89,6 +89,12 @@ type WireContextManagementEvent struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
+// WireUserMessageEvent represents a user message injected mid-turn via SendMessage.
+type WireUserMessageEvent struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
 func (e WireTextEvent) WireType() string       { return e.Type }
 func (e WireThinkingEvent) WireType() string   { return e.Type }
 func (e WireToolUseEvent) WireType() string    { return e.Type }
@@ -100,6 +106,7 @@ func (e WireStreamEvent) WireType() string          { return e.Type }
 func (e WireCompactStatusEvent) WireType() string   { return e.Type }
 func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
+func (e WireUserMessageEvent) WireType() string        { return e.Type }
 
 // errorDetail extracts a clean human-readable message from a claudecli error,
 // stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."

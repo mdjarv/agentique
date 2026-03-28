@@ -15,12 +15,6 @@ export const QueryAttachmentSchema = z.object({
   dataUrl: z.string(),
 });
 
-export const QueuedMessageSchema = z.object({
-  id: z.string(),
-  prompt: z.string(),
-  attachments: z.array(QueryAttachmentSchema).optional(),
-});
-
 export const DiffStatSchema = z.object({
   path: z.string(),
   insertions: z.number(),
@@ -110,6 +104,11 @@ export const WireContextManagementEventSchema = z.object({
   raw: z.unknown(),
 });
 
+export const WireUserMessageEventSchema = z.object({
+  type: z.literal("user_message"),
+  content: z.string(),
+});
+
 export const WireQuestionOptionSchema = z.object({
   label: z.string(),
   description: z.string().optional(),
@@ -178,7 +177,6 @@ export const SessionInfoSchema = z.object({
   behaviorPresets: BehaviorPresetsSchema,
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
-  queuedMessages: z.array(QueuedMessageSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),
@@ -460,15 +458,6 @@ export const SessionRefreshGitPayloadSchema = z.object({
   sessionId: z.string(),
 });
 
-export const SessionCancelQueuedPayloadSchema = z.object({
-  sessionId: z.string(),
-  messageId: z.string(),
-});
-
-export const SessionClearQueuePayloadSchema = z.object({
-  sessionId: z.string(),
-});
-
 export const ProjectGitStatusPayloadSchema = z.object({
   projectId: z.string(),
 });
@@ -510,4 +499,5 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireCompactStatusEventSchema,
   WireCompactBoundaryEventSchema,
   WireContextManagementEventSchema,
+  WireUserMessageEventSchema,
 ]);

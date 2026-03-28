@@ -15,6 +15,7 @@ type mockCLISession struct {
 
 	mu           sync.Mutex
 	queries      []string
+	sentMessages []string
 	closed       bool
 	model        claudecli.Model
 	permMode     claudecli.PermissionMode
@@ -38,6 +39,17 @@ func (m *mockCLISession) Query(prompt string) error {
 
 func (m *mockCLISession) QueryWithContent(prompt string, _ ...claudecli.ContentBlock) error {
 	return m.Query(prompt)
+}
+
+func (m *mockCLISession) SendMessage(prompt string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sentMessages = append(m.sentMessages, prompt)
+	return nil
+}
+
+func (m *mockCLISession) SendMessageWithContent(prompt string, _ ...claudecli.ContentBlock) error {
+	return m.SendMessage(prompt)
 }
 
 func (m *mockCLISession) SetPermissionMode(mode claudecli.PermissionMode) error {

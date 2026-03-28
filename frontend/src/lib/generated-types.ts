@@ -13,12 +13,6 @@ export interface QueryAttachment {
   dataUrl: string;
 }
 
-export interface QueuedMessage {
-  id: string;
-  prompt: string;
-  attachments?: QueryAttachment[];
-}
-
 export interface DiffStat {
   path: string;
   insertions: number;
@@ -108,6 +102,11 @@ export interface WireContextManagementEvent {
   raw: unknown;
 }
 
+export interface WireUserMessageEvent {
+  type: "user_message";
+  content: string;
+}
+
 export interface WireQuestionOption {
   label: string;
   description?: string;
@@ -176,7 +175,6 @@ export interface SessionInfo {
   behaviorPresets: BehaviorPresets;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
-  queuedMessages?: QueuedMessage[];
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;
@@ -458,15 +456,6 @@ export interface SessionRefreshGitPayload {
   sessionId: string;
 }
 
-export interface SessionCancelQueuedPayload {
-  sessionId: string;
-  messageId: string;
-}
-
-export interface SessionClearQueuePayload {
-  sessionId: string;
-}
-
 export interface ProjectGitStatusPayload {
   projectId: string;
 }
@@ -507,4 +496,5 @@ export type WireEvent =
   | WireStreamEvent
   | WireCompactStatusEvent
   | WireCompactBoundaryEvent
-  | WireContextManagementEvent;
+  | WireContextManagementEvent
+  | WireUserMessageEvent;

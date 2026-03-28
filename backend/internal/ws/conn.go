@@ -181,10 +181,6 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionUncommittedDiff(msg)
 	case "session.enqueue":
 		c.handleSessionEnqueue(msg)
-	case "session.cancel-queued":
-		c.handleSessionCancelQueued(msg)
-	case "session.clear-queue":
-		c.handleSessionClearQueue(msg)
 	case "project.git-status":
 		c.handleProjectGitStatus(msg)
 	case "project.fetch":
