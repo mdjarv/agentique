@@ -1,8 +1,10 @@
 package gitops
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -215,5 +217,214 @@ func TestMergeTreeCheck_Conflict(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected README in conflict files, got %v", result.ConflictFiles)
+	}
+}
+
+func TestStashPush_CleanRepo(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	stashed, err := StashPush(repoDir)
+	if err != nil {
+		t.Fatalf("StashPush failed: %v", err)
+	}
+	if stashed {
+		t.Fatal("expected nothing to stash on clean repo")
+	}
+}
+
+func TestStashPush_DirtyRepo(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "dirty.txt", "uncommitted")
+
+	stashed, err := StashPush(repoDir)
+	if err != nil {
+		t.Fatalf("StashPush failed: %v", err)
+	}
+	if !stashed {
+		t.Fatal("expected changes to be stashed")
+	}
+
+	// Tree should be clean now.
+	dirty, _ := HasUncommittedChanges(repoDir)
+	if dirty {
+		t.Fatal("expected clean tree after stash push")
+	}
+
+	// Pop to restore.
+	if err := StashPop(repoDir); err != nil {
+		t.Fatalf("StashPop failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "dirty.txt")); err != nil {
+		t.Fatal("expected dirty.txt restored after stash pop")
+	}
+}
+
+func TestStashPush_IncludesUntracked(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "untracked.txt", "new file")
+
+	stashed, err := StashPush(repoDir)
+	if err != nil {
+		t.Fatalf("StashPush failed: %v", err)
+	}
+	if !stashed {
+		t.Fatal("expected untracked file to be stashed")
+	}
+
+	// File should be gone.
+	if _, err := os.Stat(filepath.Join(repoDir, "untracked.txt")); !os.IsNotExist(err) {
+		t.Fatal("expected untracked.txt to be stashed away")
+	}
+
+	// Pop restores it.
+	if err := StashPop(repoDir); err != nil {
+		t.Fatalf("StashPop failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "untracked.txt")); err != nil {
+		t.Fatal("expected untracked.txt restored after pop")
+	}
+}
+
+func TestWithCleanWorktree_CleanRepo(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	called := false
+	stashConflict, err := WithCleanWorktree(repoDir, func() error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithCleanWorktree failed: %v", err)
+	}
+	if stashConflict {
+		t.Fatal("unexpected stash conflict")
+	}
+	if !called {
+		t.Fatal("expected fn to be called")
+	}
+}
+
+func TestWithCleanWorktree_DirtyRepo(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "wip.txt", "work in progress")
+
+	var wasDirty bool
+	stashConflict, err := WithCleanWorktree(repoDir, func() error {
+		wasDirty, _ = HasUncommittedChanges(repoDir)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithCleanWorktree failed: %v", err)
+	}
+	if stashConflict {
+		t.Fatal("unexpected stash conflict")
+	}
+	if wasDirty {
+		t.Fatal("expected clean tree inside fn")
+	}
+
+	// Changes should be restored.
+	data, err := os.ReadFile(filepath.Join(repoDir, "wip.txt"))
+	if err != nil {
+		t.Fatal("expected wip.txt restored after WithCleanWorktree")
+	}
+	if string(data) != "work in progress" {
+		t.Fatalf("expected original content, got %q", string(data))
+	}
+}
+
+func TestWithCleanWorktree_FnError(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "wip.txt", "work in progress")
+
+	fnErr := errors.New("operation failed")
+	stashConflict, err := WithCleanWorktree(repoDir, func() error {
+		return fnErr
+	})
+	if !errors.Is(err, fnErr) {
+		t.Fatalf("expected fn error propagated, got %v", err)
+	}
+	if stashConflict {
+		t.Fatal("unexpected stash conflict")
+	}
+
+	// Changes should still be restored despite fn error.
+	if _, err := os.Stat(filepath.Join(repoDir, "wip.txt")); err != nil {
+		t.Fatal("expected wip.txt restored even when fn fails")
+	}
+}
+
+func TestWithCleanWorktree_MergeThenPop(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	// Create a feature branch with a commit.
+	testGitRun(t, repoDir, "checkout", "-b", "feature")
+	writeFile(t, repoDir, "feature.txt", "feature content")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "feature commit")
+	testGitRun(t, repoDir, "checkout", "main")
+
+	// Dirty the project root with an unrelated file.
+	writeFile(t, repoDir, "wip.txt", "local work")
+
+	var hash string
+	stashConflict, err := WithCleanWorktree(repoDir, func() error {
+		var mergeErr error
+		hash, mergeErr = MergeBranch(repoDir, "feature", "Merge: feature")
+		return mergeErr
+	})
+	if err != nil {
+		t.Fatalf("merge inside WithCleanWorktree failed: %v", err)
+	}
+	if stashConflict {
+		t.Fatal("unexpected stash conflict")
+	}
+	if hash == "" {
+		t.Fatal("expected merge commit hash")
+	}
+
+	// Feature file should exist (merged).
+	if _, err := os.Stat(filepath.Join(repoDir, "feature.txt")); err != nil {
+		t.Fatal("expected feature.txt after merge")
+	}
+
+	// WIP file should be restored (from stash).
+	data, err := os.ReadFile(filepath.Join(repoDir, "wip.txt"))
+	if err != nil {
+		t.Fatal("expected wip.txt restored after merge")
+	}
+	if string(data) != "local work" {
+		t.Fatalf("expected wip content preserved, got %q", string(data))
+	}
+}
+
+func TestWithCleanWorktree_StashPopConflict(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	// Create a feature branch that modifies README.
+	testGitRun(t, repoDir, "checkout", "-b", "feature")
+	writeFile(t, repoDir, "README", "feature version")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "feature changes README")
+	testGitRun(t, repoDir, "checkout", "main")
+
+	// Dirty the project root with conflicting changes to the same file.
+	writeFile(t, repoDir, "README", "local uncommitted version")
+
+	stashConflict, err := WithCleanWorktree(repoDir, func() error {
+		_, mergeErr := MergeBranch(repoDir, "feature", "Merge: feature")
+		return mergeErr
+	})
+	if err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+	if !stashConflict {
+		t.Fatal("expected stash conflict when merged file overlaps with stashed changes")
+	}
+
+	// Stash should still exist for manual recovery.
+	out := testGitOutput(t, repoDir, "stash", "list")
+	if !strings.Contains(out, "agentique: auto-stash") {
+		t.Fatal("expected stash entry preserved for recovery")
 	}
 }

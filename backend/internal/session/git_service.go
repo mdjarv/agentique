@@ -212,14 +212,6 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		}()
 	}
 
-	dirty, err := gitops.HasUncommittedChanges(project.Path)
-	if err != nil {
-		return MergeResult{Status: "error", Error: err.Error()}, nil
-	}
-	if dirty {
-		return MergeResult{Status: "error", Error: "project root has uncommitted changes"}, nil
-	}
-
 	wtPath := nullStr(dbSess.WorktreePath)
 	if err := autoCommit(ctx, g.runner, sessionID, dbSess.Name, wtPath); err != nil {
 		return MergeResult{Status: "error", Error: "failed to commit worktree changes: " + err.Error()}, nil
@@ -229,24 +221,37 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		live.broadcastState(StateMerging)
 	}
 
-	hash, mergeErr := gitops.MergeBranch(project.Path, branch, "Merge: "+dbSess.Name)
-	if mergeErr != nil {
-		files, _ := gitops.MergeConflictFiles(project.Path)
-		_ = gitops.AbortMerge(project.Path)
-		if len(files) > 0 {
-			slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
-			if live != nil {
-				_ = live.UnlockGitOp(StateIdle)
+	var hash string
+	var mergeResult MergeResult
+	stashConflict, stashErr := gitops.WithCleanWorktree(project.Path, func() error {
+		var mergeErr error
+		hash, mergeErr = gitops.MergeBranch(project.Path, branch, "Merge: "+dbSess.Name)
+		if mergeErr != nil {
+			files, _ := gitops.MergeConflictFiles(project.Path)
+			_ = gitops.AbortMerge(project.Path)
+			if len(files) > 0 {
+				slog.Warn("merge conflict", "session_id", sessionID, "branch", branch, "conflict_files", len(files))
+				mergeResult = MergeResult{Status: "conflict", ConflictFiles: files}
+				return mergeErr
 			}
-			g.broadcastSnapshot(dbSess, project)
-			return MergeResult{Status: "conflict", ConflictFiles: files}, nil
+			slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
+			mergeResult = MergeResult{Status: "error", Error: mergeErr.Error()}
+			return mergeErr
 		}
-		slog.Error("merge failed", "session_id", sessionID, "branch", branch, "error", mergeErr)
+		return nil
+	})
+	if stashErr != nil {
+		return MergeResult{Status: "error", Error: stashErr.Error()}, nil
+	}
+	if stashConflict {
+		slog.Warn("stash pop conflict after merge — user's uncommitted changes are preserved in git stash", "session_id", sessionID)
+	}
+	if mergeResult.Status != "" {
 		if live != nil {
 			_ = live.UnlockGitOp(StateIdle)
 		}
 		g.broadcastSnapshot(dbSess, project)
-		return MergeResult{Status: "error", Error: mergeErr.Error()}, nil
+		return mergeResult, nil
 	}
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)

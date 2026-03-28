@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -119,6 +120,47 @@ func AutoCommitAll(dir, message string) error {
 		return fmt.Errorf("git commit failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// StashPush stashes uncommitted changes (including untracked files).
+// Returns true if something was stashed, false if the tree was already clean.
+func StashPush(dir string) (bool, error) {
+	out, err := gitRun(dir, "stash", "push", "--include-untracked", "-m", "agentique: auto-stash")
+	if err != nil {
+		return false, fmt.Errorf("git stash push failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return !strings.Contains(string(out), "No local changes to save"), nil
+}
+
+// StashPop restores the most recent stash entry.
+// On conflict, the stash is preserved (not dropped) by git.
+func StashPop(dir string) error {
+	out, err := gitRun(dir, "stash", "pop")
+	if err != nil {
+		return fmt.Errorf("git stash pop failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// WithCleanWorktree stashes uncommitted changes, runs fn, then pops the stash.
+// If fn fails, the stash is still popped. Returns fn's error as the primary error.
+// stashConflict is true if stash pop failed (stash preserved for manual recovery).
+func WithCleanWorktree(dir string, fn func() error) (stashConflict bool, err error) {
+	stashed, err := StashPush(dir)
+	if err != nil {
+		return false, fmt.Errorf("failed to stash project root: %w", err)
+	}
+	if !stashed {
+		return false, fn()
+	}
+
+	fnErr := fn()
+
+	if popErr := StashPop(dir); popErr != nil {
+		slog.Warn("stash pop failed after git operation, stash preserved for manual recovery", "dir", dir, "error", popErr)
+		return true, fnErr
+	}
+	return false, fnErr
 }
 
 // UncommittedDiff returns the diff of uncommitted changes (staged + unstaged vs HEAD)
