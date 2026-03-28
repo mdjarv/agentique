@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, GitBranch, Plus, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus, Star } from "lucide-react";
 import { type ReactNode, memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -430,6 +430,21 @@ export function ProjectTreeItem({
                   className="text-base font-medium shrink-0 text-foreground-bright hover:underline"
                 >
                   {project.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeSidebar();
+                    navigate({
+                      to: "/project/$projectSlug/files",
+                      params: { projectSlug: project.slug },
+                    });
+                  }}
+                  className="shrink-0 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-colors hover:text-foreground cursor-pointer"
+                  title="Browse files"
+                >
+                  <FolderOpen className="size-3.5" />
                 </button>
                 <ProjectTagDots projectId={project.id} />
                 <ActiveSessionIndicators counts={sessionCounts} />

@@ -301,7 +301,12 @@ export function useGlobalSubscriptions(projects: Project[]) {
         return; // Already created optimistically
       }
       const attachments = Array.isArray(payload.attachments)
-        ? payload.attachments.map((a: any) => ({ id: uuid(), name: a.name, mimeType: a.mimeType, dataUrl: a.dataUrl }))
+        ? payload.attachments.map((a: { name: string; mimeType: string; dataUrl: string }) => ({
+            id: uuid(),
+            name: a.name,
+            mimeType: a.mimeType,
+            dataUrl: a.dataUrl,
+          }))
         : undefined;
       useChatStore.getState().submitQuery(sid, payload.prompt, attachments);
     });
