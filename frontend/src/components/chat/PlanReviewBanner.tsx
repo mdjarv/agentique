@@ -69,22 +69,22 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
         </div>
       )}
 
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-primary/20 bg-primary/5">
+      <div className="flex items-center gap-2 max-md:flex-col max-md:items-stretch px-3 py-2 border-t border-primary/20 bg-primary/5">
         <Button
           size="sm"
           variant="ghost"
-          className="h-8 px-3 text-muted-foreground hover:text-foreground"
+          className="h-8 max-md:h-10 px-3 text-muted-foreground hover:text-foreground"
           onClick={handleKeepChatting}
           disabled={submitting}
         >
           <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
           Keep chatting
         </Button>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 max-md:ml-0 max-md:w-full max-md:flex-col">
           <Button
             size="sm"
             variant="outline"
-            className="h-8 px-3"
+            className="h-8 max-md:h-10 px-3 max-md:w-full"
             onClick={handleStartFresh}
             disabled={submitting}
           >
@@ -93,7 +93,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
           </Button>
           <Button
             size="sm"
-            className="h-8 px-3 bg-success hover:bg-success/90 text-background"
+            className="h-8 max-md:h-10 px-3 max-md:w-full bg-success hover:bg-success/90 text-background"
             onClick={handleContinue}
             disabled={submitting}
           >
