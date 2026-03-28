@@ -63,9 +63,28 @@ const RE_PROMPT_OPEN = /^(`{3,})prompt\s*$/;
 const RE_BARE_FENCE = /^(`{3,})\s*$/;
 const RE_INFO_FENCE = /^(`{3,})\S/;
 
+/** Lookahead: determine whether a bare fence should open an inner code block
+ *  rather than close the prompt block.
+ *
+ *  Counts remaining bare and info fences (stopping at the next prompt opener).
+ *  If there are >= 2 unpaired bare fences ahead, this one opens an inner block
+ *  (one to close it, one more to close the prompt). */
+function shouldOpenInnerBlock(lines: string[], currentIndex: number): boolean {
+  let bare = 0;
+  let info = 0;
+  for (let j = currentIndex + 1; j < lines.length; j++) {
+    const line = lines[j] ?? "";
+    if (RE_PROMPT_OPEN.test(line)) break;
+    if (RE_BARE_FENCE.test(line)) bare++;
+    else if (RE_INFO_FENCE.test(line)) info++;
+  }
+  return bare - info >= 2;
+}
+
 /** Find prompt blocks in raw markdown, correctly handling nested code fences.
- *  Uses pair-counting: info-string fences increment depth, bare fences decrement.
- *  Depth reaching 0 marks the true closing fence. */
+ *  Tracks inner code blocks with a boolean flag instead of a depth counter,
+ *  using lookahead to distinguish bare fences that open inner blocks from
+ *  bare fences that close the prompt. */
 export function findRawPromptBlocks(markdown: string): RawPromptBlock[] {
   const lines = markdown.split("\n");
   const blocks: RawPromptBlock[] = [];
@@ -83,25 +102,37 @@ export function findRawPromptBlocks(markdown: string): RawPromptBlock[] {
     const startLine = i;
     const contentLines: string[] = [];
     let maxInnerFence = 0;
-    let depth = 1;
+    let insideInner = false;
+    let innerFenceLen = 0;
 
     i++;
     let found = false;
     while (i < lines.length) {
       const line = lines[i] ?? "";
       const bareMatch = RE_BARE_FENCE.exec(line);
+      const infoMatch = RE_INFO_FENCE.exec(line);
 
-      if (bareMatch?.[1]) {
-        depth--;
-        if (depth === 0) {
+      if (insideInner) {
+        if (bareMatch?.[1] && bareMatch[1].length >= innerFenceLen) {
+          insideInner = false;
+          maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
+        }
+        contentLines.push(line);
+      } else if (bareMatch?.[1]) {
+        if (shouldOpenInnerBlock(lines, i)) {
+          insideInner = true;
+          innerFenceLen = bareMatch[1].length;
+          maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
+          contentLines.push(line);
+        } else {
           found = true;
           i++;
           break;
         }
-        maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
-        contentLines.push(line);
-      } else if (RE_INFO_FENCE.test(line)) {
-        depth++;
+      } else if (infoMatch?.[1]) {
+        insideInner = true;
+        innerFenceLen = infoMatch[1].length;
+        maxInnerFence = Math.max(maxInnerFence, infoMatch[1].length);
         contentLines.push(line);
       } else {
         contentLines.push(line);
