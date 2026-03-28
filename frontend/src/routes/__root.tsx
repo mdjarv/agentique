@@ -74,7 +74,7 @@ function AuthenticatedLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   // Session routes render their own merged header on mobile — skip the root one
-  const isSessionRoute = /^\/project\/[^/]+\/session\/[^/]+/.test(pathname);
+  const isSessionRoute = /^\/project\/[^/]+\/session\/(?!new(?:\/|$))[^/]+/.test(pathname);
   const showMobileHeader = isMobile && !isSessionRoute;
 
   return (
