@@ -43,5 +43,8 @@ frontend/playwright-report/
 # TLS certs
 certs/
 
+# Scratch / temp files (screenshots, exports, etc.)
+tmp/
+
 # Claude Code
 .claude/
