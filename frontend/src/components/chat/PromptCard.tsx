@@ -47,17 +47,114 @@ export function parsePromptFromCode(code: string): PromptBlock | null {
   return { title, prompt, projectSlug };
 }
 
+// ---------------------------------------------------------------------------
+// State-machine prompt block finder (handles nested code fences)
+// ---------------------------------------------------------------------------
+
+export interface RawPromptBlock {
+  startLine: number;
+  endLine: number;
+  content: string;
+  fenceLen: number;
+  maxInnerFence: number;
+}
+
+const RE_PROMPT_OPEN = /^(`{3,})prompt\s*$/;
+const RE_BARE_FENCE = /^(`{3,})\s*$/;
+const RE_INFO_FENCE = /^(`{3,})\S/;
+
+/** Find prompt blocks in raw markdown, correctly handling nested code fences.
+ *  Uses pair-counting: info-string fences increment depth, bare fences decrement.
+ *  Depth reaching 0 marks the true closing fence. */
+export function findRawPromptBlocks(markdown: string): RawPromptBlock[] {
+  const lines = markdown.split("\n");
+  const blocks: RawPromptBlock[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const cur = lines[i] ?? "";
+    const openMatch = RE_PROMPT_OPEN.exec(cur);
+    if (!openMatch?.[1]) {
+      i++;
+      continue;
+    }
+
+    const fenceLen = openMatch[1].length;
+    const startLine = i;
+    const contentLines: string[] = [];
+    let maxInnerFence = 0;
+    let depth = 1;
+
+    i++;
+    let found = false;
+    while (i < lines.length) {
+      const line = lines[i] ?? "";
+      const bareMatch = RE_BARE_FENCE.exec(line);
+
+      if (bareMatch?.[1]) {
+        depth--;
+        if (depth === 0) {
+          found = true;
+          i++;
+          break;
+        }
+        maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
+        contentLines.push(line);
+      } else if (RE_INFO_FENCE.test(line)) {
+        depth++;
+        contentLines.push(line);
+      } else {
+        contentLines.push(line);
+      }
+
+      i++;
+    }
+
+    if (found) {
+      blocks.push({
+        startLine,
+        endLine: i - 1,
+        content: contentLines.join("\n"),
+        fenceLen,
+        maxInnerFence,
+      });
+    }
+  }
+
+  return blocks;
+}
+
+/** Rewrite outer prompt fences so inner bare fences don't confuse CommonMark. */
+export function normalizePromptFences(markdown: string): string {
+  const blocks = findRawPromptBlocks(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let needsNorm = false;
+  for (const b of blocks) {
+    if (b.maxInnerFence >= b.fenceLen) {
+      needsNorm = true;
+      break;
+    }
+  }
+  if (!needsNorm) return markdown;
+
+  const lines = markdown.split("\n");
+  const result = [...lines];
+  for (const b of blocks) {
+    if (b.maxInnerFence >= b.fenceLen) {
+      const fence = "`".repeat(b.maxInnerFence + 1);
+      result[b.startLine] = `${fence}prompt`;
+      result[b.endLine] = fence;
+    }
+  }
+  return result.join("\n");
+}
+
 /** Extract all prompt blocks from raw markdown content. */
 export function parsePromptBlocks(markdown: string): PromptBlock[] {
-  const blocks: PromptBlock[] = [];
-  const re = /```prompt\s*\n#\s+([^\n]+)\n(?:project:\s*(\S+)\s*\n)?([\s\S]*?)```/g;
-  for (const m of markdown.matchAll(re)) {
-    const title = m[1]?.trim();
-    const projectSlug = m[2]?.trim();
-    const prompt = m[3]?.trim();
-    if (title && prompt) blocks.push({ title, prompt, projectSlug });
-  }
-  return blocks;
+  return findRawPromptBlocks(markdown)
+    .map((raw) => parsePromptFromCode(raw.content))
+    .filter((b): b is PromptBlock => b !== null);
 }
 
 // ---------------------------------------------------------------------------
