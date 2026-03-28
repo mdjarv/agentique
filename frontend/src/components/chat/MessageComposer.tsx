@@ -367,7 +367,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
             {/* Bottom bar */}
             <div className="flex items-center justify-between px-2 pb-2">
-              <div className="flex items-center gap-0.5 max-md:gap-1 flex-wrap min-w-0">
+              <div className="flex items-center gap-0.5 max-md:gap-1 max-md:overflow-x-auto max-md:flex-nowrap min-w-0">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -378,7 +378,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   <Paperclip className="h-3.5 w-3.5" />
                 </button>
 
-                {hasToggles && <div className="w-px h-4 bg-border mx-1" />}
+                {hasToggles && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
 
                 {worktree !== undefined &&
                   (onWorktreeChange ? (
@@ -386,7 +386,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                       type="button"
                       onClick={() => onWorktreeChange(!worktree)}
                       className={cn(
-                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                        "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
                         worktree ? "bg-primary/10 text-primary" : "bg-orange/10 text-orange",
                       )}
                     >
@@ -400,7 +400,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   ) : (
                     <span
                       className={cn(
-                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                        "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 shrink-0",
                         worktree ? "text-primary" : "text-orange",
                       )}
                     >
@@ -418,7 +418,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     onClick={() => onPlanModeChange(!planMode)}
                     disabled={isRunning}
                     className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
                       planMode
                         ? "bg-warning/10 text-warning"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
@@ -438,7 +438,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     type="button"
                     onClick={() => onAutoApproveChange(!autoApprove)}
                     className={cn(
-                      "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                      "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
                       autoApprove
                         ? "bg-success/10 text-success"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
@@ -449,14 +449,14 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   </button>
                 )}
 
-                {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1" />}
+                {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
 
                 {effort !== undefined &&
                   (onEffortChange ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         className={cn(
-                          "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
                           "hover:text-foreground hover:bg-muted/80 focus-visible:outline-none",
                           EFFORT_COLORS[effort],
                         )}
@@ -486,7 +486,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   ) : (
                     <span
                       className={cn(
-                        "flex items-center gap-1 text-[11px] rounded-md px-2 py-1",
+                        "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 shrink-0",
                         EFFORT_COLORS[effort],
                       )}
                     >
@@ -500,7 +500,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         className={cn(
-                          "flex items-center gap-1 text-[11px] rounded-md px-2 py-1 transition-colors",
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
                           "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                           "focus-visible:outline-none",
                         )}
@@ -524,7 +524,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : (
-                    <span className="flex items-center gap-1 text-[11px] rounded-md px-2 py-1 text-muted-foreground">
+                    <span className="flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 text-muted-foreground shrink-0">
                       {MODEL_LABELS[model]}
                     </span>
                   ))}
