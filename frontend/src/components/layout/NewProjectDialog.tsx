@@ -32,10 +32,10 @@ export function NewProjectDialog() {
   const [nameManuallySet, setNameManuallySet] = useState(false);
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
-  const [showBrowser, setShowBrowser] = useState(true);
   const addProject = useAppStore((s) => s.addProject);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [showBrowser, setShowBrowser] = useState(!isMobile);
 
   const handlePathChange = useCallback(
     (newPath: string) => {
@@ -79,7 +79,7 @@ export function NewProjectDialog() {
       setPath("");
       setNameManuallySet(false);
       setError("");
-      setShowBrowser(true);
+      setShowBrowser(!isMobile);
     }
   };
 
