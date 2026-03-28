@@ -110,8 +110,9 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 		"member": member,
 	})
 
-	// Inject team context into a live session so it knows about peers.
+	// Wire agent message callback and inject team context into a live session.
 	if live := s.mgr.Get(sessionID); live != nil {
+		s.wireAgentMessageCallback(live, teamID)
 		go s.injectTeamContext(context.Background(), live, teamID)
 	}
 
@@ -137,6 +138,11 @@ func (s *Service) LeaveTeam(ctx context.Context, sessionID string) error {
 
 	if err := s.queries.ClearSessionTeam(ctx, sessionID); err != nil {
 		return fmt.Errorf("clear session team: %w", err)
+	}
+
+	// Clear agent message callback.
+	if live := s.mgr.Get(sessionID); live != nil {
+		live.SetAgentMessageCallback(nil)
 	}
 
 	s.hub.Broadcast(team.ProjectID, "team.member-left", map[string]any{
@@ -280,6 +286,28 @@ func (s *Service) buildTeamInfo(ctx context.Context, team store.Team) (TeamInfo,
 		Members:   memberInfos,
 		CreatedAt: team.CreatedAt,
 	}, nil
+}
+
+// wireAgentMessageCallback sets up the SendMessage interception callback on a
+// live session. The callback resolves the target name to a session ID within
+// the team and routes the message through RouteAgentMessage.
+func (s *Service) wireAgentMessageCallback(sess *Session, teamID string) {
+	sess.SetAgentMessageCallback(func(senderID, targetName, content string) error {
+		members, err := s.queries.ListTeamMembers(context.Background(), sql.NullString{String: teamID, Valid: true})
+		if err != nil {
+			return fmt.Errorf("list team members: %w", err)
+		}
+		for _, m := range members {
+			if m.Name == targetName {
+				return s.RouteAgentMessage(context.Background(), AgentMessagePayload{
+					SenderSessionID: senderID,
+					TargetSessionID: m.ID,
+					Content:         content,
+				})
+			}
+		}
+		return fmt.Errorf("no team member named %q", targetName)
+	})
 }
 
 // injectTeamContext sends a message to a live session about its team peers.

@@ -91,8 +91,9 @@ type Session struct {
 	workDir        string
 	gitVersion      int64
 	eventLoopDone   chan struct{}
-	toolCategories  map[string]string // ToolID → category for correlating results to writes
-	gitRefreshTimer *time.Timer       // debounce timer for mid-turn git refresh
+	toolCategories   map[string]string // ToolID → category for correlating results to writes
+	gitRefreshTimer  *time.Timer       // debounce timer for mid-turn git refresh
+	onAgentMessage   func(senderID, targetName, content string) error
 }
 
 
@@ -775,6 +776,11 @@ func isPlanSafeTool(toolName string) bool {
 // claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
 // this blocks, the SDK will unblock on context cancellation.
 func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	// Intercept SendMessage tool for inter-agent messaging.
+	if toolName == "SendMessage" {
+		return s.interceptSendMessage(input)
+	}
+
 	s.mu.Lock()
 	bypass := (s.autoApprove && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
@@ -831,6 +837,53 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
 	}
+}
+
+// SetAgentMessageCallback sets the callback for routing SendMessage tool invocations.
+func (s *Session) SetAgentMessageCallback(cb func(senderID, targetName, content string) error) {
+	s.mu.Lock()
+	s.onAgentMessage = cb
+	s.mu.Unlock()
+}
+
+// interceptSendMessage handles the SendMessage tool by routing it through the
+// team messaging system. Returns a deny response with a success-like message
+// so Claude thinks the message was delivered (v1 hack — proper tool result
+// interception requires claudecli-go changes).
+func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	s.mu.Lock()
+	cb := s.onAgentMessage
+	s.mu.Unlock()
+
+	if cb == nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: "SendMessage is not available — this session is not part of a team.",
+		}, nil
+	}
+
+	var parsed struct {
+		To      string `json:"to"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
+		}, nil
+	}
+
+	if err := cb(s.ID, parsed.To, parsed.Content); err != nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Message delivery failed: %v", err),
+		}, nil
+	}
+
+	return &claudecli.PermissionResponse{
+		Allow:       false,
+		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", parsed.To),
+	}, nil
 }
 
 // ResolveApproval sends a permission response for a pending tool approval.
