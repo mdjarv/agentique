@@ -1,10 +1,8 @@
-import { Outlet, createRootRoute, useRouterState } from "@tanstack/react-router";
-import { Menu } from "lucide-react";
+import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { LoginPage } from "~/components/auth/LoginPage";
 import { AppSidebar } from "~/components/layout/AppSidebar";
-import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
@@ -41,27 +39,6 @@ function RootLayout() {
   return <AuthenticatedLayout />;
 }
 
-function MobileHeaderTitle() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const projects = useAppStore((s) => s.projects);
-
-  // /project/:slug/settings
-  if (pathname.includes("/settings")) {
-    const slug = pathname.split("/")[2];
-    const name = projects.find((p) => p.slug === slug)?.name;
-    return <span className="text-sm font-semibold truncate">{name ?? slug} — Settings</span>;
-  }
-
-  // /project/:slug/session/... or /project/:slug
-  const slugMatch = pathname.match(/^\/project\/([^/]+)/);
-  if (slugMatch) {
-    const name = projects.find((p) => p.slug === slugMatch[1])?.name;
-    return <span className="text-sm font-semibold truncate">{name ?? slugMatch[1]}</span>;
-  }
-
-  return <span className="text-sm font-semibold">Agentique</span>;
-}
-
 function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
@@ -71,11 +48,6 @@ function AuthenticatedLayout() {
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-
-  // Session routes render their own merged header on mobile — skip the root one
-  const isSessionRoute = /^\/project\/[^/]+\/session\/[^/]+/.test(pathname);
-  const showMobileHeader = isMobile && !isSessionRoute;
 
   return (
     <TooltipProvider>
@@ -94,22 +66,6 @@ function AuthenticatedLayout() {
           <AppSidebar className="w-72 border-r" />
         )}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {showMobileHeader && (
-            <div className="h-11 border-b px-3 flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="h-11 w-11 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors -ml-3"
-                aria-label="Open sidebar"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
-              <MobileHeaderTitle />
-              <div className="ml-auto">
-                <ConnectionIndicator />
-              </div>
-            </div>
-          )}
           <Outlet />
         </main>
         <Toaster

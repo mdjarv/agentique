@@ -20,6 +20,7 @@ import { ResumeBanner } from "~/components/chat/ResumeBanner";
 
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
+import { StatusPage } from "~/components/layout/PageHeader";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { useGitActions } from "~/hooks/useGitActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -64,7 +65,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
-  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const projectSlug = project?.slug ?? "";
 
   // Granular selectors — turns changes on every streaming event, meta changes
@@ -283,11 +283,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   }, [sessionState, sessionId, queuedMessages]);
 
   if (!meta) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Loading session...</p>
-      </div>
-    );
+    return <StatusPage message="Loading session..." />;
   }
 
   return (
@@ -298,7 +294,6 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           hasPendingInput={!!pendingApproval || !!pendingQuestion}
           showPanelButton={isMobile && showPanel}
           onOpenPanel={() => setMobileSessionOpen(true)}
-          onOpenSidebar={isMobile ? () => setSidebarOpen(true) : undefined}
         />
 
         {/* Tab bar — only when there are changes to view */}

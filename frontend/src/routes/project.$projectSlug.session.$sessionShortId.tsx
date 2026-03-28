@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChatPanel } from "~/components/chat/ChatPanel";
+import { StatusPage } from "~/components/layout/PageHeader";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -9,7 +10,6 @@ export const Route = createFileRoute("/project/$projectSlug/session/$sessionShor
 
 function SessionPage() {
   const { projectSlug, sessionShortId } = Route.useParams();
-  const projectsLoaded = useAppStore((s) => s.projectsLoaded);
   const project = useAppStore((s) => s.projects.find((p) => p.slug === projectSlug));
   const sessionId = useChatStore((s) => {
     if (!project) return undefined;
@@ -21,28 +21,14 @@ function SessionPage() {
     project ? s.loadedProjects.has(project.id) : false,
   );
 
-  if (!projectsLoaded || (project && !sessionListLoaded)) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Loading...</p>
-      </div>
-    );
-  }
+  if (!project) return null;
 
-  if (!project) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Project not found</p>
-      </div>
-    );
+  if (!sessionListLoaded) {
+    return <StatusPage message="Loading..." />;
   }
 
   if (!sessionId) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <p className="text-sm">Session not found</p>
-      </div>
-    );
+    return <StatusPage message="Session not found" />;
   }
 
   return <ChatPanel projectId={project.id} sessionId={sessionId} />;
