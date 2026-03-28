@@ -1,9 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, GitBranch, Plus, Star } from "lucide-react";
 import { type ReactNode, memo, useCallback, useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { setProjectFavorite } from "~/lib/project-actions";
+import { getTagColor } from "~/lib/tag-colors";
 import type { Project } from "~/lib/types";
-import { cn } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type ChatState, type SessionData, useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
@@ -207,7 +211,6 @@ interface ProjectTreeItemProps {
   onToggleExpand: () => void;
   activeSessionId: string | undefined;
   isNewChatActive: boolean;
-  dragListeners?: React.HTMLAttributes<HTMLElement>;
 }
 
 // --- Active session indicators ---
@@ -291,6 +294,31 @@ function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
   );
 }
 
+function ProjectTagDots({ projectId }: { projectId: string }) {
+  const tags = useAppStore((s) => s.tags);
+  const projectTags = useAppStore((s) => s.projectTags);
+  const tagIds = projectTags.filter((pt) => pt.project_id === projectId).map((pt) => pt.tag_id);
+  if (tagIds.length === 0) return null;
+
+  return (
+    <span className="flex items-center gap-0.5 shrink-0">
+      {tagIds.map((id) => {
+        const tag = tags.find((t) => t.id === id);
+        if (!tag) return null;
+        const color = getTagColor(tag.color);
+        return (
+          <span
+            key={id}
+            className="inline-block size-2 rounded-full"
+            style={{ backgroundColor: color.bg }}
+            title={tag.name}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
 export function ProjectTreeItem({
   project,
   isActive,
@@ -298,11 +326,12 @@ export function ProjectTreeItem({
   onToggleExpand,
   activeSessionId,
   isNewChatActive,
-  dragListeners,
 }: ProjectTreeItemProps) {
   const navigate = useNavigate();
+  const ws = useWebSocket();
   const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
   const sessionCounts = useActiveSessionCounts(project.id);
+  const isFavorite = project.favorite === 1;
 
   const sessionIds = useChatStore(
     useShallow((s) =>
@@ -315,6 +344,19 @@ export function ProjectTreeItem({
   const handleProjectClick = () => {
     onToggleExpand();
   };
+
+  const handleToggleFavorite = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        const updated = await setProjectFavorite(ws, project.id, !isFavorite);
+        useAppStore.getState().updateProject(updated);
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to toggle favorite"));
+      }
+    },
+    [ws, project.id, isFavorite],
+  );
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
@@ -352,7 +394,6 @@ export function ProjectTreeItem({
             "w-full text-left px-3 py-1.5 max-md:py-2.5 group bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors cursor-pointer",
             isActive && "bg-sidebar-accent",
           )}
-          {...dragListeners}
         >
           <div className="flex gap-1.5">
             <div className="flex items-center shrink-0">
@@ -364,7 +405,19 @@ export function ProjectTreeItem({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <FolderOpen className="h-4 w-4 shrink-0" />
+                <button
+                  type="button"
+                  onClick={handleToggleFavorite}
+                  className={cn(
+                    "shrink-0 transition-colors cursor-pointer",
+                    isFavorite
+                      ? "text-warning"
+                      : "text-muted-foreground/30 opacity-0 group-hover:opacity-100",
+                  )}
+                  title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                >
+                  <Star className="size-3.5" fill={isFavorite ? "currentColor" : "none"} />
+                </button>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -378,6 +431,7 @@ export function ProjectTreeItem({
                 >
                   {project.name}
                 </button>
+                <ProjectTagDots projectId={project.id} />
                 <ActiveSessionIndicators counts={sessionCounts} />
               </div>
               {isExpanded && gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}

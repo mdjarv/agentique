@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, GitBranch, RefreshCw } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, GitBranch, RefreshCw } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -8,8 +8,9 @@ import {
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { fetchProject, pushProject } from "~/lib/project-actions";
-import { getErrorMessage } from "~/lib/utils";
+import { fetchProject, pushProject, setProjectTags } from "~/lib/project-actions";
+import { getTagColor } from "~/lib/tag-colors";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { ActionItem } from "./ActionItem";
 
@@ -33,6 +34,10 @@ export function ProjectHoverCard({
   const ws = useWebSocket();
   const [pushing, setPushing] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const tags = useAppStore((s) => s.tags);
+  const projectTagIds = useAppStore((s) =>
+    s.projectTags.filter((pt) => pt.project_id === projectId).map((pt) => pt.tag_id),
+  );
 
   const handlePush = useCallback(async () => {
     setPushing(true);
@@ -46,6 +51,21 @@ export function ProjectHoverCard({
       setPushing(false);
     }
   }, [ws, projectId]);
+
+  const handleToggleTag = useCallback(
+    async (tagId: string) => {
+      const newTagIds = projectTagIds.includes(tagId)
+        ? projectTagIds.filter((id) => id !== tagId)
+        : [...projectTagIds, tagId];
+      try {
+        await setProjectTags(ws, projectId, newTagIds);
+        useAppStore.getState().setTagsForProject(projectId, newTagIds);
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to update tags"));
+      }
+    },
+    [ws, projectId, projectTagIds],
+  );
 
   const handleFetch = useCallback(async () => {
     setFetching(true);
@@ -106,6 +126,37 @@ export function ProjectHoverCard({
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="px-3 py-2 border-b">
+            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Tags</div>
+            <div className="space-y-0.5">
+              {tags.map((tag) => {
+                const color = getTagColor(tag.color);
+                const isAssigned = projectTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => handleToggleTag(tag.id)}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-1.5 py-1 rounded text-xs hover:bg-accent transition-colors cursor-pointer",
+                      isAssigned && "text-foreground-bright",
+                    )}
+                  >
+                    <span
+                      className="inline-block size-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: color.bg }}
+                    />
+                    <span className="flex-1 text-left truncate">{tag.name}</span>
+                    {isAssigned && <Check className="size-3 text-success shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

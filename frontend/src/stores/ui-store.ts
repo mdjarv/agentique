@@ -33,11 +33,14 @@ interface UIState {
   drafts: Record<string, string>;
   collapsedProjectIds: string[];
   sessionDefaults: SessionDefaults;
+  activeTagFilters: string[];
 
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
   setSessionDefaults: (partial: Partial<SessionDefaults>) => void;
+  toggleTagFilter: (tagId: string) => void;
+  clearTagFilters: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -46,6 +49,7 @@ export const useUIStore = create<UIState>()(
       drafts: {},
       collapsedProjectIds: readLegacyCollapsedProjects(),
       sessionDefaults: { ...DEFAULT_SESSION_DEFAULTS },
+      activeTagFilters: [],
 
       setDraft: (sessionId, text) =>
         set((s) => {
@@ -77,6 +81,15 @@ export const useUIStore = create<UIState>()(
 
       setSessionDefaults: (partial) =>
         set((s) => ({ sessionDefaults: { ...s.sessionDefaults, ...partial } })),
+
+      toggleTagFilter: (tagId) =>
+        set((s) => ({
+          activeTagFilters: s.activeTagFilters.includes(tagId)
+            ? s.activeTagFilters.filter((id) => id !== tagId)
+            : [...s.activeTagFilters, tagId],
+        })),
+
+      clearTagFilters: () => set({ activeTagFilters: [] }),
     }),
     {
       name: "agentique:ui",
@@ -85,6 +98,7 @@ export const useUIStore = create<UIState>()(
         drafts: state.drafts,
         collapsedProjectIds: state.collapsedProjectIds,
         sessionDefaults: state.sessionDefaults,
+        activeTagFilters: state.activeTagFilters,
       }),
       onRehydrateStorage: () => () => {
         try {

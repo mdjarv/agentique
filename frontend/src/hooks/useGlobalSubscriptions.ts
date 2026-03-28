@@ -3,8 +3,8 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { parseServerEvent } from "~/lib/events";
-import type { ListSessionsResult, ProjectGitStatus } from "~/lib/generated-types";
-import { getProjectGitStatus } from "~/lib/project-actions";
+import type { ListSessionsResult, ProjectGitStatus, Tag } from "~/lib/generated-types";
+import { getProjectGitStatus, listTags } from "~/lib/project-actions";
 import { loadSessionHistory } from "~/lib/session-history";
 import type { Project } from "~/lib/types";
 import { sessionShortId } from "~/lib/utils";
@@ -141,6 +141,19 @@ export function useGlobalSubscriptions(projects: Project[]) {
   const subscribedRef = useRef(new Set<string>());
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
+
+  // Load tags once on mount
+  const tagsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (tagsLoadedRef.current) return;
+    tagsLoadedRef.current = true;
+    listTags(ws)
+      .then((result) => {
+        useAppStore.getState().setTags(result.tags);
+        useAppStore.getState().setProjectTags(result.projectTags);
+      })
+      .catch(() => {}); // silent — tags feature may not exist on older backend
+  }, [ws]);
 
   // Subscribe to new projects as they appear
   useEffect(() => {
@@ -294,6 +307,30 @@ export function useGlobalSubscriptions(projects: Project[]) {
       useAppStore.getState().setProjectGitStatus(payload);
     });
 
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubProjectUpdated = ws.subscribe("project.updated", (payload: any) => {
+      useAppStore.getState().updateProject(payload);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubProjectTagsUpdated = ws.subscribe("project.tags-updated", (payload: any) => {
+      const tagIds = (payload.tags as Tag[]).map((t) => t.id);
+      useAppStore.getState().setTagsForProject(payload.projectId, tagIds);
+    });
+
+    const unsubTagCreated = ws.subscribe("tag.created", (payload: Tag) => {
+      useAppStore.getState().addTag(payload);
+    });
+
+    const unsubTagUpdated = ws.subscribe("tag.updated", (payload: Tag) => {
+      useAppStore.getState().updateTag(payload);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTagDeleted = ws.subscribe("tag.deleted", (payload: any) => {
+      useAppStore.getState().removeTag(payload.id);
+    });
+
     // Reload active session when returning from background (catches missed events on mobile)
     let hiddenAt = 0;
     const handleVisibility = () => {
@@ -318,6 +355,14 @@ export function useGlobalSubscriptions(projects: Project[]) {
         subscribeAndLoad(ws, project.id);
       }
 
+      // Reload tags
+      listTags(ws)
+        .then((result) => {
+          useAppStore.getState().setTags(result.tags);
+          useAppStore.getState().setProjectTags(result.projectTags);
+        })
+        .catch(() => {});
+
       // Reload active session history
       const activeId = useChatStore.getState().activeSessionId;
       if (activeId) {
@@ -337,6 +382,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPermMode();
       unsubTurnStarted();
       unsubProjectGit();
+      unsubProjectUpdated();
+      unsubProjectTagsUpdated();
+      unsubTagCreated();
+      unsubTagUpdated();
+      unsubTagDeleted();
       unsubReconnect();
       document.removeEventListener("visibilitychange", handleVisibility);
     };
