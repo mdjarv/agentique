@@ -520,8 +520,9 @@ func (s *Session) processEvent(event claudecli.Event) {
 	}
 
 	// Track tool categories for correlating results to write operations.
-	// Also detect plan mode transitions — the CLI auto-approves EnterPlanMode/ExitPlanMode
-	// without sending a can_use_tool request, so handleToolPermission never fires for them.
+	// EnterPlanMode is auto-approved by the CLI without a can_use_tool request.
+	// ExitPlanMode is intercepted here: we create a synthetic approval and interrupt
+	// so the user can review the plan before execution starts.
 	if tue, ok := wireEvent.(WireToolUseEvent); ok {
 		s.mu.Lock()
 		s.toolCategories[tue.ToolID] = tue.Category
@@ -531,7 +532,7 @@ func (s *Session) processEvent(event claudecli.Event) {
 		case "EnterPlanMode":
 			s.transitionPlanMode("plan")
 		case "ExitPlanMode":
-			s.transitionPlanMode("default")
+			go s.requestPlanReview(tue.ToolInput)
 		}
 	}
 
@@ -756,6 +757,67 @@ func (s *Session) transitionPlanMode(mode string) {
 	})
 }
 
+// requestPlanReview creates a synthetic pending approval for ExitPlanMode so
+// the user can review the plan before execution begins. Interrupts the session
+// to prevent tool calls between ExitPlanMode and user confirmation.
+func (s *Session) requestPlanReview(input json.RawMessage) {
+	approvalID := uuid.New().String()
+	ch := make(chan *claudecli.PermissionResponse, 1)
+
+	pa := &pendingApproval{
+		id:       approvalID,
+		toolName: "ExitPlanMode",
+		input:    input,
+		ch:       ch,
+	}
+
+	s.mu.Lock()
+	s.pendingApprovals[approvalID] = pa
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.pendingApprovals, approvalID)
+		s.mu.Unlock()
+	}()
+
+	s.broadcast("session.tool-permission", map[string]any{
+		"sessionId":  s.ID,
+		"approvalId": approvalID,
+		"toolName":   "ExitPlanMode",
+		"input":      input,
+	})
+
+	// Interrupt to stop execution before the agent acts on the plan.
+	// Ignore errors — session may have already finished naturally.
+	_ = s.Interrupt()
+
+	select {
+	case resp := <-ch:
+		if resp.Allow {
+			s.transitionPlanMode("default")
+			// Wait briefly for the interrupt's ResultEvent to transition session to idle.
+			time.Sleep(200 * time.Millisecond)
+			if err := s.Query(context.Background(), "Plan approved. Proceed with implementation.", nil); err != nil {
+				slog.Warn("auto-resume after plan approval failed", "session_id", s.ID, "error", err)
+			}
+		} else {
+			// User chose to keep chatting or start fresh. The CLI already
+			// exited plan mode internally — set it back.
+			s.mu.Lock()
+			cli := s.cliSess
+			s.mu.Unlock()
+			if cli != nil {
+				if err := cli.SetPermissionMode(claudecli.PermissionPlan); err != nil {
+					slog.Warn("failed to restore plan mode after deny", "session_id", s.ID, "error", err)
+				}
+			}
+		}
+	case <-s.ctx.Done():
+		// Session closed while waiting for review.
+	}
+}
+
 // planSafeCategories lists tool categories that can be auto-approved in plan
 // mode. These are read-only tools that cannot mutate the filesystem or execute
 // arbitrary commands.
@@ -784,6 +846,10 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	s.mu.Lock()
 	bypass := (s.autoApprove && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
+	// ExitPlanMode always requires user review, even with auto-approve.
+	if toolName == "ExitPlanMode" {
+		bypass = false
+	}
 	if bypass {
 		// Defensive fallback — processEvent also detects EnterPlanMode from the
 		// event stream, but if the CLI ever starts sending can_use_tool for it,
