@@ -35,6 +35,7 @@ type CreateParams struct {
 	MaxTurns        int
 	Projects        []ProjectInfo
 	BehaviorPresets BehaviorPresets
+	TeamPreamble    *TeamPreambleInfo
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -97,7 +98,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.TeamPreamble)),
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -177,6 +178,7 @@ type ResumeParams struct {
 	InitialGitVersion int64
 	Projects          []ProjectInfo
 	BehaviorPresets   BehaviorPresets
+	TeamPreamble      *TeamPreambleInfo
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -218,7 +220,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble)),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

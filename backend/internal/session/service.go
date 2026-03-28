@@ -778,6 +778,13 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 
 	resumeProjects, _ := s.queries.ListProjects(ctx)
 
+	// Build team preamble if session is in a team.
+	var teamPreamble *TeamPreambleInfo
+	teamID := nullStr(dbSess.TeamID)
+	if teamID != "" {
+		teamPreamble = s.buildTeamPreamble(ctx, teamID, sessionID)
+	}
+
 	sess, resumeErr := s.mgr.Resume(ctx, ResumeParams{
 		SessionID:         sessionID,
 		ClaudeSessionID:   claudeSessID,
@@ -793,9 +800,14 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		InitialGitVersion: initialVersion,
 		Projects:          ProjectInfoFromStore(resumeProjects),
 		BehaviorPresets:   ParsePresets(dbSess.BehaviorPresets),
+		TeamPreamble:      teamPreamble,
 	})
 	if resumeErr != nil {
 		return nil, resumeErr
+	}
+	// Wire agent message callback for team members.
+	if teamID != "" {
+		s.wireAgentMessageCallback(sess, teamID)
 	}
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()

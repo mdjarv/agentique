@@ -288,6 +288,36 @@ func (s *Service) buildTeamInfo(ctx context.Context, team store.Team) (TeamInfo,
 	}, nil
 }
 
+// buildTeamPreamble creates team context for the system prompt, excluding the given session.
+func (s *Service) buildTeamPreamble(ctx context.Context, teamID, excludeSessionID string) *TeamPreambleInfo {
+	team, err := s.queries.GetTeam(ctx, teamID)
+	if err != nil {
+		return nil
+	}
+	members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	if err != nil {
+		return nil
+	}
+	var peers []TeamPreambleMember
+	for _, m := range members {
+		if m.ID == excludeSessionID {
+			continue
+		}
+		peers = append(peers, TeamPreambleMember{
+			Name:         m.Name,
+			Role:         m.TeamRole,
+			WorktreePath: nullStr(m.WorktreePath),
+		})
+	}
+	if len(peers) == 0 {
+		return nil
+	}
+	return &TeamPreambleInfo{
+		TeamName: team.Name,
+		Members:  peers,
+	}
+}
+
 // wireAgentMessageCallback sets up the SendMessage interception callback on a
 // live session. The callback resolves the target name to a session ID within
 // the team and routes the message through RouteAgentMessage.
