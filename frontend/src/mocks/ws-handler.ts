@@ -15,15 +15,21 @@ import {
   ProjectGitStatusSchema,
   RebaseResultSchema,
   SessionCommitResultSchema,
+  TagListResultSchema,
+  TagSchema,
   TrackedFilesResultSchema,
   UncommittedFilesResultSchema,
   WireEventSchema,
 } from "~/lib/generated-schemas";
+import type { Tag } from "~/lib/generated-types";
 import {
   MOCK_PENDING_APPROVALS,
   MOCK_PENDING_QUESTIONS,
+  MOCK_PROJECTS,
   MOCK_PROJECT_GIT_STATUS,
+  MOCK_PROJECT_TAGS,
   MOCK_SESSIONS,
+  MOCK_TAGS,
   MOCK_TURNS,
   PROJECT_IDS,
   SESSION_IDS,
@@ -101,6 +107,11 @@ function schedulePushEvents(client: WsClientConnection, projectId: string) {
 }
 
 let sessionCounter = 0;
+let tagCounter = 0;
+
+// Mutable copies for tag/project-tag mutations
+const mockTags = [...MOCK_TAGS];
+const mockProjectTags = [...MOCK_PROJECT_TAGS];
 
 /** Dispatch a WS request to the appropriate mock handler. */
 function dispatch(client: WsClientConnection, msg: ClientMessage) {
@@ -548,6 +559,99 @@ index abc1234..def5678 100644
       );
       break;
     }
+
+    case "tag.list": {
+      const tagListPayload = { tags: mockTags, projectTags: mockProjectTags };
+      respond(
+        client,
+        msg.id,
+        validatePayload(TagListResultSchema, tagListPayload, "tag.list response"),
+      );
+      break;
+    }
+
+    case "tag.create": {
+      const newTag = {
+        id: `ttt-mock-${++tagCounter}`,
+        name: p.name as string,
+        color: p.color as string,
+        sort_order: mockTags.length,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      mockTags.push(newTag);
+      respond(client, msg.id, validatePayload(TagSchema, newTag, "tag.create response"));
+      push(client, "tag.created", newTag);
+      break;
+    }
+
+    case "tag.update": {
+      const idx = mockTags.findIndex((t) => t.id === p.id);
+      const existing = mockTags[idx];
+      if (idx >= 0 && existing) {
+        const updated: Tag = {
+          ...existing,
+          name: p.name as string,
+          color: p.color as string,
+          updated_at: new Date().toISOString(),
+        };
+        mockTags[idx] = updated;
+        respond(client, msg.id, validatePayload(TagSchema, updated, "tag.update response"));
+        push(client, "tag.updated", updated);
+      } else {
+        respondError(client, msg.id, "tag not found");
+      }
+      break;
+    }
+
+    case "tag.delete": {
+      const delIdx = mockTags.findIndex((t) => t.id === p.id);
+      if (delIdx >= 0) {
+        mockTags.splice(delIdx, 1);
+        // Remove project-tag associations
+        for (let i = mockProjectTags.length - 1; i >= 0; i--) {
+          const pt = mockProjectTags[i];
+          if (pt && pt.tag_id === p.id) mockProjectTags.splice(i, 1);
+        }
+      }
+      respond(client, msg.id);
+      push(client, "tag.deleted", { id: p.id });
+      break;
+    }
+
+    case "project.set-favorite": {
+      // In mock mode, just echo back the project with updated favorite
+      const proj = MOCK_PROJECTS.find((proj) => proj.id === p.projectId);
+      if (proj) {
+        proj.favorite = p.favorite ? 1 : 0;
+        respond(client, msg.id, proj);
+        push(client, "project.updated", proj);
+      } else {
+        respondError(client, msg.id, "project not found");
+      }
+      break;
+    }
+
+    case "project.set-tags": {
+      const projectId = p.projectId as string;
+      const tagIds = (p.tagIds as string[]) ?? [];
+      // Update mutable project-tags
+      for (let i = mockProjectTags.length - 1; i >= 0; i--) {
+        const pt = mockProjectTags[i];
+        if (pt && pt.project_id === projectId) mockProjectTags.splice(i, 1);
+      }
+      for (const tagId of tagIds) {
+        mockProjectTags.push({ project_id: projectId, tag_id: tagId });
+      }
+      const assignedTags = mockTags.filter((t) => tagIds.includes(t.id));
+      respond(client, msg.id, assignedTags);
+      push(client, "project.tags-updated", { projectId, tags: assignedTags });
+      break;
+    }
+
+    case "project.reorder":
+      respond(client, msg.id);
+      break;
 
     case "session.set-model":
     case "session.set-permission":
