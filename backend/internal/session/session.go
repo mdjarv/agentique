@@ -515,10 +515,19 @@ func (s *Session) processEvent(event claudecli.Event) {
 	}
 
 	// Track tool categories for correlating results to write operations.
+	// Also detect plan mode transitions — the CLI auto-approves EnterPlanMode/ExitPlanMode
+	// without sending a can_use_tool request, so handleToolPermission never fires for them.
 	if tue, ok := wireEvent.(WireToolUseEvent); ok {
 		s.mu.Lock()
 		s.toolCategories[tue.ToolID] = tue.Category
 		s.mu.Unlock()
+
+		switch tue.ToolName {
+		case "EnterPlanMode":
+			s.transitionPlanMode("plan")
+		case "ExitPlanMode":
+			s.transitionPlanMode("default")
+		}
 	}
 
 	// Schedule debounced git refresh after write-tool results.
@@ -718,6 +727,30 @@ func (s *Session) SetModel(model string) error {
 	return nil
 }
 
+// transitionPlanMode updates permission mode if changed, persists to DB, and
+// broadcasts to connected clients. Idempotent — no-op if already in target mode.
+func (s *Session) transitionPlanMode(mode string) {
+	s.mu.Lock()
+	if s.permissionMode == mode {
+		s.mu.Unlock()
+		return
+	}
+	s.permissionMode = mode
+	s.mu.Unlock()
+
+	if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
+		PermissionMode: mode,
+		ID:             s.ID,
+	}); err != nil {
+		slog.Warn("failed to persist permission mode", "session_id", s.ID, "mode", mode, "error", err)
+	}
+
+	s.broadcast("session.permission-mode-changed", map[string]any{
+		"sessionId":      s.ID,
+		"permissionMode": mode,
+	})
+}
+
 // planSafeCategories lists tool categories that can be auto-approved in plan
 // mode. These are read-only tools that cannot mutate the filesystem or execute
 // arbitrary commands.
@@ -742,25 +775,11 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	bypass := (s.autoApprove && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
 	if bypass {
-		// When EnterPlanMode is auto-approved, transition into plan mode so
-		// subsequent tools require explicit approval. Don't call cli.SetPermissionMode
-		// — the CLI handles its own mode transition when processing EnterPlanMode.
+		// Defensive fallback — processEvent also detects EnterPlanMode from the
+		// event stream, but if the CLI ever starts sending can_use_tool for it,
+		// handle it here too. transitionPlanMode is idempotent.
 		if toolName == "EnterPlanMode" {
-			s.mu.Lock()
-			s.permissionMode = "plan"
-			s.mu.Unlock()
-
-			if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
-				PermissionMode: "plan",
-				ID:             s.ID,
-			}); err != nil {
-				slog.Warn("failed to persist permission mode after EnterPlanMode", "session_id", s.ID, "error", err)
-			}
-
-			s.broadcast("session.permission-mode-changed", map[string]any{
-				"sessionId":      s.ID,
-				"permissionMode": "plan",
-			})
+			s.transitionPlanMode("plan")
 		}
 		return &claudecli.PermissionResponse{Allow: true}, nil
 	}
@@ -798,25 +817,10 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	case resp := <-ch:
 		slog.Debug("tool permission resolved", "session_id", s.ID, "tool", toolName, "approval_id", approvalID, "allow", resp.Allow)
 
-		// When ExitPlanMode is approved, transition out of plan mode so
-		// autoApprove works for subsequent tools. Don't call cli.SetPermissionMode
-		// — the CLI handles its own mode transition when processing ExitPlanMode.
+		// Defensive fallback — processEvent also detects ExitPlanMode from the
+		// event stream. transitionPlanMode is idempotent.
 		if toolName == "ExitPlanMode" && resp.Allow {
-			s.mu.Lock()
-			s.permissionMode = "default"
-			s.mu.Unlock()
-
-			if err := s.queries.UpdateSessionPermissionMode(context.Background(), store.UpdateSessionPermissionModeParams{
-				PermissionMode: "default",
-				ID:             s.ID,
-			}); err != nil {
-				slog.Warn("failed to persist permission mode after ExitPlanMode", "session_id", s.ID, "error", err)
-			}
-
-			s.broadcast("session.permission-mode-changed", map[string]any{
-				"sessionId":      s.ID,
-				"permissionMode": "default",
-			})
+			s.transitionPlanMode("default")
 		}
 
 		return resp, nil
