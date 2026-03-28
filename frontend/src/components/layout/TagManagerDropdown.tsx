@@ -25,7 +25,7 @@ export function TagManagerDropdown({ open, onOpenChange, children }: TagManagerD
   const ws = useWebSocket();
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0].id);
+  const [newTagColor, setNewTagColor] = useState<string>(TAG_COLORS[0].id);
   const [showNewForm, setShowNewForm] = useState(false);
 
   const handleCreate = useCallback(async () => {
