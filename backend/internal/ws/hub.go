@@ -58,6 +58,25 @@ func (h *Hub) RemoveListener(l EventListener) {
 	delete(h.listeners, l)
 }
 
+// BroadcastAll sends a push message to every connected client (deduplicated)
+// and to all global event listeners.
+func (h *Hub) BroadcastAll(pushType string, payload any) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := make(map[*conn]struct{})
+	for _, conns := range h.conns {
+		for c := range conns {
+			if _, ok := seen[c]; !ok {
+				seen[c] = struct{}{}
+				c.push(pushType, payload)
+			}
+		}
+	}
+	for l := range h.listeners {
+		l.OnEvent("", pushType, payload)
+	}
+}
+
 // Broadcast sends a push message to all connections subscribed to a project
 // and to all global event listeners.
 func (h *Hub) Broadcast(projectID, pushType string, payload any) {

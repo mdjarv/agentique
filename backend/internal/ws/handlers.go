@@ -8,6 +8,7 @@ import (
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/google/uuid"
 )
 
 func (c *conn) handleProjectSubscribe(msg ClientMessage) {
@@ -263,6 +264,106 @@ func (c *conn) handleProjectReorder(msg ClientMessage) {
 				return struct{}{}, fmt.Errorf("update sort order: %w", err)
 			}
 		}
+		return struct{}{}, nil
+	})
+}
+
+func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectSetFavoritePayload) (store.Project, error) {
+		var fav int64
+		if p.Favorite {
+			fav = 1
+		}
+		proj, err := c.queries.UpdateProjectFavorite(c.ctx, store.UpdateProjectFavoriteParams{
+			Favorite: fav,
+			ID:       p.ProjectID,
+		})
+		if err != nil {
+			return store.Project{}, fmt.Errorf("update favorite: %w", err)
+		}
+		c.hub.Broadcast(p.ProjectID, "project.updated", proj)
+		return proj, nil
+	})
+}
+
+func (c *conn) handleProjectSetTags(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectSetTagsPayload) ([]store.Tag, error) {
+		if err := c.queries.ClearProjectTags(c.ctx, p.ProjectID); err != nil {
+			return nil, fmt.Errorf("clear project tags: %w", err)
+		}
+		for _, tagID := range p.TagIDs {
+			if err := c.queries.AddTagToProject(c.ctx, store.AddTagToProjectParams{
+				ProjectID: p.ProjectID,
+				TagID:     tagID,
+			}); err != nil {
+				return nil, fmt.Errorf("add tag to project: %w", err)
+			}
+		}
+		tags, err := c.queries.ListProjectTags(c.ctx, p.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("list project tags: %w", err)
+		}
+		c.hub.Broadcast(p.ProjectID, "project.tags-updated", map[string]any{
+			"projectId": p.ProjectID,
+			"tags":      tags,
+		})
+		return tags, nil
+	})
+}
+
+// --- Tag handlers ---
+
+func (c *conn) handleTagList(msg ClientMessage) {
+	handleRequest(c, msg, func(_ struct{}) (TagListResult, error) {
+		tags, err := c.queries.ListTags(c.ctx)
+		if err != nil {
+			return TagListResult{}, fmt.Errorf("list tags: %w", err)
+		}
+		projectTags, err := c.queries.ListAllProjectTags(c.ctx)
+		if err != nil {
+			return TagListResult{}, fmt.Errorf("list project tags: %w", err)
+		}
+		return TagListResult{Tags: tags, ProjectTags: projectTags}, nil
+	})
+}
+
+func (c *conn) handleTagCreate(msg ClientMessage) {
+	handleRequest(c, msg, func(p TagCreatePayload) (store.Tag, error) {
+		id := uuid.New().String()
+		tag, err := c.queries.CreateTag(c.ctx, store.CreateTagParams{
+			ID:    id,
+			Name:  p.Name,
+			Color: p.Color,
+		})
+		if err != nil {
+			return store.Tag{}, fmt.Errorf("create tag: %w", err)
+		}
+		c.hub.BroadcastAll("tag.created", tag)
+		return tag, nil
+	})
+}
+
+func (c *conn) handleTagUpdate(msg ClientMessage) {
+	handleRequest(c, msg, func(p TagUpdatePayload) (store.Tag, error) {
+		tag, err := c.queries.UpdateTag(c.ctx, store.UpdateTagParams{
+			Name:  p.Name,
+			Color: p.Color,
+			ID:    p.ID,
+		})
+		if err != nil {
+			return store.Tag{}, fmt.Errorf("update tag: %w", err)
+		}
+		c.hub.BroadcastAll("tag.updated", tag)
+		return tag, nil
+	})
+}
+
+func (c *conn) handleTagDelete(msg ClientMessage) {
+	handleRequest(c, msg, func(p TagDeletePayload) (struct{}, error) {
+		if err := c.queries.DeleteTag(c.ctx, p.ID); err != nil {
+			return struct{}{}, fmt.Errorf("delete tag: %w", err)
+		}
+		c.hub.BroadcastAll("tag.deleted", map[string]string{"id": p.ID})
 		return struct{}{}, nil
 	})
 }

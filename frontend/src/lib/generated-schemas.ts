@@ -313,6 +313,21 @@ export const ProjectSchema = z.object({
   slug: z.string(),
   sort_order: z.number(),
   default_behavior_presets: z.string(),
+  favorite: z.number(),
+});
+
+export const TagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+  sort_order: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const ProjectTagSchema = z.object({
+  project_id: z.string(),
+  tag_id: z.string(),
 });
 
 export const ProjectSubscribePayloadSchema = z.object({
@@ -485,6 +500,36 @@ export const ProjectCommandsPayloadSchema = z.object({
 
 export const ProjectReorderPayloadSchema = z.object({
   projectIds: z.array(z.string()),
+});
+
+export const ProjectSetFavoritePayloadSchema = z.object({
+  projectId: z.string(),
+  favorite: z.boolean(),
+});
+
+export const ProjectSetTagsPayloadSchema = z.object({
+  projectId: z.string(),
+  tagIds: z.array(z.string()),
+});
+
+export const TagCreatePayloadSchema = z.object({
+  name: z.string(),
+  color: z.string(),
+});
+
+export const TagUpdatePayloadSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+});
+
+export const TagDeletePayloadSchema = z.object({
+  id: z.string(),
+});
+
+export const TagListResultSchema = z.object({
+  tags: z.array(TagSchema),
+  projectTags: z.array(ProjectTagSchema),
 });
 
 export const WireEventSchema = z.discriminatedUnion("type", [

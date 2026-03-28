@@ -195,6 +195,18 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleProjectCommands(msg)
 	case "project.reorder":
 		c.handleProjectReorder(msg)
+	case "project.set-favorite":
+		c.handleProjectSetFavorite(msg)
+	case "project.set-tags":
+		c.handleProjectSetTags(msg)
+	case "tag.list":
+		c.handleTagList(msg)
+	case "tag.create":
+		c.handleTagCreate(msg)
+	case "tag.update":
+		c.handleTagUpdate(msg)
+	case "tag.delete":
+		c.handleTagDelete(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)

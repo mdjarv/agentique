@@ -311,6 +311,21 @@ export interface Project {
   slug: string;
   sort_order: number;
   default_behavior_presets: string;
+  favorite: number;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectTag {
+  project_id: string;
+  tag_id: string;
 }
 
 export interface ProjectSubscribePayload {
@@ -483,6 +498,36 @@ export interface ProjectCommandsPayload {
 
 export interface ProjectReorderPayload {
   projectIds: string[];
+}
+
+export interface ProjectSetFavoritePayload {
+  projectId: string;
+  favorite: boolean;
+}
+
+export interface ProjectSetTagsPayload {
+  projectId: string;
+  tagIds: string[];
+}
+
+export interface TagCreatePayload {
+  name: string;
+  color: string;
+}
+
+export interface TagUpdatePayload {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface TagDeletePayload {
+  id: string;
+}
+
+export interface TagListResult {
+  tags: Tag[];
+  projectTags: ProjectTag[];
 }
 
 export type WireEvent =

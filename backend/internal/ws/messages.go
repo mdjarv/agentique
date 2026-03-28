@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 // ClientMessage is the envelope for all client -> server messages.
@@ -211,6 +212,38 @@ type ProjectCommandsPayload struct {
 
 type ProjectReorderPayload struct {
 	ProjectIDs []string `json:"projectIds"`
+}
+
+type ProjectSetFavoritePayload struct {
+	ProjectID string `json:"projectId"`
+	Favorite  bool   `json:"favorite"`
+}
+
+type ProjectSetTagsPayload struct {
+	ProjectID string   `json:"projectId"`
+	TagIDs    []string `json:"tagIds"`
+}
+
+// --- Tag payloads ---
+
+type TagCreatePayload struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+type TagUpdatePayload struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+type TagDeletePayload struct {
+	ID string `json:"id"`
+}
+
+type TagListResult struct {
+	Tags        []store.Tag        `json:"tags"`
+	ProjectTags []store.ProjectTag `json:"projectTags"`
 }
 
 // --- Validate methods ---
@@ -473,6 +506,49 @@ func (p *ProjectCommandsPayload) Validate() error {
 func (p *ProjectReorderPayload) Validate() error {
 	if len(p.ProjectIDs) == 0 {
 		return errProjectIDsRequired
+	}
+	return nil
+}
+
+func (p *ProjectSetFavoritePayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectSetTagsPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+var (
+	errTagNameRequired = errors.New("name is required")
+	errTagIDRequired   = errors.New("id is required")
+)
+
+func (p *TagCreatePayload) Validate() error {
+	if p.Name == "" {
+		return errTagNameRequired
+	}
+	return nil
+}
+
+func (p *TagUpdatePayload) Validate() error {
+	if p.ID == "" {
+		return errTagIDRequired
+	}
+	if p.Name == "" {
+		return errTagNameRequired
+	}
+	return nil
+}
+
+func (p *TagDeletePayload) Validate() error {
+	if p.ID == "" {
+		return errTagIDRequired
 	}
 	return nil
 }

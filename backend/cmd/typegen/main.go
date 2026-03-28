@@ -352,6 +352,8 @@ func main() {
 	// ── Store types (sqlc — uses snake_case JSON tags) ──
 
 	g.register(store.Project{}, "Project")
+	g.register(store.Tag{}, "Tag")
+	g.register(store.ProjectTag{}, "ProjectTag")
 
 	// ── WS request payloads ──
 
@@ -391,6 +393,12 @@ func main() {
 	g.register(ws.ProjectTrackedFilesPayload{}, "ProjectTrackedFilesPayload")
 	g.register(ws.ProjectCommandsPayload{}, "ProjectCommandsPayload")
 	g.register(ws.ProjectReorderPayload{}, "ProjectReorderPayload")
+	g.register(ws.ProjectSetFavoritePayload{}, "ProjectSetFavoritePayload")
+	g.register(ws.ProjectSetTagsPayload{}, "ProjectSetTagsPayload")
+	g.register(ws.TagCreatePayload{}, "TagCreatePayload")
+	g.register(ws.TagUpdatePayload{}, "TagUpdatePayload")
+	g.register(ws.TagDeletePayload{}, "TagDeletePayload")
+	g.register(ws.TagListResult{}, "TagListResult")
 
 	// ── Generate output ──
 
