@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -90,15 +92,35 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := os.Stat(req.Path)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "path does not exist on disk")
+	cleanPath := filepath.Clean(req.Path)
+	if !filepath.IsAbs(cleanPath) {
+		respondError(w, http.StatusBadRequest, "path must be absolute")
 		return
 	}
-	if !info.IsDir() {
+
+	info, err := os.Stat(cleanPath)
+	if os.IsNotExist(err) {
+		parentInfo, parentErr := os.Stat(filepath.Dir(cleanPath))
+		if parentErr != nil || !parentInfo.IsDir() {
+			respondError(w, http.StatusBadRequest, "parent directory does not exist")
+			return
+		}
+		if err := os.MkdirAll(cleanPath, 0o755); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to create directory")
+			return
+		}
+		if out, err := exec.Command("git", "init", cleanPath).CombinedOutput(); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("git init failed: %s", out))
+			return
+		}
+	} else if err != nil {
+		respondError(w, http.StatusBadRequest, "cannot access path")
+		return
+	} else if !info.IsDir() {
 		respondError(w, http.StatusBadRequest, "path is not a directory")
 		return
 	}
+	req.Path = cleanPath
 
 	slug, err := h.uniqueSlug(r, Slugify(req.Name))
 	if err != nil {

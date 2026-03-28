@@ -76,6 +76,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	fsh := &filesystem.Handler{}
 	mux.HandleFunc("GET /api/filesystem/browse", fsh.HandleBrowse)
+	mux.HandleFunc("GET /api/filesystem/validate", fsh.HandleValidate)
 
 	subscribe := func() (<-chan session.SSEEvent, func()) {
 		ch := make(chan session.SSEEvent, 64)

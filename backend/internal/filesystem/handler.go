@@ -114,6 +114,44 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type validateResponse struct {
+	Exists       bool `json:"exists"`
+	IsDirectory  bool `json:"isDirectory"`
+	ParentExists bool `json:"parentExists"`
+}
+
+// HandleValidate checks whether a path exists and whether its parent exists.
+func (h *Handler) HandleValidate(w http.ResponseWriter, r *http.Request) {
+	dirPath := r.URL.Query().Get("path")
+	if dirPath == "" {
+		respondError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	dirPath = filepath.Clean(dirPath)
+	if !filepath.IsAbs(dirPath) {
+		respondError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
+
+	info, err := os.Stat(dirPath)
+	if err == nil {
+		respondJSON(w, http.StatusOK, validateResponse{
+			Exists:       true,
+			IsDirectory:  info.IsDir(),
+			ParentExists: true,
+		})
+		return
+	}
+
+	parentInfo, parentErr := os.Stat(filepath.Dir(dirPath))
+	respondJSON(w, http.StatusOK, validateResponse{
+		Exists:       false,
+		IsDirectory:  false,
+		ParentExists: parentErr == nil && parentInfo.IsDir(),
+	})
+}
+
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
