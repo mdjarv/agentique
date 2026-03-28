@@ -1,0 +1,125 @@
+package filesystem
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Handler handles filesystem browsing HTTP requests.
+type Handler struct{}
+
+type browseResponse struct {
+	Path    string  `json:"path"`
+	Parent  string  `json:"parent"`
+	Entries []entry `json:"entries"`
+}
+
+type entry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	IsGitRepo bool   `json:"isGitRepo"`
+}
+
+// HandleBrowse lists subdirectories at the requested path.
+// Query param "path" defaults to the user's home directory.
+func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
+	dirPath := r.URL.Query().Get("path")
+	if dirPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "cannot determine home directory")
+			return
+		}
+		dirPath = home
+	}
+
+	dirPath = filepath.Clean(dirPath)
+	if !filepath.IsAbs(dirPath) {
+		respondError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
+
+	info, err := os.Stat(dirPath)
+	if os.IsNotExist(err) {
+		respondError(w, http.StatusNotFound, "path does not exist")
+		return
+	}
+	if os.IsPermission(err) {
+		respondError(w, http.StatusForbidden, "permission denied")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "cannot stat path")
+		return
+	}
+	if !info.IsDir() {
+		respondError(w, http.StatusBadRequest, "path is not a directory")
+		return
+	}
+
+	dirEntries, err := os.ReadDir(dirPath)
+	if os.IsPermission(err) {
+		respondError(w, http.StatusForbidden, "permission denied")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "cannot read directory")
+		return
+	}
+
+	var entries []entry
+	for _, de := range dirEntries {
+		name := de.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		fullPath := filepath.Join(dirPath, name)
+
+		// Resolve symlinks — skip if broken or not a directory.
+		fi, err := os.Stat(fullPath)
+		if err != nil || !fi.IsDir() {
+			continue
+		}
+
+		isGit := false
+		if gitInfo, err := os.Stat(filepath.Join(fullPath, ".git")); err == nil && gitInfo != nil {
+			isGit = true
+		}
+
+		entries = append(entries, entry{
+			Name:      name,
+			Path:      fullPath,
+			IsGitRepo: isGit,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+
+	parent := filepath.Dir(dirPath)
+	if parent == dirPath {
+		parent = ""
+	}
+
+	respondJSON(w, http.StatusOK, browseResponse{
+		Path:    dirPath,
+		Parent:  parent,
+		Entries: entries,
+	})
+}
+
+func respondJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func respondError(w http.ResponseWriter, status int, message string) {
+	respondJSON(w, status, map[string]string{"error": message})
+}
