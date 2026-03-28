@@ -552,3 +552,106 @@ func (p *TagDeletePayload) Validate() error {
 	}
 	return nil
 }
+
+// --- Team payloads ---
+
+type TeamCreatePayload struct {
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+}
+
+type TeamDeletePayload struct {
+	TeamID string `json:"teamId"`
+}
+
+type TeamJoinPayload struct {
+	SessionID string `json:"sessionId"`
+	TeamID    string `json:"teamId"`
+	Role      string `json:"role"`
+}
+
+type TeamLeavePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type TeamListPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type TeamInfoPayload struct {
+	TeamID string `json:"teamId"`
+}
+
+type TeamTimelinePayload struct {
+	TeamID string `json:"teamId"`
+}
+
+type TeamSendMessagePayload struct {
+	SenderSessionID string `json:"senderSessionId"`
+	TargetSessionID string `json:"targetSessionId"`
+	Content         string `json:"content"`
+}
+
+var (
+	errTeamIDRequired              = errors.New("teamId is required")
+	errTeamProjectIDRequired       = errors.New("projectId is required")
+	errTeamSessionIDRequired       = errors.New("sessionId is required")
+	errTeamSessionAndTeamRequired  = errors.New("sessionId and teamId are required")
+	errTeamSendMessageRequired     = errors.New("senderSessionId, targetSessionId, and content are required")
+)
+
+func (p *TeamCreatePayload) Validate() error {
+	if p.ProjectID == "" {
+		return errTeamProjectIDRequired
+	}
+	return nil
+}
+
+func (p *TeamDeletePayload) Validate() error {
+	if p.TeamID == "" {
+		return errTeamIDRequired
+	}
+	return nil
+}
+
+func (p *TeamJoinPayload) Validate() error {
+	if p.SessionID == "" || p.TeamID == "" {
+		return errTeamSessionAndTeamRequired
+	}
+	return nil
+}
+
+func (p *TeamLeavePayload) Validate() error {
+	if p.SessionID == "" {
+		return errTeamSessionIDRequired
+	}
+	return nil
+}
+
+func (p *TeamListPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errTeamProjectIDRequired
+	}
+	return nil
+}
+
+func (p *TeamInfoPayload) Validate() error {
+	if p.TeamID == "" {
+		return errTeamIDRequired
+	}
+	return nil
+}
+
+func (p *TeamTimelinePayload) Validate() error {
+	if p.TeamID == "" {
+		return errTeamIDRequired
+	}
+	return nil
+}
+
+func (p *TeamSendMessagePayload) Validate() error {
+	if p.SenderSessionID == "" || p.TargetSessionID == "" || p.Content == "" {
+		return errTeamSendMessageRequired
+	}
+	return nil
+}
