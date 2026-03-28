@@ -6,6 +6,7 @@ import {
   isValidElement,
   memo,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import type { Components } from "react-markdown";
@@ -14,7 +15,11 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
-import { PromptCard, parsePromptFromCode } from "~/components/chat/PromptCard";
+import {
+  PromptCard,
+  normalizePromptFences,
+  parsePromptFromCode,
+} from "~/components/chat/PromptCard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 
@@ -123,11 +128,12 @@ export const Markdown = memo(function Markdown({
   preserveNewlines,
 }: MarkdownProps) {
   const plugins = preserveNewlines ? BREAKS_PLUGINS : STANDARD_PLUGINS;
+  const normalized = useMemo(() => normalizePromptFences(content), [content]);
 
   return (
     <div className={cn("prose prose-sm max-w-none", className)}>
       <ReactMarkdown remarkPlugins={plugins} components={COMPONENTS}>
-        {content}
+        {normalized}
       </ReactMarkdown>
     </div>
   );
