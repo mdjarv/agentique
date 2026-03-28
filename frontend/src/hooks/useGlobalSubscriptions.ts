@@ -215,6 +215,16 @@ export function useGlobalSubscriptions(projects: Project[]) {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubCreated = ws.subscribe("session.created", (payload: any) => {
+      const store = useChatStore.getState();
+      if (store.sessions[payload.id]) return;
+      store.addSession({
+        ...payload,
+        state: payload.state as SessionMetadata["state"],
+      } as SessionMetadata);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubRenamed = ws.subscribe("session.renamed", (payload: any) => {
       useChatStore.getState().setSessionName(payload.sessionId, payload.name);
     });
@@ -317,6 +327,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
     return () => {
       unsubEvent();
       unsubState();
+      unsubCreated();
       unsubRenamed();
       unsubDeleted();
       unsubPrUpdated();

@@ -245,6 +245,24 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		createdAt = dbSess.CreatedAt
 	}
 
+	s.hub.Broadcast(p.ProjectID, "session.created", SessionInfo{
+		ID:              sess.ID,
+		ProjectID:       p.ProjectID,
+		Name:            name,
+		State:           string(sess.State()),
+		Connected:       true,
+		Model:           model,
+		PermissionMode:  sess.PermissionMode(),
+		AutoApprove:     sess.AutoApprove(),
+		Effort:          p.Effort,
+		MaxBudget:       p.MaxBudget,
+		MaxTurns:        p.MaxTurns,
+		WorktreePath:    worktreePath,
+		WorktreeBranch:  worktreeBranch,
+		BehaviorPresets: presets,
+		CreatedAt:       createdAt,
+	})
+
 	return CreateSessionResult{
 		SessionID:       sess.ID,
 		Name:            name,
