@@ -26,18 +26,18 @@ export const UserMessage = memo(function UserMessage({ prompt, attachments }: Us
 
   return (
     <>
-      <div className="flex gap-3 flex-row-reverse">
-        <Avatar className="h-8 w-8 shrink-0">
+      <div className="flex gap-3 flex-row-reverse max-md:flex-col max-md:items-end max-md:gap-1">
+        <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
           <AvatarFallback className="bg-primary/20 text-primary">
-            <User className="h-4 w-4" />
+            <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
+        <div className="group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
           {prompt && (
             <button
               type="button"
               onClick={() => handleCopy(prompt)}
-              className="absolute -left-8 max-md:-top-6 max-md:left-auto max-md:right-0 top-1 p-1 rounded max-md:opacity-60 opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10"
+              className="absolute -left-8 top-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10 max-md:static max-md:float-right max-md:opacity-60 max-md:ml-2 max-md:-mr-1 max-md:-mt-0.5"
               aria-label="Copy message"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

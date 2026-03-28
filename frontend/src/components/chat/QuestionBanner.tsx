@@ -201,7 +201,7 @@ function SingleQuestionBanner({
   answered: boolean;
 }) {
   return (
-    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           {question.header && (
@@ -259,7 +259,7 @@ function WizardQuestionBanner({
   );
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
       <div className="flex flex-col gap-2">
         {/* Header: step label + dots */}
         <div className="flex items-center justify-between">

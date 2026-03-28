@@ -145,7 +145,7 @@ export function MessageList({
         onScroll={handleScroll}
         className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >
-        <div className="p-4 space-y-8 min-w-0">
+        <div className="p-4 max-md:px-2 space-y-8 min-w-0">
           {turns.map((turn, i) => {
             const eager = i >= turns.length - EAGER_TURN_COUNT;
             // If this turn has a compact_boundary, find the post-compaction

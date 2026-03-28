@@ -471,13 +471,13 @@ export const TurnBlock = memo(function TurnBlock({
 
       {/* Assistant response */}
       {hasAssistantContent && (
-        <div className="flex gap-3">
-          <Avatar className="h-8 w-8 shrink-0">
+        <div className="flex gap-3 max-md:flex-col max-md:gap-1">
+          <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
             <AvatarFallback className="bg-agent/15 text-agent">
-              <Bot className="h-4 w-4" />
+              <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-3 max-w-[85%] min-w-0 overflow-x-clip pr-2">
+          <div className="flex-1 space-y-3 max-w-[85%] max-md:max-w-full min-w-0 overflow-x-clip pr-2 max-md:pr-0">
             {/* Chronological segments */}
             {segments.map((seg, i) => {
               if (!showEvents && seg.kind === "activity") {

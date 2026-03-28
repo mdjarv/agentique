@@ -39,7 +39,7 @@ export function ResumeBanner({ state, onResume, resuming }: ResumeBannerProps) {
   const Icon = c.icon;
 
   return (
-    <div className={`mx-4 mb-2 rounded-md border ${c.border} ${c.bg} px-3 py-2`}>
+    <div className={`mx-4 mb-2 rounded-md border ${c.border} ${c.bg} px-3 py-2 shrink-0`}>
       <div className="flex items-center gap-2 text-sm">
         <Icon className={`h-4 w-4 shrink-0 ${c.iconColor}`} />
         <span className="text-muted-foreground">{c.label}</span>

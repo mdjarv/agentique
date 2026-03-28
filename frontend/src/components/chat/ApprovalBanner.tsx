@@ -2,6 +2,7 @@ import { Check, ShieldAlert, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval, setAutoApprove } from "~/lib/session-actions";
 import { getErrorMessage } from "~/lib/utils";
@@ -75,7 +76,9 @@ export function ApprovalBanner({
   worktreePath,
 }: ApprovalBannerProps) {
   const ws = useWebSocket();
+  const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const summary = formatInput(approval.toolName, approval.input, projectPath, worktreePath);
 
   const handleAllow = useCallback(() => {
@@ -104,43 +107,66 @@ export function ApprovalBanner({
     });
   }, [ws, sessionId, approval.approvalId]);
 
+  const buttons = (
+    <div className="flex items-center gap-1.5 shrink-0 max-md:ml-auto">
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 max-md:h-10 px-2 max-md:px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+        onClick={handleDeny}
+        disabled={submitting}
+      >
+        <X className="h-3.5 w-3.5 mr-1" />
+        Deny
+      </Button>
+      <Button
+        size="sm"
+        className="h-7 max-md:h-10 px-2 max-md:px-3 bg-success hover:bg-success/90 text-background"
+        onClick={handleAllow}
+        disabled={submitting}
+      >
+        <Check className="h-3.5 w-3.5 mr-1" />
+        Allow
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 max-md:h-10 px-2 max-md:px-3 text-muted-foreground hover:text-foreground"
+        onClick={handleAllowAll}
+        disabled={submitting}
+      >
+        Allow all
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="mx-4 mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
-      <div className="flex items-center gap-2 text-sm">
-        <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
-        <span className="font-medium shrink-0">{approval.toolName}</span>
-        <span className="text-muted-foreground truncate min-w-0">{summary}</span>
-        <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 max-md:h-10 px-2 max-md:px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={handleDeny}
-            disabled={submitting}
-          >
-            <X className="h-3.5 w-3.5 mr-1" />
-            Deny
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 max-md:h-10 px-2 max-md:px-3 bg-success hover:bg-success/90 text-background"
-            onClick={handleAllow}
-            disabled={submitting}
-          >
-            <Check className="h-3.5 w-3.5 mr-1" />
-            Allow
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 max-md:h-10 px-2 max-md:px-3 text-muted-foreground hover:text-foreground"
-            onClick={handleAllowAll}
-            disabled={submitting}
-          >
-            Allow all
-          </Button>
+    <div className="mx-4 mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 shrink-0">
+      {isMobile ? (
+        <div className="flex flex-col gap-2 text-sm">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+            <div className="min-w-0">
+              <span className="font-medium">{approval.toolName}</span>{" "}
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className={`text-muted-foreground text-left ${expanded ? "whitespace-pre-wrap break-all" : "truncate block w-full"}`}
+              >
+                {summary}
+              </button>
+            </div>
+          </div>
+          {buttons}
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center gap-2 text-sm">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
+          <span className="font-medium shrink-0">{approval.toolName}</span>
+          <span className="text-muted-foreground truncate min-w-0">{summary}</span>
+          <div className="ml-auto">{buttons}</div>
+        </div>
+      )}
     </div>
   );
 }

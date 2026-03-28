@@ -99,8 +99,9 @@ export function FileEntry({
         <span className="font-mono truncate min-w-0">{path}</span>
       </ExpandableRow>
       {expanded && (
-        <div className="border-t bg-muted/30 max-h-80 overflow-y-auto">
+        <div className="relative border-t bg-muted/30 max-h-80 overflow-y-auto">
           <DiffLines text={diff} />
+          <div className="pointer-events-none absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-muted/60 to-transparent md:hidden" />
         </div>
       )}
     </div>

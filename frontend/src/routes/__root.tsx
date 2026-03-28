@@ -1,4 +1,4 @@
-import { Outlet, createRootRoute } from "@tanstack/react-router";
+import { Outlet, createRootRoute, useRouterState } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
@@ -41,6 +41,27 @@ function RootLayout() {
   return <AuthenticatedLayout />;
 }
 
+function MobileHeaderTitle() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const projects = useAppStore((s) => s.projects);
+
+  // /project/:slug/settings
+  if (pathname.includes("/settings")) {
+    const slug = pathname.split("/")[2];
+    const name = projects.find((p) => p.slug === slug)?.name;
+    return <span className="text-sm font-semibold truncate">{name ?? slug} — Settings</span>;
+  }
+
+  // /project/:slug/session/... or /project/:slug
+  const slugMatch = pathname.match(/^\/project\/([^/]+)/);
+  if (slugMatch) {
+    const name = projects.find((p) => p.slug === slugMatch[1])?.name;
+    return <span className="text-sm font-semibold truncate">{name ?? slugMatch[1]}</span>;
+  }
+
+  return <span className="text-sm font-semibold">Agentique</span>;
+}
+
 function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
@@ -50,6 +71,12 @@ function AuthenticatedLayout() {
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Session routes render their own merged header on mobile — skip the root one
+  const isSessionRoute = /^\/project\/[^/]+\/session\/[^/]+/.test(pathname);
+  const showMobileHeader = isMobile && !isSessionRoute;
+
   return (
     <TooltipProvider>
       <div className="flex h-dvh">
@@ -67,7 +94,7 @@ function AuthenticatedLayout() {
           <AppSidebar className="w-72 border-r" />
         )}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {isMobile && (
+          {showMobileHeader && (
             <div className="h-11 border-b px-3 flex items-center gap-2 shrink-0">
               <button
                 type="button"
@@ -77,7 +104,7 @@ function AuthenticatedLayout() {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              <span className="text-sm font-semibold">Agentique</span>
+              <MobileHeaderTitle />
               <div className="ml-auto">
                 <ConnectionIndicator />
               </div>
@@ -87,7 +114,7 @@ function AuthenticatedLayout() {
         </main>
         <Toaster
           theme="dark"
-          position="bottom-right"
+          position={isMobile ? "top-center" : "bottom-right"}
           toastOptions={{
             style: {
               background: "var(--muted)",
