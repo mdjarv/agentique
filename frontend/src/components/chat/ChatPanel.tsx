@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FileDiff, MessageSquare } from "lucide-react";
+import { FileDiff, MessageSquare, Users } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApprovalBanner } from "~/components/chat/ApprovalBanner";
@@ -19,6 +19,7 @@ import { ResumeBanner } from "~/components/chat/ResumeBanner";
 
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
+import { TeamView } from "~/components/chat/TeamView";
 import { StatusPage } from "~/components/layout/PageHeader";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { useGitActions } from "~/hooks/useGitActions";
@@ -80,6 +81,10 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
 
+  const teamId = meta?.teamId;
+  const hasTeam = !!teamId;
+  const allSessions = useChatStore((s) => (hasTeam ? s.sessions : {}));
+
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = meta?.state ?? "idle";
   const draft = useUIStore((s) => s.drafts[sessionId] ?? "");
@@ -92,7 +97,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
-  const [activeTab, setActiveTab] = useState<"chat" | "changes">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "changes" | "team">("chat");
   const [resuming, setResuming] = useState(false);
 
   const git = useGitActions(sessionId);
@@ -266,8 +271,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           onOpenPanel={() => setMobileSessionOpen(true)}
         />
 
-        {/* Tab bar — only when there are changes to view */}
-        {hasChanges && (
+        {/* Tab bar — when there are changes or a team */}
+        {(hasChanges || hasTeam) && (
           <div className="shrink-0 flex gap-1 px-2 pt-1.5 pb-0 border-b text-xs">
             <button
               type="button"
@@ -282,29 +287,48 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               <MessageSquare className="h-3.5 w-3.5" />
               Chat
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("changes")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
-                activeTab === "changes"
-                  ? "text-foreground bg-muted/60 border-b-2 border-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
-              )}
-            >
-              <FileDiff className="h-3.5 w-3.5" />
-              Changes
-              {(totalAdd > 0 || totalDel > 0) && (
-                <span className="flex items-center gap-1 ml-1 text-[11px]">
-                  {totalAdd > 0 && <span className="text-success">+{totalAdd}</span>}
-                  {totalDel > 0 && <span className="text-destructive">-{totalDel}</span>}
-                </span>
-              )}
-            </button>
+            {hasChanges && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("changes")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
+                  activeTab === "changes"
+                    ? "text-foreground bg-muted/60 border-b-2 border-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+                )}
+              >
+                <FileDiff className="h-3.5 w-3.5" />
+                Changes
+                {(totalAdd > 0 || totalDel > 0) && (
+                  <span className="flex items-center gap-1 ml-1 text-[11px]">
+                    {totalAdd > 0 && <span className="text-success">+{totalAdd}</span>}
+                    {totalDel > 0 && <span className="text-destructive">-{totalDel}</span>}
+                  </span>
+                )}
+              </button>
+            )}
+            {hasTeam && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("team")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
+                  activeTab === "team"
+                    ? "text-foreground bg-muted/60 border-b-2 border-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+                )}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Team
+              </button>
+            )}
           </div>
         )}
 
-        {activeTab === "changes" && hasChanges ? (
+        {activeTab === "team" && hasTeam && teamId ? (
+          <TeamView sessionId={sessionId} teamId={teamId} sessions={allSessions} />
+        ) : activeTab === "changes" && hasChanges ? (
           <ChangesView committedDiff={git.diffResult} uncommittedDiff={git.uncommittedDiffResult} />
         ) : (
           <>
