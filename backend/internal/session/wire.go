@@ -280,6 +280,12 @@ func classifyTool(name string) string {
 		return "task"
 	case "EnterPlanMode", "ExitPlanMode":
 		return "plan"
+	case "ToolSearch", "Skill":
+		return "meta"
+	case "AskUserQuestion":
+		return "question"
+	case "ExitWorktree":
+		return "agent"
 	}
 	if strings.HasPrefix(name, "mcp__") {
 		return "mcp"

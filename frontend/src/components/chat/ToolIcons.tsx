@@ -1,6 +1,7 @@
 import {
   Bot,
   Brain,
+  CircleHelp,
   ClipboardList,
   FileSearch,
   FileText,
@@ -10,6 +11,7 @@ import {
   PencilLine,
   Plug,
   Search,
+  Sparkles,
   Terminal,
   Wrench,
 } from "lucide-react";
@@ -54,9 +56,11 @@ function toolColor(name: string, category?: string): ToolColor {
     case "web":
     case "mcp":
     case "task":
+    case "meta":
       return "info";
     case "agent":
     case "plan":
+    case "question":
       return "agent";
     default:
       return "info";
@@ -98,6 +102,10 @@ function toolIconElement(name: string, category?: string) {
       return ListTodo;
     case "plan":
       return ClipboardList;
+    case "meta":
+      return Sparkles;
+    case "question":
+      return CircleHelp;
     default:
       return Wrench;
   }
