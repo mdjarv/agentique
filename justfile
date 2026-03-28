@@ -1,3 +1,6 @@
+# Load .env if present (sets AGENTIQUE_DB for production DB in main repo).
+set dotenv-load
+
 # TLS hostname — override per-machine: just --set tls-host myhost.ts.net dev-tls
 tls-host := env("AGENTIQUE_TLS_HOST", "localhost")
 
@@ -62,10 +65,10 @@ test-frontend:
     cd frontend && npx vitest run
 
 test-e2e: backend-build
-    cd frontend && npx playwright test
+    cd frontend && AGENTIQUE_DB="$(mktemp -d)/agentique-e2e.db" npx playwright test
 
 test-e2e-hybrid: backend-build
-    cd frontend && npx playwright test --config playwright-hybrid.config.ts
+    cd frontend && AGENTIQUE_DB="$(mktemp -d)/agentique-e2e.db" npx playwright test --config playwright-hybrid.config.ts
 
 test: test-backend test-frontend test-e2e
 
@@ -84,7 +87,7 @@ typegen:
 check:
     cd frontend && npx biome check src/ && npx tsc --noEmit
 
-# Reset (cleans DB from both project root and backend/)
+# Reset (cleans local dev DB files, NOT the production DB)
 reset:
     rm -f agentique.db agentique.db-journal agentique.db-wal agentique.db-shm
     rm -f backend/agentique.db backend/agentique.db-journal backend/agentique.db-wal backend/agentique.db-shm

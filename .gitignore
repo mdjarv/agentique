@@ -28,6 +28,9 @@ backend/internal/server/frontend_dist/assets/
 .vscode/
 *.swp
 
+# Environment
+.env
+
 # OS
 .DS_Store
 Thumbs.db

@@ -35,7 +35,7 @@ var authStatusCmd = &cobra.Command{
 }
 
 func openDB() (*store.Queries, func(), error) {
-	db, err := store.Open("agentique.db")
+	db, err := store.Open(resolveDBPath())
 	if err != nil {
 		return nil, nil, fmt.Errorf("open db: %w", err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/backup"
 	"github.com/allbin/agentique/backend/internal/logging"
 	"github.com/allbin/agentique/backend/internal/paths"
 	"github.com/allbin/agentique/backend/internal/project"
@@ -30,9 +31,12 @@ var (
 	logLevel    string
 	rpID        string
 	rpOrigin    string
-	tlsCert     string
-	tlsKey      string
-	testMode    bool
+	tlsCert        string
+	tlsKey         string
+	testMode       bool
+	backupInterval string
+	backupRetain   int
+	disableBackup  bool
 )
 
 func init() {
@@ -44,6 +48,9 @@ func init() {
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
 	serveCmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to TLS key file")
 	serveCmd.Flags().BoolVar(&testMode, "test-mode", false, "enable test mode (mock CLI, test endpoints, no auth)")
+	serveCmd.Flags().StringVar(&backupInterval, "backup-interval", "1h", "interval between database backups")
+	serveCmd.Flags().IntVar(&backupRetain, "backup-retain", 24, "number of backup files to keep")
+	serveCmd.Flags().BoolVar(&disableBackup, "disable-backup", false, "disable automatic database backups")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -70,9 +77,24 @@ func preflight() error {
 	return nil
 }
 
+// isRelease reports whether this is a release build (version set via ldflags).
+func isRelease() bool {
+	return version != "" && version != "dev"
+}
+
 func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
+	}
+	if v := os.Getenv("AGENTIQUE_DB"); v != "" {
+		if err := os.MkdirAll(filepath.Dir(v), 0o755); err != nil {
+			slog.Warn("cannot create directory for AGENTIQUE_DB, using default", "path", v, "error", err)
+		} else {
+			return v
+		}
+	}
+	if !isRelease() {
+		return "agentique.db"
 	}
 	p := paths.DBPath()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -112,6 +134,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	queries := store.New(db)
 	ensureDefaultProject(queries)
+
+	if !testMode && !disableBackup {
+		interval, err := time.ParseDuration(backupInterval)
+		if err != nil {
+			slog.Error("invalid backup interval", "value", backupInterval)
+			os.Exit(1)
+		}
+		backupDir := filepath.Join(filepath.Dir(dbFile), "backups")
+		stopBackup := backup.Start(backup.Config{
+			DB:       db,
+			Dir:      backupDir,
+			Interval: interval,
+			Retain:   backupRetain,
+		})
+		defer stopBackup()
+		slog.Info("backup enabled", "interval", interval, "retain", backupRetain, "dir", backupDir)
+	}
 
 	tlsEnabled := tlsCert != "" && tlsKey != ""
 	if (tlsCert != "") != (tlsKey != "") {
