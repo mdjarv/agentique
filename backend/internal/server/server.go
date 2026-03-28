@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/allbin/agentique/backend/internal/auth"
+	"github.com/allbin/agentique/backend/internal/filebrowser"
 	"github.com/allbin/agentique/backend/internal/filesystem"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/respond"
@@ -78,6 +79,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	fsh := &filesystem.Handler{}
 	mux.HandleFunc("GET /api/filesystem/browse", fsh.HandleBrowse)
 	mux.HandleFunc("GET /api/filesystem/validate", fsh.HandleValidate)
+
+	fbh := &filebrowser.Handler{Queries: queries}
+	mux.HandleFunc("GET /api/projects/{id}/files", fbh.HandleList)
+	mux.HandleFunc("GET /api/projects/{id}/files/content", fbh.HandleContent)
 
 	subscribe := func() (<-chan session.SSEEvent, func()) {
 		ch := make(chan session.SSEEvent, 64)

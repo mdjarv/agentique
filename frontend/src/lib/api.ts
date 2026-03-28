@@ -82,3 +82,36 @@ export async function browseDirectory(path?: string): Promise<BrowseResult> {
   if (!res.ok) throw new Error("Failed to browse directory");
   return res.json();
 }
+
+// --- Project file browser ---
+
+export interface FileEntry {
+  name: string;
+  isDir: boolean;
+  size: number;
+  modTime: string;
+}
+
+export interface FileListResult {
+  path: string;
+  entries: FileEntry[];
+}
+
+export async function listProjectFiles(projectId: string, path = ""): Promise<FileListResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : "";
+  const res = await fetch(`${BASE}/projects/${projectId}/files${params}`);
+  if (!res.ok) throw new Error("Failed to list files");
+  return res.json();
+}
+
+export async function getFileContent(projectId: string, path: string): Promise<string> {
+  const res = await fetch(
+    `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch file content");
+  return res.text();
+}
+
+export function fileContentUrl(projectId: string, path: string): string {
+  return `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`;
+}

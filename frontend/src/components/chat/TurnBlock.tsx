@@ -124,7 +124,11 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
           segments.push({ kind: "compact", event });
           break;
         case "user_message":
-          segments.push({ kind: "user_message", content: event.content ?? "", attachments: event.attachments });
+          segments.push({
+            kind: "user_message",
+            content: event.content ?? "",
+            attachments: event.attachments,
+          });
           break;
       }
     }
@@ -547,7 +551,13 @@ export const TurnBlock = memo(function TurnBlock({
                     />
                   );
                 case "user_message":
-                  return <UserMessage key={segmentKey(seg, i)} prompt={seg.content} attachments={seg.attachments} />;
+                  return (
+                    <UserMessage
+                      key={segmentKey(seg, i)}
+                      prompt={seg.content}
+                      attachments={seg.attachments}
+                    />
+                  );
               }
             })}
 
