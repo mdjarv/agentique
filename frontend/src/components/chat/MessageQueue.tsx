@@ -8,7 +8,7 @@ interface MessageQueueProps {
 
 export function MessageQueue({ messages, onCancel }: MessageQueueProps) {
   return (
-    <div className="mx-4 mb-2 rounded-md border border-muted-foreground/20 bg-muted/50 px-3 py-2">
+    <div className="mx-4 mb-2 rounded-md border border-muted-foreground/20 bg-muted/50 px-3 py-2 shrink-0">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
         <ListPlus className="h-3 w-3" />
         <span className="font-medium">Queued ({messages.length})</span>

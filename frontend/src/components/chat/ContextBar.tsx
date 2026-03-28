@@ -57,7 +57,7 @@ function getTier(pct: number): Tier {
 export function ContextBar({ usage, compacting }: ContextBarProps) {
   if (compacting) {
     return (
-      <div className="flex items-center gap-2 px-4 py-1">
+      <div className="flex items-center gap-2 px-4 py-1 shrink-0">
         <div className="h-1.5 flex-1 rounded-full overflow-hidden compact-stripes" />
         <span className="text-[11px] text-primary shrink-0">Compacting...</span>
       </div>
@@ -71,7 +71,7 @@ export function ContextBar({ usage, compacting }: ContextBarProps) {
   const tier = getTier(pct);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1">
+    <div className="flex items-center gap-2 px-4 py-1 shrink-0">
       {tier.label && (
         <span className={cn("inline-flex items-center gap-1 text-[11px] shrink-0", tier.text)}>
           <AlertTriangle className="size-3" />

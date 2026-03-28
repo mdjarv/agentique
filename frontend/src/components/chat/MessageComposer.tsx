@@ -287,7 +287,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     const hasToggles = worktree !== undefined || onPlanModeChange || onAutoApproveChange;
 
     return (
-      <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
         {/* Attachment previews */}
         {attachments.length > 0 && (
           <div className="flex gap-2 flex-wrap mb-2">

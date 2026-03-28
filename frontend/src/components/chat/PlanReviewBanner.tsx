@@ -57,7 +57,7 @@ export function PlanReviewBanner({ sessionId, approval, onStartFresh }: PlanRevi
   }, [ws, sessionId, approval.approvalId]);
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-primary/40 bg-primary/5 overflow-hidden">
+    <div className="mx-4 mb-2 rounded-md border border-primary/40 bg-primary/5 overflow-hidden shrink-0">
       <div className="flex items-center gap-2 px-3 py-2 text-sm border-b border-primary/20">
         <ClipboardList className="h-4 w-4 shrink-0 text-primary" />
         <span className="font-medium">Plan ready for review</span>
