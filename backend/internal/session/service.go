@@ -80,6 +80,8 @@ type SessionInfo struct {
 	GitVersion         int64    `json:"gitVersion"`
 	PrUrl              string   `json:"prUrl,omitempty"`
 	BehaviorPresets    BehaviorPresets      `json:"behaviorPresets"`
+	TeamID             string               `json:"teamId,omitempty"`
+	TeamRole           string               `json:"teamRole,omitempty"`
 	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
 	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
@@ -503,6 +505,8 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			CompletedAt:    nullStr(ss.CompletedAt),
 			PrUrl:           ss.PrUrl,
 			BehaviorPresets: ParsePresets(ss.BehaviorPresets),
+			TeamID:          nullStr(ss.TeamID),
+			TeamRole:        ss.TeamRole,
 			CreatedAt:       ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
 			LastQueryAt:    nullStr(ss.LastQueryAt),

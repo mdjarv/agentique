@@ -89,6 +89,14 @@ type WireContextManagementEvent struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
+// WireAgentMessageEvent represents a message received from a peer session in a team.
+type WireAgentMessageEvent struct {
+	Type            string `json:"type"`            // "agent_message"
+	SenderSessionID string `json:"senderSessionId"`
+	SenderName      string `json:"senderName"`
+	Content         string `json:"content"`
+}
+
 // WireUserMessageEvent represents a user message injected mid-turn via SendMessage.
 type WireUserMessageEvent struct {
 	Type        string            `json:"type"`
@@ -107,6 +115,7 @@ func (e WireStreamEvent) WireType() string          { return e.Type }
 func (e WireCompactStatusEvent) WireType() string   { return e.Type }
 func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
+func (e WireAgentMessageEvent) WireType() string       { return e.Type }
 func (e WireUserMessageEvent) WireType() string        { return e.Type }
 
 // errorDetail extracts a clean human-readable message from a claudecli error,

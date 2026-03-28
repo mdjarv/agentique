@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/allbin/agentique/backend/internal/store"
 )
@@ -30,6 +31,18 @@ type serviceQueries interface {
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)
 	SetSessionCompleted(ctx context.Context, id string) error
+	InsertEvent(ctx context.Context, arg store.InsertEventParams) error
+
+	// Team queries
+	CreateTeam(ctx context.Context, arg store.CreateTeamParams) (store.Team, error)
+	GetTeam(ctx context.Context, id string) (store.Team, error)
+	ListTeamsByProject(ctx context.Context, projectID string) ([]store.Team, error)
+	DeleteTeam(ctx context.Context, id string) error
+	UpdateTeamName(ctx context.Context, arg store.UpdateTeamNameParams) error
+	ListTeamMembers(ctx context.Context, teamID sql.NullString) ([]store.Session, error)
+	SetSessionTeam(ctx context.Context, arg store.SetSessionTeamParams) error
+	ClearSessionTeam(ctx context.Context, id string) error
+	ListAgentMessagesByTeam(ctx context.Context, teamID sql.NullString) ([]store.SessionEvent, error)
 }
 
 type gitServiceQueries interface {
