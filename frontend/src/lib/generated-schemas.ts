@@ -176,6 +176,8 @@ export const SessionInfoSchema = z.object({
   gitVersion: z.number(),
   prUrl: z.string().optional(),
   behaviorPresets: BehaviorPresetsSchema,
+  teamId: z.string().optional(),
+  teamRole: z.string().optional(),
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
   createdAt: z.string(),

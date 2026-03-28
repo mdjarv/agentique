@@ -174,6 +174,8 @@ export interface SessionInfo {
   gitVersion: number;
   prUrl?: string;
   behaviorPresets: BehaviorPresets;
+  teamId?: string;
+  teamRole?: string;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
   createdAt: string;
