@@ -261,6 +261,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		WorktreeBranch:  worktreeBranch,
 		BehaviorPresets: presets,
 		CreatedAt:       createdAt,
+		UpdatedAt:       createdAt,
 	})
 
 	return CreateSessionResult{
