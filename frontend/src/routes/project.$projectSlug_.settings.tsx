@@ -145,7 +145,7 @@ function ProjectSettingsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-2xl mx-auto p-8 space-y-8">
+      <div className="max-w-2xl mx-auto p-8 max-md:p-4 space-y-8 max-md:space-y-6">
         <div className="space-y-1">
           <button
             type="button"
