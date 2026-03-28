@@ -1,56 +1,44 @@
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
-import { useWebSocket } from "~/hooks/useWebSocket";
+import type { Project } from "~/lib/types";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 import { ProjectTreeItem } from "./ProjectTreeItem";
 
-function SortableProjectItem({
-  id,
-  children,
-}: {
-  id: string;
-  children: (dragListeners: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-  });
+function useFilteredSortedProjects(): { favorites: Project[]; rest: Project[] } {
+  const projects = useAppStore((s) => s.projects);
+  const projectTags = useAppStore((s) => s.projectTags);
+  const activeTagFilters = useUIStore((s) => s.activeTagFilters);
 
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-      }}
-      {...attributes}
-    >
-      {children(listeners ?? {})}
-    </div>
-  );
+  return useMemo(() => {
+    let filtered = projects;
+
+    // Filter by tags (OR logic: show projects matching ANY selected tag)
+    if (activeTagFilters.length > 0) {
+      const filterSet = new Set(activeTagFilters);
+      const projectsWithMatchingTag = new Set(
+        projectTags.filter((pt) => filterSet.has(pt.tag_id)).map((pt) => pt.project_id),
+      );
+      filtered = filtered.filter((p) => projectsWithMatchingTag.has(p.id));
+    }
+
+    // Sort: favorites first, then alphabetical by name
+    const sorted = [...filtered].sort((a, b) => {
+      if (a.favorite !== b.favorite) return b.favorite - a.favorite;
+      return a.name.localeCompare(b.name);
+    });
+
+    const favorites = sorted.filter((p) => p.favorite === 1);
+    const rest = sorted.filter((p) => p.favorite !== 1);
+    return { favorites, rest };
+  }, [projects, projectTags, activeTagFilters]);
 }
 
 export function ProjectList() {
-  const projects = useAppStore((s) => s.projects);
-  const reorderProjects = useAppStore((s) => s.reorderProjects);
-  const ws = useWebSocket();
+  const { favorites, rest } = useFilteredSortedProjects();
+  const allVisible = useMemo(() => [...favorites, ...rest], [favorites, rest]);
+
   const params = useParams({ strict: false }) as {
     projectSlug?: string;
     sessionShortId?: string;
@@ -68,8 +56,8 @@ export function ProjectList() {
   const collapsedProjectIds = useUIStore((s) => s.collapsedProjectIds);
   const expandedIds = useMemo(() => {
     const collapsed = new Set(collapsedProjectIds);
-    return new Set(projects.filter((p) => !collapsed.has(p.id)).map((p) => p.id));
-  }, [collapsedProjectIds, projects]);
+    return new Set(allVisible.filter((p) => !collapsed.has(p.id)).map((p) => p.id));
+  }, [collapsedProjectIds, allVisible]);
 
   const toggleExpand = useCallback(
     (id: string) => {
@@ -78,54 +66,42 @@ export function ProjectList() {
     [expandedIds],
   );
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-
-      const oldIndex = projects.findIndex((p) => p.id === active.id);
-      const newIndex = projects.findIndex((p) => p.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = arrayMove(projects, oldIndex, newIndex);
-      const orderedIds = reordered.map((p) => p.id);
-      reorderProjects(orderedIds);
-      ws.request("project.reorder", { projectIds: orderedIds }).catch(console.error);
-    },
-    [projects, reorderProjects, ws],
-  );
-
+  const projects = useAppStore((s) => s.projects);
   if (projects.length === 0) {
     return <div className="p-4 text-sm text-sidebar-foreground/70">No projects yet</div>;
   }
 
+  if (allVisible.length === 0) {
+    return <div className="p-4 text-sm text-sidebar-foreground/70">No matching projects</div>;
+  }
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-        <div className="py-1">
-          {projects.map((project) => (
-            <SortableProjectItem key={project.id} id={project.id}>
-              {(dragListeners) => (
-                <ProjectTreeItem
-                  project={project}
-                  isActive={project.slug === activeProjectSlug}
-                  isExpanded={expandedIds.has(project.id)}
-                  onToggleExpand={() => toggleExpand(project.id)}
-                  activeSessionId={activeSessionId}
-                  isNewChatActive={project.slug === activeProjectSlug && isNewChatRoute}
-                  dragListeners={dragListeners}
-                />
-              )}
-            </SortableProjectItem>
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
+    <div className="py-1">
+      {favorites.map((project) => (
+        <ProjectTreeItem
+          key={project.id}
+          project={project}
+          isActive={project.slug === activeProjectSlug}
+          isExpanded={expandedIds.has(project.id)}
+          onToggleExpand={() => toggleExpand(project.id)}
+          activeSessionId={activeSessionId}
+          isNewChatActive={project.slug === activeProjectSlug && isNewChatRoute}
+        />
+      ))}
+      {favorites.length > 0 && rest.length > 0 && (
+        <div className="mx-3 my-1 border-t border-sidebar-border/30" />
+      )}
+      {rest.map((project) => (
+        <ProjectTreeItem
+          key={project.id}
+          project={project}
+          isActive={project.slug === activeProjectSlug}
+          isExpanded={expandedIds.has(project.id)}
+          onToggleExpand={() => toggleExpand(project.id)}
+          activeSessionId={activeSessionId}
+          isNewChatActive={project.slug === activeProjectSlug && isNewChatRoute}
+        />
+      ))}
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { NewProjectDialog } from "~/components/layout/NewProjectDialog";
 import { ProjectList } from "~/components/layout/ProjectList";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
+import { TagFilterBar } from "~/components/layout/TagFilterBar";
 import { cn } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -27,6 +28,7 @@ export function AppSidebar({ className }: AppSidebarProps) {
         </div>
         <NewProjectDialog />
       </div>
+      <TagFilterBar />
       <div className="flex-1 overflow-y-auto">
         <ProjectList />
       </div>

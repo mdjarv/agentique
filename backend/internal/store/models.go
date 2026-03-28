@@ -36,6 +36,12 @@ type Project struct {
 	Slug                   string `json:"slug"`
 	SortOrder              int64  `json:"sort_order"`
 	DefaultBehaviorPresets string `json:"default_behavior_presets"`
+	Favorite               int64  `json:"favorite"`
+}
+
+type ProjectTag struct {
+	ProjectID string `json:"project_id"`
+	TagID     string `json:"tag_id"`
 }
 
 type Session struct {
@@ -71,6 +77,15 @@ type SessionEvent struct {
 	Type      string `json:"type"`
 	Data      string `json:"data"`
 	CreatedAt string `json:"created_at"`
+}
+
+type Tag struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Color     string `json:"color"`
+	SortOrder int64  `json:"sort_order"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type User struct {

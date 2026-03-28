@@ -19,5 +19,8 @@ UPDATE projects SET sort_order = ? WHERE id = ?;
 -- name: UpdateProjectBehaviorPresets :one
 UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateProjectFavorite :one
+UPDATE projects SET favorite = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?;

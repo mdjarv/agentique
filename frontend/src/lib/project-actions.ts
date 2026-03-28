@@ -1,6 +1,9 @@
 import type {
+  Project,
   ProjectCommitResult,
   ProjectGitStatus,
+  Tag,
+  TagListResult,
   TrackedFilesResult,
 } from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
@@ -49,4 +52,43 @@ export interface CommandsResult {
 
 export async function getCommands(ws: WsClient, projectId: string): Promise<CommandsResult> {
   return ws.request<CommandsResult>("project.commands", { projectId });
+}
+
+// --- Tags & Favorites ---
+
+export async function listTags(ws: WsClient): Promise<TagListResult> {
+  return ws.request<TagListResult>("tag.list", {});
+}
+
+export async function createTag(ws: WsClient, name: string, color: string): Promise<Tag> {
+  return ws.request<Tag>("tag.create", { name, color });
+}
+
+export async function updateTag(
+  ws: WsClient,
+  id: string,
+  name: string,
+  color: string,
+): Promise<Tag> {
+  return ws.request<Tag>("tag.update", { id, name, color });
+}
+
+export async function deleteTag(ws: WsClient, id: string): Promise<void> {
+  await ws.request("tag.delete", { id });
+}
+
+export async function setProjectFavorite(
+  ws: WsClient,
+  projectId: string,
+  favorite: boolean,
+): Promise<Project> {
+  return ws.request<Project>("project.set-favorite", { projectId, favorite });
+}
+
+export async function setProjectTags(
+  ws: WsClient,
+  projectId: string,
+  tagIds: string[],
+): Promise<Tag[]> {
+  return ws.request<Tag[]>("project.set-tags", { projectId, tagIds });
 }

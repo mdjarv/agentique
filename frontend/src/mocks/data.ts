@@ -2,7 +2,9 @@ import type {
   BehaviorPresets,
   Project,
   ProjectGitStatus,
+  ProjectTag,
   SessionInfo,
+  Tag,
 } from "~/lib/generated-types";
 import type { PendingApproval, PendingQuestion } from "~/stores/chat-store";
 
@@ -40,7 +42,49 @@ const S = {
   queryOptimizer: "bbb00006-0000-4000-8000-000000000006",
 } as const;
 
-export { S as SESSION_IDS, P as PROJECT_IDS };
+const T = {
+  work: "ttt00001-0000-4000-8000-000000000001",
+  personal: "ttt00002-0000-4000-8000-000000000002",
+  infra: "ttt00003-0000-4000-8000-000000000003",
+} as const;
+
+export { S as SESSION_IDS, P as PROJECT_IDS, T as TAG_IDS };
+
+// --- Tags ---
+
+export const MOCK_TAGS: Tag[] = [
+  {
+    id: T.work,
+    name: "Work",
+    color: "blue",
+    sort_order: 0,
+    created_at: daysAgo(30),
+    updated_at: daysAgo(30),
+  },
+  {
+    id: T.personal,
+    name: "Personal",
+    color: "green",
+    sort_order: 1,
+    created_at: daysAgo(30),
+    updated_at: daysAgo(30),
+  },
+  {
+    id: T.infra,
+    name: "Infra",
+    color: "orange",
+    sort_order: 2,
+    created_at: daysAgo(14),
+    updated_at: daysAgo(14),
+  },
+];
+
+export const MOCK_PROJECT_TAGS: ProjectTag[] = [
+  { project_id: P.agentique, tag_id: T.personal },
+  { project_id: P.agentique, tag_id: T.infra },
+  { project_id: P.thePint, tag_id: T.personal },
+  { project_id: P.alltixApi, tag_id: T.work },
+];
 
 // --- Projects ---
 
@@ -55,6 +99,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_system_prompt: "",
     default_behavior_presets: "{}",
     sort_order: 1,
+    favorite: 1,
     created_at: daysAgo(30),
     updated_at: hoursAgo(2),
   },
@@ -68,6 +113,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_system_prompt: "",
     default_behavior_presets: "{}",
     sort_order: 2,
+    favorite: 0,
     created_at: daysAgo(60),
     updated_at: daysAgo(1),
   },
@@ -81,6 +127,7 @@ export const MOCK_PROJECTS: Project[] = [
     default_system_prompt: "",
     default_behavior_presets: "{}",
     sort_order: 3,
+    favorite: 0,
     created_at: daysAgo(90),
     updated_at: daysAgo(3),
   },

@@ -10,7 +10,7 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
+INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
 `
 
 type CreateProjectParams struct {
@@ -40,6 +40,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Slug,
 		&i.SortOrder,
 		&i.DefaultBehaviorPresets,
+		&i.Favorite,
 	)
 	return i, err
 }
@@ -54,7 +55,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects WHERE id = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -72,12 +73,13 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.Slug,
 		&i.SortOrder,
 		&i.DefaultBehaviorPresets,
+		&i.Favorite,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects WHERE slug = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -95,12 +97,13 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.Slug,
 		&i.SortOrder,
 		&i.DefaultBehaviorPresets,
+		&i.Favorite,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets FROM projects ORDER BY sort_order ASC, updated_at DESC
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite FROM projects ORDER BY sort_order ASC, updated_at DESC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -124,6 +127,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.Slug,
 			&i.SortOrder,
 			&i.DefaultBehaviorPresets,
+			&i.Favorite,
 		); err != nil {
 			return nil, err
 		}
@@ -139,7 +143,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 const updateProjectBehaviorPresets = `-- name: UpdateProjectBehaviorPresets :one
-UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
+UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
 `
 
 type UpdateProjectBehaviorPresetsParams struct {
@@ -162,12 +166,42 @@ func (q *Queries) UpdateProjectBehaviorPresets(ctx context.Context, arg UpdatePr
 		&i.Slug,
 		&i.SortOrder,
 		&i.DefaultBehaviorPresets,
+		&i.Favorite,
+	)
+	return i, err
+}
+
+const updateProjectFavorite = `-- name: UpdateProjectFavorite :one
+UPDATE projects SET favorite = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
+`
+
+type UpdateProjectFavoriteParams struct {
+	Favorite int64  `json:"favorite"`
+	ID       string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFavoriteParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectFavorite, arg.Favorite, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
+		&i.Favorite,
 	)
 	return i, err
 }
 
 const updateProjectSlug = `-- name: UpdateProjectSlug :one
-UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets
+UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
 `
 
 type UpdateProjectSlugParams struct {
@@ -190,6 +224,7 @@ func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugPa
 		&i.Slug,
 		&i.SortOrder,
 		&i.DefaultBehaviorPresets,
+		&i.Favorite,
 	)
 	return i, err
 }
