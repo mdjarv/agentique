@@ -571,9 +571,14 @@ index abc1234..def5678 100644
     }
 
     case "tag.create": {
+      const tagName = p.name as string;
+      if (mockTags.some((t) => t.name.toLowerCase() === tagName.toLowerCase())) {
+        respondError(client, msg.id, "tag name already exists");
+        break;
+      }
       const newTag = {
         id: `ttt-mock-${++tagCounter}`,
-        name: p.name as string,
+        name: tagName,
         color: p.color as string,
         sort_order: mockTags.length,
         created_at: new Date().toISOString(),
