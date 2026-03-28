@@ -6,18 +6,21 @@ package store
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
 	AddTagToProject(ctx context.Context, arg AddTagToProjectParams) error
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
 	ClearProjectTags(ctx context.Context, projectID string) error
+	ClearSessionTeam(ctx context.Context, id string) error
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
 	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error)
+	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error
 	DeleteAuthSession(ctx context.Context, token string) error
@@ -25,6 +28,7 @@ type Querier interface {
 	DeleteProject(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteTag(ctx context.Context, id string) error
+	DeleteTeam(ctx context.Context, id string) error
 	DeleteUser(ctx context.Context, id string) error
 	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
@@ -33,9 +37,11 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
 	GetTag(ctx context.Context, id string) (Tag, error)
+	GetTeam(ctx context.Context, id string) (Team, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (User, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
+	ListAgentMessagesByTeam(ctx context.Context, teamID sql.NullString) ([]SessionEvent, error)
 	ListAllProjectTags(ctx context.Context) ([]ProjectTag, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
 	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
@@ -45,12 +51,15 @@ type Querier interface {
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
 	ListTags(ctx context.Context) ([]Tag, error)
+	ListTeamMembers(ctx context.Context, teamID sql.NullString) ([]Session, error)
+	ListTeamsByProject(ctx context.Context, projectID string) ([]Team, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
 	RecoverStaleSessions(ctx context.Context) error
 	RemoveTagFromProject(ctx context.Context, arg RemoveTagFromProjectParams) error
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
 	SetSessionCompleted(ctx context.Context, id string) error
+	SetSessionTeam(ctx context.Context, arg SetSessionTeamParams) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
@@ -67,6 +76,7 @@ type Querier interface {
 	UpdateSessionPermissionMode(ctx context.Context, arg UpdateSessionPermissionModeParams) error
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
 	UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error)
+	UpdateTeamName(ctx context.Context, arg UpdateTeamNameParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }
