@@ -11,7 +11,6 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
-import { useIsMobile } from "~/hooks/useIsMobile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -209,10 +209,7 @@ export function SessionHeader({
             <DropdownMenuContent align="end">
               {isMobile && (
                 <>
-                  <DropdownMenuItem
-                    onClick={() => setEditing(true)}
-                    className="text-xs gap-2"
-                  >
+                  <DropdownMenuItem onClick={() => setEditing(true)} className="text-xs gap-2">
                     <Pencil className="h-3.5 w-3.5" />
                     Rename
                   </DropdownMenuItem>

@@ -449,7 +449,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   </button>
                 )}
 
-                {(effort !== undefined || model) && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
+                {(effort !== undefined || model) && (
+                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                )}
 
                 {effort !== undefined &&
                   (onEffortChange ? (
