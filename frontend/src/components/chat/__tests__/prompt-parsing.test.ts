@@ -100,6 +100,60 @@ describe("findRawPromptBlocks", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.maxInnerFence).toBe(4);
   });
+
+  it("handles a bare inner code block (no language tag)", () => {
+    const md = [
+      "```prompt",
+      "# Title",
+      "Format:",
+      "```",
+      "[Message from agent]",
+      "```",
+      "Done.",
+      "```",
+    ].join("\n");
+    const blocks = findRawPromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.content).toContain("[Message from agent]");
+    expect(blocks[0]?.content).toContain("Done.");
+    expect(blocks[0]?.maxInnerFence).toBe(3);
+  });
+
+  it("handles a bare inner block followed by an info-string block", () => {
+    const md = [
+      "```prompt",
+      "# Title",
+      "```",
+      "plain code",
+      "```",
+      "```go",
+      "func main() {}",
+      "```",
+      "```",
+    ].join("\n");
+    const blocks = findRawPromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.content).toContain("plain code");
+    expect(blocks[0]?.content).toContain("```go");
+    expect(blocks[0]?.content).toContain("func main() {}");
+  });
+
+  it("handles multiple consecutive bare inner blocks", () => {
+    const md = ["```prompt", "# Title", "```", "block1", "```", "```", "block2", "```", "```"].join(
+      "\n",
+    );
+    const blocks = findRawPromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.content).toContain("block1");
+    expect(blocks[0]?.content).toContain("block2");
+  });
+
+  it("tracks maxInnerFence from info fence openers", () => {
+    const md = ["```prompt", "# Title", "````go", "code", "````", "```"].join("\n");
+    const blocks = findRawPromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.maxInnerFence).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -173,6 +227,14 @@ describe("normalizePromptFences", () => {
     );
   });
 
+  it("lengthens outer fence when bare inner block has same backtick count", () => {
+    const md = ["```prompt", "# Title", "```", "plain code", "```", "Done.", "```"].join("\n");
+    const result = normalizePromptFences(md);
+    expect(result).toBe(
+      ["````prompt", "# Title", "```", "plain code", "```", "Done.", "````"].join("\n"),
+    );
+  });
+
   it("normalizes only blocks that need it", () => {
     const md = [
       "```prompt",
@@ -241,6 +303,24 @@ describe("parsePromptBlocks", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.title).toBe("Fix API");
     expect(blocks[0]?.prompt).toContain("```go");
+    expect(blocks[0]?.prompt).toContain("Make sure tests pass.");
+  });
+
+  it("extracts full prompt through bare inner fences", () => {
+    const md = [
+      "```prompt",
+      "# Fix API",
+      "Format:",
+      "```",
+      "[Message from agent]",
+      "```",
+      "Make sure tests pass.",
+      "```",
+    ].join("\n");
+    const blocks = parsePromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.title).toBe("Fix API");
+    expect(blocks[0]?.prompt).toContain("[Message from agent]");
     expect(blocks[0]?.prompt).toContain("Make sure tests pass.");
   });
 
