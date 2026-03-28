@@ -200,12 +200,12 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 	})
 	sess.mu.Lock()
 	sess.queryCount = turnIndex + 1
-	sess.claudeSessionID = p.ClaudeSessionID
 	sess.autoApproveMode = p.AutoApproveMode
 	if p.PermissionMode != "" {
 		sess.permissionMode = p.PermissionMode
 	}
 	sess.mu.Unlock()
+	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
 	connectOpts := []claudecli.Option{
 		claudecli.WithWorkDir(p.WorkDir),

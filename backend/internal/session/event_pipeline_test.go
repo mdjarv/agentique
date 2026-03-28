@@ -328,22 +328,43 @@ func TestPipeline_ToolCategoryTracking_BashRefresh(t *testing.T) {
 func TestPipeline_PlanModeTransitions(t *testing.T) {
 	sink := newTestSink()
 	var transitions []string
+	var exitInput json.RawMessage
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
 		cfg.OnPlanTransition = func(mode string) { transitions = append(transitions, mode) }
+		cfg.OnExitPlanMode = func(input json.RawMessage) { exitInput = input }
 	})
 	p.AdvanceTurn()
 
 	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`)})
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t2", Name: "ExitPlanMode", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t2", Name: "ExitPlanMode", Input: json.RawMessage(`{"plan":"test"}`)})
 
-	if len(transitions) != 2 {
-		t.Fatalf("expected 2 transitions, got %d", len(transitions))
+	if len(transitions) != 1 {
+		t.Fatalf("expected 1 transition (EnterPlanMode only), got %d: %v", len(transitions), transitions)
 	}
 	if transitions[0] != "plan" {
 		t.Errorf("expected 'plan', got %q", transitions[0])
 	}
-	if transitions[1] != "default" {
-		t.Errorf("expected 'default', got %q", transitions[1])
+	if exitInput == nil {
+		t.Fatal("expected OnExitPlanMode to be called")
+	}
+	if string(exitInput) != `{"plan":"test"}` {
+		t.Errorf("expected exit input %q, got %q", `{"plan":"test"}`, string(exitInput))
+	}
+}
+
+func TestPipeline_ExitPlanModeFallback(t *testing.T) {
+	sink := newTestSink()
+	var transitions []string
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnPlanTransition = func(mode string) { transitions = append(transitions, mode) }
+		// No OnExitPlanMode — should fall back to OnPlanTransition("default").
+	})
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "ExitPlanMode", Input: json.RawMessage(`{}`)})
+
+	if len(transitions) != 1 || transitions[0] != "default" {
+		t.Errorf("expected fallback to OnPlanTransition('default'), got %v", transitions)
 	}
 }
 

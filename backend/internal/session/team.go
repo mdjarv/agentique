@@ -231,11 +231,9 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 	turnIndex := int64(0)
 	seq := int64(0)
 	if live != nil {
-		live.mu.Lock()
-		turnIndex = int64(live.turnIndex)
-		seq = int64(live.seqInTurn)
-		live.seqInTurn++
-		live.mu.Unlock()
+		t, sq := live.pipeline.AllocSeq()
+		turnIndex = int64(t)
+		seq = int64(sq)
 	}
 
 	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{

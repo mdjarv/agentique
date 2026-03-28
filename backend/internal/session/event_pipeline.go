@@ -25,6 +25,7 @@ type PipelineConfig struct {
 	// All are optional (nil-safe).
 	OnClaudeSessionID func(id string)
 	OnPlanTransition  func(mode string)
+	OnExitPlanMode    func(input json.RawMessage)
 	OnWriteToolResult func()
 	OnTurnComplete    func()
 	OnFatalError      func(err error)
@@ -48,6 +49,7 @@ type EventPipeline struct {
 
 	onClaudeSessionID func(string)
 	onPlanTransition  func(string)
+	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
 	onTurnComplete    func()
 	onFatalError      func(error)
@@ -62,6 +64,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		toolCategories:    make(map[string]string),
 		onClaudeSessionID: cfg.OnClaudeSessionID,
 		onPlanTransition:  cfg.OnPlanTransition,
+		onExitPlanMode:    cfg.OnExitPlanMode,
 		onWriteToolResult: cfg.OnWriteToolResult,
 		onTurnComplete:    cfg.OnTurnComplete,
 		onFatalError:      cfg.OnFatalError,
@@ -212,11 +215,15 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 	p.toolCategories[tue.ToolID] = tue.Category
 	p.mu.Unlock()
 
-	if p.onPlanTransition != nil {
-		switch tue.ToolName {
-		case "EnterPlanMode":
+	switch tue.ToolName {
+	case "EnterPlanMode":
+		if p.onPlanTransition != nil {
 			p.onPlanTransition("plan")
-		case "ExitPlanMode":
+		}
+	case "ExitPlanMode":
+		if p.onExitPlanMode != nil {
+			p.onExitPlanMode(tue.ToolInput)
+		} else if p.onPlanTransition != nil {
 			p.onPlanTransition("default")
 		}
 	}

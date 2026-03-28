@@ -76,9 +76,7 @@ type Session struct {
 	state            State
 	cliSess          CLISession
 	queryCount       int
-	claudeSessionID  string
-	turnIndex        int
-	seqInTurn        int
+	pipeline         *EventPipeline
 	queries          sessionQueries
 	broadcast        func(pushType string, payload any)
 	pendingApprovals map[string]*pendingApproval
@@ -91,8 +89,7 @@ type Session struct {
 	workDir        string
 	gitVersion      int64
 	eventLoopDone   chan struct{}
-	toolCategories   map[string]string // ToolID → category for correlating results to writes
-	gitRefreshTimer  *time.Timer       // debounce timer for mid-turn git refresh
+	gitRefreshTimer  *time.Timer // debounce timer for mid-turn git refresh
 	onAgentMessage   func(senderID, targetName, content string) error
 }
 
@@ -119,15 +116,61 @@ func newSession(p sessionParams) *Session {
 		cliSess:          p.cliSess,
 		queries:          p.queries,
 		broadcast:        p.broadcast,
-		turnIndex:        p.turnIndex,
 		pendingApprovals: make(map[string]*pendingApproval),
 		pendingQuestions: make(map[string]*pendingQuestion),
 		permissionMode:   "default",
 		workDir:          p.workDir,
 		gitVersion:       p.initialGitVersion,
 		eventLoopDone:    make(chan struct{}),
-		toolCategories:   make(map[string]string),
 	}
+	s.pipeline = NewEventPipeline(PipelineConfig{
+		SessionID:        p.id,
+		InitialTurnIndex: p.turnIndex,
+		Sink: EventSink{
+			Persist: func(turnIndex, seq int, wireType string, data []byte) {
+				if err := p.queries.InsertEvent(context.Background(), store.InsertEventParams{
+					SessionID: p.id,
+					TurnIndex: int64(turnIndex),
+					Seq:       int64(seq),
+					Type:      wireType,
+					Data:      string(data),
+				}); err != nil {
+					slog.Error("persist event failed", "session_id", p.id, "type", wireType, "error", err)
+				}
+			},
+			Broadcast: p.broadcast,
+		},
+		OnClaudeSessionID: func(id string) {
+			if err := p.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
+				ClaudeSessionID: sqlNullString(id),
+				ID:              p.id,
+			}); err != nil {
+				slog.Error("persist claude session ID failed", "session_id", p.id, "error", err)
+			}
+		},
+		OnPlanTransition: s.transitionPlanMode,
+		OnExitPlanMode: func(input json.RawMessage) {
+			s.mu.Lock()
+			aam := s.autoApproveMode
+			s.mu.Unlock()
+			if aam == "fullAuto" {
+				s.transitionPlanMode("default")
+			} else {
+				go s.requestPlanReview(input)
+			}
+		},
+		OnWriteToolResult: s.scheduleGitRefresh,
+		OnTurnComplete: func() {
+			if err := s.setState(StateIdle); err != nil {
+				slog.Error("state transition failed", "session_id", s.ID, "error", err)
+			}
+		},
+		OnFatalError: func(err error) {
+			if stErr := s.setState(StateFailed); stErr != nil {
+				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
+			}
+		},
+	})
 	s.broadcastState(StateIdle)
 	if s.cliSess != nil {
 		s.startEventLoop()
@@ -147,9 +190,7 @@ func (s *Session) setCLISession(cliSess CLISession) {
 
 // ClaudeSessionID returns the Claude CLI session ID, if available.
 func (s *Session) ClaudeSessionID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.claudeSessionID
+	return s.pipeline.ClaudeSessionID()
 }
 
 // QueryCount returns the number of queries sent to this session.
@@ -180,10 +221,9 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 		s.mu.Unlock()
 		return ErrNotLive
 	}
-	seq := s.seqInTurn
-	turnIdx := s.turnIndex
-	s.seqInTurn++
 	s.mu.Unlock()
+
+	turnIdx, seq := s.pipeline.AllocSeq()
 
 	// Send to CLI.
 	if len(attachments) > 0 {
@@ -236,11 +276,11 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	}
 	s.state = StateRunning
 	s.queryCount++
-	s.turnIndex++
-	s.seqInTurn = 0
 	wasCompleted := s.completedAt != ""
 	s.completedAt = ""
 	s.mu.Unlock()
+
+	turnIndex := s.pipeline.AdvanceTurn()
 
 	// Persist running state to DB so it survives server restarts.
 	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
@@ -266,16 +306,14 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	}
 	if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 		SessionID: s.ID,
-		TurnIndex: int64(s.turnIndex),
+		TurnIndex: int64(turnIndex),
 		Seq:       0,
 		Type:      "prompt",
 		Data:      string(promptData),
 	}); err != nil {
 		slog.Error("persist prompt event failed", "session_id", s.ID, "error", err)
 	}
-	s.mu.Lock()
-	s.seqInTurn = 1
-	s.mu.Unlock()
+	s.pipeline.SetSeq(1)
 
 	s.broadcastState(StateRunning)
 
@@ -424,7 +462,7 @@ func (s *Session) startEventLoop() {
 	}()
 }
 
-// safeProcessEvent wraps processEvent with panic recovery so a single
+// safeProcessEvent wraps pipeline.ProcessEvent with panic recovery so a single
 // malformed event can't kill the event loop goroutine.
 func (s *Session) safeProcessEvent(event claudecli.Event) {
 	defer func() {
@@ -440,151 +478,7 @@ func (s *Session) safeProcessEvent(event claudecli.Event) {
 			})
 		}
 	}()
-	s.processEvent(event)
-}
-
-// processEvent handles a single event from the CLI session.
-func (s *Session) processEvent(event claudecli.Event) {
-	// Capture Claude session ID from InitEvent.
-	if initEv, ok := event.(*claudecli.InitEvent); ok {
-		s.mu.Lock()
-		if s.claudeSessionID == "" && initEv.SessionID != "" {
-			s.claudeSessionID = initEv.SessionID
-			if err := s.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
-				ClaudeSessionID: sqlNullString(initEv.SessionID),
-				ID:              s.ID,
-			}); err != nil {
-				slog.Error("persist claude session ID failed", "session_id", s.ID, "error", err)
-			}
-			slog.Debug("captured claude session ID", "session_id", s.ID, "claude_session_id", initEv.SessionID)
-		}
-		s.mu.Unlock()
-		return
-	}
-
-	wireEvent := ToWireEvent(event)
-	if wireEvent == nil {
-		return
-	}
-
-	// Rate limit and stream events are transient — broadcast only, skip DB.
-	switch wireEvent.(type) {
-	case WireRateLimitEvent, WireCompactStatusEvent, WireContextManagementEvent, WireStreamEvent:
-		s.broadcast("session.event", map[string]any{
-			"sessionId": s.ID,
-			"event":     wireEvent,
-		})
-		return
-	}
-
-	// Persist to DB. Truncate large tool results to keep DB lean —
-	// the full content is still broadcast to connected clients above.
-	s.mu.Lock()
-	seq := s.seqInTurn
-	turnIdx := s.turnIndex
-	s.seqInTurn++
-	s.mu.Unlock()
-
-	dbEvent := wireEvent
-	if tr, ok := wireEvent.(WireToolResultEvent); ok {
-		// Truncate large text blocks for DB; image blocks pass through.
-		text := toolResultText(tr.Content)
-		if len(text) > maxToolResultDBSize {
-			truncated := text[:toolResultKeepHead] + "\n...[truncated]...\n" + text[len(text)-toolResultKeepTail:]
-			blocks := make([]WireContentBlock, 0, len(tr.Content))
-			replaced := false
-			for _, b := range tr.Content {
-				if b.Type == "text" && !replaced {
-					blocks = append(blocks, WireContentBlock{Type: "text", Text: truncated})
-					replaced = true
-				} else if b.Type != "text" {
-					blocks = append(blocks, b)
-				}
-			}
-			tr.Content = blocks
-			dbEvent = tr
-		}
-	}
-
-	if data, err := json.Marshal(dbEvent); err == nil {
-		typed, _ := wireEvent.(interface{ WireType() string })
-		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
-			SessionID: s.ID,
-			TurnIndex: int64(turnIdx),
-			Seq:       int64(seq),
-			Type:      typed.WireType(),
-			Data:      string(data),
-		}); err != nil {
-			slog.Error("persist event failed", "session_id", s.ID, "type", typed.WireType(), "error", err)
-		}
-	}
-
-	// Track tool categories for correlating results to write operations.
-	// EnterPlanMode is auto-approved by the CLI without a can_use_tool request.
-	// ExitPlanMode is intercepted here: we create a synthetic approval and interrupt
-	// so the user can review the plan before execution starts.
-	if tue, ok := wireEvent.(WireToolUseEvent); ok {
-		s.mu.Lock()
-		s.toolCategories[tue.ToolID] = tue.Category
-		s.mu.Unlock()
-
-		switch tue.ToolName {
-		case "EnterPlanMode":
-			s.transitionPlanMode("plan")
-		case "ExitPlanMode":
-			s.mu.Lock()
-			aam := s.autoApproveMode
-			s.mu.Unlock()
-			if aam == "fullAuto" {
-				s.transitionPlanMode("default")
-			} else {
-				go s.requestPlanReview(tue.ToolInput)
-			}
-		}
-	}
-
-	// Schedule debounced git refresh after write-tool results.
-	if tr, ok := wireEvent.(WireToolResultEvent); ok {
-		s.mu.Lock()
-		cat := s.toolCategories[tr.ToolID]
-		delete(s.toolCategories, tr.ToolID)
-		s.mu.Unlock()
-		if cat == "command" || cat == "file_write" {
-			s.scheduleGitRefresh()
-		}
-	}
-
-	// Broadcast to all project clients.
-	s.broadcast("session.event", map[string]any{
-		"sessionId": s.ID,
-		"event":     wireEvent,
-	})
-
-	if _, ok := event.(*claudecli.ResultEvent); ok {
-		s.mu.Lock()
-		s.toolCategories = make(map[string]string)
-		s.mu.Unlock()
-		if err := s.setState(StateIdle); err != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", err)
-		}
-	}
-
-	if errEv, ok := event.(*claudecli.ErrorEvent); ok {
-		lvl := slog.LevelWarn
-		if errEv.Fatal {
-			lvl = slog.LevelError
-		}
-		slog.Log(context.Background(), lvl, "claude API error",
-			"session_id", s.ID,
-			"fatal", errEv.Fatal,
-			"error", errEv.Error(),
-		)
-		if errEv.Fatal {
-			if err := s.setState(StateFailed); err != nil {
-				slog.Error("state transition failed", "session_id", s.ID, "error", err)
-			}
-		}
-	}
+	s.pipeline.ProcessEvent(event)
 }
 
 func (s *Session) broadcastState(state State) {
