@@ -442,13 +442,6 @@ export function useGlobalSubscriptions(projects: Project[]) {
         })
         .catch(() => {});
 
-      // Reload teams
-      for (const project of projectsRef.current) {
-        listTeams(ws, project.id)
-          .then((teams) => useTeamStore.getState().mergeTeams(teams))
-          .catch(() => {});
-      }
-
       // Reload active session history
       const activeId = useChatStore.getState().activeSessionId;
       if (activeId) {

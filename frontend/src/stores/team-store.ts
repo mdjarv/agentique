@@ -36,7 +36,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       for (const t of teams) {
         const existing = merged[t.id];
         // Don't overwrite a team that has more members (stale RPC vs fresh broadcast).
-        if (existing && existing.members.length > t.members.length) continue;
+        if (existing && existing.members.length >= t.members.length) continue;
         merged[t.id] = t;
       }
       return { teams: merged };
