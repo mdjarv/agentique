@@ -148,6 +148,24 @@ describe("findRawPromptBlocks", () => {
     expect(blocks[0]?.content).toContain("block2");
   });
 
+  it("handles indented inner code fences (CommonMark allows 0-3 spaces)", () => {
+    const md = [
+      "```prompt",
+      "# Backend tests",
+      "Extract interfaces:",
+      "   ```go",
+      "   type Foo interface {}",
+      "   ```",
+      "Run tests.",
+      "```",
+    ].join("\n");
+    const blocks = findRawPromptBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.content).toContain("```go");
+    expect(blocks[0]?.content).toContain("Run tests.");
+    expect(blocks[0]?.maxInnerFence).toBe(3);
+  });
+
   it("tracks maxInnerFence from info fence openers", () => {
     const md = ["```prompt", "# Title", "````go", "code", "````", "```"].join("\n");
     const blocks = findRawPromptBlocks(md);
@@ -232,6 +250,32 @@ describe("normalizePromptFences", () => {
     const result = normalizePromptFences(md);
     expect(result).toBe(
       ["````prompt", "# Title", "```", "plain code", "```", "Done.", "````"].join("\n"),
+    );
+  });
+
+  it("lengthens outer fence when indented inner fence conflicts", () => {
+    const md = [
+      "```prompt",
+      "# Backend tests",
+      "Extract interfaces:",
+      "   ```go",
+      "   type Foo interface {}",
+      "   ```",
+      "Run tests.",
+      "```",
+    ].join("\n");
+    const result = normalizePromptFences(md);
+    expect(result).toBe(
+      [
+        "````prompt",
+        "# Backend tests",
+        "Extract interfaces:",
+        "   ```go",
+        "   type Foo interface {}",
+        "   ```",
+        "Run tests.",
+        "````",
+      ].join("\n"),
     );
   });
 

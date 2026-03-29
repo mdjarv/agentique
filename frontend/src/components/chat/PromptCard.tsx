@@ -59,9 +59,9 @@ export interface RawPromptBlock {
   maxInnerFence: number;
 }
 
-const RE_PROMPT_OPEN = /^(`{3,})prompt\s*$/;
-const RE_BARE_FENCE = /^(`{3,})\s*$/;
-const RE_INFO_FENCE = /^(`{3,})\S/;
+const RE_PROMPT_OPEN = /^ {0,3}(`{3,})prompt\s*$/;
+const RE_BARE_FENCE = /^ {0,3}(`{3,})\s*$/;
+const RE_INFO_FENCE = /^ {0,3}(`{3,})\S/;
 
 /** Lookahead: determine whether a bare fence should open an inner code block
  *  rather than close the prompt block.
