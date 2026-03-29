@@ -253,6 +253,12 @@ export function useGlobalSubscriptions(projects: Project[]) {
       const deletedSession = store.sessions[deletedId];
       const wasActive = store.activeSessionId === deletedId;
 
+      // Clean up team membership before removing session data.
+      const deletedTeamId = deletedSession?.meta.teamId;
+      if (deletedTeamId) {
+        useTeamStore.getState().removeMember(deletedTeamId, deletedId);
+      }
+
       store.removeSession(deletedId);
 
       if (wasActive && deletedSession) {
