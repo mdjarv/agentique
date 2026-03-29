@@ -140,6 +140,7 @@ func (s *Session) Events() <-chan claudecli.Event { return s.events }
 func (s *Session) Query(prompt string) error {
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)
+	s.interrupted = false
 	// Check for scripted scenario.
 	var scenario *Scenario
 	if s.scenarioIdx < len(s.scenarios) {
@@ -231,9 +232,13 @@ func (s *Session) replayScenario(sc *Scenario) {
 		}
 		s.mu.Lock()
 		closed := s.closed
+		interrupted := s.interrupted
 		canUseTool := s.canUseTool
 		s.mu.Unlock()
-		if closed {
+		if closed || interrupted {
+			if interrupted && !closed {
+				s.events <- &claudecli.ResultEvent{StopReason: "interrupted"}
+			}
 			return
 		}
 		s.events <- event
