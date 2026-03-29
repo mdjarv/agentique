@@ -69,4 +69,3 @@ Don't be afraid to change existing code. Don't take shortcuts by just adding loc
 
 - [README.md](README.md) — architecture, tech stack, dev workflow, commands.
 - [ROADMAP.md](ROADMAP.md) — vision, milestones, investigations.
-- [docs/claudecli-go-api.md](docs/claudecli-go-api.md) — Go wrapper API docs.

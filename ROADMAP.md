@@ -120,11 +120,18 @@ Frontend:
 
 - [x] Git integration: merge worktree branches, create PRs
 - [x] Todo/task checklist visualization
+- [x] Tool input streaming (partial messages)
+- [x] Rate limit handling + UI banner
+- [x] Tool category classification (command, file_write, file_read, mcp, etc.)
+- [x] State machine enforcement (reject invalid transitions)
+- [ ] Hung session watchdog — detect sessions with no events for N seconds, auto-fail after timeout
+- [ ] File checkpointing / rewind — claudecli-go supports `WithFileCheckpointing()` + `RewindFiles()`
+- [ ] MCP server management — expose reconnect/toggle/status via WS
 - [ ] Terminal emulator (xterm.js)
 - [ ] Desktop app via Tauri
 - [ ] Session templates / saved prompts
 - [ ] Split pane session layout
-- [ ] Use `/btw` (side query) for auto-naming and PR description generation — requires claudecli-go support for the `/btw` protocol, then replace `RunBlocking` Haiku calls with side queries on the existing session (full context, no pollution, no extra process spawn)
+- [ ] Use `/btw` (side query) for auto-naming and PR description generation — requires claudecli-go support for the `/btw` protocol
 
 ---
 
@@ -196,4 +203,4 @@ Frontend:
 
 - `Events()` is session-lifetime, not per-turn. Detect turn boundaries via `ResultEvent`.
 - Claude CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
-- See [docs/claudecli-go-api.md](docs/claudecli-go-api.md) for full API reference.
+- Source: [github.com/allbin/claudecli-go](https://github.com/allbin/claudecli-go)
