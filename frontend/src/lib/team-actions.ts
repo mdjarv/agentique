@@ -64,3 +64,35 @@ export async function sendTeamMessage(
 ): Promise<void> {
   await ws.request("team.send-message", { senderSessionId, targetSessionId, content });
 }
+
+export interface SwarmMemberSpec {
+  name: string;
+  prompt: string;
+  role?: string;
+  model?: string;
+  planMode?: boolean;
+  autoApproveMode?: string;
+  effort?: string;
+  behaviorPresets?: import("~/lib/generated-types").BehaviorPresets;
+}
+
+export interface CreateSwarmResult {
+  teamId: string;
+  sessionIds: string[];
+  errors?: string[];
+}
+
+export async function createSwarm(
+  ws: WsClient,
+  projectId: string,
+  teamName: string,
+  members: SwarmMemberSpec[],
+  leadSessionId?: string,
+): Promise<CreateSwarmResult> {
+  return ws.request<CreateSwarmResult>("team.create-swarm", {
+    projectId,
+    teamName,
+    leadSessionId,
+    members,
+  });
+}

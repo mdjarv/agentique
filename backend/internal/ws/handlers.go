@@ -421,3 +421,14 @@ func (c *conn) handleTeamSendMessage(msg ClientMessage) {
 		})
 	})
 }
+
+func (c *conn) handleTeamCreateSwarm(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamCreateSwarmPayload) (session.CreateSwarmResult, error) {
+		return c.svc.CreateSwarm(c.ctx, session.CreateSwarmParams{
+			ProjectID:     p.ProjectID,
+			TeamName:      p.TeamName,
+			LeadSessionID: p.LeadSessionID,
+			Members:       p.Members,
+		})
+	})
+}
