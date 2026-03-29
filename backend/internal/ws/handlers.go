@@ -75,7 +75,7 @@ func (c *conn) handleSessionInterrupt(msg ClientMessage) {
 
 func (c *conn) handleSessionMerge(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionMergePayload) (session.MergeResult, error) {
-		return c.gitSvc.Merge(c.ctx, p.SessionID, p.Cleanup)
+		return c.gitSvc.Merge(c.ctx, p.SessionID, p.Mode)
 	})
 }
 
