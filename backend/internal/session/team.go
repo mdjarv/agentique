@@ -386,6 +386,21 @@ type CreateSwarmResult struct {
 	Errors     []string `json:"errors,omitempty"`
 }
 
+// buildWorkerPrompt wraps a raw worker prompt with team framing so the worker
+// knows its role, who the lead is, and that it should report back.
+func buildWorkerPrompt(teamName, workerRole, leadName, rawPrompt string) string {
+	role := workerRole
+	if role == "" {
+		role = "worker"
+	}
+	return fmt.Sprintf(
+		"You are a %s on team %q, led by %q. Complete the task below, "+
+			"commit your changes, then message the lead with a summary of what you did "+
+			"and any decisions you made.\n\n## Task\n\n%s",
+		role, teamName, leadName, rawPrompt,
+	)
+}
+
 // CreateSwarm creates a team and N worker sessions in one operation.
 // The lead session (if provided) joins as "lead". Each member gets its own
 // worktree and immediately receives the first query. Supports partial success.
@@ -397,9 +412,13 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 	}
 
 	// 2. Join the lead session if specified.
+	var leadName string
 	if p.LeadSessionID != "" {
 		if _, err := s.JoinTeam(ctx, p.LeadSessionID, team.ID, "lead"); err != nil {
 			slog.Warn("swarm: lead join failed", "session_id", p.LeadSessionID, "error", err)
+		}
+		if dbLead, err := s.queries.GetSession(ctx, p.LeadSessionID); err == nil {
+			leadName = dbLead.Name
 		}
 	}
 
@@ -433,7 +452,13 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 			errs = append(errs, fmt.Sprintf("member %d join: %v", i, err))
 		}
 
-		if err := s.QuerySession(ctx, result.SessionID, member.Prompt, nil); err != nil {
+		// Augment the worker's initial prompt with team framing.
+		workerPrompt := member.Prompt
+		if leadName != "" {
+			workerPrompt = buildWorkerPrompt(p.TeamName, member.Role, leadName, member.Prompt)
+		}
+
+		if err := s.QuerySession(ctx, result.SessionID, workerPrompt, nil); err != nil {
 			errs = append(errs, fmt.Sprintf("member %d query: %v", i, err))
 		}
 	}
@@ -481,6 +506,7 @@ func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
 		for i, w := range req.Workers {
 			members[i] = SwarmMemberSpec{
 				Name:   w.Name,
+				Role:   w.Role,
 				Prompt: w.Prompt,
 			}
 		}

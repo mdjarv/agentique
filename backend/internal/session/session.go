@@ -915,6 +915,7 @@ type SpawnWorkersRequest struct {
 // SpawnWorkerEntry describes a single worker to spawn.
 type SpawnWorkerEntry struct {
 	Name   string `json:"name"`
+	Role   string `json:"role"`
 	Prompt string `json:"prompt"`
 }
 
@@ -1046,9 +1047,16 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
 			}, nil
 		}
+		var names []string
+		for _, w := range req.Workers {
+			names = append(names, w.Name)
+		}
 		return &claudecli.PermissionResponse{
 			Allow:       false,
-			DenyMessage: fmt.Sprintf("Successfully spawned %d workers. They have joined your team and will report back via SendMessage.", len(req.Workers)),
+			DenyMessage: fmt.Sprintf(
+				"Successfully spawned %d workers: %s. They are working in separate worktrees "+
+					"and will message you when done. Wait for their reports before synthesizing results.",
+				len(req.Workers), strings.Join(names, ", ")),
 		}, nil
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil

@@ -184,3 +184,54 @@ func TestBuildPreamble_GlobalExtraEmpty(t *testing.T) {
 		t.Error("empty global extra should produce identical output")
 	}
 }
+
+func TestBuildPreamble_DelegationAlwaysPresent(t *testing.T) {
+	// Delegation should be present regardless of preset configuration.
+	tests := []struct {
+		name    string
+		presets BehaviorPresets
+	}{
+		{"all off", BehaviorPresets{}},
+		{"suggest parallel off", BehaviorPresets{AutoCommit: true}},
+		{"suggest parallel on", BehaviorPresets{SuggestParallel: true}},
+		{"defaults", DefaultPresets()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildPreamble("", nil, tt.presets, nil, "")
+			if !strings.Contains(got, "## Delegation") {
+				t.Error("delegation section must always be present")
+			}
+			if !strings.Contains(got, "@spawn") {
+				t.Error("@spawn instructions must always be present")
+			}
+		})
+	}
+}
+
+func TestBuildWorkerPrompt(t *testing.T) {
+	got := buildWorkerPrompt("alpha-squad", "backend expert", "lead-session", "Implement the API endpoints.")
+
+	if !strings.Contains(got, "backend expert") {
+		t.Error("missing role")
+	}
+	if !strings.Contains(got, `"alpha-squad"`) {
+		t.Error("missing team name")
+	}
+	if !strings.Contains(got, `"lead-session"`) {
+		t.Error("missing lead name")
+	}
+	if !strings.Contains(got, "Implement the API endpoints.") {
+		t.Error("missing raw prompt")
+	}
+	if !strings.Contains(got, "message the lead") {
+		t.Error("missing report-back instruction")
+	}
+}
+
+func TestBuildWorkerPrompt_EmptyRole(t *testing.T) {
+	got := buildWorkerPrompt("team", "", "lead", "Do stuff.")
+	if !strings.Contains(got, "worker") {
+		t.Error("empty role should default to 'worker'")
+	}
+}

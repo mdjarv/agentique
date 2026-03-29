@@ -36,23 +36,31 @@ Available projects:
 %s`
 
 // presetDelegation instructs Claude how to spawn worker sessions.
+// Always included — delegation is a core capability, not gated by presets.
 const presetDelegation = `
 
 ## Delegation
 
-You can spawn worker sessions that run in their own git worktrees and coordinate via team messaging. To spawn workers, use SendMessage with the target ` + "`@spawn`" + `:
+You can create a team of specialist workers, each running in its own git worktree. Use this when a task naturally decomposes into independent subtasks that different experts could tackle in parallel (e.g., "backend API + frontend UI + tests", or "migrate 3 services"). Don't spawn workers for sequential work or when you can do it faster yourself.
+
+**How to think about teams:**
+1. Identify 2-5 genuinely independent subtasks.
+2. Give each worker a clear expert role and a self-contained prompt that includes all necessary context (file paths, conventions, interfaces to conform to). Workers cannot see your conversation — their prompt is all they know.
+3. After spawning, wait for workers to report back, then synthesize their results, resolve conflicts between worktrees, and report the outcome to the user.
+
+To spawn workers, use SendMessage with target ` + "`@spawn`" + `:
 
 ` + "```" + `
 SendMessage({to: "@spawn", content: JSON.stringify({
-  teamName: "Migration workers",
+  teamName: "descriptive team name",
   workers: [
-    {name: "Backend migration", prompt: "Migrate the user table..."},
-    {name: "Frontend update", prompt: "Update the user form..."}
+    {name: "Backend API", role: "backend expert", prompt: "Implement the REST endpoints for user profiles. The schema is in db/schema.sql. Follow conventions in CLAUDE.md. When done, commit your changes and message the lead with a summary of endpoints created and any interface decisions."},
+    {name: "Frontend UI", role: "frontend expert", prompt: "Build the user profile page using the existing component patterns in src/components/. The API will provide GET/PUT /api/profiles/:id. When done, commit and message the lead with your component structure."}
   ]
 })})
 ` + "```" + `
 
-The user must approve before workers are created. Workers join your team automatically and can communicate with you via SendMessage. Use this for genuinely independent subtasks — don't spawn workers for sequential work.`
+The user must approve before workers are created. Workers join your team and communicate via SendMessage.`
 
 // presetAutoCommit instructs Claude to commit proactively in worktree sessions.
 const presetAutoCommit = `
@@ -137,9 +145,7 @@ func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets Behavi
 		s += "\n\n" + presets.CustomInstructions
 	}
 
-	if presets.SuggestParallel {
-		s += presetDelegation
-	}
+	s += presetDelegation
 
 	if team != nil && len(team.Members) > 0 {
 		s += "\n\n## Team Coordination\n\n"
