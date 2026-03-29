@@ -193,8 +193,18 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 			worktreeBaseSHA = baseSHA
 		}
 
-		if err := gitops.CreateWorktree(project.Path, branch, worktreePath); err != nil {
-			return CreateSessionResult{}, fmt.Errorf("failed to create worktree: %w", err)
+		if _, statErr := os.Stat(worktreePath); statErr == nil {
+			// Worktree directory already exists — adopt it.
+		} else if gitops.BranchExists(project.Path, branch) {
+			// Branch exists but worktree dir is gone — restore it.
+			if err := gitops.RestoreWorktree(project.Path, branch, worktreePath); err != nil {
+				return CreateSessionResult{}, fmt.Errorf("failed to restore worktree: %w", err)
+			}
+		} else {
+			// Fresh: create new branch + worktree.
+			if err := gitops.CreateWorktree(project.Path, branch, worktreePath); err != nil {
+				return CreateSessionResult{}, fmt.Errorf("failed to create worktree: %w", err)
+			}
 		}
 		workDir = worktreePath
 	}
