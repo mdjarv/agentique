@@ -9,7 +9,7 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 	// DefaultPresets (suggestParallel=true, autoCommit=true) with a worktree
 	// should produce the same output as the old hardcoded preamble.
 	projects := []ProjectInfo{{Name: "MyProject", Slug: "my-project"}}
-	got := buildPreamble("session-abc123", projects, DefaultPresets(), nil)
+	got := buildPreamble("session-abc123", projects, DefaultPresets(), nil, "")
 
 	// Must contain identity
 	if !strings.Contains(got, "You are running inside Agentique") {
@@ -37,7 +37,7 @@ func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
 		{Name: "Frontend", Slug: "frontend"},
 		{Name: "Backend", Slug: "backend"},
 	}
-	got := buildPreamble("main", projects, DefaultPresets(), nil)
+	got := buildPreamble("main", projects, DefaultPresets(), nil, "")
 
 	if !strings.Contains(got, "Available projects:") {
 		t.Error("missing cross-project instructions")
@@ -56,7 +56,7 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 		{Name: "A", Slug: "a"},
 		{Name: "B", Slug: "b"},
 	}
-	got := buildPreamble("branch", projects, presets, nil)
+	got := buildPreamble("branch", projects, presets, nil, "")
 
 	if strings.Contains(got, "suggest session prompts") {
 		t.Error("parallel suggestion text should be excluded")
@@ -73,7 +73,7 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 
 func TestBuildPreamble_AutoCommitOff(t *testing.T) {
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: false}
-	got := buildPreamble("session-xyz", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil)
+	got := buildPreamble("session-xyz", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, "")
 
 	if strings.Contains(got, "Commit after each milestone") {
 		t.Error("commit instructions should be excluded when autoCommit is off")
@@ -82,7 +82,7 @@ func TestBuildPreamble_AutoCommitOff(t *testing.T) {
 
 func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: true}
-	got := buildPreamble("", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil)
+	got := buildPreamble("", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, "")
 
 	if strings.Contains(got, "Commit after each milestone") {
 		t.Error("commit instructions should be excluded when no worktree branch")
@@ -91,7 +91,7 @@ func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
 
 func TestBuildPreamble_PlanFirst(t *testing.T) {
 	presets := BehaviorPresets{PlanFirst: true}
-	got := buildPreamble("", nil, presets, nil)
+	got := buildPreamble("", nil, presets, nil, "")
 
 	if !strings.Contains(got, "Plan before implementing") {
 		t.Error("plan-first snippet missing")
@@ -100,7 +100,7 @@ func TestBuildPreamble_PlanFirst(t *testing.T) {
 
 func TestBuildPreamble_Terse(t *testing.T) {
 	presets := BehaviorPresets{Terse: true}
-	got := buildPreamble("", nil, presets, nil)
+	got := buildPreamble("", nil, presets, nil, "")
 
 	if !strings.Contains(got, "Terse mode") {
 		t.Error("terse snippet missing")
@@ -109,7 +109,7 @@ func TestBuildPreamble_Terse(t *testing.T) {
 
 func TestBuildPreamble_CustomInstructions(t *testing.T) {
 	presets := BehaviorPresets{CustomInstructions: "Only touch backend files."}
-	got := buildPreamble("", nil, presets, nil)
+	got := buildPreamble("", nil, presets, nil, "")
 
 	if !strings.Contains(got, "Only touch backend files.") {
 		t.Error("custom instructions not appended")
@@ -118,7 +118,7 @@ func TestBuildPreamble_CustomInstructions(t *testing.T) {
 
 func TestBuildPreamble_AllOff(t *testing.T) {
 	presets := BehaviorPresets{}
-	got := buildPreamble("branch", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil)
+	got := buildPreamble("branch", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, "")
 
 	// Should only contain identity
 	if !strings.Contains(got, "You are running inside Agentique") {
@@ -147,7 +147,7 @@ func TestBuildPreamble_TeamContext(t *testing.T) {
 			{Name: "frontend-agent", Role: "", WorktreePath: "/tmp/wt2"},
 		},
 	}
-	got := buildPreamble("", nil, presets, team)
+	got := buildPreamble("", nil, presets, team, "")
 
 	if !strings.Contains(got, "Team Coordination") {
 		t.Error("missing team section header")
@@ -166,5 +166,21 @@ func TestBuildPreamble_TeamContext(t *testing.T) {
 	}
 	if !strings.Contains(got, "SendMessage") {
 		t.Error("missing SendMessage instructions")
+	}
+}
+
+func TestBuildPreamble_GlobalExtra(t *testing.T) {
+	got := buildPreamble("", nil, BehaviorPresets{}, nil, "Do not touch the production database.")
+
+	if !strings.Contains(got, "Do not touch the production database.") {
+		t.Error("global extra not appended")
+	}
+}
+
+func TestBuildPreamble_GlobalExtraEmpty(t *testing.T) {
+	with := buildPreamble("", nil, BehaviorPresets{}, nil, "")
+	without := buildPreamble("", nil, BehaviorPresets{}, nil, "")
+	if with != without {
+		t.Error("empty global extra should produce identical output")
 	}
 }

@@ -48,8 +48,8 @@ func init() {
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
 	serveCmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to TLS key file")
 	serveCmd.Flags().BoolVar(&testMode, "test-mode", false, "enable test mode (mock CLI, test endpoints, no auth)")
-	serveCmd.Flags().StringVar(&backupInterval, "backup-interval", "1h", "interval between database backups")
-	serveCmd.Flags().IntVar(&backupRetain, "backup-retain", 24, "number of backup files to keep")
+	serveCmd.Flags().StringVar(&backupInterval, "backup-interval", "15m", "interval between database backups")
+	serveCmd.Flags().IntVar(&backupRetain, "backup-retain", 7, "days to keep daily backups")
 	serveCmd.Flags().BoolVar(&disableBackup, "disable-backup", false, "disable automatic database backups")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -120,12 +120,28 @@ func runServe(cmd *cobra.Command, args []string) error {
 	dbFile := resolveDBPath()
 	slog.Info("database", "path", dbFile)
 
+	if testMode {
+		absDB, _ := filepath.Abs(dbFile)
+		prodDB := paths.DBPath()
+		if absDB == prodDB {
+			slog.Error("refusing to run in test mode against production database",
+				"path", absDB,
+				"hint", "set AGENTIQUE_DB or --db to an isolated path")
+			os.Exit(1)
+		}
+	}
+
 	db, err := store.Open(dbFile)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if !testMode && !disableBackup {
+		backupDir := filepath.Join(filepath.Dir(dbFile), "backups")
+		backup.Snapshot(db, backupDir, 5)
+	}
 
 	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
 		slog.Error("failed to run migrations", "error", err)
@@ -143,10 +159,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 		backupDir := filepath.Join(filepath.Dir(dbFile), "backups")
 		stopBackup := backup.Start(backup.Config{
-			DB:       db,
-			Dir:      backupDir,
-			Interval: interval,
-			Retain:   backupRetain,
+			DB:          db,
+			Dir:         backupDir,
+			Interval:    interval,
+			DailyRetain: backupRetain,
 		})
 		defer stopBackup()
 		slog.Info("backup enabled", "interval", interval, "retain", backupRetain, "dir", backupDir)
@@ -171,6 +187,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg := server.Config{
 		AuthEnabled: !disableAuth,
 		TestMode:    testMode,
+		DevMode:     !isRelease(),
+		DBPath:      dbFile,
 		DB:          db,
 	}
 	if cfg.AuthEnabled {

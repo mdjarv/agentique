@@ -28,8 +28,22 @@ type Config struct {
 
 	// TestMode enables mock CLI connector and test-only HTTP routes.
 	TestMode bool
+	// DevMode indicates a non-release build. Injects safety instructions into session prompts.
+	DevMode bool
+	// DBPath is the resolved database file path. Used to generate dev-mode safety warnings.
+	DBPath string
 	// DB is required when TestMode is true (for raw SQL in reset).
 	DB *sql.DB
+}
+
+func devModePreamble(dbPath string) string {
+	return fmt.Sprintf(`## Live Database Warning
+
+This Agentique instance is a development build. The live database is at:
+
+    %s
+
+This file is shared with the running server. Any command that writes to, overwrites, or deletes this file will cause data loss. If you cannot verify that a command is isolated from this database, confirm with the user before proceeding.`, dbPath)
 }
 
 // Server is the main HTTP server for the Agentique backend.
@@ -60,6 +74,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	}
 
 	mgr := session.NewManager(queries, hub, connector)
+	if cfg.DevMode && cfg.DBPath != "" {
+		mgr.GlobalPreamble = devModePreamble(cfg.DBPath)
+	}
 	mgr.RecoverStaleSessions(context.Background())
 	svc := session.NewService(mgr, queries, hub, runner)
 	gitSvc := session.NewGitService(mgr, queries, hub, runner)

@@ -40,11 +40,12 @@ type CreateParams struct {
 
 // Manager manages the lifecycle of claudecli-go sessions.
 type Manager struct {
-	mu          sync.Mutex
-	sessions    map[string]*Session
-	queries     managerQueries
-	broadcaster Broadcaster
-	connector   CLIConnector
+	mu             sync.Mutex
+	sessions       map[string]*Session
+	queries        managerQueries
+	broadcaster    Broadcaster
+	connector      CLIConnector
+	GlobalPreamble string // extra system prompt appended to every session
 }
 
 // NewManager creates a new session manager.
@@ -91,7 +92,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.TeamPreamble)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.TeamPreamble, m.GlobalPreamble)),
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -213,7 +214,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble, m.GlobalPreamble)),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

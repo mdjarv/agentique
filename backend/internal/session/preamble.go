@@ -82,7 +82,8 @@ type TeamPreambleMember struct {
 
 // buildPreamble returns the system prompt preamble for a session.
 // Snippets are conditionally included based on the behavior presets.
-func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, team *TeamPreambleInfo) string {
+// globalExtra is appended at the end if non-empty (e.g., dev-mode safety instructions).
+func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, team *TeamPreambleInfo, globalExtra string) string {
 	s := preambleIdentity
 
 	if presets.SuggestParallel {
@@ -133,6 +134,10 @@ func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets Behavi
 		s += "\nTo message a teammate, use the SendMessage tool with their name.\n"
 		s += "You can read files from teammates' worktrees at the paths above.\n"
 		s += "To share your changes, commit and notify teammates via SendMessage."
+	}
+
+	if globalExtra != "" {
+		s += "\n\n" + globalExtra
 	}
 
 	return s
