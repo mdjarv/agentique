@@ -17,7 +17,7 @@
           { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-glob-001", "toolName": "Glob", "toolInput": { "pattern": "src/**/*.tsx" } } },
           { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-glob-001", "content": [{ "type": "text", "text": "src/App.tsx\nsrc/pages/Home.tsx" }] } },
           { "delay": 5, "event": { "type": "text", "content": "I see the project has a pages directory. Here is my plan for adding the login page." } },
-          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-exitplan-001", "toolName": "ExitPlanMode", "toolInput": { "planFilePath": "/tmp/fixture-project/.claude/plans/login-page.md" } } },
+          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-exitplan-001", "toolName": "ExitPlanMode", "toolInput": { "plan": "## Login Page Plan\n\n1. Create LoginPage component\n2. Add form with email and password fields\n3. Add routing to /login" } } },
           { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-exitplan-001", "content": [{ "type": "text", "text": "Plan approved by user" }] } },
           { "delay": 5, "event": { "type": "text", "content": "Plan approved. I will now create the login page component with email and password fields." } },
           { "delay": 5, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.015, "duration": 2800, "usage": { "inputTokens": 900, "outputTokens": 250 } } }
