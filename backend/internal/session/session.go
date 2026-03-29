@@ -769,9 +769,10 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	mode := s.autoApproveMode
 	bypass := (mode != "manual" && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
-	// ExitPlanMode only auto-approved in fullAuto mode.
+	// ExitPlanMode is always auto-approved here — the event pipeline's
+	// requestPlanReview handles the user-facing plan approval flow.
 	if toolName == "ExitPlanMode" {
-		bypass = mode == "fullAuto"
+		bypass = true
 	}
 	if bypass {
 		// Defensive fallback — processEvent also detects EnterPlanMode from the
@@ -815,13 +816,6 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	select {
 	case resp := <-ch:
 		slog.Debug("tool permission resolved", "session_id", s.ID, "tool", toolName, "approval_id", approvalID, "allow", resp.Allow)
-
-		// Defensive fallback — processEvent also detects ExitPlanMode from the
-		// event stream. transitionPlanMode is idempotent.
-		if toolName == "ExitPlanMode" && resp.Allow {
-			s.transitionPlanMode("default")
-		}
-
 		return resp, nil
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil

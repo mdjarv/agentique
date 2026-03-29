@@ -305,8 +305,8 @@ test.describe("Plan acceptance", () => {
     // Should navigate to a new session (different URL).
     await expect(page).not.toHaveURL(new RegExp(SESSION_ID.slice(0, 8)), { timeout: 10_000 });
 
-    // New session should have a composer ready for input.
-    await expect(page.getByPlaceholder("Send a message...")).toBeVisible({ timeout: 5_000 });
+    // New session should have a composer (running with enqueued plan).
+    await expect(page.getByPlaceholder("Queue a follow-up...")).toBeVisible({ timeout: 5_000 });
   });
 });
 
