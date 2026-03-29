@@ -249,8 +249,28 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 
 	eventData, _ := json.Marshal(wireEvent)
 
-	// Use the live session's turn/seq tracking, or fall back to 0/0
-	// for offline sessions (will be visible on history reload).
+	// Persist on the sender's session so outgoing messages are visible.
+	senderLive := s.mgr.Get(p.SenderSessionID)
+	senderTurn := int64(0)
+	senderSeq := int64(0)
+	if senderLive != nil {
+		t, sq := senderLive.pipeline.AllocSeq()
+		senderTurn = int64(t)
+		senderSeq = int64(sq)
+	}
+	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: p.SenderSessionID,
+		TurnIndex: senderTurn,
+		Seq:       senderSeq,
+		Type:      "agent_message",
+		Data:      string(eventData),
+	})
+	s.hub.Broadcast(senderSess.ProjectID, "session.event", map[string]any{
+		"sessionId": p.SenderSessionID,
+		"event":     wireEvent,
+	})
+
+	// Persist on the target's session so incoming messages are visible.
 	live := s.mgr.Get(p.TargetSessionID)
 	turnIndex := int64(0)
 	seq := int64(0)
@@ -259,7 +279,6 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 		turnIndex = int64(t)
 		seq = int64(sq)
 	}
-
 	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
 		SessionID: p.TargetSessionID,
 		TurnIndex: turnIndex,
@@ -267,8 +286,6 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 		Type:      "agent_message",
 		Data:      string(eventData),
 	})
-
-	// Broadcast to frontend.
 	s.hub.Broadcast(targetSess.ProjectID, "session.event", map[string]any{
 		"sessionId": p.TargetSessionID,
 		"event":     wireEvent,
@@ -292,13 +309,17 @@ func (s *Service) GetTeamTimeline(ctx context.Context, teamID string) ([]WireAge
 		return nil, fmt.Errorf("list agent messages: %w", err)
 	}
 
-	messages := make([]WireAgentMessageEvent, 0, len(events))
+	// Messages are stored on both sender and target sessions. Deduplicate
+	// by only keeping the sender's copy (session_id == senderSessionId).
+	messages := make([]WireAgentMessageEvent, 0, len(events)/2+1)
 	for _, e := range events {
 		var msg WireAgentMessageEvent
 		if err := json.Unmarshal([]byte(e.Data), &msg); err != nil {
 			continue
 		}
-		messages = append(messages, msg)
+		if msg.SenderSessionID == e.SessionID {
+			messages = append(messages, msg)
+		}
 	}
 	return messages, nil
 }
