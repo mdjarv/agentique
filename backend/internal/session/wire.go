@@ -11,21 +11,24 @@ import (
 // Wire event types for JSON serialization to the frontend.
 
 type WireTextEvent struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	Type            string `json:"type"`
+	Content         string `json:"content"`
+	ParentToolUseID string `json:"parentToolUseId,omitempty"`
 }
 
 type WireThinkingEvent struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	Type            string `json:"type"`
+	Content         string `json:"content"`
+	ParentToolUseID string `json:"parentToolUseId,omitempty"`
 }
 
 type WireToolUseEvent struct {
-	Type      string          `json:"type"`
-	ToolID    string          `json:"toolId"`
-	ToolName  string          `json:"toolName"`
-	ToolInput json.RawMessage `json:"toolInput"`
-	Category  string          `json:"category"`
+	Type            string          `json:"type"`
+	ToolID          string          `json:"toolId"`
+	ToolName        string          `json:"toolName"`
+	ToolInput       json.RawMessage `json:"toolInput"`
+	Category        string          `json:"category"`
+	ParentToolUseID string          `json:"parentToolUseId,omitempty"`
 }
 
 // WireContentBlock represents a single block of tool result content.
@@ -37,9 +40,10 @@ type WireContentBlock struct {
 }
 
 type WireToolResultEvent struct {
-	Type    string             `json:"type"`
-	ToolID  string             `json:"toolId"`
-	Content []WireContentBlock `json:"content"`
+	Type            string             `json:"type"`
+	ToolID          string             `json:"toolId"`
+	Content         []WireContentBlock `json:"content"`
+	ParentToolUseID string             `json:"parentToolUseId,omitempty"`
 }
 
 type WireResultEvent struct {
@@ -89,11 +93,20 @@ type WireContextManagementEvent struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
-// WireAgentMessageEvent represents a message received from a peer session in a team.
+// Agent message direction constants.
+const (
+	DirectionSent     = "sent"
+	DirectionReceived = "received"
+)
+
+// WireAgentMessageEvent represents a message between peer sessions in a team.
 type WireAgentMessageEvent struct {
 	Type            string `json:"type"`            // "agent_message"
+	Direction       string `json:"direction"`       // DirectionSent or DirectionReceived
 	SenderSessionID string `json:"senderSessionId"`
 	SenderName      string `json:"senderName"`
+	TargetSessionID string `json:"targetSessionId"`
+	TargetName      string `json:"targetName"`
 	Content         string `json:"content"`
 }
 
@@ -102,6 +115,36 @@ type WireUserMessageEvent struct {
 	Type        string            `json:"type"`
 	Content     string            `json:"content"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
+}
+
+// WireTaskEvent represents a subagent lifecycle event.
+type WireTaskEvent struct {
+	Type         string `json:"type"`                    // "task"
+	Subtype      string `json:"subtype"`                 // "task_started", "task_progress", "task_notification"
+	TaskID       string `json:"taskId"`
+	ToolUseID    string `json:"toolUseId"`               // parent Agent ToolUseEvent.ID
+	Description  string `json:"description,omitempty"`
+	TaskType     string `json:"taskType,omitempty"`
+	Prompt       string `json:"prompt,omitempty"`
+	LastToolName string `json:"lastToolName,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	TotalTokens  int    `json:"totalTokens,omitempty"`
+	ToolUses     int    `json:"toolUses,omitempty"`
+	DurationMs   int    `json:"durationMs,omitempty"`
+}
+
+// WireAgentResultEvent represents a completed subagent execution.
+type WireAgentResultEvent struct {
+	Type              string             `json:"type"`              // "agent_result"
+	ParentToolUseID   string             `json:"parentToolUseId"`
+	Status            string             `json:"status"`
+	AgentID           string             `json:"agentId,omitempty"`
+	AgentType         string             `json:"agentType,omitempty"`
+	Content           []WireContentBlock `json:"content"`
+	TotalDurationMs   int                `json:"totalDurationMs,omitempty"`
+	TotalTokens       int                `json:"totalTokens,omitempty"`
+	TotalToolUseCount int                `json:"totalToolUseCount,omitempty"`
 }
 
 func (e WireTextEvent) WireType() string       { return e.Type }
@@ -117,6 +160,8 @@ func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
 func (e WireAgentMessageEvent) WireType() string       { return e.Type }
 func (e WireUserMessageEvent) WireType() string        { return e.Type }
+func (e WireTaskEvent) WireType() string               { return e.Type }
+func (e WireAgentResultEvent) WireType() string        { return e.Type }
 
 // errorDetail extracts a clean human-readable message from a claudecli error,
 // stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."
@@ -138,22 +183,24 @@ func errorDetail(err error) string {
 func ToWireEvent(event claudecli.Event) any {
 	switch e := event.(type) {
 	case *claudecli.TextEvent:
-		return WireTextEvent{Type: "text", Content: e.Content}
+		return WireTextEvent{Type: "text", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
 	case *claudecli.ThinkingEvent:
-		return WireThinkingEvent{Type: "thinking", Content: e.Content}
+		return WireThinkingEvent{Type: "thinking", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
 	case *claudecli.ToolUseEvent:
 		return WireToolUseEvent{
-			Type:      "tool_use",
-			ToolID:    e.ID,
-			ToolName:  e.Name,
-			ToolInput: e.Input,
-			Category:  classifyTool(e.Name),
+			Type:            "tool_use",
+			ToolID:          e.ID,
+			ToolName:        e.Name,
+			ToolInput:       e.Input,
+			Category:        classifyTool(e.Name),
+			ParentToolUseID: e.ParentToolUseID,
 		}
 	case *claudecli.ToolResultEvent:
 		return WireToolResultEvent{
-			Type:    "tool_result",
-			ToolID:  e.ToolUseID,
-			Content: convertToolContent(e.Content),
+			Type:            "tool_result",
+			ToolID:          e.ToolUseID,
+			Content:         convertToolContent(e.Content),
+			ParentToolUseID: e.ParentToolUseID,
 		}
 	case *claudecli.ResultEvent:
 		wire := WireResultEvent{
@@ -238,6 +285,37 @@ func ToWireEvent(event claudecli.Event) any {
 		return WireContextManagementEvent{
 			Type: "context_management",
 			Raw:  e.Raw,
+		}
+	case *claudecli.TaskEvent:
+		return WireTaskEvent{
+			Type:         "task",
+			Subtype:      e.Subtype,
+			TaskID:       e.TaskID,
+			ToolUseID:    e.ToolUseID,
+			Description:  e.Description,
+			TaskType:     e.TaskType,
+			Prompt:       e.Prompt,
+			LastToolName: e.LastToolName,
+			Status:       e.Status,
+			Summary:      e.Summary,
+			TotalTokens:  e.TotalTokens,
+			ToolUses:     e.ToolUses,
+			DurationMs:   e.DurationMs,
+		}
+	case *claudecli.UserEvent:
+		if e.AgentResult == nil {
+			return nil
+		}
+		return WireAgentResultEvent{
+			Type:              "agent_result",
+			ParentToolUseID:   e.ParentToolUseID,
+			Status:            e.AgentResult.Status,
+			AgentID:           e.AgentResult.AgentID,
+			AgentType:         e.AgentResult.AgentType,
+			Content:           convertToolContent(e.AgentResult.Content),
+			TotalDurationMs:   e.AgentResult.TotalDurationMs,
+			TotalTokens:       e.AgentResult.TotalTokens,
+			TotalToolUseCount: e.AgentResult.TotalToolUseCount,
 		}
 	default:
 		return nil

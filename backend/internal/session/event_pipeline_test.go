@@ -473,6 +473,129 @@ func TestIsTransient(t *testing.T) {
 	}
 }
 
+func TestPipeline_TaskProgressIsTransient(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.TaskEvent{
+		Subtype: "task_progress", TaskID: "task-1", ToolUseID: "tu_agent",
+		LastToolName: "Read", TotalTokens: 5000,
+	})
+
+	if len(sink.persisted) != 0 {
+		t.Errorf("task_progress should not be persisted, got %d", len(sink.persisted))
+	}
+	if len(sink.broadcasts) != 1 {
+		t.Errorf("task_progress should be broadcast, got %d", len(sink.broadcasts))
+	}
+}
+
+func TestPipeline_TaskStartedAndNotificationPersist(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.TaskEvent{
+		Subtype: "task_started", TaskID: "task-1", ToolUseID: "tu_agent",
+		Description: "Explore", TaskType: "local_agent",
+	})
+	p.ProcessEvent(&claudecli.TaskEvent{
+		Subtype: "task_notification", TaskID: "task-1", ToolUseID: "tu_agent",
+		Status: "completed", Summary: "Done",
+	})
+
+	if len(sink.persisted) != 2 {
+		t.Fatalf("expected 2 persisted events, got %d", len(sink.persisted))
+	}
+	if sink.persisted[0].WireType != "task" || sink.persisted[1].WireType != "task" {
+		t.Errorf("expected wire type 'task', got %q and %q", sink.persisted[0].WireType, sink.persisted[1].WireType)
+	}
+	if len(sink.broadcasts) != 2 {
+		t.Errorf("expected 2 broadcasts, got %d", len(sink.broadcasts))
+	}
+}
+
+func TestPipeline_UnknownEventDropped(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.UnknownEvent{Type: "future_type", Raw: json.RawMessage(`{}`)})
+
+	if len(sink.persisted) != 0 {
+		t.Errorf("UnknownEvent should not be persisted, got %d", len(sink.persisted))
+	}
+	if len(sink.broadcasts) != 0 {
+		t.Errorf("UnknownEvent should not be broadcast, got %d", len(sink.broadcasts))
+	}
+}
+
+func TestPipeline_SubagentPlanModeIsolation(t *testing.T) {
+	sink := newTestSink()
+	planTransitioned := false
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnPlanTransition = func(_ string) { planTransitioned = true }
+	})
+	p.AdvanceTurn()
+
+	// Subagent EnterPlanMode should NOT trigger parent plan transition.
+	p.ProcessEvent(&claudecli.ToolUseEvent{
+		ID: "t1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`),
+		ParentToolUseID: "tu_agent",
+	})
+
+	if planTransitioned {
+		t.Error("subagent EnterPlanMode should not trigger parent plan transition")
+	}
+}
+
+func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
+	sink := newTestSink()
+	gitRefreshCalled := false
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnWriteToolResult = func() { gitRefreshCalled = true }
+	})
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.ToolUseEvent{
+		ID: "t1", Name: "Write", Input: json.RawMessage(`{}`),
+		ParentToolUseID: "tu_agent",
+	})
+	p.ProcessEvent(&claudecli.ToolResultEvent{
+		ToolUseID: "t1",
+		Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+		ParentToolUseID: "tu_agent",
+	})
+
+	if !gitRefreshCalled {
+		t.Error("subagent Write tool should trigger git refresh")
+	}
+}
+
+func TestPipeline_AgentResultPersisted(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(&claudecli.UserEvent{
+		ParentToolUseID: "tu_agent",
+		AgentResult: &claudecli.AgentResult{
+			Status:    "completed",
+			AgentID:   "explorer",
+			AgentType: "Explore",
+			Content:   []claudecli.ToolContent{{Type: "text", Text: "result"}},
+		},
+	})
+
+	if len(sink.persisted) != 1 {
+		t.Fatalf("expected 1 persisted event, got %d", len(sink.persisted))
+	}
+	if sink.persisted[0].WireType != "agent_result" {
+		t.Errorf("expected wire type 'agent_result', got %q", sink.persisted[0].WireType)
+	}
+}
+
 func TestPipeline_SetClaudeSessionID(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)

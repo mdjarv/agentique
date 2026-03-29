@@ -189,8 +189,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
         const teamId = chatStore.sessions[sid]?.meta.teamId;
         if (teamId) {
           useTeamStore.getState().appendTimelineEvent(teamId, {
+            direction: event.direction ?? "received",
             senderSessionId: event.senderSessionId ?? "",
             senderName: event.senderName ?? "",
+            targetSessionId: event.targetSessionId ?? "",
+            targetName: event.targetName ?? "",
             content: event.content ?? "",
           });
           if (chatStore.activeSessionId !== sid) {

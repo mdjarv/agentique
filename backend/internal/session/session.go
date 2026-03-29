@@ -28,6 +28,14 @@ type QueryAttachment struct {
 	DataUrl  string `json:"dataUrl"`
 }
 
+// truncate returns the first n bytes of s, appending "..." if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 // nullStr extracts the string value from a sql.NullString, returning "" if null.
 func nullStr(ns sql.NullString) string {
 	if ns.Valid {
@@ -906,6 +914,7 @@ func (s *Session) SetAgentMessageCallback(cb func(senderID, targetName, content 
 	s.mu.Unlock()
 }
 
+
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
 type SpawnWorkersRequest struct {
 	TeamName string              `json:"teamName"`
@@ -915,6 +924,7 @@ type SpawnWorkersRequest struct {
 // SpawnWorkerEntry describes a single worker to spawn.
 type SpawnWorkerEntry struct {
 	Name   string `json:"name"`
+	Role   string `json:"role"`
 	Prompt string `json:"prompt"`
 }
 
@@ -930,21 +940,51 @@ func (s *Session) SetSpawnWorkersCallback(cb func(senderID string, req SpawnWork
 // so Claude thinks the message was delivered (v1 hack — proper tool result
 // interception requires claudecli-go changes).
 // Also intercepts "@spawn" target for worker delegation.
-func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+// parseSendMessageInput extracts the target and body from a SendMessage tool
+// call. It accepts both "content" (our preamble examples) and "message" (the
+// actual tool schema), and handles "message" being either a JSON string or a
+// raw JSON object (for @spawn payloads).
+func parseSendMessageInput(input json.RawMessage) (to, body string, err error) {
 	var parsed struct {
-		To      string `json:"to"`
-		Content string `json:"content"`
+		To      string          `json:"to"`
+		Content string          `json:"content"`
+		Message json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal(input, &parsed); err != nil {
+		return "", "", err
+	}
+
+	// Resolve the message body: prefer "content", fall back to "message".
+	body = parsed.Content
+	if body == "" && len(parsed.Message) > 0 {
+		// "message" may be a JSON string or an object. Try to unquote as
+		// string first; if that fails, use the raw JSON bytes directly.
+		var msgStr string
+		if json.Unmarshal(parsed.Message, &msgStr) == nil {
+			body = msgStr
+		} else {
+			body = string(parsed.Message)
+		}
+	}
+
+	return parsed.To, body, nil
+}
+
+func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	to, body, err := parseSendMessageInput(input)
+	if err != nil {
+		slog.Warn("SendMessage parse failed", "session_id", s.ID, "error", err, "raw_input", string(input))
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
 		}, nil
 	}
 
+	slog.Debug("SendMessage intercepted", "session_id", s.ID, "to", to, "body_len", len(body))
+
 	// Intercept @spawn for worker delegation.
-	if parsed.To == "@spawn" {
-		return s.interceptSpawnWorkers(parsed.Content)
+	if to == "@spawn" {
+		return s.interceptSpawnWorkers(body)
 	}
 
 	s.mu.Lock()
@@ -958,7 +998,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		}, nil
 	}
 
-	if err := cb(s.ID, parsed.To, parsed.Content); err != nil {
+	if err := cb(s.ID, to, body); err != nil {
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Message delivery failed: %v", err),
@@ -967,7 +1007,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 
 	return &claudecli.PermissionResponse{
 		Allow:       false,
-		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", parsed.To),
+		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", to),
 	}, nil
 }
 
@@ -976,6 +1016,12 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionResponse, error) {
 	var req SpawnWorkersRequest
 	if err := json.Unmarshal([]byte(content), &req); err != nil {
+		slog.Warn("spawn request parse failed",
+			"session_id", s.ID,
+			"error", err,
+			"content_len", len(content),
+			"content_preview", truncate(content, 200),
+		)
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse spawn request: %v. Expected JSON with teamName and workers array.", err),
@@ -1046,9 +1092,16 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
 			}, nil
 		}
+		var names []string
+		for _, w := range req.Workers {
+			names = append(names, w.Name)
+		}
 		return &claudecli.PermissionResponse{
 			Allow:       false,
-			DenyMessage: fmt.Sprintf("Successfully spawned %d workers. They have joined your team and will report back via SendMessage.", len(req.Workers)),
+			DenyMessage: fmt.Sprintf(
+				"Successfully spawned %d workers: %s. They are working in separate worktrees "+
+					"and will message you when done. Wait for their reports before synthesizing results.",
+				len(req.Workers), strings.Join(names, ", ")),
 		}, nil
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil

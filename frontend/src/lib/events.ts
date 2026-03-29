@@ -39,7 +39,22 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     trigger: raw.trigger as string | undefined,
     preTokens: raw.preTokens as number | undefined,
     attachments: type === "user_message" ? parseAttachments(raw.attachments) : undefined,
+    direction: raw.direction as "sent" | "received" | undefined,
     senderSessionId: raw.senderSessionId as string | undefined,
     senderName: raw.senderName as string | undefined,
+    targetSessionId: raw.targetSessionId as string | undefined,
+    targetName: raw.targetName as string | undefined,
+    // Subagent task fields
+    toolUseId: raw.toolUseId as string | undefined,
+    taskSubtype: raw.taskSubtype as ChatEvent["taskSubtype"],
+    taskDescription: raw.taskDescription as string | undefined,
+    taskType: raw.taskType as string | undefined,
+    taskSummary: raw.taskSummary as string | undefined,
+    taskStatus: raw.taskStatus as string | undefined,
+    lastToolName: raw.lastToolName as string | undefined,
+    totalTokens: raw.totalTokens as number | undefined,
+    toolUses: raw.toolUses as number | undefined,
+    durationMs: raw.durationMs as number | undefined,
+    parentToolUseId: raw.parentToolUseId as string | undefined,
   };
 }

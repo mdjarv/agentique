@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -222,6 +223,32 @@ func (s *Service) ListTeams(ctx context.Context, projectID string) ([]TeamInfo, 
 	return infos, nil
 }
 
+// persistAgentMessage persists an agent message event on a session and broadcasts it.
+func (s *Service) persistAgentMessage(ctx context.Context, sessionID, projectID string, event WireAgentMessageEvent) {
+	live := s.mgr.Get(sessionID)
+	turnIndex := int64(0)
+	seq := int64(0)
+	if live != nil {
+		t, sq := live.pipeline.AllocSeq()
+		turnIndex = int64(t)
+		seq = int64(sq)
+	}
+	eventData, _ := json.Marshal(event)
+	if err := s.queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: sessionID,
+		TurnIndex: turnIndex,
+		Seq:       seq,
+		Type:      "agent_message",
+		Data:      string(eventData),
+	}); err != nil {
+		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
+	}
+	s.hub.Broadcast(projectID, "session.event", map[string]any{
+		"sessionId": sessionID,
+		"event":     event,
+	})
+}
+
 // RouteAgentMessage delivers a message from one session to another within the same team.
 func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) error {
 	senderSess, err := s.queries.GetSession(ctx, p.SenderSessionID)
@@ -239,42 +266,27 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 		return fmt.Errorf("sender and target must be in the same team")
 	}
 
-	wireEvent := WireAgentMessageEvent{
+	base := WireAgentMessageEvent{
 		Type:            "agent_message",
 		SenderSessionID: p.SenderSessionID,
 		SenderName:      senderSess.Name,
+		TargetSessionID: p.TargetSessionID,
+		TargetName:      targetSess.Name,
 		Content:         p.Content,
 	}
 
-	eventData, _ := json.Marshal(wireEvent)
+	// Persist outgoing copy on sender.
+	sentEvent := base
+	sentEvent.Direction = DirectionSent
+	s.persistAgentMessage(ctx, p.SenderSessionID, senderSess.ProjectID, sentEvent)
 
-	// Use the live session's turn/seq tracking, or fall back to 0/0
-	// for offline sessions (will be visible on history reload).
-	live := s.mgr.Get(p.TargetSessionID)
-	turnIndex := int64(0)
-	seq := int64(0)
-	if live != nil {
-		t, sq := live.pipeline.AllocSeq()
-		turnIndex = int64(t)
-		seq = int64(sq)
-	}
-
-	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
-		SessionID: p.TargetSessionID,
-		TurnIndex: turnIndex,
-		Seq:       seq,
-		Type:      "agent_message",
-		Data:      string(eventData),
-	})
-
-	// Broadcast to frontend.
-	s.hub.Broadcast(targetSess.ProjectID, "session.event", map[string]any{
-		"sessionId": p.TargetSessionID,
-		"event":     wireEvent,
-	})
+	// Persist incoming copy on target.
+	recvEvent := base
+	recvEvent.Direction = DirectionReceived
+	s.persistAgentMessage(ctx, p.TargetSessionID, targetSess.ProjectID, recvEvent)
 
 	// Deliver to the target's CLI via SendMessage.
-	if live != nil {
+	if live := s.mgr.Get(p.TargetSessionID); live != nil {
 		formatted := claudecli.FormatAgentMessage(senderSess.Name, p.Content)
 		if err := live.cliSess.SendMessage(formatted); err != nil {
 			slog.Warn("agent message CLI delivery failed", "target", p.TargetSessionID, "error", err)
@@ -285,19 +297,22 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 }
 
 // GetTeamTimeline returns all agent messages across team members.
+// Deduplicates by keeping only the "sent" copy of each message.
 func (s *Service) GetTeamTimeline(ctx context.Context, teamID string) ([]WireAgentMessageEvent, error) {
 	events, err := s.queries.ListAgentMessagesByTeam(ctx, sql.NullString{String: teamID, Valid: true})
 	if err != nil {
 		return nil, fmt.Errorf("list agent messages: %w", err)
 	}
 
-	messages := make([]WireAgentMessageEvent, 0, len(events))
+	messages := make([]WireAgentMessageEvent, 0, len(events)/2+1)
 	for _, e := range events {
 		var msg WireAgentMessageEvent
 		if err := json.Unmarshal([]byte(e.Data), &msg); err != nil {
 			continue
 		}
-		messages = append(messages, msg)
+		if msg.Direction == DirectionSent {
+			messages = append(messages, msg)
+		}
 	}
 	return messages, nil
 }
@@ -386,10 +401,35 @@ type CreateSwarmResult struct {
 	Errors     []string `json:"errors,omitempty"`
 }
 
+// buildWorkerPrompt wraps a raw worker prompt with team framing so the worker
+// knows its role, who the lead is, and that it should report back.
+func buildWorkerPrompt(teamName, workerRole, leadName string, peerNames []string, rawPrompt string) string {
+	role := workerRole
+	if role == "" {
+		role = "worker"
+	}
+	header := fmt.Sprintf(
+		"You are a %s on team %q, led by %q.",
+		role, teamName, leadName,
+	)
+	if len(peerNames) > 0 {
+		header += fmt.Sprintf(" Your teammates: %s.", strings.Join(peerNames, ", "))
+	}
+	header += " Complete the task below, commit your changes, " +
+		"then message the lead with a summary of what you did and any decisions you made."
+	return header + "\n\n## Task\n\n" + rawPrompt
+}
+
 // CreateSwarm creates a team and N worker sessions in one operation.
 // The lead session (if provided) joins as "lead". Each member gets its own
 // worktree and immediately receives the first query. Supports partial success.
 func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateSwarmResult, error) {
+	slog.Info("swarm: creating",
+		"team_name", p.TeamName,
+		"lead_id", p.LeadSessionID,
+		"worker_count", len(p.Members),
+	)
+
 	// 1. Create the team.
 	team, err := s.CreateTeam(ctx, p.ProjectID, p.TeamName)
 	if err != nil {
@@ -397,9 +437,13 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 	}
 
 	// 2. Join the lead session if specified.
+	var leadName string
 	if p.LeadSessionID != "" {
 		if _, err := s.JoinTeam(ctx, p.LeadSessionID, team.ID, "lead"); err != nil {
 			slog.Warn("swarm: lead join failed", "session_id", p.LeadSessionID, "error", err)
+		}
+		if dbLead, err := s.queries.GetSession(ctx, p.LeadSessionID); err == nil {
+			leadName = dbLead.Name
 		}
 	}
 
@@ -428,12 +472,32 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 		}
 
 		sessionIDs[i] = result.SessionID
+		slog.Info("swarm: worker created",
+			"team_id", team.ID,
+			"worker_name", member.Name,
+			"worker_role", role,
+			"session_id", result.SessionID,
+			"auto_approve", member.AutoApproveMode,
+		)
 
 		if _, err := s.JoinTeam(ctx, result.SessionID, team.ID, role); err != nil {
 			errs = append(errs, fmt.Sprintf("member %d join: %v", i, err))
 		}
 
-		if err := s.QuerySession(ctx, result.SessionID, member.Prompt, nil); err != nil {
+		// Augment the worker's initial prompt with team framing.
+		workerPrompt := member.Prompt
+		if leadName != "" {
+			// Collect peer names (other workers, not self).
+			var peers []string
+			for j, other := range p.Members {
+				if j != i {
+					peers = append(peers, other.Name)
+				}
+			}
+			workerPrompt = buildWorkerPrompt(p.TeamName, member.Role, leadName, peers, member.Prompt)
+		}
+
+		if err := s.QuerySession(ctx, result.SessionID, workerPrompt, nil); err != nil {
 			errs = append(errs, fmt.Sprintf("member %d query: %v", i, err))
 		}
 	}
@@ -477,11 +541,21 @@ func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
 			teamName = dbSess.Name + " workers"
 		}
 
+		// Inherit the lead's auto-approve mode and behavior presets so workers
+		// don't need manual approval for every tool call.
+		leadAutoApprove := dbSess.AutoApproveMode
+		leadPresets := ParsePresets(dbSess.BehaviorPresets)
+		// Workers always get auto-commit since they're in worktrees.
+		leadPresets.AutoCommit = true
+
 		members := make([]SwarmMemberSpec, len(req.Workers))
 		for i, w := range req.Workers {
 			members[i] = SwarmMemberSpec{
-				Name:   w.Name,
-				Prompt: w.Prompt,
+				Name:            w.Name,
+				Role:            w.Role,
+				Prompt:          w.Prompt,
+				AutoApproveMode: leadAutoApprove,
+				BehaviorPresets: leadPresets,
 			}
 		}
 

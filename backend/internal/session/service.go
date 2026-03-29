@@ -252,9 +252,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	slog.Info("session created", "session_id", sess.ID, "project", project.Name, "model", model, "worktree", p.Worktree)
 
 	// Wire spawn-workers callback so the session can delegate to workers.
-	if presets.SuggestParallel {
-		s.wireSpawnWorkersCallback(sess, p.ProjectID)
-	}
+	s.wireSpawnWorkersCallback(sess, p.ProjectID)
 
 	dbSess, dbErr := s.queries.GetSession(ctx, sess.ID)
 	createdAt := ""
@@ -833,10 +831,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		s.wireAgentMessageCallback(sess, teamID)
 	}
 	// Wire spawn-workers callback for delegation.
-	presets := ParsePresets(dbSess.BehaviorPresets)
-	if presets.SuggestParallel {
-		s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
-	}
+	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
 	}
