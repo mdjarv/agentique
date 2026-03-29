@@ -6,12 +6,14 @@ interface TeamState {
   timelines: Record<string, TimelineEvent[]>;
 
   setTeams: (teams: TeamInfo[]) => void;
+  mergeTeams: (teams: TeamInfo[]) => void;
   addTeam: (team: TeamInfo) => void;
   removeTeam: (teamId: string) => void;
   updateTeamName: (teamId: string, name: string) => void;
 
   addMember: (teamId: string, member: TeamMember) => void;
   removeMember: (teamId: string, sessionId: string) => void;
+  updateMemberState: (sessionId: string, state: string, connected?: boolean) => void;
 
   setTimeline: (teamId: string, events: TimelineEvent[]) => void;
   appendTimelineEvent: (teamId: string, event: TimelineEvent) => void;
@@ -27,6 +29,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     set({
       teams: Object.fromEntries(teams.map((t) => [t.id, t])),
     }),
+
+  mergeTeams: (teams) =>
+    set((s) => ({
+      teams: { ...s.teams, ...Object.fromEntries(teams.map((t) => [t.id, t])) },
+    })),
 
   addTeam: (team) =>
     set((s) => ({
@@ -67,6 +74,28 @@ export const useTeamStore = create<TeamState>((set, get) => ({
           [teamId]: { ...team, members: team.members.filter((m) => m.sessionId !== sessionId) },
         },
       };
+    }),
+
+  updateMemberState: (sessionId, state, connected) =>
+    set((s) => {
+      let changed = false;
+      const teams = { ...s.teams };
+      for (const [tid, team] of Object.entries(teams)) {
+        const idx = team.members.findIndex((m) => m.sessionId === sessionId);
+        if (idx === -1) continue;
+        const member = team.members[idx];
+        if (member.state === state && (connected === undefined || member.connected === connected))
+          continue;
+        const updated = [...team.members];
+        updated[idx] = {
+          ...member,
+          state,
+          ...(connected !== undefined && { connected }),
+        };
+        teams[tid] = { ...team, members: updated };
+        changed = true;
+      }
+      return changed ? { teams } : s;
     }),
 
   setTimeline: (teamId, events) =>

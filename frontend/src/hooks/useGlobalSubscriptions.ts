@@ -6,6 +6,7 @@ import { parseServerEvent } from "~/lib/events";
 import type { ListSessionsResult, ProjectGitStatus, Tag } from "~/lib/generated-types";
 import { getProjectGitStatus, listTags } from "~/lib/project-actions";
 import { loadSessionHistory } from "~/lib/session-history";
+import { listTeams } from "~/lib/team-actions";
 import type { Project } from "~/lib/types";
 import { sessionShortId, uuid } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -130,6 +131,9 @@ function subscribeAndLoad(ws: ReturnType<typeof useWebSocket>, projectId: string
   getProjectGitStatus(ws, projectId)
     .then((status) => useAppStore.getState().setProjectGitStatus(status))
     .catch(() => {}); // silent — project may not be a git repo
+  listTeams(ws, projectId)
+    .then((teams) => useTeamStore.getState().mergeTeams(teams))
+    .catch(() => {});
 }
 
 /**
@@ -180,6 +184,21 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
       useChatStore.getState().handleServerEvent(sid, event);
 
+      if (event.type === "agent_message") {
+        const chatStore = useChatStore.getState();
+        const teamId = chatStore.sessions[sid]?.meta.teamId;
+        if (teamId) {
+          useTeamStore.getState().appendTimelineEvent(teamId, {
+            senderSessionId: event.senderSessionId ?? "",
+            senderName: event.senderName ?? "",
+            content: event.content ?? "",
+          });
+          if (chatStore.activeSessionId !== sid) {
+            chatStore.setUnreadTeamMessage(sid, true);
+          }
+        }
+      }
+
       if (event.type === "tool_use" && event.toolId) {
         streaming.clearToolInput(sid, event.toolId);
       }
@@ -207,6 +226,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         gitOperation: payload.gitOperation ?? "",
         gitVersion: payload.version,
       });
+      useTeamStore.getState().updateMemberState(payload.sessionId, payload.state, payload.connected);
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
@@ -348,17 +368,26 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamDeleted = ws.subscribe("team.deleted", (payload: any) => {
-      useTeamStore.getState().removeTeam(payload.teamId);
+      const deletedTeamId: string = payload.teamId;
+      useTeamStore.getState().removeTeam(deletedTeamId);
+      const sessions = useChatStore.getState().sessions;
+      for (const [sid, data] of Object.entries(sessions)) {
+        if (data.meta.teamId === deletedTeamId) {
+          useChatStore.getState().setSessionTeamId(sid, undefined);
+        }
+      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamJoined = ws.subscribe("team.member-joined", (payload: any) => {
       useTeamStore.getState().addMember(payload.teamId, payload.member);
+      useChatStore.getState().setSessionTeamId(payload.member.sessionId, payload.teamId);
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamLeft = ws.subscribe("team.member-left", (payload: any) => {
       useTeamStore.getState().removeMember(payload.teamId, payload.sessionId);
+      useChatStore.getState().setSessionTeamId(payload.sessionId, undefined);
     });
 
     // Reload active session when returning from background (catches missed events on mobile)
