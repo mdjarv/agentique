@@ -596,6 +596,7 @@ func (s *Session) SetPermissionMode(mode string) error {
 }
 
 // SetAutoApproveMode sets the auto-approve mode. Valid values: "manual", "auto", "fullAuto".
+// If the new mode permits pending tool approvals, they are auto-resolved.
 func (s *Session) SetAutoApproveMode(mode string) {
 	switch mode {
 	case "auto", "fullAuto":
@@ -604,7 +605,29 @@ func (s *Session) SetAutoApproveMode(mode string) {
 	}
 	s.mu.Lock()
 	s.autoApproveMode = mode
+	// Auto-resolve pending approvals that the new mode would bypass.
+	var resolved []string
+	for _, pa := range s.pendingApprovals {
+		bypass := (mode != "manual" && (s.permissionMode != "plan" || isPlanSafeTool(pa.toolName))) || pa.toolName == "EnterPlanMode"
+		if pa.toolName == "ExitPlanMode" {
+			bypass = mode == "fullAuto"
+		}
+		if bypass {
+			select {
+			case pa.ch <- &claudecli.PermissionResponse{Allow: true}:
+				resolved = append(resolved, pa.id)
+			default:
+			}
+		}
+	}
 	s.mu.Unlock()
+
+	for _, id := range resolved {
+		s.broadcast("session.approval-auto-resolved", map[string]any{
+			"sessionId":  s.ID,
+			"approvalId": id,
+		})
+	}
 }
 
 // Interrupt stops the current generation without killing the session.

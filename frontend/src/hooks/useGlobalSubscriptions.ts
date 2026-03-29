@@ -305,6 +305,14 @@ export function useGlobalSubscriptions(projects: Project[]) {
       },
     );
 
+    const unsubApprovalAutoResolved = ws.subscribe(
+      "session.approval-auto-resolved",
+      // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+      (payload: any) => {
+        useChatStore.getState().clearPendingApproval(payload.sessionId);
+      },
+    );
+
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubPermMode = ws.subscribe("session.permission-mode-changed", (payload: any) => {
       useChatStore
@@ -453,6 +461,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubPrUpdated();
       unsubPermission();
       unsubQuestion();
+      unsubApprovalAutoResolved();
       unsubPermMode();
       unsubTurnStarted();
       unsubProjectGit();
