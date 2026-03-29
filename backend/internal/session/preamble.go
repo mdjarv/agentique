@@ -35,6 +35,25 @@ Fix the API client timeout handling.
 Available projects:
 %s`
 
+// presetDelegation instructs Claude how to spawn worker sessions.
+const presetDelegation = `
+
+## Delegation
+
+You can spawn worker sessions that run in their own git worktrees and coordinate via team messaging. To spawn workers, use SendMessage with the target ` + "`@spawn`" + `:
+
+` + "```" + `
+SendMessage({to: "@spawn", content: JSON.stringify({
+  teamName: "Migration workers",
+  workers: [
+    {name: "Backend migration", prompt: "Migrate the user table..."},
+    {name: "Frontend update", prompt: "Update the user form..."}
+  ]
+})})
+` + "```" + `
+
+The user must approve before workers are created. Workers join your team automatically and can communicate with you via SendMessage. Use this for genuinely independent subtasks — don't spawn workers for sequential work.`
+
 // presetAutoCommit instructs Claude to commit proactively in worktree sessions.
 const presetAutoCommit = `
 
@@ -116,6 +135,10 @@ func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets Behavi
 
 	if presets.CustomInstructions != "" {
 		s += "\n\n" + presets.CustomInstructions
+	}
+
+	if presets.SuggestParallel {
+		s += presetDelegation
 	}
 
 	if team != nil && len(team.Members) > 0 {

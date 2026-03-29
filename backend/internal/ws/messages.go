@@ -655,3 +655,20 @@ func (p *TeamSendMessagePayload) Validate() error {
 	}
 	return nil
 }
+
+type TeamCreateSwarmPayload struct {
+	ProjectID     string                     `json:"projectId"`
+	TeamName      string                     `json:"teamName"`
+	LeadSessionID string                     `json:"leadSessionId"`
+	Members       []session.SwarmMemberSpec  `json:"members"`
+}
+
+func (p *TeamCreateSwarmPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errTeamProjectIDRequired
+	}
+	if len(p.Members) == 0 {
+		return errors.New("at least one member is required")
+	}
+	return nil
+}

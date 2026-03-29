@@ -223,6 +223,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleTeamTimeline(msg)
 	case "team.send-message":
 		c.handleTeamSendMessage(msg)
+	case "team.create-swarm":
+		c.handleTeamCreateSwarm(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)

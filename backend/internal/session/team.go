@@ -359,6 +359,142 @@ func (s *Service) buildTeamPreamble(ctx context.Context, teamID, excludeSessionI
 	}
 }
 
+// SwarmMemberSpec describes a single worker to create in a swarm.
+type SwarmMemberSpec struct {
+	Name            string          `json:"name"`
+	Prompt          string          `json:"prompt"`
+	Role            string          `json:"role"`
+	Model           string          `json:"model"`
+	PlanMode        bool            `json:"planMode"`
+	AutoApproveMode string          `json:"autoApproveMode"`
+	Effort          string          `json:"effort"`
+	BehaviorPresets BehaviorPresets `json:"behaviorPresets"`
+}
+
+// CreateSwarmParams holds the parameters for creating a team with multiple sessions.
+type CreateSwarmParams struct {
+	ProjectID     string
+	TeamName      string
+	LeadSessionID string // existing session to join as lead (optional)
+	Members       []SwarmMemberSpec
+}
+
+// CreateSwarmResult is the wire type returned after swarm creation.
+type CreateSwarmResult struct {
+	TeamID     string   `json:"teamId"`
+	SessionIDs []string `json:"sessionIds"`
+	Errors     []string `json:"errors,omitempty"`
+}
+
+// CreateSwarm creates a team and N worker sessions in one operation.
+// The lead session (if provided) joins as "lead". Each member gets its own
+// worktree and immediately receives the first query. Supports partial success.
+func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateSwarmResult, error) {
+	// 1. Create the team.
+	team, err := s.CreateTeam(ctx, p.ProjectID, p.TeamName)
+	if err != nil {
+		return CreateSwarmResult{}, fmt.Errorf("create team: %w", err)
+	}
+
+	// 2. Join the lead session if specified.
+	if p.LeadSessionID != "" {
+		if _, err := s.JoinTeam(ctx, p.LeadSessionID, team.ID, "lead"); err != nil {
+			slog.Warn("swarm: lead join failed", "session_id", p.LeadSessionID, "error", err)
+		}
+	}
+
+	// 3. Create each worker session, join team, submit query.
+	sessionIDs := make([]string, len(p.Members))
+	var errs []string
+	for i, member := range p.Members {
+		role := member.Role
+		if role == "" {
+			role = "worker"
+		}
+
+		result, err := s.CreateSession(ctx, CreateSessionParams{
+			ProjectID:       p.ProjectID,
+			Name:            member.Name,
+			Worktree:        true,
+			Model:           member.Model,
+			PlanMode:        member.PlanMode,
+			AutoApproveMode: member.AutoApproveMode,
+			Effort:          member.Effort,
+			BehaviorPresets: member.BehaviorPresets,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("member %d (%s): %v", i, member.Name, err))
+			continue
+		}
+
+		sessionIDs[i] = result.SessionID
+
+		if _, err := s.JoinTeam(ctx, result.SessionID, team.ID, role); err != nil {
+			errs = append(errs, fmt.Sprintf("member %d join: %v", i, err))
+		}
+
+		if err := s.QuerySession(ctx, result.SessionID, member.Prompt, nil); err != nil {
+			errs = append(errs, fmt.Sprintf("member %d query: %v", i, err))
+		}
+	}
+
+	// 4. Re-inject team context to all live members so everyone sees the full roster.
+	s.refreshTeamContext(ctx, team.ID)
+
+	out := CreateSwarmResult{TeamID: team.ID, SessionIDs: sessionIDs}
+	if len(errs) > 0 {
+		out.Errors = errs
+	}
+	return out, nil
+}
+
+// refreshTeamContext re-injects team preamble to all live members of a team.
+func (s *Service) refreshTeamContext(ctx context.Context, teamID string) {
+	members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	if err != nil {
+		return
+	}
+	for _, m := range members {
+		if live := s.mgr.Get(m.ID); live != nil {
+			go s.injectTeamContext(context.Background(), live, teamID)
+		}
+	}
+}
+
+// wireSpawnWorkersCallback sets up the SpawnWorkers interception callback on a
+// live session. On approval, it creates a swarm with the session as lead.
+func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
+	sess.SetSpawnWorkersCallback(func(senderID string, req SpawnWorkersRequest) error {
+		// Look up current team — if the session is already in one, add workers there.
+		// Otherwise, create a new team.
+		dbSess, err := s.queries.GetSession(context.Background(), senderID)
+		if err != nil {
+			return fmt.Errorf("sender not found: %w", err)
+		}
+
+		teamName := req.TeamName
+		if teamName == "" {
+			teamName = dbSess.Name + " workers"
+		}
+
+		members := make([]SwarmMemberSpec, len(req.Workers))
+		for i, w := range req.Workers {
+			members[i] = SwarmMemberSpec{
+				Name:   w.Name,
+				Prompt: w.Prompt,
+			}
+		}
+
+		_, err = s.CreateSwarm(context.Background(), CreateSwarmParams{
+			ProjectID:     projectID,
+			TeamName:      teamName,
+			LeadSessionID: senderID,
+			Members:       members,
+		})
+		return err
+	})
+}
+
 // wireAgentMessageCallback sets up the SendMessage interception callback on a
 // live session. The callback resolves the target name to a session ID within
 // the team and routes the message through RouteAgentMessage.

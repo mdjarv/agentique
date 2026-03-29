@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown, ExternalLink, Loader2, Play, Rocket } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Loader2, Play, Users2 } from "lucide-react";
 import { type ReactNode, createContext, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -11,6 +11,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session-actions";
+import { type SwarmMemberSpec, createSwarm } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -293,16 +294,80 @@ export function PromptGroupProvider({
 
   const startAll = useCallback(() => {
     const projects = useAppStore.getState().projects;
+    const sessions = useChatStore.getState().sessions;
+    const parent = sessions[sessionId]?.meta;
+
+    // Partition: same-project prompts go through createSwarm, cross-project through startPrompt.
+    const swarmEligible: PromptBlock[] = [];
+    const crossProject: { block: PromptBlock; targetId: string }[] = [];
+
     for (const p of prompts) {
       const entry = cardStates[p.title];
-      if (!entry || entry.state === "idle" || entry.state === "error") {
-        const resolvedId = p.projectSlug
-          ? projects.find((proj) => proj.slug === p.projectSlug)?.id
-          : undefined;
-        startPrompt(p.title, p.prompt, resolvedId);
+      if (entry && entry.state !== "idle" && entry.state !== "error") continue;
+
+      if (p.projectSlug) {
+        const resolved = projects.find((proj) => proj.slug === p.projectSlug);
+        if (resolved && resolved.id !== projectId) {
+          crossProject.push({ block: p, targetId: resolved.id });
+          continue;
+        }
       }
+      swarmEligible.push(p);
     }
-  }, [prompts, cardStates, startPrompt]);
+
+    // Cross-project prompts: individual sessions (can't join same team)
+    for (const { block, targetId } of crossProject) {
+      startPrompt(block.title, block.prompt, targetId);
+    }
+
+    // Same-project prompts: create as a team via createSwarm
+    if (swarmEligible.length > 0) {
+      const members: SwarmMemberSpec[] = swarmEligible.map((p) => ({
+        name: p.title,
+        prompt: p.prompt,
+        model: parent?.model,
+        autoApproveMode: parent?.autoApproveMode,
+        effort: parent?.effort,
+        behaviorPresets: parent?.behaviorPresets,
+      }));
+
+      for (const p of swarmEligible) {
+        setCardStates((prev) => ({ ...prev, [p.title]: { state: "creating" } }));
+      }
+
+      const teamName = parent?.name ? `${parent.name} team` : "Swarm";
+
+      void (async () => {
+        try {
+          const result = await createSwarm(ws, projectId, teamName, members, sessionId);
+          for (let i = 0; i < swarmEligible.length; i++) {
+            const title = swarmEligible[i]?.title;
+            if (!title) continue;
+            const sid = result.sessionIds[i];
+            if (sid) {
+              setCardStates((prev) => ({ ...prev, [title]: { state: "started", sessionId: sid } }));
+            } else {
+              setCardStates((prev) => ({
+                ...prev,
+                [title]: { state: "error", error: "Failed to create session" },
+              }));
+            }
+          }
+          if (result.errors?.length) {
+            toast.warning(`Team created with ${result.errors.length} warning(s)`);
+          } else {
+            toast.success(`Team "${teamName}" created with ${swarmEligible.length} sessions`);
+          }
+        } catch (err) {
+          const msg = getErrorMessage(err, "Failed to create team");
+          toast.error(msg);
+          for (const p of swarmEligible) {
+            setCardStates((prev) => ({ ...prev, [p.title]: { state: "error", error: msg } }));
+          }
+        }
+      })();
+    }
+  }, [ws, projectId, sessionId, prompts, cardStates, startPrompt]);
 
   const value = useMemo<PromptGroupCtx>(
     () => ({ projectId, sessionId, isStreaming, cardStates, startPrompt }),
@@ -336,8 +401,8 @@ export function PromptGroupProvider({
               </>
             ) : (
               <>
-                <Rocket className="h-3 w-3" />
-                Start All ({prompts.length})
+                <Users2 className="h-3 w-3" />
+                Start Team ({prompts.length})
               </>
             )}
           </Button>
