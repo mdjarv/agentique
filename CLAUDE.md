@@ -6,6 +6,7 @@
 - `cd backend && go test ./... -count=1 -short` for Go changes — the justfile recipe doesn't accept flags, so run directly. `-short` skips the integration test that needs a live Claude CLI.
 - `just sqlc` after modifying SQL queries in `backend/db/queries/`.
 - ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the correct directory. Running `npx biome` from the project root fails silently.
+- Put scratch files (screenshots, exports, temp data) in `tmp/` — it's gitignored. Never commit images to the repo root.
 
 ## Project Snapshot
 
