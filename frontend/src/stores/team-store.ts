@@ -83,15 +83,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       for (const [tid, team] of Object.entries(teams)) {
         const idx = team.members.findIndex((m) => m.sessionId === sessionId);
         if (idx === -1) continue;
-        const member = team.members[idx];
-        if (member.state === state && (connected === undefined || member.connected === connected))
+        const prev = team.members[idx];
+        if (!prev) continue;
+        if (prev.state === state && (connected === undefined || prev.connected === connected))
           continue;
+        const patched: TeamMember = { ...prev, state };
+        if (connected !== undefined) patched.connected = connected;
         const updated = [...team.members];
-        updated[idx] = {
-          ...member,
-          state,
-          ...(connected !== undefined && { connected }),
-        };
+        updated[idx] = patched;
         teams[tid] = { ...team, members: updated };
         changed = true;
       }

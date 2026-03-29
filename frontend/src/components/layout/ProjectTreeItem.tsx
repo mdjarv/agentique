@@ -65,9 +65,7 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
 }) {
   const meta = useChatStore((s) => s.sessions[id]?.meta);
   const hasUnseenCompletion = useChatStore((s) => s.sessions[id]?.hasUnseenCompletion ?? false);
-  const hasUnreadTeamMessage = useChatStore(
-    (s) => s.sessions[id]?.hasUnreadTeamMessage ?? false,
-  );
+  const hasUnreadTeamMessage = useChatStore((s) => s.sessions[id]?.hasUnreadTeamMessage ?? false);
   const hasPendingInput = useChatStore(
     (s) => !!(s.sessions[id]?.pendingApproval || s.sessions[id]?.pendingQuestion),
   );

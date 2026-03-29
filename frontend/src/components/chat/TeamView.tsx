@@ -108,7 +108,11 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
       </div>
 
       {/* Timeline */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
+      >
         {timeline.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>
         )}

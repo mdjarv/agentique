@@ -226,7 +226,9 @@ export function useGlobalSubscriptions(projects: Project[]) {
         gitOperation: payload.gitOperation ?? "",
         gitVersion: payload.version,
       });
-      useTeamStore.getState().updateMemberState(payload.sessionId, payload.state, payload.connected);
+      useTeamStore
+        .getState()
+        .updateMemberState(payload.sessionId, payload.state, payload.connected);
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
