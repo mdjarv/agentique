@@ -28,6 +28,14 @@ type QueryAttachment struct {
 	DataUrl  string `json:"dataUrl"`
 }
 
+// truncate returns the first n bytes of s, appending "..." if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 // nullStr extracts the string value from a sql.NullString, returning "" if null.
 func nullStr(ns sql.NullString) string {
 	if ns.Valid {
@@ -92,6 +100,7 @@ type Session struct {
 	gitRefreshTimer  *time.Timer // debounce timer for mid-turn git refresh
 	onAgentMessage   func(senderID, targetName, content string) error
 	onSpawnWorkers   func(senderID string, req SpawnWorkersRequest) error
+	onTurnDone       func(sessionID string, failed bool, failErr error) // team notification callback
 }
 
 
@@ -165,10 +174,22 @@ func newSession(p sessionParams) *Session {
 			if err := s.setState(StateIdle); err != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", err)
 			}
+			s.mu.Lock()
+			cb := s.onTurnDone
+			s.mu.Unlock()
+			if cb != nil {
+				go cb(s.ID, false, nil)
+			}
 		},
 		OnFatalError: func(err error) {
 			if stErr := s.setState(StateFailed); stErr != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
+			}
+			s.mu.Lock()
+			cb := s.onTurnDone
+			s.mu.Unlock()
+			if cb != nil {
+				go cb(s.ID, true, err)
 			}
 		},
 	})
@@ -906,6 +927,14 @@ func (s *Session) SetAgentMessageCallback(cb func(senderID, targetName, content 
 	s.mu.Unlock()
 }
 
+// SetTurnDoneCallback sets a callback that fires when the session's turn
+// completes (idle) or fatally errors. Used for team completion notifications.
+func (s *Session) SetTurnDoneCallback(cb func(sessionID string, failed bool, failErr error)) {
+	s.mu.Lock()
+	s.onTurnDone = cb
+	s.mu.Unlock()
+}
+
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
 type SpawnWorkersRequest struct {
 	TeamName string              `json:"teamName"`
@@ -964,11 +993,14 @@ func parseSendMessageInput(input json.RawMessage) (to, body string, err error) {
 func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
 	to, body, err := parseSendMessageInput(input)
 	if err != nil {
+		slog.Warn("SendMessage parse failed", "session_id", s.ID, "error", err, "raw_input", string(input))
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
 		}, nil
 	}
+
+	slog.Debug("SendMessage intercepted", "session_id", s.ID, "to", to, "body_len", len(body))
 
 	// Intercept @spawn for worker delegation.
 	if to == "@spawn" {
@@ -1004,6 +1036,12 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionResponse, error) {
 	var req SpawnWorkersRequest
 	if err := json.Unmarshal([]byte(content), &req); err != nil {
+		slog.Warn("spawn request parse failed",
+			"session_id", s.ID,
+			"error", err,
+			"content_len", len(content),
+			"content_preview", truncate(content, 200),
+		)
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse spawn request: %v. Expected JSON with teamName and workers array.", err),

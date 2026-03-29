@@ -210,7 +210,7 @@ func TestBuildPreamble_DelegationAlwaysPresent(t *testing.T) {
 }
 
 func TestBuildWorkerPrompt(t *testing.T) {
-	got := buildWorkerPrompt("alpha-squad", "backend expert", "lead-session", "Implement the API endpoints.")
+	got := buildWorkerPrompt("alpha-squad", "backend expert", "lead-session", []string{"Frontend UI"}, "Implement the API endpoints.")
 
 	if !strings.Contains(got, "backend expert") {
 		t.Error("missing role")
@@ -221,6 +221,9 @@ func TestBuildWorkerPrompt(t *testing.T) {
 	if !strings.Contains(got, `"lead-session"`) {
 		t.Error("missing lead name")
 	}
+	if !strings.Contains(got, "Frontend UI") {
+		t.Error("missing peer name")
+	}
 	if !strings.Contains(got, "Implement the API endpoints.") {
 		t.Error("missing raw prompt")
 	}
@@ -229,8 +232,15 @@ func TestBuildWorkerPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildWorkerPrompt_NoPeers(t *testing.T) {
+	got := buildWorkerPrompt("team", "expert", "lead", nil, "Do stuff.")
+	if strings.Contains(got, "teammates") {
+		t.Error("should not mention teammates when there are none")
+	}
+}
+
 func TestBuildWorkerPrompt_EmptyRole(t *testing.T) {
-	got := buildWorkerPrompt("team", "", "lead", "Do stuff.")
+	got := buildWorkerPrompt("team", "", "lead", nil, "Do stuff.")
 	if !strings.Contains(got, "worker") {
 		t.Error("empty role should default to 'worker'")
 	}

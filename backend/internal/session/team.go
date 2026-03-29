@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/store"
@@ -153,9 +154,11 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 	}
 	s.hub.Broadcast(team.ProjectID, "team.member-joined", broadcastPayload)
 
-	// Wire agent message callback and inject team context into a live session.
+	// Wire agent message callback, turn-done notification, and inject team
+	// context into a live session.
 	if live := s.mgr.Get(sessionID); live != nil {
 		s.wireAgentMessageCallback(live, teamID)
+		s.wireTeamTurnDoneCallback(live, teamID)
 		go s.injectTeamContext(context.Background(), live, teamID)
 	}
 
@@ -388,23 +391,33 @@ type CreateSwarmResult struct {
 
 // buildWorkerPrompt wraps a raw worker prompt with team framing so the worker
 // knows its role, who the lead is, and that it should report back.
-func buildWorkerPrompt(teamName, workerRole, leadName, rawPrompt string) string {
+func buildWorkerPrompt(teamName, workerRole, leadName string, peerNames []string, rawPrompt string) string {
 	role := workerRole
 	if role == "" {
 		role = "worker"
 	}
-	return fmt.Sprintf(
-		"You are a %s on team %q, led by %q. Complete the task below, "+
-			"commit your changes, then message the lead with a summary of what you did "+
-			"and any decisions you made.\n\n## Task\n\n%s",
-		role, teamName, leadName, rawPrompt,
+	header := fmt.Sprintf(
+		"You are a %s on team %q, led by %q.",
+		role, teamName, leadName,
 	)
+	if len(peerNames) > 0 {
+		header += fmt.Sprintf(" Your teammates: %s.", strings.Join(peerNames, ", "))
+	}
+	header += " Complete the task below, commit your changes, " +
+		"then message the lead with a summary of what you did and any decisions you made."
+	return header + "\n\n## Task\n\n" + rawPrompt
 }
 
 // CreateSwarm creates a team and N worker sessions in one operation.
 // The lead session (if provided) joins as "lead". Each member gets its own
 // worktree and immediately receives the first query. Supports partial success.
 func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateSwarmResult, error) {
+	slog.Info("swarm: creating",
+		"team_name", p.TeamName,
+		"lead_id", p.LeadSessionID,
+		"worker_count", len(p.Members),
+	)
+
 	// 1. Create the team.
 	team, err := s.CreateTeam(ctx, p.ProjectID, p.TeamName)
 	if err != nil {
@@ -447,6 +460,13 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 		}
 
 		sessionIDs[i] = result.SessionID
+		slog.Info("swarm: worker created",
+			"team_id", team.ID,
+			"worker_name", member.Name,
+			"worker_role", role,
+			"session_id", result.SessionID,
+			"auto_approve", member.AutoApproveMode,
+		)
 
 		if _, err := s.JoinTeam(ctx, result.SessionID, team.ID, role); err != nil {
 			errs = append(errs, fmt.Sprintf("member %d join: %v", i, err))
@@ -455,7 +475,14 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 		// Augment the worker's initial prompt with team framing.
 		workerPrompt := member.Prompt
 		if leadName != "" {
-			workerPrompt = buildWorkerPrompt(p.TeamName, member.Role, leadName, member.Prompt)
+			// Collect peer names (other workers, not self).
+			var peers []string
+			for j, other := range p.Members {
+				if j != i {
+					peers = append(peers, other.Name)
+				}
+			}
+			workerPrompt = buildWorkerPrompt(p.TeamName, member.Role, leadName, peers, member.Prompt)
 		}
 
 		if err := s.QuerySession(ctx, result.SessionID, workerPrompt, nil); err != nil {
@@ -502,12 +529,21 @@ func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
 			teamName = dbSess.Name + " workers"
 		}
 
+		// Inherit the lead's auto-approve mode and behavior presets so workers
+		// don't need manual approval for every tool call.
+		leadAutoApprove := dbSess.AutoApproveMode
+		leadPresets := ParsePresets(dbSess.BehaviorPresets)
+		// Workers always get auto-commit since they're in worktrees.
+		leadPresets.AutoCommit = true
+
 		members := make([]SwarmMemberSpec, len(req.Workers))
 		for i, w := range req.Workers {
 			members[i] = SwarmMemberSpec{
-				Name:   w.Name,
-				Role:   w.Role,
-				Prompt: w.Prompt,
+				Name:            w.Name,
+				Role:            w.Role,
+				Prompt:          w.Prompt,
+				AutoApproveMode: leadAutoApprove,
+				BehaviorPresets: leadPresets,
 			}
 		}
 
@@ -540,6 +576,62 @@ func (s *Service) wireAgentMessageCallback(sess *Session, teamID string) {
 			}
 		}
 		return fmt.Errorf("no team member named %q", targetName)
+	})
+}
+
+// wireTeamTurnDoneCallback sets up a callback that auto-notifies the team lead
+// when a worker's turn completes or fatally errors. The notification is routed
+// as a system agent message so the lead sees it in conversation.
+func (s *Service) wireTeamTurnDoneCallback(sess *Session, teamID string) {
+	sess.SetTurnDoneCallback(func(sessionID string, failed bool, failErr error) {
+		ctx := context.Background()
+
+		// Look up the worker's name for the notification.
+		workerSess, err := s.queries.GetSession(ctx, sessionID)
+		if err != nil {
+			slog.Warn("turn-done: worker lookup failed", "session_id", sessionID, "error", err)
+			return
+		}
+
+		// Find the lead session in this team.
+		members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+		if err != nil {
+			slog.Warn("turn-done: list team members failed", "team_id", teamID, "error", err)
+			return
+		}
+		var leadID string
+		for _, m := range members {
+			if m.TeamRole == "lead" {
+				leadID = m.ID
+				break
+			}
+		}
+		if leadID == "" || leadID == sessionID {
+			return // no lead, or the lead itself finished — nothing to notify
+		}
+
+		var msg string
+		if failed {
+			msg = fmt.Sprintf("[system] Worker %q failed: %v", workerSess.Name, failErr)
+		} else {
+			msg = fmt.Sprintf("[system] Worker %q completed and went idle.", workerSess.Name)
+		}
+
+		slog.Info("team turn-done notification",
+			"worker", workerSess.Name,
+			"worker_id", sessionID,
+			"lead_id", leadID,
+			"team_id", teamID,
+			"failed", failed,
+		)
+
+		if err := s.RouteAgentMessage(ctx, AgentMessagePayload{
+			SenderSessionID: sessionID,
+			TargetSessionID: leadID,
+			Content:         msg,
+		}); err != nil {
+			slog.Warn("turn-done: failed to notify lead", "lead_id", leadID, "error", err)
+		}
 	})
 }
 
