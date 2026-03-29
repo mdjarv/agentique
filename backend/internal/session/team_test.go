@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
@@ -286,6 +287,185 @@ func (s *TeamSuite) TestTeam_JoinInjectsContext() {
 		}
 	}
 	s.True(found, "lead should have received team context mentioning Worker")
+}
+
+// --- End-to-end pipeline → routing tests ---
+
+// TestTeam_E2E_PipelineRoutesMessage verifies the full production path:
+// session sends SendMessage ToolUseEvent → pipeline fires OnSendMessage →
+// onAgentMessage callback → RouteAgentMessage → events persisted + CLI delivery.
+func (s *TeamSuite) TestTeam_E2E_PipelineRoutesMessage() {
+	leadID, leadMock := s.createNamedSession("Alice")
+	workerID, workerMock := s.createNamedSession("Bob")
+	s.createTeamWithMembers("e2e-team", leadID, workerID)
+
+	// Start a query so the event loop is running.
+	lead := s.mgr.Get(leadID)
+	s.Require().NoError(lead.Query(context.Background(), "do work", nil))
+
+	// Inject a SendMessage ToolUseEvent through the mock CLI — this is what
+	// Claude actually produces when it calls SendMessage.
+	input, _ := json.Marshal(map[string]string{"to": "Bob", "message": "pipeline e2e test"})
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_e2e", "SendMessage", json.RawMessage(input))))
+
+	// Give the async pipeline goroutine time to process.
+	time.Sleep(200 * time.Millisecond)
+
+	// Complete the turn.
+	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
+	waitForState(s.T(), lead, StateIdle)
+
+	// Verify: events persisted on both sessions.
+	senderMsgs := s.findAgentMessages(leadID)
+	s.Require().NotEmpty(senderMsgs, "sender should have a 'sent' agent_message event")
+	s.Equal("pipeline e2e test", senderMsgs[0].Content)
+
+	targetMsgs := s.findAgentMessages(workerID)
+	s.Require().NotEmpty(targetMsgs, "target should have a 'received' agent_message event")
+	s.Equal("pipeline e2e test", targetMsgs[0].Content)
+
+	// Verify: Bob's CLI mock received the formatted message.
+	var delivered bool
+	for _, msg := range workerMock.SentMessages() {
+		if contains(msg, "pipeline e2e test") {
+			delivered = true
+			break
+		}
+	}
+	s.True(delivered, "Bob's CLI should have received the message via SendMessage")
+}
+
+// TestTeam_E2E_Bidirectional verifies messages route correctly in both
+// directions: lead→worker and worker→lead.
+func (s *TeamSuite) TestTeam_E2E_Bidirectional() {
+	leadID, leadMock := s.createNamedSession("Lead")
+	workerID, workerMock := s.createNamedSession("Worker")
+	s.createTeamWithMembers("bidi-team", leadID, workerID)
+
+	// Lead → Worker
+	lead := s.mgr.Get(leadID)
+	s.Require().NoError(lead.Query(context.Background(), "task 1", nil))
+
+	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "lead says hi"})
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_l2w", "SendMessage", json.RawMessage(input))))
+	time.Sleep(200 * time.Millisecond)
+	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
+	waitForState(s.T(), lead, StateIdle)
+
+	// Worker → Lead
+	worker := s.mgr.Get(workerID)
+	s.Require().NoError(worker.Query(context.Background(), "task 2", nil))
+
+	input2, _ := json.Marshal(map[string]string{"to": "Lead", "message": "worker says hi"})
+	s.Require().NoError(workerMock.Inject(testutil.ToolUseEvent("tu_w2l", "SendMessage", json.RawMessage(input2))))
+	time.Sleep(200 * time.Millisecond)
+	s.Require().NoError(workerMock.Inject(testutil.ResultEvent(0.01)))
+	waitForState(s.T(), worker, StateIdle)
+
+	// Verify: Lead has 1 sent + 1 received message.
+	leadMsgs := s.findAgentMessages(leadID)
+	s.Require().Len(leadMsgs, 2, "lead should have sent + received messages")
+	directions := map[string]bool{}
+	for _, m := range leadMsgs {
+		directions[m.Direction] = true
+	}
+	s.True(directions[DirectionSent], "lead should have a 'sent' message")
+	s.True(directions[DirectionReceived], "lead should have a 'received' message")
+
+	// Verify: Worker has 1 received + 1 sent message.
+	workerMsgs := s.findAgentMessages(workerID)
+	s.Require().Len(workerMsgs, 2, "worker should have received + sent messages")
+
+	// Verify: Lead's CLI received worker's message.
+	var leadGotMsg bool
+	for _, msg := range leadMock.SentMessages() {
+		if contains(msg, "worker says hi") {
+			leadGotMsg = true
+			break
+		}
+	}
+	s.True(leadGotMsg, "lead CLI should have received worker's message")
+}
+
+// TestTeam_LeaveTeam_StopsRouting verifies that after a session leaves a team,
+// SendMessage tool calls from that session are no longer routed to teammates.
+func (s *TeamSuite) TestTeam_LeaveTeam_StopsRouting() {
+	leadID, leadMock := s.createNamedSession("Lead")
+	workerID, _ := s.createNamedSession("Worker")
+	s.createTeamWithMembers("leave-team", leadID, workerID)
+
+	// Verify routing works before leaving.
+	err := s.svc.RouteAgentMessage(context.Background(), AgentMessagePayload{
+		SenderSessionID: leadID,
+		TargetSessionID: workerID,
+		Content:         "before leave",
+	})
+	s.Require().NoError(err)
+	s.Require().Len(s.findAgentMessages(workerID), 1)
+
+	// Leave the team.
+	s.Require().NoError(s.svc.LeaveTeam(context.Background(), leadID))
+
+	// Inject a SendMessage ToolUseEvent — it should not route anywhere.
+	lead := s.mgr.Get(leadID)
+	s.Require().NoError(lead.Query(context.Background(), "more work", nil))
+
+	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "after leave"})
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_left", "SendMessage", json.RawMessage(input))))
+	time.Sleep(200 * time.Millisecond)
+	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
+	waitForState(s.T(), lead, StateIdle)
+
+	// Worker should still only have the 1 message from before leaving.
+	workerMsgs := s.findAgentMessages(workerID)
+	s.Len(workerMsgs, 1, "no new messages should arrive after leaving team")
+	s.Equal("before leave", workerMsgs[0].Content)
+}
+
+// TestTeam_Resume_RewireCallback verifies that when a session in a team is
+// stopped and resumed, the agent message callback is re-wired and messages
+// route correctly again.
+func (s *TeamSuite) TestTeam_Resume_RewireCallback() {
+	leadID, _ := s.createNamedSession("Lead")
+	workerID, _ := s.createNamedSession("Worker")
+	s.createTeamWithMembers("resume-team", leadID, workerID)
+
+	// Stop the lead session.
+	s.Require().NoError(s.mgr.Stop(context.Background(), leadID))
+	s.False(s.mgr.IsLive(leadID))
+
+	// Give the session a Claude session ID so it can be resumed.
+	s.Require().NoError(s.Queries.UpdateClaudeSessionID(context.Background(),
+		store.UpdateClaudeSessionIDParams{
+			ClaudeSessionID: sqlNullString("claude-resume-test"),
+			ID:              leadID,
+		}))
+
+	// Resume by querying — triggers lazy resume via svc.QuerySession.
+	s.Require().NoError(s.svc.QuerySession(context.Background(), leadID, "resumed query", nil))
+	s.True(s.mgr.IsLive(leadID))
+
+	// The resumed session should have its callback re-wired.
+	// Inject a SendMessage ToolUseEvent through the new mock CLI.
+	resumedMock := s.Connector.Last()
+	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "after resume"})
+	s.Require().NoError(resumedMock.Inject(testutil.ToolUseEvent("tu_resume", "SendMessage", json.RawMessage(input))))
+	time.Sleep(200 * time.Millisecond)
+	s.Require().NoError(resumedMock.Inject(testutil.ResultEvent(0.01)))
+
+	lead := s.mgr.Get(leadID)
+	waitForState(s.T(), lead, StateIdle)
+
+	// Verify: Worker received the message from the resumed session.
+	workerMsgs := s.findAgentMessages(workerID)
+	var found bool
+	for _, m := range workerMsgs {
+		if m.Content == "after resume" {
+			found = true
+			break
+		}
+	}
+	s.True(found, "worker should receive message from resumed lead session")
 }
 
 // contains checks if s contains substr (avoids importing strings in test).
