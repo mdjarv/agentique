@@ -47,6 +47,8 @@ export function fixtureToSeed(
     projectSlug?: string;
     planMode?: boolean;
     autoApproveMode?: string;
+    /** Cap all event delays to this value (ms). Speeds up slow fixtures. */
+    maxDelay?: number;
   },
 ): SeedRequest {
   const projectId = overrides?.projectId ?? "fix-proj-0000-0000-000000000001";
@@ -60,15 +62,26 @@ export function fixtureToSeed(
     slug,
   };
 
+  let behaviors = fixture.turns.map((t) => t.scenario);
+  if (overrides?.maxDelay != null) {
+    const cap = overrides.maxDelay;
+    behaviors = behaviors.map((scenario) => ({
+      events: scenario.events.map((se) => ({
+        ...se,
+        delay: se.delay != null ? Math.min(se.delay, cap) : se.delay,
+      })),
+    }));
+  }
+
   const session: SeedSession = {
     id: sessionId,
     projectId,
     name: fixture.metadata.sessionName,
     workDir: fixture.metadata.projectPath,
     live: true,
-    behavior: fixture.turns.map((t) => t.scenario),
+    behavior: behaviors,
     planMode: overrides?.planMode,
-    autoApproveMode: overrides?.autoApproveMode,
+    autoApproveMode: overrides?.autoApproveMode ?? "auto",
   };
 
   return { projects: [project], sessions: [session] };

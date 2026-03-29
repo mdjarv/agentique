@@ -41,7 +41,8 @@ export interface SeedRequest {
 
 // --- Constants ---
 
-export const TEST_API = "http://localhost:8090/api/test";
+export const TEST_BASE = process.env.BASE_URL ?? "http://localhost:8090";
+export const TEST_API = `${TEST_BASE}/api/test`;
 
 const TEST_PROJECT_ID = "eee00001-0000-4000-8000-000000000001";
 const TEST_SESSION_ID = "eee00002-0000-4000-8000-000000000002";
@@ -126,16 +127,6 @@ export const BASIC_SCENARIO: Scenario = {
   ],
 };
 
-/** Approval: thinking -> text -> Bash tool_use (no result — scenario ends incomplete) */
-export const APPROVAL_SCENARIO: Scenario = {
-  events: [
-    immediate(thinking("I need to run the test suite to verify the changes.")),
-    withDelay(20, text("Let me run the tests now.")),
-    withDelay(30, toolUse("tool-bash-001", "Bash", { command: "npm test" })),
-    // Scenario ends without result — test uses inject-event for further events.
-  ],
-};
-
 const TOOL_ID_GREP = "tool-grep-001";
 const TOOL_ID_EDIT = "tool-edit-001";
 
@@ -184,6 +175,7 @@ export function basicChatSeed(): SeedRequest {
         workDir: "/tmp/fixture-project",
         live: true,
         behavior: [BASIC_SCENARIO],
+        autoApproveMode: "auto",
       },
     ],
   };
@@ -200,6 +192,7 @@ export function compactChatSeed(): SeedRequest {
         workDir: "/tmp/fixture-project",
         live: true,
         behavior: [COMPACT_TURN_1, COMPACT_TURN_2],
+        autoApproveMode: "auto",
       },
     ],
   };

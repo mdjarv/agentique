@@ -1,10 +1,8 @@
 import { test, expect } from "@playwright/test";
-
-const TEST_API = "http://localhost:8090/api/test";
+import { TEST_API, resetFixture } from "./fixtures";
 
 test.beforeEach(async ({ request }) => {
-  // Reset all state between tests.
-  await request.post(`${TEST_API}/reset`);
+  await resetFixture(request);
 });
 
 test.describe("Test mode endpoints", () => {
