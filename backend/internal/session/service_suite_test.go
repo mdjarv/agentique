@@ -106,14 +106,14 @@ func (s *ServiceSuite) TestSetPermissionMode() {
 	s.Equal("plan", dbSess.PermissionMode)
 }
 
-func (s *ServiceSuite) TestSetAutoApprove() {
+func (s *ServiceSuite) TestSetAutoApproveMode() {
 	sessionID, _ := s.createLiveSession()
 
-	s.Require().NoError(s.svc.SetAutoApprove(sessionID, true))
+	s.Require().NoError(s.svc.SetAutoApproveMode(sessionID, "fullAuto"))
 
 	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
 	s.Require().NoError(err)
-	s.Equal(int64(1), dbSess.AutoApprove)
+	s.Equal("fullAuto", dbSess.AutoApproveMode)
 }
 
 func (s *ServiceSuite) TestListSessions() {
