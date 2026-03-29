@@ -41,7 +41,7 @@ import {
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment, Turn } from "~/stores/chat-store";
+import type { Attachment, SessionMetadata, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -59,6 +59,7 @@ const resumePlaceholders: Record<string, string> = {
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
 const EMPTY_TURNS: Turn[] = [];
+const EMPTY_SESSIONS: Record<string, { meta: SessionMetadata }> = {};
 
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
@@ -83,7 +84,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
 
   const teamId = meta?.teamId;
   const hasTeam = !!teamId;
-  const allSessions = useChatStore((s) => (hasTeam ? s.sessions : {}));
+  const allSessions = useChatStore((s) => (hasTeam ? s.sessions : EMPTY_SESSIONS));
   const hasUnreadTeamMessage = useChatStore(
     (s) => s.sessions[sessionId]?.hasUnreadTeamMessage ?? false,
   );

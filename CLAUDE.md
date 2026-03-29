@@ -95,6 +95,7 @@ Frontend connects WebSocket directly to :9201 (avoids Vite proxy flakiness).
 - Path alias: `~/` maps to `src/`.
 - shadcn/ui primitives in `components/ui/`.
 - `routeTree.gen.ts` is auto-generated — do not edit.
+- **Zustand selectors must return stable references.** Never return `{}`, `[]`, or the result of `.map()`/`.filter()`/`Object.values()` etc. as a fallback or computed value — these create a new reference every render, causing infinite re-render loops. Use a module-level constant (e.g. `const EMPTY_FOO: Foo[] = []`) for fallbacks. For computed arrays/objects, use `useShallow` or memoize outside the selector.
 
 ## Backend Conventions
 

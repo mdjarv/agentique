@@ -6,7 +6,7 @@ import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { getTeamTimeline, sendTeamMessage } from "~/lib/team-actions";
+import { type TimelineEvent, getTeamTimeline, sendTeamMessage } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
@@ -17,10 +17,12 @@ interface TeamViewProps {
   sessions: Record<string, { meta: SessionMetadata }>;
 }
 
+const EMPTY_TIMELINE: TimelineEvent[] = [];
+
 export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: TeamViewProps) {
   const ws = useWebSocket();
   const team = useTeamStore((s) => s.teams[teamId]);
-  const timeline = useTeamStore((s) => s.timelines[teamId] ?? []);
+  const timeline = useTeamStore((s) => s.timelines[teamId] ?? EMPTY_TIMELINE);
   const [targetId, setTargetId] = useState<string>("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
