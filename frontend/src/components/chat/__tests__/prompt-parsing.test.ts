@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   findRawPromptBlocks,
-  normalizePromptFences,
   parsePromptBlocks,
+  splitByPromptBlocks,
 } from "~/components/chat/PromptCard";
 
 // ---------------------------------------------------------------------------
@@ -175,21 +175,69 @@ describe("findRawPromptBlocks", () => {
 });
 
 // ---------------------------------------------------------------------------
-// normalizePromptFences
+// splitByPromptBlocks
 // ---------------------------------------------------------------------------
 
-describe("normalizePromptFences", () => {
-  it("returns input unchanged when no prompt blocks exist", () => {
+describe("splitByPromptBlocks", () => {
+  it("returns single markdown segment when no prompt blocks exist", () => {
     const md = "# Hello\n\nSome text.\n\n```python\ncode\n```";
-    expect(normalizePromptFences(md)).toBe(md);
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toEqual([{ type: "markdown", content: md }]);
   });
 
-  it("returns input unchanged when no inner fences conflict", () => {
-    const md = "```prompt\n# Title\nNo code here.\n```";
-    expect(normalizePromptFences(md)).toBe(md);
+  it("splits text before, prompt, and text after", () => {
+    const md = [
+      "Before text.",
+      "",
+      "```prompt",
+      "# My Task",
+      "Do the thing.",
+      "```",
+      "",
+      "After text.",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(3);
+    expect(segments[0]).toEqual({ type: "markdown", content: "Before text.\n" });
+    expect(segments[1]).toEqual({
+      type: "prompt",
+      block: { title: "My Task", prompt: "Do the thing." },
+    });
+    expect(segments[2]).toEqual({ type: "markdown", content: "\nAfter text." });
   });
 
-  it("lengthens outer fence when inner has 3 backticks", () => {
+  it("handles prompt-only content (no surrounding text)", () => {
+    const md = "```prompt\n# Title\nDo it.\n```";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+  });
+
+  it("handles multiple prompts with text between", () => {
+    const md = [
+      "Here are 2 tasks:",
+      "",
+      "```prompt",
+      "# First",
+      "Do A.",
+      "```",
+      "",
+      "And also:",
+      "",
+      "```prompt",
+      "# Second",
+      "Do B.",
+      "```",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(4);
+    expect(segments[0]?.type).toBe("markdown");
+    expect(segments[1]).toEqual({ type: "prompt", block: { title: "First", prompt: "Do A." } });
+    expect(segments[2]?.type).toBe("markdown");
+    expect(segments[3]).toEqual({ type: "prompt", block: { title: "Second", prompt: "Do B." } });
+  });
+
+  it("handles prompts with nested code fences", () => {
     const md = [
       "```prompt",
       "# Fix API",
@@ -199,61 +247,16 @@ describe("normalizePromptFences", () => {
       "Run tests.",
       "```",
     ].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      ["````prompt", "# Fix API", "```go", "func main() {}", "```", "Run tests.", "````"].join(
-        "\n",
-      ),
-    );
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.prompt).toContain("```go");
+      expect(segments[0].block.prompt).toContain("Run tests.");
+    }
   });
 
-  it("lengthens to maxInnerFence + 1", () => {
-    const md = ["```prompt", "# Title", "````python", "code", "````", "```"].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      ["`````prompt", "# Title", "````python", "code", "````", "`````"].join("\n"),
-    );
-  });
-
-  it("preserves surrounding content", () => {
-    const md = [
-      "Before text.",
-      "",
-      "```prompt",
-      "# Title",
-      "```go",
-      "code",
-      "```",
-      "```",
-      "",
-      "After text.",
-    ].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      [
-        "Before text.",
-        "",
-        "````prompt",
-        "# Title",
-        "```go",
-        "code",
-        "```",
-        "````",
-        "",
-        "After text.",
-      ].join("\n"),
-    );
-  });
-
-  it("lengthens outer fence when bare inner block has same backtick count", () => {
-    const md = ["```prompt", "# Title", "```", "plain code", "```", "Done.", "```"].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      ["````prompt", "# Title", "```", "plain code", "```", "Done.", "````"].join("\n"),
-    );
-  });
-
-  it("lengthens outer fence when indented inner fence conflicts", () => {
+  it("handles prompts with indented inner fences", () => {
     const md = [
       "```prompt",
       "# Backend tests",
@@ -264,49 +267,38 @@ describe("normalizePromptFences", () => {
       "Run tests.",
       "```",
     ].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      [
-        "````prompt",
-        "# Backend tests",
-        "Extract interfaces:",
-        "   ```go",
-        "   type Foo interface {}",
-        "   ```",
-        "Run tests.",
-        "````",
-      ].join("\n"),
-    );
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.prompt).toContain("Run tests.");
+    }
   });
 
-  it("normalizes only blocks that need it", () => {
+  it("skips empty text segments between consecutive prompts", () => {
     const md = [
       "```prompt",
-      "# Simple",
-      "No fences.",
+      "# First",
+      "Do A.",
       "```",
       "```prompt",
-      "# Complex",
-      "```python",
-      "code",
-      "```",
+      "# Second",
+      "Do B.",
       "```",
     ].join("\n");
-    const result = normalizePromptFences(md);
-    expect(result).toBe(
-      [
-        "```prompt",
-        "# Simple",
-        "No fences.",
-        "```",
-        "````prompt",
-        "# Complex",
-        "```python",
-        "code",
-        "```",
-        "````",
-      ].join("\n"),
-    );
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.type).toBe("prompt");
+    expect(segments[1]?.type).toBe("prompt");
+  });
+
+  it("includes project slug from metadata", () => {
+    const md = "```prompt\n# Task\nproject: my-proj\nDo it.\n```";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.projectSlug).toBe("my-proj");
+    }
   });
 });
 
