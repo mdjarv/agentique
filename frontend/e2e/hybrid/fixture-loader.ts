@@ -81,7 +81,7 @@ export function fixtureToSeed(
     live: true,
     behavior: behaviors,
     planMode: overrides?.planMode,
-    autoApproveMode: overrides?.autoApproveMode ?? "auto",
+    autoApproveMode: overrides?.autoApproveMode ?? "fullAuto",
   };
 
   return { projects: [project], sessions: [session] };
