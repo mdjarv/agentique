@@ -65,6 +65,9 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
 }) {
   const meta = useChatStore((s) => s.sessions[id]?.meta);
   const hasUnseenCompletion = useChatStore((s) => s.sessions[id]?.hasUnseenCompletion ?? false);
+  const hasUnreadTeamMessage = useChatStore(
+    (s) => s.sessions[id]?.hasUnreadTeamMessage ?? false,
+  );
   const hasPendingInput = useChatStore(
     (s) => !!(s.sessions[id]?.pendingApproval || s.sessions[id]?.pendingQuestion),
   );
@@ -96,6 +99,7 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
         gitOperation={meta.gitOperation}
         prUrl={meta.prUrl}
         teamId={meta.teamId}
+        hasUnreadTeamMessage={hasUnreadTeamMessage}
         onClick={handleClick}
       />
     </SessionHoverCard>

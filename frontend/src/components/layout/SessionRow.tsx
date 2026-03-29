@@ -25,6 +25,7 @@ interface SessionRowProps {
   gitOperation?: string;
   prUrl?: string;
   teamId?: string;
+  hasUnreadTeamMessage?: boolean;
   onClick: () => void;
 }
 
@@ -50,6 +51,7 @@ export const SessionRow = memo(function SessionRow({
   gitOperation,
   prUrl,
   teamId,
+  hasUnreadTeamMessage,
   worktreeBranch,
   onClick,
 }: SessionRowProps) {
@@ -93,7 +95,14 @@ export const SessionRow = memo(function SessionRow({
       >
         {name || "Untitled"}
       </span>
-      {teamId && <Users className="size-3 shrink-0 text-muted-foreground/60" />}
+      {teamId && (
+        <Users
+          className={cn(
+            "size-3 shrink-0",
+            hasUnreadTeamMessage ? "text-warning" : "text-muted-foreground/60",
+          )}
+        />
+      )}
       <span className="ml-auto flex shrink-0 items-center">
         <SessionGitStatus
           worktreeMerged={worktreeMerged}

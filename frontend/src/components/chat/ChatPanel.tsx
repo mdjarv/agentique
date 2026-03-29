@@ -84,6 +84,9 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const teamId = meta?.teamId;
   const hasTeam = !!teamId;
   const allSessions = useChatStore((s) => (hasTeam ? s.sessions : {}));
+  const hasUnreadTeamMessage = useChatStore(
+    (s) => s.sessions[sessionId]?.hasUnreadTeamMessage ?? false,
+  );
 
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = meta?.state ?? "idle";
@@ -311,7 +314,10 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
             {hasTeam && (
               <button
                 type="button"
-                onClick={() => setActiveTab("team")}
+                onClick={() => {
+                  setActiveTab("team");
+                  useChatStore.getState().setUnreadTeamMessage(sessionId, false);
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-t transition-colors",
                   activeTab === "team"
@@ -321,6 +327,9 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               >
                 <Users className="h-3.5 w-3.5" />
                 Team
+                {hasUnreadTeamMessage && activeTab !== "team" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                )}
               </button>
             )}
           </div>
