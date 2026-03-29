@@ -89,11 +89,20 @@ type WireContextManagementEvent struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
-// WireAgentMessageEvent represents a message received from a peer session in a team.
+// Agent message direction constants.
+const (
+	DirectionSent     = "sent"
+	DirectionReceived = "received"
+)
+
+// WireAgentMessageEvent represents a message between peer sessions in a team.
 type WireAgentMessageEvent struct {
 	Type            string `json:"type"`            // "agent_message"
+	Direction       string `json:"direction"`       // DirectionSent or DirectionReceived
 	SenderSessionID string `json:"senderSessionId"`
 	SenderName      string `json:"senderName"`
+	TargetSessionID string `json:"targetSessionId"`
+	TargetName      string `json:"targetName"`
 	Content         string `json:"content"`
 }
 

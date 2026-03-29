@@ -223,6 +223,32 @@ func (s *Service) ListTeams(ctx context.Context, projectID string) ([]TeamInfo, 
 	return infos, nil
 }
 
+// persistAgentMessage persists an agent message event on a session and broadcasts it.
+func (s *Service) persistAgentMessage(ctx context.Context, sessionID, projectID string, event WireAgentMessageEvent) {
+	live := s.mgr.Get(sessionID)
+	turnIndex := int64(0)
+	seq := int64(0)
+	if live != nil {
+		t, sq := live.pipeline.AllocSeq()
+		turnIndex = int64(t)
+		seq = int64(sq)
+	}
+	eventData, _ := json.Marshal(event)
+	if err := s.queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: sessionID,
+		TurnIndex: turnIndex,
+		Seq:       seq,
+		Type:      "agent_message",
+		Data:      string(eventData),
+	}); err != nil {
+		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
+	}
+	s.hub.Broadcast(projectID, "session.event", map[string]any{
+		"sessionId": sessionID,
+		"event":     event,
+	})
+}
+
 // RouteAgentMessage delivers a message from one session to another within the same team.
 func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) error {
 	senderSess, err := s.queries.GetSession(ctx, p.SenderSessionID)
@@ -240,59 +266,27 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 		return fmt.Errorf("sender and target must be in the same team")
 	}
 
-	wireEvent := WireAgentMessageEvent{
+	base := WireAgentMessageEvent{
 		Type:            "agent_message",
 		SenderSessionID: p.SenderSessionID,
 		SenderName:      senderSess.Name,
+		TargetSessionID: p.TargetSessionID,
+		TargetName:      targetSess.Name,
 		Content:         p.Content,
 	}
 
-	eventData, _ := json.Marshal(wireEvent)
+	// Persist outgoing copy on sender.
+	sentEvent := base
+	sentEvent.Direction = DirectionSent
+	s.persistAgentMessage(ctx, p.SenderSessionID, senderSess.ProjectID, sentEvent)
 
-	// Persist on the sender's session so outgoing messages are visible.
-	senderLive := s.mgr.Get(p.SenderSessionID)
-	senderTurn := int64(0)
-	senderSeq := int64(0)
-	if senderLive != nil {
-		t, sq := senderLive.pipeline.AllocSeq()
-		senderTurn = int64(t)
-		senderSeq = int64(sq)
-	}
-	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
-		SessionID: p.SenderSessionID,
-		TurnIndex: senderTurn,
-		Seq:       senderSeq,
-		Type:      "agent_message",
-		Data:      string(eventData),
-	})
-	s.hub.Broadcast(senderSess.ProjectID, "session.event", map[string]any{
-		"sessionId": p.SenderSessionID,
-		"event":     wireEvent,
-	})
-
-	// Persist on the target's session so incoming messages are visible.
-	live := s.mgr.Get(p.TargetSessionID)
-	turnIndex := int64(0)
-	seq := int64(0)
-	if live != nil {
-		t, sq := live.pipeline.AllocSeq()
-		turnIndex = int64(t)
-		seq = int64(sq)
-	}
-	_ = s.queries.InsertEvent(ctx, store.InsertEventParams{
-		SessionID: p.TargetSessionID,
-		TurnIndex: turnIndex,
-		Seq:       seq,
-		Type:      "agent_message",
-		Data:      string(eventData),
-	})
-	s.hub.Broadcast(targetSess.ProjectID, "session.event", map[string]any{
-		"sessionId": p.TargetSessionID,
-		"event":     wireEvent,
-	})
+	// Persist incoming copy on target.
+	recvEvent := base
+	recvEvent.Direction = DirectionReceived
+	s.persistAgentMessage(ctx, p.TargetSessionID, targetSess.ProjectID, recvEvent)
 
 	// Deliver to the target's CLI via SendMessage.
-	if live != nil {
+	if live := s.mgr.Get(p.TargetSessionID); live != nil {
 		formatted := claudecli.FormatAgentMessage(senderSess.Name, p.Content)
 		if err := live.cliSess.SendMessage(formatted); err != nil {
 			slog.Warn("agent message CLI delivery failed", "target", p.TargetSessionID, "error", err)
@@ -303,21 +297,20 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 }
 
 // GetTeamTimeline returns all agent messages across team members.
+// Deduplicates by keeping only the "sent" copy of each message.
 func (s *Service) GetTeamTimeline(ctx context.Context, teamID string) ([]WireAgentMessageEvent, error) {
 	events, err := s.queries.ListAgentMessagesByTeam(ctx, sql.NullString{String: teamID, Valid: true})
 	if err != nil {
 		return nil, fmt.Errorf("list agent messages: %w", err)
 	}
 
-	// Messages are stored on both sender and target sessions. Deduplicate
-	// by only keeping the sender's copy (session_id == senderSessionId).
 	messages := make([]WireAgentMessageEvent, 0, len(events)/2+1)
 	for _, e := range events {
 		var msg WireAgentMessageEvent
 		if err := json.Unmarshal([]byte(e.Data), &msg); err != nil {
 			continue
 		}
-		if msg.SenderSessionID == e.SessionID {
+		if msg.Direction == DirectionSent {
 			messages = append(messages, msg)
 		}
 	}

@@ -48,9 +48,12 @@ interface UserMessageSegment {
 }
 interface AgentMessageSegment {
   kind: "agent_message";
+  direction: "sent" | "received";
   content: string;
   senderName: string;
   senderSessionId: string;
+  targetName: string;
+  targetSessionId: string;
 }
 
 type Segment =
@@ -150,9 +153,12 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
         case "agent_message":
           segments.push({
             kind: "agent_message",
+            direction: event.direction ?? "received",
             content: event.content ?? "",
             senderName: event.senderName ?? "",
             senderSessionId: event.senderSessionId ?? "",
+            targetName: event.targetName ?? "",
+            targetSessionId: event.targetSessionId ?? "",
           });
           break;
       }
@@ -589,8 +595,11 @@ export const TurnBlock = memo(function TurnBlock({
                   return (
                     <AgentMessage
                       key={segmentKey(seg, i)}
+                      direction={seg.direction}
                       senderName={seg.senderName}
                       senderSessionId={seg.senderSessionId}
+                      targetName={seg.targetName}
+                      targetSessionId={seg.targetSessionId}
                       content={seg.content}
                     />
                   );

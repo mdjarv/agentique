@@ -32,8 +32,11 @@ export interface ChatEvent {
     | "user_message"
     | "agent_message";
   content?: string;
+  direction?: "sent" | "received";
   senderSessionId?: string;
   senderName?: string;
+  targetSessionId?: string;
+  targetName?: string;
   contentBlocks?: ToolContentBlock[];
   toolId?: string;
   toolName?: string;

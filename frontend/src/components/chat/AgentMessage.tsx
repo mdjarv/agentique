@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { ArrowRight, Bot } from "lucide-react";
 import { memo } from "react";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
@@ -78,18 +78,45 @@ export function getAgentColor(sessionId: string) {
 }
 
 interface AgentMessageProps {
+  direction: "sent" | "received";
   senderName: string;
   senderSessionId: string;
+  targetName: string;
+  targetSessionId: string;
   content: string;
 }
 
 export const AgentMessage = memo(function AgentMessage({
+  direction,
   senderName,
   senderSessionId,
+  targetName,
+  targetSessionId,
   content,
 }: AgentMessageProps) {
-  const color = getAgentColor(senderSessionId);
+  if (direction === "sent") {
+    const color = getAgentColor(targetSessionId);
+    return (
+      <div className="flex gap-3 justify-end max-md:flex-col max-md:gap-1">
+        <div className="flex-1 max-w-[85%] max-md:max-w-full min-w-0 flex flex-col items-end">
+          <span className="text-[10px] font-medium text-muted-foreground/60 mb-0.5 flex items-center gap-1">
+            <ArrowRight className="h-2.5 w-2.5" />
+            {targetName}
+          </span>
+          <div className="rounded-lg px-4 py-2 bg-muted/30 border border-border/50 opacity-70">
+            <Markdown content={content} />
+          </div>
+        </div>
+        <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
+          <AvatarFallback className={`${color.bg} ${color.text}`}>
+            <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+    );
+  }
 
+  const color = getAgentColor(senderSessionId);
   return (
     <div className="flex gap-3 max-md:flex-col max-md:gap-1">
       <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
