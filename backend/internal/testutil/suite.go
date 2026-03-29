@@ -262,6 +262,15 @@ func (m *MockCLISession) Queries() []string {
 	return out
 }
 
+// SentMessages returns a copy of all messages sent via SendMessage.
+func (m *MockCLISession) SentMessages() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.sentMessages))
+	copy(out, m.sentMessages)
+	return out
+}
+
 // SendEvents pushes events then closes the channel.
 func (m *MockCLISession) SendEvents(events ...claudecli.Event) {
 	for _, e := range events {
