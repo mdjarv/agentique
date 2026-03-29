@@ -16,7 +16,7 @@ func mustUnmarshal(t *testing.T, data json.RawMessage) map[string]any {
 
 func TestNormalizeEventJSON_OldToolUse(t *testing.T) {
 	old := `{"type":"tool_use","id":"1","name":"Read","input":{}}`
-	got := mustUnmarshal(t, normalizeEventJSON("tool_use", []byte(old)))
+	got := mustUnmarshal(t, NormalizeEventJSON("tool_use", []byte(old)))
 
 	if got["toolId"] != "1" {
 		t.Errorf("toolId = %v, want 1", got["toolId"])
@@ -40,7 +40,7 @@ func TestNormalizeEventJSON_OldToolUse(t *testing.T) {
 
 func TestNormalizeEventJSON_OldToolResult(t *testing.T) {
 	old := `{"type":"tool_result","toolUseId":"1","content":"ok"}`
-	got := mustUnmarshal(t, normalizeEventJSON("tool_result", []byte(old)))
+	got := mustUnmarshal(t, NormalizeEventJSON("tool_result", []byte(old)))
 
 	if got["toolId"] != "1" {
 		t.Errorf("toolId = %v, want 1", got["toolId"])
@@ -64,14 +64,14 @@ func TestNormalizeEventJSON_OldToolResult(t *testing.T) {
 
 func TestNormalizeEventJSON_AlreadyNormalized(t *testing.T) {
 	toolUse := `{"type":"tool_use","toolId":"1","toolName":"Read","toolInput":{}}`
-	got := normalizeEventJSON("tool_use", []byte(toolUse))
+	got := NormalizeEventJSON("tool_use", []byte(toolUse))
 	if string(got) != toolUse {
 		t.Errorf("tool_use modified: %s", got)
 	}
 
 	// tool_result with string content should be migrated to array format.
 	toolResult := `{"type":"tool_result","toolId":"1","content":"ok"}`
-	trGot := mustUnmarshal(t, normalizeEventJSON("tool_result", []byte(toolResult)))
+	trGot := mustUnmarshal(t, NormalizeEventJSON("tool_result", []byte(toolResult)))
 	blocks, ok := trGot["content"].([]any)
 	if !ok || len(blocks) != 1 {
 		t.Errorf("tool_result content not migrated to array: %v", trGot["content"])
@@ -79,7 +79,7 @@ func TestNormalizeEventJSON_AlreadyNormalized(t *testing.T) {
 
 	// tool_result with array content should pass through.
 	arrayContent := `{"type":"tool_result","toolId":"1","content":[{"type":"text","text":"ok"}]}`
-	got = normalizeEventJSON("tool_result", []byte(arrayContent))
+	got = NormalizeEventJSON("tool_result", []byte(arrayContent))
 	if string(got) != arrayContent {
 		t.Errorf("tool_result with array content modified: %s", got)
 	}
@@ -95,7 +95,7 @@ func TestNormalizeEventJSON_OtherEvents(t *testing.T) {
 		{"result", `{"type":"result","costUsd":0.01}`},
 	}
 	for _, tc := range cases {
-		got := normalizeEventJSON(tc.typ, []byte(tc.data))
+		got := NormalizeEventJSON(tc.typ, []byte(tc.data))
 		if string(got) != tc.data {
 			t.Errorf("%s: modified: %s", tc.typ, got)
 		}
@@ -104,7 +104,7 @@ func TestNormalizeEventJSON_OtherEvents(t *testing.T) {
 
 func TestNormalizeEventJSON_MalformedJSON(t *testing.T) {
 	bad := `{not valid json`
-	got := normalizeEventJSON("tool_use", []byte(bad))
+	got := NormalizeEventJSON("tool_use", []byte(bad))
 	if string(got) != bad {
 		t.Errorf("malformed JSON modified: %s", got)
 	}

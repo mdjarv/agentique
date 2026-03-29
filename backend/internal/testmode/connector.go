@@ -32,8 +32,15 @@ func NewConnector() *Connector {
 }
 
 // Connect implements session.CLIConnector.
-func (c *Connector) Connect(_ context.Context, _ ...claudecli.Option) (session.CLISession, error) {
+// Extracts CanUseTool callback from options so the mock session can invoke
+// tool permission checks during scenario replay.
+func (c *Connector) Connect(_ context.Context, opts ...claudecli.Option) (session.CLISession, error) {
 	s := NewSession()
+	if fn := claudecli.ResolveCanUseTool(opts...); fn != nil {
+		s.mu.Lock()
+		s.canUseTool = fn
+		s.mu.Unlock()
+	}
 	c.mu.Lock()
 	c.pending = append(c.pending, s)
 	c.mu.Unlock()
@@ -118,6 +125,7 @@ type Session struct {
 	interrupted bool
 	scenarios   []Scenario
 	scenarioIdx int
+	canUseTool  claudecli.ToolPermissionFunc
 }
 
 // NewSession creates a mock CLI session with a buffered event channel.
@@ -209,6 +217,9 @@ func (s *Session) InjectEvent(event claudecli.Event) error {
 }
 
 // replayScenario pushes scripted events with delays.
+// For tool_use events, the event is pushed first (so processEvent sees it),
+// then the canUseTool callback is invoked if set. This mirrors the real CLI
+// behavior where the event stream shows tool_use before permission is resolved.
 func (s *Session) replayScenario(sc *Scenario) {
 	for _, se := range sc.Events {
 		if se.Delay > 0 {
@@ -220,11 +231,19 @@ func (s *Session) replayScenario(sc *Scenario) {
 		}
 		s.mu.Lock()
 		closed := s.closed
+		canUseTool := s.canUseTool
 		s.mu.Unlock()
 		if closed {
 			return
 		}
 		s.events <- event
+
+		// After pushing a tool_use event, invoke the permission callback.
+		// This blocks until the user resolves the approval (or auto-approves),
+		// pausing the replay just like the real CLI pauses before executing.
+		if toolUse, ok := event.(*claudecli.ToolUseEvent); ok && canUseTool != nil {
+			canUseTool(toolUse.Name, toolUse.Input)
+		}
 	}
 }
 

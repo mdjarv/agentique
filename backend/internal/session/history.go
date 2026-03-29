@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 )
 
-// normalizeEventJSON rewrites legacy JSON keys to the current wire format.
+// NormalizeEventJSON rewrites legacy JSON keys to the current wire format.
 // Old tool_use events used "id"/"name"/"input"; current format uses "toolId"/"toolName"/"toolInput".
 // Old tool_result events used "toolUseId"; current format uses "toolId".
-func normalizeEventJSON(eventType string, data []byte) json.RawMessage {
+func NormalizeEventJSON(eventType string, data []byte) json.RawMessage {
 	if eventType != "tool_use" && eventType != "tool_result" {
 		return json.RawMessage(data)
 	}
@@ -98,7 +98,7 @@ func HistoryFromDB(ctx context.Context, q historyQueries, sessionID string) ([]H
 				t.Attachments = p.Attachments
 			}
 		} else {
-			t.Events = append(t.Events, normalizeEventJSON(row.Type, []byte(row.Data)))
+			t.Events = append(t.Events, NormalizeEventJSON(row.Type, []byte(row.Data)))
 		}
 	}
 
