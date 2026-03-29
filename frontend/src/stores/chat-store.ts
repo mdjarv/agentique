@@ -30,7 +30,8 @@ export interface ChatEvent {
     | "compact_boundary"
     | "context_management"
     | "user_message"
-    | "agent_message";
+    | "agent_message"
+    | "task";
   content?: string;
   direction?: "sent" | "received";
   senderSessionId?: string;
@@ -58,6 +59,18 @@ export interface ChatEvent {
   trigger?: string;
   preTokens?: number;
   attachments?: Attachment[];
+  // Subagent task fields (type === "task")
+  toolUseId?: string;
+  taskSubtype?: "task_started" | "task_progress" | "task_notification";
+  taskDescription?: string;
+  taskType?: string;
+  taskSummary?: string;
+  taskStatus?: string;
+  lastToolName?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
+  parentToolUseId?: string;
 }
 
 export interface Attachment {
@@ -576,9 +589,27 @@ export const useChatStore = create<ChatState>((set) => ({
       const turns = [...session.turns];
       const lastTurn = turns[turns.length - 1];
       if (lastTurn) {
+        // Upsert task_progress: replace previous progress for same toolUseId
+        let events: ChatEvent[];
+        if (event.type === "task" && event.taskSubtype === "task_progress" && event.toolUseId) {
+          const idx = lastTurn.events.findIndex(
+            (e) =>
+              e.type === "task" &&
+              e.taskSubtype === "task_progress" &&
+              e.toolUseId === event.toolUseId,
+          );
+          if (idx >= 0) {
+            events = [...lastTurn.events];
+            events[idx] = event;
+          } else {
+            events = [...lastTurn.events, event];
+          }
+        } else {
+          events = [...lastTurn.events, event];
+        }
         turns[turns.length - 1] = {
           ...lastTurn,
-          events: [...lastTurn.events, event],
+          events,
           complete: lastTurn.complete || isResult,
         };
         patch.turns = turns;

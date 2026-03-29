@@ -7,6 +7,7 @@ import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
 import { PromptGroupProvider } from "~/components/chat/PromptCard";
+import { SubagentActivity } from "~/components/chat/SubagentActivity";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
@@ -23,7 +24,7 @@ const EMBEDDED_RESULT_TOOLS = new Set(["Bash", "Edit", "Write", "Glob", "TodoWri
 
 type ActivityItem =
   | { kind: "thinking"; event: ChatEvent }
-  | { kind: "tool"; use: ChatEvent; result?: ChatEvent };
+  | { kind: "tool"; use: ChatEvent; result?: ChatEvent; taskEvents?: ChatEvent[] };
 
 interface ActivitySegment {
   kind: "activity";
@@ -83,6 +84,8 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
       return "user_message";
     case "agent_message":
       return "agent_message";
+    case "task":
+      return "skip";
     default:
       return "skip";
   }
@@ -91,6 +94,19 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
 function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?: ChatEvent } {
   const segments: Segment[] = [];
   let resultEvent: ChatEvent | undefined;
+
+  // First pass: collect task events indexed by parent toolUseId
+  const taskEventsByToolUseId = new Map<string, ChatEvent[]>();
+  for (const event of events) {
+    if (event.type === "task" && event.toolUseId) {
+      let list = taskEventsByToolUseId.get(event.toolUseId);
+      if (!list) {
+        list = [];
+        taskEventsByToolUseId.set(event.toolUseId, list);
+      }
+      list.push(event);
+    }
+  }
 
   for (const event of events) {
     const kind = classifyEvent(event);
@@ -108,7 +124,11 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
           if (event.type === "thinking") {
             last.items.push({ kind: "thinking", event });
           } else if (event.type === "tool_use") {
-            last.items.push({ kind: "tool", use: event });
+            last.items.push({
+              kind: "tool",
+              use: event,
+              taskEvents: event.toolId ? taskEventsByToolUseId.get(event.toolId) : undefined,
+            });
           } else {
             const item = last.items.find(
               (it) => it.kind === "tool" && it.use.toolId === event.toolId,
@@ -129,7 +149,16 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
           if (event.type === "thinking") {
             segments.push({ kind: "activity", items: [{ kind: "thinking", event }] });
           } else if (event.type === "tool_use") {
-            segments.push({ kind: "activity", items: [{ kind: "tool", use: event }] });
+            segments.push({
+              kind: "activity",
+              items: [
+                {
+                  kind: "tool",
+                  use: event,
+                  taskEvents: event.toolId ? taskEventsByToolUseId.get(event.toolId) : undefined,
+                },
+              ],
+            });
           } else {
             segments.push({ kind: "activity", items: [{ kind: "tool", use: event }] });
           }
@@ -372,6 +401,9 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 worktreePath={worktreePath}
                 resultContent={item.result?.contentBlocks}
               />
+              {item.taskEvents && item.taskEvents.length > 0 && (
+                <SubagentActivity taskEvents={item.taskEvents} />
+              )}
               {item.result &&
                 !EMBEDDED_RESULT_TOOLS.has(item.use.toolName ?? "") &&
                 (item.result.contentBlocks ?? []).length > 0 && (
