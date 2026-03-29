@@ -931,24 +931,22 @@ func (s *Session) SetSpawnWorkersCallback(cb func(senderID string, req SpawnWork
 // so Claude thinks the message was delivered (v1 hack — proper tool result
 // interception requires claudecli-go changes).
 // Also intercepts "@spawn" target for worker delegation.
-func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
-	// The SendMessage tool schema uses "message" but our preamble examples use
-	// "content". Accept both, and handle "message" being either a string or a
-	// JSON object (for @spawn payloads).
+// parseSendMessageInput extracts the target and body from a SendMessage tool
+// call. It accepts both "content" (our preamble examples) and "message" (the
+// actual tool schema), and handles "message" being either a JSON string or a
+// raw JSON object (for @spawn payloads).
+func parseSendMessageInput(input json.RawMessage) (to, body string, err error) {
 	var parsed struct {
 		To      string          `json:"to"`
 		Content string          `json:"content"`
 		Message json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal(input, &parsed); err != nil {
-		return &claudecli.PermissionResponse{
-			Allow:       false,
-			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
-		}, nil
+		return "", "", err
 	}
 
 	// Resolve the message body: prefer "content", fall back to "message".
-	body := parsed.Content
+	body = parsed.Content
 	if body == "" && len(parsed.Message) > 0 {
 		// "message" may be a JSON string or an object. Try to unquote as
 		// string first; if that fails, use the raw JSON bytes directly.
@@ -960,8 +958,20 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		}
 	}
 
+	return parsed.To, body, nil
+}
+
+func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+	to, body, err := parseSendMessageInput(input)
+	if err != nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
+		}, nil
+	}
+
 	// Intercept @spawn for worker delegation.
-	if parsed.To == "@spawn" {
+	if to == "@spawn" {
 		return s.interceptSpawnWorkers(body)
 	}
 
@@ -976,7 +986,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		}, nil
 	}
 
-	if err := cb(s.ID, parsed.To, body); err != nil {
+	if err := cb(s.ID, to, body); err != nil {
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Message delivery failed: %v", err),
@@ -985,7 +995,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 
 	return &claudecli.PermissionResponse{
 		Allow:       false,
-		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", parsed.To),
+		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", to),
 	}, nil
 }
 
