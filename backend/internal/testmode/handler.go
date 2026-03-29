@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/allbin/agentique/backend/internal/httperr"
 	"github.com/allbin/agentique/backend/internal/respond"
@@ -30,6 +32,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/test/inject-event", h.HandleInjectEvent)
 	mux.HandleFunc("POST /api/test/reset", h.HandleReset)
 	mux.HandleFunc("GET /api/test/state", h.HandleState)
+	mux.HandleFunc("GET /api/test/export-session/{id}", h.HandleExportSession)
 }
 
 // SeedRequest is the JSON body for POST /api/test/seed.
@@ -213,4 +216,134 @@ func (h *Handler) HandleState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusOK, states)
+}
+
+// ExportedSession is the JSON format for a recorded session fixture.
+type ExportedSession struct {
+	Metadata ExportMetadata `json:"metadata"`
+	Turns    []ExportTurn   `json:"turns"`
+}
+
+// ExportMetadata contains session and project info for the fixture.
+type ExportMetadata struct {
+	SessionID   string `json:"sessionId"`
+	SessionName string `json:"sessionName"`
+	ProjectName string `json:"projectName"`
+	ProjectPath string `json:"projectPath"`
+	Model       string `json:"model"`
+	CapturedAt  string `json:"capturedAt"`
+}
+
+// ExportTurn is a single turn (prompt + events with timing).
+type ExportTurn struct {
+	Prompt   string   `json:"prompt"`
+	Scenario Scenario `json:"scenario"`
+}
+
+// HandleExportSession reads a session's events from DB and returns them
+// as a fixture in the Scenario/ScriptedEvent format for Playwright replay.
+func (h *Handler) HandleExportSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	ctx := context.Background()
+
+	dbSess, err := h.Queries.GetSession(ctx, sessionID)
+	if err != nil {
+		respond.Error(w, httperr.NotFound(fmt.Sprintf("session %s not found", sessionID)))
+		return
+	}
+
+	project, err := h.Queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		respond.Error(w, httperr.Internal("get project", err))
+		return
+	}
+
+	events, err := h.Queries.ListEventsBySession(ctx, sessionID)
+	if err != nil {
+		respond.Error(w, httperr.Internal("list events", err))
+		return
+	}
+
+	scrubber := NewScrubber(dbSess.WorkDir, os.Getenv("HOME"))
+
+	// Group events by turn, extracting prompts and computing relative timing.
+	type turnData struct {
+		prompt string
+		events []ScriptedEvent
+		start  time.Time
+	}
+	turnMap := make(map[int64]*turnData)
+	var turnOrder []int64
+
+	for _, ev := range events {
+		td, ok := turnMap[ev.TurnIndex]
+		if !ok {
+			td = &turnData{}
+			turnMap[ev.TurnIndex] = td
+			turnOrder = append(turnOrder, ev.TurnIndex)
+		}
+
+		if ev.Type == "prompt" {
+			// Extract prompt text from the JSON data.
+			var p struct {
+				Prompt string `json:"prompt"`
+			}
+			if json.Unmarshal([]byte(ev.Data), &p) == nil {
+				td.prompt = p.Prompt
+			}
+			continue
+		}
+
+		// Parse created_at for timing delta.
+		ts, tsErr := time.Parse("2006-01-02T15:04:05.000", ev.CreatedAt)
+		if tsErr != nil {
+			ts = time.Time{} // fallback: no timing
+		}
+
+		var delayMs int
+		if !ts.IsZero() {
+			if td.start.IsZero() {
+				td.start = ts
+			}
+			delayMs = int(ts.Sub(td.start).Milliseconds())
+		}
+
+		// Build wire event: merge type into the data JSON.
+		data := session.NormalizeEventJSON(ev.Type, []byte(ev.Data))
+		var m map[string]any
+		if json.Unmarshal(data, &m) == nil {
+			m["type"] = ev.Type
+			scrubbed, _ := json.Marshal(m)
+			td.events = append(td.events, ScriptedEvent{
+				Delay: delayMs,
+				Event: json.RawMessage(scrubber.Scrub(string(scrubbed))),
+			})
+		}
+	}
+
+	// Assemble export.
+	turns := make([]ExportTurn, 0, len(turnOrder))
+	for _, idx := range turnOrder {
+		td := turnMap[idx]
+		turns = append(turns, ExportTurn{
+			Prompt: scrubber.Scrub(td.prompt),
+			Scenario: Scenario{
+				Events: td.events,
+			},
+		})
+	}
+
+	export := ExportedSession{
+		Metadata: ExportMetadata{
+			SessionID:   sessionID,
+			SessionName: dbSess.Name,
+			ProjectName: project.Name,
+			ProjectPath: scrubber.Scrub(project.Path),
+			Model:       dbSess.Model,
+			CapturedAt:  time.Now().UTC().Format(time.RFC3339),
+		},
+		Turns: turns,
+	}
+
+	respond.JSON(w, http.StatusOK, export)
 }
