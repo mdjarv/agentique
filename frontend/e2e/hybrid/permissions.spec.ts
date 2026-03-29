@@ -146,7 +146,7 @@ test.describe("Permission selector", () => {
     await sendQuery(page, composer, "Run the tests");
 
     // ApprovalBanner should appear for Bash.
-    const allowBtn = page.getByRole("button", { name: "Allow" });
+    const allowBtn = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Bash").first()).toBeVisible();
 
@@ -170,7 +170,7 @@ test.describe("Permission selector", () => {
     await expect(page.getByText("Found the config.")).toBeVisible({ timeout: 10_000 });
 
     // Bash triggers approval banner.
-    const allowBtn = page.getByRole("button", { name: "Allow" });
+    const allowBtn = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
 
     await allowBtn.click();
@@ -189,7 +189,7 @@ test.describe("Permission selector", () => {
 
     // Turn 1: manual mode, Bash needs approval.
     await sendQuery(page, composer, "Run tests");
-    const allowBtn = page.getByRole("button", { name: "Allow" });
+    const allowBtn = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
     await allowBtn.click();
     await waitForIdle(request);
@@ -202,7 +202,7 @@ test.describe("Permission selector", () => {
     await sendQuery(page, composer, "Read and build");
     await expect(page.getByText("Found the config.")).toBeVisible({ timeout: 10_000 });
 
-    const allowBtn2 = page.getByRole("button", { name: "Allow" });
+    const allowBtn2 = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn2).toBeVisible({ timeout: 10_000 });
     await allowBtn2.click();
 
@@ -220,7 +220,7 @@ test.describe("Permission selector", () => {
 
     // Turn 1: auto mode, Bash needs approval.
     await sendQuery(page, composer, "Run tests");
-    const allowBtn = page.getByRole("button", { name: "Allow" });
+    const allowBtn = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
     await allowBtn.click();
     await waitForIdle(request);
@@ -236,7 +236,27 @@ test.describe("Permission selector", () => {
     });
 
     // Verify no approval banner appeared.
-    await expect(page.getByRole("button", { name: "Allow" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Allow", exact: true })).not.toBeVisible();
+    await waitForIdle(request);
+  });
+
+  test("manual mode: Deny rejects tool and session continues", async ({ page, request }) => {
+    const seed = permSeed({ behavior: [SCENARIO_BASH_ONLY], autoApproveMode: "manual" });
+    await seedFixture(request, seed);
+    const composer = await navigateToSession(page);
+
+    await sendQuery(page, composer, "Run the tests");
+
+    // ApprovalBanner should appear.
+    const denyBtn = page.getByRole("button", { name: "Deny" });
+    await expect(denyBtn).toBeVisible({ timeout: 10_000 });
+
+    await denyBtn.click();
+
+    // Banner should dismiss after deny.
+    await expect(denyBtn).not.toBeVisible({ timeout: 5_000 });
+
+    // Session should still complete (scenario events continue after deny).
     await waitForIdle(request);
   });
 
@@ -269,7 +289,7 @@ test.describe("Chat/Plan toggle", () => {
     const composer = await navigateToSession(page);
 
     // Toggle from Chat to Plan.
-    await page.getByRole("button", { name: "Chat" }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
     await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
 
     await sendQuery(page, composer, "Create a login page");
@@ -298,7 +318,7 @@ test.describe("Chat/Plan toggle", () => {
     await waitForIdle(request);
 
     // Toggle to plan mode.
-    await page.getByRole("button", { name: "Chat" }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
     await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
 
     // Turn 2: plan mode.
@@ -320,15 +340,15 @@ test.describe("Chat/Plan toggle", () => {
     await sendQuery(page, composer, "Run tests");
 
     // Wait for approval banner (session is running).
-    await expect(page.getByRole("button", { name: "Allow" })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeVisible({ timeout: 10_000 });
 
     // Plan toggle should be disabled.
-    await expect(page.getByRole("button", { name: "Chat" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeDisabled();
 
     // Resolve and verify toggle re-enables.
-    await page.getByRole("button", { name: "Allow" }).click();
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
     await waitForIdle(request);
-    await expect(page.getByRole("button", { name: "Chat" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeEnabled();
   });
 
   test("plan mode: Read auto-approved, Bash blocked", async ({ page, request }) => {
@@ -349,7 +369,7 @@ test.describe("Chat/Plan toggle", () => {
     await expect(page.getByText("Read complete.")).toBeVisible({ timeout: 10_000 });
 
     // Bash blocked (not plan-safe in plan mode).
-    const allowBtn = page.getByRole("button", { name: "Allow" });
+    const allowBtn = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
     await allowBtn.click();
 
@@ -379,7 +399,7 @@ test.describe("Plan approval", () => {
     await expect(page.getByRole("button", { name: "Start fresh" })).toBeVisible();
 
     // ApprovalBanner's "Allow" button should NOT be visible (this is plan review, not tool approval).
-    await expect(page.getByRole("button", { name: "Allow" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Allow", exact: true })).not.toBeVisible();
 
     // Approve and complete.
     await page.getByRole("button", { name: "Continue with plan" }).click();

@@ -153,6 +153,36 @@ test.describe("Recorded session replay", () => {
     }).toPass({ timeout: 15_000 });
   });
 
+  test("tool-diversity: varied tool types render correctly", async ({ page, request }) => {
+    const fixture = loadFixture("tool-diversity");
+    const seed = fixtureToSeed(fixture, { maxDelay: 20 });
+    await seedFixture(request, seed);
+
+    await page.goto(`/project/${seed.projects[0]!.slug}`);
+
+    const sessionLink = page.getByText(fixture.metadata.sessionName);
+    await expect(sessionLink).toBeVisible({ timeout: 10_000 });
+    await sessionLink.click();
+
+    const composer = page.getByPlaceholder("Send a message...");
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+
+    const prompts = fixturePrompts(fixture);
+    await composer.fill(prompts[0]!);
+    await page.keyboard.press("Enter");
+
+    // Fixture has many tool calls across multiple activity groups.
+    // Verify at least one tool call group renders.
+    await expect(page.getByText(/\d+ tool calls?/).first()).toBeVisible({ timeout: 30_000 });
+
+    // Verify session reaches idle.
+    await expect(async () => {
+      const states = await getTestState(request);
+      const session = states.find((s) => s.id === seed.sessions[0]!.id);
+      expect(session?.state).toBe("idle");
+    }).toPass({ timeout: 15_000 });
+  });
+
   test("plan-approval: ExitPlanMode triggers approval banner", async ({ page, request }) => {
     const fixture = loadFixture("plan-approval");
     const seed = fixtureToSeed(fixture, {

@@ -7,6 +7,7 @@ const binaryPath = path.resolve(import.meta.dirname, "..", binaryName);
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["**/hybrid/**"],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
