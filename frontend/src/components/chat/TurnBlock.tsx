@@ -17,6 +17,8 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
+const EMBEDDED_RESULT_TOOLS = new Set(["Bash", "Edit", "Write", "Glob", "TodoWrite"]);
+
 // --- Segment types ---
 
 type ActivityItem =
@@ -365,7 +367,7 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 resultContent={item.result?.contentBlocks}
               />
               {item.result &&
-                item.use.toolName !== "Bash" &&
+                !EMBEDDED_RESULT_TOOLS.has(item.use.toolName ?? "") &&
                 (item.result.contentBlocks ?? []).length > 0 && (
                   <ToolResultBlock
                     content={item.result.contentBlocks ?? []}
@@ -631,14 +633,9 @@ export const TurnBlock = memo(function TurnBlock({
               )}
 
             {/* Result metadata */}
-            {resultEvent && (resultEvent.duration || resultEvent.cost) && (
+            {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                {resultEvent.duration != null && resultEvent.duration > 0 && (
-                  <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
-                )}
-                {resultEvent.cost != null && resultEvent.cost > 0 && (
-                  <span className="tabular-nums">${resultEvent.cost.toFixed(2)}</span>
-                )}
+                <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
               </div>
             )}
           </div>

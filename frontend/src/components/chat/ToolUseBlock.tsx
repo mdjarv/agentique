@@ -65,6 +65,8 @@ export function formatSummary(
     }
     case "EnterPlanMode":
       return "Entering plan mode";
+    case "TodoRead":
+      return "Reading todos";
     case "ExitPlanMode":
       return "Plan submitted";
     default:
@@ -140,8 +142,6 @@ function buildDetail(
       return obj.prompt ? { kind: "text", content: String(obj.prompt) } : null;
 
     case "Grep":
-      return { kind: "text", content: JSON.stringify(input, null, 2) };
-
     case "ExitPlanMode":
       return obj.plan ? { kind: "markdown", content: String(obj.plan) } : null;
 
