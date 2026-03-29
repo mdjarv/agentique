@@ -13,88 +13,7 @@ with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/cla
 - Heavy Node.js backend with Effect-TS adds unnecessary complexity
 - We already have a battle-tested Go wrapper for Claude CLI
 
-## Tech Stack
-
-### Backend (Go)
-
-- **HTTP/WS server:** net/http + gorilla/websocket
-- **Claude integration:** github.com/allbin/claudecli-go
-- **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
-- **Query generation:** sqlc
-- **Migrations:** goose
-
-### Frontend (TypeScript + React)
-
-- **Framework:** React 19
-- **Build tool:** Vite
-- **Routing:** TanStack Router
-- **State management:** Zustand
-- **Styling:** Tailwind CSS 4 + shadcn/ui (Catppuccin Mocha theme)
-- **Markdown:** react-markdown + @tailwindcss/typography + react-syntax-highlighter
-- **Linting/Formatting:** Biome
-
-### Deployment
-
-- Single binary: Go backend embeds built frontend assets via `embed.FS`
-- Separate dev servers during development (Vite dev server + Go backend)
-- Desktop wrapper (Tauri) deferred to post-MVP
-
-## Architecture
-
-```
-+------------------+         WebSocket / HTTP          +------------------+
-|                  | <-------------------------------> |                  |
-|   React SPA      |                                   |   Go Backend     |
-|   (Vite)         |                                   |                  |
-|   Zustand        |                                   |  session.Manager |
-|   shadcn/ui      |                                   |  (singleton)     |
-+------------------+                                   +------------------+
-                                                              |
-                                                     claudecli-go Sessions
-                                                         (one per tab)
-                                                              |
-                                                       +------------------+
-                                                       |  Claude CLI      |
-                                                       |  processes       |
-                                                       +------------------+
-```
-
-### WebSocket Protocol
-
-JSON messages with `id` for request/response correlation. Push events have no `id`.
-
-```jsonc
-// Client -> Server (request)
-{ "id": "req-1", "type": "session.create", "payload": { "projectId": "...", "name": "...", "worktree": false } }
-{ "id": "req-2", "type": "session.list", "payload": { "projectId": "..." } }
-{ "id": "req-3", "type": "session.query", "payload": { "sessionId": "...", "prompt": "..." } }
-{ "id": "req-4", "type": "session.stop", "payload": { "sessionId": "..." } }
-{ "id": "req-5", "type": "session.subscribe", "payload": { "sessionId": "..." } }
-
-// Server -> Client (response, correlated by id)
-{ "id": "req-1", "type": "response", "payload": { "sessionId": "...", "name": "...", "state": "idle" } }
-
-// Server -> Client (push, no id)
-{ "type": "session.event", "payload": { "sessionId": "...", "event": { "type": "text", "content": "..." } } }
-{ "type": "session.state", "payload": { "sessionId": "...", "state": "running" } }
-```
-
-Event types forwarded from claudecli-go: text, thinking, tool_use, tool_result, result, error.
-
-## Development
-
-See `just --list` for all commands. Key ones:
-
-```
-just dev              # Run both servers in parallel
-just dev-frontend     # Vite HMR on :9200
-just dev-backend      # Go server on :9201
-just check            # Biome lint + tsc typecheck
-just test-backend     # Go tests
-```
-
-Frontend connects WebSocket directly to `:9201` (bypasses Vite proxy for reliability).
-In production, the Go binary embeds the built frontend via `embed.FS`.
+See [README.md](README.md) for architecture, tech stack, and development setup.
 
 ## Milestones
 
@@ -199,13 +118,13 @@ Frontend:
 
 ### M4: Advanced Features (future)
 
-- [ ] Git integration: merge worktree branches, create PRs (backend infra exists in `session/git.go`)
+- [x] Git integration: merge worktree branches, create PRs
+- [x] Todo/task checklist visualization
 - [ ] Terminal emulator (xterm.js)
 - [ ] Desktop app via Tauri
 - [ ] Session templates / saved prompts
 - [ ] Split pane session layout
 - [ ] Use `/btw` (side query) for auto-naming and PR description generation — requires claudecli-go support for the `/btw` protocol, then replace `RunBlocking` Haiku calls with side queries on the existing session (full context, no pollution, no extra process spawn)
-- [ ] Todo/task checklist visualization — render `TodoWrite` tool inputs as a read-only checklist (pending/in_progress/completed) instead of raw JSON, matching CLI's task progress display
 
 ---
 

@@ -50,45 +50,6 @@ These are non-negotiable. Apply them in all new code and improve existing code w
 
 Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem. If adding a feature reveals structural problems, fix the structure.
 
-## Architecture
-
-- **backend/cmd/agentique**: Entry point, DB init, default project creation.
-- **backend/internal/server**: HTTP mux, SPA handler, embedded frontend assets.
-- **backend/internal/ws**: WebSocket handler, hub (connection registry + broadcasting), wire message types.
-- **backend/internal/gitops**: Pure git/gh CLI wrappers (merge, branch, worktree, diff, PR), no session dependencies.
-- **backend/internal/session**: Session lifecycle (Service), GitService (orchestrates gitops), event streaming, state machine.
-- **backend/internal/project**: Project CRUD routes.
-- **backend/internal/store**: SQLite via sqlc — generated query code, migrations via goose.
-- **frontend/src/components/chat/**: Chat UI — message rendering, composer, turn blocks, tool display.
-- **frontend/src/components/layout/**: Sidebar, project tree, session status.
-- **frontend/src/hooks/**: useWebSocket (connection + reconnect), useChatSession, useProjects.
-- **frontend/src/stores/**: Zustand — app-store (projects), chat-store (sessions + turns), streaming-store (assistant text), selectors.
-- **frontend/src/lib/**: Types, WS client (request/response correlation), event schemas, utils.
-
-## Dev Workflow
-
-```
-just dev            # Run both servers in parallel (with auto-stop of previous)
-just dev-frontend   # Vite HMR on :9200
-just dev-backend    # Go server on :9201
-```
-
-Frontend connects WebSocket directly to :9201 (avoids Vite proxy flakiness).
-
-## Key Commands
-
-| Command | Purpose |
-|---------|---------|
-| `just dev-frontend` | Vite dev server (:9200) |
-| `just dev-backend` | Go backend (:9201) |
-| `just dev-mock` | Frontend with MSW mocks (:9210, no backend needed) |
-| `just build` | Full production build (single binary) |
-| `just check` | Biome lint + tsc typecheck |
-| `just test-backend` | Go tests |
-| `just test-e2e` | Playwright e2e tests |
-| `just sqlc` | Regenerate sqlc query code |
-| `just reset` | Delete all .db files |
-
 ## Frontend Conventions
 
 - Biome: 2-space indent, 100-char line width, double quotes, semicolons, organize imports.
@@ -106,7 +67,6 @@ Frontend connects WebSocket directly to :9201 (avoids Vite proxy flakiness).
 
 ## Reference
 
-- [ROADMAP.md](ROADMAP.md) — vision, architecture diagram, milestones.
-- [docs/websocket-protocol.md](docs/websocket-protocol.md) — WS method reference.
-- [docs/database-schema.md](docs/database-schema.md) — tables, sqlc queries.
+- [README.md](README.md) — architecture, tech stack, dev workflow, commands.
+- [ROADMAP.md](ROADMAP.md) — vision, milestones, investigations.
 - [docs/claudecli-go-api.md](docs/claudecli-go-api.md) — Go wrapper API docs.
