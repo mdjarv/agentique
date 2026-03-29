@@ -796,8 +796,10 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 	case resp := <-ch:
 		if resp.Allow {
 			s.transitionPlanMode("default")
-			// Wait briefly for the interrupt's ResultEvent to transition session to idle.
-			time.Sleep(200 * time.Millisecond)
+			if err := s.waitForIdle(5 * time.Second); err != nil {
+				slog.Warn("wait for idle after plan approval failed", "session_id", s.ID, "error", err)
+				return
+			}
 			if err := s.Query(context.Background(), "Plan approved. Proceed with implementation.", nil); err != nil {
 				slog.Warn("auto-resume after plan approval failed", "session_id", s.ID, "error", err)
 			}
@@ -816,6 +818,20 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 	case <-s.ctx.Done():
 		// Session closed while waiting for review.
 	}
+}
+
+func (s *Session) waitForIdle(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		st := s.state
+		s.mu.Unlock()
+		if st == StateIdle || st == StateDone || st == StateStopped {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("session %s: timed out waiting for idle (state: %s)", s.ID, s.State())
 }
 
 // planSafeCategories lists tool categories that can be auto-approved in plan
