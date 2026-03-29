@@ -136,19 +136,14 @@ func TestParseSendMessageInput_SpawnPayloadRoundtrip(t *testing.T) {
 	}
 }
 
-func TestInterceptSendMessage_TeamMessage(t *testing.T) {
+// TestInterceptSendMessage_DeniesWithSuccess verifies that interceptSendMessage
+// denies the tool with a "delivered" message (actual routing happens in the
+// EventPipeline's OnSendMessage callback, not here).
+func TestInterceptSendMessage_DeniesWithSuccess(t *testing.T) {
 	sess := &Session{
 		ID:               "lead-1",
 		pendingApprovals: make(map[string]*pendingApproval),
 	}
-
-	var gotSender, gotTarget, gotContent string
-	sess.SetAgentMessageCallback(func(senderID, targetName, content string) error {
-		gotSender = senderID
-		gotTarget = targetName
-		gotContent = content
-		return nil
-	})
 
 	input := json.RawMessage(`{"to":"Backend Worker","message":"looks good, proceed"}`)
 	resp, err := sess.interceptSendMessage(input)
@@ -156,22 +151,16 @@ func TestInterceptSendMessage_TeamMessage(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp.Allow {
-		t.Error("should deny (message routed externally)")
+		t.Error("should deny (routing happens in pipeline)")
 	}
 	if !strings.Contains(resp.DenyMessage, "delivered") {
 		t.Errorf("deny message should indicate success, got: %s", resp.DenyMessage)
 	}
-	if gotSender != "lead-1" {
-		t.Errorf("sender = %q, want %q", gotSender, "lead-1")
-	}
-	if gotTarget != "Backend Worker" {
-		t.Errorf("target = %q, want %q", gotTarget, "Backend Worker")
-	}
-	if gotContent != "looks good, proceed" {
-		t.Errorf("content = %q, want %q", gotContent, "looks good, proceed")
-	}
 }
 
+// TestInterceptSendMessage_NoTeam verifies the deny message when no team
+// callback is set. Even without a team, interceptSendMessage still denies
+// with a success message — the pipeline handles the "no team" case.
 func TestInterceptSendMessage_NoTeam(t *testing.T) {
 	sess := &Session{
 		ID:               "solo-1",
@@ -186,8 +175,84 @@ func TestInterceptSendMessage_NoTeam(t *testing.T) {
 	if resp.Allow {
 		t.Error("should deny")
 	}
-	if !strings.Contains(resp.DenyMessage, "not part of a team") {
-		t.Errorf("should indicate no team, got: %s", resp.DenyMessage)
+	if !strings.Contains(resp.DenyMessage, "delivered") {
+		t.Errorf("deny message should indicate success, got: %s", resp.DenyMessage)
+	}
+}
+
+// TestPipelineSendMessageRouting verifies that the EventPipeline's OnSendMessage
+// callback fires when a SendMessage ToolUseEvent is processed.
+func TestPipelineSendMessageRouting(t *testing.T) {
+	var gotToolID, gotTarget, gotContent string
+	ch := make(chan struct{}, 1)
+
+	pipeline := NewEventPipeline(PipelineConfig{
+		SessionID:        "test-session",
+		InitialTurnIndex: 0,
+		Sink: EventSink{
+			Persist:   func(int, int, string, []byte) {},
+			Broadcast: func(string, any) {},
+		},
+		OnSendMessage: func(toolUseID, targetName, content string) {
+			gotToolID = toolUseID
+			gotTarget = targetName
+			gotContent = content
+			ch <- struct{}{}
+		},
+	})
+
+	input, _ := json.Marshal(map[string]string{
+		"to":      "Backend Worker",
+		"message": "looks good",
+	})
+	pipeline.trackToolUse(WireToolUseEvent{
+		Type:     "tool_use",
+		ToolID:   "tu_123",
+		ToolName: "SendMessage",
+		ToolInput: input,
+	})
+
+	<-ch // wait for goroutine
+	if gotToolID != "tu_123" {
+		t.Errorf("toolID = %q, want %q", gotToolID, "tu_123")
+	}
+	if gotTarget != "Backend Worker" {
+		t.Errorf("target = %q, want %q", gotTarget, "Backend Worker")
+	}
+	if gotContent != "looks good" {
+		t.Errorf("content = %q, want %q", gotContent, "looks good")
+	}
+}
+
+// TestPipelineSendMessageSkipsSpawn verifies @spawn targets are not routed
+// through the pipeline (handled by handleToolPermission instead).
+func TestPipelineSendMessageSkipsSpawn(t *testing.T) {
+	called := false
+	pipeline := NewEventPipeline(PipelineConfig{
+		SessionID:        "test-session",
+		InitialTurnIndex: 0,
+		Sink: EventSink{
+			Persist:   func(int, int, string, []byte) {},
+			Broadcast: func(string, any) {},
+		},
+		OnSendMessage: func(_, _, _ string) {
+			called = true
+		},
+	})
+
+	input, _ := json.Marshal(map[string]string{
+		"to":      "@spawn",
+		"message": `{"teamName":"t","workers":[]}`,
+	})
+	pipeline.trackToolUse(WireToolUseEvent{
+		Type:      "tool_use",
+		ToolID:    "tu_456",
+		ToolName:  "SendMessage",
+		ToolInput: input,
+	})
+
+	if called {
+		t.Error("OnSendMessage should not fire for @spawn targets")
 	}
 }
 
