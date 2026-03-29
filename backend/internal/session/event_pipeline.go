@@ -78,6 +78,12 @@ func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
 		return
 	}
 
+	// Stage 1.5: UnknownEvent — log and drop.
+	if unk, ok := event.(*claudecli.UnknownEvent); ok {
+		slog.Debug("unknown CLI event type", "session_id", p.sessionID, "type", unk.Type)
+		return
+	}
+
 	// Stage 2: Convert to wire format.
 	wireEvent := ToWireEvent(event)
 	if wireEvent == nil {
@@ -215,6 +221,11 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 	p.toolCategories[tue.ToolID] = tue.Category
 	p.mu.Unlock()
 
+	// Subagent tool uses don't affect parent session plan mode.
+	if tue.ParentToolUseID != "" {
+		return
+	}
+
 	switch tue.ToolName {
 	case "EnterPlanMode":
 		if p.onPlanTransition != nil {
@@ -274,10 +285,12 @@ func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 
 // isTransient returns true for event types that are broadcast-only (skip DB).
 func isTransient(wireEvent any) bool {
-	switch wireEvent.(type) {
+	switch e := wireEvent.(type) {
 	case WireRateLimitEvent, WireCompactStatusEvent,
 		WireContextManagementEvent, WireStreamEvent:
 		return true
+	case WireTaskEvent:
+		return e.Subtype == "task_progress"
 	}
 	return false
 }

@@ -266,6 +266,187 @@ func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
 	}
 }
 
+func TestToWireEvent_ParentToolUseID(t *testing.T) {
+	tests := []struct {
+		name  string
+		event claudecli.Event
+		check func(t *testing.T, wire any)
+	}{
+		{
+			name:  "TextEvent with ParentToolUseID",
+			event: &claudecli.TextEvent{Content: "hello", ParentToolUseID: "tu_parent"},
+			check: func(t *testing.T, wire any) {
+				e := wire.(WireTextEvent)
+				if e.ParentToolUseID != "tu_parent" {
+					t.Errorf("ParentToolUseID = %q, want tu_parent", e.ParentToolUseID)
+				}
+			},
+		},
+		{
+			name:  "TextEvent without ParentToolUseID omits field",
+			event: &claudecli.TextEvent{Content: "hello"},
+			check: func(t *testing.T, wire any) {
+				data, _ := json.Marshal(wire)
+				if strings.Contains(string(data), "parentToolUseId") {
+					t.Error("parentToolUseId should be omitted when empty")
+				}
+			},
+		},
+		{
+			name:  "ThinkingEvent with ParentToolUseID",
+			event: &claudecli.ThinkingEvent{Content: "think", ParentToolUseID: "tu_parent"},
+			check: func(t *testing.T, wire any) {
+				e := wire.(WireThinkingEvent)
+				if e.ParentToolUseID != "tu_parent" {
+					t.Errorf("ParentToolUseID = %q, want tu_parent", e.ParentToolUseID)
+				}
+			},
+		},
+		{
+			name: "ToolUseEvent with ParentToolUseID",
+			event: &claudecli.ToolUseEvent{
+				ID: "t1", Name: "Read", Input: json.RawMessage(`{}`),
+				ParentToolUseID: "tu_parent",
+			},
+			check: func(t *testing.T, wire any) {
+				e := wire.(WireToolUseEvent)
+				if e.ParentToolUseID != "tu_parent" {
+					t.Errorf("ParentToolUseID = %q, want tu_parent", e.ParentToolUseID)
+				}
+			},
+		},
+		{
+			name: "ToolResultEvent with ParentToolUseID",
+			event: &claudecli.ToolResultEvent{
+				ToolUseID: "t1",
+				Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+				ParentToolUseID: "tu_parent",
+			},
+			check: func(t *testing.T, wire any) {
+				e := wire.(WireToolResultEvent)
+				if e.ParentToolUseID != "tu_parent" {
+					t.Errorf("ParentToolUseID = %q, want tu_parent", e.ParentToolUseID)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire := ToWireEvent(tt.event)
+			if wire == nil {
+				t.Fatal("ToWireEvent returned nil")
+			}
+			tt.check(t, wire)
+		})
+	}
+}
+
+func TestToWireEvent_TaskEvent(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   *claudecli.TaskEvent
+		wantSub string
+	}{
+		{
+			name: "task_started",
+			event: &claudecli.TaskEvent{
+				Subtype: "task_started", TaskID: "task-1", ToolUseID: "tu_agent",
+				Description: "Explore codebase", TaskType: "local_agent",
+			},
+			wantSub: "task_started",
+		},
+		{
+			name: "task_progress",
+			event: &claudecli.TaskEvent{
+				Subtype: "task_progress", TaskID: "task-1", ToolUseID: "tu_agent",
+				LastToolName: "Read", TotalTokens: 5000, ToolUses: 3,
+			},
+			wantSub: "task_progress",
+		},
+		{
+			name: "task_notification",
+			event: &claudecli.TaskEvent{
+				Subtype: "task_notification", TaskID: "task-1", ToolUseID: "tu_agent",
+				Status: "completed", Summary: "Done exploring",
+				TotalTokens: 10000, ToolUses: 8, DurationMs: 5000,
+			},
+			wantSub: "task_notification",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire := ToWireEvent(tt.event)
+			te, ok := wire.(WireTaskEvent)
+			if !ok {
+				t.Fatalf("expected WireTaskEvent, got %T", wire)
+			}
+			if te.Type != "task" {
+				t.Errorf("Type = %q, want task", te.Type)
+			}
+			if te.Subtype != tt.wantSub {
+				t.Errorf("Subtype = %q, want %q", te.Subtype, tt.wantSub)
+			}
+			if te.TaskID != tt.event.TaskID {
+				t.Errorf("TaskID = %q, want %q", te.TaskID, tt.event.TaskID)
+			}
+			if te.ToolUseID != tt.event.ToolUseID {
+				t.Errorf("ToolUseID = %q, want %q", te.ToolUseID, tt.event.ToolUseID)
+			}
+		})
+	}
+}
+
+func TestToWireEvent_UserEventWithAgentResult(t *testing.T) {
+	event := &claudecli.UserEvent{
+		ParentToolUseID: "tu_agent",
+		AgentResult: &claudecli.AgentResult{
+			Status:            "completed",
+			AgentID:           "explorer",
+			AgentType:         "Explore",
+			Content:           []claudecli.ToolContent{{Type: "text", Text: "Found it"}},
+			TotalDurationMs:   3000,
+			TotalTokens:       8000,
+			TotalToolUseCount: 5,
+		},
+	}
+	wire := ToWireEvent(event)
+	ar, ok := wire.(WireAgentResultEvent)
+	if !ok {
+		t.Fatalf("expected WireAgentResultEvent, got %T", wire)
+	}
+	if ar.Type != "agent_result" {
+		t.Errorf("Type = %q, want agent_result", ar.Type)
+	}
+	if ar.ParentToolUseID != "tu_agent" {
+		t.Errorf("ParentToolUseID = %q, want tu_agent", ar.ParentToolUseID)
+	}
+	if ar.Status != "completed" {
+		t.Errorf("Status = %q, want completed", ar.Status)
+	}
+	if ar.TotalTokens != 8000 {
+		t.Errorf("TotalTokens = %d, want 8000", ar.TotalTokens)
+	}
+	if len(ar.Content) != 1 || ar.Content[0].Text != "Found it" {
+		t.Errorf("Content = %+v, want single text block", ar.Content)
+	}
+}
+
+func TestToWireEvent_UserEventWithoutAgentResult(t *testing.T) {
+	event := &claudecli.UserEvent{ParentToolUseID: "tu_agent"}
+	wire := ToWireEvent(event)
+	if wire != nil {
+		t.Errorf("expected nil for UserEvent without AgentResult, got %T", wire)
+	}
+}
+
+func TestToWireEvent_UnknownEvent(t *testing.T) {
+	event := &claudecli.UnknownEvent{Type: "future_type", Raw: json.RawMessage(`{}`)}
+	wire := ToWireEvent(event)
+	if wire != nil {
+		t.Errorf("expected nil for UnknownEvent, got %T", wire)
+	}
+}
+
 func TestToolResultText(t *testing.T) {
 	blocks := []WireContentBlock{
 		{Type: "text", Text: "line1"},
