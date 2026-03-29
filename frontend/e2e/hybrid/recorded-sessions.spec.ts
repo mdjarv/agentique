@@ -209,13 +209,13 @@ test.describe("Recorded session replay", () => {
       timeout: 10_000,
     });
 
-    // Approval banner should appear for ExitPlanMode.
-    await expect(page.getByText("ExitPlanMode")).toBeVisible({ timeout: 10_000 });
-    const allowButton = page.getByRole("button", { name: "Allow" });
-    await expect(allowButton).toBeVisible({ timeout: 5_000 });
+    // PlanReviewBanner should appear for ExitPlanMode.
+    await expect(page.getByText("Plan ready for review")).toBeVisible({ timeout: 10_000 });
+    const continueButton = page.getByRole("button", { name: "Continue with plan" });
+    await expect(continueButton).toBeVisible({ timeout: 5_000 });
 
-    // Click Allow to approve the plan.
-    await allowButton.click();
+    // Approve the plan.
+    await continueButton.click();
 
     // After approval, the remaining events should replay and session completes.
     await expect(page.getByText("create the login page component")).toBeVisible({

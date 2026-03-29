@@ -717,10 +717,6 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 		"input":      input,
 	})
 
-	// Interrupt to stop execution before the agent acts on the plan.
-	// Ignore errors — session may have already finished naturally.
-	_ = s.Interrupt()
-
 	select {
 	case resp := <-ch:
 		if resp.Allow {

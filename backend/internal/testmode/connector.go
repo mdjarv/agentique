@@ -151,6 +151,17 @@ func (s *Session) Query(prompt string) error {
 
 	if scenario != nil {
 		go s.replayScenario(scenario)
+	} else {
+		// No scenario to replay — emit an immediate ResultEvent so the
+		// session transitions back to idle instead of hanging in Running.
+		go func() {
+			s.mu.Lock()
+			closed := s.closed
+			s.mu.Unlock()
+			if !closed {
+				s.events <- &claudecli.ResultEvent{StopReason: "end_turn"}
+			}
+		}()
 	}
 	return nil
 }
