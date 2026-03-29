@@ -48,9 +48,12 @@ export function resetCounter(): void {
  */
 export async function navigateToSession(page: Page, sessionName: string): Promise<Locator> {
   await page.goto(`/project/${TEST_PROJECT.slug}`);
-  const sessionLink = page.getByText(sessionName);
-  await expect(sessionLink).toBeVisible({ timeout: 10_000 });
-  await sessionLink.click();
+  // Use button role for reliable sidebar click (avoids matching text elsewhere).
+  const sessionBtn = page.getByRole("button", { name: sessionName, exact: true });
+  await expect(sessionBtn).toBeVisible({ timeout: 10_000 });
+  await sessionBtn.click();
+  // Wait for URL to change to session path (prevents race with previously loaded session).
+  await page.waitForURL(/\/session\//, { timeout: 5_000 });
   const composer = page.getByPlaceholder("Send a message...");
   await expect(composer).toBeVisible({ timeout: 5_000 });
   return composer;
