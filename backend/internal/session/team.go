@@ -127,6 +127,21 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 	}
 
 	info, buildErr := s.buildTeamInfo(ctx, team)
+	// Defensive: verify the just-joined session appears in the member list.
+	// With SQLite connection pool + WAL, a read on a different connection may
+	// miss a just-committed write. Retry once if the joiner is absent.
+	if buildErr == nil {
+		found := false
+		for _, m := range info.Members {
+			if m.SessionID == sessionID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			info, buildErr = s.buildTeamInfo(ctx, team)
+		}
+	}
 	broadcastPayload := map[string]any{
 		"teamId": teamID,
 		"member": member,
