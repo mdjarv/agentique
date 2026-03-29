@@ -29,6 +29,7 @@ type PipelineConfig struct {
 	OnWriteToolResult func()
 	OnTurnComplete    func()
 	OnFatalError      func(err error)
+	OnSendMessage     func(toolUseID, targetName, content string)
 }
 
 // EventPipeline processes raw CLI events through a linear sequence of stages:
@@ -53,6 +54,7 @@ type EventPipeline struct {
 	onWriteToolResult func()
 	onTurnComplete    func()
 	onFatalError      func(error)
+	onSendMessage     func(string, string, string)
 }
 
 // NewEventPipeline creates an event pipeline. Does not start any goroutines.
@@ -68,6 +70,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onWriteToolResult: cfg.OnWriteToolResult,
 		onTurnComplete:    cfg.OnTurnComplete,
 		onFatalError:      cfg.OnFatalError,
+		onSendMessage:     cfg.OnSendMessage,
 	}
 }
 
@@ -236,6 +239,16 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 			p.onExitPlanMode(tue.ToolInput)
 		} else if p.onPlanTransition != nil {
 			p.onPlanTransition("default")
+		}
+	case "SendMessage":
+		if p.onSendMessage != nil {
+			to, body, err := parseSendMessageInput(tue.ToolInput)
+			if err != nil {
+				slog.Warn("pipeline: SendMessage parse failed",
+					"session_id", p.sessionID, "error", err)
+			} else if to != "@spawn" {
+				go p.onSendMessage(tue.ToolID, to, body)
+			}
 		}
 	}
 }

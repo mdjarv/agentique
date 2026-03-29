@@ -168,6 +168,20 @@ func newSession(p sessionParams) *Session {
 				go s.requestPlanReview(input)
 			}
 		},
+		OnSendMessage: func(toolUseID, targetName, content string) {
+			s.mu.Lock()
+			cb := s.onAgentMessage
+			s.mu.Unlock()
+			if cb == nil {
+				slog.Debug("pipeline: SendMessage ignored, no team callback",
+					"session_id", s.ID, "target", targetName)
+				return
+			}
+			if err := cb(s.ID, targetName, content); err != nil {
+				slog.Warn("pipeline: SendMessage routing failed",
+					"session_id", s.ID, "target", targetName, "error", err)
+			}
+		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnTurnComplete: func() {
 			if err := s.setState(StateIdle); err != nil {
@@ -987,24 +1001,10 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		return s.interceptSpawnWorkers(body)
 	}
 
-	s.mu.Lock()
-	cb := s.onAgentMessage
-	s.mu.Unlock()
-
-	if cb == nil {
-		return &claudecli.PermissionResponse{
-			Allow:       false,
-			DenyMessage: "SendMessage is not available — this session is not part of a team.",
-		}, nil
-	}
-
-	if err := cb(s.ID, to, body); err != nil {
-		return &claudecli.PermissionResponse{
-			Allow:       false,
-			DenyMessage: fmt.Sprintf("Message delivery failed: %v", err),
-		}, nil
-	}
-
+	// Regular messages: deny here (to prevent CLI from processing internally)
+	// but don't route — the EventPipeline's OnSendMessage callback handles
+	// actual routing. This avoids double-delivery when both can_use_tool and
+	// the pipeline fire for the same SendMessage.
 	return &claudecli.PermissionResponse{
 		Allow:       false,
 		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", to),
