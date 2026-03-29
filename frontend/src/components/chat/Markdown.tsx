@@ -15,11 +15,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
-import {
-  PromptCard,
-  normalizePromptFences,
-  parsePromptFromCode,
-} from "~/components/chat/PromptCard";
+import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 
@@ -95,14 +91,6 @@ function PreBlock({
   const lang = /language-(\w+)/.exec(codeChild.props.className ?? "")?.[1];
   const code = nodeToPlainText(codeChild.props.children).replace(/\n$/, "");
 
-  if (lang === "prompt") {
-    const parsed = parsePromptFromCode(code);
-    if (parsed)
-      return (
-        <PromptCard title={parsed.title} prompt={parsed.prompt} projectSlug={parsed.projectSlug} />
-      );
-  }
-
   return (
     <div className="code-block-wrapper">
       <CopyButton text={code} />
@@ -128,13 +116,28 @@ export const Markdown = memo(function Markdown({
   preserveNewlines,
 }: MarkdownProps) {
   const plugins = preserveNewlines ? BREAKS_PLUGINS : STANDARD_PLUGINS;
-  const normalized = useMemo(() => normalizePromptFences(content), [content]);
+  const segments = useMemo(() => splitByPromptBlocks(content), [content]);
 
   return (
     <div className={cn("prose prose-sm max-w-none", className)}>
-      <ReactMarkdown remarkPlugins={plugins} components={COMPONENTS}>
-        {normalized}
-      </ReactMarkdown>
+      {segments.map((seg) =>
+        seg.type === "prompt" ? (
+          <PromptCard
+            key={`prompt-${seg.block.title}`}
+            title={seg.block.title}
+            prompt={seg.block.prompt}
+            projectSlug={seg.block.projectSlug}
+          />
+        ) : (
+          <ReactMarkdown
+            key={`md-${seg.content.length}-${seg.content.slice(0, 32)}`}
+            remarkPlugins={plugins}
+            components={COMPONENTS}
+          >
+            {seg.content}
+          </ReactMarkdown>
+        ),
+      )}
     </div>
   );
 });

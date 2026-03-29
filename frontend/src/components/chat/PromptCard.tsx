@@ -59,9 +59,9 @@ export interface RawPromptBlock {
   maxInnerFence: number;
 }
 
-const RE_PROMPT_OPEN = /^(`{3,})prompt\s*$/;
-const RE_BARE_FENCE = /^(`{3,})\s*$/;
-const RE_INFO_FENCE = /^(`{3,})\S/;
+const RE_PROMPT_OPEN = /^ {0,3}(`{3,})prompt\s*$/;
+const RE_BARE_FENCE = /^ {0,3}(`{3,})\s*$/;
+const RE_INFO_FENCE = /^ {0,3}(`{3,})\S/;
 
 /** Lookahead: determine whether a bare fence should open an inner code block
  *  rather than close the prompt block.
@@ -155,37 +155,51 @@ export function findRawPromptBlocks(markdown: string): RawPromptBlock[] {
   return blocks;
 }
 
-/** Rewrite outer prompt fences so inner bare fences don't confuse CommonMark. */
-export function normalizePromptFences(markdown: string): string {
-  const blocks = findRawPromptBlocks(markdown);
-  if (blocks.length === 0) return markdown;
-
-  let needsNorm = false;
-  for (const b of blocks) {
-    if (b.maxInnerFence >= b.fenceLen) {
-      needsNorm = true;
-      break;
-    }
-  }
-  if (!needsNorm) return markdown;
-
-  const lines = markdown.split("\n");
-  const result = [...lines];
-  for (const b of blocks) {
-    if (b.maxInnerFence >= b.fenceLen) {
-      const fence = "`".repeat(b.maxInnerFence + 1);
-      result[b.startLine] = `${fence}prompt`;
-      result[b.endLine] = fence;
-    }
-  }
-  return result.join("\n");
-}
-
 /** Extract all prompt blocks from raw markdown content. */
 export function parsePromptBlocks(markdown: string): PromptBlock[] {
   return findRawPromptBlocks(markdown)
     .map((raw) => parsePromptFromCode(raw.content))
     .filter((b): b is PromptBlock => b !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Content segmentation — splits markdown into text + prompt segments so
+// prompt blocks never pass through the markdown parser.
+// ---------------------------------------------------------------------------
+
+export type ContentSegment =
+  | { type: "markdown"; content: string }
+  | { type: "prompt"; block: PromptBlock };
+
+/** Split markdown into interleaved text/prompt segments.
+ *  Prompt blocks are extracted by our state machine parser and never
+ *  reach the markdown renderer, eliminating all fence-nesting issues. */
+export function splitByPromptBlocks(markdown: string): ContentSegment[] {
+  const rawBlocks = findRawPromptBlocks(markdown);
+  if (rawBlocks.length === 0) return [{ type: "markdown", content: markdown }];
+
+  const lines = markdown.split("\n");
+  const segments: ContentSegment[] = [];
+  let cursor = 0;
+
+  for (const raw of rawBlocks) {
+    if (raw.startLine > cursor) {
+      const text = lines.slice(cursor, raw.startLine).join("\n");
+      if (text.trim()) segments.push({ type: "markdown", content: text });
+    }
+
+    const parsed = parsePromptFromCode(raw.content);
+    if (parsed) segments.push({ type: "prompt", block: parsed });
+
+    cursor = raw.endLine + 1;
+  }
+
+  if (cursor < lines.length) {
+    const text = lines.slice(cursor).join("\n");
+    if (text.trim()) segments.push({ type: "markdown", content: text });
+  }
+
+  return segments;
 }
 
 // ---------------------------------------------------------------------------
