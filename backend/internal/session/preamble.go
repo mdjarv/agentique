@@ -51,7 +51,7 @@ You can create a team of specialist workers, each running in its own git worktre
 To spawn workers, use SendMessage with target ` + "`@spawn`" + `:
 
 ` + "```" + `
-SendMessage({to: "@spawn", content: JSON.stringify({
+SendMessage({to: "@spawn", message: JSON.stringify({
   teamName: "descriptive team name",
   workers: [
     {name: "Backend API", role: "backend expert", prompt: "Implement the REST endpoints for user profiles. The schema is in db/schema.sql. Follow conventions in CLAUDE.md. When done, commit your changes and message the lead with a summary of endpoints created and any interface decisions."},
