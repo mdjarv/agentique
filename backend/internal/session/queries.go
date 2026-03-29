@@ -25,7 +25,7 @@ type serviceQueries interface {
 	DeleteSession(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg store.UpdateSessionModelParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
-	UpdateSessionAutoApprove(ctx context.Context, arg store.UpdateSessionAutoApproveParams) error
+	UpdateSessionAutoApproveMode(ctx context.Context, arg store.UpdateSessionAutoApproveModeParams) error
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error

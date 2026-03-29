@@ -153,7 +153,7 @@ export interface SessionInfo {
   connected: boolean;
   model: string;
   permissionMode: string;
-  autoApprove: boolean;
+  autoApproveMode: string;
   effort?: string;
   maxBudget?: number;
   maxTurns?: number;
@@ -190,7 +190,7 @@ export interface CreateSessionResult {
   connected: boolean;
   model: string;
   permissionMode: string;
-  autoApprove: boolean;
+  autoApproveMode: string;
   effort?: string;
   maxBudget?: number;
   maxTurns?: number;
@@ -342,7 +342,7 @@ export interface SessionCreatePayload {
   branch: string;
   model: string;
   planMode: boolean;
-  autoApprove: boolean;
+  autoApproveMode: string;
   effort: string;
   maxBudget: number;
   maxTurns: number;
@@ -423,7 +423,7 @@ export interface SessionResolveApprovalPayload {
 
 export interface SessionSetAutoApprovePayload {
   sessionId: string;
-  enabled: boolean;
+  mode: string;
 }
 
 export interface SessionResolveQuestionPayload {

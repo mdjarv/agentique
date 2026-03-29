@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Paperclip,
   SendHorizonal,
+  ShieldAlert,
   ShieldCheck,
   Square,
   X,
@@ -26,6 +27,7 @@ import {
 import { useAutocomplete } from "~/hooks/useAutocomplete";
 import { MODELS, MODEL_LABELS, type ModelId } from "~/lib/session-actions";
 import { cn, readFileAsDataUrl, uuid } from "~/lib/utils";
+import type { AutoApproveMode } from "~/stores/chat-store";
 import type { Attachment } from "~/stores/chat-store";
 import { AutocompletePopup } from "./AutocompletePopup";
 
@@ -76,8 +78,8 @@ interface MessageComposerProps {
   onWorktreeChange?: (value: boolean) => void;
   planMode?: boolean;
   onPlanModeChange?: (value: boolean) => void;
-  autoApprove?: boolean;
-  onAutoApproveChange?: (value: boolean) => void;
+  autoApproveMode?: AutoApproveMode;
+  onAutoApproveModeChange?: (value: AutoApproveMode) => void;
   model?: ModelId;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
@@ -100,8 +102,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onWorktreeChange,
       planMode,
       onPlanModeChange,
-      autoApprove,
-      onAutoApproveChange,
+      autoApproveMode,
+      onAutoApproveModeChange,
       model,
       onModelChange,
       effort,
@@ -284,7 +286,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const hasToggles = worktree !== undefined || onPlanModeChange || onAutoApproveChange;
+    const hasToggles = worktree !== undefined || onPlanModeChange || onAutoApproveModeChange;
 
     return (
       <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
@@ -433,19 +435,36 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     {planMode ? "Plan" : "Chat"}
                   </button>
                 )}
-                {onAutoApproveChange && (
+                {onAutoApproveModeChange && (
                   <button
                     type="button"
-                    onClick={() => onAutoApproveChange(!autoApprove)}
+                    onClick={() => {
+                      const next: Record<AutoApproveMode, AutoApproveMode> = {
+                        manual: "auto",
+                        auto: "fullAuto",
+                        fullAuto: "manual",
+                      };
+                      onAutoApproveModeChange(next[autoApproveMode ?? "manual"]);
+                    }}
                     className={cn(
                       "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
-                      autoApprove
-                        ? "bg-success/10 text-success"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                      autoApproveMode === "fullAuto"
+                        ? "bg-warning/10 text-warning"
+                        : autoApproveMode === "auto"
+                          ? "bg-success/10 text-success"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                     )}
                   >
-                    <ShieldCheck className="h-3 w-3" />
-                    {autoApprove ? "Auto" : "Manual"}
+                    {autoApproveMode === "fullAuto" ? (
+                      <ShieldAlert className="h-3 w-3" />
+                    ) : (
+                      <ShieldCheck className="h-3 w-3" />
+                    )}
+                    {autoApproveMode === "fullAuto"
+                      ? "Full Auto"
+                      : autoApproveMode === "auto"
+                        ? "Auto"
+                        : "Manual"}
                   </button>
                 )}
 

@@ -83,7 +83,7 @@ type Session struct {
 	broadcast        func(pushType string, payload any)
 	pendingApprovals map[string]*pendingApproval
 	pendingQuestions map[string]*pendingQuestion
-	autoApprove    bool
+	autoApproveMode string // "manual", "auto", "fullAuto"
 	permissionMode string
 	worktreeMerged bool
 	completedAt    string // ISO8601 timestamp or "" if not completed
@@ -532,7 +532,14 @@ func (s *Session) processEvent(event claudecli.Event) {
 		case "EnterPlanMode":
 			s.transitionPlanMode("plan")
 		case "ExitPlanMode":
-			go s.requestPlanReview(tue.ToolInput)
+			s.mu.Lock()
+			aam := s.autoApproveMode
+			s.mu.Unlock()
+			if aam == "fullAuto" {
+				s.transitionPlanMode("default")
+			} else {
+				go s.requestPlanReview(tue.ToolInput)
+			}
 		}
 	}
 
@@ -656,11 +663,11 @@ func (s *Session) PermissionMode() string {
 	return s.permissionMode
 }
 
-// AutoApprove returns whether automatic tool approval is enabled.
-func (s *Session) AutoApprove() bool {
+// AutoApproveMode returns the auto-approve mode ("manual", "auto", "fullAuto").
+func (s *Session) AutoApproveMode() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.autoApprove
+	return s.autoApproveMode
 }
 
 // SetPermissionMode changes the CLI permission mode (plan, acceptEdits, default).
@@ -694,10 +701,15 @@ func (s *Session) SetPermissionMode(mode string) error {
 	return nil
 }
 
-// SetAutoApprove enables or disables automatic tool approval.
-func (s *Session) SetAutoApprove(enabled bool) {
+// SetAutoApproveMode sets the auto-approve mode. Valid values: "manual", "auto", "fullAuto".
+func (s *Session) SetAutoApproveMode(mode string) {
+	switch mode {
+	case "auto", "fullAuto":
+	default:
+		mode = "manual"
+	}
 	s.mu.Lock()
-	s.autoApprove = enabled
+	s.autoApproveMode = mode
 	s.mu.Unlock()
 }
 
@@ -860,11 +872,12 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 	}
 
 	s.mu.Lock()
-	bypass := (s.autoApprove && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
+	mode := s.autoApproveMode
+	bypass := (mode != "manual" && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
 	s.mu.Unlock()
-	// ExitPlanMode always requires user review, even with auto-approve.
+	// ExitPlanMode only auto-approved in fullAuto mode.
 	if toolName == "ExitPlanMode" {
-		bypass = false
+		bypass = mode == "fullAuto"
 	}
 	if bypass {
 		// Defensive fallback — processEvent also detects EnterPlanMode from the

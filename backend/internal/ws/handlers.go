@@ -27,7 +27,7 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 			Branch:          p.Branch,
 			Model:           p.Model,
 			PlanMode:        p.PlanMode,
-			AutoApprove:     p.AutoApprove,
+			AutoApproveMode: p.AutoApproveMode,
 			RequestID:       msg.ID,
 			Effort:          p.Effort,
 			MaxBudget:       p.MaxBudget,
@@ -130,7 +130,7 @@ func (c *conn) handleSessionSetPermission(msg ClientMessage) {
 
 func (c *conn) handleSessionSetAutoApprove(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionSetAutoApprovePayload) (struct{}, error) {
-		return struct{}{}, c.svc.SetAutoApprove(p.SessionID, p.Enabled)
+		return struct{}{}, c.svc.SetAutoApproveMode(p.SessionID, p.Mode)
 	})
 }
 

@@ -68,7 +68,7 @@ type Querier interface {
 	UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFavoriteParams) (Project, error)
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
-	UpdateSessionAutoApprove(ctx context.Context, arg UpdateSessionAutoApproveParams) error
+	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error

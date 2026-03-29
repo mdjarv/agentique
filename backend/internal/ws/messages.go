@@ -47,7 +47,7 @@ type SessionCreatePayload struct {
 	Branch          string                  `json:"branch"`
 	Model           string                  `json:"model"`
 	PlanMode        bool                    `json:"planMode"`
-	AutoApprove     bool                    `json:"autoApprove"`
+	AutoApproveMode string                  `json:"autoApproveMode"`
 	Effort          string                  `json:"effort"`
 	MaxBudget       float64                 `json:"maxBudget"`
 	MaxTurns        int                     `json:"maxTurns"`
@@ -132,7 +132,7 @@ type SessionResolveApprovalPayload struct {
 
 type SessionSetAutoApprovePayload struct {
 	SessionID string `json:"sessionId"`
-	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode"`
 }
 
 type SessionResolveQuestionPayload struct {
@@ -374,8 +374,8 @@ func (p *SessionSetPermissionPayload) Validate() error {
 }
 
 func (p *SessionSetAutoApprovePayload) Validate() error {
-	if p.SessionID == "" {
-		return errSessionIDRequired
+	if p.SessionID == "" || p.Mode == "" {
+		return errSessionIDAndModeRequired
 	}
 	return nil
 }

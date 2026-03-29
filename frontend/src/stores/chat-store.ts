@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { SessionInfo } from "~/lib/generated-types";
+
+export type AutoApproveMode = "manual" | "auto" | "fullAuto";
 import { uuid } from "~/lib/utils";
 
 // Debounce timer for rate-limit "allowed" → clear transition.
@@ -128,7 +130,7 @@ export interface SessionData {
   pendingApproval: PendingApproval | null;
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
-  autoApprove: boolean;
+  autoApproveMode: AutoApproveMode;
   todos: TodoItem[] | null;
   contextUsage: ContextUsage | null;
   compacting: boolean;
@@ -142,7 +144,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   pendingApproval: null,
   pendingQuestion: null,
   planMode: meta.permissionMode === "plan",
-  autoApprove: meta.autoApprove ?? false,
+  autoApproveMode: (meta.autoApproveMode as AutoApproveMode) ?? "manual",
   todos: null,
   contextUsage: null,
   compacting: false,
@@ -280,7 +282,7 @@ export interface ChatState {
   setPendingQuestion: (sessionId: string, question: PendingQuestion) => void;
   clearPendingQuestion: (sessionId: string) => void;
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
-  setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
+  setSessionAutoApproveMode: (sessionId: string, mode: AutoApproveMode) => void;
   setSessionPrUrl: (sessionId: string, prUrl: string) => void;
   setSessionTeamId: (sessionId: string, teamId: string | undefined) => void;
   setUnreadTeamMessage: (sessionId: string, value: boolean) => void;
@@ -322,7 +324,7 @@ export const useChatStore = create<ChatState>((set) => ({
             ...existing,
             meta: tagged,
             planMode: tagged.permissionMode === "plan",
-            autoApprove: tagged.autoApprove ?? false,
+            autoApproveMode: (tagged.autoApproveMode as AutoApproveMode) ?? "manual",
             pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
             pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
           };
@@ -437,8 +439,8 @@ export const useChatStore = create<ChatState>((set) => ({
   setSessionPlanMode: (sessionId, planMode) =>
     set((s) => updateSession(s, sessionId, { planMode })),
 
-  setSessionAutoApprove: (sessionId, autoApprove) =>
-    set((s) => updateSession(s, sessionId, { autoApprove })),
+  setSessionAutoApproveMode: (sessionId, autoApproveMode) =>
+    set((s) => updateSession(s, sessionId, { autoApproveMode })),
 
   setSessionPrUrl: (sessionId, prUrl) => set((s) => updateMeta(s, sessionId, { prUrl })),
 

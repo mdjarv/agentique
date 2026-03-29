@@ -168,7 +168,7 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
         connected: true,
         model: (p.model as string) ?? "sonnet",
         permissionMode: p.planMode ? "plan" : "default",
-        autoApprove: (p.autoApprove as boolean) ?? false,
+        autoApproveMode: (p.autoApproveMode as string) ?? "manual",
         effort: p.effort as string,
         maxBudget: p.maxBudget as number,
         maxTurns: p.maxTurns as number,

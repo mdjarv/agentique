@@ -11,7 +11,12 @@ import type {
   SessionDeleteBulkResultItem,
 } from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
-import type { Attachment, SessionMetadata, SessionState } from "~/stores/chat-store";
+import type {
+  Attachment,
+  AutoApproveMode,
+  SessionMetadata,
+  SessionState,
+} from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -33,7 +38,7 @@ export interface CreateSessionOpts {
   branch?: string;
   model?: string;
   planMode?: boolean;
-  autoApprove?: boolean;
+  autoApproveMode?: string;
   effort?: string;
   maxBudget?: number;
   maxTurns?: number;
@@ -56,7 +61,7 @@ export async function createSession(
       branch: opts?.branch,
       model: opts?.model,
       planMode: opts?.planMode,
-      autoApprove: opts?.autoApprove,
+      autoApproveMode: opts?.autoApproveMode,
       effort: opts?.effort,
       maxBudget: opts?.maxBudget,
       maxTurns: opts?.maxTurns,
@@ -72,7 +77,7 @@ export async function createSession(
     connected: result.connected,
     model: result.model as ModelId,
     permissionMode: result.permissionMode,
-    autoApprove: result.autoApprove,
+    autoApproveMode: result.autoApproveMode,
     effort: result.effort,
     maxBudget: result.maxBudget,
     maxTurns: result.maxTurns,
@@ -171,13 +176,13 @@ export async function resolveApproval(
   useChatStore.getState().clearPendingApproval(sessionId);
 }
 
-export async function setAutoApprove(
+export async function setAutoApproveMode(
   ws: WsClient,
   sessionId: string,
-  enabled: boolean,
+  mode: AutoApproveMode,
 ): Promise<void> {
-  await ws.request("session.set-auto-approve", { sessionId, enabled });
-  useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
+  await ws.request("session.set-auto-approve", { sessionId, mode });
+  useChatStore.getState().setSessionAutoApproveMode(sessionId, mode);
 }
 
 export async function resolveQuestion(
