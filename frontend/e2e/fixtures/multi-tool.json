@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "sessionId": "recorded-multi-tool-001",
+    "sessionName": "Fix lint errors",
+    "projectName": "Fixture Project",
+    "projectPath": "/tmp/fixture-project",
+    "model": "sonnet",
+    "capturedAt": "2026-03-29T10:05:00Z"
+  },
+  "turns": [
+    {
+      "prompt": "Fix the lint errors in utils.ts",
+      "scenario": {
+        "events": [
+          { "delay": 0, "event": { "type": "thinking", "content": "I need to read the file first to see the lint errors." } },
+          { "delay": 20, "event": { "type": "text", "content": "Let me check the file for lint issues." } },
+          { "delay": 40, "event": { "type": "tool_use", "toolId": "tool-read-001", "toolName": "Read", "toolInput": { "file_path": "/tmp/fixture-project/src/utils.ts" } } },
+          { "delay": 80, "event": { "type": "tool_result", "toolId": "tool-read-001", "content": [{ "type": "text", "text": "export const helper = (x: any) => {\n  let unused = 5;\n  return x + 1;\n};" }] } },
+          { "delay": 30, "event": { "type": "text", "content": "I see two issues: `any` type and an unused variable. Let me fix both." } },
+          { "delay": 40, "event": { "type": "tool_use", "toolId": "tool-edit-001", "toolName": "Edit", "toolInput": { "file_path": "/tmp/fixture-project/src/utils.ts", "old_string": "export const helper = (x: any) => {\n  let unused = 5;\n  return x + 1;\n};", "new_string": "export const helper = (x: number): number => {\n  return x + 1;\n};" } } },
+          { "delay": 60, "event": { "type": "tool_result", "toolId": "tool-edit-001", "content": [{ "type": "text", "text": "Successfully edited file" }] } },
+          { "delay": 20, "event": { "type": "text", "content": "Fixed both issues: replaced `any` with `number`, added return type, and removed the unused variable." } },
+          { "delay": 10, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.022, "duration": 3200, "usage": { "inputTokens": 1400, "outputTokens": 280 } } }
+        ]
+      }
+    }
+  ]
+}

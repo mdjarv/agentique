@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "sessionId": "recorded-multi-turn-001",
+    "sessionName": "Add validation",
+    "projectName": "Fixture Project",
+    "projectPath": "/tmp/fixture-project",
+    "model": "opus",
+    "capturedAt": "2026-03-29T10:10:00Z"
+  },
+  "turns": [
+    {
+      "prompt": "What does the main.ts file do?",
+      "scenario": {
+        "events": [
+          { "delay": 0, "event": { "type": "thinking", "content": "Let me read the main file." } },
+          { "delay": 30, "event": { "type": "tool_use", "toolId": "tool-read-001", "toolName": "Read", "toolInput": { "file_path": "/tmp/fixture-project/src/main.ts" } } },
+          { "delay": 60, "event": { "type": "tool_result", "toolId": "tool-read-001", "content": [{ "type": "text", "text": "import { helper } from './utils';\n\nconst result = helper(42);\nconsole.log(result);" }] } },
+          { "delay": 20, "event": { "type": "text", "content": "The `main.ts` file imports a `helper` function from `utils` and calls it with `42`, logging the result." } },
+          { "delay": 10, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.01, "duration": 1500, "usage": { "inputTokens": 600, "outputTokens": 80 } } }
+        ]
+      }
+    },
+    {
+      "prompt": "Add input validation to the helper function",
+      "scenario": {
+        "events": [
+          { "delay": 0, "event": { "type": "thinking", "content": "I need to add validation to ensure the input is a positive number." } },
+          { "delay": 20, "event": { "type": "text", "content": "I'll add a guard clause to validate the input." } },
+          { "delay": 40, "event": { "type": "tool_use", "toolId": "tool-edit-002", "toolName": "Edit", "toolInput": { "file_path": "/tmp/fixture-project/src/utils.ts", "old_string": "export const helper = (x: number): number => {\n  return x + 1;\n};", "new_string": "export const helper = (x: number): number => {\n  if (!Number.isFinite(x)) {\n    throw new Error('Input must be a finite number');\n  }\n  return x + 1;\n};" } } },
+          { "delay": 60, "event": { "type": "tool_result", "toolId": "tool-edit-002", "content": [{ "type": "text", "text": "Successfully edited file" }] } },
+          { "delay": 20, "event": { "type": "text", "content": "Added a guard clause that throws if the input is not a finite number (catches `NaN`, `Infinity`, etc.)." } },
+          { "delay": 10, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.018, "duration": 2200, "usage": { "inputTokens": 1100, "outputTokens": 200 } } }
+        ]
+      }
+    }
+  ]
+}

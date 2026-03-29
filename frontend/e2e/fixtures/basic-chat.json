@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "sessionId": "recorded-basic-001",
+    "sessionName": "Explore project structure",
+    "projectName": "Fixture Project",
+    "projectPath": "/tmp/fixture-project",
+    "model": "opus",
+    "capturedAt": "2026-03-29T10:00:00Z"
+  },
+  "turns": [
+    {
+      "prompt": "Show me the project structure",
+      "scenario": {
+        "events": [
+          { "delay": 0, "event": { "type": "thinking", "content": "I'll look at the project directory to understand the structure." } },
+          { "delay": 30, "event": { "type": "text", "content": "Let me examine the project layout." } },
+          { "delay": 50, "event": { "type": "tool_use", "toolId": "tool-glob-001", "toolName": "Glob", "toolInput": { "pattern": "**/*", "path": "/tmp/fixture-project" } } },
+          { "delay": 80, "event": { "type": "tool_result", "toolId": "tool-glob-001", "content": [{ "type": "text", "text": "src/main.ts\nsrc/utils.ts\npackage.json\ntsconfig.json\nREADME.md" }] } },
+          { "delay": 30, "event": { "type": "text", "content": "The project has a clean TypeScript setup with source files in `src/` and standard config files." } },
+          { "delay": 10, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.015, "duration": 2100, "usage": { "inputTokens": 800, "outputTokens": 150 } } }
+        ]
+      }
+    }
+  ]
+}
