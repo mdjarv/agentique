@@ -56,7 +56,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
     if (sending) return;
     setSending(true);
     setPendingPrompt(prompt);
-    setPendingAttachments(attachments ?? []);
+    setPendingAttachments((attachments ?? []).map(({ previewUrl: _, ...rest }) => rest));
     try {
       // Resolve behavior presets: project defaults > hardcoded defaults.
       // Backend falls back to project defaults if presets are zero-value,
