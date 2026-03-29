@@ -1,5 +1,5 @@
 import { Send, Users } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { type UIEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getAgentColor } from "~/components/chat/AgentMessage";
 import { Markdown } from "~/components/chat/Markdown";
@@ -33,10 +33,17 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
       .catch(() => {});
   }, [ws, teamId]);
 
-  // Auto-scroll on new events
+  // Auto-scroll only when already at bottom
+  const wasAtBottomRef = useRef(true);
   const timelineLen = timeline.length;
+
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    wasAtBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+  }, []);
+
   useEffect(() => {
-    if (timelineLen > 0) {
+    if (timelineLen > 0 && wasAtBottomRef.current) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [timelineLen]);
@@ -101,7 +108,11 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
       </div>
 
       {/* Timeline */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
+      >
         {timeline.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>
         )}

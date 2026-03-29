@@ -61,11 +61,20 @@ func (s *Service) CreateTeam(ctx context.Context, projectID, name string) (TeamI
 	return info, nil
 }
 
-// DeleteTeam removes a team and unlinks all members.
+// DeleteTeam removes a team, clears callbacks on live sessions, and unlinks all members.
 func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
 	team, err := s.queries.GetTeam(ctx, teamID)
 	if err != nil {
 		return fmt.Errorf("team not found: %w", err)
+	}
+
+	// Clear agent message callbacks and team association on all members.
+	members, _ := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	for _, m := range members {
+		if live := s.mgr.Get(m.ID); live != nil {
+			live.SetAgentMessageCallback(nil)
+		}
+		_ = s.queries.ClearSessionTeam(ctx, m.ID)
 	}
 
 	if err := s.queries.DeleteTeam(ctx, teamID); err != nil {
@@ -83,17 +92,28 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 		return fmt.Errorf("team not found: %w", err)
 	}
 
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	// Reject duplicate names within the team.
+	existingMembers, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("list team members: %w", err)
+	}
+	for _, m := range existingMembers {
+		if m.Name == dbSess.Name && m.ID != sessionID {
+			return fmt.Errorf("team member named %q already exists; rename this session first", dbSess.Name)
+		}
+	}
+
 	if err := s.queries.SetSessionTeam(ctx, store.SetSessionTeamParams{
 		TeamID:   sql.NullString{String: teamID, Valid: true},
 		TeamRole: role,
 		ID:       sessionID,
 	}); err != nil {
 		return fmt.Errorf("set session team: %w", err)
-	}
-
-	dbSess, err := s.queries.GetSession(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
 	}
 
 	member := TeamMember{

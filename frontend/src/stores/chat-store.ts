@@ -124,6 +124,7 @@ export interface SessionData {
   meta: SessionMetadata;
   turns: Turn[];
   hasUnseenCompletion: boolean;
+  hasUnreadTeamMessage: boolean;
   pendingApproval: PendingApproval | null;
   pendingQuestion: PendingQuestion | null;
   planMode: boolean;
@@ -137,6 +138,7 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   meta,
   turns: [],
   hasUnseenCompletion: false,
+  hasUnreadTeamMessage: false,
   pendingApproval: null,
   pendingQuestion: null,
   planMode: meta.permissionMode === "plan",
@@ -280,6 +282,8 @@ export interface ChatState {
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
   setSessionAutoApprove: (sessionId: string, autoApprove: boolean) => void;
   setSessionPrUrl: (sessionId: string, prUrl: string) => void;
+  setSessionTeamId: (sessionId: string, teamId: string | undefined) => void;
+  setUnreadTeamMessage: (sessionId: string, value: boolean) => void;
   updateStreamingContextUsage: (
     sessionId: string,
     patch: { inputTokens?: number; outputTokens?: number },
@@ -364,7 +368,10 @@ export const useChatStore = create<ChatState>((set) => ({
         if (next) {
           return {
             activeSessionId: id,
-            sessions: { ...sessions, [id]: { ...next, hasUnseenCompletion: false } },
+            sessions: {
+              ...sessions,
+              [id]: { ...next, hasUnseenCompletion: false, hasUnreadTeamMessage: false },
+            },
           };
         }
       }
@@ -434,6 +441,11 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => updateSession(s, sessionId, { autoApprove })),
 
   setSessionPrUrl: (sessionId, prUrl) => set((s) => updateMeta(s, sessionId, { prUrl })),
+
+  setSessionTeamId: (sessionId, teamId) => set((s) => updateMeta(s, sessionId, { teamId })),
+
+  setUnreadTeamMessage: (sessionId, value) =>
+    set((s) => updateSession(s, sessionId, { hasUnreadTeamMessage: value })),
 
   updateStreamingContextUsage: (sessionId, patch) =>
     set((s) => {
