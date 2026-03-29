@@ -593,6 +593,20 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		return ErrNotFound
 	}
 
+	// Clean up team membership before deleting.
+	if teamID := nullStr(dbSess.TeamID); teamID != "" {
+		if live := s.mgr.Get(sessionID); live != nil {
+			live.SetAgentMessageCallback(nil)
+		}
+		team, teamErr := s.queries.GetTeam(ctx, teamID)
+		if teamErr == nil {
+			s.hub.Broadcast(team.ProjectID, "team.member-left", map[string]any{
+				"teamId":    teamID,
+				"sessionId": sessionID,
+			})
+		}
+	}
+
 	// Merged sessions already had their worktree/branch cleaned up during merge.
 	if dbSess.WorktreeMerged == 0 {
 		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
