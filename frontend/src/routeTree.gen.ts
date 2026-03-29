@@ -8,120 +8,120 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as ProjectProjectSlugRouteImport } from './routes/project.$projectSlug'
-import { Route as DevContextBarRouteImport } from './routes/dev.context-bar'
-import { Route as ProjectProjectSlugIndexRouteImport } from './routes/project.$projectSlug.index'
-import { Route as ProjectProjectSlugSettingsRouteImport } from './routes/project.$projectSlug_.settings'
-import { Route as ProjectProjectSlugFilesRouteImport } from './routes/project.$projectSlug.files'
-import { Route as ProjectProjectSlugSessionNewRouteImport } from './routes/project.$projectSlug.session.new'
-import { Route as ProjectProjectSlugSessionSessionShortIdRouteImport } from './routes/project.$projectSlug.session.$sessionShortId'
+import { Route as rootRouteImport } from "./routes/__root"
+import { Route as IndexRouteImport } from "./routes/index"
+import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug"
+import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar"
+import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index"
+import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings"
+import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files"
+import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/project.$projectSlug.session.new"
+import { Route as ProjectProjectSlugSessionSessionShortIdRouteImport } from "./routes/project.$projectSlug.session.$sessionShortId"
 
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
-  id: '/project/$projectSlug',
-  path: '/project/$projectSlug',
+  id: "/project/$projectSlug",
+  path: "/project/$projectSlug",
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevContextBarRoute = DevContextBarRouteImport.update({
-  id: '/dev/context-bar',
-  path: '/dev/context-bar',
+  id: "/dev/context-bar",
+  path: "/dev/context-bar",
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ProjectProjectSlugRoute,
 } as any)
 const ProjectProjectSlugSettingsRoute =
   ProjectProjectSlugSettingsRouteImport.update({
-    id: '/project/$projectSlug_/settings',
-    path: '/project/$projectSlug/settings',
+    id: "/project/$projectSlug_/settings",
+    path: "/project/$projectSlug/settings",
     getParentRoute: () => rootRouteImport,
   } as any)
 const ProjectProjectSlugFilesRoute = ProjectProjectSlugFilesRouteImport.update({
-  id: '/files',
-  path: '/files',
+  id: "/files",
+  path: "/files",
   getParentRoute: () => ProjectProjectSlugRoute,
 } as any)
 const ProjectProjectSlugSessionNewRoute =
   ProjectProjectSlugSessionNewRouteImport.update({
-    id: '/session/new',
-    path: '/session/new',
+    id: "/session/new",
+    path: "/session/new",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any)
 const ProjectProjectSlugSessionSessionShortIdRoute =
   ProjectProjectSlugSessionSessionShortIdRouteImport.update({
-    id: '/session/$sessionShortId',
-    path: '/session/$sessionShortId',
+    id: "/session/$sessionShortId",
+    path: "/session/$sessionShortId",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/dev/context-bar': typeof DevContextBarRoute
-  '/project/$projectSlug': typeof ProjectProjectSlugRouteWithChildren
-  '/project/$projectSlug/files': typeof ProjectProjectSlugFilesRoute
-  '/project/$projectSlug/settings': typeof ProjectProjectSlugSettingsRoute
-  '/project/$projectSlug/': typeof ProjectProjectSlugIndexRoute
-  '/project/$projectSlug/session/$sessionShortId': typeof ProjectProjectSlugSessionSessionShortIdRoute
-  '/project/$projectSlug/session/new': typeof ProjectProjectSlugSessionNewRoute
+  "/": typeof IndexRoute
+  "/dev/context-bar": typeof DevContextBarRoute
+  "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
+  "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
+  "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
+  "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
+  "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/dev/context-bar': typeof DevContextBarRoute
-  '/project/$projectSlug/files': typeof ProjectProjectSlugFilesRoute
-  '/project/$projectSlug/settings': typeof ProjectProjectSlugSettingsRoute
-  '/project/$projectSlug': typeof ProjectProjectSlugIndexRoute
-  '/project/$projectSlug/session/$sessionShortId': typeof ProjectProjectSlugSessionSessionShortIdRoute
-  '/project/$projectSlug/session/new': typeof ProjectProjectSlugSessionNewRoute
+  "/": typeof IndexRoute
+  "/dev/context-bar": typeof DevContextBarRoute
+  "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
+  "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
+  "/project/$projectSlug": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
+  "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/dev/context-bar': typeof DevContextBarRoute
-  '/project/$projectSlug': typeof ProjectProjectSlugRouteWithChildren
-  '/project/$projectSlug/files': typeof ProjectProjectSlugFilesRoute
-  '/project/$projectSlug_/settings': typeof ProjectProjectSlugSettingsRoute
-  '/project/$projectSlug/': typeof ProjectProjectSlugIndexRoute
-  '/project/$projectSlug/session/$sessionShortId': typeof ProjectProjectSlugSessionSessionShortIdRoute
-  '/project/$projectSlug/session/new': typeof ProjectProjectSlugSessionNewRoute
+  "/": typeof IndexRoute
+  "/dev/context-bar": typeof DevContextBarRoute
+  "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
+  "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
+  "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute
+  "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
+  "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/dev/context-bar'
-    | '/project/$projectSlug'
-    | '/project/$projectSlug/files'
-    | '/project/$projectSlug/settings'
-    | '/project/$projectSlug/'
-    | '/project/$projectSlug/session/$sessionShortId'
-    | '/project/$projectSlug/session/new'
+    | "/"
+    | "/dev/context-bar"
+    | "/project/$projectSlug"
+    | "/project/$projectSlug/files"
+    | "/project/$projectSlug/settings"
+    | "/project/$projectSlug/"
+    | "/project/$projectSlug/session/$sessionShortId"
+    | "/project/$projectSlug/session/new"
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/dev/context-bar'
-    | '/project/$projectSlug/files'
-    | '/project/$projectSlug/settings'
-    | '/project/$projectSlug'
-    | '/project/$projectSlug/session/$sessionShortId'
-    | '/project/$projectSlug/session/new'
+    | "/"
+    | "/dev/context-bar"
+    | "/project/$projectSlug/files"
+    | "/project/$projectSlug/settings"
+    | "/project/$projectSlug"
+    | "/project/$projectSlug/session/$sessionShortId"
+    | "/project/$projectSlug/session/new"
   id:
-    | '__root__'
-    | '/'
-    | '/dev/context-bar'
-    | '/project/$projectSlug'
-    | '/project/$projectSlug/files'
-    | '/project/$projectSlug_/settings'
-    | '/project/$projectSlug/'
-    | '/project/$projectSlug/session/$sessionShortId'
-    | '/project/$projectSlug/session/new'
+    | "__root__"
+    | "/"
+    | "/dev/context-bar"
+    | "/project/$projectSlug"
+    | "/project/$projectSlug/files"
+    | "/project/$projectSlug_/settings"
+    | "/project/$projectSlug/"
+    | "/project/$projectSlug/session/$sessionShortId"
+    | "/project/$projectSlug/session/new"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,61 +131,61 @@ export interface RootRouteChildren {
   ProjectProjectSlugSettingsRoute: typeof ProjectProjectSlugSettingsRoute
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
+    "/": {
+      id: "/"
+      path: "/"
+      fullPath: "/"
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectSlug': {
-      id: '/project/$projectSlug'
-      path: '/project/$projectSlug'
-      fullPath: '/project/$projectSlug'
+    "/project/$projectSlug": {
+      id: "/project/$projectSlug"
+      path: "/project/$projectSlug"
+      fullPath: "/project/$projectSlug"
       preLoaderRoute: typeof ProjectProjectSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dev/context-bar': {
-      id: '/dev/context-bar'
-      path: '/dev/context-bar'
-      fullPath: '/dev/context-bar'
+    "/dev/context-bar": {
+      id: "/dev/context-bar"
+      path: "/dev/context-bar"
+      fullPath: "/dev/context-bar"
       preLoaderRoute: typeof DevContextBarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectSlug/': {
-      id: '/project/$projectSlug/'
-      path: '/'
-      fullPath: '/project/$projectSlug/'
+    "/project/$projectSlug/": {
+      id: "/project/$projectSlug/"
+      path: "/"
+      fullPath: "/project/$projectSlug/"
       preLoaderRoute: typeof ProjectProjectSlugIndexRouteImport
       parentRoute: typeof ProjectProjectSlugRoute
     }
-    '/project/$projectSlug_/settings': {
-      id: '/project/$projectSlug_/settings'
-      path: '/project/$projectSlug/settings'
-      fullPath: '/project/$projectSlug/settings'
+    "/project/$projectSlug_/settings": {
+      id: "/project/$projectSlug_/settings"
+      path: "/project/$projectSlug/settings"
+      fullPath: "/project/$projectSlug/settings"
       preLoaderRoute: typeof ProjectProjectSlugSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectSlug/files': {
-      id: '/project/$projectSlug/files'
-      path: '/files'
-      fullPath: '/project/$projectSlug/files'
+    "/project/$projectSlug/files": {
+      id: "/project/$projectSlug/files"
+      path: "/files"
+      fullPath: "/project/$projectSlug/files"
       preLoaderRoute: typeof ProjectProjectSlugFilesRouteImport
       parentRoute: typeof ProjectProjectSlugRoute
     }
-    '/project/$projectSlug/session/new': {
-      id: '/project/$projectSlug/session/new'
-      path: '/session/new'
-      fullPath: '/project/$projectSlug/session/new'
+    "/project/$projectSlug/session/new": {
+      id: "/project/$projectSlug/session/new"
+      path: "/session/new"
+      fullPath: "/project/$projectSlug/session/new"
       preLoaderRoute: typeof ProjectProjectSlugSessionNewRouteImport
       parentRoute: typeof ProjectProjectSlugRoute
     }
-    '/project/$projectSlug/session/$sessionShortId': {
-      id: '/project/$projectSlug/session/$sessionShortId'
-      path: '/session/$sessionShortId'
-      fullPath: '/project/$projectSlug/session/$sessionShortId'
+    "/project/$projectSlug/session/$sessionShortId": {
+      id: "/project/$projectSlug/session/$sessionShortId"
+      path: "/session/$sessionShortId"
+      fullPath: "/project/$projectSlug/session/$sessionShortId"
       preLoaderRoute: typeof ProjectProjectSlugSessionSessionShortIdRouteImport
       parentRoute: typeof ProjectProjectSlugRoute
     }
