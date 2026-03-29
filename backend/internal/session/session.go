@@ -100,7 +100,6 @@ type Session struct {
 	gitRefreshTimer  *time.Timer // debounce timer for mid-turn git refresh
 	onAgentMessage   func(senderID, targetName, content string) error
 	onSpawnWorkers   func(senderID string, req SpawnWorkersRequest) error
-	onTurnDone       func(sessionID string, failed bool, failErr error) // team notification callback
 }
 
 
@@ -174,22 +173,10 @@ func newSession(p sessionParams) *Session {
 			if err := s.setState(StateIdle); err != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", err)
 			}
-			s.mu.Lock()
-			cb := s.onTurnDone
-			s.mu.Unlock()
-			if cb != nil {
-				go cb(s.ID, false, nil)
-			}
 		},
 		OnFatalError: func(err error) {
 			if stErr := s.setState(StateFailed); stErr != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
-			}
-			s.mu.Lock()
-			cb := s.onTurnDone
-			s.mu.Unlock()
-			if cb != nil {
-				go cb(s.ID, true, err)
 			}
 		},
 	})
@@ -927,13 +914,6 @@ func (s *Session) SetAgentMessageCallback(cb func(senderID, targetName, content 
 	s.mu.Unlock()
 }
 
-// SetTurnDoneCallback sets a callback that fires when the session's turn
-// completes (idle) or fatally errors. Used for team completion notifications.
-func (s *Session) SetTurnDoneCallback(cb func(sessionID string, failed bool, failErr error)) {
-	s.mu.Lock()
-	s.onTurnDone = cb
-	s.mu.Unlock()
-}
 
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
 type SpawnWorkersRequest struct {

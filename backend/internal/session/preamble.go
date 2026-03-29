@@ -60,7 +60,7 @@ SendMessage({to: "@spawn", message: JSON.stringify({
 })})
 ` + "```" + `
 
-The user must approve before workers are created. Workers join your team and communicate via SendMessage.`
+The user must approve before workers are created. Workers join your team and communicate via SendMessage. If a worker seems to be taking too long, send them a message asking for a status update.`
 
 // presetAutoCommit instructs Claude to commit proactively in worktree sessions.
 const presetAutoCommit = `

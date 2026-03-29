@@ -154,11 +154,9 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 	}
 	s.hub.Broadcast(team.ProjectID, "team.member-joined", broadcastPayload)
 
-	// Wire agent message callback, turn-done notification, and inject team
-	// context into a live session.
+	// Wire agent message callback and inject team context into a live session.
 	if live := s.mgr.Get(sessionID); live != nil {
 		s.wireAgentMessageCallback(live, teamID)
-		s.wireTeamTurnDoneCallback(live, teamID)
 		go s.injectTeamContext(context.Background(), live, teamID)
 	}
 
@@ -576,62 +574,6 @@ func (s *Service) wireAgentMessageCallback(sess *Session, teamID string) {
 			}
 		}
 		return fmt.Errorf("no team member named %q", targetName)
-	})
-}
-
-// wireTeamTurnDoneCallback sets up a callback that auto-notifies the team lead
-// when a worker's turn completes or fatally errors. The notification is routed
-// as a system agent message so the lead sees it in conversation.
-func (s *Service) wireTeamTurnDoneCallback(sess *Session, teamID string) {
-	sess.SetTurnDoneCallback(func(sessionID string, failed bool, failErr error) {
-		ctx := context.Background()
-
-		// Look up the worker's name for the notification.
-		workerSess, err := s.queries.GetSession(ctx, sessionID)
-		if err != nil {
-			slog.Warn("turn-done: worker lookup failed", "session_id", sessionID, "error", err)
-			return
-		}
-
-		// Find the lead session in this team.
-		members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
-		if err != nil {
-			slog.Warn("turn-done: list team members failed", "team_id", teamID, "error", err)
-			return
-		}
-		var leadID string
-		for _, m := range members {
-			if m.TeamRole == "lead" {
-				leadID = m.ID
-				break
-			}
-		}
-		if leadID == "" || leadID == sessionID {
-			return // no lead, or the lead itself finished — nothing to notify
-		}
-
-		var msg string
-		if failed {
-			msg = fmt.Sprintf("[system] Worker %q failed: %v", workerSess.Name, failErr)
-		} else {
-			msg = fmt.Sprintf("[system] Worker %q completed and went idle.", workerSess.Name)
-		}
-
-		slog.Info("team turn-done notification",
-			"worker", workerSess.Name,
-			"worker_id", sessionID,
-			"lead_id", leadID,
-			"team_id", teamID,
-			"failed", failed,
-		)
-
-		if err := s.RouteAgentMessage(ctx, AgentMessagePayload{
-			SenderSessionID: sessionID,
-			TargetSessionID: leadID,
-			Content:         msg,
-		}); err != nil {
-			slog.Warn("turn-done: failed to notify lead", "lead_id", leadID, "error", err)
-		}
 	})
 }
 

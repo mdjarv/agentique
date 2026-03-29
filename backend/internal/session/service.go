@@ -826,10 +826,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	if resumeErr != nil {
 		return nil, resumeErr
 	}
-	// Wire team callbacks for team members.
+	// Wire agent message callback for team members.
 	if teamID != "" {
 		s.wireAgentMessageCallback(sess, teamID)
-		s.wireTeamTurnDoneCallback(sess, teamID)
 	}
 	// Wire spawn-workers callback for delegation.
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
