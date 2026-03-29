@@ -184,7 +184,7 @@ func (h *Handler) HandleReset(w http.ResponseWriter, r *http.Request) {
 	h.Connector.Reset()
 
 	ctx := context.Background()
-	tables := []string{"session_events", "sessions", "projects"}
+	tables := []string{"session_events", "sessions", "teams", "projects"}
 	for _, t := range tables {
 		if _, err := h.DB.ExecContext(ctx, "DELETE FROM "+t); err != nil {
 			slog.Error("test reset: delete from "+t, "error", err)

@@ -383,8 +383,8 @@ func (c *conn) handleTeamDelete(msg ClientMessage) {
 }
 
 func (c *conn) handleTeamJoin(msg ClientMessage) {
-	handleRequest(c, msg, func(p TeamJoinPayload) (struct{}, error) {
-		return struct{}{}, c.svc.JoinTeam(c.ctx, p.SessionID, p.TeamID, p.Role)
+	handleRequest(c, msg, func(p TeamJoinPayload) (session.TeamInfo, error) {
+		return c.svc.JoinTeam(c.ctx, p.SessionID, p.TeamID, p.Role)
 	})
 }
 

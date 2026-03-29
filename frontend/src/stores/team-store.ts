@@ -31,14 +31,18 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     }),
 
   mergeTeams: (teams) =>
-    set((s) => ({
-      teams: { ...s.teams, ...Object.fromEntries(teams.map((t) => [t.id, t])) },
-    })),
+    set((s) => {
+      const merged = { ...s.teams };
+      for (const t of teams) {
+        const existing = merged[t.id];
+        // Don't overwrite a team that has more members (stale RPC vs fresh broadcast).
+        if (existing && existing.members.length > t.members.length) continue;
+        merged[t.id] = t;
+      }
+      return { teams: merged };
+    }),
 
-  addTeam: (team) =>
-    set((s) => ({
-      teams: { ...s.teams, [team.id]: team },
-    })),
+  addTeam: (team) => set((s) => ({ teams: { ...s.teams, [team.id]: team } })),
 
   removeTeam: (teamId) =>
     set((s) => {

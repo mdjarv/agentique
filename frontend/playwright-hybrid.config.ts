@@ -26,5 +26,9 @@ export default defineConfig({
     cwd: path.resolve(import.meta.dirname, ".."),
     reuseExistingServer: !process.env.CI,
     timeout: 15000,
+    env: {
+      ...process.env,
+      AGENTIQUE_DB: path.resolve(import.meta.dirname, "..", "tmp", "test-hybrid.db"),
+    },
   },
 });
