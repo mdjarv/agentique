@@ -67,6 +67,8 @@ type Session struct {
 	LastQueryAt     sql.NullString `json:"last_query_at"`
 	CompletedAt     sql.NullString `json:"completed_at"`
 	BehaviorPresets string         `json:"behavior_presets"`
+	TeamID          sql.NullString `json:"team_id"`
+	TeamRole        string         `json:"team_role"`
 }
 
 type SessionEvent struct {
@@ -86,6 +88,13 @@ type Tag struct {
 	SortOrder int64  `json:"sort_order"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+type Team struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	ProjectID string `json:"project_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type User struct {

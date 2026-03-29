@@ -3,10 +3,13 @@ import {
   Copy,
   Eraser,
   Loader2,
+  LogOut,
   MoreHorizontal,
   PanelRightOpen,
   Pencil,
   Trash2,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -28,14 +31,17 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
+import { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
+import { useTeamStore } from "~/stores/team-store";
 
 interface SessionHeaderProps {
   meta: SessionMetadata;
@@ -56,9 +62,16 @@ export function SessionHeader({
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = isRunning;
 
-  const [activeDialog, setActiveDialog] = useState<"none" | "delete">("none");
+  const [activeDialog, setActiveDialog] = useState<"none" | "delete" | "create-team" | "join-team">(
+    "none",
+  );
   const [deleting, setDeleting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [teamRole, setTeamRole] = useState("");
+  const [availableTeams, setAvailableTeams] = useState<TeamInfo[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const hasTeam = !!meta.teamId;
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
   const { copied: nameCopied, copy: copyName } = useCopyToClipboard();
@@ -111,6 +124,55 @@ export function SessionHeader({
       toast.error(getErrorMessage(err, "Clean failed"));
     } finally {
       setCleaning(false);
+    }
+  }, [ws, meta.id]);
+
+  const handleOpenJoinTeam = useCallback(async () => {
+    try {
+      const teams = await listTeams(ws, meta.projectId);
+      setAvailableTeams(teams);
+      setSelectedTeamId(teams[0]?.id ?? "");
+      setTeamRole("");
+      setActiveDialog("join-team");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to load teams"));
+    }
+  }, [ws, meta.projectId]);
+
+  const handleCreateTeam = useCallback(async () => {
+    const name = teamName.trim();
+    if (!name) return;
+    try {
+      const team = await createTeam(ws, meta.projectId, name);
+      useTeamStore.getState().addTeam(team);
+      await joinTeam(ws, meta.id, team.id, teamRole.trim());
+      setActiveDialog("none");
+      setTeamName("");
+      setTeamRole("");
+      toast.success("Team created");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to create team"));
+    }
+  }, [ws, meta.projectId, meta.id, teamName, teamRole]);
+
+  const handleJoinTeam = useCallback(async () => {
+    if (!selectedTeamId) return;
+    try {
+      await joinTeam(ws, meta.id, selectedTeamId, teamRole.trim());
+      setActiveDialog("none");
+      setTeamRole("");
+      toast.success("Joined team");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to join team"));
+    }
+  }, [ws, meta.id, selectedTeamId, teamRole]);
+
+  const handleLeaveTeam = useCallback(async () => {
+    try {
+      await leaveTeam(ws, meta.id);
+      toast.success("Left team");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to leave team"));
     }
   }, [ws, meta.id]);
 
@@ -244,6 +306,32 @@ export function SessionHeader({
                   Clean up worktree
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              {hasTeam ? (
+                <DropdownMenuItem onClick={handleLeaveTeam} className="text-xs gap-2">
+                  <LogOut className="h-3.5 w-3.5" />
+                  Leave team
+                </DropdownMenuItem>
+              ) : (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setTeamName("");
+                      setTeamRole("");
+                      setActiveDialog("create-team");
+                    }}
+                    className="text-xs gap-2"
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    Create team...
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleOpenJoinTeam} className="text-xs gap-2">
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Join team...
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setActiveDialog("delete")}
                 className="text-xs gap-2 text-destructive focus:text-destructive"
@@ -278,6 +366,91 @@ export function SessionHeader({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleting}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Create team dialog */}
+      <AlertDialog
+        open={activeDialog === "create-team"}
+        onOpenChange={(open) => setActiveDialog(open ? "create-team" : "none")}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create team</AlertDialogTitle>
+            <AlertDialogDescription>
+              Create a new team and add this session as the first member.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <input
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              placeholder="Team name"
+              className="w-full text-sm bg-background border rounded px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreateTeam();
+              }}
+            />
+            <input
+              value={teamRole}
+              onChange={(e) => setTeamRole(e.target.value)}
+              placeholder="Your role (optional)"
+              className="w-full text-sm bg-background border rounded px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCreateTeam} disabled={!teamName.trim()}>
+              Create
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Join team dialog */}
+      <AlertDialog
+        open={activeDialog === "join-team"}
+        onOpenChange={(open) => setActiveDialog(open ? "join-team" : "none")}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Join team</AlertDialogTitle>
+            <AlertDialogDescription>Select a team to join.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            {availableTeams.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No teams yet. Create one from the menu.
+              </p>
+            ) : (
+              <select
+                value={selectedTeamId}
+                onChange={(e) => setSelectedTeamId(e.target.value)}
+                className="w-full text-sm bg-background border rounded px-3 py-1.5"
+              >
+                {availableTeams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.members.length} members)
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              value={teamRole}
+              onChange={(e) => setTeamRole(e.target.value)}
+              placeholder="Your role (optional)"
+              className="w-full text-sm bg-background border rounded px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleJoinTeam}
+              disabled={!selectedTeamId || availableTeams.length === 0}
+            >
+              Join
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

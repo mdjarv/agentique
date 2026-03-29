@@ -80,6 +80,8 @@ type SessionInfo struct {
 	GitVersion         int64    `json:"gitVersion"`
 	PrUrl              string   `json:"prUrl,omitempty"`
 	BehaviorPresets    BehaviorPresets      `json:"behaviorPresets"`
+	TeamID             string               `json:"teamId,omitempty"`
+	TeamRole           string               `json:"teamRole,omitempty"`
 	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
 	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
@@ -503,6 +505,8 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			CompletedAt:    nullStr(ss.CompletedAt),
 			PrUrl:           ss.PrUrl,
 			BehaviorPresets: ParsePresets(ss.BehaviorPresets),
+			TeamID:          nullStr(ss.TeamID),
+			TeamRole:        ss.TeamRole,
 			CreatedAt:       ss.CreatedAt,
 			UpdatedAt:      ss.UpdatedAt,
 			LastQueryAt:    nullStr(ss.LastQueryAt),
@@ -774,6 +778,13 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 
 	resumeProjects, _ := s.queries.ListProjects(ctx)
 
+	// Build team preamble if session is in a team.
+	var teamPreamble *TeamPreambleInfo
+	teamID := nullStr(dbSess.TeamID)
+	if teamID != "" {
+		teamPreamble = s.buildTeamPreamble(ctx, teamID, sessionID)
+	}
+
 	sess, resumeErr := s.mgr.Resume(ctx, ResumeParams{
 		SessionID:         sessionID,
 		ClaudeSessionID:   claudeSessID,
@@ -789,9 +800,14 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		InitialGitVersion: initialVersion,
 		Projects:          ProjectInfoFromStore(resumeProjects),
 		BehaviorPresets:   ParsePresets(dbSess.BehaviorPresets),
+		TeamPreamble:      teamPreamble,
 	})
 	if resumeErr != nil {
 		return nil, resumeErr
+	}
+	// Wire agent message callback for team members.
+	if teamID != "" {
+		s.wireAgentMessageCallback(sess, teamID)
 	}
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()

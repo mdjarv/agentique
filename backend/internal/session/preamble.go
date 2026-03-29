@@ -67,9 +67,22 @@ func ProjectInfoFromStore(projects []store.Project) []ProjectInfo {
 	return out
 }
 
+// TeamPreambleInfo holds team context for the system prompt.
+type TeamPreambleInfo struct {
+	TeamName string
+	Members  []TeamPreambleMember
+}
+
+// TeamPreambleMember is a peer in the team (excluding the current session).
+type TeamPreambleMember struct {
+	Name         string
+	Role         string
+	WorktreePath string
+}
+
 // buildPreamble returns the system prompt preamble for a session.
 // Snippets are conditionally included based on the behavior presets.
-func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets) string {
+func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, team *TeamPreambleInfo) string {
 	s := preambleIdentity
 
 	if presets.SuggestParallel {
@@ -102,6 +115,24 @@ func buildPreamble(worktreeBranch string, projects []ProjectInfo, presets Behavi
 
 	if presets.CustomInstructions != "" {
 		s += "\n\n" + presets.CustomInstructions
+	}
+
+	if team != nil && len(team.Members) > 0 {
+		s += "\n\n## Team Coordination\n\n"
+		s += fmt.Sprintf("You are part of team %q. Your teammates:\n", team.TeamName)
+		for _, m := range team.Members {
+			line := fmt.Sprintf("- %q", m.Name)
+			if m.Role != "" {
+				line += fmt.Sprintf(" (role: %s)", m.Role)
+			}
+			if m.WorktreePath != "" {
+				line += fmt.Sprintf(" — worktree: %s", m.WorktreePath)
+			}
+			s += line + "\n"
+		}
+		s += "\nTo message a teammate, use the SendMessage tool with their name.\n"
+		s += "You can read files from teammates' worktrees at the paths above.\n"
+		s += "To share your changes, commit and notify teammates via SendMessage."
 	}
 
 	return s

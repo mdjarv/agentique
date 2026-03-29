@@ -367,3 +367,57 @@ func (c *conn) handleTagDelete(msg ClientMessage) {
 		return struct{}{}, nil
 	})
 }
+
+// --- Team handlers ---
+
+func (c *conn) handleTeamCreate(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamCreatePayload) (session.TeamInfo, error) {
+		return c.svc.CreateTeam(c.ctx, p.ProjectID, p.Name)
+	})
+}
+
+func (c *conn) handleTeamDelete(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamDeletePayload) (struct{}, error) {
+		return struct{}{}, c.svc.DeleteTeam(c.ctx, p.TeamID)
+	})
+}
+
+func (c *conn) handleTeamJoin(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamJoinPayload) (struct{}, error) {
+		return struct{}{}, c.svc.JoinTeam(c.ctx, p.SessionID, p.TeamID, p.Role)
+	})
+}
+
+func (c *conn) handleTeamLeave(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamLeavePayload) (struct{}, error) {
+		return struct{}{}, c.svc.LeaveTeam(c.ctx, p.SessionID)
+	})
+}
+
+func (c *conn) handleTeamList(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamListPayload) ([]session.TeamInfo, error) {
+		return c.svc.ListTeams(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleTeamInfo(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamInfoPayload) (session.TeamInfo, error) {
+		return c.svc.GetTeamInfo(c.ctx, p.TeamID)
+	})
+}
+
+func (c *conn) handleTeamTimeline(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamTimelinePayload) ([]session.WireAgentMessageEvent, error) {
+		return c.svc.GetTeamTimeline(c.ctx, p.TeamID)
+	})
+}
+
+func (c *conn) handleTeamSendMessage(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamSendMessagePayload) (struct{}, error) {
+		return struct{}{}, c.svc.RouteAgentMessage(c.ctx, session.AgentMessagePayload{
+			SenderSessionID: p.SenderSessionID,
+			TargetSessionID: p.TargetSessionID,
+			Content:         p.Content,
+		})
+	})
+}

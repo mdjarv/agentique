@@ -3,7 +3,7 @@ module github.com/allbin/agentique/backend
 go 1.26.1
 
 require (
-	github.com/allbin/claudecli-go v0.0.0-20260328104719-1bf21215dbca
+	github.com/allbin/claudecli-go v0.0.0-20260328233034-a0ebd4efd497
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/go-webauthn/webauthn v0.16.1

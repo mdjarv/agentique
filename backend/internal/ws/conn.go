@@ -207,6 +207,22 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleTagUpdate(msg)
 	case "tag.delete":
 		c.handleTagDelete(msg)
+	case "team.create":
+		c.handleTeamCreate(msg)
+	case "team.delete":
+		c.handleTeamDelete(msg)
+	case "team.join":
+		c.handleTeamJoin(msg)
+	case "team.leave":
+		c.handleTeamLeave(msg)
+	case "team.list":
+		c.handleTeamList(msg)
+	case "team.info":
+		c.handleTeamInfo(msg)
+	case "team.timeline":
+		c.handleTeamTimeline(msg)
+	case "team.send-message":
+		c.handleTeamSendMessage(msg)
 	default:
 		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
 		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)

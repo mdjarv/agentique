@@ -39,5 +39,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     trigger: raw.trigger as string | undefined,
     preTokens: raw.preTokens as number | undefined,
     attachments: type === "user_message" ? parseAttachments(raw.attachments) : undefined,
+    senderSessionId: raw.senderSessionId as string | undefined,
+    senderName: raw.senderName as string | undefined,
   };
 }

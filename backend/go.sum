@@ -1,5 +1,7 @@
 github.com/allbin/claudecli-go v0.0.0-20260328104719-1bf21215dbca h1:YFuZM8Rfa22Hrrfit6ZeArxExFq/UmO7uSExhhSjeU8=
 github.com/allbin/claudecli-go v0.0.0-20260328104719-1bf21215dbca/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260328233034-a0ebd4efd497 h1:snWWOXsbtAGPb3Jo0pLy3GQMonOlQPfQcwFQGfguSlo=
+github.com/allbin/claudecli-go v0.0.0-20260328233034-a0ebd4efd497/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc h1:4pZI35227imm7yK2bGPcfpFEmuY1gc2YSTShr4iJBfs=
