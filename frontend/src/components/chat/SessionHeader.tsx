@@ -143,9 +143,9 @@ export function SessionHeader({
     const name = teamName.trim();
     if (!name) return;
     try {
-      const team = await createTeam(ws, meta.projectId, name);
+      const created = await createTeam(ws, meta.projectId, name);
+      const team = await joinTeam(ws, meta.id, created.id, teamRole.trim());
       useTeamStore.getState().addTeam(team);
-      await joinTeam(ws, meta.id, team.id, teamRole.trim());
       setActiveDialog("none");
       setTeamName("");
       setTeamRole("");
@@ -158,7 +158,8 @@ export function SessionHeader({
   const handleJoinTeam = useCallback(async () => {
     if (!selectedTeamId) return;
     try {
-      await joinTeam(ws, meta.id, selectedTeamId, teamRole.trim());
+      const team = await joinTeam(ws, meta.id, selectedTeamId, teamRole.trim());
+      useTeamStore.getState().addTeam(team);
       setActiveDialog("none");
       setTeamRole("");
       toast.success("Joined team");

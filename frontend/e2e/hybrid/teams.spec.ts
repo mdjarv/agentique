@@ -172,11 +172,12 @@ test.describe("Team lifecycle", () => {
     // Open Team tab.
     await page.getByRole("button", { name: "Team", exact: true }).click();
 
-    // Both members should be visible with roles.
-    await expect(page.getByText(SESSION_1_NAME)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(SESSION_2_NAME)).toBeVisible();
-    await expect(page.getByText("lead")).toBeVisible();
-    await expect(page.getByText("worker")).toBeVisible();
+    // Both members should be visible with roles (scope to main to avoid sidebar/select matches).
+    const main = page.getByRole("main");
+    await expect(main.getByText(SESSION_1_NAME, { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(main.getByText(`${SESSION_2_NAME} (you)`)).toBeVisible();
+    await expect(main.getByText("lead", { exact: true })).toBeVisible();
+    await expect(main.getByText("worker", { exact: true })).toBeVisible();
   });
 });
 

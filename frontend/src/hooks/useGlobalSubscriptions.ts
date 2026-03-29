@@ -396,7 +396,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamJoined = ws.subscribe("team.member-joined", (payload: any) => {
-      useTeamStore.getState().addMember(payload.teamId, payload.member);
+      if (payload.team) {
+        useTeamStore.getState().addTeam(payload.team);
+      } else {
+        useTeamStore.getState().addMember(payload.teamId, payload.member);
+      }
       useChatStore.getState().setSessionTeamId(payload.member.sessionId, payload.teamId);
     });
 

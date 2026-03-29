@@ -85,26 +85,27 @@ func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
 	return nil
 }
 
-// JoinTeam adds a session to a team and broadcasts the change.
-func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) error {
+// JoinTeam adds a session to a team, broadcasts the change, and returns the
+// updated TeamInfo so the caller (RPC handler) can forward it to the client.
+func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) (TeamInfo, error) {
 	team, err := s.queries.GetTeam(ctx, teamID)
 	if err != nil {
-		return fmt.Errorf("team not found: %w", err)
+		return TeamInfo{}, fmt.Errorf("team not found: %w", err)
 	}
 
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
+		return TeamInfo{}, fmt.Errorf("session not found: %w", err)
 	}
 
 	// Reject duplicate names within the team.
 	existingMembers, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
 	if err != nil {
-		return fmt.Errorf("list team members: %w", err)
+		return TeamInfo{}, fmt.Errorf("list team members: %w", err)
 	}
 	for _, m := range existingMembers {
 		if m.Name == dbSess.Name && m.ID != sessionID {
-			return fmt.Errorf("team member named %q already exists; rename this session first", dbSess.Name)
+			return TeamInfo{}, fmt.Errorf("team member named %q already exists; rename this session first", dbSess.Name)
 		}
 	}
 
@@ -113,7 +114,7 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 		TeamRole: role,
 		ID:       sessionID,
 	}); err != nil {
-		return fmt.Errorf("set session team: %w", err)
+		return TeamInfo{}, fmt.Errorf("set session team: %w", err)
 	}
 
 	member := TeamMember{
@@ -125,10 +126,17 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 		WorktreePath: nullStr(dbSess.WorktreePath),
 	}
 
-	s.hub.Broadcast(team.ProjectID, "team.member-joined", map[string]any{
+	info, buildErr := s.buildTeamInfo(ctx, team)
+	broadcastPayload := map[string]any{
 		"teamId": teamID,
 		"member": member,
-	})
+	}
+	if buildErr == nil {
+		broadcastPayload["team"] = info
+	} else {
+		slog.Warn("buildTeamInfo after join failed", "teamId", teamID, "error", buildErr)
+	}
+	s.hub.Broadcast(team.ProjectID, "team.member-joined", broadcastPayload)
 
 	// Wire agent message callback and inject team context into a live session.
 	if live := s.mgr.Get(sessionID); live != nil {
@@ -136,7 +144,7 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 		go s.injectTeamContext(context.Background(), live, teamID)
 	}
 
-	return nil
+	return info, buildErr
 }
 
 // LeaveTeam removes a session from its team.

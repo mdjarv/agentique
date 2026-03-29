@@ -36,8 +36,8 @@ export async function joinTeam(
   sessionId: string,
   teamId: string,
   role: string,
-): Promise<void> {
-  await ws.request("team.join", { sessionId, teamId, role });
+): Promise<TeamInfo> {
+  return ws.request<TeamInfo>("team.join", { sessionId, teamId, role });
 }
 
 export async function leaveTeam(ws: WsClient, sessionId: string): Promise<void> {
