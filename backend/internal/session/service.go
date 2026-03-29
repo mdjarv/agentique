@@ -607,17 +607,15 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		}
 	}
 
-	// Merged sessions already had their worktree/branch cleaned up during merge.
-	if dbSess.WorktreeMerged == 0 {
-		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
-		if projErr == nil {
-			if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-				gitops.RemoveWorktree(project.Path, wtPath)
-			}
-			if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
-				if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
-					slog.Warn("branch delete failed", "session_id", sessionID, "error", delErr)
-				}
+	// Always clean up worktree/branch — operations are idempotent if already removed.
+	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
+	if projErr == nil {
+		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+			gitops.RemoveWorktree(project.Path, wtPath)
+		}
+		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
+			if delErr := gitops.DeleteBranch(project.Path, branch); delErr != nil {
+				slog.Warn("branch delete failed", "session_id", sessionID, "error", delErr)
 			}
 		}
 	}

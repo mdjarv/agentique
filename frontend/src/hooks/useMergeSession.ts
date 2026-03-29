@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { mergeSession, refreshGitStatus } from "~/lib/session-actions";
+import { type MergeMode, mergeSession, refreshGitStatus } from "~/lib/session-actions";
 import { getErrorMessage } from "~/lib/utils";
 
 export function useMergeSession(sessionId: string) {
@@ -9,10 +9,10 @@ export function useMergeSession(sessionId: string) {
   const [merging, setMerging] = useState(false);
 
   const handleMerge = useCallback(
-    async (cleanup: boolean) => {
+    async (mode: MergeMode) => {
       setMerging(true);
       try {
-        const result = await mergeSession(ws, sessionId, cleanup);
+        const result = await mergeSession(ws, sessionId, mode);
         switch (result.status) {
           case "merged":
             toast.success(`Merged (${result.commitHash.slice(0, 7)})`);

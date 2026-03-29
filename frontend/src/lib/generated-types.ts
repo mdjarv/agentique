@@ -377,7 +377,7 @@ export interface SessionInterruptPayload {
 
 export interface SessionMergePayload {
   sessionId: string;
-  cleanup: boolean;
+  mode: string;
 }
 
 export interface SessionCreatePRPayload {

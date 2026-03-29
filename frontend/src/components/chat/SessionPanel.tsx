@@ -67,10 +67,13 @@ function MergeDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuItem onClick={() => git.handleMerge(false)} className="text-xs">
+        <DropdownMenuItem onClick={() => git.handleMerge("merge")} className="text-xs">
           Merge
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => git.handleMerge(true)} className="text-xs">
+        <DropdownMenuItem onClick={() => git.handleMerge("complete")} className="text-xs">
+          Merge & complete
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => git.handleMerge("delete")} className="text-xs">
           Merge & delete branch
         </DropdownMenuItem>
       </DropdownMenuContent>

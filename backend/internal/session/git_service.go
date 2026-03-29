@@ -184,8 +184,21 @@ func (g *GitService) broadcastSnapshot(dbSess store.Session, project store.Proje
 	g.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
 }
 
+// Merge mode constants.
+const (
+	MergeModeMerge    = "merge"    // merge only, session stays active
+	MergeModeComplete = "complete" // merge + mark completed
+	MergeModeDelete   = "delete"   // merge + mark completed + cleanup worktree/branch
+)
+
 // Merge merges a worktree session's branch into the project's main branch.
-func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) (MergeResult, error) {
+func (g *GitService) Merge(ctx context.Context, sessionID string, mode string) (MergeResult, error) {
+	switch mode {
+	case MergeModeMerge, MergeModeComplete, MergeModeDelete:
+	default:
+		return MergeResult{}, fmt.Errorf("invalid merge mode: %q", mode)
+	}
+
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		return MergeResult{}, fmt.Errorf("session not found")
@@ -200,7 +213,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 		return MergeResult{}, fmt.Errorf("project not found")
 	}
 
-	slog.Info("merge started", "session_id", sessionID, "branch", branch, "cleanup", cleanup)
+	slog.Info("merge started", "session_id", sessionID, "branch", branch, "mode", mode)
 
 	live := g.mgr.Get(sessionID)
 	if live != nil {
@@ -256,18 +269,22 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 
 	slog.Info("merge completed", "session_id", sessionID, "branch", branch, "commit", hash)
 
-	if err := g.queries.SetWorktreeMerged(ctx, sessionID); err != nil {
-		slog.Warn("persist worktree merged failed", "session_id", sessionID, "error", err)
-	}
-	if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
-		slog.Warn("persist session completed on merge failed", "session_id", sessionID, "error", err)
-	}
-	if live != nil {
-		live.MarkMerged()
-		live.MarkCompleted()
+	// mode="merge": no state changes — session stays active with git tracking.
+	// mode="complete"/"delete": mark merged + completed.
+	if mode == MergeModeComplete || mode == MergeModeDelete {
+		if err := g.queries.SetWorktreeMerged(ctx, sessionID); err != nil {
+			slog.Warn("persist worktree merged failed", "session_id", sessionID, "error", err)
+		}
+		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
+			slog.Warn("persist session completed on merge failed", "session_id", sessionID, "error", err)
+		}
+		if live != nil {
+			live.MarkMerged()
+			live.MarkCompleted()
+		}
 	}
 
-	if cleanup {
+	if mode == MergeModeDelete {
 		if wtPath != "" {
 			gitops.RemoveWorktree(project.Path, wtPath)
 		}
@@ -285,8 +302,13 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, cleanup bool) 
 	}
 
 	if live != nil {
-		unlockState := StateIdle
-		if cleanup {
+		var unlockState State
+		switch mode {
+		case MergeModeMerge:
+			unlockState = StateIdle
+		case MergeModeComplete:
+			unlockState = StateDone
+		case MergeModeDelete:
 			unlockState = StateStopped
 		}
 		_ = live.UnlockGitOp(unlockState)

@@ -213,12 +213,14 @@ export type CreatePRResult =
   | { status: "existing"; url: string }
   | { status: "error"; error: string };
 
+export type MergeMode = "merge" | "complete" | "delete";
+
 export async function mergeSession(
   ws: WsClient,
   sessionId: string,
-  cleanup: boolean,
+  mode: MergeMode,
 ): Promise<MergeResult> {
-  return ws.request<MergeResult>("session.merge", { sessionId, cleanup });
+  return ws.request<MergeResult>("session.merge", { sessionId, mode });
 }
 
 export async function createPR(

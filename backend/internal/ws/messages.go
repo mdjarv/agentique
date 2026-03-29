@@ -86,7 +86,7 @@ type SessionInterruptPayload struct {
 
 type SessionMergePayload struct {
 	SessionID string `json:"sessionId"`
-	Cleanup   bool   `json:"cleanup"`
+	Mode      string `json:"mode"` // "merge" | "complete" | "delete"
 }
 
 type SessionCreatePRPayload struct {

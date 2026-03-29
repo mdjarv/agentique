@@ -366,16 +366,18 @@ index abc1234..def5678 100644
     }
 
     case "session.merge": {
+      const mode = p.mode as string;
       const mergeResult = { status: "merged", commitHash: "def5678" };
       validatePayload(MergeResultSchema, mergeResult, "session.merge response");
       respond(client, msg.id, mergeResult);
+      const state = mode === "delete" ? "stopped" : mode === "complete" ? "done" : "idle";
       push(client, "session.state", {
         sessionId: p.sessionId,
-        state: "idle",
-        connected: true,
+        state,
+        connected: state === "idle",
         hasDirtyWorktree: false,
         hasUncommitted: false,
-        worktreeMerged: true,
+        worktreeMerged: mode !== "merge",
         commitsAhead: 0,
         commitsBehind: 0,
         branchMissing: false,

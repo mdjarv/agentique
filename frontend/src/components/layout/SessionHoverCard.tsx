@@ -42,6 +42,7 @@ import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
+  type MergeMode,
   createPR,
   deleteSession,
   interruptSession,
@@ -59,8 +60,6 @@ interface SessionHoverCardProps {
   children: ReactNode;
 }
 
-const isTerminal = (state: string) => state === "done" || state === "stopped" || state === "failed";
-
 export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps) {
   const ws = useWebSocket();
   const meta = useChatStore((s) => s.sessions[sessionId]?.meta);
@@ -70,7 +69,6 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
 
   if (!meta) return <>{children}</>;
 
-  const terminal = isTerminal(meta.state);
   const hasWorktree = !!meta.worktreePath;
   const ahead = !!meta.commitsAhead && meta.commitsAhead > 0;
   const behind = !!meta.commitsBehind && meta.commitsBehind > 0;
@@ -84,7 +82,8 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const branchMissing = !!meta.branchMissing;
   const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
-  const canMerge = terminal && hasWorktree && !merged && ahead && !hasConflicts && !branchMissing;
+  const canMerge =
+    hasWorktree && ahead && !hasConflicts && !branchMissing && meta.state !== "running";
   const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
   const hasStateActions = canInterrupt || canMarkDone;
@@ -123,9 +122,9 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     if (meta.prUrl) window.open(meta.prUrl, "_blank", "noopener");
   };
 
-  const handleMerge = async (cleanup: boolean) => {
+  const handleMerge = async (mode: MergeMode) => {
     try {
-      const result = await mergeSession(ws, sessionId, cleanup);
+      const result = await mergeSession(ws, sessionId, mode);
       if (result.status === "merged") {
         toast.success("Merged successfully");
       } else if (result.status === "error") {
@@ -223,11 +222,16 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
             {hasOpenPR && <ActionItem icon={ExternalLink} label="Open PR" onClick={handleOpenPR} />}
             {canMerge && (
               <>
-                <ActionItem icon={GitMerge} label="Merge" onClick={() => handleMerge(false)} />
+                <ActionItem icon={GitMerge} label="Merge" onClick={() => handleMerge("merge")} />
+                <ActionItem
+                  icon={GitMerge}
+                  label="Merge & complete"
+                  onClick={() => handleMerge("complete")}
+                />
                 <ActionItem
                   icon={GitMerge}
                   label="Merge & delete branch"
-                  onClick={() => handleMerge(true)}
+                  onClick={() => handleMerge("delete")}
                 />
               </>
             )}
