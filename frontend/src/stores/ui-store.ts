@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { EffortLevel } from "~/components/chat/MessageComposer";
 import type { ModelId } from "~/lib/session-actions";
+import type { AutoApproveMode } from "~/stores/chat-store";
 
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
 
@@ -16,7 +17,7 @@ function readLegacyCollapsedProjects(): string[] {
 export interface SessionDefaults {
   worktree: boolean;
   planMode: boolean;
-  autoApprove: boolean;
+  autoApproveMode: AutoApproveMode;
   model: ModelId;
   effort: EffortLevel;
 }
@@ -24,7 +25,7 @@ export interface SessionDefaults {
 const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
   worktree: true,
   planMode: false,
-  autoApprove: true,
+  autoApproveMode: "auto",
   model: "opus",
   effort: "",
 };

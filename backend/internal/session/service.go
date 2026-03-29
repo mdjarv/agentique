@@ -59,7 +59,7 @@ type SessionInfo struct {
 	Connected       bool    `json:"connected"`
 	Model           string  `json:"model"`
 	PermissionMode  string  `json:"permissionMode"`
-	AutoApprove     bool    `json:"autoApprove"`
+	AutoApproveMode string  `json:"autoApproveMode"`
 	Effort          string  `json:"effort,omitempty"`
 	MaxBudget       float64 `json:"maxBudget,omitempty"`
 	MaxTurns        int     `json:"maxTurns,omitempty"`
@@ -97,7 +97,7 @@ type CreateSessionParams struct {
 	Branch          string
 	Model           string
 	PlanMode        bool
-	AutoApprove     bool
+	AutoApproveMode string
 	RequestID       string // used as fallback branch name suffix
 	Effort          string
 	MaxBudget       float64
@@ -113,7 +113,7 @@ type CreateSessionResult struct {
 	Connected       bool            `json:"connected"`
 	Model           string          `json:"model"`
 	PermissionMode  string          `json:"permissionMode"`
-	AutoApprove     bool            `json:"autoApprove"`
+	AutoApproveMode string          `json:"autoApproveMode"`
 	Effort          string          `json:"effort,omitempty"`
 	MaxBudget       float64         `json:"maxBudget,omitempty"`
 	MaxTurns        int             `json:"maxTurns,omitempty"`
@@ -225,7 +225,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		WorktreeBaseSHA: worktreeBaseSHA,
 		Model:           model,
 		PlanMode:        p.PlanMode,
-		AutoApprove:     p.AutoApprove,
+		AutoApproveMode: p.AutoApproveMode,
 		Effort:          p.Effort,
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
@@ -255,7 +255,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Connected:       true,
 		Model:           model,
 		PermissionMode:  sess.PermissionMode(),
-		AutoApprove:     sess.AutoApprove(),
+		AutoApproveMode: sess.AutoApproveMode(),
 		Effort:          p.Effort,
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
@@ -273,7 +273,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Connected:       true,
 		Model:           model,
 		PermissionMode:  sess.PermissionMode(),
-		AutoApprove:     sess.AutoApprove(),
+		AutoApproveMode: sess.AutoApproveMode(),
 		Effort:          p.Effort,
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
@@ -495,7 +495,7 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			Connected:      s.mgr.IsLive(ss.ID),
 			Model:          ss.Model,
 			PermissionMode: ss.PermissionMode,
-			AutoApprove:    ss.AutoApprove != 0,
+			AutoApproveMode: ss.AutoApproveMode,
 			Effort:         ss.Effort,
 			MaxBudget:      ss.MaxBudget,
 			MaxTurns:       int(ss.MaxTurns),
@@ -692,22 +692,18 @@ func (s *Service) SetPermissionMode(sessionID, mode string) error {
 	return nil
 }
 
-// SetAutoApprove enables or disables automatic tool approval for a session and persists it.
-func (s *Service) SetAutoApprove(sessionID string, enabled bool) error {
+// SetAutoApproveMode sets the auto-approve mode for a session and persists it.
+func (s *Service) SetAutoApproveMode(sessionID string, mode string) error {
 	sess, err := s.getLiveSession(sessionID)
 	if err != nil {
 		return err
 	}
-	sess.SetAutoApprove(enabled)
-	var v int64
-	if enabled {
-		v = 1
-	}
-	if err := s.queries.UpdateSessionAutoApprove(context.Background(), store.UpdateSessionAutoApproveParams{
-		AutoApprove: v,
-		ID:          sessionID,
+	sess.SetAutoApproveMode(mode)
+	if err := s.queries.UpdateSessionAutoApproveMode(context.Background(), store.UpdateSessionAutoApproveModeParams{
+		AutoApproveMode: sess.AutoApproveMode(), // use validated value
+		ID:              sessionID,
 	}); err != nil {
-		return newPersistError("update auto-approve", err)
+		return newPersistError("update auto-approve mode", err)
 	}
 	return nil
 }
@@ -807,7 +803,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		WorktreeBranch:    nullStr(dbSess.WorktreeBranch),
 		Model:             dbSess.Model,
 		PermissionMode:    dbSess.PermissionMode,
-		AutoApprove:       dbSess.AutoApprove != 0,
+		AutoApproveMode:   dbSess.AutoApproveMode,
 		Effort:            dbSess.Effort,
 		MaxBudget:         dbSess.MaxBudget,
 		MaxTurns:          int(dbSess.MaxTurns),

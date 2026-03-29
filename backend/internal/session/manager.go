@@ -29,7 +29,7 @@ type CreateParams struct {
 	WorktreeBaseSHA string
 	Model           string
 	PlanMode        bool
-	AutoApprove     bool
+	AutoApproveMode string
 	Effort          string
 	MaxBudget       float64
 	MaxTurns        int
@@ -78,15 +78,8 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 	if params.PlanMode {
 		permMode = "plan"
 	}
-	var autoApproveInt int64
-	if params.AutoApprove {
-		autoApproveInt = 1
-	}
-
 	// Set auto-approve and permission mode before connecting so the callback has it immediately.
-	if params.AutoApprove {
-		sess.SetAutoApprove(true)
-	}
+	sess.SetAutoApproveMode(params.AutoApproveMode)
 	sess.mu.Lock()
 	sess.permissionMode = permMode
 	sess.mu.Unlock()
@@ -142,7 +135,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		State:          string(StateIdle),
 		Model:          params.Model,
 		PermissionMode: permMode,
-		AutoApprove:    autoApproveInt,
+		AutoApproveMode: params.AutoApproveMode,
 		Effort:          params.Effort,
 		MaxBudget:       params.MaxBudget,
 		MaxTurns:        int64(params.MaxTurns),
@@ -171,7 +164,7 @@ type ResumeParams struct {
 	WorktreeBranch    string
 	Model             string
 	PermissionMode    string
-	AutoApprove       bool
+	AutoApproveMode   string
 	Effort            string
 	MaxBudget         float64
 	MaxTurns          int
@@ -207,7 +200,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 	sess.mu.Lock()
 	sess.queryCount = turnIndex + 1
 	sess.claudeSessionID = p.ClaudeSessionID
-	sess.autoApprove = p.AutoApprove
+	sess.autoApproveMode = p.AutoApproveMode
 	if p.PermissionMode != "" {
 		sess.permissionMode = p.PermissionMode
 	}

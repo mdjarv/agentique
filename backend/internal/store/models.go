@@ -69,6 +69,7 @@ type Session struct {
 	BehaviorPresets string         `json:"behavior_presets"`
 	TeamID          sql.NullString `json:"team_id"`
 	TeamRole        string         `json:"team_role"`
+	AutoApproveMode string         `json:"auto_approve_mode"`
 }
 
 type SessionEvent struct {

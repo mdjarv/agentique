@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { resolveApproval, setAutoApprove } from "~/lib/session-actions";
+import { resolveApproval, setAutoApproveMode } from "~/lib/session-actions";
 import { getErrorMessage } from "~/lib/utils";
 import type { PendingApproval } from "~/stores/chat-store";
 
@@ -91,7 +91,7 @@ export function ApprovalBanner({
 
   const handleAllowAll = useCallback(() => {
     setSubmitting(true);
-    setAutoApprove(ws, sessionId, true)
+    setAutoApproveMode(ws, sessionId, "auto")
       .then(() => resolveApproval(ws, sessionId, approval.approvalId, true))
       .catch((err) => {
         setSubmitting(false);

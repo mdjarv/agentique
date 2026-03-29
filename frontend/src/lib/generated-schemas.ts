@@ -155,7 +155,7 @@ export const SessionInfoSchema = z.object({
   connected: z.boolean(),
   model: z.string(),
   permissionMode: z.string(),
-  autoApprove: z.boolean(),
+  autoApproveMode: z.string(),
   effort: z.string().optional(),
   maxBudget: z.number().optional(),
   maxTurns: z.number().optional(),
@@ -192,7 +192,7 @@ export const CreateSessionResultSchema = z.object({
   connected: z.boolean(),
   model: z.string(),
   permissionMode: z.string(),
-  autoApprove: z.boolean(),
+  autoApproveMode: z.string(),
   effort: z.string().optional(),
   maxBudget: z.number().optional(),
   maxTurns: z.number().optional(),
@@ -344,7 +344,7 @@ export const SessionCreatePayloadSchema = z.object({
   branch: z.string(),
   model: z.string(),
   planMode: z.boolean(),
-  autoApprove: z.boolean(),
+  autoApproveMode: z.string(),
   effort: z.string(),
   maxBudget: z.number(),
   maxTurns: z.number(),
@@ -425,7 +425,7 @@ export const SessionResolveApprovalPayloadSchema = z.object({
 
 export const SessionSetAutoApprovePayloadSchema = z.object({
   sessionId: z.string(),
-  enabled: z.boolean(),
+  mode: z.string(),
 });
 
 export const SessionResolveQuestionPayloadSchema = z.object({

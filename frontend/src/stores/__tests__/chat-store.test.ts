@@ -10,7 +10,7 @@ function makeMeta(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
     connected: true,
     model: "sonnet",
     permissionMode: "default",
-    autoApprove: false,
+    autoApproveMode: "manual",
     behaviorPresets: { autoCommit: true, suggestParallel: true, planFirst: false, terse: false },
     totalCost: 0,
     turnCount: 0,

@@ -12,7 +12,7 @@ import type { BehaviorPresets } from "~/lib/generated-types";
 import { type ModelId, createSession, submitQuery } from "~/lib/session-actions";
 import { copyToClipboard, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment } from "~/stores/chat-store";
+import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
 const DEFAULT_PRESETS: BehaviorPresets = {
@@ -45,7 +45,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
   const [defaults] = useState(() => useUIStore.getState().sessionDefaults);
   const [worktree, setWorktree] = useState(defaults.worktree);
   const [planMode, setPlanMode] = useState(defaults.planMode);
-  const [autoApprove, setAutoApprove] = useState(defaults.autoApprove);
+  const [autoApproveMode, setAutoApproveMode] = useState<AutoApproveMode>(defaults.autoApproveMode);
   const [model, setModel] = useState<ModelId>(defaults.model);
   const [effort, setEffort] = useState<EffortLevel>(defaults.effort);
   const [sending, setSending] = useState(false);
@@ -67,12 +67,14 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       const sessionId = await createSession(ws, projectId, "", worktree, {
         model,
         planMode,
-        autoApprove,
+        autoApproveMode,
         effort: effort || undefined,
         behaviorPresets,
       });
       await submitQuery(ws, sessionId, prompt, attachments);
-      useUIStore.getState().setSessionDefaults({ worktree, planMode, autoApprove, model, effort });
+      useUIStore
+        .getState()
+        .setSessionDefaults({ worktree, planMode, autoApproveMode, model, effort });
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
         params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
@@ -131,8 +133,8 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
         onWorktreeChange={setWorktree}
         planMode={planMode}
         onPlanModeChange={setPlanMode}
-        autoApprove={autoApprove}
-        onAutoApproveChange={setAutoApprove}
+        autoApproveMode={autoApproveMode}
+        onAutoApproveModeChange={setAutoApproveMode}
         model={model}
         onModelChange={setModel}
         effort={effort}

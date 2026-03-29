@@ -105,7 +105,7 @@ func (q *Queries) ListAgentMessagesByTeam(ctx context.Context, teamID sql.NullSt
 }
 
 const listTeamMembers = `-- name: ListTeamMembers :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets, team_id, team_role FROM sessions WHERE team_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets, team_id, team_role, auto_approve_mode FROM sessions WHERE team_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListTeamMembers(ctx context.Context, teamID sql.NullString) ([]Session, error) {
@@ -142,6 +142,7 @@ func (q *Queries) ListTeamMembers(ctx context.Context, teamID sql.NullString) ([
 			&i.BehaviorPresets,
 			&i.TeamID,
 			&i.TeamRole,
+			&i.AutoApproveMode,
 		); err != nil {
 			return nil, err
 		}

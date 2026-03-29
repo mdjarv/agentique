@@ -33,7 +33,7 @@ import {
   isGitFresh,
   refreshGitStatus,
   resumeSession,
-  setAutoApprove,
+  setAutoApproveMode,
   setPermissionMode,
   setSessionModel,
   stopSession,
@@ -41,7 +41,7 @@ import {
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment, SessionMetadata, Turn } from "~/stores/chat-store";
+import type { Attachment, AutoApproveMode, SessionMetadata, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -75,7 +75,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const pendingApproval = useChatStore((s) => s.sessions[sessionId]?.pendingApproval ?? null);
   const pendingQuestion = useChatStore((s) => s.sessions[sessionId]?.pendingQuestion ?? null);
   const planMode = useChatStore((s) => s.sessions[sessionId]?.planMode ?? false);
-  const autoApprove = useChatStore((s) => s.sessions[sessionId]?.autoApprove ?? false);
+  const autoApproveMode = useChatStore((s) => s.sessions[sessionId]?.autoApproveMode ?? "manual");
   const todos = useChatStore((s) => s.sessions[sessionId]?.todos ?? null);
   const contextUsage = useChatStore((s) => s.sessions[sessionId]?.contextUsage ?? null);
   const compacting = useChatStore((s) => s.sessions[sessionId]?.compacting ?? false);
@@ -182,11 +182,11 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
     [ws, sessionId],
   );
 
-  const handleAutoApproveChange = useCallback(
-    (enabled: boolean) => {
-      useChatStore.getState().setSessionAutoApprove(sessionId, enabled);
-      setAutoApprove(ws, sessionId, enabled).catch((err) => {
-        toast.error(getErrorMessage(err, "Failed to set auto-approve"));
+  const handleAutoApproveModeChange = useCallback(
+    (mode: AutoApproveMode) => {
+      useChatStore.getState().setSessionAutoApproveMode(sessionId, mode);
+      setAutoApproveMode(ws, sessionId, mode).catch((err) => {
+        toast.error(getErrorMessage(err, "Failed to set auto-approve mode"));
       });
     },
     [ws, sessionId],
@@ -228,7 +228,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
       try {
         const newId = await createSession(ws, projectId, "", !!meta?.worktreeBranch, {
           model: meta?.model,
-          autoApprove: meta?.autoApprove,
+          autoApproveMode: meta?.autoApproveMode,
         });
         await stopSession(ws, sessionId);
         await enqueueMessage(ws, newId, plan);
@@ -398,8 +398,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               worktree={isWorktree}
               planMode={planMode}
               onPlanModeChange={handlePlanModeChange}
-              autoApprove={autoApprove}
-              onAutoApproveChange={handleAutoApproveChange}
+              autoApproveMode={autoApproveMode}
+              onAutoApproveModeChange={handleAutoApproveModeChange}
               model={(meta.model as ModelId) ?? undefined}
               onModelChange={handleModelChange}
               effort={(meta.effort as EffortLevel) ?? ""}

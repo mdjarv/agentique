@@ -256,7 +256,7 @@ export function PromptGroupProvider({
       const opts: CreateSessionOpts = {
         planMode: false,
         model: parent?.model,
-        autoApprove: parent?.autoApprove,
+        autoApproveMode: parent?.autoApproveMode,
         effort: parent?.effort,
         behaviorPresets: parent?.behaviorPresets,
       };
