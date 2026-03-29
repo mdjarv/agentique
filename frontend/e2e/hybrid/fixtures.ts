@@ -30,6 +30,8 @@ export interface SeedSession {
   workDir: string;
   live: boolean;
   behavior?: Scenario[];
+  planMode?: boolean;
+  autoApproveMode?: string;
 }
 
 export interface SeedRequest {

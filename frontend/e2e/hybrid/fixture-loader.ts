@@ -45,6 +45,8 @@ export function fixtureToSeed(
     projectId?: string;
     sessionId?: string;
     projectSlug?: string;
+    planMode?: boolean;
+    autoApproveMode?: string;
   },
 ): SeedRequest {
   const projectId = overrides?.projectId ?? "fix-proj-0000-0000-000000000001";
@@ -65,6 +67,8 @@ export function fixtureToSeed(
     workDir: fixture.metadata.projectPath,
     live: true,
     behavior: fixture.turns.map((t) => t.scenario),
+    planMode: overrides?.planMode,
+    autoApproveMode: overrides?.autoApproveMode,
   };
 
   return { projects: [project], sessions: [session] };

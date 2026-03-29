@@ -12,18 +12,15 @@
       "prompt": "Add a login page to the app",
       "scenario": {
         "events": [
-          { "delay": 0, "event": { "type": "thinking", "content": "The user wants a login page. Let me plan the implementation before writing code." } },
-          { "delay": 20, "event": { "type": "text", "content": "I'll create a plan for adding a login page to the app." } },
-          { "delay": 40, "event": { "type": "tool_use", "toolId": "tool-write-plan-001", "toolName": "Write", "toolInput": { "file_path": "/tmp/fixture-project/.claude/plans/login-page.md", "content": "# Login Page Plan\n\n## Steps\n1. Create LoginForm component with email/password fields\n2. Add form validation\n3. Connect to auth API\n4. Add route at /login\n5. Redirect authenticated users to dashboard" } } },
-          { "delay": 60, "event": { "type": "tool_result", "toolId": "tool-write-plan-001", "content": [{ "type": "text", "text": "Successfully wrote to /tmp/fixture-project/.claude/plans/login-page.md" }] } },
-          { "delay": 20, "event": { "type": "text", "content": "I've written the implementation plan. Let me proceed with the implementation." } },
-          { "delay": 30, "event": { "type": "tool_use", "toolId": "tool-exitplan-001", "toolName": "ExitPlanMode", "toolInput": { "planFilePath": "/tmp/fixture-project/.claude/plans/login-page.md" } } },
-          { "delay": 40, "event": { "type": "tool_result", "toolId": "tool-exitplan-001", "content": [{ "type": "text", "text": "Plan approved by user" }] } },
-          { "delay": 30, "event": { "type": "text", "content": "Plan approved. Now I'll implement the login page step by step." } },
-          { "delay": 40, "event": { "type": "tool_use", "toolId": "tool-write-login-001", "toolName": "Write", "toolInput": { "file_path": "/tmp/fixture-project/src/pages/Login.tsx", "content": "export function LoginPage() {\n  return (\n    <form className=\"login-form\">\n      <input type=\"email\" placeholder=\"Email\" />\n      <input type=\"password\" placeholder=\"Password\" />\n      <button type=\"submit\">Sign in</button>\n    </form>\n  );\n}" } } },
-          { "delay": 60, "event": { "type": "tool_result", "toolId": "tool-write-login-001", "content": [{ "type": "text", "text": "Successfully wrote to /tmp/fixture-project/src/pages/Login.tsx" }] } },
-          { "delay": 20, "event": { "type": "text", "content": "Created the login page component with email and password fields. The form includes basic structure that can be extended with validation and API integration." } },
-          { "delay": 10, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.015, "duration": 2800, "usage": { "inputTokens": 900, "outputTokens": 250 } } }
+          { "delay": 0, "event": { "type": "thinking", "content": "The user wants a login page. Let me explore the project structure first, then create a plan." } },
+          { "delay": 5, "event": { "type": "text", "content": "Let me look at the project structure before creating a plan." } },
+          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-glob-001", "toolName": "Glob", "toolInput": { "pattern": "src/**/*.tsx" } } },
+          { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-glob-001", "content": [{ "type": "text", "text": "src/App.tsx\nsrc/pages/Home.tsx" }] } },
+          { "delay": 5, "event": { "type": "text", "content": "I see the project has a pages directory. Here is my plan for adding the login page." } },
+          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-exitplan-001", "toolName": "ExitPlanMode", "toolInput": { "planFilePath": "/tmp/fixture-project/.claude/plans/login-page.md" } } },
+          { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-exitplan-001", "content": [{ "type": "text", "text": "Plan approved by user" }] } },
+          { "delay": 5, "event": { "type": "text", "content": "Plan approved. I will now create the login page component with email and password fields." } },
+          { "delay": 5, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.015, "duration": 2800, "usage": { "inputTokens": 900, "outputTokens": 250 } } }
         ]
       }
     }

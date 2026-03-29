@@ -51,12 +51,14 @@ type SeedProject struct {
 
 // SeedSession defines a session to create and optionally make live.
 type SeedSession struct {
-	ID        string     `json:"id"`
-	ProjectID string     `json:"projectId"`
-	Name      string     `json:"name"`
-	WorkDir   string     `json:"workDir"`
-	Live      bool       `json:"live"`     // if true, create via Manager (starts event loop)
-	Behavior  []Scenario `json:"behavior"` // scripted event sequences for mock
+	ID              string     `json:"id"`
+	ProjectID       string     `json:"projectId"`
+	Name            string     `json:"name"`
+	WorkDir         string     `json:"workDir"`
+	Live            bool       `json:"live"`             // if true, create via Manager (starts event loop)
+	Behavior        []Scenario `json:"behavior"`         // scripted event sequences for mock
+	PlanMode        bool       `json:"planMode"`         // start in plan permission mode
+	AutoApproveMode string     `json:"autoApproveMode"`  // "manual" (default), "auto", "fullAuto"
 }
 
 // SeedResult is returned from POST /api/test/seed.
@@ -105,10 +107,12 @@ func (h *Handler) HandleSeed(w http.ResponseWriter, r *http.Request) {
 
 		if s.Live {
 			sess, err := h.Manager.Create(ctx, session.CreateParams{
-				ID:        s.ID,
-				ProjectID: s.ProjectID,
-				Name:      s.Name,
-				WorkDir:   s.WorkDir,
+				ID:              s.ID,
+				ProjectID:       s.ProjectID,
+				Name:            s.Name,
+				WorkDir:         s.WorkDir,
+				PlanMode:        s.PlanMode,
+				AutoApproveMode: s.AutoApproveMode,
 			})
 			if err != nil {
 				respond.Error(w, httperr.Internal(fmt.Sprintf("create live session %s", s.ID), err))

@@ -153,9 +153,12 @@ test.describe("Recorded session replay", () => {
     }).toPass({ timeout: 15_000 });
   });
 
-  test("plan-approval: ExitPlanMode tool renders correctly", async ({ page, request }) => {
+  test("plan-approval: ExitPlanMode triggers approval banner", async ({ page, request }) => {
     const fixture = loadFixture("plan-approval");
-    const seed = fixtureToSeed(fixture);
+    const seed = fixtureToSeed(fixture, {
+      planMode: true,
+      autoApproveMode: "auto",
+    });
     await seedFixture(request, seed);
 
     await page.goto(`/project/${seed.projects[0]!.slug}`);
@@ -171,16 +174,23 @@ test.describe("Recorded session replay", () => {
     await composer.fill(prompts[0]!);
     await page.keyboard.press("Enter");
 
-    // Verify plan-related text renders.
-    await expect(page.getByText("create a plan for adding a login page")).toBeVisible({
+    // Verify pre-approval text renders.
+    await expect(page.getByText("project structure before creating a plan")).toBeVisible({
       timeout: 10_000,
     });
 
-    // Verify the plan file write and ExitPlanMode tool calls are shown.
-    await expect(page.getByText(/\d+ tool calls?/)).toBeVisible({ timeout: 10_000 });
+    // Approval banner should appear for ExitPlanMode.
+    await expect(page.getByText("ExitPlanMode")).toBeVisible({ timeout: 10_000 });
+    const allowButton = page.getByRole("button", { name: "Allow" });
+    await expect(allowButton).toBeVisible({ timeout: 5_000 });
 
-    // Verify final text about the login page component.
-    await expect(page.getByText("login page component")).toBeVisible({ timeout: 10_000 });
+    // Click Allow to approve the plan.
+    await allowButton.click();
+
+    // After approval, the remaining events should replay and session completes.
+    await expect(page.getByText("create the login page component")).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Session should be idle.
     await expect(async () => {
