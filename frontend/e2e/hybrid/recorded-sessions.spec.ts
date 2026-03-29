@@ -119,4 +119,74 @@ test.describe("Recorded session replay", () => {
     await expect(page.getByText("What does the main.ts file do?")).toBeVisible();
     await expect(page.getByText("Add input validation")).toBeVisible();
   });
+
+  test("agent-teams: real recorded session with many tool calls", async ({ page, request }) => {
+    const fixture = loadFixture("agent-teams");
+    const seed = fixtureToSeed(fixture);
+    await seedFixture(request, seed);
+
+    await page.goto(`/project/${seed.projects[0]!.slug}`);
+
+    const sessionLink = page.getByText(fixture.metadata.sessionName);
+    await expect(sessionLink).toBeVisible({ timeout: 10_000 });
+    await sessionLink.click();
+
+    const composer = page.getByPlaceholder("Send a message...");
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+
+    // Send the first turn's prompt.
+    const prompts = fixturePrompts(fixture);
+    await composer.fill(prompts[0]!);
+    await page.keyboard.press("Enter");
+
+    // Verify assistant text from the real session renders.
+    await expect(page.getByText("Sub-agent visibility")).toBeVisible({ timeout: 30_000 });
+
+    // Verify tool calls rendered (turn 0 has 48 tool calls).
+    await expect(page.getByText(/\d+ tool calls?/)).toBeVisible({ timeout: 10_000 });
+
+    // Verify session returns to idle.
+    await expect(async () => {
+      const states = await getTestState(request);
+      const session = states.find((s) => s.id === seed.sessions[0]!.id);
+      expect(session?.state).toBe("idle");
+    }).toPass({ timeout: 15_000 });
+  });
+
+  test("plan-approval: ExitPlanMode tool renders correctly", async ({ page, request }) => {
+    const fixture = loadFixture("plan-approval");
+    const seed = fixtureToSeed(fixture);
+    await seedFixture(request, seed);
+
+    await page.goto(`/project/${seed.projects[0]!.slug}`);
+
+    const sessionLink = page.getByText(fixture.metadata.sessionName);
+    await expect(sessionLink).toBeVisible({ timeout: 10_000 });
+    await sessionLink.click();
+
+    const composer = page.getByPlaceholder("Send a message...");
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+
+    const prompts = fixturePrompts(fixture);
+    await composer.fill(prompts[0]!);
+    await page.keyboard.press("Enter");
+
+    // Verify plan-related text renders.
+    await expect(page.getByText("create a plan for adding a login page")).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Verify the plan file write and ExitPlanMode tool calls are shown.
+    await expect(page.getByText(/\d+ tool calls?/)).toBeVisible({ timeout: 10_000 });
+
+    // Verify final text about the login page component.
+    await expect(page.getByText("login page component")).toBeVisible({ timeout: 10_000 });
+
+    // Session should be idle.
+    await expect(async () => {
+      const states = await getTestState(request);
+      const session = states.find((s) => s.id === seed.sessions[0]!.id);
+      expect(session?.state).toBe("idle");
+    }).toPass({ timeout: 5_000 });
+  });
 });
