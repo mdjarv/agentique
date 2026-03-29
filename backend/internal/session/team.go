@@ -461,6 +461,40 @@ func (s *Service) refreshTeamContext(ctx context.Context, teamID string) {
 	}
 }
 
+// wireSpawnWorkersCallback sets up the SpawnWorkers interception callback on a
+// live session. On approval, it creates a swarm with the session as lead.
+func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
+	sess.SetSpawnWorkersCallback(func(senderID string, req SpawnWorkersRequest) error {
+		// Look up current team — if the session is already in one, add workers there.
+		// Otherwise, create a new team.
+		dbSess, err := s.queries.GetSession(context.Background(), senderID)
+		if err != nil {
+			return fmt.Errorf("sender not found: %w", err)
+		}
+
+		teamName := req.TeamName
+		if teamName == "" {
+			teamName = dbSess.Name + " workers"
+		}
+
+		members := make([]SwarmMemberSpec, len(req.Workers))
+		for i, w := range req.Workers {
+			members[i] = SwarmMemberSpec{
+				Name:   w.Name,
+				Prompt: w.Prompt,
+			}
+		}
+
+		_, err = s.CreateSwarm(context.Background(), CreateSwarmParams{
+			ProjectID:     projectID,
+			TeamName:      teamName,
+			LeadSessionID: senderID,
+			Members:       members,
+		})
+		return err
+	})
+}
+
 // wireAgentMessageCallback sets up the SendMessage interception callback on a
 // live session. The callback resolves the target name to a session ID within
 // the team and routes the message through RouteAgentMessage.

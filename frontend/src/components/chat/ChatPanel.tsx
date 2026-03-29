@@ -16,6 +16,7 @@ import { MessageList } from "~/components/chat/MessageList";
 import { PlanReviewBanner } from "~/components/chat/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/QuestionBanner";
 import { ResumeBanner } from "~/components/chat/ResumeBanner";
+import { SpawnWorkerApprovalBanner } from "~/components/chat/SpawnWorkerApprovalBanner";
 
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { CollapsedSessionStrip, SessionPanel } from "~/components/chat/SessionPanel";
@@ -358,6 +359,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                   approval={pendingApproval}
                   onStartFresh={handleStartFresh}
                 />
+              ) : pendingApproval.toolName === "SpawnWorkers" ? (
+                <SpawnWorkerApprovalBanner sessionId={sessionId} approval={pendingApproval} />
               ) : (
                 <ApprovalBanner
                   sessionId={sessionId}

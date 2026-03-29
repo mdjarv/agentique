@@ -91,6 +91,7 @@ type Session struct {
 	eventLoopDone   chan struct{}
 	gitRefreshTimer  *time.Timer // debounce timer for mid-turn git refresh
 	onAgentMessage   func(senderID, targetName, content string) error
+	onSpawnWorkers   func(senderID string, req SpawnWorkersRequest) error
 }
 
 
@@ -905,22 +906,31 @@ func (s *Session) SetAgentMessageCallback(cb func(senderID, targetName, content 
 	s.mu.Unlock()
 }
 
+// SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
+type SpawnWorkersRequest struct {
+	TeamName string              `json:"teamName"`
+	Workers  []SpawnWorkerEntry  `json:"workers"`
+}
+
+// SpawnWorkerEntry describes a single worker to spawn.
+type SpawnWorkerEntry struct {
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+}
+
+// SetSpawnWorkersCallback sets the callback for handling worker spawn requests.
+func (s *Session) SetSpawnWorkersCallback(cb func(senderID string, req SpawnWorkersRequest) error) {
+	s.mu.Lock()
+	s.onSpawnWorkers = cb
+	s.mu.Unlock()
+}
+
 // interceptSendMessage handles the SendMessage tool by routing it through the
 // team messaging system. Returns a deny response with a success-like message
 // so Claude thinks the message was delivered (v1 hack — proper tool result
 // interception requires claudecli-go changes).
+// Also intercepts "@spawn" target for worker delegation.
 func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
-	s.mu.Lock()
-	cb := s.onAgentMessage
-	s.mu.Unlock()
-
-	if cb == nil {
-		return &claudecli.PermissionResponse{
-			Allow:       false,
-			DenyMessage: "SendMessage is not available — this session is not part of a team.",
-		}, nil
-	}
-
 	var parsed struct {
 		To      string `json:"to"`
 		Content string `json:"content"`
@@ -929,6 +939,22 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		return &claudecli.PermissionResponse{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
+		}, nil
+	}
+
+	// Intercept @spawn for worker delegation.
+	if parsed.To == "@spawn" {
+		return s.interceptSpawnWorkers(parsed.Content)
+	}
+
+	s.mu.Lock()
+	cb := s.onAgentMessage
+	s.mu.Unlock()
+
+	if cb == nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: "SendMessage is not available — this session is not part of a team.",
 		}, nil
 	}
 
@@ -943,6 +969,90 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 		Allow:       false,
 		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", parsed.To),
 	}, nil
+}
+
+// interceptSpawnWorkers handles SendMessage to "@spawn" — routes through the
+// standard approval flow so the user can approve/deny worker creation.
+func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionResponse, error) {
+	var req SpawnWorkersRequest
+	if err := json.Unmarshal([]byte(content), &req); err != nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Failed to parse spawn request: %v. Expected JSON with teamName and workers array.", err),
+		}, nil
+	}
+	if len(req.Workers) == 0 {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: "Spawn request must include at least one worker.",
+		}, nil
+	}
+
+	s.mu.Lock()
+	cb := s.onSpawnWorkers
+	s.mu.Unlock()
+
+	if cb == nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: "Worker spawning is not available for this session.",
+		}, nil
+	}
+
+	// Marshal the request as the tool input for the approval UI.
+	inputJSON, _ := json.Marshal(req)
+
+	approvalID := uuid.New().String()
+	ch := make(chan *claudecli.PermissionResponse, 1)
+
+	pa := &pendingApproval{
+		id:       approvalID,
+		toolName: "SpawnWorkers",
+		input:    inputJSON,
+		ch:       ch,
+	}
+
+	s.mu.Lock()
+	s.pendingApprovals[approvalID] = pa
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.pendingApprovals, approvalID)
+		s.mu.Unlock()
+	}()
+
+	slog.Debug("spawn workers requested", "session_id", s.ID, "workers", len(req.Workers), "approval_id", approvalID)
+
+	s.broadcast("session.tool-permission", map[string]any{
+		"sessionId":  s.ID,
+		"approvalId": approvalID,
+		"toolName":   "SpawnWorkers",
+		"input":      json.RawMessage(inputJSON),
+	})
+
+	select {
+	case resp := <-ch:
+		if !resp.Allow {
+			return &claudecli.PermissionResponse{
+				Allow:       false,
+				DenyMessage: "User denied worker creation.",
+			}, nil
+		}
+		// User approved — create the workers.
+		if err := cb(s.ID, req); err != nil {
+			return &claudecli.PermissionResponse{
+				Allow:       false,
+				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
+			}, nil
+		}
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Successfully spawned %d workers. They have joined your team and will report back via SendMessage.", len(req.Workers)),
+		}, nil
+	case <-s.ctx.Done():
+		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
+	}
 }
 
 // ResolveApproval sends a permission response for a pending tool approval.
