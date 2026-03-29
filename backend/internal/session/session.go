@@ -591,7 +591,25 @@ func (s *Session) SetPermissionMode(mode string) error {
 
 	s.mu.Lock()
 	s.permissionMode = mode
+	// Re-evaluate pending approvals under the new permission mode.
+	var resolved []string
+	for _, pa := range s.pendingApprovals {
+		if shouldBypassPermission(s.autoApproveMode, mode, pa.toolName) {
+			select {
+			case pa.ch <- &claudecli.PermissionResponse{Allow: true}:
+				resolved = append(resolved, pa.id)
+			default:
+			}
+		}
+	}
 	s.mu.Unlock()
+
+	for _, id := range resolved {
+		s.broadcast("session.approval-auto-resolved", map[string]any{
+			"sessionId":  s.ID,
+			"approvalId": id,
+		})
+	}
 	return nil
 }
 
@@ -608,11 +626,7 @@ func (s *Session) SetAutoApproveMode(mode string) {
 	// Auto-resolve pending approvals that the new mode would bypass.
 	var resolved []string
 	for _, pa := range s.pendingApprovals {
-		bypass := (mode != "manual" && (s.permissionMode != "plan" || isPlanSafeTool(pa.toolName))) || pa.toolName == "EnterPlanMode"
-		if pa.toolName == "ExitPlanMode" {
-			bypass = mode == "fullAuto"
-		}
-		if bypass {
+		if shouldBypassPermission(mode, s.permissionMode, pa.toolName) {
 			select {
 			case pa.ch <- &claudecli.PermissionResponse{Allow: true}:
 				resolved = append(resolved, pa.id)
@@ -774,6 +788,46 @@ func isPlanSafeTool(toolName string) bool {
 	return planSafeCategories[classifyTool(toolName)]
 }
 
+// autoSafeCategories lists tool categories that can be auto-approved in "auto"
+// mode. Superset of planSafeCategories, adding meta and question tools.
+var autoSafeCategories = map[string]bool{
+	"file_read": true, // Read, Glob, Grep
+	"web":       true, // WebSearch, WebFetch
+	"agent":     true, // Agent, ExitWorktree
+	"task":      true, // TodoWrite, TodoRead
+	"meta":      true, // ToolSearch, Skill
+	"question":  true, // AskUserQuestion
+}
+
+// isAutoSafeTool reports whether a tool can be auto-approved in "auto" mode.
+func isAutoSafeTool(toolName string) bool {
+	return autoSafeCategories[classifyTool(toolName)]
+}
+
+// shouldBypassPermission determines whether a tool should be auto-approved.
+//
+//	EnterPlanMode            → always bypass
+//	fullAuto                 → always bypass
+//	auto + plan permMode     → bypass only plan-safe tools
+//	auto + non-plan permMode → bypass only auto-safe tools
+//	manual                   → never bypass
+func shouldBypassPermission(autoMode, permMode, toolName string) bool {
+	if toolName == "EnterPlanMode" {
+		return true
+	}
+	switch autoMode {
+	case "fullAuto":
+		return true
+	case "auto":
+		if permMode == "plan" {
+			return isPlanSafeTool(toolName)
+		}
+		return isAutoSafeTool(toolName)
+	default: // "manual"
+		return false
+	}
+}
+
 // handleToolPermission is the callback for claudecli WithCanUseTool.
 // Blocks until the user resolves the approval or Close() cancels all pending approvals.
 // claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
@@ -784,22 +838,9 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 		return s.interceptSendMessage(input)
 	}
 
-	s.mu.Lock()
-	mode := s.autoApproveMode
-	bypass := (mode != "manual" && (s.permissionMode != "plan" || isPlanSafeTool(toolName))) || toolName == "EnterPlanMode"
-	s.mu.Unlock()
 	// ExitPlanMode is always auto-approved here — the event pipeline's
 	// requestPlanReview handles the user-facing plan approval flow.
 	if toolName == "ExitPlanMode" {
-		bypass = true
-	}
-	if bypass {
-		// Defensive fallback — processEvent also detects EnterPlanMode from the
-		// event stream, but if the CLI ever starts sending can_use_tool for it,
-		// handle it here too. transitionPlanMode is idempotent.
-		if toolName == "EnterPlanMode" {
-			s.transitionPlanMode("plan")
-		}
 		return &claudecli.PermissionResponse{Allow: true}, nil
 	}
 
@@ -813,9 +854,25 @@ func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (
 		ch:       ch,
 	}
 
+	// Single lock: check bypass and register pending approval atomically.
+	// Prevents TOCTOU race where SetAutoApproveMode iterates pending approvals
+	// between the bypass check and registration, missing this approval.
 	s.mu.Lock()
-	s.pendingApprovals[approvalID] = pa
+	bypass := shouldBypassPermission(s.autoApproveMode, s.permissionMode, toolName)
+	if !bypass {
+		s.pendingApprovals[approvalID] = pa
+	}
 	s.mu.Unlock()
+
+	if bypass {
+		// Defensive fallback — processEvent also detects EnterPlanMode from the
+		// event stream, but if the CLI ever starts sending can_use_tool for it,
+		// handle it here too. transitionPlanMode is idempotent.
+		if toolName == "EnterPlanMode" {
+			s.transitionPlanMode("plan")
+		}
+		return &claudecli.PermissionResponse{Allow: true}, nil
+	}
 
 	defer func() {
 		s.mu.Lock()
