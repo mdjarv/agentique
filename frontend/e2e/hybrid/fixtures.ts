@@ -192,7 +192,7 @@ export function compactChatSeed(): SeedRequest {
         workDir: "/tmp/fixture-project",
         live: true,
         behavior: [COMPACT_TURN_1, COMPACT_TURN_2],
-        autoApproveMode: "auto",
+        autoApproveMode: "fullAuto",
       },
     ],
   };
