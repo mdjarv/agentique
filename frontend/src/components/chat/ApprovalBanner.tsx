@@ -121,9 +121,9 @@ export function ApprovalBanner({
   const buttons = (
     <div className="flex items-center gap-1.5 shrink-0 max-md:ml-auto">
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
-        className="h-7 max-md:h-10 px-2 max-md:px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+        className="text-destructive hover:text-destructive hover:bg-destructive/10 max-md:h-10 max-md:px-3"
         onClick={handleDeny}
         disabled={submitting}
       >
@@ -131,8 +131,8 @@ export function ApprovalBanner({
         Deny
       </Button>
       <Button
-        size="sm"
-        className="h-7 max-md:h-10 px-2 max-md:px-3 bg-success hover:bg-success/90 text-background"
+        size="xs"
+        className="bg-success hover:bg-success/90 text-background max-md:h-10 max-md:px-3"
         onClick={handleAllow}
         disabled={submitting}
       >
@@ -140,9 +140,9 @@ export function ApprovalBanner({
         Allow
       </Button>
       <Button
-        size="sm"
+        size="xs"
         variant="outline"
-        className="h-7 max-md:h-10 px-2 max-md:px-3"
+        className="max-md:h-10 max-md:px-3"
         onClick={handleAllowAll}
         disabled={submitting}
       >
@@ -152,7 +152,7 @@ export function ApprovalBanner({
   );
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 shrink-0">
+    <div className="mx-4 mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 shrink-0">
       {isMobile ? (
         <div className="flex flex-col gap-2 text-sm">
           <div className="flex items-start gap-2">
@@ -176,16 +176,20 @@ export function ApprovalBanner({
           {buttons}
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-sm">
-          <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
-          <span className="font-mono text-xs font-medium bg-warning/15 text-warning px-1.5 py-0.5 rounded shrink-0">
-            {approval.toolName}
-          </span>
-          {description && (
-            <span className="text-muted-foreground text-xs shrink-0">{description}</span>
-          )}
-          <span className="font-mono text-foreground/70 truncate min-w-0">{summary}</span>
-          <div className="ml-auto">{buttons}</div>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
+            <span className="font-mono text-xs font-medium bg-warning/15 text-warning px-1.5 py-0.5 rounded shrink-0">
+              {approval.toolName}
+            </span>
+            {description && (
+              <span className="text-muted-foreground text-xs shrink-0">{description}</span>
+            )}
+            <div className="ml-auto">{buttons}</div>
+          </div>
+          <div className="font-mono text-xs text-foreground/70 pl-6 break-all">
+            {summary}
+          </div>
         </div>
       )}
     </div>

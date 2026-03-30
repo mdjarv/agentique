@@ -370,7 +370,8 @@ export const MOCK_PENDING_APPROVALS: Record<string, PendingApproval> = {
     approvalId: "mock-approval-001",
     toolName: "Bash",
     input: {
-      command: "cd frontend && npm test -- --run src/lib/ws-client.test.ts",
+      command:
+        "cd frontend && npm test -- --run src/lib/ws-client.test.ts src/lib/ws-reconnect.test.ts src/hooks/useWebSocket.test.ts --coverage --reporter=verbose",
       description: "Run WebSocket client tests",
     },
   },
