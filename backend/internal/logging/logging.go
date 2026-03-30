@@ -20,7 +20,8 @@ func Trace(msg string, args ...any) {
 
 // Init sets up charmbracelet/log as the default slog handler with colored output.
 // Level is parsed from levelStr ("trace", "debug", "info", "warn", "error"); defaults to info.
-func Init(levelStr string) {
+// If jsonLogPath is non-empty, a parallel JSON handler writes all log records to that file.
+func Init(levelStr string, jsonLogPath string) {
 	level := parseLevel(levelStr)
 
 	handler := log.NewWithOptions(os.Stderr, log.Options{
@@ -36,7 +37,60 @@ func Init(levelStr string) {
 		Foreground(lipgloss.Color("241"))
 	handler.SetStyles(styles)
 
-	slog.SetDefault(slog.New(handler))
+	var slogHandler slog.Handler = handler
+	if jsonLogPath != "" {
+		f, err := os.OpenFile(jsonLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			slog.SetDefault(slog.New(handler))
+			slog.Error("failed to open json log file", "path", jsonLogPath, "error", err)
+			return
+		}
+		jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: level})
+		slogHandler = &teeHandler{handlers: []slog.Handler{handler, jsonHandler}}
+	}
+
+	slog.SetDefault(slog.New(slogHandler))
+}
+
+// teeHandler fans out slog records to multiple handlers.
+type teeHandler struct {
+	handlers []slog.Handler
+	attrs    []slog.Attr
+	groups   []string
+}
+
+func (t *teeHandler) Enabled(_ context.Context, level slog.Level) bool {
+	for _, h := range t.handlers {
+		if h.Enabled(context.Background(), level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *teeHandler) Handle(ctx context.Context, r slog.Record) error {
+	for _, h := range t.handlers {
+		if h.Enabled(ctx, r.Level) {
+			_ = h.Handle(ctx, r.Clone())
+		}
+	}
+	return nil
+}
+
+func (t *teeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	hs := make([]slog.Handler, len(t.handlers))
+	for i, h := range t.handlers {
+		hs[i] = h.WithAttrs(attrs)
+	}
+	return &teeHandler{handlers: hs}
+}
+
+func (t *teeHandler) WithGroup(name string) slog.Handler {
+	hs := make([]slog.Handler, len(t.handlers))
+	for i, h := range t.handlers {
+		hs[i] = h.WithGroup(name)
+	}
+	return &teeHandler{handlers: hs}
 }
 
 func parseLevel(s string) slog.Level {
