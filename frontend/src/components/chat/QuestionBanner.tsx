@@ -12,6 +12,34 @@ interface QuestionBannerProps {
   pending: PendingQuestion;
 }
 
+function OptionCard({
+  label,
+  description,
+  selected,
+  onClick,
+}: {
+  label: string;
+  description?: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "text-left rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer",
+        selected
+          ? "border-agent bg-agent/10 ring-1 ring-agent/30"
+          : "border-border hover:border-muted-foreground/40 hover:bg-muted/30",
+      )}
+    >
+      <span className="font-medium">{label}</span>
+      {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+    </button>
+  );
+}
+
 function OptionsInput({
   question,
   value,
@@ -24,59 +52,38 @@ function OptionsInput({
   if (question.multiSelect) {
     const selected = new Set(value ? value.split("\n") : []);
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         {question.options?.map((opt) => (
-          <label
+          <OptionCard
             key={opt.label}
-            className="flex items-start gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/50"
-          >
-            <input
-              type="checkbox"
-              className="mt-0.5 accent-[var(--agent)]"
-              checked={selected.has(opt.label)}
-              onChange={(e) => {
-                const next = new Set(selected);
-                if (e.target.checked) {
-                  next.add(opt.label);
-                } else {
-                  next.delete(opt.label);
-                }
-                onChange([...next].join("\n"));
-              }}
-            />
-            <span className="text-sm">
-              <span className="font-medium">{opt.label}</span>
-              {opt.description && (
-                <span className="text-muted-foreground ml-1">{opt.description}</span>
-              )}
-            </span>
-          </label>
+            label={opt.label}
+            description={opt.description}
+            selected={selected.has(opt.label)}
+            onClick={() => {
+              const next = new Set(selected);
+              if (next.has(opt.label)) {
+                next.delete(opt.label);
+              } else {
+                next.add(opt.label);
+              }
+              onChange([...next].join("\n"));
+            }}
+          />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {question.options?.map((opt) => (
-        <label
+        <OptionCard
           key={opt.label}
-          className="flex items-start gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/50"
-        >
-          <input
-            type="radio"
-            className="mt-0.5 accent-[var(--agent)]"
-            name={question.question}
-            checked={value === opt.label}
-            onChange={() => onChange(opt.label)}
-          />
-          <span className="text-sm">
-            <span className="font-medium">{opt.label}</span>
-            {opt.description && (
-              <span className="text-muted-foreground ml-1">{opt.description}</span>
-            )}
-          </span>
-        </label>
+          label={opt.label}
+          description={opt.description}
+          selected={value === opt.label}
+          onClick={() => onChange(opt.label)}
+        />
       ))}
     </div>
   );
@@ -136,14 +143,14 @@ function QuestionInput({
       <OptionsInput question={question} value={value} onChange={onChange} />
       <button
         type="button"
-        className="self-start text-xs text-agent hover:text-agent/80 flex items-center gap-1"
+        className="self-start text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted/50 transition-colors"
         onClick={() => {
           onChange("");
           setCustomMode(true);
         }}
       >
         <MessageSquare className="h-3 w-3" />
-        Type a custom response
+        Custom response
       </button>
     </div>
   );
