@@ -53,6 +53,7 @@ export default defineConfig({
         manualChunks: {
           vendor: ["react", "react-dom"],
           markdown: ["react-markdown", "remark-gfm", "remark-breaks", "react-syntax-highlighter"],
+          mermaid: ["mermaid"],
         },
       },
     },

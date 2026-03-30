@@ -435,6 +435,21 @@
   color: var(--foreground-bright);
 }
 
+/* --- Mermaid diagrams --- */
+.prose .mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0.5rem;
+}
+
+.prose .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* --- Strikethrough (GFM) --- */
 .prose del {
   color: var(--muted-foreground);

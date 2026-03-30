@@ -15,6 +15,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -48,7 +49,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-const CODE_STYLE = { margin: 0, fontSize: "0.75rem", borderRadius: "0.5rem" } as const;
+export const CODE_STYLE = { margin: 0, fontSize: "0.75rem", borderRadius: "0.5rem" } as const;
 
 function DeferredHighlighter({ code, language }: { code: string; language: string }) {
   const [ready, setReady] = useState(false);
@@ -94,7 +95,9 @@ function PreBlock({
   return (
     <div className="code-block-wrapper">
       <CopyButton text={code} />
-      {lang ? (
+      {lang === "mermaid" ? (
+        <MermaidDiagram code={code} />
+      ) : lang ? (
         <DeferredHighlighter code={code} language={lang} />
       ) : (
         <pre {...rest}>
