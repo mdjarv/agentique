@@ -39,7 +39,8 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
 import { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from "~/lib/team-actions";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
 
@@ -74,8 +75,11 @@ export function SessionHeader({
   const hasTeam = !!meta.teamId;
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
-  const { copied: nameCopied, copy: copyName } = useCopyToClipboard();
+  const { copied: refCopied, copy: copyRef } = useCopyToClipboard();
   const inputRef = useRef<HTMLInputElement>(null);
+  const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
+  const shortId = sessionShortId(meta.id);
+  const sessionRef = projectSlug ? `${projectSlug}/${shortId}` : shortId;
 
   useEffect(() => {
     if (editing) {
@@ -203,11 +207,11 @@ export function SessionHeader({
             className="font-medium truncate bg-transparent border-b border-border outline-none px-0 py-0 text-sm w-48"
           />
         ) : (
-          <div className="group/name flex items-center gap-1 font-medium truncate">
+          <div className="group/name flex items-center gap-1.5 min-w-0">
             <button
               type="button"
               onClick={() => (isMobile ? undefined : setEditing(true))}
-              className="flex items-center gap-1 truncate hover:text-foreground"
+              className="flex items-center gap-1 truncate hover:text-foreground font-medium"
             >
               <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
                 {meta.name || "Untitled"}
@@ -216,16 +220,17 @@ export function SessionHeader({
                 <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
               )}
             </button>
-            {!isMobile && (
+            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground/60">
+              <span className="text-[10px] font-mono">{sessionRef}</span>
               <button
                 type="button"
-                onClick={() => copyName(meta.name || "Untitled")}
-                className="p-0.5 rounded opacity-0 group-hover/name:opacity-50 hover:!opacity-100 text-muted-foreground transition-opacity shrink-0"
-                aria-label="Copy session name"
+                onClick={() => copyRef(sessionRef)}
+                className="p-0.5 rounded hover:text-foreground transition-colors"
+                aria-label="Copy session reference"
               >
-                {nameCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {refCopied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
               </button>
-            )}
+            </span>
           </div>
         )}
 
@@ -280,16 +285,13 @@ export function SessionHeader({
                     <Pencil className="h-3.5 w-3.5" />
                     Rename
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => copyName(meta.name || "Untitled")}
-                    className="text-xs gap-2"
-                  >
-                    {nameCopied ? (
+                  <DropdownMenuItem onClick={() => copyRef(sessionRef)} className="text-xs gap-2">
+                    {refCopied ? (
                       <Check className="h-3.5 w-3.5" />
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
-                    Copy name
+                    Copy ref ({sessionRef})
                   </DropdownMenuItem>
                 </>
               )}
