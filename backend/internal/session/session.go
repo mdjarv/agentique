@@ -163,7 +163,7 @@ func newSession(p sessionParams) *Session {
 			s.mu.Lock()
 			aam := s.autoApproveMode
 			s.mu.Unlock()
-			if aam == "fullAuto" {
+			if aam == "fullAuto" || aam == "auto" {
 				s.transitionPlanMode("default")
 			} else {
 				go s.requestPlanReview(input)
