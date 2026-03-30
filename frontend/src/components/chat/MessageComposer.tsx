@@ -51,7 +51,7 @@ export type EffortLevel = "" | "low" | "medium" | "high" | "max";
 
 const EFFORT_LEVELS: EffortLevel[] = ["max", "high", "medium", "low", ""];
 const EFFORT_LABELS: Record<EffortLevel, string> = {
-  "": "Auto",
+  "": "Default",
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -396,7 +396,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={disabled}
-                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
                   aria-label="Attach files"
                 >
                   <Paperclip className="h-3.5 w-3.5" />
@@ -410,7 +410,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                       type="button"
                       onClick={() => onWorktreeChange(!worktree)}
                       className={cn(
-                        "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                        "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0 cursor-pointer",
                         worktree ? "bg-primary/10 text-primary" : "bg-orange/10 text-orange",
                       )}
                     >
@@ -442,10 +442,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     onClick={() => onPlanModeChange(!planMode)}
                     disabled={isRunning}
                     className={cn(
-                      "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
-                      planMode
-                        ? "bg-warning/10 text-warning"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                      "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0 cursor-pointer",
+                      planMode ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary",
                       isRunning && "opacity-40 cursor-not-allowed",
                     )}
                   >
@@ -470,7 +468,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           className={cn(
-                            "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                            "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0 cursor-pointer",
                             "hover:text-foreground hover:bg-muted/80 focus-visible:outline-none",
                             PERMISSION_COLORS[mode],
                             PERMISSION_BG[mode],
@@ -534,7 +532,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         className={cn(
-                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0 cursor-pointer",
                           "text-muted-foreground hover:text-foreground hover:bg-muted/80",
                           "focus-visible:outline-none",
                         )}
@@ -568,7 +566,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         className={cn(
-                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0 cursor-pointer",
                           "hover:text-foreground hover:bg-muted/80 focus-visible:outline-none",
                           EFFORT_COLORS[effort],
                         )}
@@ -613,7 +611,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   <button
                     type="button"
                     onClick={onInterrupt}
-                    className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors"
+                    className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
                     aria-label="Stop"
                   >
                     <Square className="h-3.5 w-3.5" />
@@ -623,7 +621,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   type="button"
                   onClick={handleSend}
                   disabled={disabled || (!text.trim() && attachments.length === 0)}
-                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   aria-label={isRunning ? "Queue message" : "Send message"}
                 >
                   {isRunning ? (
