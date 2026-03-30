@@ -398,6 +398,18 @@ export function useGlobalSubscriptions(projects: Project[]) {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamDissolved = ws.subscribe("team.dissolved", (payload: any) => {
+      const dissolvedTeamId: string = payload.teamId;
+      useTeamStore.getState().removeTeam(dissolvedTeamId);
+      const sessions = useChatStore.getState().sessions;
+      for (const [sid, data] of Object.entries(sessions)) {
+        if (data.meta.teamId === dissolvedTeamId) {
+          useChatStore.getState().setSessionTeamId(sid, undefined);
+        }
+      }
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamJoined = ws.subscribe("team.member-joined", (payload: any) => {
       if (payload.team) {
         useTeamStore.getState().addTeam(payload.team);
@@ -472,6 +484,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubTagDeleted();
       unsubTeamCreated();
       unsubTeamDeleted();
+      unsubTeamDissolved();
       unsubTeamJoined();
       unsubTeamLeft();
       unsubReconnect();
