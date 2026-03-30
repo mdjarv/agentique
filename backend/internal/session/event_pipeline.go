@@ -42,11 +42,12 @@ type EventPipeline struct {
 	sessionID string
 	sink      EventSink
 
-	mu              sync.Mutex
-	claudeSessionID string
-	turnIndex       int
-	seqInTurn       int
-	toolCategories  map[string]string
+	mu                sync.Mutex
+	claudeSessionID   string
+	turnIndex         int
+	seqInTurn         int
+	toolCategories    map[string]string
+	pendingMessageIDs []string // FIFO queue of messageIds awaiting replay confirmation
 
 	onClaudeSessionID func(string)
 	onPlanTransition  func(string)
@@ -146,9 +147,43 @@ func (p *EventPipeline) emitWireEvent(wireEvent any) {
 	})
 }
 
+// PushPendingMessage enqueues a messageId for replay confirmation.
+func (p *EventPipeline) PushPendingMessage(id string) {
+	p.mu.Lock()
+	p.pendingMessageIDs = append(p.pendingMessageIDs, id)
+	p.mu.Unlock()
+}
+
+// handleReplayConfirmation pops the oldest pending messageId and broadcasts
+// a transient delivery confirmation event.
+func (p *EventPipeline) handleReplayConfirmation() {
+	p.mu.Lock()
+	if len(p.pendingMessageIDs) == 0 {
+		p.mu.Unlock()
+		slog.Debug("replay event with no pending message", "session_id", p.sessionID)
+		return
+	}
+	msgID := p.pendingMessageIDs[0]
+	p.pendingMessageIDs = p.pendingMessageIDs[1:]
+	p.mu.Unlock()
+
+	p.sink.Broadcast("session.event", map[string]any{
+		"sessionId": p.sessionID,
+		"event": WireMessageDeliveryEvent{
+			Type:      "message_delivery",
+			Status:    "delivered",
+			MessageID: msgID,
+		},
+	})
+}
+
 // processUserEvent extracts wire events from a UserEvent: tool_result content
 // blocks become WireToolResultEvent, and agent results become WireAgentResultEvent.
 func (p *EventPipeline) processUserEvent(ue *claudecli.UserEvent) {
+	if ue.IsReplay {
+		p.handleReplayConfirmation()
+		return
+	}
 	for _, c := range ue.Content {
 		if c.Type == "tool_result" && c.ToolUseID != "" {
 			p.emitWireEvent(WireToolResultEvent{
@@ -353,7 +388,8 @@ func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 func isTransient(wireEvent any) bool {
 	switch e := wireEvent.(type) {
 	case WireRateLimitEvent, WireCompactStatusEvent,
-		WireContextManagementEvent, WireStreamEvent:
+		WireContextManagementEvent, WireStreamEvent,
+		WireMessageDeliveryEvent:
 		return true
 	case WireTaskEvent:
 		return e.Subtype == "task_progress"

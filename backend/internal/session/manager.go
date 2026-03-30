@@ -92,7 +92,11 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
+		claudecli.WithReplayUserMessages(),
 		claudecli.WithAppendSystemPrompt(buildPreamble(params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.TeamPreamble, m.GlobalPreamble)),
+	}
+	if params.Name != "" {
+		connectOpts = append(connectOpts, claudecli.WithSessionName(params.Name))
 	}
 	if effort := resolveEffort(params.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
@@ -161,6 +165,7 @@ type ResumeParams struct {
 	SessionID         string
 	ClaudeSessionID   string
 	ProjectID         string
+	Name              string
 	WorkDir           string
 	WorktreeBranch    string
 	Model             string
@@ -214,8 +219,12 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithCanUseTool(sess.handleToolPermission),
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
+		claudecli.WithReplayUserMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
 		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble, m.GlobalPreamble) + p.ExtraPreamble),
+	}
+	if p.Name != "" {
+		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

@@ -850,6 +850,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		SessionID:         sessionID,
 		ClaudeSessionID:   claudeSessID,
 		ProjectID:         dbSess.ProjectID,
+		Name:              dbSess.Name,
 		WorkDir:           workDir,
 		WorktreeBranch:    nullStr(dbSess.WorktreeBranch),
 		Model:             dbSess.Model,

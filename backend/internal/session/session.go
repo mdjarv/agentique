@@ -267,7 +267,9 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 	}
 
 	// Persist + broadcast as a user_message event within the current turn.
-	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, Attachments: attachments}
+	messageID := uuid.New().String()
+	s.pipeline.PushPendingMessage(messageID)
+	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, MessageID: messageID, Attachments: attachments}
 	if data, err := json.Marshal(wireEvent); err == nil {
 		if err := s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 			SessionID: s.ID,

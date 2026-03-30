@@ -115,7 +115,16 @@ type WireAgentMessageEvent struct {
 type WireUserMessageEvent struct {
 	Type        string            `json:"type"`
 	Content     string            `json:"content"`
+	MessageID   string            `json:"messageId,omitempty"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
+}
+
+// WireMessageDeliveryEvent confirms that the CLI has read a user message
+// sent via SendMessage. Transient — broadcast only, not persisted.
+type WireMessageDeliveryEvent struct {
+	Type      string `json:"type"`      // "message_delivery"
+	Status    string `json:"status"`    // "delivered"
+	MessageID string `json:"messageId"`
 }
 
 // WireTaskEvent represents a subagent lifecycle event.
@@ -161,6 +170,7 @@ func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
 func (e WireContextManagementEvent) WireType() string  { return e.Type }
 func (e WireAgentMessageEvent) WireType() string       { return e.Type }
 func (e WireUserMessageEvent) WireType() string        { return e.Type }
+func (e WireMessageDeliveryEvent) WireType() string    { return e.Type }
 func (e WireTaskEvent) WireType() string               { return e.Type }
 func (e WireAgentResultEvent) WireType() string        { return e.Type }
 
