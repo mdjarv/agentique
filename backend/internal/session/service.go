@@ -943,6 +943,10 @@ func generateSessionName(runner msggen.Runner, prompt string) string {
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithBuiltinTools(""),
+		claudecli.WithSkipVersionCheck(),
+		claudecli.WithStrictMCPConfig(),
+		claudecli.WithDisableSlashCommands(),
+		claudecli.WithSettingSources(""),
 	)
 	if err != nil {
 		slog.Warn("auto-rename haiku failed", "error", err)
