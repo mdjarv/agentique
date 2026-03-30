@@ -34,6 +34,7 @@ var (
 	rpOrigin    string
 	tlsCert        string
 	tlsKey         string
+	logOutput      string
 	testMode       bool
 	backupInterval string
 	backupRetain   int
@@ -48,6 +49,7 @@ func init() {
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
 	serveCmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to TLS key file")
+	serveCmd.Flags().StringVar(&logOutput, "log-output", "auto", "log output mode: auto, journald, file, stdout")
 	serveCmd.Flags().BoolVar(&testMode, "test-mode", false, "enable test mode (mock CLI, test endpoints, no auth)")
 	serveCmd.Flags().StringVar(&backupInterval, "backup-interval", "15m", "interval between database backups")
 	serveCmd.Flags().IntVar(&backupRetain, "backup-retain", 7, "days to keep daily backups")
@@ -117,7 +119,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if jsonLog == "" {
 		jsonLog = filepath.Join(paths.DataDir(), "agentique.log.jsonl")
 	}
-	logging.Init(lvl, jsonLog)
+	logging.InitWithMode(lvl, jsonLog, logging.OutputMode(logOutput))
 
 	if !testMode {
 		if err := preflight(); err != nil {
@@ -301,6 +303,9 @@ func applyConfig(cmd *cobra.Command, cfg *config.Config) {
 	}
 	if !flags.Changed("log-level") && cfg.Logging.Level != "" {
 		logLevel = cfg.Logging.Level
+	}
+	if !flags.Changed("log-output") && cfg.Logging.Output != "" {
+		logOutput = cfg.Logging.Output
 	}
 	if !flags.Changed("backup-interval") && cfg.Backup.Interval != "" {
 		backupInterval = cfg.Backup.Interval

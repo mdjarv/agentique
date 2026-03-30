@@ -13,17 +13,58 @@ import (
 // LevelTrace is below Debug, for high-frequency messages like ws polling.
 const LevelTrace = slog.Level(-8)
 
+// OutputMode controls where log output is directed.
+type OutputMode string
+
+const (
+	OutputAuto     OutputMode = "auto"     // detect journald, else file+stderr
+	OutputJournald OutputMode = "journald" // plain text to stderr, no file
+	OutputFile     OutputMode = "file"     // colored stderr + JSON file (original behavior)
+	OutputStdout   OutputMode = "stdout"   // plain text to stdout only
+)
+
 // Trace logs at trace level.
 func Trace(msg string, args ...any) {
 	slog.Log(context.Background(), LevelTrace, msg, args...)
 }
 
-// Init sets up charmbracelet/log as the default slog handler with colored output.
-// Level is parsed from levelStr ("trace", "debug", "info", "warn", "error"); defaults to info.
-// If jsonLogPath is non-empty, a parallel JSON handler writes all log records to that file.
+// Init sets up logging with the given output mode.
+// If outputMode is empty, defaults to OutputAuto.
+// jsonLogPath is only used in file mode.
 func Init(levelStr string, jsonLogPath string) {
+	InitWithMode(levelStr, jsonLogPath, OutputAuto)
+}
+
+// InitWithMode sets up logging with explicit output mode control.
+func InitWithMode(levelStr string, jsonLogPath string, mode OutputMode) {
 	level := parseLevel(levelStr)
 
+	if mode == "" || mode == OutputAuto {
+		mode = detectMode()
+	}
+
+	var handler slog.Handler
+	switch mode {
+	case OutputJournald:
+		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	case OutputStdout:
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	default: // OutputFile
+		handler = initCharmHandler(level, jsonLogPath)
+	}
+
+	slog.SetDefault(slog.New(handler))
+}
+
+// detectMode checks if we're running under systemd.
+func detectMode() OutputMode {
+	if os.Getenv("JOURNAL_STREAM") != "" {
+		return OutputJournald
+	}
+	return OutputFile
+}
+
+func initCharmHandler(level slog.Level, jsonLogPath string) slog.Handler {
 	handler := log.NewWithOptions(os.Stderr, log.Options{
 		Level:           log.Level(level),
 		ReportTimestamp: true,
@@ -43,20 +84,18 @@ func Init(levelStr string, jsonLogPath string) {
 		if err != nil {
 			slog.SetDefault(slog.New(handler))
 			slog.Error("failed to open json log file", "path", jsonLogPath, "error", err)
-			return
+			return handler
 		}
 		jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: level})
 		slogHandler = &teeHandler{handlers: []slog.Handler{handler, jsonHandler}}
 	}
 
-	slog.SetDefault(slog.New(slogHandler))
+	return slogHandler
 }
 
 // teeHandler fans out slog records to multiple handlers.
 type teeHandler struct {
 	handlers []slog.Handler
-	attrs    []slog.Attr
-	groups   []string
 }
 
 func (t *teeHandler) Enabled(_ context.Context, level slog.Level) bool {
