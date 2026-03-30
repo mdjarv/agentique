@@ -110,7 +110,14 @@ export interface WireContextManagementEvent {
 export interface WireUserMessageEvent {
   type: "user_message";
   content: string;
+  messageId?: string;
   attachments?: QueryAttachment[];
+}
+
+export interface WireMessageDeliveryEvent {
+  type: "message_delivery";
+  status: string;
+  messageId: string;
 }
 
 export interface WireQuestionOption {
@@ -550,4 +557,5 @@ export type WireEvent =
   | WireCompactStatusEvent
   | WireCompactBoundaryEvent
   | WireContextManagementEvent
-  | WireUserMessageEvent;
+  | WireUserMessageEvent
+  | WireMessageDeliveryEvent;

@@ -40,6 +40,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     retryAfterSecs: raw.retryAfterSecs as number | undefined,
     trigger: raw.trigger as string | undefined,
     preTokens: raw.preTokens as number | undefined,
+    messageId: raw.messageId as string | undefined,
     attachments: type === "user_message" ? parseAttachments(raw.attachments) : undefined,
     direction: raw.direction as "sent" | "received" | undefined,
     senderSessionId: raw.senderSessionId as string | undefined,

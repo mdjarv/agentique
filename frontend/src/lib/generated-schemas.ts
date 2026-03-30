@@ -112,7 +112,14 @@ export const WireContextManagementEventSchema = z.object({
 export const WireUserMessageEventSchema = z.object({
   type: z.literal("user_message"),
   content: z.string(),
+  messageId: z.string().optional(),
   attachments: z.array(QueryAttachmentSchema).optional(),
+});
+
+export const WireMessageDeliveryEventSchema = z.object({
+  type: z.literal("message_delivery"),
+  status: z.string(),
+  messageId: z.string(),
 });
 
 export const WireQuestionOptionSchema = z.object({
@@ -553,4 +560,5 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireCompactBoundaryEventSchema,
   WireContextManagementEventSchema,
   WireUserMessageEventSchema,
+  WireMessageDeliveryEventSchema,
 ]);

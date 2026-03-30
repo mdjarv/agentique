@@ -46,6 +46,7 @@ interface UserMessageSegment {
   kind: "user_message";
   content: string;
   attachments?: Attachment[];
+  deliveryStatus?: "sending" | "delivered";
 }
 interface AgentMessageSegment {
   kind: "agent_message";
@@ -184,6 +185,7 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
             kind: "user_message",
             content: event.content ?? "",
             attachments: event.attachments,
+            deliveryStatus: event.deliveryStatus,
           });
           break;
         case "agent_message":
@@ -632,6 +634,7 @@ export const TurnBlock = memo(function TurnBlock({
                       key={segmentKey(seg, i)}
                       prompt={seg.content}
                       attachments={seg.attachments}
+                      deliveryStatus={seg.deliveryStatus}
                     />
                   );
                 case "agent_message":

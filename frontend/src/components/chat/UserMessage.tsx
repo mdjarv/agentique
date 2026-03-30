@@ -1,4 +1,4 @@
-import { Check, Copy, FileText, User } from "lucide-react";
+import { Check, CheckCheck, Copy, FileText, Loader2, User } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
@@ -9,9 +9,14 @@ import type { Attachment } from "~/stores/chat-store";
 interface UserMessageProps {
   prompt: string;
   attachments?: Attachment[];
+  deliveryStatus?: "sending" | "delivered";
 }
 
-export const UserMessage = memo(function UserMessage({ prompt, attachments }: UserMessageProps) {
+export const UserMessage = memo(function UserMessage({
+  prompt,
+  attachments,
+  deliveryStatus,
+}: UserMessageProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
@@ -72,6 +77,15 @@ export const UserMessage = memo(function UserMessage({ prompt, attachments }: Us
             </div>
           )}
           {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
+          {deliveryStatus && (
+            <div className="flex justify-end mt-1 -mb-0.5">
+              {deliveryStatus === "sending" ? (
+                <Loader2 className="h-3 w-3 text-muted-foreground/50 animate-spin" />
+              ) : (
+                <CheckCheck className="h-3 w-3 text-primary/60" />
+              )}
+            </div>
+          )}
         </div>
       </div>
 

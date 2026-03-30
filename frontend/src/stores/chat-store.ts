@@ -27,6 +27,7 @@ export interface ChatEvent {
     | "compact_boundary"
     | "context_management"
     | "user_message"
+    | "message_delivery"
     | "agent_message"
     | "task";
   content?: string;
@@ -56,6 +57,8 @@ export interface ChatEvent {
   retryAfterSecs?: number;
   trigger?: string;
   preTokens?: number;
+  messageId?: string;
+  deliveryStatus?: "sending" | "delivered";
   attachments?: Attachment[];
   // Subagent task fields (type === "task")
   toolUseId?: string;
@@ -531,6 +534,20 @@ export const useChatStore = create<ChatState>((set) => ({
         return s;
       }
       if (event.type === "stream" || event.type === "context_management") return s;
+      if (event.type === "message_delivery" && event.messageId) {
+        // Find the matching user_message and mark it delivered.
+        const turns = session.turns.map((turn) => {
+          const idx = turn.events.findIndex(
+            (e) => e.type === "user_message" && e.messageId === event.messageId,
+          );
+          if (idx < 0) return turn;
+          const events = turn.events.map((e, i) =>
+            i === idx ? { ...e, deliveryStatus: "delivered" as const } : e,
+          );
+          return { ...turn, events };
+        });
+        return updateSession(s, sessionId, { turns });
+      }
       if (event.type === "compact_status") {
         return updateSession(s, sessionId, {
           compacting: event.status === "compacting",
@@ -585,7 +602,12 @@ export const useChatStore = create<ChatState>((set) => ({
             events = [...lastTurn.events, event];
           }
         } else {
-          events = [...lastTurn.events, event];
+          // Mark user_message with messageId as "sending" until delivery confirmation.
+          const appended =
+            event.type === "user_message" && event.messageId
+              ? { ...event, deliveryStatus: "sending" as const }
+              : event;
+          events = [...lastTurn.events, appended];
         }
         turns[turns.length - 1] = {
           ...lastTurn,
