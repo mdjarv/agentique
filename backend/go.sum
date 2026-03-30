@@ -1,3 +1,5 @@
+github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
+github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/allbin/claudecli-go v0.0.0-20260328233034-a0ebd4efd497 h1:snWWOXsbtAGPb3Jo0pLy3GQMonOlQPfQcwFQGfguSlo=
 github.com/allbin/claudecli-go v0.0.0-20260328233034-a0ebd4efd497/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/claudecli-go v0.0.0-20260329090852-57c44c963d33 h1:5OLEJJRaz5SoVX/NxRYhcw/rjk6FLoNAeZUzeMYhPTY=

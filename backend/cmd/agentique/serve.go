@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/allbin/agentique/backend/internal/doctor"
-
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/backup"
+	"github.com/allbin/agentique/backend/internal/config"
+	"github.com/allbin/agentique/backend/internal/doctor"
 	"github.com/allbin/agentique/backend/internal/logging"
 	"github.com/allbin/agentique/backend/internal/paths"
 	"github.com/allbin/agentique/backend/internal/project"
@@ -102,6 +102,13 @@ func resolveDBPath() string {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	// Load config file (missing file = defaults, not an error).
+	fileCfg, err := config.Load(config.Path())
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	applyConfig(cmd, fileCfg)
+
 	lvl := logLevel
 	if lvl == "" {
 		lvl = os.Getenv("LOG_LEVEL")
@@ -267,6 +274,43 @@ func runServe(cmd *cobra.Command, args []string) error {
 	srv.Shutdown()
 	slog.Info("server stopped")
 	return nil
+}
+
+// applyConfig merges config file values into package-level vars.
+// CLI flags that were explicitly set take precedence.
+func applyConfig(cmd *cobra.Command, cfg *config.Config) {
+	flags := cmd.Flags()
+
+	if !flags.Changed("addr") && cfg.Server.Addr != "" {
+		addr = cfg.Server.Addr
+	}
+	if !flags.Changed("disable-auth") && cfg.Server.DisableAuth {
+		disableAuth = cfg.Server.DisableAuth
+	}
+	if !flags.Changed("tls-cert") && cfg.Server.TLSCert != "" {
+		tlsCert = cfg.Server.TLSCert
+	}
+	if !flags.Changed("tls-key") && cfg.Server.TLSKey != "" {
+		tlsKey = cfg.Server.TLSKey
+	}
+	if !flags.Changed("rp-id") && cfg.Server.RPID != "" {
+		rpID = cfg.Server.RPID
+	}
+	if !flags.Changed("rp-origin") && cfg.Server.RPOrigin != "" {
+		rpOrigin = cfg.Server.RPOrigin
+	}
+	if !flags.Changed("log-level") && cfg.Logging.Level != "" {
+		logLevel = cfg.Logging.Level
+	}
+	if !flags.Changed("backup-interval") && cfg.Backup.Interval != "" {
+		backupInterval = cfg.Backup.Interval
+	}
+	if !flags.Changed("backup-retain") && cfg.Backup.Retain != 0 {
+		backupRetain = cfg.Backup.Retain
+	}
+	if !flags.Changed("disable-backup") && cfg.Backup.Disabled {
+		disableBackup = cfg.Backup.Disabled
+	}
 }
 
 // findGitRoot walks up from dir to find the nearest .git directory.
