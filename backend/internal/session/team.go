@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentique/backend/internal/gitops"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -63,6 +64,7 @@ func (s *Service) CreateTeam(ctx context.Context, projectID, name string) (TeamI
 }
 
 // DeleteTeam removes a team, clears callbacks on live sessions, and unlinks all members.
+// Does NOT clean up worker sessions/worktrees/branches — use DissolveTeam for that.
 func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
 	team, err := s.queries.GetTeam(ctx, teamID)
 	if err != nil {
@@ -83,6 +85,75 @@ func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
 	}
 
 	s.hub.Broadcast(team.ProjectID, "team.deleted", map[string]string{"teamId": teamID})
+	return nil
+}
+
+// DissolveTeam stops all non-lead worker sessions, removes their worktrees and
+// branches (force-delete), deletes them from DB, unlinks the leader, and deletes
+// the team. The leader session stays alive as a normal session.
+func (s *Service) DissolveTeam(ctx context.Context, teamID string) error {
+	team, err := s.queries.GetTeam(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("team not found: %w", err)
+	}
+
+	members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("list members: %w", err)
+	}
+
+	project, projErr := s.queries.GetProject(ctx, team.ProjectID)
+
+	for _, m := range members {
+		if m.TeamRole == "lead" {
+			// Unlink lead — keep session alive.
+			if live := s.mgr.Get(m.ID); live != nil {
+				live.SetAgentMessageCallback(nil)
+			}
+			_ = s.queries.ClearSessionTeam(ctx, m.ID)
+			continue
+		}
+
+		// Stop worker CLI process.
+		if live := s.mgr.Get(m.ID); live != nil {
+			live.SetAgentMessageCallback(nil)
+			_ = s.mgr.Stop(ctx, m.ID)
+		}
+
+		// Remove worktree and force-delete branch.
+		if projErr == nil {
+			if wtPath := nullStr(m.WorktreePath); wtPath != "" {
+				gitops.RemoveWorktree(project.Path, wtPath)
+			}
+			if branch := nullStr(m.WorktreeBranch); branch != "" {
+				if delErr := gitops.ForceDeleteBranch(project.Path, branch); delErr != nil {
+					slog.Warn("dissolve: branch force-delete failed",
+						"session_id", m.ID, "branch", branch, "error", delErr)
+				}
+				gitops.DeleteRemoteBranch(project.Path, branch)
+			}
+		}
+
+		// Delete session from DB.
+		if err := s.queries.DeleteSession(ctx, m.ID); err != nil {
+			slog.Warn("dissolve: session delete failed", "session_id", m.ID, "error", err)
+			continue
+		}
+		if s.gitSvc != nil {
+			s.gitSvc.CleanupVersion(m.ID)
+		}
+		s.hub.Broadcast(team.ProjectID, "session.deleted", map[string]any{
+			"sessionId": m.ID,
+		})
+	}
+
+	// Delete team record.
+	if err := s.queries.DeleteTeam(ctx, teamID); err != nil {
+		return fmt.Errorf("delete team: %w", err)
+	}
+
+	s.hub.Broadcast(team.ProjectID, "team.dissolved", map[string]string{"teamId": teamID})
+	slog.Info("team dissolved", "team_id", teamID, "team_name", team.Name)
 	return nil
 }
 
