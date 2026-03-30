@@ -1,12 +1,9 @@
 import { create } from "zustand";
 import type { SessionInfo } from "~/lib/generated-types";
+import { useRateLimitStore } from "~/stores/rate-limit-store";
 
 export type AutoApproveMode = "manual" | "auto" | "fullAuto";
 import { uuid } from "~/lib/utils";
-
-// Debounce timer for rate-limit "allowed" → clear transition.
-// Prevents flickering when multiple sessions alternate between warning and allowed.
-let rateLimitClearTimer: ReturnType<typeof setTimeout> | null = null;
 
 export interface ToolContentBlock {
   type: "text" | "image";
@@ -53,6 +50,7 @@ export interface ChatEvent {
   status?: string;
   utilization?: number;
   resetsAt?: number;
+  rateLimitType?: string;
   category?: string;
   errorType?: string;
   retryAfterSecs?: number;
@@ -118,12 +116,6 @@ export interface Question {
 export interface PendingQuestion {
   questionId: string;
   questions: Question[];
-}
-
-export interface RateLimitInfo {
-  status: string;
-  utilization: number;
-  resetsAt: number | null;
 }
 
 export interface TodoItem {
@@ -263,7 +255,6 @@ export interface ChatState {
   activeSessionId: string | null;
   loadedProjects: Set<string>;
   historyLoading: Set<string>;
-  rateLimit: RateLimitInfo | null;
 
   // Session management
   setSessions: (sessions: SessionMetadata[], projectId: string) => void;
@@ -321,7 +312,6 @@ export const useChatStore = create<ChatState>((set) => ({
   activeSessionId: null,
   loadedProjects: new Set<string>(),
   historyLoading: new Set<string>(),
-  rateLimit: null,
 
   setSessions: (metas, projectId) =>
     set((s) => {
@@ -530,25 +520,11 @@ export const useChatStore = create<ChatState>((set) => ({
 
       // Transient events: update session state without appending to turns
       if (event.type === "rate_limit") {
-        const status = event.status ?? "";
-        if (rateLimitClearTimer) {
-          clearTimeout(rateLimitClearTimer);
-          rateLimitClearTimer = null;
-        }
-        if (status === "allowed") {
-          rateLimitClearTimer = setTimeout(() => {
-            rateLimitClearTimer = null;
-            useChatStore.setState({ rateLimit: null });
-          }, 5_000);
-          return s;
-        }
-        return {
-          rateLimit: {
-            status,
-            utilization: event.utilization ?? 0,
-            resetsAt: event.resetsAt ?? null,
-          },
-        };
+        const rlType = event.rateLimitType === "seven_day" ? "seven_day" : "five_hour";
+        useRateLimitStore
+          .getState()
+          .updateEntry(rlType, event.status ?? "", event.utilization ?? 0, event.resetsAt ?? 0);
+        return s;
       }
       if (event.type === "stream" || event.type === "context_management") return s;
       if (event.type === "compact_status") {

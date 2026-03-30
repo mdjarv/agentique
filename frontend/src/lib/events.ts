@@ -33,6 +33,8 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     fatal: raw.fatal as boolean | undefined,
     status: raw.status as string | undefined,
     utilization: raw.utilization as number | undefined,
+    resetsAt: raw.resetsAt as number | undefined,
+    rateLimitType: raw.rateLimitType as string | undefined,
     category: raw.category as string | undefined,
     errorType: raw.errorType as string | undefined,
     retryAfterSecs: raw.retryAfterSecs as number | undefined,

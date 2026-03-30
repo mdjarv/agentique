@@ -1,19 +1,15 @@
 import { Cpu } from "lucide-react";
-import { RateLimitBanner } from "~/components/chat/RateLimitBanner";
 import { NewProjectDialog } from "~/components/layout/NewProjectDialog";
 import { ProjectList } from "~/components/layout/ProjectList";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
 import { TagFilterBar } from "~/components/layout/TagFilterBar";
 import { cn } from "~/lib/utils";
-import { useChatStore } from "~/stores/chat-store";
 
 interface AppSidebarProps {
   className?: string;
 }
 
 export function AppSidebar({ className }: AppSidebarProps) {
-  const rateLimit = useChatStore((s) => s.rateLimit);
-
   return (
     <div className={cn("bg-sidebar flex flex-col h-full", className)}>
       <div className="px-4 py-3 border-b flex items-center justify-between">
@@ -32,7 +28,6 @@ export function AppSidebar({ className }: AppSidebarProps) {
       <div className="flex-1 overflow-y-auto">
         <ProjectList />
       </div>
-      {rateLimit && <RateLimitBanner rateLimit={rateLimit} />}
       <SidebarFooter />
     </div>
   );

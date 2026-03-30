@@ -36,11 +36,13 @@ export const CommandFileSchema = z.object({
 export const WireTextEventSchema = z.object({
   type: z.literal("text"),
   content: z.string(),
+  parentToolUseId: z.string().optional(),
 });
 
 export const WireThinkingEventSchema = z.object({
   type: z.literal("thinking"),
   content: z.string(),
+  parentToolUseId: z.string().optional(),
 });
 
 export const WireToolUseEventSchema = z.object({
@@ -49,12 +51,14 @@ export const WireToolUseEventSchema = z.object({
   toolName: z.string(),
   toolInput: z.unknown(),
   category: z.string(),
+  parentToolUseId: z.string().optional(),
 });
 
 export const WireToolResultEventSchema = z.object({
   type: z.literal("tool_result"),
   toolId: z.string(),
   content: z.array(WireContentBlockSchema),
+  parentToolUseId: z.string().optional(),
 });
 
 export const WireResultEventSchema = z.object({
@@ -81,6 +85,7 @@ export const WireRateLimitEventSchema = z.object({
   status: z.string(),
   utilization: z.number(),
   resetsAt: z.number().optional(),
+  rateLimitType: z.string().optional(),
 });
 
 export const WireStreamEventSchema = z.object({
