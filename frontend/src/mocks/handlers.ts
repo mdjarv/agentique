@@ -8,9 +8,21 @@ export const restHandlers = [
 
   http.get("/api/preset-definitions", () => {
     return HttpResponse.json([
-      { key: "autoCommit", title: "Auto-commit", description: "Commit after each milestone automatically" },
-      { key: "suggestParallel", title: "Suggest parallel sessions", description: "Suggest session prompts for parallelizable work" },
-      { key: "planFirst", title: "Plan first", description: "Start sessions in plan mode by default" },
+      {
+        key: "autoCommit",
+        title: "Auto-commit",
+        description: "Commit after each milestone automatically",
+      },
+      {
+        key: "suggestParallel",
+        title: "Suggest parallel sessions",
+        description: "Suggest session prompts for parallelizable work",
+      },
+      {
+        key: "planFirst",
+        title: "Plan first",
+        description: "Start sessions in plan mode by default",
+      },
       { key: "terse", title: "Terse output", description: "Minimize explanations and summaries" },
     ]);
   }),
@@ -44,7 +56,7 @@ export const restHandlers = [
 
   http.get("/api/projects/:id/files/content", () => {
     return new HttpResponse(
-      `# Agentique\n\nLightweight GUI for managing concurrent Claude Code agents.\n\n## Quick Start\n\n\`\`\`bash\njust dev\n\`\`\`\n`,
+      "# Agentique\n\nLightweight GUI for managing concurrent Claude Code agents.\n\n## Quick Start\n\n```bash\njust dev\n```\n",
       { headers: { "Content-Type": "text/plain" } },
     );
   }),

@@ -146,7 +146,7 @@ function SessionGroups({
           onSessionClick={onSessionClick}
         />
       ))}
-      {promoted.length > 0 && rest.length > 0 && <div className="h-2" aria-hidden="true" />}
+      {promoted.length > 0 && rest.length > 0 && <div className="h-3" aria-hidden="true" />}
       {rest.map((id) => (
         <SidebarSessionRow
           key={id}
@@ -297,14 +297,14 @@ function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
   );
 }
 
-function ProjectTagDots({ projectId }: { projectId: string }) {
+function ProjectTagBadges({ projectId }: { projectId: string }) {
   const tags = useAppStore((s) => s.tags);
   const projectTags = useAppStore((s) => s.projectTags);
   const tagIds = projectTags.filter((pt) => pt.project_id === projectId).map((pt) => pt.tag_id);
   if (tagIds.length === 0) return null;
 
   return (
-    <span className="flex items-center gap-0.5 shrink-0">
+    <span className="flex items-center gap-1 shrink-0">
       {tagIds.map((id) => {
         const tag = tags.find((t) => t.id === id);
         if (!tag) return null;
@@ -312,10 +312,11 @@ function ProjectTagDots({ projectId }: { projectId: string }) {
         return (
           <span
             key={id}
-            className="inline-block size-2 rounded-full"
-            style={{ backgroundColor: color.bg }}
-            title={tag.name}
-          />
+            className="rounded-full px-1.5 py-px text-[10px] font-medium leading-tight"
+            style={{ backgroundColor: `${color.bg}20`, color: color.bg }}
+          >
+            {tag.name}
+          </span>
         );
       })}
     </span>
@@ -449,7 +450,7 @@ export function ProjectTreeItem({
                 >
                   <FolderOpen className="size-3.5" />
                 </button>
-                <ProjectTagDots projectId={project.id} />
+                <ProjectTagBadges projectId={project.id} />
                 <ActiveSessionIndicators counts={sessionCounts} />
               </div>
               {isExpanded && gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}
