@@ -829,6 +829,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	// Wire agent message callback for team members.
 	if teamID != "" {
 		s.wireAgentMessageCallback(sess, teamID)
+		if dbSess.TeamRole == "lead" {
+			s.wireDissolveTeamCallback(sess, teamID)
+		}
 	}
 	// Wire spawn-workers callback for delegation.
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)

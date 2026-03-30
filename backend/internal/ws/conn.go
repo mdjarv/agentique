@@ -211,6 +211,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleTeamCreate(msg)
 	case "team.delete":
 		c.handleTeamDelete(msg)
+	case "team.dissolve":
+		c.handleTeamDissolve(msg)
 	case "team.join":
 		c.handleTeamJoin(msg)
 	case "team.leave":

@@ -1,4 +1,4 @@
-import { Send, Users } from "lucide-react";
+import { Send, Trash2, Users } from "lucide-react";
 import { type UIEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getAgentColor } from "~/components/chat/AgentMessage";
@@ -6,7 +6,12 @@ import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { type TimelineEvent, getTeamTimeline, sendTeamMessage } from "~/lib/team-actions";
+import {
+  type TimelineEvent,
+  dissolveTeam,
+  getTeamTimeline,
+  sendTeamMessage,
+} from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
@@ -63,6 +68,19 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
     }
   }, [ws, sessionId, targetId, message]);
 
+  const [dissolving, setDissolving] = useState(false);
+  const handleDissolve = useCallback(async () => {
+    if (!teamId) return;
+    setDissolving(true);
+    try {
+      await dissolveTeam(ws, teamId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to dissolve team"));
+    } finally {
+      setDissolving(false);
+    }
+  }, [ws, teamId]);
+
   if (!team) return null;
 
   const otherMembers = team.members.filter((m) => m.sessionId !== sessionId);
@@ -75,6 +93,16 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
           <Users className="h-3 w-3" />
           <span className="font-medium">{team.name || "Team"}</span>
           <span>({team.members.length})</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-5 px-1.5 text-muted-foreground hover:text-destructive"
+            disabled={dissolving}
+            onClick={handleDissolve}
+            title="Dissolve team — stop and delete all workers"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
         </div>
         <div className="flex flex-col gap-1">
           {team.members.map((member) => {

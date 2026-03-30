@@ -249,6 +249,16 @@ func DeleteBranch(projectDir, branch string) error {
 	return nil
 }
 
+// ForceDeleteBranch deletes a local branch unconditionally (uses -D).
+// Use for ephemeral branches (e.g. team workers) where unmerged state is expected.
+func ForceDeleteBranch(projectDir, branch string) error {
+	out, err := gitRun(projectDir, "branch", "-D", branch)
+	if err != nil {
+		return fmt.Errorf("git branch -D failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // PushBranch pushes a branch to origin with upstream tracking.
 func PushBranch(projectDir, branch string) error {
 	out, err := gitRun(projectDir, "push", "-u", "origin", branch)

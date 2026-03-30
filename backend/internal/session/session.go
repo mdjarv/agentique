@@ -100,6 +100,7 @@ type Session struct {
 	gitRefreshTimer  *time.Timer // debounce timer for mid-turn git refresh
 	onAgentMessage   func(senderID, targetName, content string) error
 	onSpawnWorkers   func(senderID string, req SpawnWorkersRequest) error
+	onDissolveTeam   func(senderID string) error
 }
 
 
@@ -184,8 +185,10 @@ func newSession(p sessionParams) *Session {
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnTurnComplete: func() {
-			if err := s.setState(StateIdle); err != nil {
-				slog.Error("state transition failed", "session_id", s.ID, "error", err)
+			if s.State() != StateIdle {
+				if err := s.setState(StateIdle); err != nil {
+					slog.Error("state transition failed", "session_id", s.ID, "error", err)
+				}
 			}
 		},
 		OnFatalError: func(err error) {
@@ -949,6 +952,13 @@ func (s *Session) SetSpawnWorkersCallback(cb func(senderID string, req SpawnWork
 	s.mu.Unlock()
 }
 
+// SetDissolveTeamCallback sets the callback for handling team dissolution requests.
+func (s *Session) SetDissolveTeamCallback(cb func(senderID string) error) {
+	s.mu.Lock()
+	s.onDissolveTeam = cb
+	s.mu.Unlock()
+}
+
 // interceptSendMessage handles the SendMessage tool by routing it through the
 // team messaging system. Returns a deny response with a success-like message
 // so Claude thinks the message was delivered (v1 hack — proper tool result
@@ -999,6 +1009,11 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 	// Intercept @spawn for worker delegation.
 	if to == "@spawn" {
 		return s.interceptSpawnWorkers(body)
+	}
+
+	// Intercept @dissolve for team dissolution.
+	if to == "@dissolve" {
+		return s.interceptDissolveTeam()
 	}
 
 	// Regular messages: deny here (to prevent CLI from processing internally)
@@ -1106,6 +1121,33 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	case <-s.ctx.Done():
 		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
 	}
+}
+
+// interceptDissolveTeam handles SendMessage to "@dissolve" — dissolves the
+// team this leader session belongs to, cleaning up all workers.
+func (s *Session) interceptDissolveTeam() (*claudecli.PermissionResponse, error) {
+	s.mu.Lock()
+	cb := s.onDissolveTeam
+	s.mu.Unlock()
+
+	if cb == nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: "Team dissolution is not available for this session.",
+		}, nil
+	}
+
+	if err := cb(s.ID); err != nil {
+		return &claudecli.PermissionResponse{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Team dissolution failed: %v", err),
+		}, nil
+	}
+
+	return &claudecli.PermissionResponse{
+		Allow:       false,
+		DenyMessage: "Team dissolved successfully. All worker sessions have been stopped and cleaned up. You are no longer part of a team.",
+	}, nil
 }
 
 // ResolveApproval sends a permission response for a pending tool approval.
