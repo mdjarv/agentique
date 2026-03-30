@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/allbin/claudecli-go v0.0.0-20260329190337-8f011289b123
+	github.com/allbin/claudecli-go v0.0.0-20260330114802-bf7257e06b03
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/go-webauthn/webauthn v0.16.1

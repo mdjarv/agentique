@@ -93,7 +93,7 @@ func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff st
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-		claudecli.WithExtraArgs(map[string]string{"bare": ""}),
+		claudecli.WithBare(),
 		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
@@ -145,7 +145,7 @@ func PRDescription(ctx context.Context, runner Runner, sessionName, summary, dif
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-		claudecli.WithExtraArgs(map[string]string{"bare": ""}),
+		claudecli.WithBare(),
 		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
