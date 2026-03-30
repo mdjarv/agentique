@@ -145,7 +145,29 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		cfg.Server.DisableAuth = authChoice == 1
 	}
 
-	// Step 5: Write config.
+	// Step 5: First project (optional).
+	fmt.Println()
+	projectPath := promptString("Path to your first project (leave empty to skip): ")
+	if projectPath != "" {
+		// Expand ~ if present.
+		if strings.HasPrefix(projectPath, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				projectPath = filepath.Join(home, projectPath[2:])
+			}
+		}
+		absPath, err := filepath.Abs(projectPath)
+		if err == nil {
+			projectPath = absPath
+		}
+		if info, err := os.Stat(projectPath); err != nil || !info.IsDir() {
+			fmt.Printf("  Warning: %s is not a directory, skipping\n", projectPath)
+		} else {
+			cfg.Setup.InitialProject = projectPath
+			fmt.Printf("  Project: %s (will be added on first start)\n", projectPath)
+		}
+	}
+
+	// Step 6: Write config.
 	configPath := config.Path()
 	fmt.Println()
 	fmt.Printf("Saving config to %s\n", configPath)
@@ -154,7 +176,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("Config saved.")
 
-	// Step 6: Service install.
+	// Step 7: Service install.
 	fmt.Println()
 	fmt.Println("Install as a system service? (auto-starts on login)")
 	svcChoice := promptChoice([]string{

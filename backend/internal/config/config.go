@@ -19,6 +19,11 @@ type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Logging LoggingConfig `toml:"logging"`
 	Backup  BackupConfig  `toml:"backup"`
+	Setup   SetupConfig   `toml:"setup"`
+}
+
+type SetupConfig struct {
+	InitialProject string `toml:"initial-project"` // path to auto-create on first serve
 }
 
 type ServerConfig struct {

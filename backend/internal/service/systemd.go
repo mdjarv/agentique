@@ -103,6 +103,14 @@ func statusSystemd() (Status, error) {
 	return s, nil
 }
 
+func restartSystemd() error {
+	out, err := exec.Command("systemctl", "--user", "restart", serviceName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl restart: %w\n%s", err, out)
+	}
+	return nil
+}
+
 func logsSystemd() *exec.Cmd {
 	return exec.Command("journalctl", "--user", "-u", serviceName, "-f", "--no-pager")
 }

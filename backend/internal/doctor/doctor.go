@@ -53,6 +53,7 @@ func RunAll() []Check {
 		checkDataDir(),
 		checkDiskSpace(),
 		checkClaudeAuth(),
+		checkGHAuth(),
 	}
 }
 
@@ -295,6 +296,48 @@ func checkClaudeAuth() Check {
 	}
 	c.Status = OK
 	c.Message = detail
+	return c
+}
+
+func checkGHAuth() Check {
+	c := Check{Name: "gh-auth", Required: false}
+
+	path, err := exec.LookPath("gh")
+	if err != nil {
+		c.Status = Warn
+		c.Message = "skipped (gh not installed)"
+		return c
+	}
+
+	// gh auth status exits 0 if logged in, 1 if not.
+	out, err := exec.Command(path, "auth", "status").CombinedOutput()
+	if err != nil {
+		c.Status = Warn
+		c.Message = "not authenticated — PR creation requires login"
+		c.Fix = "Run: gh auth login"
+		return c
+	}
+
+	// Parse account name from output: "Logged in to github.com account <name>"
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Logged in to") {
+			// Extract "account <name>"
+			if idx := strings.Index(line, "account "); idx >= 0 {
+				account := strings.TrimSpace(line[idx+len("account "):])
+				// Strip trailing parenthetical path.
+				if paren := strings.Index(account, " ("); paren >= 0 {
+					account = account[:paren]
+				}
+				c.Status = OK
+				c.Message = account
+				return c
+			}
+		}
+	}
+
+	c.Status = OK
+	c.Message = "authenticated"
 	return c
 }
 

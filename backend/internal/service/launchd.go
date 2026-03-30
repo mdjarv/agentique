@@ -114,6 +114,15 @@ func statusLaunchd() (Status, error) {
 	return s, nil
 }
 
+func restartLaunchd() error {
+	path := plistPath()
+	exec.Command("launchctl", "unload", path).CombinedOutput()
+	if out, err := exec.Command("launchctl", "load", "-w", path).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl load: %w\n%s", err, out)
+	}
+	return nil
+}
+
 func logsLaunchd() *exec.Cmd {
 	return exec.Command("tail", "-f", launchdLogPath())
 }

@@ -33,6 +33,6 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  2. Replace the current binary:\n")
 	fmt.Printf("       cp agentique-linux-amd64 %s\n", exe)
 	fmt.Printf("  3. Restart the service:\n")
-	fmt.Printf("       systemctl --user restart agentique\n")
+	fmt.Printf("       agentique service restart\n")
 	return nil
 }

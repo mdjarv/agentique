@@ -165,7 +165,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	queries := store.New(db)
-	ensureDefaultProject(queries)
+	ensureDefaultProject(queries, fileCfg.Setup.InitialProject)
 
 	if !testMode && !disableBackup {
 		interval, err := time.ParseDuration(backupInterval)
@@ -342,22 +342,29 @@ func findGitRoot(dir string) string {
 	}
 }
 
-// ensureDefaultProject creates a project for the git root (or cwd)
-// if no projects exist.
-func ensureDefaultProject(q *store.Queries) {
+// ensureDefaultProject creates a project if none exist.
+// Uses initialProject from config if set, otherwise falls back to git root or cwd.
+func ensureDefaultProject(q *store.Queries, initialProject string) {
 	projects, err := q.ListProjects(context.Background())
 	if err != nil || len(projects) > 0 {
 		return
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return
+	var projectDir string
+	if initialProject != "" {
+		if info, err := os.Stat(initialProject); err == nil && info.IsDir() {
+			projectDir = initialProject
+		}
 	}
-
-	projectDir := cwd
-	if root := findGitRoot(cwd); root != "" {
-		projectDir = root
+	if projectDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		projectDir = cwd
+		if root := findGitRoot(cwd); root != "" {
+			projectDir = root
+		}
 	}
 
 	name := filepath.Base(projectDir)
