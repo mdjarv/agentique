@@ -87,6 +87,18 @@ func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
 		return
 	}
 
+	// Log raw rate_limit events for investigation (utilization field presence).
+	if rle, ok := event.(*claudecli.RateLimitEvent); ok {
+		slog.Info("rate_limit_event raw",
+			"session_id", p.sessionID,
+			"status", rle.Status,
+			"utilization", rle.Utilization,
+			"resets_at", rle.ResetsAt,
+			"type", rle.RateLimitType,
+			"raw", rle.Raw,
+		)
+	}
+
 	// Stage 2: Convert to wire format.
 	wireEvent := ToWireEvent(event)
 	if wireEvent == nil {
