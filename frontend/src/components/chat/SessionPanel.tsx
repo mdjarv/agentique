@@ -38,6 +38,7 @@ interface SessionPanelProps {
   meta: SessionMetadata;
   todos: TodoItem[] | null;
   git: ReturnType<typeof useGitActions>;
+  mainBranch?: string;
   onCollapse: () => void;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
@@ -300,11 +301,13 @@ function UncommittedSection({
 function GitSection({
   meta,
   git,
+  mainBranch,
   onSendMessage,
   onOpenDialog,
 }: {
   meta: SessionMetadata;
   git: ReturnType<typeof useGitActions>;
+  mainBranch?: string;
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
 }) {
@@ -336,7 +339,7 @@ function GitSection({
           <GitBranch className="h-3 w-3 shrink-0" />
           <span className="font-mono truncate">{meta.worktreeBranch}</span>
           <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-          <span className="font-mono">master</span>
+          <span className="font-mono">{mainBranch || "main"}</span>
         </div>
       )}
 
@@ -415,6 +418,7 @@ export function SessionPanel({
   meta,
   todos,
   git,
+  mainBranch,
   onCollapse,
   onSendMessage,
   onOpenDialog,
@@ -444,6 +448,7 @@ export function SessionPanel({
           <GitSection
             meta={meta}
             git={git}
+            mainBranch={mainBranch}
             onSendMessage={onSendMessage}
             onOpenDialog={onOpenDialog}
           />

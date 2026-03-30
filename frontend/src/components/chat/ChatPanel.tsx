@@ -67,6 +67,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const ws = useWebSocket();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const projectSlug = project?.slug ?? "";
+  const mainBranch = useAppStore((s) => s.projectGitStatus[projectId]?.branch);
 
   // Granular selectors — turns changes on every streaming event, meta changes
   // only on state transitions and git refreshes. Splitting prevents cascading
@@ -423,6 +424,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                 meta={meta}
                 todos={todos}
                 git={git}
+                mainBranch={mainBranch}
                 onCollapse={() => setMobileSessionOpen(false)}
                 onSendMessage={handleSend}
                 onOpenDialog={(d) => setActiveDialog(d)}
@@ -442,6 +444,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               meta={meta}
               todos={todos}
               git={git}
+              mainBranch={mainBranch}
               onCollapse={() => useUIStore.getState().setRightPanelCollapsed(true)}
               onSendMessage={handleSend}
               onOpenDialog={(d) => setActiveDialog(d)}
