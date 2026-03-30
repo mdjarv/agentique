@@ -208,10 +208,11 @@ export function SessionHeader({
           />
         ) : (
           <div className="flex items-center gap-1.5 min-w-0">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => (isMobile ? undefined : setEditing(true))}
-              className="group/name flex items-center gap-1 truncate hover:text-foreground font-medium"
+              className="group/name h-auto px-1 py-0.5 gap-1 truncate font-medium text-sm"
             >
               <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
                 {meta.name || "Untitled"}
@@ -219,17 +220,18 @@ export function SessionHeader({
               {!isMobile && (
                 <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
               )}
-            </button>
+            </Button>
             <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
               <span className="text-[10px] font-mono">{sessionRef}</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => copyRef(sessionRef)}
-                className="p-0.5 rounded hover:text-foreground transition-colors"
+                className="text-muted-foreground hover:text-foreground"
                 aria-label="Copy session reference"
               >
                 {refCopied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
-              </button>
+              </Button>
             </span>
           </div>
         )}
