@@ -26,6 +26,7 @@ func TestIsPlanSafeTool(t *testing.T) {
 func TestIsAutoSafeTool(t *testing.T) {
 	safe := []string{
 		"Read", "Glob", "Grep", // file_read
+		"Edit", "Write", "NotebookEdit", "MultiEdit", // file_write
 		"WebSearch", "WebFetch", // web
 		"Agent", "ExitWorktree", // agent
 		"TodoWrite", "TodoRead", // task
@@ -40,7 +41,6 @@ func TestIsAutoSafeTool(t *testing.T) {
 
 	unsafe := []string{
 		"Bash",
-		"Edit", "Write", "NotebookEdit", "MultiEdit",
 		"EnterPlanMode", "ExitPlanMode",
 		"mcp__foo__bar", "LSP", "UnknownTool",
 	}
@@ -84,8 +84,8 @@ func TestShouldBypassPermission(t *testing.T) {
 		{"auto-default-AskUserQuestion", "auto", "default", "AskUserQuestion", true},
 		{"auto-default-Agent", "auto", "default", "Agent", true},
 		{"auto-default-Bash", "auto", "default", "Bash", false},
-		{"auto-default-Edit", "auto", "default", "Edit", false},
-		{"auto-default-Write", "auto", "default", "Write", false},
+		{"auto-default-Edit", "auto", "default", "Edit", true},
+		{"auto-default-Write", "auto", "default", "Write", true},
 		{"auto-default-mcp", "auto", "default", "mcp__server__tool", false},
 		{"auto-default-ExitPlanMode", "auto", "default", "ExitPlanMode", false},
 

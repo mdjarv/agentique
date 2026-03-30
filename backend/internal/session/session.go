@@ -815,14 +815,16 @@ func isPlanSafeTool(toolName string) bool {
 }
 
 // autoSafeCategories lists tool categories that can be auto-approved in "auto"
-// mode. Superset of planSafeCategories, adding meta and question tools.
+// mode. Superset of planSafeCategories — adds file writes, meta, and question
+// tools. Only Bash and MCP tools remain gated.
 var autoSafeCategories = map[string]bool{
-	"file_read": true, // Read, Glob, Grep
-	"web":       true, // WebSearch, WebFetch
-	"agent":     true, // Agent, ExitWorktree
-	"task":      true, // TodoWrite, TodoRead
-	"meta":      true, // ToolSearch, Skill
-	"question":  true, // AskUserQuestion
+	"file_read":  true, // Read, Glob, Grep
+	"file_write": true, // Edit, Write, NotebookEdit, MultiEdit
+	"web":        true, // WebSearch, WebFetch
+	"agent":      true, // Agent, ExitWorktree
+	"task":       true, // TodoWrite, TodoRead
+	"meta":       true, // ToolSearch, Skill
+	"question":   true, // AskUserQuestion
 }
 
 // isAutoSafeTool reports whether a tool can be auto-approved in "auto" mode.
