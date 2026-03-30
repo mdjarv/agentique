@@ -35,6 +35,7 @@ interface UIState {
   collapsedProjectIds: string[];
   sessionDefaults: SessionDefaults;
   activeTagFilters: string[];
+  rightPanelCollapsed: boolean;
 
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
@@ -42,6 +43,7 @@ interface UIState {
   setSessionDefaults: (partial: Partial<SessionDefaults>) => void;
   toggleTagFilter: (tagId: string) => void;
   clearTagFilters: () => void;
+  setRightPanelCollapsed: (collapsed: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -51,6 +53,7 @@ export const useUIStore = create<UIState>()(
       collapsedProjectIds: readLegacyCollapsedProjects(),
       sessionDefaults: { ...DEFAULT_SESSION_DEFAULTS },
       activeTagFilters: [],
+      rightPanelCollapsed: true,
 
       setDraft: (sessionId, text) =>
         set((s) => {
@@ -91,6 +94,8 @@ export const useUIStore = create<UIState>()(
         })),
 
       clearTagFilters: () => set({ activeTagFilters: [] }),
+
+      setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
     }),
     {
       name: "agentique:ui",
@@ -100,6 +105,7 @@ export const useUIStore = create<UIState>()(
         collapsedProjectIds: state.collapsedProjectIds,
         sessionDefaults: state.sessionDefaults,
         activeTagFilters: state.activeTagFilters,
+        rightPanelCollapsed: state.rightPanelCollapsed,
       }),
       onRehydrateStorage: () => () => {
         try {
