@@ -39,11 +39,13 @@ function loadMermaid() {
 export function MermaidDiagram({ code }: { code: string }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settled, setSettled] = useState(false);
   const idRef = useRef(`mermaid-${crypto.randomUUID().slice(0, 8)}`);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setSettled(false);
 
     const timeoutId = setTimeout(() => {
       loadMermaid()
@@ -52,15 +54,17 @@ export function MermaidDiagram({ code }: { code: string }) {
           if (!cancelled) {
             setSvg(rendered);
             setError(null);
+            setSettled(true);
           }
         })
         .catch((err) => {
           if (!cancelled) {
             setError(err instanceof Error ? err.message : String(err));
             setSvg(null);
+            setSettled(true);
           }
         });
-    }, 0);
+    }, 500);
 
     return () => {
       cancelled = true;
@@ -74,7 +78,7 @@ export function MermaidDiagram({ code }: { code: string }) {
     }
   }, [svg]);
 
-  if (!svg && !error) {
+  if (!svg && !(settled && error)) {
     return (
       <pre style={{ ...CODE_STYLE, background: "var(--muted)", padding: "1em", overflow: "auto" }}>
         <code>{code}</code>
@@ -82,7 +86,7 @@ export function MermaidDiagram({ code }: { code: string }) {
     );
   }
 
-  if (error) {
+  if (settled && error) {
     return (
       <div>
         <div className="flex items-center gap-1.5 text-xs text-warning mb-1">
