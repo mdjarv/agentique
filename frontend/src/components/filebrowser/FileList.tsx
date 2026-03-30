@@ -60,12 +60,18 @@ function FileRow({
         isSelected ? "bg-accent text-accent-foreground" : ""
       }`}
     >
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="flex-1 truncate">{entry.name}</span>
+      <Icon
+        className={`h-4 w-4 shrink-0 ${entry.isDir ? "text-primary/70" : "text-muted-foreground/70"}`}
+      />
+      <span className={`flex-1 truncate font-mono text-[13px] ${entry.isDir ? "font-medium" : ""}`}>
+        {entry.name}
+      </span>
       {!entry.isDir && (
-        <span className="shrink-0 text-xs text-muted-foreground">{formatFileSize(entry.size)}</span>
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {formatFileSize(entry.size)}
+        </span>
       )}
-      <span className="shrink-0 text-xs text-muted-foreground w-16 text-right">
+      <span className="shrink-0 text-xs text-muted-foreground w-16 text-right tabular-nums">
         {relativeTime(entry.modTime)}
       </span>
     </button>

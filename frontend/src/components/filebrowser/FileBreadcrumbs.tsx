@@ -10,7 +10,7 @@ export function FileBreadcrumbs({ projectName, path, onNavigate }: FileBreadcrum
   const segments = path ? path.split("/").filter(Boolean) : [];
 
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto text-sm px-4 py-2 border-b">
+    <div className="flex items-center gap-0.5 overflow-x-auto text-sm font-mono px-4 py-2 border-b">
       <button
         type="button"
         onClick={() => onNavigate("")}
