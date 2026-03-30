@@ -65,6 +65,28 @@ const EFFORT_COLORS: Record<EffortLevel, string> = {
   max: "text-destructive",
 };
 
+const PERMISSION_MODES: AutoApproveMode[] = ["manual", "auto", "fullAuto"];
+const PERMISSION_LABELS: Record<AutoApproveMode, string> = {
+  manual: "Manual",
+  auto: "Auto",
+  fullAuto: "Full Auto",
+};
+const PERMISSION_DESCRIPTIONS: Record<AutoApproveMode, string> = {
+  manual: "Approve every tool use individually",
+  auto: "Auto-approve safe operations like reads",
+  fullAuto: "Auto-approve all operations including writes",
+};
+const PERMISSION_COLORS: Record<AutoApproveMode, string> = {
+  manual: "text-muted-foreground",
+  auto: "text-success",
+  fullAuto: "text-warning",
+};
+const PERMISSION_BG: Record<AutoApproveMode, string> = {
+  manual: "",
+  auto: "bg-success/10",
+  fullAuto: "bg-warning/10",
+};
+
 interface MessageComposerProps {
   projectId: string;
   onSend: (prompt: string, attachments?: Attachment[]) => void;
@@ -286,7 +308,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       });
     };
 
-    const hasToggles = worktree !== undefined || onPlanModeChange || onAutoApproveModeChange;
+    const hasToggles = worktree !== undefined || onPlanModeChange || autoApproveMode !== undefined;
 
     return (
       <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
@@ -435,42 +457,111 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     {planMode ? "Plan" : "Chat"}
                   </button>
                 )}
-                {onAutoApproveModeChange && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next: Record<AutoApproveMode, AutoApproveMode> = {
-                        manual: "auto",
-                        auto: "fullAuto",
-                        fullAuto: "manual",
-                      };
-                      onAutoApproveModeChange(next[autoApproveMode ?? "manual"]);
-                    }}
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
-                      autoApproveMode === "fullAuto"
-                        ? "bg-warning/10 text-warning"
-                        : autoApproveMode === "auto"
-                          ? "bg-success/10 text-success"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                    )}
-                  >
-                    {autoApproveMode === "fullAuto" ? (
-                      <ShieldAlert className="h-3 w-3" />
+                {autoApproveMode !== undefined &&
+                  (() => {
+                    const mode = autoApproveMode ?? "manual";
+                    const icon =
+                      mode === "fullAuto" ? (
+                        <ShieldAlert className="h-3 w-3" />
+                      ) : (
+                        <ShieldCheck className="h-3 w-3" />
+                      );
+                    return onAutoApproveModeChange ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          className={cn(
+                            "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                            "hover:text-foreground hover:bg-muted/80 focus-visible:outline-none",
+                            PERMISSION_COLORS[mode],
+                            PERMISSION_BG[mode],
+                          )}
+                        >
+                          {icon}
+                          {PERMISSION_LABELS[mode]}
+                          <ChevronDown className="h-3 w-3" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="min-w-[16rem]">
+                          {PERMISSION_MODES.map((m) => (
+                            <DropdownMenuItem
+                              key={m}
+                              onClick={() => onAutoApproveModeChange(m)}
+                              className="text-xs gap-2 items-start"
+                            >
+                              <Check
+                                className={cn(
+                                  "h-3 w-3 mt-0.5",
+                                  m === mode ? "opacity-100" : "opacity-0",
+                                )}
+                              />
+                              <div className="flex flex-col gap-0.5">
+                                <span
+                                  className={cn("flex items-center gap-1", PERMISSION_COLORS[m])}
+                                >
+                                  {m === "fullAuto" ? (
+                                    <ShieldAlert className="h-3 w-3" />
+                                  ) : (
+                                    <ShieldCheck className="h-3 w-3" />
+                                  )}
+                                  {PERMISSION_LABELS[m]}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {PERMISSION_DESCRIPTIONS[m]}
+                                </span>
+                              </div>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ) : (
-                      <ShieldCheck className="h-3 w-3" />
-                    )}
-                    {autoApproveMode === "fullAuto"
-                      ? "Full Auto"
-                      : autoApproveMode === "auto"
-                        ? "Auto"
-                        : "Manual"}
-                  </button>
-                )}
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 shrink-0",
+                          PERMISSION_COLORS[mode],
+                        )}
+                      >
+                        {icon}
+                        {PERMISSION_LABELS[mode]}
+                      </span>
+                    );
+                  })()}
 
                 {(effort !== undefined || model) && (
                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 )}
+
+                {model &&
+                  (onModelChange ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className={cn(
+                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
+                          "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                          "focus-visible:outline-none",
+                        )}
+                      >
+                        {MODEL_LABELS[model]}
+                        <ChevronDown className="h-3 w-3" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {MODELS.map((m) => (
+                          <DropdownMenuItem
+                            key={m}
+                            onClick={() => onModelChange(m)}
+                            className="text-xs gap-2"
+                          >
+                            <Check
+                              className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
+                            />
+                            {MODEL_LABELS[m]}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 text-muted-foreground shrink-0">
+                      {MODEL_LABELS[model]}
+                    </span>
+                  ))}
 
                 {effort !== undefined &&
                   (onEffortChange ? (
@@ -513,40 +604,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     >
                       <Gauge className="h-3 w-3" />
                       {EFFORT_LABELS[effort]}
-                    </span>
-                  ))}
-
-                {model &&
-                  (onModelChange ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        className={cn(
-                          "flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 transition-colors shrink-0",
-                          "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                          "focus-visible:outline-none",
-                        )}
-                      >
-                        {MODEL_LABELS[model]}
-                        <ChevronDown className="h-3 w-3" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        {MODELS.map((m) => (
-                          <DropdownMenuItem
-                            key={m}
-                            onClick={() => onModelChange(m)}
-                            className="text-xs gap-2"
-                          >
-                            <Check
-                              className={cn("h-3 w-3", m === model ? "opacity-100" : "opacity-0")}
-                            />
-                            {MODEL_LABELS[m]}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] max-md:text-xs rounded-md px-2 py-1 max-md:py-1.5 text-muted-foreground shrink-0">
-                      {MODEL_LABELS[model]}
                     </span>
                   ))}
               </div>

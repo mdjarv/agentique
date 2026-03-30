@@ -72,7 +72,9 @@ export function AutocompletePopup({
                 type="button"
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                  i === selectedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                  i === selectedIndex
+                    ? "bg-primary/15 text-accent-foreground"
+                    : "hover:bg-accent/50",
                 )}
                 onMouseDown={(e) => {
                   e.preventDefault();
