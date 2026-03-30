@@ -108,7 +108,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if lvl == "" {
 		lvl = os.Getenv("LOG_LEVEL")
 	}
-	logging.Init(lvl)
+	jsonLog := os.Getenv("JSON_LOG")
+	if jsonLog == "" {
+		jsonLog = filepath.Join(paths.DataDir(), "agentique.log.jsonl")
+	}
+	logging.Init(lvl, jsonLog)
 
 	if !testMode {
 		if err := preflight(); err != nil {

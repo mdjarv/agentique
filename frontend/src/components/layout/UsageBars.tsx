@@ -18,10 +18,22 @@ function getTier(utilization: number): Tier {
   return "normal";
 }
 
+// When CLI doesn't send utilization (v2.1.87+), estimate from status.
+const STATUS_UTILIZATION: Record<string, number> = {
+  allowed: 0.35,
+  allowed_warning: 0.8,
+  rejected: 1.0,
+};
+
 function getEffectiveUtilization(entry: RateLimitEntry | undefined): number {
   if (!entry) return 0;
   if (entry.resetsAt > 0 && Date.now() > entry.resetsAt * 1000) return 0;
-  return entry.utilization;
+  if (entry.utilization > 0) return entry.utilization;
+  return STATUS_UTILIZATION[entry.status] ?? 0;
+}
+
+function isEstimated(entry: RateLimitEntry | undefined): boolean {
+  return !!entry && entry.utilization === 0 && entry.status in STATUS_UTILIZATION;
 }
 
 function formatResetTime(resetsAt: number): string | null {
@@ -42,12 +54,14 @@ const statusLabels: Record<string, string> = {
 
 function UsageBar({ label, entry }: { label: string; entry: RateLimitEntry | undefined }) {
   const util = getEffectiveUtilization(entry);
+  const estimated = isEstimated(entry);
   const pct = Math.round(util * 100);
   const tier = getTier(util);
   const colors = tierColors[tier];
   const isRejected = entry?.status === "rejected";
   const resetLabel = entry?.resetsAt ? formatResetTime(entry.resetsAt) : null;
   const statusLabel = entry ? (statusLabels[entry.status] ?? entry.status) : "No data";
+  const pctPrefix = estimated ? "~" : "";
 
   return (
     <Tooltip>
@@ -66,17 +80,19 @@ function UsageBar({ label, entry }: { label: string; entry: RateLimitEntry | und
           </div>
           <span
             className={cn(
-              "text-[10px] tabular-nums w-7 text-right shrink-0",
+              "text-[10px] tabular-nums w-9 text-right shrink-0",
               tier === "critical" ? "text-destructive" : "text-muted-foreground",
             )}
           >
+            {pctPrefix}
             {pct}%
           </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top">
         <span>
-          {statusLabel} &middot; {pct}% utilization
+          {statusLabel} &middot; {pctPrefix}
+          {pct}% utilization
           {resetLabel ? ` \u00b7 ${resetLabel}` : ""}
         </span>
       </TooltipContent>
