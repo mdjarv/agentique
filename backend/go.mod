@@ -3,6 +3,7 @@ module github.com/allbin/agentique/backend
 go 1.26.1
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/allbin/claudecli-go v0.0.0-20260329190337-8f011289b123
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v1.0.0
@@ -16,7 +17,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
