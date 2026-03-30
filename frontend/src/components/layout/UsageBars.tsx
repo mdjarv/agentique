@@ -18,22 +18,10 @@ function getTier(utilization: number): Tier {
   return "normal";
 }
 
-// When CLI doesn't send utilization (v2.1.87+), estimate from status.
-const STATUS_UTILIZATION: Record<string, number> = {
-  allowed: 0.35,
-  allowed_warning: 0.8,
-  rejected: 1.0,
-};
-
 function getEffectiveUtilization(entry: RateLimitEntry | undefined): number {
   if (!entry) return 0;
   if (entry.resetsAt > 0 && Date.now() > entry.resetsAt * 1000) return 0;
-  if (entry.utilization > 0) return entry.utilization;
-  return STATUS_UTILIZATION[entry.status] ?? 0;
-}
-
-function isEstimated(entry: RateLimitEntry | undefined): boolean {
-  return !!entry && entry.utilization === 0 && entry.status in STATUS_UTILIZATION;
+  return entry.utilization;
 }
 
 function formatResetTime(resetsAt: number): string | null {
@@ -54,14 +42,12 @@ const statusLabels: Record<string, string> = {
 
 function UsageBar({ label, entry }: { label: string; entry: RateLimitEntry | undefined }) {
   const util = getEffectiveUtilization(entry);
-  const estimated = isEstimated(entry);
   const pct = Math.round(util * 100);
   const tier = getTier(util);
   const colors = tierColors[tier];
   const isRejected = entry?.status === "rejected";
   const resetLabel = entry?.resetsAt ? formatResetTime(entry.resetsAt) : null;
   const statusLabel = entry ? (statusLabels[entry.status] ?? entry.status) : "No data";
-  const pctPrefix = estimated ? "~" : "";
 
   return (
     <Tooltip>
@@ -80,19 +66,17 @@ function UsageBar({ label, entry }: { label: string; entry: RateLimitEntry | und
           </div>
           <span
             className={cn(
-              "text-[10px] tabular-nums w-9 text-right shrink-0",
+              "text-[10px] tabular-nums w-7 text-right shrink-0",
               tier === "critical" ? "text-destructive" : "text-muted-foreground",
             )}
           >
-            {pctPrefix}
             {pct}%
           </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top">
         <span>
-          {statusLabel} &middot; {pctPrefix}
-          {pct}% utilization
+          {statusLabel} &middot; {pct}% utilization
           {resetLabel ? ` \u00b7 ${resetLabel}` : ""}
         </span>
       </TooltipContent>
@@ -120,16 +104,19 @@ export function UsageBars() {
     return () => timers.forEach(clearTimeout);
   }, [fiveHourReset, sevenDayReset]);
 
+  // Only show bars when we have real utilization data from the CLI.
+  // The CLI omits utilization for "allowed" status, so we hide rather than guess.
+  const fiveHourUtil = getEffectiveUtilization(fiveHour);
   const sevenDayUtil = getEffectiveUtilization(sevenDay);
-  const showWeekly = sevenDay && sevenDayUtil > 0.7;
+  const showFiveHour = fiveHourUtil > 0;
+  const showSevenDay = sevenDayUtil > 0;
 
-  // Don't render anything if we've never received rate limit data
-  if (!fiveHour && !sevenDay) return null;
+  if (!showFiveHour && !showSevenDay) return null;
 
   return (
     <div className="flex flex-col gap-1 mb-1.5">
-      <UsageBar label="5h" entry={fiveHour} />
-      {showWeekly && <UsageBar label="7d" entry={sevenDay} />}
+      {showFiveHour && <UsageBar label="5h" entry={fiveHour} />}
+      {showSevenDay && <UsageBar label="7d" entry={sevenDay} />}
     </div>
   );
 }
