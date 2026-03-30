@@ -20,7 +20,7 @@ func TestMergeBranch(t *testing.T) {
 	// Switch back to main and merge.
 	testGitRun(t, repoDir, "checkout", "main")
 
-	hash, err := MergeBranch(repoDir, "feature", "")
+	hash, err := MergeBranch(repoDir, "feature")
 	if err != nil {
 		t.Fatalf("MergeBranch failed: %v", err)
 	}
@@ -54,8 +54,8 @@ func TestMergeConflictFiles(t *testing.T) {
 	testGitRun(t, repoDir, "add", ".")
 	testGitRun(t, repoDir, "commit", "-m", "main branch change")
 
-	// Attempt merge (should fail).
-	_, err := MergeBranch(repoDir, "conflict-branch", "")
+	// Attempt a regular merge (not ff-only) to produce conflict markers.
+	_, err := gitRun(repoDir, "merge", "conflict-branch")
 	if err == nil {
 		t.Fatal("expected merge to fail with conflict")
 	}
@@ -370,7 +370,7 @@ func TestWithCleanWorktree_MergeThenPop(t *testing.T) {
 	var hash string
 	stashConflict, err := WithCleanWorktree(repoDir, func() error {
 		var mergeErr error
-		hash, mergeErr = MergeBranch(repoDir, "feature", "Merge: feature")
+		hash, mergeErr = MergeBranch(repoDir, "feature")
 		return mergeErr
 	})
 	if err != nil {
@@ -412,7 +412,7 @@ func TestWithCleanWorktree_StashPopConflict(t *testing.T) {
 	writeFile(t, repoDir, "README", "local uncommitted version")
 
 	stashConflict, err := WithCleanWorktree(repoDir, func() error {
-		_, mergeErr := MergeBranch(repoDir, "feature", "Merge: feature")
+		_, mergeErr := MergeBranch(repoDir, "feature")
 		return mergeErr
 	})
 	if err != nil {

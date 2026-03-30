@@ -238,7 +238,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, mode string) (
 	var mergeResult MergeResult
 	stashConflict, stashErr := gitops.WithCleanWorktree(project.Path, func() error {
 		var mergeErr error
-		hash, mergeErr = gitops.MergeBranch(project.Path, branch, "Merge: "+dbSess.Name)
+		hash, mergeErr = gitops.MergeBranch(project.Path, branch)
 		if mergeErr != nil {
 			files, _ := gitops.MergeConflictFiles(project.Path)
 			_ = gitops.AbortMerge(project.Path)

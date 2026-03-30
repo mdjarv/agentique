@@ -51,14 +51,10 @@ func ghRun(dir string, args ...string) ([]byte, error) {
 	return out, err
 }
 
-// MergeBranch performs a --no-ff merge of branch into the current branch in projectDir.
-// Returns the merge commit hash on success.
-func MergeBranch(projectDir, branch, message string) (string, error) {
-	args := []string{"merge", "--no-ff"}
-	if message != "" {
-		args = append(args, "-m", message)
-	}
-	args = append(args, branch)
+// MergeBranch fast-forward merges branch into the current branch in projectDir.
+// Returns the resulting HEAD commit hash on success.
+func MergeBranch(projectDir, branch string) (string, error) {
+	args := []string{"merge", "--ff-only", branch}
 	out, err := gitRun(projectDir, args...)
 	if err != nil {
 		return "", fmt.Errorf("git merge failed: %w: %s", err, strings.TrimSpace(string(out)))
