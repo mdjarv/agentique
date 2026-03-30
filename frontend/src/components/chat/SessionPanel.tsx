@@ -220,9 +220,18 @@ const uncommittedFileIconMap = {
   untracked: FileQuestion,
 } as const;
 
+const uncommittedFileColorMap: Record<string, string> = {
+  modified: "text-warning/70",
+  added: "text-success/70",
+  deleted: "text-destructive/70",
+  renamed: "text-primary/70",
+  untracked: "text-muted-foreground/50",
+};
+
 function UncommittedFileIcon({ status }: { status: string }) {
   const Icon = uncommittedFileIconMap[status as keyof typeof uncommittedFileIconMap] ?? FileText;
-  return <Icon className="h-3 w-3 shrink-0" />;
+  const color = uncommittedFileColorMap[status] ?? "text-muted-foreground/50";
+  return <Icon className={`h-3 w-3 shrink-0 ${color}`} />;
 }
 
 function UncommittedSection({
@@ -370,7 +379,7 @@ function GitSection({
         </a>
       ) : isWorktree && !isBusy ? (
         <Button
-          variant="ghost"
+          variant="outline"
           size="xs"
           className="w-full justify-start"
           onClick={() => onOpenDialog?.("pr")}
@@ -392,6 +401,7 @@ function GitSection({
 
 function TodoSection({ todos }: { todos: TodoItem[] }) {
   const completed = todos.filter((t) => t.status === "completed").length;
+  const pct = todos.length > 0 ? (completed / todos.length) * 100 : 0;
 
   return (
     <div className="space-y-2">
@@ -403,6 +413,12 @@ function TodoSection({ todos }: { todos: TodoItem[] }) {
           </span>
         }
       />
+      <div className="h-1 rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full bg-success transition-all duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
       <div className="space-y-0">
         {todos.map((item, i) => (
           <TodoItemRow key={`${i}-${item.content}`} item={item} />
