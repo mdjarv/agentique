@@ -6,6 +6,7 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
@@ -247,4 +248,45 @@ func (s *LifecycleSuite) TestToolUseEventsPersisted() {
 	}
 	s.Contains(types, "tool_use")
 	s.Contains(types, "tool_result")
+}
+
+func (s *LifecycleSuite) TestResumePreservesGitVersion() {
+	ctx := context.Background()
+
+	// Wire up GitService so resume uses version seeding.
+	gitSvc := NewGitService(s.mgr, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner())
+	s.svc.SetGitService(gitSvc)
+
+	sess := s.createSession()
+
+	// Set a claude_session_id so resumeSession can find it.
+	s.Require().NoError(s.Queries.UpdateClaudeSessionID(ctx, store.UpdateClaudeSessionIDParams{
+		ClaudeSessionID: sqlNullString("test-resume-123"),
+		ID:              sess.ID,
+	}))
+
+	// Run a turn to bump gitVersion via broadcastState calls.
+	s.Require().NoError(sess.Query(ctx, "hello", nil))
+	mock := s.Connector.Last()
+	s.Require().NoError(mock.Inject(testutil.TextEvent("response")))
+	s.Require().NoError(mock.Inject(testutil.ResultEvent(0.01)))
+	s.waitForState(sess, StateIdle, 2*time.Second)
+
+	// Fail the session via fatal error.
+	s.Require().NoError(mock.Inject(testutil.ErrorEvent("internet down", true)))
+	s.waitForState(sess, StateFailed, 2*time.Second)
+
+	versionAtFailure := sess.GitVersion()
+	s.Greater(versionAtFailure, int64(0), "should have positive version after state transitions")
+
+	// Resume — the new session must continue from the old version
+	// so that frontend state broadcasts aren't rejected as stale.
+	info, err := s.svc.ResumeSession(ctx, sess.ID)
+	s.Require().NoError(err)
+	s.Equal("idle", info.State)
+
+	newSess := s.mgr.Get(sess.ID)
+	s.Require().NotNil(newSess, "resumed session should be live")
+	s.GreaterOrEqual(newSess.GitVersion(), versionAtFailure,
+		"resumed session must continue from old version to avoid stale-update rejection on the frontend")
 }
