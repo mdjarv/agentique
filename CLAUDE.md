@@ -25,6 +25,15 @@ If a tradeoff is required, choose correctness and robustness over short-term con
 ## Domain Context
 
 - **Costs are irrelevant.** We use API subscriptions. Don't surface costs/prices in UI, CLI output, or mockups. The `totalCost` field exists in the data model but should not be shown to users.
+- **Session references** use the format `project-slug/short-id` (e.g., `agentique/550e8400`). The short ID is the first 8 characters of the session UUID. When a user pastes a reference like this, resolve it by: finding the project by slug, then prefix-matching the short ID against session IDs in that project.
+
+## Database Access
+
+The live SQLite database is at `~/.local/share/agentique/agentique.db`. Sessions running in Agentique share this file with the running server.
+
+**Reads are encouraged.** Use `sqlite3 ~/.local/share/agentique/agentique.db` for read-only queries when it helps answer questions about sessions, projects, events, or state. Key tables: `projects`, `sessions`, `session_events`, `teams`, `tags`, `project_tags`.
+
+**Writes require explicit user approval.** Never INSERT, UPDATE, DELETE, DROP, or ALTER without asking first. A bad write to the live DB causes immediate data loss for all running sessions. If you need to test write operations, use a copy or an in-memory DB.
 
 ## Engineering Practices
 
