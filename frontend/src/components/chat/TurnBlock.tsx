@@ -360,16 +360,16 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
   );
   const inFlightTool = isStreaming ? [...toolItems].reverse().find((i) => !i.result) : undefined;
 
-  const trailingIcons = segment.items.slice(0, 12).map((item) => {
+  const trailingIcons = segment.items.map((item) => {
     if (item.kind === "thinking") {
       return (
-        <span key={item.event.id}>
+        <span key={item.event.id} className="shrink-0">
           <ThinkingIcon />
         </span>
       );
     }
     return (
-      <span key={item.use.id}>
+      <span key={item.use.id} className="shrink-0">
         <ToolIcon name={item.use.toolName ?? "Unknown"} category={item.use.category} />
       </span>
     );
@@ -381,7 +381,11 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
         title={activityTitle(segment.items)}
         icon={<Wrench className="h-3 w-3" />}
         defaultExpanded={false}
-        trailingIcons={trailingIcons}
+        trailingIcons={
+          <span className="flex flex-row-reverse items-center gap-1.5 overflow-hidden">
+            {[...trailingIcons].reverse()}
+          </span>
+        }
         activeHeader={
           inFlightTool ? (
             <InFlightToolContent

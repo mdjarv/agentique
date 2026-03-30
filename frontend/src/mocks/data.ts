@@ -606,76 +606,139 @@ func Middleware(next http.Handler) http.Handler {
     prompt: "Also update the integration test to cover the new error cases",
     events: [
       thinking(
-        "I need to add test cases for expired, malformed, and revoked tokens to the integration test suite.",
+        "I need to add test cases for expired, malformed, and revoked tokens to the integration test suite. Let me first understand the existing test structure and helpers.",
       ),
-      (() => {
-        const id = "mock-tool-ar-05";
-        return toolUse(
-          "Read",
-          { file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go" },
-          "file_read",
-          id,
-        );
-      })(),
+      toolUse(
+        "Grep",
+        { pattern: "TestMiddleware", path: "backend/internal/auth/" },
+        "file_read",
+        "mock-tool-ar-05a",
+      ),
       toolResult(
-        "mock-tool-ar-05",
-        `package auth_test
-
-import (
-\t"net/http"
-\t"net/http/httptest"
-\t"testing"
-)
-
-func TestMiddleware_ValidToken(t *testing.T) {
-\t// ... existing test
-}
-
-func TestMiddleware_MissingToken(t *testing.T) {
-\t// ... existing test
-}`,
+        "mock-tool-ar-05a",
+        "middleware_test.go:12: func TestMiddleware_ValidToken\nmiddleware_test.go:30: func TestMiddleware_MissingToken",
       ),
-      (() => {
-        const id = "mock-tool-ar-06";
-        return toolUse(
-          "Edit",
-          {
-            file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go",
-            old_string: "// end of file",
-            new_string:
-              "func TestMiddleware_ExpiredToken(t *testing.T) { ... }\nfunc TestMiddleware_MalformedToken(t *testing.T) { ... }\nfunc TestMiddleware_RevokedToken(t *testing.T) { ... }",
-          },
-          "file_write",
-          id,
-        );
-      })(),
+      toolUse(
+        "Read",
+        { file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go" },
+        "file_read",
+        "mock-tool-ar-05b",
+      ),
+      toolResult(
+        "mock-tool-ar-05b",
+        'package auth_test\n\nimport (\n\t"net/http"\n\t"testing"\n)\n\nfunc TestMiddleware_ValidToken(t *testing.T) {\n\t// ... existing test\n}\n\nfunc TestMiddleware_MissingToken(t *testing.T) {\n\t// ... existing test\n}',
+      ),
+      toolUse(
+        "Read",
+        { file_path: "/home/user/git/agentique/backend/internal/auth/testhelpers_test.go" },
+        "file_read",
+        "mock-tool-ar-05c",
+      ),
+      toolResult(
+        "mock-tool-ar-05c",
+        "package auth_test\n\nfunc newTestServer(t *testing.T) *httptest.Server { ... }\nfunc issueToken(claims jwt.Claims) string { ... }",
+      ),
+      toolUse(
+        "Read",
+        { file_path: "/home/user/git/agentique/backend/internal/auth/jwt.go" },
+        "file_read",
+        "mock-tool-ar-05d",
+      ),
+      toolResult(
+        "mock-tool-ar-05d",
+        'package auth\n\nvar (\n\tErrExpired   = errors.New("token expired")\n\tErrMalformed = errors.New("malformed token")\n\tErrRevoked   = errors.New("revoked token")\n)',
+      ),
+      toolUse(
+        "Glob",
+        { pattern: "backend/internal/auth/**_test.go" },
+        "file_read",
+        "mock-tool-ar-05e",
+      ),
+      toolResult(
+        "mock-tool-ar-05e",
+        "backend/internal/auth/middleware_test.go\nbackend/internal/auth/jwt_test.go",
+      ),
+      toolUse(
+        "Read",
+        { file_path: "/home/user/git/agentique/backend/internal/auth/jwt_test.go" },
+        "file_read",
+        "mock-tool-ar-05f",
+      ),
+      toolResult(
+        "mock-tool-ar-05f",
+        "package auth_test\n\nfunc TestVerify_ValidToken(t *testing.T) { ... }",
+      ),
+      toolUse(
+        "Edit",
+        {
+          file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go",
+          old_string: "// end",
+          new_string: "func TestMiddleware_ExpiredToken...",
+        },
+        "file_write",
+        "mock-tool-ar-06",
+      ),
       toolResult("mock-tool-ar-06", "File edited successfully."),
-      (() => {
-        const id = "mock-tool-ar-07";
-        return toolUse(
-          "Bash",
-          {
-            command: "cd backend && go test ./internal/auth/... -v -count=1",
-            description: "Run auth tests verbose",
-          },
-          "command",
-          id,
-        );
-      })(),
+      toolUse(
+        "Edit",
+        {
+          file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go",
+          old_string: "func TestMiddleware_ExpiredToken...",
+          new_string:
+            "func TestMiddleware_ExpiredToken(t *testing.T) { ... }\nfunc TestMiddleware_MalformedToken(t *testing.T) { ... }",
+        },
+        "file_write",
+        "mock-tool-ar-06b",
+      ),
+      toolResult("mock-tool-ar-06b", "File edited successfully."),
+      toolUse(
+        "Edit",
+        {
+          file_path: "/home/user/git/agentique/backend/internal/auth/testhelpers_test.go",
+          old_string: "func issueToken",
+          new_string: "func issueExpiredToken...",
+        },
+        "file_write",
+        "mock-tool-ar-06c",
+      ),
+      toolResult("mock-tool-ar-06c", "File edited successfully."),
+      toolUse(
+        "Bash",
+        {
+          command: "cd backend && go test ./internal/auth/... -count=1",
+          description: "Run auth tests",
+        },
+        "command",
+        "mock-tool-ar-07",
+      ),
       toolResult(
         "mock-tool-ar-07",
-        `=== RUN   TestMiddleware_ValidToken
---- PASS: TestMiddleware_ValidToken (0.01s)
-=== RUN   TestMiddleware_MissingToken
---- PASS: TestMiddleware_MissingToken (0.00s)
-=== RUN   TestMiddleware_ExpiredToken
---- PASS: TestMiddleware_ExpiredToken (0.01s)
-=== RUN   TestMiddleware_MalformedToken
---- PASS: TestMiddleware_MalformedToken (0.00s)
-=== RUN   TestMiddleware_RevokedToken
---- PASS: TestMiddleware_RevokedToken (0.01s)
-PASS
-ok  \tagentique/internal/auth\t0.038s`,
+        "--- FAIL: TestMiddleware_RevokedToken (0.00s)\n    middleware_test.go:58: expected 401, got 400\nFAIL",
+      ),
+      toolUse(
+        "Edit",
+        {
+          file_path: "/home/user/git/agentique/backend/internal/auth/middleware.go",
+          old_string: "case errors.Is(err, jwt.ErrRevoked):",
+          new_string:
+            'case errors.Is(err, jwt.ErrRevoked):\n\t\t\t\thttp.Error(w, "revoked token", http.StatusUnauthorized)',
+        },
+        "file_write",
+        "mock-tool-ar-07b",
+      ),
+      toolResult("mock-tool-ar-07b", "File edited successfully."),
+      toolUse(
+        "Bash",
+        {
+          command: "cd backend && go test ./internal/auth/... -v -count=1",
+          description: "Run auth tests verbose",
+        },
+        "command",
+        "mock-tool-ar-07c",
+      ),
+      toolResult(
+        "mock-tool-ar-07c",
+        "=== RUN   TestMiddleware_ValidToken\n--- PASS (0.01s)\n=== RUN   TestMiddleware_ExpiredToken\n--- PASS (0.01s)\n=== RUN   TestMiddleware_MalformedToken\n--- PASS (0.00s)\n=== RUN   TestMiddleware_RevokedToken\n--- PASS (0.01s)\nPASS\nok  \tagentique/internal/auth\t0.038s",
       ),
       toolUse(
         "TodoWrite",
