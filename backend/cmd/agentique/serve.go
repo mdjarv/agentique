@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+
+	"github.com/allbin/agentique/backend/internal/doctor"
 
 	dbpkg "github.com/allbin/agentique/backend/db"
 	"github.com/allbin/agentique/backend/internal/backup"
@@ -61,18 +62,15 @@ var serveCmd = &cobra.Command{
 }
 
 func preflight() error {
-	if _, err := exec.LookPath("claude"); err != nil {
-		return fmt.Errorf("claude CLI not found on PATH\n\n" +
-			"  Agentique requires Claude Code CLI (>= 2.0.0).\n" +
-			"  Install: npm install -g @anthropic-ai/claude-code\n" +
-			"  Verify:  claude --version")
+	checks := doctor.RunRequired()
+	if doctor.HasFailures(checks) {
+		return fmt.Errorf("%s", doctor.FormatError(checks))
 	}
-	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git not found on PATH\n\n" +
-			"  Agentique requires git for worktree management.")
-	}
-	if _, err := exec.LookPath("gh"); err != nil {
-		slog.Warn("gh (GitHub CLI) not found — PR creation will be unavailable")
+	// Log warnings for optional tools.
+	for _, c := range checks {
+		if c.Status == doctor.Warn {
+			slog.Warn(c.Name+": "+c.Message, "fix", c.Fix)
+		}
 	}
 	return nil
 }
