@@ -304,7 +304,7 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	// CLI process dead — evict and resume with a fresh connection.
 	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
 		slog.Debug("evicting dead session for resume", "session_id", sessionID, "state", string(sess.State()))
-		s.mgr.Evict(sessionID)
+		s.evictForResume(sessionID)
 		sess = nil
 	}
 
@@ -341,7 +341,7 @@ func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, 
 	// CLI process dead — evict and resume with a fresh connection.
 	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
 		slog.Debug("evicting dead session for resume", "session_id", sessionID, "state", string(sess.State()))
-		s.mgr.Evict(sessionID)
+		s.evictForResume(sessionID)
 		sess = nil
 	}
 
@@ -383,7 +383,7 @@ func (s *Service) ResumeSession(ctx context.Context, sessionID string) (SessionI
 
 	// CLI process dead — evict and resume with a fresh connection.
 	if sess != nil && (sess.State() == StateDone || sess.State() == StateFailed) {
-		s.mgr.Evict(sessionID)
+		s.evictForResume(sessionID)
 		sess = nil
 	}
 
@@ -397,6 +397,16 @@ func (s *Service) ResumeSession(ctx context.Context, sessionID string) (SessionI
 	}
 
 	return s.GetSessionInfo(ctx, sessionID)
+}
+
+// evictForResume preserves the git version counter before evicting a dead session.
+// Without this, the resumed session starts from version 0 and all state broadcasts
+// are rejected by the frontend's monotonic version guard.
+func (s *Service) evictForResume(sessionID string) {
+	if live := s.mgr.Get(sessionID); live != nil && s.gitSvc != nil {
+		s.gitSvc.SeedVersion(sessionID, live.GitVersion())
+	}
+	s.mgr.Evict(sessionID)
 }
 
 // StopSession stops a live session. The worktree is preserved so the session

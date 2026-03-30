@@ -254,16 +254,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	slog.Info("shutting down")
 
-	srv.Shutdown()
-
+	// Release the port first so a restart doesn't hit EADDRINUSE while
+	// sessions are still draining.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
 	if err := httpServer.Shutdown(ctx); err != nil {
-		slog.Error("server shutdown failed", "error", err)
-		os.Exit(1)
+		slog.Error("http shutdown failed", "error", err)
 	}
 
+	srv.Shutdown()
 	slog.Info("server stopped")
 	return nil
 }
