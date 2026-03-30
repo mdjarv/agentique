@@ -19,6 +19,7 @@ export const UserMessage = memo(function UserMessage({
 }: UserMessageProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const isPending = deliveryStatus === "sending";
 
   useEffect(() => {
     if (!lightboxSrc) return;
@@ -37,7 +38,13 @@ export const UserMessage = memo(function UserMessage({
             <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
           </AvatarFallback>
         </Avatar>
-        <div className="group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br from-primary/20 to-primary/10 text-foreground shadow-lg shadow-black/30 border border-primary/10">
+        <div
+          className={`group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br border ${
+            isPending
+              ? "from-primary/12 to-primary/6 border-dashed border-primary/15 shadow-md shadow-black/15 text-foreground/70"
+              : "from-primary/20 to-primary/10 border-primary/10 shadow-lg shadow-black/30 text-foreground"
+          }`}
+        >
           {prompt && (
             <button
               type="button"
