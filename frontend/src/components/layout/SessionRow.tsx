@@ -71,11 +71,8 @@ export const SessionRow = memo(function SessionRow({
         }
       }}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm hover:bg-sidebar-accent/50 transition-colors cursor-pointer border-l-2 border-l-transparent",
+        "flex items-center gap-1.5 rounded-md px-2 py-1.5 max-md:py-2.5 text-sm hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
         isActive && "bg-sidebar-accent/70",
-        hasPendingApproval && "border-l-orange",
-        !hasPendingApproval && hasAttention && "border-l-warning",
-        !hasPendingApproval && !hasAttention && hasUnseenCompletion && "border-l-primary",
       )}
     >
       <SessionStatusBadge
