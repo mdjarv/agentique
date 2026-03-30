@@ -1,4 +1,4 @@
-import { Check, CheckCheck, Copy, FileText, Loader2, User } from "lucide-react";
+import { Check, Copy, FileText, Loader2, User } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
@@ -82,7 +82,7 @@ export const UserMessage = memo(function UserMessage({
               {deliveryStatus === "sending" ? (
                 <Loader2 className="h-3 w-3 text-muted-foreground/50 animate-spin" />
               ) : (
-                <CheckCheck className="h-3 w-3 text-primary/60" />
+                <Check className="h-3 w-3 text-primary/60" />
               )}
             </div>
           )}
