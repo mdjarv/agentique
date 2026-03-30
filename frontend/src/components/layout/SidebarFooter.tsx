@@ -15,6 +15,7 @@ import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
+import { UsageBars } from "./UsageBars";
 
 type DisplayState =
   | "approval"
@@ -90,6 +91,7 @@ export function SidebarFooter() {
 
   return (
     <div className="px-3 py-2 border-t border-sidebar-border">
+      <UsageBars />
       {hasAny && (
         <div className="flex items-center gap-3">
           {displayOrder.map((state) => {

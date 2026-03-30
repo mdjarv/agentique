@@ -66,10 +66,11 @@ type WireErrorEvent struct {
 }
 
 type WireRateLimitEvent struct {
-	Type        string  `json:"type"`
-	Status      string  `json:"status"`
-	Utilization float64 `json:"utilization"`
-	ResetsAt    int64   `json:"resetsAt,omitempty"`
+	Type          string  `json:"type"`
+	Status        string  `json:"status"`
+	Utilization   float64 `json:"utilization"`
+	ResetsAt      int64   `json:"resetsAt,omitempty"`
+	RateLimitType string  `json:"rateLimitType,omitempty"`
 }
 
 type WireStreamEvent struct {
@@ -259,11 +260,16 @@ func ToWireEvent(event claudecli.Event) any {
 		}
 		return we
 	case *claudecli.RateLimitEvent:
+		rlType := e.RateLimitType
+		if rlType == "seven_day_opus" {
+			rlType = "seven_day"
+		}
 		return WireRateLimitEvent{
-			Type:        "rate_limit",
-			Status:      e.Status,
-			Utilization: e.Utilization,
-			ResetsAt:    e.ResetsAt,
+			Type:          "rate_limit",
+			Status:        e.Status,
+			Utilization:   e.Utilization,
+			ResetsAt:      e.ResetsAt,
+			RateLimitType: rlType,
 		}
 	case *claudecli.StreamEvent:
 		return WireStreamEvent{

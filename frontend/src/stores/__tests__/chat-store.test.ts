@@ -34,7 +34,6 @@ describe("chat-store", () => {
       activeSessionId: null,
       loadedProjects: new Set(),
       historyLoading: new Set(),
-      rateLimit: null,
     });
   });
 
@@ -219,17 +218,23 @@ describe("chat-store", () => {
       expect(turns?.[0]?.events).toHaveLength(0);
     });
 
-    it("sets global rateLimit on warning", () => {
-      useChatStore
-        .getState()
-        .handleServerEvent(
-          "sess-1",
-          makeEvent({ type: "rate_limit", status: "warning", utilization: 0.8, resetsAt: 123 }),
-        );
-      const rl = useChatStore.getState().rateLimit;
-      expect(rl?.status).toBe("warning");
-      expect(rl?.utilization).toBe(0.8);
-      expect(rl?.resetsAt).toBe(123);
+    it("dispatches rate_limit to rate-limit-store", async () => {
+      const { useRateLimitStore } = await import("~/stores/rate-limit-store");
+      useRateLimitStore.setState({ entries: {} });
+      useChatStore.getState().handleServerEvent(
+        "sess-1",
+        makeEvent({
+          type: "rate_limit",
+          status: "allowed_warning",
+          utilization: 0.8,
+          resetsAt: 123,
+          rateLimitType: "five_hour",
+        }),
+      );
+      const entry = useRateLimitStore.getState().entries.five_hour;
+      expect(entry?.status).toBe("allowed_warning");
+      expect(entry?.utilization).toBe(0.8);
+      expect(entry?.resetsAt).toBe(123);
     });
 
     it("ignores stream events", () => {

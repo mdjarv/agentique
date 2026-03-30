@@ -34,11 +34,13 @@ export interface CommandFile {
 export interface WireTextEvent {
   type: "text";
   content: string;
+  parentToolUseId?: string;
 }
 
 export interface WireThinkingEvent {
   type: "thinking";
   content: string;
+  parentToolUseId?: string;
 }
 
 export interface WireToolUseEvent {
@@ -47,12 +49,14 @@ export interface WireToolUseEvent {
   toolName: string;
   toolInput: unknown;
   category: string;
+  parentToolUseId?: string;
 }
 
 export interface WireToolResultEvent {
   type: "tool_result";
   toolId: string;
   content: WireContentBlock[];
+  parentToolUseId?: string;
 }
 
 export interface WireResultEvent {
@@ -79,6 +83,7 @@ export interface WireRateLimitEvent {
   status: string;
   utilization: number;
   resetsAt?: number;
+  rateLimitType?: string;
 }
 
 export interface WireStreamEvent {

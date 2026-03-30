@@ -76,15 +76,19 @@ describe("parseServerEvent", () => {
     expect(event.retryAfterSecs).toBe(30);
   });
 
-  it("parses rate_limit event", () => {
+  it("parses rate_limit event with rateLimitType", () => {
     const event = parseServerEvent({
       type: "rate_limit",
-      status: "warning",
+      status: "allowed_warning",
       utilization: 0.85,
+      resetsAt: 1234567890,
+      rateLimitType: "five_hour",
     });
     expect(event.type).toBe("rate_limit");
-    expect(event.status).toBe("warning");
+    expect(event.status).toBe("allowed_warning");
     expect(event.utilization).toBe(0.85);
+    expect(event.resetsAt).toBe(1234567890);
+    expect(event.rateLimitType).toBe("five_hour");
   });
 
   it("parses compact_boundary event", () => {
