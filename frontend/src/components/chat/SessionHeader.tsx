@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
-import { SessionStatusDot } from "~/components/layout/SessionStatusDot";
+import { SessionStatusPill } from "~/components/layout/SessionStatusPill";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -184,7 +184,7 @@ export function SessionHeader({
   return (
     <>
       <PageHeader>
-        <SessionStatusDot
+        <SessionStatusPill
           state={meta.state}
           connected={meta.connected}
           hasPendingApproval={hasPendingInput}
@@ -207,11 +207,11 @@ export function SessionHeader({
             className="font-medium truncate bg-transparent border-b border-border outline-none px-0 py-0 text-sm w-48"
           />
         ) : (
-          <div className="group/name flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
               type="button"
               onClick={() => (isMobile ? undefined : setEditing(true))}
-              className="flex items-center gap-1 truncate hover:text-foreground font-medium"
+              className="group/name flex items-center gap-1 truncate hover:text-foreground font-medium"
             >
               <span className={cn("truncate", !meta.name && "italic text-muted-foreground")}>
                 {meta.name || "Untitled"}
@@ -220,7 +220,7 @@ export function SessionHeader({
                 <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-50 transition-opacity shrink-0" />
               )}
             </button>
-            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground/60">
+            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
               <span className="text-[10px] font-mono">{sessionRef}</span>
               <button
                 type="button"
@@ -255,7 +255,7 @@ export function SessionHeader({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-1.5 text-xs text-muted-foreground hover:text-success"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-success gap-1"
               title="Mark done"
               onClick={() => {
                 markSessionDone(ws, meta.id).catch((err) => {
@@ -264,6 +264,7 @@ export function SessionHeader({
               }}
             >
               <Check className="h-3.5 w-3.5" />
+              {!isMobile && <span>Done</span>}
             </Button>
           )}
 
@@ -344,11 +345,6 @@ export function SessionHeader({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* State label — hidden on mobile where status dot suffices */}
-          {!isMobile && (
-            <span className="text-xs text-muted-foreground capitalize">{meta.state}</span>
-          )}
         </div>
       </PageHeader>
 
