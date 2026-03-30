@@ -246,7 +246,7 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 			if err != nil {
 				slog.Warn("pipeline: SendMessage parse failed",
 					"session_id", p.sessionID, "error", err)
-			} else if to != "@spawn" {
+			} else if to != "@spawn" && to != "@dissolve" {
 				go p.onSendMessage(tue.ToolID, to, body)
 			}
 		}

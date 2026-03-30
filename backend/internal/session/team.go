@@ -225,9 +225,12 @@ func (s *Service) JoinTeam(ctx context.Context, sessionID, teamID, role string) 
 	}
 	s.hub.Broadcast(team.ProjectID, "team.member-joined", broadcastPayload)
 
-	// Wire agent message callback and inject team context into a live session.
+	// Wire callbacks and inject team context into a live session.
 	if live := s.mgr.Get(sessionID); live != nil {
 		s.wireAgentMessageCallback(live, teamID)
+		if role == "lead" {
+			s.wireDissolveTeamCallback(live, teamID)
+		}
 		go s.injectTeamContext(context.Background(), live, teamID)
 	}
 
@@ -637,6 +640,15 @@ func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
 			Members:       members,
 		})
 		return err
+	})
+}
+
+// wireDissolveTeamCallback sets up the @dissolve interception callback on a
+// live session. When the leader calls SendMessage(to="@dissolve"), it triggers
+// DissolveTeam which cleans up all workers and the team.
+func (s *Service) wireDissolveTeamCallback(sess *Session, teamID string) {
+	sess.SetDissolveTeamCallback(func(senderID string) error {
+		return s.DissolveTeam(context.Background(), teamID)
 	})
 }
 
