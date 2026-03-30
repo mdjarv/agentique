@@ -1,4 +1,3 @@
-import { AlertTriangle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CODE_STYLE } from "~/components/chat/Markdown";
 
@@ -38,33 +37,22 @@ function loadMermaid() {
 
 export function MermaidDiagram({ code }: { code: string }) {
   const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [settled, setSettled] = useState(false);
   const idRef = useRef(`mermaid-${crypto.randomUUID().slice(0, 8)}`);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setSettled(false);
 
     const timeoutId = setTimeout(() => {
       loadMermaid()
         .then((mod) => mod.default.render(idRef.current, code))
         .then(({ svg: rendered }) => {
-          if (!cancelled) {
-            setSvg(rendered);
-            setError(null);
-            setSettled(true);
-          }
+          if (!cancelled) setSvg(rendered);
         })
-        .catch((err) => {
-          if (!cancelled) {
-            setError(err instanceof Error ? err.message : String(err));
-            setSvg(null);
-            setSettled(true);
-          }
+        .catch(() => {
+          // Keep last successful SVG — don't clear on parse failure
         });
-    }, 500);
+    }, 150);
 
     return () => {
       cancelled = true;
@@ -78,27 +66,11 @@ export function MermaidDiagram({ code }: { code: string }) {
     }
   }, [svg]);
 
-  if (!svg && !(settled && error)) {
+  if (!svg) {
     return (
       <pre style={{ ...CODE_STYLE, background: "var(--muted)", padding: "1em", overflow: "auto" }}>
         <code>{code}</code>
       </pre>
-    );
-  }
-
-  if (settled && error) {
-    return (
-      <div>
-        <div className="flex items-center gap-1.5 text-xs text-warning mb-1">
-          <AlertTriangle className="h-3 w-3" />
-          <span>Invalid mermaid syntax</span>
-        </div>
-        <pre
-          style={{ ...CODE_STYLE, background: "var(--muted)", padding: "1em", overflow: "auto" }}
-        >
-          <code>{code}</code>
-        </pre>
-      </div>
     );
   }
 
