@@ -93,6 +93,8 @@ func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff st
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+		claudecli.WithExtraArgs(map[string]string{"bare": ""}),
+		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
 		return CommitMessageResult{}, fmt.Errorf("haiku generation failed: %w", err)
@@ -143,6 +145,8 @@ func PRDescription(ctx context.Context, runner Runner, sessionName, summary, dif
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
 		claudecli.WithPermissionMode(claudecli.PermissionBypass),
+		claudecli.WithExtraArgs(map[string]string{"bare": ""}),
+		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
 		return PRDescriptionResult{}, fmt.Errorf("haiku generation failed: %w", err)
