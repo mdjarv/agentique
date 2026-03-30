@@ -73,8 +73,8 @@ const PERMISSION_LABELS: Record<AutoApproveMode, string> = {
 };
 const PERMISSION_DESCRIPTIONS: Record<AutoApproveMode, string> = {
   manual: "Approve every tool use individually",
-  auto: "Auto-approve safe operations like reads",
-  fullAuto: "Auto-approve all operations including writes",
+  auto: "Auto-approve reads and writes, prompt for shell commands",
+  fullAuto: "Auto-approve all operations including shell commands",
 };
 const PERMISSION_COLORS: Record<AutoApproveMode, string> = {
   manual: "text-muted-foreground",
