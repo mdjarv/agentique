@@ -163,11 +163,11 @@ function BranchStatus({
   if (ahead === 0 && behind === 0) return null;
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center gap-3 text-xs">
         {ahead > 0 && (
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <ArrowUp className="h-3 w-3" />
+          <span className="flex items-center gap-1 text-foreground/70">
+            <ArrowUp className="h-3 w-3 text-muted-foreground/70" />
             {ahead} ahead
           </span>
         )}
@@ -178,7 +178,10 @@ function BranchStatus({
           </span>
         )}
         {meta.mergeStatus === "clean" && ahead > 0 && (
-          <CheckCircle2 className="h-3 w-3 text-success/70 ml-auto shrink-0" />
+          <span className="flex items-center gap-1 text-success/70 ml-auto text-[11px]">
+            <CheckCircle2 className="h-3 w-3 shrink-0" />
+            Ready
+          </span>
         )}
       </div>
 
@@ -200,7 +203,9 @@ function BranchStatus({
             <MergeDropdown
               git={git}
               className={
-                meta.mergeStatus === "clean" ? "text-success hover:bg-success/10" : undefined
+                meta.mergeStatus === "clean"
+                  ? "bg-success/10 text-success hover:bg-success/20"
+                  : undefined
               }
             />
           )}
@@ -344,11 +349,11 @@ function GitSection({
 
       {/* Branch line */}
       {isWorktree && (
-        <div className="rounded-md bg-muted/30 px-2.5 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <GitBranch className="h-3 w-3 shrink-0" />
-          <span className="font-mono truncate">{meta.worktreeBranch}</span>
-          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-          <span className="font-mono">{mainBranch || "main"}</span>
+        <div className="rounded-md bg-muted/30 px-2.5 py-1.5 flex items-center gap-1.5 text-xs">
+          <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+          <span className="font-mono truncate text-foreground/80">{meta.worktreeBranch}</span>
+          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+          <span className="font-mono text-muted-foreground">{mainBranch || "main"}</span>
         </div>
       )}
 

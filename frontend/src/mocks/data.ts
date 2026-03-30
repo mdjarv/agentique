@@ -151,6 +151,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     gitVersion: 1,
     commitsAhead: 3,
     commitsBehind: 0,
+    mergeStatus: "clean" as const,
     hasUncommitted: true,
     turnCount: 2,
     totalCost: 0,
