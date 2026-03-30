@@ -275,7 +275,7 @@ function CollapsibleGroup({
         ) : (
           <>
             {icon}
-            <span>{title}</span>
+            <span className="shrink-0">{title}</span>
           </>
         )}
       </ExpandableRow>
@@ -558,144 +558,195 @@ export const TurnBlock = memo(function TurnBlock({
     : segments.filter((s) => s.kind !== "activity").length;
   const hasAssistantContent = visibleSegmentCount > 0 || streamingTail || isStreaming;
 
+  // Group segments into agent content runs split by user messages.
+  // User messages render at the turn level (full width) instead of inside
+  // the agent's indented, width-constrained content column.
+  const turnSections = useMemo(() => {
+    const sections: Array<
+      | { kind: "agent"; items: { seg: Segment; idx: number }[] }
+      | { kind: "user"; seg: UserMessageSegment; idx: number }
+    > = [];
+    let run: { seg: Segment; idx: number }[] = [];
+    segments.forEach((seg, idx) => {
+      if (seg.kind === "user_message") {
+        if (run.length > 0) sections.push({ kind: "agent", items: run });
+        run = [];
+        sections.push({ kind: "user", seg, idx });
+      } else {
+        run.push({ seg, idx });
+      }
+    });
+    if (run.length > 0) sections.push({ kind: "agent", items: run });
+    return sections;
+  }, [segments]);
+
+  // Ensure streaming/result metadata has an agent section to live in
+  const hasTrailingContent =
+    streamingTail || isStreaming || (resultEvent?.duration != null && resultEvent.duration > 0);
+  const lastIsAgent =
+    turnSections.length > 0 && turnSections[turnSections.length - 1]?.kind === "agent";
+  const renderSections =
+    hasTrailingContent && !lastIsAgent
+      ? [...turnSections, { kind: "agent" as const, items: [] as { seg: Segment; idx: number }[] }]
+      : turnSections;
+  const firstAgentIdx = renderSections.findIndex((s) => s.kind === "agent");
+
   return (
     <div className="space-y-4">
       {/* User message */}
       <UserMessage prompt={turn.prompt} attachments={turn.attachments} />
 
-      {/* Assistant response */}
-      {hasAssistantContent && (
-        <div className="flex gap-3 max-md:flex-col max-md:gap-1">
-          <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
-            <AvatarFallback className="bg-agent/15 text-agent">
-              <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 space-y-3 max-w-[85%] max-md:max-w-full min-w-0 overflow-x-clip pr-2 max-md:pr-0">
-            {/* Chronological segments */}
-            {segments.map((seg, i) => {
-              if (!showEvents && seg.kind === "activity") {
-                if (isStreaming && i === segments.length - 1) {
-                  const toolItems = seg.items.filter(
-                    (it): it is ActivityItem & { kind: "tool" } => it.kind === "tool",
-                  );
-                  const inFlightTool = [...toolItems].reverse().find((t) => !t.result);
-                  if (inFlightTool) {
-                    return (
-                      <InFlightToolStatus
-                        key={segmentKey(seg, i)}
-                        event={inFlightTool.use}
-                        sessionId={sessionId}
-                        projectPath={projectPath}
-                        worktreePath={worktreePath}
-                      />
-                    );
-                  }
-                }
-                return null;
-              }
-              switch (seg.kind) {
-                case "activity":
-                  return (
-                    <ActivitySegmentView
-                      key={segmentKey(seg, i)}
-                      segment={seg}
-                      isStreaming={isStreaming && i === segments.length - 1}
-                      sessionId={sessionId}
-                      projectPath={projectPath}
-                      worktreePath={worktreePath}
-                    />
-                  );
-                case "text":
-                  return (
-                    <TextSegmentView
-                      key={segmentKey(seg, i)}
-                      content={seg.content}
-                      onCopy={handleCopy}
-                      copied={copied}
-                      projectId={projectId}
-                      sessionId={sessionId}
-                      isStreaming={false}
-                    />
-                  );
-                case "error":
-                  return <ErrorSegmentView key={segmentKey(seg, i)} segment={seg} />;
-                case "compact":
-                  return (
-                    <CompactDivider
-                      key={segmentKey(seg, i)}
-                      event={seg.event}
-                      postTokens={postCompactTokens}
-                    />
-                  );
-                case "user_message":
-                  return (
-                    <UserMessage
-                      key={segmentKey(seg, i)}
-                      prompt={seg.content}
-                      attachments={seg.attachments}
-                      deliveryStatus={seg.deliveryStatus}
-                    />
-                  );
-                case "agent_message":
-                  return (
-                    <AgentMessage
-                      key={segmentKey(seg, i)}
-                      direction={seg.direction}
-                      senderName={seg.senderName}
-                      senderSessionId={seg.senderSessionId}
-                      targetName={seg.targetName}
-                      targetSessionId={seg.targetSessionId}
-                      content={seg.content}
-                    />
-                  );
-              }
-            })}
-
-            {/* Streaming text tail (not yet committed as an event) */}
-            {streamingTail && (
-              <TextSegmentView
-                content={streamingTail}
-                onCopy={handleCopy}
-                copied={copied}
-                projectId={projectId}
-                sessionId={sessionId}
-                isStreaming
+      {/* Assistant response — sections alternate between agent content blocks and user messages */}
+      {hasAssistantContent &&
+        renderSections.map((section, si) => {
+          if (section.kind === "user") {
+            return (
+              <UserMessage
+                key={`usermsg-${section.idx}`}
+                prompt={section.seg.content}
+                attachments={section.seg.attachments}
+                deliveryStatus={section.seg.deliveryStatus}
               />
-            )}
+            );
+          }
 
-            {/* Streaming indicator — empty turn */}
-            {isStreaming && segments.length === 0 && !streamingTail && (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm px-1">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>{sessionState === "running" ? "Working..." : "Connecting..."}</span>
-              </div>
-            )}
-
-            {/* Streaming indicator — has content, still working (hidden when in-flight tool already shows a spinner) */}
-            {isStreaming &&
-              (segments.length > 0 || streamingTail) &&
-              (() => {
-                const last = segments[segments.length - 1];
-                const hasInFlightTool =
-                  last?.kind === "activity" &&
-                  last.items.some((it) => it.kind === "tool" && !it.result);
-                return !hasInFlightTool;
-              })() && (
-                <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                </div>
+          const isLastSection = si === renderSections.length - 1;
+          return (
+            <div
+              key={`agent-${section.items[0]?.idx ?? "tail"}`}
+              className="flex gap-3 max-md:flex-col max-md:gap-1"
+            >
+              {si === firstAgentIdx ? (
+                <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
+                  <AvatarFallback className="bg-agent/15 text-agent">
+                    <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
+                  </AvatarFallback>
+                </Avatar>
+              ) : (
+                <div className="w-8 shrink-0 max-md:hidden" />
               )}
+              <div className="flex-1 space-y-3 max-w-[85%] max-md:max-w-full min-w-0 overflow-x-clip pr-2 max-md:pr-0">
+                {section.items.map(({ seg, idx }) => {
+                  if (!showEvents && seg.kind === "activity") {
+                    if (isStreaming && idx === segments.length - 1) {
+                      const toolItems = seg.items.filter(
+                        (it): it is ActivityItem & { kind: "tool" } => it.kind === "tool",
+                      );
+                      const inFlightTool = [...toolItems].reverse().find((t) => !t.result);
+                      if (inFlightTool) {
+                        return (
+                          <InFlightToolStatus
+                            key={segmentKey(seg, idx)}
+                            event={inFlightTool.use}
+                            sessionId={sessionId}
+                            projectPath={projectPath}
+                            worktreePath={worktreePath}
+                          />
+                        );
+                      }
+                    }
+                    return null;
+                  }
+                  switch (seg.kind) {
+                    case "activity":
+                      return (
+                        <ActivitySegmentView
+                          key={segmentKey(seg, idx)}
+                          segment={seg}
+                          isStreaming={isStreaming && idx === segments.length - 1}
+                          sessionId={sessionId}
+                          projectPath={projectPath}
+                          worktreePath={worktreePath}
+                        />
+                      );
+                    case "text":
+                      return (
+                        <TextSegmentView
+                          key={segmentKey(seg, idx)}
+                          content={seg.content}
+                          onCopy={handleCopy}
+                          copied={copied}
+                          projectId={projectId}
+                          sessionId={sessionId}
+                          isStreaming={false}
+                        />
+                      );
+                    case "error":
+                      return <ErrorSegmentView key={segmentKey(seg, idx)} segment={seg} />;
+                    case "compact":
+                      return (
+                        <CompactDivider
+                          key={segmentKey(seg, idx)}
+                          event={seg.event}
+                          postTokens={postCompactTokens}
+                        />
+                      );
+                    case "agent_message":
+                      return (
+                        <AgentMessage
+                          key={segmentKey(seg, idx)}
+                          direction={seg.direction}
+                          senderName={seg.senderName}
+                          senderSessionId={seg.senderSessionId}
+                          targetName={seg.targetName}
+                          targetSessionId={seg.targetSessionId}
+                          content={seg.content}
+                        />
+                      );
+                    case "user_message":
+                      return null;
+                  }
+                })}
 
-            {/* Result metadata */}
-            {resultEvent && resultEvent.duration != null && resultEvent.duration > 0 && (
-              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
+                {/* Streaming text tail (not yet committed as an event) */}
+                {isLastSection && streamingTail && (
+                  <TextSegmentView
+                    content={streamingTail}
+                    onCopy={handleCopy}
+                    copied={copied}
+                    projectId={projectId}
+                    sessionId={sessionId}
+                    isStreaming
+                  />
+                )}
+
+                {/* Streaming indicator — empty turn */}
+                {isLastSection && isStreaming && segments.length === 0 && !streamingTail && (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm px-1">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>{sessionState === "running" ? "Working..." : "Connecting..."}</span>
+                  </div>
+                )}
+
+                {/* Streaming indicator — has content, still working */}
+                {isLastSection &&
+                  isStreaming &&
+                  (segments.length > 0 || streamingTail) &&
+                  (() => {
+                    const last = segments[segments.length - 1];
+                    const hasInFlightTool =
+                      last?.kind === "activity" &&
+                      last.items.some((it) => it.kind === "tool" && !it.result);
+                    return !hasInFlightTool;
+                  })() && (
+                    <div className="flex items-center gap-2 text-muted-foreground/60 text-xs px-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    </div>
+                  )}
+
+                {/* Result metadata */}
+                {isLastSection &&
+                  resultEvent &&
+                  resultEvent.duration != null &&
+                  resultEvent.duration > 0 && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
+                    </div>
+                  )}
               </div>
-            )}
-          </div>
-        </div>
-      )}
+            </div>
+          );
+        })}
     </div>
   );
 });
