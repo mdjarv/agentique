@@ -122,6 +122,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	logging.InitWithMode(lvl, jsonLog, logging.OutputMode(logOutput))
 
+	// First-run hint.
+	if !config.Exists() && !fileExists(paths.DBPath()) {
+		slog.Info("first run detected — run 'agentique setup' for guided configuration")
+	}
+
 	if !testMode {
 		if err := preflight(); err != nil {
 			return err
@@ -326,6 +331,11 @@ func applyConfig(cmd *cobra.Command, cfg *config.Config) {
 	if !flags.Changed("disable-backup") && cfg.Backup.Disabled {
 		disableBackup = cfg.Backup.Disabled
 	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // findGitRoot walks up from dir to find the nearest .git directory.
