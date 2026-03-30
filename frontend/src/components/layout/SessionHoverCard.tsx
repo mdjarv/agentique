@@ -83,7 +83,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
   const canMerge =
-    hasWorktree && ahead && !hasConflicts && !branchMissing && meta.state !== "running";
+    hasWorktree && ahead && !behind && !hasConflicts && !branchMissing && meta.state !== "running";
   const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
   const hasStateActions = canInterrupt || canMarkDone;
