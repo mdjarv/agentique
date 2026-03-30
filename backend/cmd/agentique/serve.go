@@ -20,7 +20,6 @@ import (
 	"github.com/allbin/agentique/backend/internal/config"
 	"github.com/allbin/agentique/backend/internal/doctor"
 	"github.com/allbin/agentique/backend/internal/logging"
-	"github.com/allbin/agentique/backend/internal/upgrade"
 	"github.com/allbin/agentique/backend/internal/paths"
 	"github.com/allbin/agentique/backend/internal/project"
 	"github.com/allbin/agentique/backend/internal/server"
@@ -131,15 +130,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if err := preflight(); err != nil {
 			return err
 		}
-	}
-
-	// Non-blocking update check (release builds only).
-	if isRelease() {
-		go func() {
-			if rel := upgrade.CheckCached(version); rel != nil {
-				slog.Info("update available", "current", version, "latest", rel.Version)
-			}
-		}()
 	}
 
 	slog.Info("data directory", "path", paths.DataDir())

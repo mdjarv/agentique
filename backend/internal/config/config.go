@@ -1,7 +1,8 @@
 // Package config handles file-based configuration for Agentique.
 //
-// Config is loaded from <data-dir>/config.toml. CLI flags take precedence
-// over config file values. Missing config file is not an error — defaults apply.
+// Config is loaded from <config-dir>/config.toml (~/.config/agentique/ on Linux).
+// CLI flags take precedence over config file values.
+// Missing config file is not an error — defaults apply.
 package config
 
 import (
@@ -59,7 +60,7 @@ func Default() *Config {
 
 // Path returns the default config file location.
 func Path() string {
-	return filepath.Join(paths.DataDir(), "config.toml")
+	return filepath.Join(paths.ConfigDir(), "config.toml")
 }
 
 // Load reads config from the given path. Returns defaults if the file doesn't exist.

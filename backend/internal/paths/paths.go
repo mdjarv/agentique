@@ -51,3 +51,36 @@ func DBPath() string {
 func WorktreeDir() string {
 	return filepath.Join(DataDir(), "worktrees")
 }
+
+// ConfigDir returns the configuration directory for Agentique.
+//
+// Resolution order:
+//  1. AGENTIQUE_HOME (explicit override — config lives alongside data)
+//  2. XDG_CONFIG_HOME/agentique
+//  3. Platform default:
+//     - Linux:   ~/.config/agentique
+//     - macOS:   ~/Library/Application Support/agentique (same as data)
+//     - Windows: %LOCALAPPDATA%/agentique (same as data)
+func ConfigDir() string {
+	if v := os.Getenv("AGENTIQUE_HOME"); v != "" {
+		return v
+	}
+	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
+		return filepath.Join(v, appName)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return appName
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(home, "Library", "Application Support", appName)
+	case "windows":
+		if v := os.Getenv("LOCALAPPDATA"); v != "" {
+			return filepath.Join(v, appName)
+		}
+		return filepath.Join(home, "AppData", "Local", appName)
+	default:
+		return filepath.Join(home, ".config", appName)
+	}
+}
