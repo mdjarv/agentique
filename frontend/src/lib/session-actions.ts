@@ -337,6 +337,8 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     mergeConflictFiles?: string[];
     gitOperation?: string;
     gitVersion: number;
+    worktreeBranch?: string;
+    worktreePath?: string;
   }>("session.resume", { sessionId }, 30000);
   useChatStore.getState().setSessionState(sessionId, info.state as SessionState, {
     connected: info.connected,
@@ -351,6 +353,8 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     mergeConflictFiles: info.mergeConflictFiles,
     gitOperation: info.gitOperation ?? "",
     gitVersion: info.gitVersion,
+    worktreeBranch: info.worktreeBranch,
+    worktreePath: info.worktreePath,
   });
 }
 

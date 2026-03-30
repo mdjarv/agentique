@@ -380,6 +380,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
                 state={sessionState as "stopped" | "failed" | "done"}
                 onResume={handleResume}
                 resuming={resuming}
+                branchMissing={meta?.branchMissing}
               />
             )}
             <MessageComposer

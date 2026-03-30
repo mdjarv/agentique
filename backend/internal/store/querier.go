@@ -75,6 +75,7 @@ type Querier interface {
 	UpdateSessionPRUrl(ctx context.Context, arg UpdateSessionPRUrlParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg UpdateSessionPermissionModeParams) error
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
+	UpdateSessionWorktree(ctx context.Context, arg UpdateSessionWorktreeParams) error
 	UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error)
 	UpdateTeamName(ctx context.Context, arg UpdateTeamNameParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error

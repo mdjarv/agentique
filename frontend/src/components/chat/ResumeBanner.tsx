@@ -5,6 +5,7 @@ interface ResumeBannerProps {
   state: "stopped" | "failed" | "done";
   onResume: () => void;
   resuming: boolean;
+  branchMissing?: boolean;
 }
 
 const config = {
@@ -34,15 +35,17 @@ const config = {
   },
 } as const;
 
-export function ResumeBanner({ state, onResume, resuming }: ResumeBannerProps) {
+export function ResumeBanner({ state, onResume, resuming, branchMissing }: ResumeBannerProps) {
   const c = config[state];
-  const Icon = c.icon;
+  const Icon = branchMissing ? TriangleAlert : c.icon;
+  const label = branchMissing ? "Branch deleted — will resume on fresh worktree" : c.label;
+  const button = branchMissing ? "Resume on latest" : c.button;
 
   return (
     <div className={`mx-4 mb-2 rounded-md border ${c.border} ${c.bg} px-3 py-2 shrink-0`}>
       <div className="flex items-center gap-2 text-sm">
-        <Icon className={`h-4 w-4 shrink-0 ${c.iconColor}`} />
-        <span className="text-muted-foreground">{c.label}</span>
+        <Icon className={`h-4 w-4 shrink-0 ${branchMissing ? "text-warning" : c.iconColor}`} />
+        <span className="text-muted-foreground">{label}</span>
         <Button
           size="sm"
           className="h-7 max-md:h-10 px-2 max-md:px-3 ml-auto"
@@ -54,7 +57,7 @@ export function ResumeBanner({ state, onResume, resuming }: ResumeBannerProps) {
           ) : (
             <Play className="h-3.5 w-3.5 mr-1" />
           )}
-          {resuming ? "Resuming..." : c.button}
+          {resuming ? "Resuming..." : button}
         </Button>
       </div>
     </div>

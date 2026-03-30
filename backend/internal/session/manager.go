@@ -173,6 +173,7 @@ type ResumeParams struct {
 	Projects          []ProjectInfo
 	BehaviorPresets   BehaviorPresets
 	TeamPreamble      *TeamPreambleInfo
+	ExtraPreamble     string // appended to system prompt (e.g. fresh-worktree notice)
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -214,7 +215,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble, m.GlobalPreamble)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble, m.GlobalPreamble) + p.ExtraPreamble),
 	}
 	if effort := resolveEffort(p.Effort); effort != "" {
 		connectOpts = append(connectOpts, claudecli.WithEffort(effort))

@@ -2,12 +2,15 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/allbin/agentique/backend/internal/gitops"
@@ -788,14 +791,41 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	slog.Debug("resuming session", "session_id", sessionID, "claude_session_id", claudeSessID)
 
 	workDir := dbSess.WorkDir
+	var extraPreamble string
 	if _, statErr := os.Stat(workDir); statErr != nil {
 		project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 		if projErr != nil {
 			return nil, fmt.Errorf("project not found: %w", projErr)
 		}
-		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
-			if err := gitops.RestoreWorktree(project.Path, branch, nullStr(dbSess.WorktreePath)); err != nil {
-				return nil, fmt.Errorf("worktree restore failed for branch %s: %w", branch, err)
+		oldBranch := nullStr(dbSess.WorktreeBranch)
+		if oldBranch != "" {
+			if gitops.BranchExists(project.Path, oldBranch) {
+				// Branch exists but worktree dir gone — restore it.
+				if err := gitops.RestoreWorktree(project.Path, oldBranch, nullStr(dbSess.WorktreePath)); err != nil {
+					return nil, fmt.Errorf("worktree restore failed for branch %s: %w", oldBranch, err)
+				}
+			} else {
+				// Branch gone — create a fresh worktree from HEAD.
+				newBranch := "session-" + sessionID[:8] + "-r" + strconv.FormatInt(time.Now().Unix(), 10)
+				newWorktreePath := gitops.WorktreePath(project.Name, newBranch)
+				if err := gitops.CreateWorktree(project.Path, newBranch, newWorktreePath); err != nil {
+					return nil, fmt.Errorf("fresh worktree creation failed: %w", err)
+				}
+				baseSHA, _ := gitops.GetWorktreeBaseSHA(project.Path)
+				_ = s.queries.UpdateSessionWorktree(ctx, store.UpdateSessionWorktreeParams{
+					WorkDir:         newWorktreePath,
+					WorktreePath:    sql.NullString{String: newWorktreePath, Valid: true},
+					WorktreeBranch:  sql.NullString{String: newBranch, Valid: true},
+					WorktreeBaseSha: sql.NullString{String: baseSHA, Valid: baseSHA != ""},
+					ID:              sessionID,
+				})
+				workDir = newWorktreePath
+				dbSess.WorktreeBranch = sql.NullString{String: newBranch, Valid: true}
+				dbSess.WorktreePath = sql.NullString{String: newWorktreePath, Valid: true}
+				dbSess.WorkDir = newWorktreePath
+				dbSess.WorktreeMerged = 0
+				extraPreamble = preambleFreshWorktreeResume
+				slog.Info("resumed session on fresh worktree", "session_id", sessionID, "old_branch", oldBranch, "new_branch", newBranch)
 			}
 		} else {
 			workDir = project.Path
@@ -832,6 +862,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		Projects:          ProjectInfoFromStore(resumeProjects),
 		BehaviorPresets:   ParsePresets(dbSess.BehaviorPresets),
 		TeamPreamble:      teamPreamble,
+		ExtraPreamble:     extraPreamble,
 	})
 	if resumeErr != nil {
 		return nil, resumeErr

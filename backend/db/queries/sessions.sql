@@ -51,5 +51,11 @@ SELECT * FROM sessions ORDER BY updated_at DESC;
 -- name: UpdateSessionLastQueryAt :exec
 UPDATE sessions SET last_query_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateSessionWorktree :exec
+UPDATE sessions
+SET work_dir = ?, worktree_path = ?, worktree_branch = ?, worktree_base_sha = ?, worktree_merged = 0,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE id = ?;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

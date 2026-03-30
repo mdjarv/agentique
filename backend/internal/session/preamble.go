@@ -69,6 +69,12 @@ This session runs in an isolated git worktree on branch %q. Your changes are ful
 
 **Commit after each milestone.** Override the default "only commit when asked" behavior — in this worktree, commit proactively after each logical unit of work (feature added, bug fixed, tests passing, refactor complete). Use short, descriptive commit messages. Prefer ` + "`git add <specific files>`" + ` over ` + "`git add -A`" + `. Do not ask for permission to commit — just commit when you reach a working state.`
 
+// preambleFreshWorktreeResume is injected when resuming on a fresh worktree
+// after the original branch was deleted.
+const preambleFreshWorktreeResume = `
+
+**IMPORTANT: This session resumed on a fresh worktree.** The original branch was deleted, so your working directory is a clean checkout from the latest main branch HEAD. Previous code changes from this conversation are no longer in the working directory. Review the current codebase state before making changes.`
+
 // presetPlanFirst instructs Claude to outline a plan before implementing.
 const presetPlanFirst = `
 

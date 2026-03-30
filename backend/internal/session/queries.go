@@ -32,6 +32,7 @@ type serviceQueries interface {
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)
 	SetSessionCompleted(ctx context.Context, id string) error
 	InsertEvent(ctx context.Context, arg store.InsertEventParams) error
+	UpdateSessionWorktree(ctx context.Context, arg store.UpdateSessionWorktreeParams) error
 
 	// Team queries
 	CreateTeam(ctx context.Context, arg store.CreateTeamParams) (store.Team, error)

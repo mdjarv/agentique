@@ -378,6 +378,32 @@ func (q *Queries) UpdateSessionState(ctx context.Context, arg UpdateSessionState
 	return err
 }
 
+const updateSessionWorktree = `-- name: UpdateSessionWorktree :exec
+UPDATE sessions
+SET work_dir = ?, worktree_path = ?, worktree_branch = ?, worktree_base_sha = ?, worktree_merged = 0,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE id = ?
+`
+
+type UpdateSessionWorktreeParams struct {
+	WorkDir         string         `json:"work_dir"`
+	WorktreePath    sql.NullString `json:"worktree_path"`
+	WorktreeBranch  sql.NullString `json:"worktree_branch"`
+	WorktreeBaseSha sql.NullString `json:"worktree_base_sha"`
+	ID              string         `json:"id"`
+}
+
+func (q *Queries) UpdateSessionWorktree(ctx context.Context, arg UpdateSessionWorktreeParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionWorktree,
+		arg.WorkDir,
+		arg.WorktreePath,
+		arg.WorktreeBranch,
+		arg.WorktreeBaseSha,
+		arg.ID,
+	)
+	return err
+}
+
 const updateWorktreeBaseSHA = `-- name: UpdateWorktreeBaseSHA :exec
 UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

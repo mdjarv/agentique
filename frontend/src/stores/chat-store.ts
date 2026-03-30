@@ -279,6 +279,8 @@ export interface ChatState {
         | "mergeConflictFiles"
         | "gitOperation"
         | "gitVersion"
+        | "worktreeBranch"
+        | "worktreePath"
       >
     >,
   ) => void;
@@ -418,6 +420,8 @@ export const useChatStore = create<ChatState>((set) => ({
         branchMissing: transient ? m.branchMissing : (extras?.branchMissing ?? false),
         mergeStatus: transient ? m.mergeStatus : extras?.mergeStatus,
         mergeConflictFiles: transient ? m.mergeConflictFiles : extras?.mergeConflictFiles,
+        worktreeBranch: extras?.worktreeBranch ?? m.worktreeBranch,
+        worktreePath: extras?.worktreePath ?? m.worktreePath,
       };
       // Evict turns when a session becomes completed and isn't being viewed.
       const becameCompleted = !transient && extras?.completedAt && !m.completedAt;
