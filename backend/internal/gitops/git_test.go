@@ -428,3 +428,102 @@ func TestWithCleanWorktree_StashPopConflict(t *testing.T) {
 		t.Fatal("expected stash entry preserved for recovery")
 	}
 }
+
+func TestPorcelainStatus(t *testing.T) {
+	tests := []struct {
+		xy   string
+		want string
+	}{
+		{"??", "untracked"},
+		{"A ", "added"},
+		{" A", "added"},
+		{"D ", "deleted"},
+		{" D", "deleted"},
+		{"R ", "renamed"},
+		{"M ", "modified"},
+		{" M", "modified"},
+		{"MM", "modified"},
+	}
+
+	for _, tt := range tests {
+		if got := porcelainStatus(tt.xy); got != tt.want {
+			t.Errorf("porcelainStatus(%q) = %q, want %q", tt.xy, got, tt.want)
+		}
+	}
+}
+
+func TestUncommittedFiles_Clean(t *testing.T) {
+	repoDir := initGitRepo(t)
+	files, err := UncommittedFiles(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedFiles failed: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected empty, got %v", files)
+	}
+}
+
+func TestUncommittedFiles_Untracked(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "new.txt", "content")
+
+	files, err := UncommittedFiles(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedFiles failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].Path != "new.txt" || files[0].Status != "untracked" {
+		t.Errorf("got %+v, want {Path:new.txt Status:untracked}", files[0])
+	}
+}
+
+func TestUncommittedFiles_Modified(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "README", "modified content")
+
+	files, err := UncommittedFiles(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedFiles failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].Status != "modified" {
+		t.Errorf("expected modified, got %q", files[0].Status)
+	}
+}
+
+func TestUncommittedDiff_Clean(t *testing.T) {
+	repoDir := initGitRepo(t)
+	diff, summary, err := UncommittedDiff(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedDiff failed: %v", err)
+	}
+	if diff != "" {
+		t.Errorf("expected empty diff, got %q", diff)
+	}
+	if summary != "" {
+		t.Errorf("expected empty summary, got %q", summary)
+	}
+}
+
+func TestUncommittedDiff_Modified(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "README", "modified content")
+
+	diff, summary, err := UncommittedDiff(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedDiff failed: %v", err)
+	}
+	if diff == "" {
+		t.Error("expected non-empty diff")
+	}
+	if summary == "" {
+		t.Error("expected non-empty summary")
+	}
+	if !strings.Contains(diff, "README") {
+		t.Errorf("expected diff to mention README, got %q", diff)
+	}
+}
