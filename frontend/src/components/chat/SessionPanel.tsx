@@ -20,12 +20,14 @@ import {
   Loader2,
   PanelRightClose,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
@@ -85,15 +87,40 @@ function MergeDropdown({
           Merge
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuItem onClick={() => git.handleMerge("merge")} className="text-xs">
-          Merge
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onClick={() => git.handleMerge("merge")} className="text-xs gap-2.5 py-2">
+          <GitMerge className="h-3.5 w-3.5 text-muted-foreground/70" />
+          <div>
+            <div className="font-medium">Merge</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Merge into main, keep session
+            </div>
+          </div>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => git.handleMerge("complete")} className="text-xs">
-          Merge & complete
+        <DropdownMenuItem
+          onClick={() => git.handleMerge("complete")}
+          className="text-xs gap-2.5 py-2"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5 text-success/70" />
+          <div>
+            <div className="font-medium">Merge & complete</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Merge and mark session done
+            </div>
+          </div>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => git.handleMerge("delete")} className="text-xs">
-          Merge & delete branch
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => git.handleMerge("delete")}
+          className="text-xs gap-2.5 py-2 text-destructive focus:text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          <div>
+            <div className="font-medium">Merge & delete branch</div>
+            <div className="text-[11px] text-destructive/60 mt-0.5">
+              Merge, remove worktree and branch
+            </div>
+          </div>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -163,50 +190,44 @@ function BranchStatus({
   if (ahead === 0 && behind === 0) return null;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3 text-xs">
-        {ahead > 0 && (
+    <div className="space-y-1 text-xs">
+      {behind > 0 && (
+        <div className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1 text-primary/80">
+            <ArrowDown className="h-3 w-3 text-primary/60" />
+            {behind} behind
+          </span>
+          {!isBusy && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="ml-auto text-primary hover:bg-primary/10"
+              onClick={git.handleRebase}
+              disabled={git.rebasing}
+            >
+              {git.rebasing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              Rebase
+            </Button>
+          )}
+        </div>
+      )}
+      {ahead > 0 && (
+        <div className="flex items-center gap-1.5">
           <span className="flex items-center gap-1 text-foreground/70">
             <ArrowUp className="h-3 w-3 text-muted-foreground/70" />
             {ahead} ahead
           </span>
-        )}
-        {behind > 0 && (
-          <span className="flex items-center gap-1 text-primary/80">
-            <ArrowDown className="h-3 w-3" />
-            {behind} behind
-          </span>
-        )}
-        {meta.mergeStatus === "clean" && ahead > 0 && (
-          <span className="flex items-center gap-1 text-success/70 ml-auto text-[11px]">
-            <CheckCircle2 className="h-3 w-3 shrink-0" />
-            Ready
-          </span>
-        )}
-      </div>
-
-      {!isBusy && (
-        <div className="flex items-center gap-1.5">
-          {behind > 0 && (
-            <Button
-              variant="ghost"
-              size="xs"
-              className="text-primary hover:bg-primary/10"
-              onClick={git.handleRebase}
-              disabled={git.rebasing}
-            >
-              {git.rebasing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Rebase
-            </Button>
-          )}
-          {ahead > 0 && (
+          {!isBusy && (
             <MergeDropdown
               git={git}
-              className={
-                meta.mergeStatus === "clean"
-                  ? "bg-success/10 text-success hover:bg-success/20"
-                  : undefined
-              }
+              className={cn(
+                "ml-auto",
+                meta.mergeStatus === "clean" && "bg-success/10 text-success hover:bg-success/20",
+              )}
             />
           )}
         </div>
@@ -329,7 +350,7 @@ function GitSection({
   const isBusy = meta.state === "running";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <SectionHeader
         label="Git"
         action={

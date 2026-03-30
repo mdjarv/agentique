@@ -671,6 +671,19 @@ index abc1234..def5678 100644
       respond(client, msg.id);
       break;
 
+    case "session.uncommitted-diff":
+      respond(client, msg.id, {
+        hasDiff: true,
+        summary: "2 files changed, 15 insertions(+), 3 deletions(-)",
+        files: [
+          { path: "internal/auth/middleware.go", insertions: 12, deletions: 3 },
+          { path: "internal/auth/middleware_test.go", insertions: 3, deletions: 0 },
+        ],
+        diff: "",
+        truncated: false,
+      });
+      break;
+
     default:
       respondError(client, msg.id, `[Mock] Unhandled message type: ${msg.type}`);
   }
