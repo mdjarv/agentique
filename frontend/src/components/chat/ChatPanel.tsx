@@ -99,7 +99,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const showPanel = isWorktree || hasTodos || isDirty;
 
   const isMobile = useIsMobile();
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const panelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
   const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
   const [activeTab, setActiveTab] = useState<"chat" | "changes" | "team">("chat");
@@ -129,7 +129,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const prevTodosRef = useRef(todos);
   useEffect(() => {
     if (todos && todos !== prevTodosRef.current) {
-      setPanelCollapsed(false);
+      useUIStore.getState().setRightPanelCollapsed(false);
     }
     prevTodosRef.current = todos;
   }, [todos]);
@@ -433,7 +433,8 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
           <CollapsedSessionStrip
             meta={meta}
             todos={todos}
-            onExpand={() => setPanelCollapsed(false)}
+            uncommittedCount={git.uncommittedFiles?.length ?? 0}
+            onExpand={() => useUIStore.getState().setRightPanelCollapsed(false)}
           />
         ) : (
           <div className="w-72 border-l shrink-0">
@@ -441,7 +442,7 @@ export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
               meta={meta}
               todos={todos}
               git={git}
-              onCollapse={() => setPanelCollapsed(true)}
+              onCollapse={() => useUIStore.getState().setRightPanelCollapsed(true)}
               onSendMessage={handleSend}
               onOpenDialog={(d) => setActiveDialog(d)}
             />

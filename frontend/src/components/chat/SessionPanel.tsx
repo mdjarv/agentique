@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Circle,
   ExternalLink,
   FileMinus,
   FilePlus,
@@ -14,6 +15,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitMerge,
+  GitPullRequestArrow,
   ListTodo,
   Loader2,
   PanelRightClose,
@@ -26,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { useGitActions } from "~/hooks/useGitActions";
 import { cn } from "~/lib/utils";
 import type { SessionMetadata, TodoItem } from "~/stores/chat-store";
@@ -40,7 +43,27 @@ interface SessionPanelProps {
   onOpenDialog?: (dialog: "pr" | "commit") => void;
 }
 
-// --- Merge dropdown (shared between ready-to-merge and has-ahead states) ---
+// --- Section header with rule line ---
+
+function SectionHeader({
+  label,
+  action,
+}: {
+  label: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest shrink-0">
+        {label}
+      </span>
+      <div className="flex-1 border-t border-border/40" />
+      {action}
+    </div>
+  );
+}
+
+// --- Merge dropdown ---
 
 function MergeDropdown({
   git,
@@ -52,16 +75,11 @@ function MergeDropdown({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn("h-6 px-2 text-xs", className)}
-          disabled={git.merging}
-        >
+        <Button variant="ghost" size="xs" className={className} disabled={git.merging}>
           {git.merging ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <GitMerge className="h-3.5 w-3.5" />
+            <GitMerge className="h-3 w-3" />
           )}
           Merge
         </Button>
@@ -82,7 +100,6 @@ function MergeDropdown({
 }
 
 // --- Branch status: ahead/behind + merge readiness + actions ---
-// Replaces the old separate ahead/behind row + MergeStatusBanner.
 
 function BranchStatus({
   meta,
@@ -106,7 +123,7 @@ function BranchStatus({
     );
   }
 
-  // Conflicts — needs attention
+  // Conflicts
   if (meta.mergeStatus === "conflicts") {
     return (
       <div className="space-y-1.5">
@@ -126,8 +143,8 @@ function BranchStatus({
         {!isBusy && (
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-warning hover:text-warning hover:bg-warning/10"
+            size="xs"
+            className="text-warning hover:text-warning hover:bg-warning/10"
             onClick={() => {
               const files = meta.mergeConflictFiles?.join(", ") ?? "";
               onSendMessage?.(
@@ -142,10 +159,8 @@ function BranchStatus({
     );
   }
 
-  // No commits ahead — nothing interesting to show
   if (ahead === 0 && behind === 0) return null;
 
-  // Build compact status line: "↑2 ahead  ↓1 behind" with action
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-3 text-xs">
@@ -166,14 +181,13 @@ function BranchStatus({
         )}
       </div>
 
-      {/* Actions based on state */}
       {!isBusy && (
         <div className="flex items-center gap-1.5">
           {behind > 0 && (
             <Button
               variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-primary hover:bg-primary/10"
+              size="xs"
+              className="text-primary hover:bg-primary/10"
               onClick={git.handleRebase}
               disabled={git.rebasing}
             >
@@ -253,15 +267,15 @@ function UncommittedSection({
         {!isBusy && (
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs ml-auto shrink-0"
+            size="xs"
+            className="ml-auto shrink-0"
             onClick={handleCommit}
             disabled={git.committing}
           >
             {git.committing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <GitCommitHorizontal className="h-3.5 w-3.5" />
+              <GitCommitHorizontal className="h-3 w-3" />
             )}
             Commit
           </Button>
@@ -299,26 +313,26 @@ function GitSection({
 
   return (
     <div className="space-y-3">
-      {/* Section header with refresh */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Git
-        </span>
-        {isWorktree && (
-          <button
-            type="button"
-            onClick={git.handleRefreshGit}
-            disabled={git.refreshingGit}
-            className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <RefreshCw className={cn("h-3 w-3", git.refreshingGit && "animate-spin")} />
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        label="Git"
+        action={
+          isWorktree ? (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={git.handleRefreshGit}
+              disabled={git.refreshingGit}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className={cn("h-3 w-3", git.refreshingGit && "animate-spin")} />
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* Branch line */}
       {isWorktree && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="rounded-md bg-muted/30 px-2.5 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <GitBranch className="h-3 w-3 shrink-0" />
           <span className="font-mono truncate">{meta.worktreeBranch}</span>
           <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
@@ -328,7 +342,6 @@ function GitSection({
 
       {meta.branchMissing && <div className="text-xs text-destructive/80">Branch missing</div>}
 
-      {/* 1. Uncommitted changes — highest priority, blocks other operations */}
       <UncommittedSection
         meta={meta}
         git={git}
@@ -336,34 +349,34 @@ function GitSection({
         onOpenDialog={onOpenDialog}
       />
 
-      {/* 2. Branch status: ahead/behind + merge/rebase */}
       {isWorktree && !meta.branchMissing && (
         <BranchStatus meta={meta} git={git} onSendMessage={onSendMessage} />
       )}
 
-      {/* 3. PR */}
+      {/* PR */}
       {meta.prUrl ? (
         <a
           href={meta.prUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors"
+          className="flex items-center gap-2 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs text-primary/80 hover:text-primary hover:bg-primary/10 transition-colors"
         >
-          <ExternalLink className="h-3 w-3" />
-          Pull Request
+          <GitPullRequestArrow className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate flex-1">Pull Request</span>
+          <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
         </a>
       ) : isWorktree && !isBusy ? (
         <Button
           variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs w-full justify-start"
+          size="xs"
+          className="w-full justify-start"
           onClick={() => onOpenDialog?.("pr")}
           disabled={git.creatingPR}
         >
           {git.creatingPR ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <ExternalLink className="h-3.5 w-3.5" />
+            <GitPullRequestArrow className="h-3 w-3" />
           )}
           Create PR
         </Button>
@@ -379,14 +392,14 @@ function TodoSection({ todos }: { todos: TodoItem[] }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Todos
-        </span>
-        <span className="text-xs text-muted-foreground/60">
-          {completed}/{todos.length}
-        </span>
-      </div>
+      <SectionHeader
+        label="Todos"
+        action={
+          <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+            {completed}/{todos.length}
+          </span>
+        }
+      />
       <div className="space-y-0">
         {todos.map((item, i) => (
           <TodoItemRow key={`${i}-${item.content}`} item={item} />
@@ -436,12 +449,7 @@ export function SessionPanel({
           />
         )}
 
-        {hasTodos && (
-          <>
-            {showGit && <div className="border-t" />}
-            <TodoSection todos={todos} />
-          </>
-        )}
+        {hasTodos && <TodoSection todos={todos} />}
       </div>
     </div>
   );
@@ -452,38 +460,121 @@ export function SessionPanel({
 interface CollapsedSessionStripProps {
   meta: SessionMetadata;
   todos: TodoItem[] | null;
+  uncommittedCount: number;
   onExpand: () => void;
 }
 
-export function CollapsedSessionStrip({ meta, todos, onExpand }: CollapsedSessionStripProps) {
+function StripTooltip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center justify-center">{children}</div>
+      </TooltipTrigger>
+      <TooltipContent side="left" className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function CollapsedSessionStrip({
+  meta,
+  todos,
+  uncommittedCount,
+  onExpand,
+}: CollapsedSessionStripProps) {
   const hasTodos = todos !== null && todos.length > 0;
   const completed = hasTodos ? todos.filter((t) => t.status === "completed").length : 0;
-
-  let mergeIcon = null;
-  if (meta.worktreeMerged && (meta.commitsAhead ?? 0) === 0) {
-    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-success/70" />;
-  } else if (meta.mergeStatus === "conflicts") {
-    mergeIcon = <AlertTriangle className="h-3.5 w-3.5 text-warning/70" />;
-  } else if (meta.mergeStatus === "clean" && (meta.commitsAhead ?? 0) > 0) {
-    mergeIcon = <CheckCircle2 className="h-3.5 w-3.5 text-success/50" />;
-  } else if (meta.worktreeBranch) {
-    mergeIcon = <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />;
-  }
+  const ahead = meta.commitsAhead ?? 0;
+  const behind = meta.commitsBehind ?? 0;
+  const hasConflicts = meta.mergeStatus === "conflicts";
+  const isMerged = meta.worktreeMerged && ahead === 0 && behind === 0;
+  const hasGitContent = !!meta.worktreeBranch || uncommittedCount > 0;
+  const hasPR = !!meta.prUrl;
 
   return (
     <button
       type="button"
       onClick={onExpand}
-      className="w-9 border-l flex flex-col items-center py-3 gap-3 shrink-0 hover:bg-muted/50 transition-colors"
+      className="w-9 border-l flex flex-col items-center py-3 gap-2 shrink-0 hover:bg-muted/50 transition-colors"
     >
-      {mergeIcon}
-      {hasTodos && (
-        <>
-          <ListTodo className="h-3.5 w-3.5 text-muted-foreground/50" />
-          <span className="text-[10px] text-muted-foreground/60">
-            {completed}/{todos.length}
+      {/* Branch icon — colored by state */}
+      {meta.worktreeBranch && !isMerged && !hasConflicts && (
+        <StripTooltip label={meta.worktreeBranch}>
+          <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />
+        </StripTooltip>
+      )}
+
+      {/* Merged */}
+      {isMerged && (
+        <StripTooltip label="Merged">
+          <CheckCircle2 className="h-3.5 w-3.5 text-success/70" />
+        </StripTooltip>
+      )}
+
+      {/* Conflicts */}
+      {hasConflicts && (
+        <StripTooltip label={`${meta.mergeConflictFiles?.length ?? 0} conflicts`}>
+          <AlertTriangle className="h-3.5 w-3.5 text-warning/70" />
+        </StripTooltip>
+      )}
+
+      {/* Uncommitted count pill */}
+      {uncommittedCount > 0 && (
+        <StripTooltip label={`${uncommittedCount} uncommitted`}>
+          <span className="flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
+            <Circle className="size-1.5 fill-current" />
+            {uncommittedCount}
           </span>
-        </>
+        </StripTooltip>
+      )}
+
+      {/* Ahead pill */}
+      {ahead > 0 && !isMerged && (
+        <StripTooltip label={`${ahead} ahead`}>
+          <span className="flex items-center gap-0.5 rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] text-success">
+            <ArrowUp className="size-2" />
+            {ahead}
+          </span>
+        </StripTooltip>
+      )}
+
+      {/* Behind pill */}
+      {behind > 0 && (
+        <StripTooltip label={`${behind} behind`}>
+          <span className="flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
+            <ArrowDown className="size-2" />
+            {behind}
+          </span>
+        </StripTooltip>
+      )}
+
+      {/* PR indicator */}
+      {hasPR && (
+        <StripTooltip label="Pull request">
+          <GitPullRequestArrow className="h-3.5 w-3.5 text-primary/60" />
+        </StripTooltip>
+      )}
+
+      {/* Divider between git and todos */}
+      {hasGitContent && hasTodos && <div className="w-4 border-t border-border/40" />}
+
+      {/* Todos */}
+      {hasTodos && (
+        <StripTooltip label={`${completed}/${todos.length} todos`}>
+          <div className="flex flex-col items-center gap-1">
+            <ListTodo className="h-3.5 w-3.5 text-muted-foreground/50" />
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+              {completed}/{todos.length}
+            </span>
+          </div>
+        </StripTooltip>
       )}
     </button>
   );
