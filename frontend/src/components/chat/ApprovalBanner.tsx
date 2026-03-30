@@ -25,14 +25,19 @@ function stripPrefix(path: string, projectPath?: string, worktreePath?: string):
   return path;
 }
 
+interface FormattedInput {
+  summary: string;
+  description?: string;
+}
+
 function formatInput(
   toolName: string,
   input: unknown,
   projectPath?: string,
   worktreePath?: string,
-): string {
-  if (typeof input === "string") return input;
-  if (!input || typeof input !== "object") return JSON.stringify(input);
+): FormattedInput {
+  if (typeof input === "string") return { summary: input };
+  if (!input || typeof input !== "object") return { summary: JSON.stringify(input) };
 
   const obj = input as Record<string, unknown>;
   const strip = (p: string) => stripPrefix(p, projectPath, worktreePath);
@@ -41,30 +46,31 @@ function formatInput(
     case "Read":
     case "Write":
     case "Edit":
-      return strip(String(obj.file_path ?? ""));
+      return { summary: strip(String(obj.file_path ?? "")) };
     case "Glob":
-      return String(obj.pattern ?? "");
+      return { summary: String(obj.pattern ?? "") };
     case "Grep":
-      return `${obj.pattern ?? ""}${obj.path ? ` in ${strip(String(obj.path))}` : ""}`;
+      return { summary: `${obj.pattern ?? ""}${obj.path ? ` in ${strip(String(obj.path))}` : ""}` };
     case "Bash":
-      return String(obj.command ?? obj.description ?? "");
+      return {
+        summary: String(obj.command ?? obj.description ?? ""),
+        description: obj.command && obj.description ? String(obj.description) : undefined,
+      };
     case "Agent":
-      return String(obj.description ?? obj.prompt ?? "").slice(0, 120);
+      return { summary: String(obj.description ?? obj.prompt ?? "").slice(0, 120) };
     case "WebFetch":
     case "WebSearch":
-      return String(obj.url ?? obj.query ?? "");
+      return { summary: String(obj.url ?? obj.query ?? "") };
     case "EnterPlanMode":
-      return "Agent wants to enter plan mode";
+      return { summary: "Agent wants to enter plan mode" };
     case "ExitPlanMode":
-      return "Agent wants to exit plan mode";
+      return { summary: "Agent wants to exit plan mode" };
     default: {
-      // Try common field names before falling back to JSON
       const desc =
         obj.description ?? obj.command ?? obj.file_path ?? obj.path ?? obj.pattern ?? obj.prompt;
-      if (desc) return strip(String(desc)).slice(0, 120);
-      // Last resort: show key names instead of raw JSON
+      if (desc) return { summary: strip(String(desc)).slice(0, 120) };
       const keys = Object.keys(obj).filter((k) => k !== "type");
-      return keys.length > 0 ? `(${keys.join(", ")})` : toolName;
+      return { summary: keys.length > 0 ? `(${keys.join(", ")})` : toolName };
     }
   }
 }
@@ -79,7 +85,12 @@ export function ApprovalBanner({
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const summary = formatInput(approval.toolName, approval.input, projectPath, worktreePath);
+  const { summary, description } = formatInput(
+    approval.toolName,
+    approval.input,
+    projectPath,
+    worktreePath,
+  );
 
   const handleAllow = useCallback(() => {
     setSubmitting(true);
@@ -130,8 +141,8 @@ export function ApprovalBanner({
       </Button>
       <Button
         size="sm"
-        variant="ghost"
-        className="h-7 max-md:h-10 px-2 max-md:px-3 text-muted-foreground hover:text-foreground"
+        variant="outline"
+        className="h-7 max-md:h-10 px-2 max-md:px-3"
         onClick={handleAllowAll}
         disabled={submitting}
       >
@@ -147,11 +158,16 @@ export function ApprovalBanner({
           <div className="flex items-start gap-2">
             <ShieldAlert className="h-4 w-4 shrink-0 text-warning mt-0.5" />
             <div className="min-w-0">
-              <span className="font-medium">{approval.toolName}</span>{" "}
+              <span className="font-mono text-xs font-medium bg-warning/15 text-warning px-1.5 py-0.5 rounded">
+                {approval.toolName}
+              </span>
+              {description && (
+                <span className="ml-2 text-muted-foreground text-xs">{description}</span>
+              )}
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className={`text-muted-foreground text-left ${expanded ? "whitespace-pre-wrap break-all" : "truncate block w-full"}`}
+                className={`font-mono text-foreground/70 text-left mt-1 ${expanded ? "whitespace-pre-wrap break-all" : "truncate block w-full"}`}
               >
                 {summary}
               </button>
@@ -162,8 +178,13 @@ export function ApprovalBanner({
       ) : (
         <div className="flex items-center gap-2 text-sm">
           <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
-          <span className="font-medium shrink-0">{approval.toolName}</span>
-          <span className="text-muted-foreground truncate min-w-0">{summary}</span>
+          <span className="font-mono text-xs font-medium bg-warning/15 text-warning px-1.5 py-0.5 rounded shrink-0">
+            {approval.toolName}
+          </span>
+          {description && (
+            <span className="text-muted-foreground text-xs shrink-0">{description}</span>
+          )}
+          <span className="font-mono text-foreground/70 truncate min-w-0">{summary}</span>
           <div className="ml-auto">{buttons}</div>
         </div>
       )}
