@@ -491,6 +491,264 @@ func TestMultipleSessions(t *testing.T) {
 	}
 }
 
+func unmarshalPayload[T any](t *testing.T, resp ws.ServerResponse) T {
+	t.Helper()
+	raw, err := json.Marshal(resp.Payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var result T
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	return result
+}
+
+func TestTagCRUD(t *testing.T) {
+	ts, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	// Create.
+	resp := sendAndReceive(t, conn, "tag.create", "70",
+		ws.TagCreatePayload{Name: "Bug", Color: "#ff0000"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	created := unmarshalPayload[store.Tag](t, resp)
+	if created.ID == "" {
+		t.Fatal("expected non-empty tag ID")
+	}
+	if created.Name != "Bug" {
+		t.Fatalf("expected name 'Bug', got %q", created.Name)
+	}
+	if created.Color != "#ff0000" {
+		t.Fatalf("expected color '#ff0000', got %q", created.Color)
+	}
+
+	// List — should contain the one tag.
+	resp = sendAndReceive(t, conn, "tag.list", "71", struct{}{})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	listed := unmarshalPayload[ws.TagListResult](t, resp)
+	if len(listed.Tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(listed.Tags))
+	}
+	if listed.Tags[0].ID != created.ID {
+		t.Fatalf("expected tag ID %q, got %q", created.ID, listed.Tags[0].ID)
+	}
+
+	// Update.
+	resp = sendAndReceive(t, conn, "tag.update", "72",
+		ws.TagUpdatePayload{ID: created.ID, Name: "Feature", Color: "#00ff00"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	updated := unmarshalPayload[store.Tag](t, resp)
+	if updated.Name != "Feature" {
+		t.Fatalf("expected name 'Feature', got %q", updated.Name)
+	}
+	if updated.Color != "#00ff00" {
+		t.Fatalf("expected color '#00ff00', got %q", updated.Color)
+	}
+
+	// Delete.
+	resp = sendAndReceive(t, conn, "tag.delete", "73",
+		ws.TagDeletePayload{ID: created.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	// List — should be empty.
+	resp = sendAndReceive(t, conn, "tag.list", "74", struct{}{})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	listed = unmarshalPayload[ws.TagListResult](t, resp)
+	if len(listed.Tags) != 0 {
+		t.Fatalf("expected 0 tags, got %d", len(listed.Tags))
+	}
+}
+
+func TestTagListMultiple(t *testing.T) {
+	ts, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "tag.create", "75",
+		ws.TagCreatePayload{Name: "Alpha", Color: "#aaaaaa"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	tag1 := unmarshalPayload[store.Tag](t, resp)
+
+	resp = sendAndReceive(t, conn, "tag.create", "76",
+		ws.TagCreatePayload{Name: "Beta", Color: "#bbbbbb"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	tag2 := unmarshalPayload[store.Tag](t, resp)
+
+	resp = sendAndReceive(t, conn, "tag.list", "77", struct{}{})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	listed := unmarshalPayload[ws.TagListResult](t, resp)
+	if len(listed.Tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(listed.Tags))
+	}
+	if listed.Tags[0].ID != tag1.ID {
+		t.Fatalf("expected first tag ID %q, got %q", tag1.ID, listed.Tags[0].ID)
+	}
+	if listed.Tags[1].ID != tag2.ID {
+		t.Fatalf("expected second tag ID %q, got %q", tag2.ID, listed.Tags[1].ID)
+	}
+}
+
+func TestSessionDelete(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	createTestProject(t, queries, "delproj", projDir)
+	insertTestSession(t, queries, "sess-del-1", "proj-delproj", "Delete Me", projDir, "idle")
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.delete", "80",
+		ws.SessionDeletePayload{SessionID: "sess-del-1"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "81",
+		ws.SessionListPayload{ProjectID: "proj-delproj"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	result := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(result.Sessions) != 0 {
+		t.Fatalf("expected 0 sessions, got %d", len(result.Sessions))
+	}
+}
+
+func TestSessionDeleteBulk(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	createTestProject(t, queries, "bulkproj", projDir)
+	insertTestSession(t, queries, "sess-bulk-1", "proj-bulkproj", "Bulk 1", projDir, "idle")
+	insertTestSession(t, queries, "sess-bulk-2", "proj-bulkproj", "Bulk 2", projDir, "idle")
+	insertTestSession(t, queries, "sess-bulk-3", "proj-bulkproj", "Bulk 3", projDir, "idle")
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.delete-bulk", "82",
+		ws.SessionDeleteBulkPayload{SessionIDs: []string{"sess-bulk-1", "sess-bulk-2"}})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	bulkResult := unmarshalPayload[ws.SessionDeleteBulkResult](t, resp)
+	if len(bulkResult.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(bulkResult.Results))
+	}
+	for i, r := range bulkResult.Results {
+		if !r.Success {
+			t.Fatalf("result %d: expected success, got error %q", i, r.Error)
+		}
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "83",
+		ws.SessionListPayload{ProjectID: "proj-bulkproj"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	listResult := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(listResult.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(listResult.Sessions))
+	}
+	if listResult.Sessions[0].ID != "sess-bulk-3" {
+		t.Fatalf("expected remaining session 'sess-bulk-3', got %q", listResult.Sessions[0].ID)
+	}
+}
+
+func TestSessionRename(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	createTestProject(t, queries, "renproj", projDir)
+	insertTestSession(t, queries, "sess-ren-1", "proj-renproj", "Old Name", projDir, "idle")
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.rename", "84",
+		ws.SessionRenamePayload{SessionID: "sess-ren-1", Name: "New Name"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "85",
+		ws.SessionListPayload{ProjectID: "proj-renproj"})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	result := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(result.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(result.Sessions))
+	}
+	if result.Sessions[0].Name != "New Name" {
+		t.Fatalf("expected name 'New Name', got %q", result.Sessions[0].Name)
+	}
+}
+
+func TestHandlerValidation(t *testing.T) {
+	ts, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	cases := []struct {
+		name      string
+		msgType   string
+		id        string
+		payload   any
+		errSubstr string
+	}{
+		{"merge/empty-sessionId", "session.merge", "90", ws.SessionMergePayload{SessionID: ""}, "sessionId"},
+		{"rename/empty-both", "session.rename", "91", ws.SessionRenamePayload{SessionID: "", Name: ""}, "sessionId"},
+		{"rename/empty-name", "session.rename", "92", ws.SessionRenamePayload{SessionID: "x", Name: ""}, "name"},
+		{"commit/empty-both", "session.commit", "93", ws.SessionCommitPayload{SessionID: "", Message: ""}, "sessionId"},
+		{"commit/empty-message", "session.commit", "94", ws.SessionCommitPayload{SessionID: "x", Message: ""}, "message"},
+		{"tag.create/empty-name", "tag.create", "95", ws.TagCreatePayload{Name: ""}, "name"},
+		{"tag.update/empty-id", "tag.update", "96", ws.TagUpdatePayload{ID: ""}, "id"},
+		{"tag.delete/empty-id", "tag.delete", "97", ws.TagDeletePayload{ID: ""}, "id"},
+		{"team.create/empty-projectId", "team.create", "98", ws.TeamCreatePayload{ProjectID: ""}, "projectId"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := sendAndReceive(t, conn, tc.msgType, tc.id, tc.payload)
+			if resp.Error == nil {
+				t.Fatalf("expected error for %s", tc.name)
+			}
+			if !strings.Contains(resp.Error.Message, tc.errSubstr) {
+				t.Fatalf("expected error containing %q, got %q", tc.errSubstr, resp.Error.Message)
+			}
+		})
+	}
+}
+
 func TestSessionQueryRequiresFields(t *testing.T) {
 	ts, _, cleanup := setupTestServer(t)
 	defer cleanup()
