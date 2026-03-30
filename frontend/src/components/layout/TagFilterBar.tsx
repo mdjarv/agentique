@@ -29,13 +29,11 @@ export function TagFilterBar() {
             onClick={() => toggleFilter(tag.id)}
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all cursor-pointer",
-              isActive
-                ? "ring-1 ring-offset-1 ring-offset-sidebar"
-                : "opacity-60 hover:opacity-100",
+              isActive ? "ring-1 ring-offset-1 ring-offset-sidebar" : "opacity-50 hover:opacity-80",
             )}
             style={{
-              backgroundColor: color.bg,
-              color: color.text,
+              backgroundColor: `${color.bg}20`,
+              color: color.bg,
               ...(isActive ? { ringColor: color.bg } : {}),
             }}
           >

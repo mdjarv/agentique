@@ -1,7 +1,7 @@
 import {
+  BellRing,
   Check,
   Circle,
-  CircleHelp,
   GitMerge,
   ListChecks,
   Loader,
@@ -30,12 +30,15 @@ export function SessionStatusBadge({
 }: SessionStatusBadgeProps) {
   // Attention overrides
   if (hasPendingApproval) {
-    const Icon = isPlanning ? ListChecks : CircleHelp;
+    const Icon = isPlanning ? ListChecks : BellRing;
     const title = isPlanning ? "Plan ready for review" : "Waiting for approval";
     return (
-      <Badge bg="bg-orange/15" text="text-orange" pulse title={title}>
-        <Icon className="size-3" />
-      </Badge>
+      <span className="relative shrink-0">
+        <span className="absolute inset-0 rounded-full ring-2 ring-orange/30 animate-pulse" />
+        <Badge bg="bg-orange/15" text="text-orange" title={title}>
+          <Icon className="size-3" />
+        </Badge>
+      </span>
     );
   }
   if (isPlanning && state === "running") {
@@ -106,14 +109,12 @@ export function SessionStatusBadge({
 function Badge({
   bg,
   text,
-  pulse,
   dim,
   title,
   children,
 }: {
   bg: string;
   text: string;
-  pulse?: boolean;
   dim?: boolean;
   title: string;
   children: React.ReactNode;
@@ -124,7 +125,6 @@ function Badge({
         "flex size-5 shrink-0 items-center justify-center rounded-full",
         bg,
         text,
-        pulse && "animate-pulse",
         dim && "opacity-40",
       )}
       title={title}
