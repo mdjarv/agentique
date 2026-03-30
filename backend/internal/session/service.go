@@ -942,8 +942,6 @@ func generateSessionName(runner msggen.Runner, prompt string) string {
 	result, err := msggen.RunWithRetry(context.Background(), runner, namePrompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-		claudecli.WithBare(),
 		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {

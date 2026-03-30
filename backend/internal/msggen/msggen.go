@@ -92,8 +92,6 @@ func CommitMsg(ctx context.Context, runner Runner, sessionName, summary, diff st
 	result, err := RunWithRetry(ctx, runner, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-		claudecli.WithBare(),
 		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
@@ -144,8 +142,6 @@ func PRDescription(ctx context.Context, runner Runner, sessionName, summary, dif
 	result, err := RunWithRetry(ctx, runner, prompt,
 		claudecli.WithModel(claudecli.ModelHaiku),
 		claudecli.WithMaxTurns(1),
-		claudecli.WithPermissionMode(claudecli.PermissionBypass),
-		claudecli.WithBare(),
 		claudecli.WithBuiltinTools(""),
 	)
 	if err != nil {
