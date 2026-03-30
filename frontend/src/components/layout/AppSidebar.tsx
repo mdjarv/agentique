@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Cpu } from "lucide-react";
 import { NewProjectDialog } from "~/components/layout/NewProjectDialog";
 import { ProjectList } from "~/components/layout/ProjectList";
@@ -13,7 +14,7 @@ export function AppSidebar({ className }: AppSidebarProps) {
   return (
     <div className={cn("bg-sidebar flex flex-col h-full", className)}>
       <div className="px-4 py-3 border-b flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5">
           <Cpu className="size-5 text-primary" />
           <span
             className="text-lg font-semibold tracking-tight bg-gradient-to-r from-primary to-agent bg-clip-text text-transparent"
@@ -21,7 +22,7 @@ export function AppSidebar({ className }: AppSidebarProps) {
           >
             Agentique
           </span>
-        </div>
+        </Link>
         <NewProjectDialog />
       </div>
       <TagFilterBar />

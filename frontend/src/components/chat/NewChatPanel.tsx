@@ -151,14 +151,15 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <div className="text-center text-muted-foreground/60">
-              <div className="text-lg font-medium">{project?.name}</div>
+            <div className="text-center text-muted-foreground/40 space-y-2">
+              <div className="text-base font-medium text-muted-foreground/60">{project?.name}</div>
               {gitStatus?.branch && (
-                <div className="flex items-center justify-center gap-1.5 text-sm mt-1 font-mono">
+                <div className="flex items-center justify-center gap-1.5 text-sm font-mono">
                   <GitBranch className="h-3.5 w-3.5" />
                   {gitStatus.branch}
                 </div>
               )}
+              <p className="text-xs pt-2">Describe what you want to work on below</p>
             </div>
           </div>
         )}
