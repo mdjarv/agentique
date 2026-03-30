@@ -185,8 +185,10 @@ func newSession(p sessionParams) *Session {
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnTurnComplete: func() {
-			if err := s.setState(StateIdle); err != nil {
-				slog.Error("state transition failed", "session_id", s.ID, "error", err)
+			if s.State() != StateIdle {
+				if err := s.setState(StateIdle); err != nil {
+					slog.Error("state transition failed", "session_id", s.ID, "error", err)
+				}
 			}
 		},
 		OnFatalError: func(err error) {
