@@ -187,9 +187,7 @@ export function ApprovalBanner({
             )}
             <div className="ml-auto">{buttons}</div>
           </div>
-          <div className="font-mono text-xs text-foreground/70 pl-6 break-all">
-            {summary}
-          </div>
+          <div className="font-mono text-xs text-foreground/70 pl-6 break-all">{summary}</div>
         </div>
       )}
     </div>

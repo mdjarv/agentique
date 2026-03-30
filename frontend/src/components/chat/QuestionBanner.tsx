@@ -28,14 +28,14 @@ function OptionCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "text-left rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer",
+        "text-left rounded-md border px-3 py-2.5 text-sm transition-colors cursor-pointer",
         selected
-          ? "border-agent bg-agent/10 ring-1 ring-agent/30"
-          : "border-border hover:border-muted-foreground/40 hover:bg-muted/30",
+          ? "bg-background border-agent/50 ring-1 ring-agent/25 shadow-[0_0_12px_rgba(187,154,247,0.25)]"
+          : "bg-background/60 border-transparent hover:bg-background/80 hover:border-border/40",
       )}
     >
-      <span className="font-medium">{label}</span>
-      {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+      <span className={cn("font-medium", selected && "text-agent")}>{label}</span>
+      {description && <p className="text-xs text-foreground/60 mt-0.5">{description}</p>}
     </button>
   );
 }
@@ -143,7 +143,7 @@ function QuestionInput({
       <OptionsInput question={question} value={value} onChange={onChange} />
       <button
         type="button"
-        className="self-start text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted/50 transition-colors"
+        className="self-start text-xs text-foreground/50 hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-background/40 transition-colors"
         onClick={() => {
           onChange("");
           setCustomMode(true);
@@ -179,11 +179,7 @@ function StepDots({
           className={cn(
             "h-2 w-2 rounded-full transition-colors",
             "p-0 before:content-[''] before:absolute before:inset-[-6px] relative",
-            i === current
-              ? "bg-agent"
-              : answeredSteps.has(i)
-                ? "bg-agent/50"
-                : "bg-muted-foreground/30",
+            i === current ? "bg-agent" : answeredSteps.has(i) ? "bg-agent/50" : "bg-foreground/20",
           )}
           onClick={() => onNavigate(i)}
         />
