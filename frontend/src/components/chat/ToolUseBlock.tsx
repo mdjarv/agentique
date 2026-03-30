@@ -69,6 +69,13 @@ export function formatSummary(
       return "Reading todos";
     case "ExitPlanMode":
       return "Plan submitted";
+    case "Skill": {
+      const name = String(obj.skill ?? "");
+      const args = obj.args ? ` ${String(obj.args)}` : "";
+      return `${name}${args}`;
+    }
+    case "ToolSearch":
+      return String(obj.query ?? "");
     default:
       return JSON.stringify(input).slice(0, 120);
   }

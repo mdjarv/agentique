@@ -308,21 +308,8 @@ func ToWireEvent(event claudecli.Event) any {
 			ToolUses:     e.ToolUses,
 			DurationMs:   e.DurationMs,
 		}
-	case *claudecli.UserEvent:
-		if e.AgentResult == nil {
-			return nil
-		}
-		return WireAgentResultEvent{
-			Type:              "agent_result",
-			ParentToolUseID:   e.ParentToolUseID,
-			Status:            e.AgentResult.Status,
-			AgentID:           e.AgentResult.AgentID,
-			AgentType:         e.AgentResult.AgentType,
-			Content:           convertToolContent(e.AgentResult.Content),
-			TotalDurationMs:   e.AgentResult.TotalDurationMs,
-			TotalTokens:       e.AgentResult.TotalTokens,
-			TotalToolUseCount: e.AgentResult.TotalToolUseCount,
-		}
+	// *claudecli.UserEvent is handled by EventPipeline.processUserEvent
+	// (can produce multiple wire events per CLI event).
 	default:
 		return nil
 	}

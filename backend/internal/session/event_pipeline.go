@@ -99,12 +99,28 @@ func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
 		)
 	}
 
+	// UserEvent: may produce multiple wire events (tool results + agent result).
+	// Handled separately because a single UserEvent can yield N wire events.
+	if ue, ok := event.(*claudecli.UserEvent); ok {
+		p.processUserEvent(ue)
+		return
+	}
+
 	// Stage 2: Convert to wire format.
 	wireEvent := ToWireEvent(event)
 	if wireEvent == nil {
 		return
 	}
 
+	p.emitWireEvent(wireEvent)
+
+	// Stage 8: State transitions on result/fatal-error.
+	p.handleTerminalEvents(event)
+}
+
+// emitWireEvent runs stages 3–7 for a single wire event: transient filtering,
+// persistence, tool tracking, and broadcasting.
+func (p *EventPipeline) emitWireEvent(wireEvent any) {
 	// Stage 3: Transient events — broadcast only, skip DB.
 	if isTransient(wireEvent) {
 		p.sink.Broadcast("session.event", map[string]any{
@@ -128,9 +144,34 @@ func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
 		"sessionId": p.sessionID,
 		"event":     wireEvent,
 	})
+}
 
-	// Stage 8: State transitions on result/fatal-error.
-	p.handleTerminalEvents(event)
+// processUserEvent extracts wire events from a UserEvent: tool_result content
+// blocks become WireToolResultEvent, and agent results become WireAgentResultEvent.
+func (p *EventPipeline) processUserEvent(ue *claudecli.UserEvent) {
+	for _, c := range ue.Content {
+		if c.Type == "tool_result" && c.ToolUseID != "" {
+			p.emitWireEvent(WireToolResultEvent{
+				Type:            "tool_result",
+				ToolID:          c.ToolUseID,
+				Content:         convertToolContent(c.Content),
+				ParentToolUseID: ue.ParentToolUseID,
+			})
+		}
+	}
+	if ue.AgentResult != nil {
+		p.emitWireEvent(WireAgentResultEvent{
+			Type:              "agent_result",
+			ParentToolUseID:   ue.ParentToolUseID,
+			Status:            ue.AgentResult.Status,
+			AgentID:           ue.AgentResult.AgentID,
+			AgentType:         ue.AgentResult.AgentType,
+			Content:           convertToolContent(ue.AgentResult.Content),
+			TotalDurationMs:   ue.AgentResult.TotalDurationMs,
+			TotalTokens:       ue.AgentResult.TotalTokens,
+			TotalToolUseCount: ue.AgentResult.TotalToolUseCount,
+		})
+	}
 }
 
 // AdvanceTurn increments the turn index, resets the sequence counter,

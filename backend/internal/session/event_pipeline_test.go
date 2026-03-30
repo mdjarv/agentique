@@ -596,6 +596,92 @@ func TestPipeline_AgentResultPersisted(t *testing.T) {
 	}
 }
 
+func TestPipeline_UserEventToolResultPersisted(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	// Register a tool_use so trackToolResult can look up the category.
+	p.ProcessEvent(&claudecli.ToolUseEvent{
+		ID: "tu_bash", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`),
+	})
+
+	// UserEvent with a tool_result content block.
+	p.ProcessEvent(&claudecli.UserEvent{
+		Content: []claudecli.UserContent{
+			{Type: "tool_result", ToolUseID: "tu_bash", Content: []claudecli.ToolContent{{Type: "text", Text: "file1\nfile2"}}},
+		},
+	})
+
+	// Expect tool_use + tool_result persisted.
+	if len(sink.persisted) != 2 {
+		t.Fatalf("expected 2 persisted events, got %d", len(sink.persisted))
+	}
+	if sink.persisted[1].WireType != "tool_result" {
+		t.Errorf("expected wire type 'tool_result', got %q", sink.persisted[1].WireType)
+	}
+}
+
+func TestPipeline_UserEventToolResultTriggersGitRefresh(t *testing.T) {
+	sink := newTestSink()
+	gitRefreshCalled := false
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnWriteToolResult = func() { gitRefreshCalled = true }
+	})
+	p.AdvanceTurn()
+
+	// Register Write tool_use.
+	p.ProcessEvent(&claudecli.ToolUseEvent{
+		ID: "tu_write", Name: "Write", Input: json.RawMessage(`{}`),
+	})
+
+	// Tool result via UserEvent.
+	p.ProcessEvent(&claudecli.UserEvent{
+		Content: []claudecli.UserContent{
+			{Type: "tool_result", ToolUseID: "tu_write", Content: []claudecli.ToolContent{{Type: "text", Text: "ok"}}},
+		},
+	})
+
+	if !gitRefreshCalled {
+		t.Error("Write tool result via UserEvent should trigger git refresh")
+	}
+}
+
+func TestPipeline_UserEventWithBothToolResultAndAgentResult(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	// Register Agent tool_use.
+	p.ProcessEvent(&claudecli.ToolUseEvent{
+		ID: "tu_agent", Name: "Agent", Input: json.RawMessage(`{}`),
+	})
+
+	// UserEvent with tool_result AND agent_result (normal for Agent completion).
+	p.ProcessEvent(&claudecli.UserEvent{
+		ParentToolUseID: "",
+		Content: []claudecli.UserContent{
+			{Type: "tool_result", ToolUseID: "tu_agent", Content: []claudecli.ToolContent{{Type: "text", Text: "agent output"}}},
+		},
+		AgentResult: &claudecli.AgentResult{
+			Status:  "completed",
+			AgentID: "explorer",
+			Content: []claudecli.ToolContent{{Type: "text", Text: "agent output"}},
+		},
+	})
+
+	// Expect tool_use + tool_result + agent_result = 3 persisted events.
+	if len(sink.persisted) != 3 {
+		t.Fatalf("expected 3 persisted events, got %d", len(sink.persisted))
+	}
+	if sink.persisted[1].WireType != "tool_result" {
+		t.Errorf("persisted[1] type = %q, want tool_result", sink.persisted[1].WireType)
+	}
+	if sink.persisted[2].WireType != "agent_result" {
+		t.Errorf("persisted[2] type = %q, want agent_result", sink.persisted[2].WireType)
+	}
+}
+
 func TestPipeline_SetClaudeSessionID(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)

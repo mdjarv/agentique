@@ -396,46 +396,12 @@ func TestToWireEvent_TaskEvent(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_UserEventWithAgentResult(t *testing.T) {
-	event := &claudecli.UserEvent{
-		ParentToolUseID: "tu_agent",
-		AgentResult: &claudecli.AgentResult{
-			Status:            "completed",
-			AgentID:           "explorer",
-			AgentType:         "Explore",
-			Content:           []claudecli.ToolContent{{Type: "text", Text: "Found it"}},
-			TotalDurationMs:   3000,
-			TotalTokens:       8000,
-			TotalToolUseCount: 5,
-		},
-	}
-	wire := ToWireEvent(event)
-	ar, ok := wire.(WireAgentResultEvent)
-	if !ok {
-		t.Fatalf("expected WireAgentResultEvent, got %T", wire)
-	}
-	if ar.Type != "agent_result" {
-		t.Errorf("Type = %q, want agent_result", ar.Type)
-	}
-	if ar.ParentToolUseID != "tu_agent" {
-		t.Errorf("ParentToolUseID = %q, want tu_agent", ar.ParentToolUseID)
-	}
-	if ar.Status != "completed" {
-		t.Errorf("Status = %q, want completed", ar.Status)
-	}
-	if ar.TotalTokens != 8000 {
-		t.Errorf("TotalTokens = %d, want 8000", ar.TotalTokens)
-	}
-	if len(ar.Content) != 1 || ar.Content[0].Text != "Found it" {
-		t.Errorf("Content = %+v, want single text block", ar.Content)
-	}
-}
-
-func TestToWireEvent_UserEventWithoutAgentResult(t *testing.T) {
+func TestToWireEvent_UserEventReturnsNil(t *testing.T) {
+	// UserEvent is handled by EventPipeline.processUserEvent, not ToWireEvent.
 	event := &claudecli.UserEvent{ParentToolUseID: "tu_agent"}
 	wire := ToWireEvent(event)
 	if wire != nil {
-		t.Errorf("expected nil for UserEvent without AgentResult, got %T", wire)
+		t.Errorf("expected nil for UserEvent, got %T", wire)
 	}
 }
 

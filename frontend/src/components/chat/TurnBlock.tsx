@@ -118,6 +118,20 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
 
     const last = segments[segments.length - 1];
 
+    // tool_result: find matching tool_use in any segment (may cross segment boundaries).
+    if (event.type === "tool_result" && event.toolId) {
+      for (let s = segments.length - 1; s >= 0; s--) {
+        const seg = segments[s];
+        if (seg?.kind !== "activity") continue;
+        const item = seg.items.find((it) => it.kind === "tool" && it.use.toolId === event.toolId);
+        if (item?.kind === "tool") {
+          item.result = event;
+          break;
+        }
+      }
+      continue;
+    }
+
     if (last?.kind === kind) {
       switch (last.kind) {
         case "activity":
@@ -129,11 +143,6 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
               use: event,
               taskEvents: event.toolId ? taskEventsByToolUseId.get(event.toolId) : undefined,
             });
-          } else {
-            const item = last.items.find(
-              (it) => it.kind === "tool" && it.use.toolId === event.toolId,
-            );
-            if (item?.kind === "tool") item.result = event;
           }
           break;
         case "text":
@@ -159,8 +168,6 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
                 },
               ],
             });
-          } else {
-            segments.push({ kind: "activity", items: [{ kind: "tool", use: event }] });
           }
           break;
         case "text":
