@@ -266,7 +266,9 @@ function CollapsibleGroup({
         className="hover:bg-muted/50"
         trailing={
           !expanded && trailingIcons ? (
-            <span className="flex items-center gap-1.5 text-primary/40">{trailingIcons}</span>
+            <span className="flex items-center gap-1.5 text-primary/40 min-w-0">
+              {trailingIcons}
+            </span>
           ) : undefined
         }
       >
@@ -384,7 +386,7 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
         icon={<Wrench className="h-3 w-3" />}
         defaultExpanded={false}
         trailingIcons={
-          <span className="flex flex-row-reverse items-center gap-1.5 overflow-hidden">
+          <span className="flex flex-row-reverse items-center gap-1.5 overflow-hidden min-w-0">
             {[...trailingIcons].reverse()}
           </span>
         }

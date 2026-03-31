@@ -29,7 +29,7 @@ export function ExpandableRow({
       )}
     >
       {children}
-      <span className="ml-auto flex items-center gap-1.5 min-w-0">
+      <span className="ml-auto flex items-center gap-1.5 min-w-0 overflow-hidden">
         {trailing}
         <span className={cn("shrink-0 pl-0.5", !expandable && "opacity-30")}>
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
