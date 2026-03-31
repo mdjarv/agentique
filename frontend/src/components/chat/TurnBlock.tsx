@@ -1,5 +1,5 @@
 import { Bot, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { type ReactNode, memo, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
@@ -14,6 +14,7 @@ import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -522,6 +523,21 @@ function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
   );
 }
 
+function AgentSectionContent({
+  className,
+  children,
+}: {
+  className: string;
+  children: ReactNode;
+}) {
+  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
+  return (
+    <div ref={animateRef} className={className}>
+      {children}
+    </div>
+  );
+}
+
 // --- Main component ---
 
 export const TurnBlock = memo(function TurnBlock({
@@ -536,6 +552,7 @@ export const TurnBlock = memo(function TurnBlock({
   postCompactTokens,
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
+  const [outerAnimateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
   const isStreaming = isLast && !turn.complete;
 
   // Subscribe to streaming text only when this is the active (last, incomplete) turn
@@ -601,7 +618,7 @@ export const TurnBlock = memo(function TurnBlock({
   const firstAgentIdx = renderSections.findIndex((s) => s.kind === "agent");
 
   return (
-    <div className="space-y-4">
+    <div ref={outerAnimateRef} className="space-y-4">
       {/* User message */}
       <UserMessage prompt={turn.prompt} attachments={turn.attachments} />
 
@@ -634,7 +651,7 @@ export const TurnBlock = memo(function TurnBlock({
               ) : (
                 <div className="w-8 shrink-0 max-md:hidden" />
               )}
-              <div className="flex-1 space-y-3 max-w-[85%] max-md:max-w-full min-w-0 overflow-x-clip pr-2 max-md:pr-0">
+              <AgentSectionContent className="flex-1 space-y-3 max-w-[85%] max-md:max-w-full min-w-0 overflow-x-clip pr-2 max-md:pr-0">
                 {section.items.map(({ seg, idx }) => {
                   if (!showEvents && seg.kind === "activity") {
                     if (isStreaming && idx === segments.length - 1) {
@@ -752,7 +769,7 @@ export const TurnBlock = memo(function TurnBlock({
                       <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
                     </div>
                   )}
-              </div>
+              </AgentSectionContent>
             </div>
           );
         })}
