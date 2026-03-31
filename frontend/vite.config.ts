@@ -41,6 +41,11 @@ export default defineConfig({
         target: backendWs,
         ws: true,
         secure: false,
+        configure: (proxy) => {
+          proxy.on("proxyReqWs", (_proxyReq, _req, socket) => {
+            socket.on("error", () => {});
+          });
+        },
       },
     },
   },
