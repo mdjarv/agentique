@@ -15,6 +15,7 @@ import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
+import { UpdateIndicator } from "./UpdateIndicator";
 import { UsageBars } from "./UsageBars";
 
 type DisplayState =
@@ -119,7 +120,10 @@ export function SidebarFooter() {
         </div>
       )}
       <div className="flex items-center justify-between">
-        <ConnectionIndicator />
+        <div className="flex items-center gap-3">
+          <ConnectionIndicator />
+          <UpdateIndicator />
+        </div>
         {authEnabled && user && (
           <button
             type="button"
