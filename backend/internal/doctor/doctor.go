@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/allbin/agentique/backend/internal/paths"
+	"github.com/allbin/agentique/backend/internal/update"
 )
 
 // Status is the outcome of a single check.
@@ -361,7 +362,7 @@ func checkVersion() Check {
 		return c
 	}
 
-	if latest != "" && latest != Version && latest != "v"+Version {
+	if update.SemverNewer(latest, Version) {
 		c.Status = Warn
 		c.Message = fmt.Sprintf("%s (latest: %s)", Version, latest)
 		c.Fix = "Upgrade: agentique upgrade"

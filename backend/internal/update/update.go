@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,11 +52,56 @@ func Check(currentVersion string) (*CheckResult, error) {
 		Release: release,
 	}
 
-	current := strings.TrimPrefix(currentVersion, "v")
-	latest := strings.TrimPrefix(release.TagName, "v")
-	result.Available = current != latest
+	result.Available = SemverNewer(release.TagName, currentVersion)
 
 	return result, nil
+}
+
+// SemverNewer reports whether latest is a newer version than current.
+// Both may have an optional "v" prefix. Pre-release versions (e.g. 1.0.0-rc1)
+// are considered older than their release counterpart.
+func SemverNewer(latest, current string) bool {
+	latMaj, latMin, latPatch, latPre := parseSemver(latest)
+	curMaj, curMin, curPatch, curPre := parseSemver(current)
+
+	if latMaj != curMaj {
+		return latMaj > curMaj
+	}
+	if latMin != curMin {
+		return latMin > curMin
+	}
+	if latPatch != curPatch {
+		return latPatch > curPatch
+	}
+	// Release (no pre-release) is newer than pre-release of same version.
+	if curPre != "" && latPre == "" {
+		return true
+	}
+	return false
+}
+
+// parseSemver extracts major, minor, patch and pre-release from a version string.
+// Handles "v1.2.3", "1.2.3-rc1", "v0.1.0", etc. Returns 0,0,0,"" on parse failure.
+func parseSemver(s string) (major, minor, patch int, pre string) {
+	s = strings.TrimPrefix(s, "v")
+
+	// Split off pre-release suffix.
+	if idx := strings.IndexByte(s, '-'); idx >= 0 {
+		pre = s[idx+1:]
+		s = s[:idx]
+	}
+
+	parts := strings.SplitN(s, ".", 3)
+	if len(parts) >= 1 {
+		major, _ = strconv.Atoi(parts[0])
+	}
+	if len(parts) >= 2 {
+		minor, _ = strconv.Atoi(parts[1])
+	}
+	if len(parts) >= 3 {
+		patch, _ = strconv.Atoi(parts[2])
+	}
+	return
 }
 
 // Download fetches the binary for the current platform and verifies its checksum.
