@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/allbin/agentique/backend/internal/config"
+	"github.com/allbin/agentique/backend/internal/doctor"
 	"github.com/allbin/agentique/backend/internal/paths"
 )
 
@@ -35,6 +36,7 @@ func init() {
 }
 
 func main() {
+	doctor.Version = version
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
