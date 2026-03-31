@@ -430,6 +430,41 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// ResetConversation clears the Claude session ID so the next query starts
+// a fresh CLI conversation. The worktree and event history are preserved.
+func (s *Service) ResetConversation(ctx context.Context, sessionID string) error {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+
+	slog.Info("resetting conversation", "session_id", sessionID)
+
+	s.evictForResume(sessionID)
+
+	if err := s.queries.UpdateClaudeSessionID(ctx, store.UpdateClaudeSessionIDParams{
+		ClaudeSessionID: sql.NullString{},
+		ID:              sessionID,
+	}); err != nil {
+		return fmt.Errorf("clear claude session id: %w", err)
+	}
+	if err := s.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
+		State: string(StateIdle),
+		ID:    sessionID,
+	}); err != nil {
+		return fmt.Errorf("update state: %w", err)
+	}
+
+	// Broadcast state change so the frontend updates.
+	if s.gitSvc != nil {
+		if snap, snapErr := s.gitSvc.computeGitSnapshot(ctx, sessionID); snapErr == nil {
+			s.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+		}
+	}
+
+	return nil
+}
+
 // costSummary holds cost/turn data for a session (unifies sqlc row types).
 type costSummary struct {
 	TurnCount int64
@@ -784,9 +819,6 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		return nil, ErrNotFound
 	}
 	claudeSessID := nullStr(dbSess.ClaudeSessionID)
-	if claudeSessID == "" {
-		return nil, ErrNoClaudeID
-	}
 
 	slog.Debug("resuming session", "session_id", sessionID, "claude_session_id", claudeSessID)
 

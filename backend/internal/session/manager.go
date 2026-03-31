@@ -220,8 +220,10 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithResume(p.ClaudeSessionID),
 		claudecli.WithAppendSystemPrompt(buildPreamble(p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.TeamPreamble, m.GlobalPreamble) + p.ExtraPreamble),
+	}
+	if p.ClaudeSessionID != "" {
+		connectOpts = append(connectOpts, claudecli.WithResume(p.ClaudeSessionID))
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))

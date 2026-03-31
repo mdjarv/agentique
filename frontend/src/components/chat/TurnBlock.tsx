@@ -1,5 +1,5 @@
 import { Bot, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
@@ -15,6 +15,8 @@ import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { resetConversation } from "~/lib/session-actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -511,11 +513,14 @@ function CompactDivider({ event, postTokens }: { event: ChatEvent; postTokens?: 
   );
 }
 
-function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
+function ErrorSegmentView({
+  segment,
+  onResetConversation,
+}: { segment: ErrorSegment; onResetConversation?: () => void }) {
   return (
     <>
       {segment.events.map((e) => (
-        <ErrorBlock key={e.id} event={e} />
+        <ErrorBlock key={e.id} event={e} onResetConversation={onResetConversation} />
       ))}
     </>
   );
@@ -535,6 +540,10 @@ export const TurnBlock = memo(function TurnBlock({
   postCompactTokens,
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
+  const ws = useWebSocket();
+  const handleResetConversation = useCallback(() => {
+    resetConversation(ws, sessionId);
+  }, [ws, sessionId]);
   const isStreaming = isLast && !turn.complete;
 
   // Subscribe to streaming text only when this is the active (last, incomplete) turn
@@ -677,7 +686,13 @@ export const TurnBlock = memo(function TurnBlock({
                         />
                       );
                     case "error":
-                      return <ErrorSegmentView key={segmentKey(seg, idx)} segment={seg} />;
+                      return (
+                        <ErrorSegmentView
+                          key={segmentKey(seg, idx)}
+                          segment={seg}
+                          onResetConversation={handleResetConversation}
+                        />
+                      );
                     case "compact":
                       return (
                         <CompactDivider

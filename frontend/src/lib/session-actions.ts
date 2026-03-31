@@ -96,6 +96,10 @@ export async function createSession(
   return result.sessionId;
 }
 
+export async function resetConversation(ws: WsClient, sessionId: string): Promise<void> {
+  await ws.request("session.reset-conversation", { sessionId });
+}
+
 export async function renameSession(ws: WsClient, sessionId: string, name: string): Promise<void> {
   await ws.request("session.rename", { sessionId, name });
   useChatStore.getState().setSessionName(sessionId, name);

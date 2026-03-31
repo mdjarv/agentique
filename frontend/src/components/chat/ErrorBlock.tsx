@@ -116,9 +116,18 @@ const styles: Record<ErrorStyle, string> = {
   destructive: "bg-destructive/10 text-destructive",
 };
 
-export const ErrorBlock = memo(function ErrorBlock({ event }: { event: ChatEvent }) {
+interface ErrorBlockProps {
+  event: ChatEvent;
+  onResetConversation?: () => void;
+}
+
+export const ErrorBlock = memo(function ErrorBlock({
+  event,
+  onResetConversation,
+}: ErrorBlockProps) {
   const info = classifyError(event);
   const Icon = info.icon;
+  const showReset = event.errorType === "request_too_large" && onResetConversation;
 
   return (
     <div className={`rounded-lg px-4 py-2.5 text-sm ${styles[info.style]}`}>
@@ -127,6 +136,15 @@ export const ErrorBlock = memo(function ErrorBlock({ event }: { event: ChatEvent
         <span className="font-medium">{info.title}</span>
       </div>
       {info.detail && <p className="mt-1 ml-6 text-xs opacity-80 leading-relaxed">{info.detail}</p>}
+      {showReset && (
+        <button
+          type="button"
+          className="mt-2 ml-6 text-xs underline underline-offset-2 opacity-70 hover:opacity-100 transition-opacity"
+          onClick={onResetConversation}
+        >
+          Reset conversation and start fresh
+        </button>
+      )}
     </div>
   );
 });

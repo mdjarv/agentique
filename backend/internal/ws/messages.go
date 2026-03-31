@@ -72,6 +72,10 @@ type SessionResumePayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionResetConversationPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionHistoryPayload struct {
 	SessionID string `json:"sessionId"`
 }

@@ -61,6 +61,12 @@ func (c *conn) handleSessionResume(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionResetConversation(msg ClientMessage) {
+	handleRequest(c, msg, func(p SessionResetConversationPayload) (struct{}, error) {
+		return struct{}{}, c.svc.ResetConversation(c.ctx, p.SessionID)
+	})
+}
+
 func (c *conn) handleSessionDiff(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionDiffPayload) (gitops.DiffResult, error) {
 		return c.gitSvc.Diff(c.ctx, p.SessionID)

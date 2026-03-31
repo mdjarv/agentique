@@ -135,6 +135,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionStop(msg)
 	case "session.resume":
 		c.handleSessionResume(msg)
+	case "session.reset-conversation":
+		c.handleSessionResetConversation(msg)
 	case "session.history":
 		c.handleSessionHistory(msg)
 	case "session.diff":
