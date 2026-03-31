@@ -108,6 +108,30 @@ function PreBlock({
   );
 }
 
+function PendingPromptCard({ title, content }: { title?: string; content: string }) {
+  return (
+    <div className="not-prose my-3 rounded-lg border border-border/40 border-l-[3px] border-l-primary bg-primary/[0.03]">
+      <div className="px-4 py-3 space-y-2">
+        <div className="flex items-center gap-2">
+          {title ? (
+            <div className="font-medium text-sm">{title}</div>
+          ) : (
+            <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+          )}
+        </div>
+        {content && (
+          <div className="text-xs text-muted-foreground/80 leading-relaxed whitespace-pre-wrap">
+            {content}
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 pt-0.5">
+          <div className="h-6 w-24 rounded bg-muted/50 animate-pulse" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STANDARD_PLUGINS = [remarkGfm];
 const BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
 
@@ -123,24 +147,30 @@ export const Markdown = memo(function Markdown({
 
   return (
     <div className={cn("prose prose-sm max-w-none", className)}>
-      {segments.map((seg) =>
-        seg.type === "prompt" ? (
-          <PromptCard
-            key={`prompt-${seg.block.title}`}
-            title={seg.block.title}
-            prompt={seg.block.prompt}
-            projectSlug={seg.block.projectSlug}
-          />
-        ) : (
+      {segments.map((seg) => {
+        if (seg.type === "prompt") {
+          return (
+            <PromptCard
+              key={`prompt-${seg.block.title}`}
+              title={seg.block.title}
+              prompt={seg.block.prompt}
+              projectSlug={seg.block.projectSlug}
+            />
+          );
+        }
+        if (seg.type === "pending_prompt") {
+          return <PendingPromptCard key="pending-prompt" title={seg.title} content={seg.content} />;
+        }
+        return (
           <ReactMarkdown
-            key={`md-${seg.content.length}-${seg.content.slice(0, 32)}`}
+            key={`md-${seg.content.slice(0, 80)}`}
             remarkPlugins={plugins}
             components={COMPONENTS}
           >
             {seg.content}
           </ReactMarkdown>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 });

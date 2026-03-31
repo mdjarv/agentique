@@ -300,6 +300,46 @@ describe("splitByPromptBlocks", () => {
       expect(segments[0].block.projectSlug).toBe("my-proj");
     }
   });
+
+  it("returns pending_prompt for unclosed prompt block", () => {
+    const md = "Some text.\n\n```prompt\n# My Task\nPartial content";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.type).toBe("markdown");
+    expect(segments[1]?.type).toBe("pending_prompt");
+    if (segments[1]?.type === "pending_prompt") {
+      expect(segments[1].title).toBe("My Task");
+      expect(segments[1].content).toContain("Partial content");
+    }
+  });
+
+  it("returns pending_prompt with no title when only opener is present", () => {
+    const md = "```prompt\n";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("pending_prompt");
+    if (segments[0]?.type === "pending_prompt") {
+      expect(segments[0].title).toBeUndefined();
+    }
+  });
+
+  it("handles completed block followed by incomplete block", () => {
+    const md = "```prompt\n# Done\nDo it.\n```\n\n```prompt\n# WIP\nPartial";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.type).toBe("prompt");
+    expect(segments[1]?.type).toBe("pending_prompt");
+    if (segments[1]?.type === "pending_prompt") {
+      expect(segments[1].title).toBe("WIP");
+    }
+  });
+
+  it("does not produce pending_prompt for non-prompt code blocks", () => {
+    const md = "Some text.\n\n```python\ncode";
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("markdown");
+  });
 });
 
 // ---------------------------------------------------------------------------

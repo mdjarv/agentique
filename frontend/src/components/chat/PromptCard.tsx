@@ -170,15 +170,29 @@ export function parsePromptBlocks(markdown: string): PromptBlock[] {
 
 export type ContentSegment =
   | { type: "markdown"; content: string }
-  | { type: "prompt"; block: PromptBlock };
+  | { type: "prompt"; block: PromptBlock }
+  | { type: "pending_prompt"; content: string; title?: string };
+
+/** Find a trailing unclosed ```prompt opener not captured by findRawPromptBlocks. */
+function findPendingPromptBlock(
+  lines: string[],
+  completedBlocks: RawPromptBlock[],
+): { startLine: number; content: string } | null {
+  const completedStarts = new Set(completedBlocks.map((b) => b.startLine));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] ?? "";
+    if (RE_PROMPT_OPEN.test(line) && !completedStarts.has(i)) {
+      return { startLine: i, content: lines.slice(i + 1).join("\n") };
+    }
+  }
+  return null;
+}
 
 /** Split markdown into interleaved text/prompt segments.
  *  Prompt blocks are extracted by our state machine parser and never
  *  reach the markdown renderer, eliminating all fence-nesting issues. */
 export function splitByPromptBlocks(markdown: string): ContentSegment[] {
   const rawBlocks = findRawPromptBlocks(markdown);
-  if (rawBlocks.length === 0) return [{ type: "markdown", content: markdown }];
-
   const lines = markdown.split("\n");
   const segments: ContentSegment[] = [];
   let cursor = 0;
@@ -195,10 +209,26 @@ export function splitByPromptBlocks(markdown: string): ContentSegment[] {
     cursor = raw.endLine + 1;
   }
 
+  // Detect trailing unclosed ```prompt block (streaming in progress)
+  const pending = findPendingPromptBlock(lines, rawBlocks);
+  if (pending && pending.startLine >= cursor) {
+    if (pending.startLine > cursor) {
+      const text = lines.slice(cursor, pending.startLine).join("\n");
+      if (text.trim()) segments.push({ type: "markdown", content: text });
+    }
+    const firstLine = pending.content.split("\n")[0]?.trim() ?? "";
+    const title = firstLine.startsWith("# ") ? firstLine.slice(2).trim() : undefined;
+    segments.push({ type: "pending_prompt", content: pending.content, title });
+    return segments;
+  }
+
   if (cursor < lines.length) {
     const text = lines.slice(cursor).join("\n");
     if (text.trim()) segments.push({ type: "markdown", content: text });
   }
+
+  // No prompt blocks at all — return single markdown segment
+  if (segments.length === 0) return [{ type: "markdown", content: markdown }];
 
   return segments;
 }
