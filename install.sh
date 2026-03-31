@@ -1,10 +1,10 @@
 #!/bin/sh
 # Agentique installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/allbin/agentique/master/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | sh
 # Pin a version: curl -fsSL ... | sh -s v0.2.0
 set -e
 
-REPO="allbin/agentique"
+REPO="mdjarv/agentique"
 INSTALL_DIR="$HOME/.local/bin"
 BINARY_NAME="agentique"
 

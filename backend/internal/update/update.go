@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const repo = "allbin/agentique"
+const repo = "mdjarv/agentique"
 
 // Release describes a GitHub release.
 type Release struct {

@@ -377,7 +377,7 @@ func checkVersion() Check {
 func fetchLatestVersion() (string, error) {
 	// Use gh CLI if available — handles auth, avoids rate limits.
 	if ghPath, err := exec.LookPath("gh"); err == nil {
-		out, err := exec.Command(ghPath, "api", "repos/allbin/agentique/releases/latest", "--jq", ".tag_name").Output()
+		out, err := exec.Command(ghPath, "api", "repos/mdjarv/agentique/releases/latest", "--jq", ".tag_name").Output()
 		if err == nil {
 			return strings.TrimSpace(string(out)), nil
 		}
@@ -385,7 +385,7 @@ func fetchLatestVersion() (string, error) {
 
 	// Fallback: unauthenticated curl.
 	out, err := exec.Command("curl", "-fsSL", "--max-time", "5",
-		"https://api.github.com/repos/allbin/agentique/releases/latest").Output()
+		"https://api.github.com/repos/mdjarv/agentique/releases/latest").Output()
 	if err != nil {
 		return "", err
 	}
