@@ -1,6 +1,7 @@
 import {
   BellRing,
   Check,
+  ChevronsDownUp,
   Circle,
   GitMerge,
   ListChecks,
@@ -17,6 +18,7 @@ interface SessionStatusBadgeProps {
   state: SessionState;
   connected?: boolean;
   hasPendingApproval?: boolean;
+  isCompacting?: boolean;
   isPlanning?: boolean;
   gitOperation?: string;
 }
@@ -25,6 +27,7 @@ export function SessionStatusBadge({
   state,
   connected = true,
   hasPendingApproval,
+  isCompacting,
   isPlanning,
   gitOperation,
 }: SessionStatusBadgeProps) {
@@ -39,6 +42,13 @@ export function SessionStatusBadge({
           <Icon className="size-3" />
         </Badge>
       </span>
+    );
+  }
+  if (isCompacting) {
+    return (
+      <Badge bg="bg-primary/15" text="text-primary" title="Compacting context">
+        <ChevronsDownUp className="size-3 animate-compact-squeeze" />
+      </Badge>
     );
   }
   if (isPlanning && state === "running") {

@@ -69,6 +69,7 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
   const hasPendingInput = useChatStore(
     (s) => !!(s.sessions[id]?.pendingApproval || s.sessions[id]?.pendingQuestion),
   );
+  const isCompacting = useChatStore((s) => s.sessions[id]?.compacting ?? false);
   const isPlanning = useChatStore((s) => !!s.sessions[id]?.planMode);
   const hasDraft = useUIStore((s) => !!s.drafts[id]);
   const handleClick = useCallback(() => onSessionClick(id), [onSessionClick, id]);
@@ -83,6 +84,7 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
         connected={meta.connected}
         hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingInput}
+        isCompacting={isCompacting}
         isPlanning={isPlanning}
         isActive={id === activeSessionId}
         hasDraft={hasDraft}
