@@ -1,5 +1,6 @@
 import { Settings2, X } from "lucide-react";
 import { useState } from "react";
+import { ANIMATE_DEFAULT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { getTagColor } from "~/lib/tag-colors";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -13,12 +14,14 @@ export function TagFilterBar() {
   const clearFilters = useUIStore((s) => s.clearTagFilters);
   const [managerOpen, setManagerOpen] = useState(false);
 
+  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
+
   if (tags.length === 0 && !managerOpen) return null;
 
   const hasActiveFilters = activeFilters.length > 0;
 
   return (
-    <div className="px-3 py-2 border-b flex flex-wrap items-center gap-1.5">
+    <div ref={animateRef} className="px-3 py-2 border-b flex flex-wrap items-center gap-1.5">
       {tags.map((tag) => {
         const color = getTagColor(tag.color);
         const isActive = activeFilters.includes(tag.id);

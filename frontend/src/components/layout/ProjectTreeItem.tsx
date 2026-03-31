@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus, Star } from "lu
 import { type ReactNode, memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { ANIMATE_DEFAULT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { setProjectFavorite } from "~/lib/project-actions";
 import { getTagColor } from "~/lib/tag-colors";
@@ -337,6 +338,7 @@ export function ProjectTreeItem({
   const sessionCounts = useActiveSessionCounts(project.id);
   const isFavorite = project.favorite === 1;
 
+  const [sessionsRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
   const sessionIds = useChatStore(
     useShallow((s) =>
       Object.keys(s.sessions).filter((id) => s.sessions[id]?.meta.projectId === project.id),
@@ -461,7 +463,7 @@ export function ProjectTreeItem({
 
       {/* Sessions + new chat */}
       {isExpanded && (
-        <div className="ml-4 mr-2 mt-1 space-y-0.5">
+        <div ref={sessionsRef} className="ml-4 mr-2 mt-1 space-y-0.5">
           <SessionGroups
             sessionIds={sessionIds}
             activeSessionId={activeSessionId}

@@ -4,6 +4,7 @@ import { TurnBlock } from "~/components/chat/TurnBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -112,6 +113,7 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
   const [following, setFollowing] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
 
@@ -154,7 +156,7 @@ export function MessageList({
         onScroll={handleScroll}
         className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >
-        <div className="p-4 max-md:px-2 space-y-8 min-w-0">
+        <div ref={animateRef} className="p-4 max-md:px-2 space-y-8 min-w-0">
           {turns.map((turn, i) => {
             const eager = i >= turns.length - EAGER_TURN_COUNT;
             // If this turn has a compact_boundary, find the post-compaction

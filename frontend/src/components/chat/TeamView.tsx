@@ -5,6 +5,7 @@ import { getAgentColor } from "~/components/chat/AgentMessage";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
+import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   type TimelineEvent,
@@ -32,6 +33,8 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [membersRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
+  useMergedAutoAnimate(scrollRef, ANIMATE_DEFAULT);
 
   // Load timeline on mount
   useEffect(() => {
@@ -104,7 +107,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
-        <div className="flex flex-col gap-1">
+        <div ref={membersRef} className="flex flex-col gap-1">
           {team.members.map((member) => {
             const color = getAgentColor(member.sessionId);
             const isSelf = member.sessionId === sessionId;

@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { ANIMATE_DEFAULT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import type { useGitActions } from "~/hooks/useGitActions";
 import { cn } from "~/lib/utils";
 import type { SessionMetadata, TodoItem } from "~/stores/chat-store";
@@ -271,6 +272,7 @@ function UncommittedSection({
   onSendMessage?: (prompt: string) => void;
   onOpenDialog?: (dialog: "pr" | "commit") => void;
 }) {
+  const [filesRef] = useAutoAnimate<HTMLUListElement>(ANIMATE_DEFAULT);
   const isBusy = meta.state === "running";
 
   if (!git.uncommittedFiles || git.uncommittedFiles.length === 0) return null;
@@ -318,7 +320,7 @@ function UncommittedSection({
         )}
       </div>
       {git.uncommittedExpanded && (
-        <ul className="text-[11px] space-y-0.5 pl-5">
+        <ul ref={filesRef} className="text-[11px] space-y-0.5 pl-5">
           {git.uncommittedFiles.map((f) => (
             <li key={f.path} className="flex items-center gap-1.5 text-muted-foreground">
               <UncommittedFileIcon status={f.status} />
@@ -426,6 +428,7 @@ function GitSection({
 // --- Todos ---
 
 function TodoSection({ todos }: { todos: TodoItem[] }) {
+  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
   const completed = todos.filter((t) => t.status === "completed").length;
   const pct = todos.length > 0 ? (completed / todos.length) * 100 : 0;
 
@@ -445,9 +448,9 @@ function TodoSection({ todos }: { todos: TodoItem[] }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="space-y-0">
-        {todos.map((item, i) => (
-          <TodoItemRow key={`${i}-${item.content}`} item={item} />
+      <div ref={animateRef} className="space-y-0">
+        {todos.map((item) => (
+          <TodoItemRow key={item.content} item={item} />
         ))}
       </div>
     </div>

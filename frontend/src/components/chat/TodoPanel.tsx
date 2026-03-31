@@ -1,4 +1,5 @@
 import { Circle, CircleCheckBig, ListTodo, Loader2, PanelRightClose } from "lucide-react";
+import { ANIMATE_DEFAULT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import type { TodoItem } from "~/stores/chat-store";
 
 interface TodoPanelProps {
@@ -43,6 +44,7 @@ export function TodoItemRow({ item }: { item: TodoItem }) {
 }
 
 export function TodoPanel({ todos, onCollapse }: TodoPanelProps) {
+  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
   const completed = todos.filter((t) => t.status === "completed").length;
 
   return (
@@ -61,9 +63,9 @@ export function TodoPanel({ todos, onCollapse }: TodoPanelProps) {
           <PanelRightClose className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        {todos.map((item, i) => (
-          <TodoItemRow key={`${i}-${item.content}`} item={item} />
+      <div ref={animateRef} className="flex-1 overflow-y-auto px-3 py-2">
+        {todos.map((item) => (
+          <TodoItemRow key={item.content} item={item} />
         ))}
       </div>
     </div>
