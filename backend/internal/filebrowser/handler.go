@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 const (

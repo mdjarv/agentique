@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/paths"
-	"github.com/allbin/agentique/backend/internal/update"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/update"
 )
 
 // Status is the outcome of a single check.

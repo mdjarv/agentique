@@ -19,10 +19,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/allbin/agentique/backend/internal/config"
-	"github.com/allbin/agentique/backend/internal/doctor"
-	"github.com/allbin/agentique/backend/internal/paths"
-	"github.com/allbin/agentique/backend/internal/service"
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/doctor"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/service"
 )
 
 var reconfigure bool

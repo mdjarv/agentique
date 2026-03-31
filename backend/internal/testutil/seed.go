@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	dbpkg "github.com/allbin/agentique/backend/db"
-	"github.com/allbin/agentique/backend/internal/store"
+	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

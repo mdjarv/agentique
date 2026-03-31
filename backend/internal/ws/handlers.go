@@ -3,11 +3,11 @@ package ws
 import (
 	"fmt"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/gorilla/websocket"
 )
 

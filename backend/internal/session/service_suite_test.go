@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/testutil"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 

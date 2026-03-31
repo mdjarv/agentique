@@ -10,16 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/auth"
-	"github.com/allbin/agentique/backend/internal/filebrowser"
-	"github.com/allbin/agentique/backend/internal/filesystem"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/respond"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
-	"github.com/allbin/agentique/backend/internal/testmode"
-	"github.com/allbin/agentique/backend/internal/update"
-	"github.com/allbin/agentique/backend/internal/ws"
+	"github.com/mdjarv/agentique/backend/internal/auth"
+	"github.com/mdjarv/agentique/backend/internal/filebrowser"
+	"github.com/mdjarv/agentique/backend/internal/filesystem"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/respond"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testmode"
+	"github.com/mdjarv/agentique/backend/internal/update"
+	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
 // BuildInfo holds version metadata set at build time.

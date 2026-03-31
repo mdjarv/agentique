@@ -15,15 +15,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	dbpkg "github.com/allbin/agentique/backend/db"
-	"github.com/allbin/agentique/backend/internal/backup"
-	"github.com/allbin/agentique/backend/internal/config"
-	"github.com/allbin/agentique/backend/internal/doctor"
-	"github.com/allbin/agentique/backend/internal/logging"
-	"github.com/allbin/agentique/backend/internal/paths"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/server"
-	"github.com/allbin/agentique/backend/internal/store"
+	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/backup"
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/doctor"
+	"github.com/mdjarv/agentique/backend/internal/logging"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/server"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 var (

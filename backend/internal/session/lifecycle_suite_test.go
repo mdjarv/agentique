@@ -6,8 +6,8 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/store"
-	"github.com/allbin/agentique/backend/internal/testutil"
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 

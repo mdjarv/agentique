@@ -11,7 +11,7 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/session"
 )
 
 // Connector implements session.CLIConnector with mock sessions.

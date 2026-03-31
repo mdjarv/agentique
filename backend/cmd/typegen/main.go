@@ -18,12 +18,12 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/msggen"
-	projpkg "github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
-	"github.com/allbin/agentique/backend/internal/ws"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	projpkg "github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
 var rawMessageType = reflect.TypeOf(json.RawMessage{})

@@ -13,9 +13,9 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

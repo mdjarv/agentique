@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/mdjarv/agentique/backend/internal/httperr"
 )
 
 // JSON writes data as a JSON response with the given status code.

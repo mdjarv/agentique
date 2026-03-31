@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 type managerQueries interface {

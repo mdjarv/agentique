@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/httperr"
-	"github.com/allbin/agentique/backend/internal/respond"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/httperr"
+	"github.com/mdjarv/agentique/backend/internal/respond"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 
