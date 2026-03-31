@@ -92,7 +92,10 @@ function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
   }
 }
 
-function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?: ChatEvent } {
+function buildSegments(
+  events: ChatEvent[],
+  turnComplete: boolean,
+): { segments: Segment[]; resultEvent?: ChatEvent } {
   const segments: Segment[] = [];
   let resultEvent: ChatEvent | undefined;
 
@@ -181,6 +184,9 @@ function buildSegments(events: ChatEvent[]): { segments: Segment[]; resultEvent?
           segments.push({ kind: "compact", event });
           break;
         case "user_message":
+          // Pending messages render pinned at the bottom of MessageList.
+          // Once the turn completes, treat any remaining "sending" as delivered.
+          if (event.deliveryStatus === "sending" && !turnComplete) break;
           segments.push({
             kind: "user_message",
             content: event.content ?? "",
@@ -537,7 +543,10 @@ export const TurnBlock = memo(function TurnBlock({
     isStreaming ? (s.texts[sessionId] ?? "") : "",
   );
 
-  const { segments, resultEvent } = useMemo(() => buildSegments(turn.events), [turn.events]);
+  const { segments, resultEvent } = useMemo(
+    () => buildSegments(turn.events, turn.complete),
+    [turn.events, turn.complete],
+  );
 
   // Compute streaming tail: text being actively streamed that hasn't been committed as an event yet
   let streamingTail = "";

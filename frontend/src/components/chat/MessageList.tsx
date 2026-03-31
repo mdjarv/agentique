@@ -1,13 +1,15 @@
 import { ArrowDown, Loader2, Wrench } from "lucide-react";
-import { type ReactNode, memo, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
+import { UserMessage } from "~/components/chat/UserMessage";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import type { Turn } from "~/stores/chat-store";
+import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 const SCROLL_THRESHOLD = 48;
 const EAGER_TURN_COUNT = 6;
+const EMPTY_PENDING: ChatEvent[] = [];
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
@@ -113,6 +115,12 @@ export function MessageList({
   const [following, setFollowing] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
 
+  const pendingMessages = useMemo(() => {
+    const last = turns[turns.length - 1];
+    if (!last || last.complete) return EMPTY_PENDING;
+    return last.events.filter((e) => e.type === "user_message" && e.deliveryStatus === "sending");
+  }, [turns]);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -182,6 +190,14 @@ export function MessageList({
               </LazyTurn>
             );
           })}
+          {pendingMessages.map((msg) => (
+            <UserMessage
+              key={msg.messageId}
+              prompt={msg.content ?? ""}
+              attachments={msg.attachments}
+              deliveryStatus="sending"
+            />
+          ))}
           <ScrollAnchor sessionId={sessionId} turns={turns} following={following} />
           <div ref={bottomRef} />
         </div>
