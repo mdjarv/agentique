@@ -123,7 +123,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// First-run hint.
 	if !config.Exists() && !fileExists(paths.DBPath()) {
-		slog.Info("first run detected — run 'agentique setup' for guided configuration")
+		slog.Warn("no configuration found — using defaults (run 'agentique setup' for guided configuration)")
 	}
 
 	if !testMode {

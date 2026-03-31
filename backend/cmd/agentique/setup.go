@@ -25,7 +25,10 @@ import (
 	"github.com/allbin/agentique/backend/internal/service"
 )
 
+var reconfigure bool
+
 func init() {
+	setupCmd.Flags().BoolVar(&reconfigure, "reconfigure", false, "skip confirmation when re-running setup")
 	rootCmd.AddCommand(setupCmd)
 }
 
@@ -44,6 +47,40 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println("================")
 	fmt.Println()
 
+	// Detect existing configuration.
+	var existingCfg *config.Config
+	if config.Exists() {
+		loaded, err := config.Load(config.Path())
+		if err == nil {
+			existingCfg = loaded
+		}
+
+		fmt.Printf("Existing configuration found at %s\n", config.Path())
+		fmt.Println()
+		fmt.Printf("  Addr:    %s\n", loaded.Server.Addr)
+		if loaded.Server.TLSCert != "" {
+			fmt.Println("  TLS:     enabled")
+		} else {
+			fmt.Println("  TLS:     disabled")
+		}
+		if loaded.Server.DisableAuth {
+			fmt.Println("  Auth:    disabled")
+		} else {
+			fmt.Println("  Auth:    passkey")
+		}
+		fmt.Println()
+
+		if !reconfigure {
+			fmt.Print("Re-run setup? This replaces current settings. [y/N] ")
+			line, _ := setupReader.ReadString('\n')
+			if strings.TrimSpace(strings.ToLower(line)) != "y" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+			fmt.Println()
+		}
+	}
+
 	// Step 1: Doctor checks.
 	fmt.Println("Checking dependencies...")
 	fmt.Println()
@@ -57,13 +94,20 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := config.Default()
+	if existingCfg != nil {
+		cfg = existingCfg
+	}
 
 	// Step 2: Network mode.
 	fmt.Println("How will you access Agentique?")
+	networkDefault := 0
+	if cfg.Server.Addr != "" && !strings.HasPrefix(cfg.Server.Addr, "localhost") && !strings.HasPrefix(cfg.Server.Addr, "127.") {
+		networkDefault = 1
+	}
 	choice := promptChoice([]string{
 		"Localhost only (recommended for single user)",
 		"Over the network (LAN, Tailscale, etc.)",
-	}, 0)
+	}, networkDefault)
 
 	networkMode := choice == 1
 	if networkMode {
@@ -77,11 +121,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if networkMode {
 		fmt.Println()
 		fmt.Println("How will you handle HTTPS?")
+		tlsDefault := 2
+		if cfg.Server.TLSCert != "" {
+			tlsDefault = 0
+		}
 		tlsChoice := promptChoice([]string{
 			"I have TLS certificates",
 			"Generate self-signed certificates",
 			"I'll use a reverse proxy (nginx, caddy, etc.)",
-		}, 2)
+		}, tlsDefault)
 
 		switch tlsChoice {
 		case 0: // existing certs
@@ -138,10 +186,14 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if networkMode {
 		fmt.Println()
 		fmt.Println("Enable passkey authentication?")
+		authDefault := 0
+		if cfg.Server.DisableAuth {
+			authDefault = 1
+		}
 		authChoice := promptChoice([]string{
 			"Yes (recommended for network access)",
 			"No (trusted network only)",
-		}, 0)
+		}, authDefault)
 		cfg.Server.DisableAuth = authChoice == 1
 	}
 
@@ -179,10 +231,14 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Step 7: Service install.
 	fmt.Println()
 	fmt.Println("Install as a system service? (auto-starts on login)")
+	svcDefault := 0
+	if st, err := service.GetStatus(); err == nil && st.Installed {
+		svcDefault = 0 // already installed, default to yes (will reinstall/update)
+	}
 	svcChoice := promptChoice([]string{
 		"Yes",
 		"No, I'll run it manually",
-	}, 0)
+	}, svcDefault)
 
 	if svcChoice == 0 {
 		fmt.Println()
