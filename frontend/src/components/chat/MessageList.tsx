@@ -49,7 +49,7 @@ function LazyTurn({
   return <>{children}</>;
 }
 
-/** Manages auto-scroll: instant during streaming, smooth on new turns. */
+/** Manages auto-scroll: instant during streaming and new turns, smooth otherwise. */
 const ScrollAnchor = memo(function ScrollAnchor({
   sessionId,
   turns,
@@ -63,6 +63,7 @@ const ScrollAnchor = memo(function ScrollAnchor({
   const streamingLen = useStreamingStore((s) => s.texts[sessionId]?.length ?? 0);
   const isStreaming = streamingLen > 0;
   const prevStreamingRef = useRef(isStreaming);
+  const prevTurnCountRef = useRef(turns.length);
   const scrollBehaviorRef = useRef<ScrollBehavior>("instant");
   const rafRef = useRef<number>(0);
 
@@ -71,8 +72,12 @@ const ScrollAnchor = memo(function ScrollAnchor({
     if (!following) return;
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
+    const newTurn = turns.length > prevTurnCountRef.current;
+    prevTurnCountRef.current = turns.length;
+    // Snap instantly for new turns (user just sent a message) and during streaming.
+    // Smooth only for minor updates like result metadata appearing after a turn completes.
     const behavior: ScrollBehavior =
-      isStreaming || wasStreaming ? "instant" : scrollBehaviorRef.current;
+      isStreaming || wasStreaming || newTurn ? "instant" : scrollBehaviorRef.current;
     scrollBehaviorRef.current = "smooth";
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -87,6 +92,7 @@ const ScrollAnchor = memo(function ScrollAnchor({
   useEffect(() => {
     scrollBehaviorRef.current = "instant";
     prevStreamingRef.current = false;
+    prevTurnCountRef.current = turns.length;
   }, [sessionId]);
 
   return <div ref={bottomRef} />;
