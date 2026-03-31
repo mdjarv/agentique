@@ -51,24 +51,26 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	var existingCfg *config.Config
 	if config.Exists() {
 		loaded, err := config.Load(config.Path())
-		if err == nil {
+		if err != nil {
+			fmt.Printf("Warning: could not parse existing config: %v\n\n", err)
+		} else {
 			existingCfg = loaded
-		}
 
-		fmt.Printf("Existing configuration found at %s\n", config.Path())
-		fmt.Println()
-		fmt.Printf("  Addr:    %s\n", loaded.Server.Addr)
-		if loaded.Server.TLSCert != "" {
-			fmt.Println("  TLS:     enabled")
-		} else {
-			fmt.Println("  TLS:     disabled")
+			fmt.Printf("Existing configuration found at %s\n", config.Path())
+			fmt.Println()
+			fmt.Printf("  Addr:    %s\n", loaded.Server.Addr)
+			if loaded.Server.TLSCert != "" {
+				fmt.Println("  TLS:     enabled")
+			} else {
+				fmt.Println("  TLS:     disabled")
+			}
+			if loaded.Server.DisableAuth {
+				fmt.Println("  Auth:    disabled")
+			} else {
+				fmt.Println("  Auth:    passkey")
+			}
+			fmt.Println()
 		}
-		if loaded.Server.DisableAuth {
-			fmt.Println("  Auth:    disabled")
-		} else {
-			fmt.Println("  Auth:    passkey")
-		}
-		fmt.Println()
 
 		if !reconfigure {
 			fmt.Print("Re-run setup? This replaces current settings. [y/N] ")

@@ -7,9 +7,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"time"
-
 	"sync"
+	"time"
 
 	"github.com/allbin/agentique/backend/internal/auth"
 	"github.com/allbin/agentique/backend/internal/filebrowser"
