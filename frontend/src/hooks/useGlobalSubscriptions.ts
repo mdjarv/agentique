@@ -215,7 +215,12 @@ export function useGlobalSubscriptions(projects: Project[]) {
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubState = ws.subscribe("session.state", (payload: any) => {
-      useChatStore.getState().setSessionState(payload.sessionId, payload.state, {
+      const store = useChatStore.getState();
+      const sid: string = payload.sessionId;
+      const prevMeta = store.sessions[sid]?.meta;
+      const wasActive = store.activeSessionId === sid;
+
+      store.setSessionState(sid, payload.state, {
         connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
@@ -229,9 +234,27 @@ export function useGlobalSubscriptions(projects: Project[]) {
         gitOperation: payload.gitOperation ?? "",
         gitVersion: payload.version,
       });
-      useTeamStore
-        .getState()
-        .updateMemberState(payload.sessionId, payload.state, payload.connected);
+      useTeamStore.getState().updateMemberState(sid, payload.state, payload.connected);
+
+      // Navigate away when the currently viewed session becomes completed.
+      const becameCompleted = payload.completedAt && prevMeta && !prevMeta.completedAt;
+      if (becameCompleted && wasActive) {
+        const projectId = prevMeta.projectId;
+        const projectSlug =
+          useAppStore.getState().projects.find((p) => p.id === projectId)?.slug ?? projectId;
+        const sibling = findNearestActiveSession(useChatStore.getState().sessions, sid, projectId);
+        if (sibling) {
+          navigate({
+            to: "/project/$projectSlug/session/$sessionShortId",
+            params: { projectSlug, sessionShortId: sessionShortId(sibling) },
+          });
+        } else {
+          navigate({
+            to: "/project/$projectSlug/session/new",
+            params: { projectSlug },
+          });
+        }
+      }
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
