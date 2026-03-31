@@ -15,6 +15,7 @@ import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { cn } from "~/lib/utils";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -257,6 +258,7 @@ function CollapsibleGroup({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const showActiveHeader = !!activeHeader && !expanded;
+  const showIcons = !expanded && trailingIcons;
 
   return (
     <div className="border rounded-md bg-muted/30 overflow-hidden">
@@ -264,12 +266,13 @@ function CollapsibleGroup({
         expanded={expanded}
         onToggle={() => setExpanded(!expanded)}
         className="hover:bg-muted/50"
+        childrenClassName={showActiveHeader ? "flex-1 overflow-hidden" : "shrink-0"}
+        trailingClassName={cn(
+          "text-primary/40",
+          showActiveHeader ? "shrink-0 max-w-[96px]" : "flex-1 justify-end",
+        )}
         trailing={
-          !expanded && trailingIcons ? (
-            <span className="flex items-center gap-1.5 text-primary/40 min-w-0">
-              {trailingIcons}
-            </span>
-          ) : undefined
+          showIcons ? <span className="flex items-center gap-1.5">{trailingIcons}</span> : undefined
         }
       >
         {showActiveHeader ? (
@@ -386,7 +389,7 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
         icon={<Wrench className="h-3 w-3" />}
         defaultExpanded={false}
         trailingIcons={
-          <span className="flex flex-row-reverse items-center gap-1.5 overflow-hidden min-w-0">
+          <span className="flex flex-row-reverse items-center gap-1.5 overflow-hidden">
             {[...trailingIcons].reverse()}
           </span>
         }

@@ -6,6 +6,8 @@ interface ExpandableRowProps {
   onToggle: () => void;
   expandable?: boolean;
   trailing?: React.ReactNode;
+  trailingClassName?: string;
+  childrenClassName?: string;
   className?: string;
   children: React.ReactNode;
 }
@@ -15,6 +17,8 @@ export function ExpandableRow({
   onToggle,
   expandable = true,
   trailing,
+  trailingClassName,
+  childrenClassName,
   className,
   children,
 }: ExpandableRowProps) {
@@ -28,12 +32,23 @@ export function ExpandableRow({
         className,
       )}
     >
-      {children}
-      <span className="ml-auto flex items-center gap-1.5 min-w-0 overflow-hidden">
-        {trailing}
-        <span className={cn("shrink-0 pl-0.5", !expandable && "opacity-30")}>
-          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      {childrenClassName ? (
+        <span className={cn("flex items-center gap-2 min-w-0", childrenClassName)}>{children}</span>
+      ) : (
+        children
+      )}
+      {trailing ? (
+        <span
+          className={cn(
+            "ml-auto flex items-center gap-1.5 min-w-0 overflow-hidden",
+            trailingClassName,
+          )}
+        >
+          {trailing}
         </span>
+      ) : null}
+      <span className={cn("shrink-0 pl-0.5", !expandable && "opacity-30", !trailing && "ml-auto")}>
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
       </span>
     </button>
   );
