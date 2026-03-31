@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 type managerQueries interface {
@@ -27,7 +27,6 @@ type serviceQueries interface {
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg store.UpdateSessionAutoApproveModeParams) error
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
-	UpdateClaudeSessionID(ctx context.Context, arg store.UpdateClaudeSessionIDParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)

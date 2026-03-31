@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/mdjarv/agentique/backend/internal/paths"
-	"github.com/mdjarv/agentique/backend/internal/update"
+	"github.com/allbin/agentique/backend/internal/paths"
 )
 
 // Status is the outcome of a single check.
@@ -45,12 +43,9 @@ type Check struct {
 	Required bool   // if true, Fail = server won't start
 }
 
-// Version is set by the caller (main package) so doctor can check for updates.
-var Version string
-
 // RunAll executes every check and returns results.
 func RunAll() []Check {
-	checks := []Check{
+	return []Check{
 		checkClaude(),
 		checkGit(),
 		checkGH(),
@@ -60,10 +55,6 @@ func RunAll() []Check {
 		checkClaudeAuth(),
 		checkGHAuth(),
 	}
-	if Version != "" && Version != "dev" {
-		checks = append(checks, checkVersion())
-	}
-	return checks
 }
 
 // RunRequired returns only the checks needed for serve startup.
@@ -108,8 +99,7 @@ func checkClaude() Check {
 	if err != nil {
 		c.Status = Fail
 		c.Message = "not found on PATH"
-		c.Fix = platformFix("Install: npm install -g @anthropic-ai/claude-code",
-			"", "") // no brew/pacman package for claude
+		c.Fix = "Install: npm install -g @anthropic-ai/claude-code"
 		return c
 	}
 
@@ -149,7 +139,7 @@ func checkGit() Check {
 	if err != nil {
 		c.Status = Fail
 		c.Message = "not found on PATH"
-		c.Fix = platformFix("Install: https://git-scm.com/downloads", "git", "git")
+		c.Fix = "Install git: https://git-scm.com/downloads"
 		return c
 	}
 
@@ -176,7 +166,7 @@ func checkGH() Check {
 	if err != nil {
 		c.Status = Warn
 		c.Message = "not found — PR creation will be unavailable"
-		c.Fix = platformFix("Install: https://cli.github.com/", "gh", "github-cli")
+		c.Fix = "Install: https://cli.github.com/"
 		return c
 	}
 
@@ -203,7 +193,7 @@ func checkNode() Check {
 	if err != nil {
 		c.Status = Warn
 		c.Message = "not found — needed if claude CLI requires update"
-		c.Fix = platformFix("Install: https://nodejs.org/", "node", "nodejs")
+		c.Fix = "Install: https://nodejs.org/"
 		return c
 	}
 
@@ -349,73 +339,6 @@ func checkGHAuth() Check {
 	c.Status = OK
 	c.Message = "authenticated"
 	return c
-}
-
-func checkVersion() Check {
-	c := Check{Name: "version", Required: false}
-	c.Message = Version
-
-	latest, err := fetchLatestVersion()
-	if err != nil {
-		// Network failure is not worth warning about.
-		c.Status = OK
-		return c
-	}
-
-	if update.SemverNewer(latest, Version) {
-		c.Status = Warn
-		c.Message = fmt.Sprintf("%s (latest: %s)", Version, latest)
-		c.Fix = "Upgrade: agentique upgrade"
-		return c
-	}
-
-	c.Status = OK
-	c.Message = Version + " (up to date)"
-	return c
-}
-
-func fetchLatestVersion() (string, error) {
-	// Use gh CLI if available — handles auth, avoids rate limits.
-	if ghPath, err := exec.LookPath("gh"); err == nil {
-		out, err := exec.Command(ghPath, "api", "repos/mdjarv/agentique/releases/latest", "--jq", ".tag_name").Output()
-		if err == nil {
-			return strings.TrimSpace(string(out)), nil
-		}
-	}
-
-	// Fallback: unauthenticated curl.
-	out, err := exec.Command("curl", "-fsSL", "--max-time", "5",
-		"https://api.github.com/repos/mdjarv/agentique/releases/latest").Output()
-	if err != nil {
-		return "", err
-	}
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.Unmarshal(out, &release); err != nil {
-		return "", err
-	}
-	return release.TagName, nil
-}
-
-func hasHomebrew() bool {
-	_, err := exec.LookPath("brew")
-	return err == nil
-}
-
-func isArch() bool {
-	_, err := exec.LookPath("pacman")
-	return err == nil
-}
-
-func platformFix(generic string, brewPkg string, archPkg string) string {
-	if runtime.GOOS == "darwin" && hasHomebrew() && brewPkg != "" {
-		return fmt.Sprintf("Install: brew install %s", brewPkg)
-	}
-	if runtime.GOOS == "linux" && isArch() && archPkg != "" {
-		return fmt.Sprintf("Install: pacman -S %s", archPkg)
-	}
-	return generic
 }
 
 // parseVersion extracts major, minor from a version string like "2.1.87 (Claude Code)".

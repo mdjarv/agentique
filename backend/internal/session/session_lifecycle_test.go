@@ -7,7 +7,7 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/mdjarv/agentique/backend/internal/testutil"
+	"github.com/allbin/agentique/backend/internal/testutil"
 )
 
 func TestEventLoop_TextAndResult(t *testing.T) {

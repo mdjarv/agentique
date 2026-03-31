@@ -47,9 +47,11 @@ export class WsClient {
   connect(): void {
     if (this.ws) return;
     this.setupVisibilityHandler();
+    console.log("[WsClient] connecting to", this.url);
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
+      console.log("[WsClient] connected");
       this.reconnectDelay = 500;
       this.setConnectionState("connected");
       for (const fn of this.connectListeners) fn();
@@ -59,7 +61,8 @@ export class WsClient {
       this.handleMessage(ev.data as string);
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
+      console.log("[WsClient] closed:", ev.code, ev.reason);
       this.ws = null;
       for (const fn of this.disconnectListeners) fn();
       // Reject all pending requests.
@@ -80,7 +83,9 @@ export class WsClient {
       }
     };
 
-    this.ws.onerror = () => {};
+    this.ws.onerror = (ev) => {
+      console.log("[WsClient] error:", ev);
+    };
   }
 
   disconnect(): void {

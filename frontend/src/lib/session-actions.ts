@@ -96,10 +96,6 @@ export async function createSession(
   return result.sessionId;
 }
 
-export async function resetConversation(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.reset-conversation", { sessionId });
-}
-
 export async function renameSession(ws: WsClient, sessionId: string, name: string): Promise<void> {
   await ws.request("session.rename", { sessionId, name });
   useChatStore.getState().setSessionName(sessionId, name);
@@ -374,10 +370,10 @@ export async function deleteSessionsBulk(
 }
 
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.stop", { sessionId });
-}
-
-export async function restartSession(ws: WsClient, sessionId: string): Promise<void> {
-  await stopSession(ws, sessionId);
-  await resumeSession(ws, sessionId);
+  try {
+    await ws.request("session.stop", { sessionId });
+  } catch (err) {
+    console.error("Failed to stop session:", err);
+  }
+  useChatStore.getState().removeSession(sessionId);
 }

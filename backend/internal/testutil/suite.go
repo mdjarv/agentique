@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/store"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/stretchr/testify/suite"
 )

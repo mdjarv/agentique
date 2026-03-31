@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/mdjarv/agentique/backend/internal/gitops"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

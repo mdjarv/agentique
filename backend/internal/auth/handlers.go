@@ -12,9 +12,9 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/mdjarv/agentique/backend/internal/httperr"
-	"github.com/mdjarv/agentique/backend/internal/respond"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 // RegisterRoutes registers all auth endpoints on the given mux.

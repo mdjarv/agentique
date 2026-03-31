@@ -11,9 +11,9 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 // noopBroadcaster satisfies session.Broadcaster for tests.

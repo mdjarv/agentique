@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 func init() {

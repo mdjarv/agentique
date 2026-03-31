@@ -13,6 +13,8 @@
 
 Agentique is a lightweight GUI for managing concurrent Claude Code agents across multiple projects. Go backend wraps [claudecli-go](https://github.com/allbin/claudecli-go), React frontend connects via WebSocket, deploys as a single embedded binary.
 
+This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
+
 ## Core Priorities
 
 1. Performance first.

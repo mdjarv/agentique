@@ -7,8 +7,6 @@ import {
   MoreHorizontal,
   PanelRightOpen,
   Pencil,
-  RotateCcw,
-  Square,
   Trash2,
   UserPlus,
   Users,
@@ -39,14 +37,7 @@ import {
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import {
-  cleanSession,
-  deleteSession,
-  markSessionDone,
-  renameSession,
-  restartSession,
-  stopSession,
-} from "~/lib/session-actions";
+import { cleanSession, deleteSession, markSessionDone, renameSession } from "~/lib/session-actions";
 import { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from "~/lib/team-actions";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -71,8 +62,6 @@ export function SessionHeader({
   const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = isRunning;
-  const canStop = meta.state === "idle" || meta.state === "running" || meta.state === "merging";
-  const canRestart = canStop || meta.state === "stopped" || meta.state === "failed";
 
   const [activeDialog, setActiveDialog] = useState<"none" | "delete" | "create-team" | "join-team">(
     "none",
@@ -139,22 +128,6 @@ export function SessionHeader({
       toast.error(getErrorMessage(err, "Clean failed"));
     } finally {
       setCleaning(false);
-    }
-  }, [ws, meta.id]);
-
-  const handleStop = useCallback(async () => {
-    try {
-      await stopSession(ws, meta.id);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to stop"));
-    }
-  }, [ws, meta.id]);
-
-  const handleRestart = useCallback(async () => {
-    try {
-      await restartSession(ws, meta.id);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to restart"));
     }
   }, [ws, meta.id]);
 
@@ -309,19 +282,6 @@ export function SessionHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {canStop && (
-                <DropdownMenuItem onClick={handleStop} className="text-xs gap-2">
-                  <Square className="h-3.5 w-3.5" />
-                  Stop session
-                </DropdownMenuItem>
-              )}
-              {canRestart && (
-                <DropdownMenuItem onClick={handleRestart} className="text-xs gap-2">
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Restart session
-                </DropdownMenuItem>
-              )}
-              {(canStop || canRestart) && <DropdownMenuSeparator />}
               {isMobile && (
                 <>
                   <DropdownMenuItem onClick={() => setEditing(true)} className="text-xs gap-2">

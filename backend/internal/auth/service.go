@@ -16,7 +16,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 const (

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mdjarv/agentique/backend/internal/logging"
-	"github.com/mdjarv/agentique/backend/internal/project"
-	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/logging"
+	"github.com/allbin/agentique/backend/internal/project"
+	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/gorilla/websocket"
 )
 
@@ -135,8 +135,6 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionStop(msg)
 	case "session.resume":
 		c.handleSessionResume(msg)
-	case "session.reset-conversation":
-		c.handleSessionResetConversation(msg)
 	case "session.history":
 		c.handleSessionHistory(msg)
 	case "session.diff":

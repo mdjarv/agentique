@@ -52,20 +52,6 @@ export async function healthCheck(): Promise<{ status: string }> {
   return res.json();
 }
 
-export interface VersionInfo {
-  version: string;
-  commit: string;
-  date: string;
-  updateAvailable: boolean;
-  latestVersion: string;
-}
-
-export async function fetchVersion(): Promise<VersionInfo> {
-  const res = await fetch(`${BASE}/version`);
-  if (!res.ok) throw new Error("Failed to fetch version");
-  return res.json();
-}
-
 export interface DirectoryEntry {
   name: string;
   path: string;

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/mdjarv/agentique/backend/internal/testutil"
+	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mdjarv/agentique/backend/internal/testutil"
+	"github.com/allbin/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 

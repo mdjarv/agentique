@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 // ClientMessage is the envelope for all client -> server messages.
@@ -69,10 +69,6 @@ type SessionStopPayload struct {
 }
 
 type SessionResumePayload struct {
-	SessionID string `json:"sessionId"`
-}
-
-type SessionResetConversationPayload struct {
 	SessionID string `json:"sessionId"`
 }
 

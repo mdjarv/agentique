@@ -11,7 +11,6 @@ interface SessionRowProps {
   connected?: boolean;
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
-  isCompacting?: boolean;
   isPlanning?: boolean;
   isActive: boolean;
   hasDraft?: boolean;
@@ -39,7 +38,6 @@ export const SessionRow = memo(function SessionRow({
   connected,
   hasUnseenCompletion,
   hasPendingApproval,
-  isCompacting,
   isPlanning,
   isActive,
   hasDraft,
@@ -81,7 +79,6 @@ export const SessionRow = memo(function SessionRow({
         state={state}
         connected={connected}
         hasPendingApproval={hasPendingApproval}
-        isCompacting={isCompacting}
         isPlanning={isPlanning}
         gitOperation={gitOperation}
       />

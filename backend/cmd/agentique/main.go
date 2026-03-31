@@ -10,10 +10,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/mdjarv/agentique/backend/internal/config"
-	"github.com/mdjarv/agentique/backend/internal/doctor"
-	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
 var (
@@ -36,7 +32,6 @@ func init() {
 }
 
 func main() {
-	doctor.Version = version
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -44,17 +39,6 @@ func main() {
 
 // runStatus checks server health and shows active session summary.
 func runStatus(cmd *cobra.Command, args []string) error {
-	// First-run welcome.
-	if !config.Exists() && !fileExists(paths.DBPath()) {
-		fmt.Println("Welcome to Agentique!")
-		fmt.Println()
-		fmt.Println("  Quick start:  agentique setup     (guided configuration)")
-		fmt.Println("  Jump in:      agentique serve     (start with defaults)")
-		fmt.Println("  Check deps:   agentique doctor    (verify prerequisites)")
-		fmt.Println()
-		return nil
-	}
-
 	base := baseURL()
 
 	// Health check.

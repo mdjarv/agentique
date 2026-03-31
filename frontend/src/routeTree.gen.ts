@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug"
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar"
+import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles"
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index"
 import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings"
 import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files"
@@ -31,6 +32,11 @@ const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
 const DevContextBarRoute = DevContextBarRouteImport.update({
   id: "/dev/context-bar",
   path: "/dev/context-bar",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevBubblesRoute = DevBubblesRouteImport.update({
+  id: "/dev/bubbles",
+  path: "/dev/bubbles",
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
@@ -64,6 +70,7 @@ const ProjectProjectSlugSessionSessionShortIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/dev/bubbles": typeof DevBubblesRoute
   "/dev/context-bar": typeof DevContextBarRoute
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
+  "/dev/bubbles": typeof DevBubblesRoute
   "/dev/context-bar": typeof DevContextBarRoute
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
@@ -84,6 +92,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/dev/bubbles": typeof DevBubblesRoute
   "/dev/context-bar": typeof DevContextBarRoute
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
+    | "/dev/bubbles"
     | "/dev/context-bar"
     | "/project/$projectSlug"
     | "/project/$projectSlug/files"
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
+    | "/dev/bubbles"
     | "/dev/context-bar"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/dev/bubbles"
     | "/dev/context-bar"
     | "/project/$projectSlug"
     | "/project/$projectSlug/files"
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DevBubblesRoute: typeof DevBubblesRoute
   DevContextBarRoute: typeof DevContextBarRoute
   ProjectProjectSlugRoute: typeof ProjectProjectSlugRouteWithChildren
   ProjectProjectSlugSettingsRoute: typeof ProjectProjectSlugSettingsRoute
@@ -152,6 +165,13 @@ declare module "@tanstack/react-router" {
       path: "/dev/context-bar"
       fullPath: "/dev/context-bar"
       preLoaderRoute: typeof DevContextBarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/dev/bubbles": {
+      id: "/dev/bubbles"
+      path: "/dev/bubbles"
+      fullPath: "/dev/bubbles"
+      preLoaderRoute: typeof DevBubblesRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/project/$projectSlug/": {
@@ -212,6 +232,7 @@ const ProjectProjectSlugRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,
   ProjectProjectSlugRoute: ProjectProjectSlugRouteWithChildren,
   ProjectProjectSlugSettingsRoute: ProjectProjectSlugSettingsRoute,

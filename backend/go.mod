@@ -1,4 +1,4 @@
-module github.com/mdjarv/agentique/backend
+module github.com/allbin/agentique/backend
 
 go 1.26.1
 

@@ -1,5 +1,5 @@
 import { Bot, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
@@ -15,9 +15,6 @@ import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useWebSocket } from "~/hooks/useWebSocket";
-import { resetConversation } from "~/lib/session-actions";
-import { cn } from "~/lib/utils";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -260,7 +257,6 @@ function CollapsibleGroup({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const showActiveHeader = !!activeHeader && !expanded;
-  const showIcons = !expanded && trailingIcons;
 
   return (
     <div className="border rounded-md bg-muted/30 overflow-hidden">
@@ -268,13 +264,10 @@ function CollapsibleGroup({
         expanded={expanded}
         onToggle={() => setExpanded(!expanded)}
         className="hover:bg-muted/50"
-        childrenClassName={showActiveHeader ? "flex-1 overflow-hidden" : "shrink-0"}
-        trailingClassName={cn(
-          "text-primary/40",
-          showActiveHeader ? "shrink-0 max-w-[96px]" : "flex-1 justify-end",
-        )}
         trailing={
-          showIcons ? <span className="flex items-center gap-1.5">{trailingIcons}</span> : undefined
+          !expanded && trailingIcons ? (
+            <span className="flex items-center gap-1.5 text-primary/40">{trailingIcons}</span>
+          ) : undefined
         }
       >
         {showActiveHeader ? (
@@ -482,7 +475,7 @@ const TextSegmentView = memo(function TextSegmentView({
       sessionId={sessionId}
       isStreaming={isStreaming}
     >
-      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-agent/12 to-agent/6 shadow-lg shadow-black/30 border border-agent/10">
+      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
         <button
           type="button"
           onClick={() => onCopy(content)}
@@ -513,14 +506,11 @@ function CompactDivider({ event, postTokens }: { event: ChatEvent; postTokens?: 
   );
 }
 
-function ErrorSegmentView({
-  segment,
-  onResetConversation,
-}: { segment: ErrorSegment; onResetConversation?: () => void }) {
+function ErrorSegmentView({ segment }: { segment: ErrorSegment }) {
   return (
     <>
       {segment.events.map((e) => (
-        <ErrorBlock key={e.id} event={e} onResetConversation={onResetConversation} />
+        <ErrorBlock key={e.id} event={e} />
       ))}
     </>
   );
@@ -540,10 +530,6 @@ export const TurnBlock = memo(function TurnBlock({
   postCompactTokens,
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
-  const ws = useWebSocket();
-  const handleResetConversation = useCallback(() => {
-    resetConversation(ws, sessionId);
-  }, [ws, sessionId]);
   const isStreaming = isLast && !turn.complete;
 
   // Subscribe to streaming text only when this is the active (last, incomplete) turn
@@ -686,13 +672,7 @@ export const TurnBlock = memo(function TurnBlock({
                         />
                       );
                     case "error":
-                      return (
-                        <ErrorSegmentView
-                          key={segmentKey(seg, idx)}
-                          segment={seg}
-                          onResetConversation={handleResetConversation}
-                        />
-                      );
+                      return <ErrorSegmentView key={segmentKey(seg, idx)} segment={seg} />;
                     case "compact":
                       return (
                         <CompactDivider

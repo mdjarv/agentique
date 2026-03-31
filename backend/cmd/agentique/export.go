@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/mdjarv/agentique/backend/internal/testmode"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/testmode"
 	"github.com/spf13/cobra"
 )
 

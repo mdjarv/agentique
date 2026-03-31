@@ -15,15 +15,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/backup"
-	"github.com/mdjarv/agentique/backend/internal/config"
-	"github.com/mdjarv/agentique/backend/internal/doctor"
-	"github.com/mdjarv/agentique/backend/internal/logging"
-	"github.com/mdjarv/agentique/backend/internal/paths"
-	"github.com/mdjarv/agentique/backend/internal/project"
-	"github.com/mdjarv/agentique/backend/internal/server"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/backup"
+	"github.com/allbin/agentique/backend/internal/config"
+	"github.com/allbin/agentique/backend/internal/doctor"
+	"github.com/allbin/agentique/backend/internal/logging"
+	"github.com/allbin/agentique/backend/internal/paths"
+	"github.com/allbin/agentique/backend/internal/project"
+	"github.com/allbin/agentique/backend/internal/server"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 var (
@@ -123,7 +123,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// First-run hint.
 	if !config.Exists() && !fileExists(paths.DBPath()) {
-		slog.Warn("no configuration found — using defaults (run 'agentique setup' for guided configuration)")
+		slog.Info("first run detected — run 'agentique setup' for guided configuration")
 	}
 
 	if !testMode {
@@ -206,11 +206,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		DevMode:     !isRelease(),
 		DBPath:      dbFile,
 		DB:          db,
-		Build: server.BuildInfo{
-			Version: version,
-			Commit:  commit,
-			Date:    date,
-		},
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

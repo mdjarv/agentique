@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/server"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	dbpkg "github.com/allbin/agentique/backend/db"
+	"github.com/allbin/agentique/backend/internal/server"
+	"github.com/allbin/agentique/backend/internal/store"
 )
 
 func setupTestServer(t *testing.T) (*httptest.Server, func()) {

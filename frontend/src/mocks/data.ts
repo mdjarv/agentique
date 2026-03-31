@@ -1303,50 +1303,6 @@ const queryOptimizerTurns: MockTurn[] = [
       })(),
       toolResult("mock-tool-qo-08", "File edited successfully."),
       (() => {
-        const id = "mock-tool-qo-08b";
-        return toolUse("Read", { file_path: "internal/executor/executor.go" }, "file_read", id);
-      })(),
-      toolResult(
-        "mock-tool-qo-08b",
-        "package executor\n\ntype Executor struct {\n\tplanner *planner.Planner\n}\n\nfunc (e *Executor) Execute(plan *Plan) (*Result, error) { ... }",
-      ),
-      (() => {
-        const id = "mock-tool-qo-08c";
-        return toolUse(
-          "Edit",
-          {
-            file_path: "internal/executor/executor.go",
-            old_string: "planner *planner.Planner",
-            new_string: "planner *planner.CostPlanner",
-          },
-          "file_write",
-          id,
-        );
-      })(),
-      toolResult("mock-tool-qo-08c", "File edited successfully."),
-      (() => {
-        const id = "mock-tool-qo-08d";
-        return toolUse("Grep", { pattern: "NewPlanner\\(", path: "internal/" }, "file_read", id);
-      })(),
-      toolResult(
-        "mock-tool-qo-08d",
-        "internal/planner/planner.go:12: func NewPlanner(stats map[string]*TableStats) *Planner\ninternal/cmd/server.go:45: p := planner.NewPlanner(stats)",
-      ),
-      (() => {
-        const id = "mock-tool-qo-08e";
-        return toolUse(
-          "Edit",
-          {
-            file_path: "internal/cmd/server.go",
-            old_string: "p := planner.NewPlanner(stats)",
-            new_string: "p := planner.NewCostPlanner(stats)",
-          },
-          "file_write",
-          id,
-        );
-      })(),
-      toolResult("mock-tool-qo-08e", "File edited successfully."),
-      (() => {
         const id = "mock-tool-qo-09";
         return toolUse(
           "Bash",
@@ -1408,67 +1364,6 @@ const queryOptimizerTurns: MockTurn[] = [
         "Benchmarks show the cost-based planner is ~40% slower in planning time (13.4us vs 9.5us) but this is negligible compared to query execution time. The real win is in execution — the cost-based planner picks significantly better join orders:\n\n| Query | Heuristic | Cost-based | Speedup |\n|-------|-----------|------------|--------|\n| 3-table join | 45ms | 12ms | 3.7x |\n| 5-table join | 890ms | 95ms | 9.4x |\n| Star schema | 2.1s | 180ms | 11.7x |\n\nThe DP enumeration adds memory overhead (8KB vs 4KB) but this is trivial. For queries with >8 tables, we fall back to the heuristic to keep planning time bounded.",
       ),
       result(42000, { contextWindow: 200000, inputTokens: 58000, outputTokens: 12000 }),
-    ],
-  },
-  {
-    prompt: "Run the full integration test suite across all packages",
-    events: [
-      thinking(
-        "Running the full test suite to verify nothing is broken after the planner refactor.",
-      ),
-      ...(() => {
-        const packages = [
-          "internal/planner",
-          "internal/executor",
-          "internal/ast",
-          "internal/optimizer",
-          "internal/stats",
-          "internal/catalog",
-          "internal/parser",
-          "internal/types",
-          "internal/index",
-          "internal/storage",
-          "internal/txn",
-          "internal/wal",
-          "internal/cache",
-          "internal/codec",
-          "internal/rpc",
-          "internal/auth",
-          "internal/config",
-          "internal/cmd",
-          "internal/testutil",
-          "internal/bench",
-          "internal/migrate",
-          "internal/schema",
-        ];
-        const tools = ["Read", "Grep", "Bash"];
-        const categories = ["file_read", "file_read", "command"];
-        const events: WireEvent[] = [];
-        for (let i = 0; i < 64; i++) {
-          const pkg = packages[i % packages.length] as string;
-          const tool = tools[i % tools.length] as string;
-          const cat = categories[i % tools.length] as string;
-          const id = `mock-tool-qo-big-${String(i).padStart(2, "0")}`;
-          if (tool === "Read") {
-            events.push(toolUse("Read", { file_path: `${pkg}/main.go` }, cat, id));
-          } else if (tool === "Grep") {
-            events.push(toolUse("Grep", { pattern: "func Test", path: pkg }, cat, id));
-          } else {
-            events.push(
-              toolUse(
-                "Bash",
-                { command: `go test ./${pkg}/... -v -count=1`, description: `Test ${pkg}` },
-                cat,
-                id,
-              ),
-            );
-          }
-          events.push(toolResult(id, `ok\t${pkg}\t0.${100 + i}s`));
-        }
-        return events;
-      })(),
-      text("All 64 packages pass. The planner refactor has no regressions across the full suite."),
-      result(120000, { contextWindow: 200000, inputTokens: 180000, outputTokens: 5000 }),
     ],
   },
 ];

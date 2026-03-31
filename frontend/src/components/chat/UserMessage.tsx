@@ -39,10 +39,10 @@ export const UserMessage = memo(function UserMessage({
           </AvatarFallback>
         </Avatar>
         <div
-          className={`group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br border ${
+          className={`group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
             isPending
-              ? "from-primary/12 to-primary/6 border-dashed border-primary/15 shadow-md shadow-black/15 text-foreground/70"
-              : "from-primary/20 to-primary/10 border-primary/10 shadow-lg shadow-black/30 text-foreground"
+              ? "from-primary/8 to-primary/4 border-dashed border-primary/15 shadow-md shadow-black/10 text-foreground/55"
+              : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"
           }`}
         >
           {prompt && (
@@ -87,7 +87,7 @@ export const UserMessage = memo(function UserMessage({
           {deliveryStatus && (
             <div className="flex justify-end mt-1 -mb-0.5">
               {deliveryStatus === "sending" ? (
-                <Loader2 className="h-3 w-3 text-muted-foreground/50 animate-spin" />
+                <Loader2 className="h-3 w-3 text-primary/40 animate-spin" />
               ) : (
                 <Check className="h-3 w-3 text-primary/60" />
               )}

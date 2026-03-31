@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mdjarv/agentique/backend/internal/service"
+	"github.com/allbin/agentique/backend/internal/service"
 )
 
 func init() {

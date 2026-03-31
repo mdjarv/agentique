@@ -9,8 +9,6 @@ import {
   Pause,
   Pencil,
   RefreshCw,
-  RotateCcw,
-  Square,
   Trash2,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -52,8 +50,6 @@ import {
   mergeSession,
   rebaseSession,
   renameSession,
-  restartSession,
-  stopSession,
 } from "~/lib/session-actions";
 import { getErrorMessage } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
@@ -83,8 +79,6 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
 
   const canInterrupt = meta.state === "running";
   const canMarkDone = meta.state === "idle";
-  const canStop = meta.state === "idle" || meta.state === "running" || meta.state === "merging";
-  const canRestart = canStop || meta.state === "stopped" || meta.state === "failed";
   const branchMissing = !!meta.branchMissing;
   const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
@@ -92,7 +86,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     hasWorktree && ahead && !behind && !hasConflicts && !branchMissing && meta.state !== "running";
   const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
-  const hasStateActions = canInterrupt || canMarkDone || canStop || canRestart;
+  const hasStateActions = canInterrupt || canMarkDone;
   const hasGitActions = canCreatePR || hasOpenPR || canMerge || canRebase;
 
   const handleInterrupt = async () => {
@@ -108,22 +102,6 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
       await markSessionDone(ws, sessionId);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to mark done"));
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      await stopSession(ws, sessionId);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to stop"));
-    }
-  };
-
-  const handleRestart = async () => {
-    try {
-      await restartSession(ws, sessionId);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to restart"));
     }
   };
 
@@ -235,8 +213,6 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
             {canMarkDone && (
               <ActionItem icon={CircleCheck} label="Mark done" onClick={handleMarkDone} />
             )}
-            {canStop && <ActionItem icon={Square} label="Stop" onClick={handleStop} />}
-            {canRestart && <ActionItem icon={RotateCcw} label="Restart" onClick={handleRestart} />}
 
             {hasStateActions && hasGitActions && <Separator className="my-1" />}
 

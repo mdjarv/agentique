@@ -3,11 +3,11 @@ package ws
 import (
 	"fmt"
 
-	"github.com/mdjarv/agentique/backend/internal/gitops"
-	"github.com/mdjarv/agentique/backend/internal/msggen"
-	"github.com/mdjarv/agentique/backend/internal/project"
-	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/allbin/agentique/backend/internal/msggen"
+	"github.com/allbin/agentique/backend/internal/project"
+	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -58,12 +58,6 @@ func (c *conn) handleSessionStop(msg ClientMessage) {
 func (c *conn) handleSessionResume(msg ClientMessage) {
 	handleRequest(c, msg, func(p SessionResumePayload) (session.SessionInfo, error) {
 		return c.svc.ResumeSession(c.ctx, p.SessionID)
-	})
-}
-
-func (c *conn) handleSessionResetConversation(msg ClientMessage) {
-	handleRequest(c, msg, func(p SessionResetConversationPayload) (struct{}, error) {
-		return struct{}{}, c.svc.ResetConversation(c.ctx, p.SessionID)
 	})
 }
 

@@ -111,10 +111,7 @@ function PreBlock({
 const STANDARD_PLUGINS = [remarkGfm];
 const BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
 
-const COMPONENTS: Components = {
-  pre: PreBlock,
-  a: ({ node: _, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-};
+const COMPONENTS: Components = { pre: PreBlock };
 
 export const Markdown = memo(function Markdown({
   content,

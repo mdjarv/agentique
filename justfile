@@ -74,7 +74,7 @@ test: test-backend test-frontend test-e2e
 
 # Run DB migrations
 migrate:
-    cd backend && goose -dir db/migrations sqlite3 "$AGENTIQUE_DB" up
+    cd backend && goose -dir db/migrations sqlite3 agentique.db up
 
 # Code generation
 sqlc:
@@ -106,17 +106,9 @@ release: frontend-build
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
-    platforms=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64")
-    for platform in "${platforms[@]}"; do
-        GOOS="${platform%/*}"
-        GOARCH="${platform#*/}"
-        output="agentique-${GOOS}-${GOARCH}"
-        echo "Building dist/${output}..."
-        cd backend && GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "$LDFLAGS" -o "../dist/${output}" ./cmd/agentique && cd ..
-    done
-    echo "Generating checksums..."
-    cd dist && sha256sum agentique-* > checksums.txt && cd ..
-    echo "Release binaries in dist/:"
+    echo "Building dist/agentique-linux-amd64..."
+    cd backend && GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique && cd ..
+    echo "Release binary in dist/:"
     ls -lh dist/
 
 # Clean build artifacts

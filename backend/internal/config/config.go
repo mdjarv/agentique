@@ -12,7 +12,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/allbin/agentique/backend/internal/paths"
 )
 
 type Config struct {

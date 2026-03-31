@@ -12,7 +12,7 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className }: AppSidebarProps) {
   return (
-    <div className={cn("bg-sidebar flex flex-col h-full", className)}>
+    <div className={cn("bg-sidebar/80 backdrop-blur-md flex flex-col h-full", className)}>
       <div className="px-4 py-3 border-b flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5">
           <Cpu className="size-5 text-primary" />

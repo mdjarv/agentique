@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mdjarv/agentique/backend/internal/httperr"
-	"github.com/mdjarv/agentique/backend/internal/respond"
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
 )
 
 // SSEEvent represents a server-sent event from the hub.

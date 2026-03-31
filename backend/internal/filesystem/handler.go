@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mdjarv/agentique/backend/internal/httperr"
-	"github.com/mdjarv/agentique/backend/internal/respond"
+	"github.com/allbin/agentique/backend/internal/httperr"
+	"github.com/allbin/agentique/backend/internal/respond"
 )
 
 // Handler handles filesystem browsing HTTP requests.
