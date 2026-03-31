@@ -74,7 +74,7 @@ test: test-backend test-frontend test-e2e
 
 # Run DB migrations
 migrate:
-    cd backend && goose -dir db/migrations sqlite3 agentique.db up
+    cd backend && goose -dir db/migrations sqlite3 "$AGENTIQUE_DB" up
 
 # Code generation
 sqlc:
