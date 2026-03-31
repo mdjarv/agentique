@@ -28,6 +28,7 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
+	Name            *string                 `json:"name,omitempty"`
 	Slug            *string                 `json:"slug,omitempty"`
 	BehaviorPresets *session.BehaviorPresets `json:"behaviorPresets,omitempty"`
 }
@@ -150,7 +151,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Slug == nil && req.BehaviorPresets == nil {
+	if req.Name == nil && req.Slug == nil && req.BehaviorPresets == nil {
 		respond.Error(w, httperr.BadRequest("no fields to update"))
 		return
 	}
@@ -161,7 +162,46 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Slug != nil {
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			respond.Error(w, httperr.BadRequest("name must not be empty"))
+			return
+		}
+
+		// Use explicit slug if provided, otherwise derive from new name.
+		var slug string
+		if req.Slug != nil {
+			slug = *req.Slug
+		} else {
+			slug = Slugify(name)
+			slug, err = h.uniqueSlug(r, slug)
+			if err != nil {
+				respond.Error(w, httperr.Internal("generate slug", err))
+				return
+			}
+		}
+
+		if !validSlugRe.MatchString(slug) {
+			respond.Error(w, httperr.BadRequest("slug must be lowercase alphanumeric with dashes"))
+			return
+		}
+		existing, slugErr := h.Queries.GetProjectBySlug(r.Context(), slug)
+		if slugErr == nil && existing.ID != id {
+			respond.Error(w, httperr.Conflict("slug is already in use"))
+			return
+		}
+
+		project, err = h.Queries.UpdateProjectName(r.Context(), store.UpdateProjectNameParams{
+			ID:   id,
+			Name: name,
+			Slug: slug,
+		})
+		if err != nil {
+			respond.Error(w, httperr.Internal("update name", err))
+			return
+		}
+	} else if req.Slug != nil {
 		slug := *req.Slug
 		if !validSlugRe.MatchString(slug) {
 			respond.Error(w, httperr.BadRequest("slug must be lowercase alphanumeric with dashes"))

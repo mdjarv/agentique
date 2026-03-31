@@ -66,6 +66,7 @@ type Querier interface {
 	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error
 	UpdateProjectBehaviorPresets(ctx context.Context, arg UpdateProjectBehaviorPresetsParams) (Project, error)
 	UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFavoriteParams) (Project, error)
+	UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) (Project, error)
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error

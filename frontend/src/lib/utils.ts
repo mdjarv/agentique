@@ -68,6 +68,15 @@ function fallbackCopy(text: string): Promise<void> {
   return Promise.resolve();
 }
 
+/** Convert a name to a URL-safe lowercase slug (mirrors backend Slugify). */
+export function slugify(name: string): string {
+  const s = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return s || "project";
+}
+
 export function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message || fallback;
   if (typeof err === "string" && err.length > 0) return err;

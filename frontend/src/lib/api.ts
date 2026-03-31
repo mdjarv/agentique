@@ -21,7 +21,7 @@ export async function createProject(name: string, path: string): Promise<Project
 
 export async function updateProject(
   id: string,
-  updates: { slug?: string; behaviorPresets?: BehaviorPresets },
+  updates: { name?: string; slug?: string; behaviorPresets?: BehaviorPresets },
 ): Promise<Project> {
   const res = await fetch(`${BASE}/projects/${id}`, {
     method: "PATCH",

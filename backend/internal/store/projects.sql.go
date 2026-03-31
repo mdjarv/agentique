@@ -200,6 +200,36 @@ func (q *Queries) UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFa
 	return i, err
 }
 
+const updateProjectName = `-- name: UpdateProjectName :one
+UPDATE projects SET name = ?, slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
+`
+
+type UpdateProjectNameParams struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	ID   string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectName, arg.Name, arg.Slug, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
+		&i.Favorite,
+	)
+	return i, err
+}
+
 const updateProjectSlug = `-- name: UpdateProjectSlug :one
 UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite
 `

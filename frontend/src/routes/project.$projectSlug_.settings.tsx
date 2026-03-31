@@ -19,7 +19,7 @@ import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
 import { deleteProject, listPresetDefinitions, updateProject } from "~/lib/api";
 import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
-import { getErrorMessage } from "~/lib/utils";
+import { getErrorMessage, slugify } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
 export const Route = createFileRoute("/project/$projectSlug_/settings")({
@@ -49,9 +49,11 @@ function ProjectSettingsPage() {
   const updateProjectStore = useAppStore((s) => s.updateProject);
   const removeProject = useAppStore((s) => s.removeProject);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [slug, setSlug] = useState("");
-  const [slugEditing, setSlugEditing] = useState(false);
-  const [slugSaving, setSlugSaving] = useState(false);
+  const [renameEditing, setRenameEditing] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [renameSlug, setRenameSlug] = useState("");
+  const [slugManual, setSlugManual] = useState(false);
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const [presets, setPresets] = useState<BehaviorPresets>(() =>
     parsePresets(project?.default_behavior_presets ?? ""),
@@ -99,30 +101,51 @@ function ProjectSettingsPage() {
     }
   };
 
-  const handleSlugEdit = () => {
-    setSlug(project.slug);
-    setSlugEditing(true);
+  const handleRenameEdit = () => {
+    setRenameName(project.name);
+    setRenameSlug(project.slug);
+    setSlugManual(true);
+    setRenameEditing(true);
   };
 
-  const handleSlugSave = async () => {
-    if (slug === project.slug) {
-      setSlugEditing(false);
+  const handleRenameNameChange = (value: string) => {
+    setRenameName(value);
+    if (!slugManual) {
+      setRenameSlug(slugify(value));
+    }
+  };
+
+  const handleRenameSlugChange = (value: string) => {
+    setRenameSlug(value);
+    setSlugManual(true);
+  };
+
+  const handleRenameSave = async () => {
+    const nameChanged = renameName !== project.name;
+    const slugChanged = renameSlug !== project.slug;
+    if (!nameChanged && !slugChanged) {
+      setRenameEditing(false);
       return;
     }
-    setSlugSaving(true);
+    setRenameSaving(true);
     try {
-      const updated = await updateProject(project.id, { slug });
+      const updates: { name?: string; slug?: string } = {};
+      if (nameChanged) updates.name = renameName;
+      if (slugChanged) updates.slug = renameSlug;
+      const updated = await updateProject(project.id, updates);
       updateProjectStore(updated);
-      setSlugEditing(false);
-      navigate({
-        to: "/project/$projectSlug/settings",
-        params: { projectSlug: updated.slug },
-        replace: true,
-      });
+      setRenameEditing(false);
+      if (slugChanged) {
+        navigate({
+          to: "/project/$projectSlug/settings",
+          params: { projectSlug: updated.slug },
+          replace: true,
+        });
+      }
     } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to update slug"));
+      toast.error(getErrorMessage(err, "Failed to rename project"));
     } finally {
-      setSlugSaving(false);
+      setRenameSaving(false);
     }
   };
 
@@ -225,35 +248,53 @@ function ProjectSettingsPage() {
 
           <section className="space-y-4">
             <div>
-              <h2 className="text-lg font-medium">URL slug</h2>
+              <h2 className="text-lg font-medium">Project identity</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Used in browser URLs. Changing it will break existing bookmarks.
+                Display name and URL slug. Changing the slug will break existing bookmarks.
               </p>
             </div>
-            {slugEditing ? (
-              <div className="flex items-end gap-2">
-                <div className="space-y-1 flex-1">
-                  <Label htmlFor="slug">Slug</Label>
+            {renameEditing ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="rename-name">Name</Label>
                   <Input
-                    id="slug"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
+                    id="rename-name"
+                    value={renameName}
+                    onChange={(e) => handleRenameNameChange(e.target.value)}
+                    placeholder="My Project"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="rename-slug">Slug</Label>
+                  <Input
+                    id="rename-slug"
+                    value={renameSlug}
+                    onChange={(e) => handleRenameSlugChange(e.target.value)}
                     placeholder="my-project"
                     pattern="[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]"
                   />
                 </div>
-                <Button onClick={handleSlugSave} disabled={slugSaving}>
-                  {slugSaving ? "Saving..." : "Save"}
-                </Button>
-                <Button variant="outline" onClick={() => setSlugEditing(false)}>
-                  Cancel
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={handleRenameSave} disabled={renameSaving}>
+                    {renameSaving ? "Saving..." : "Save"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setRenameEditing(false)}>
+                    Cancel
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <code className="text-sm bg-muted px-2 py-1 rounded">{project.slug}</code>
-                <Button variant="outline" size="sm" onClick={handleSlugEdit}>
-                  Edit
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-12">Name</span>
+                  <span className="text-sm">{project.name}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-12">Slug</span>
+                  <code className="text-sm bg-muted px-2 py-1 rounded">{project.slug}</code>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleRenameEdit}>
+                  Rename
                 </Button>
               </div>
             )}

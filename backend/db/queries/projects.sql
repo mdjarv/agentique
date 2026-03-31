@@ -13,6 +13,9 @@ INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING *;
 -- name: UpdateProjectSlug :one
 UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateProjectName :one
+UPDATE projects SET name = ?, slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
 -- name: UpdateProjectSortOrder :exec
 UPDATE projects SET sort_order = ? WHERE id = ?;
 
