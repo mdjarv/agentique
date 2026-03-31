@@ -128,6 +128,15 @@ export async function enqueueMessage(
   prompt: string,
   attachments?: Attachment[],
 ): Promise<void> {
+  // For non-running sessions, create an optimistic turn for immediate feedback.
+  // The session.turn-started handler in useGlobalSubscriptions deduplicates with this.
+  const sessionState = useChatStore.getState().sessions[sessionId]?.meta.state;
+  const isOptimistic = sessionState !== "running";
+  if (isOptimistic) {
+    useStreamingStore.getState().clearText(sessionId);
+    useChatStore.getState().submitQuery(sessionId, prompt, attachments);
+  }
+
   const payload: Record<string, unknown> = { sessionId, prompt };
   if (attachments && attachments.length > 0) {
     payload.attachments = attachments.map((a) => ({
@@ -136,7 +145,15 @@ export async function enqueueMessage(
       dataUrl: a.dataUrl,
     }));
   }
-  await ws.request("session.enqueue", payload);
+
+  try {
+    await ws.request("session.enqueue", payload);
+  } catch (err) {
+    if (isOptimistic) {
+      useChatStore.getState().rollbackOptimisticTurn(sessionId, prompt);
+    }
+    throw err;
+  }
 }
 
 export async function setSessionModel(

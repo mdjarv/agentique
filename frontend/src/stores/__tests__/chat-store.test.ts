@@ -130,6 +130,49 @@ describe("chat-store", () => {
     });
   });
 
+  // --- rollbackOptimisticTurn ---
+
+  describe("rollbackOptimisticTurn", () => {
+    it("removes optimistic turn with matching prompt", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "test message");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
+
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(0);
+    });
+
+    it("does not remove turn with events", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "test message");
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeEvent({ type: "text", content: "hi" }));
+
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
+    });
+
+    it("does not remove turn with different prompt", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "original message");
+
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", "different message");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
+    });
+
+    it("does not remove completed turn", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "test message");
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeEvent({ type: "result", stopReason: "end_turn" }));
+
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
+    });
+  });
+
   // --- handleServerEvent ---
 
   describe("handleServerEvent", () => {

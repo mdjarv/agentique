@@ -309,6 +309,7 @@ export interface ChatState {
 
   // Turn/event management
   submitQuery: (sessionId: string, prompt: string, attachments?: Attachment[]) => void;
+  rollbackOptimisticTurn: (sessionId: string, prompt: string) => void;
   handleServerEvent: (sessionId: string, event: ChatEvent) => void;
 }
 
@@ -515,6 +516,18 @@ export const useChatStore = create<ChatState>((set) => ({
           },
         ],
       });
+    }),
+
+  rollbackOptimisticTurn: (sessionId, prompt) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      const turns = session.turns;
+      const last = turns[turns.length - 1];
+      if (last && !last.complete && last.events.length === 0 && last.prompt === prompt) {
+        return updateSession(s, sessionId, { turns: turns.slice(0, -1) });
+      }
+      return s;
     }),
 
   handleServerEvent: (sessionId, event) =>
