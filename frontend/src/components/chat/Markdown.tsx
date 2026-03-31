@@ -135,7 +135,10 @@ function PendingPromptCard({ title, content }: { title?: string; content: string
 const STANDARD_PLUGINS = [remarkGfm];
 const BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
 
-const COMPONENTS: Components = { pre: PreBlock };
+const COMPONENTS: Components = {
+  pre: PreBlock,
+  a: ({ node: _, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+};
 
 export const Markdown = memo(function Markdown({
   content,
