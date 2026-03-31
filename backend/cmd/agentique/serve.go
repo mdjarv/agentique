@@ -206,6 +206,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		DevMode:     !isRelease(),
 		DBPath:      dbFile,
 		DB:          db,
+		Build: server.BuildInfo{
+			Version: version,
+			Commit:  commit,
+			Date:    date,
+		},
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

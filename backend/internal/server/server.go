@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"sync"
+
 	"github.com/allbin/agentique/backend/internal/auth"
 	"github.com/allbin/agentique/backend/internal/filebrowser"
 	"github.com/allbin/agentique/backend/internal/filesystem"
@@ -17,8 +19,16 @@ import (
 	"github.com/allbin/agentique/backend/internal/session"
 	"github.com/allbin/agentique/backend/internal/store"
 	"github.com/allbin/agentique/backend/internal/testmode"
+	"github.com/allbin/agentique/backend/internal/update"
 	"github.com/allbin/agentique/backend/internal/ws"
 )
+
+// BuildInfo holds version metadata set at build time.
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
 
 // Config holds server configuration.
 type Config struct {
@@ -34,6 +44,8 @@ type Config struct {
 	DBPath string
 	// DB is required when TestMode is true (for raw SQL in reset).
 	DB *sql.DB
+	// Build holds version metadata for the /api/version endpoint.
+	Build BuildInfo
 }
 
 func devModePreamble(dbPath string) string {
@@ -46,18 +58,30 @@ This Agentique instance is a development build. The live database is at:
 This file is shared with the running server. Any command that writes to, overwrites, or deletes this file will cause data loss. If you cannot verify that a command is isolated from this database, confirm with the user before proceeding.`, dbPath)
 }
 
+// versionCache holds the cached result of an update check.
+type versionCache struct {
+	mu              sync.RWMutex
+	updateAvailable bool
+	latestVersion   string
+}
+
 // Server is the main HTTP server for the Agentique backend.
 type Server struct {
 	mux            *http.ServeMux
 	mgr            *session.Manager
 	authSvc        *auth.Service
 	allowedOrigins map[string]bool
+	build          BuildInfo
+	verCache       versionCache
+	stopChecker    func()
 }
 
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	hub := ws.NewHub()
+
+	s := &Server{mux: mux, build: cfg.Build}
 
 	var connector session.CLIConnector
 	var runner session.BlockingRunner
@@ -74,6 +98,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	}
 
 	mgr := session.NewManager(queries, hub, connector)
+	s.mgr = mgr
 	if cfg.DevMode && cfg.DBPath != "" {
 		mgr.GlobalPreamble = devModePreamble(cfg.DBPath)
 	}
@@ -87,6 +112,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/projects", ph.HandleList)
 	mux.HandleFunc("POST /api/projects", ph.HandleCreate)
 	mux.HandleFunc("PATCH /api/projects/{id}", ph.HandleUpdate)
@@ -136,8 +162,6 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr}
-
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
 		if err != nil {
@@ -160,14 +184,79 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		})
 	}
 
+	s.startUpdateChecker()
+
 	return s, nil
 }
 
-// Shutdown gracefully closes all live sessions.
+// Shutdown gracefully closes all live sessions and stops background tasks.
 func (s *Server) Shutdown() {
+	if s.stopChecker != nil {
+		s.stopChecker()
+	}
 	if s.mgr != nil {
 		s.mgr.CloseAll()
 	}
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	s.verCache.mu.RLock()
+	updateAvailable := s.verCache.updateAvailable
+	latestVersion := s.verCache.latestVersion
+	s.verCache.mu.RUnlock()
+
+	respond.JSON(w, http.StatusOK, map[string]any{
+		"version":         s.build.Version,
+		"commit":          s.build.Commit,
+		"date":            s.build.Date,
+		"updateAvailable": updateAvailable,
+		"latestVersion":   latestVersion,
+	})
+}
+
+func (s *Server) startUpdateChecker() {
+	if s.build.Version == "" || s.build.Version == "dev" {
+		return
+	}
+
+	done := make(chan struct{})
+	s.stopChecker = func() { close(done) }
+
+	check := func() {
+		result, err := update.Check(s.build.Version)
+		if err != nil {
+			slog.Debug("update check failed", "error", err)
+			return
+		}
+		s.verCache.mu.Lock()
+		s.verCache.updateAvailable = result.Available
+		s.verCache.latestVersion = result.Latest
+		s.verCache.mu.Unlock()
+		if result.Available {
+			slog.Info("update available", "current", result.Current, "latest", result.Latest)
+		}
+	}
+
+	// Run first check after a short delay to not slow down startup.
+	go func() {
+		select {
+		case <-time.After(30 * time.Second):
+		case <-done:
+			return
+		}
+		check()
+
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				check()
+			case <-done:
+				return
+			}
+		}
+	}()
 }
 
 // ServeHTTP implements the http.Handler interface.
