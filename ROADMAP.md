@@ -3,15 +3,7 @@
 ## Vision
 
 A lightweight GUI for managing concurrent Claude Code agents across multiple projects.
-Inspired by [pingdotgg/t3code](https://github.com/pingdotgg/t3code) but purpose-built for Claude Code,
-with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/claudecli-go).
-
-## Why not just use t3code?
-
-- Codex-first design; Claude support is secondary and incomplete
-- Buggy backend with stalling/crashing process management issues
-- Heavy Node.js backend with Effect-TS adds unnecessary complexity
-- We already have a battle-tested Go wrapper for Claude CLI
+Go backend leveraging [claudecli-go](https://github.com/allbin/claudecli-go), React frontend via WebSocket, deploys as a single embedded binary.
 
 See [README.md](README.md) for architecture, tech stack, and development setup.
 

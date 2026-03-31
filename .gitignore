@@ -1,6 +1,7 @@
 # Go
 backend/tmp/
 *.exe
+coverage.out
 
 # Release builds
 dist/
