@@ -387,10 +387,10 @@ export async function deleteSessionsBulk(
 }
 
 export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {
-  try {
-    await ws.request("session.stop", { sessionId });
-  } catch (err) {
-    console.error("Failed to stop session:", err);
-  }
-  useChatStore.getState().removeSession(sessionId);
+  await ws.request("session.stop", { sessionId });
+}
+
+export async function restartSession(ws: WsClient, sessionId: string): Promise<void> {
+  await stopSession(ws, sessionId);
+  await resumeSession(ws, sessionId);
 }
