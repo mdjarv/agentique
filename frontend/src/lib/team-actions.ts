@@ -19,6 +19,7 @@ export interface TeamMember {
 
 export interface TimelineEvent {
   direction: "sent" | "received";
+  fromUser?: boolean;
   senderSessionId: string;
   senderName: string;
   targetSessionId: string;

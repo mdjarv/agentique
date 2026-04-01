@@ -96,6 +96,7 @@ export type SessionMetadata = Omit<SessionInfo, "state" | "mergeStatus"> & {
   state: SessionState;
   mergeStatus?: "clean" | "conflicts" | "unknown";
   gitRefreshedAt?: number;
+  icon?: string;
 };
 
 export interface PendingApproval {
@@ -296,6 +297,7 @@ export interface ChatState {
   setSessionPlanMode: (sessionId: string, planMode: boolean) => void;
   setSessionAutoApproveMode: (sessionId: string, mode: AutoApproveMode) => void;
   setSessionPrUrl: (sessionId: string, prUrl: string) => void;
+  setSessionIcon: (sessionId: string, icon: string | undefined) => void;
   setSessionTeamId: (sessionId: string, teamId: string | undefined) => void;
   setUnreadTeamMessage: (sessionId: string, value: boolean) => void;
   updateStreamingContextUsage: (
@@ -458,6 +460,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setSessionPrUrl: (sessionId, prUrl) => set((s) => updateMeta(s, sessionId, { prUrl })),
 
+  setSessionIcon: (sessionId, icon) => set((s) => updateMeta(s, sessionId, { icon })),
   setSessionTeamId: (sessionId, teamId) => set((s) => updateMeta(s, sessionId, { teamId })),
 
   setUnreadTeamMessage: (sessionId, value) =>

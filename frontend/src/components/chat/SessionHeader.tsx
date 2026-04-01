@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { SessionIconButton } from "~/components/chat/IconPicker";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusPill } from "~/components/layout/SessionStatusPill";
@@ -47,6 +48,7 @@ import {
   restartSession,
   stopSession,
 } from "~/lib/session-actions";
+import { setSessionIcon } from "~/lib/session-actions";
 import { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from "~/lib/team-actions";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -87,6 +89,15 @@ export function SessionHeader({
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
   const { copied: refCopied, copy: copyRef } = useCopyToClipboard();
+
+  const handleIconChange = useCallback(
+    (icon: string | undefined) => {
+      setSessionIcon(ws, meta.id, icon).catch((err) => {
+        toast.error(getErrorMessage(err, "Failed to set icon"));
+      });
+    },
+    [ws, meta.id],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
   const shortId = sessionShortId(meta.id);
@@ -235,6 +246,7 @@ export function SessionHeader({
           />
         ) : (
           <div className="flex items-center gap-1.5 min-w-0">
+            <SessionIconButton icon={meta.icon} onChange={handleIconChange} />
             <Button
               variant="ghost"
               size="sm"

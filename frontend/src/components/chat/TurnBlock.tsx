@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
+import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 const EMBEDDED_RESULT_TOOLS = new Set(["Bash", "Edit", "Write", "Glob", "TodoWrite"]);
@@ -55,8 +56,10 @@ interface AgentMessageSegment {
   content: string;
   senderName: string;
   senderSessionId: string;
+  senderIcon?: string;
   targetName: string;
   targetSessionId: string;
+  targetIcon?: string;
 }
 
 type Segment =
@@ -702,18 +705,22 @@ export const TurnBlock = memo(function TurnBlock({
                           postTokens={postCompactTokens}
                         />
                       );
-                    case "agent_message":
+                    case "agent_message": {
+                      const sessions = useChatStore.getState().sessions;
                       return (
                         <AgentMessage
                           key={segmentKey(seg, idx)}
                           direction={seg.direction}
                           senderName={seg.senderName}
                           senderSessionId={seg.senderSessionId}
+                          senderIcon={sessions[seg.senderSessionId]?.meta.icon}
                           targetName={seg.targetName}
                           targetSessionId={seg.targetSessionId}
+                          targetIcon={sessions[seg.targetSessionId]?.meta.icon}
                           content={seg.content}
                         />
                       );
+                    }
                     case "user_message":
                       return null;
                   }

@@ -182,6 +182,7 @@ export interface SessionInfo {
   behaviorPresets: BehaviorPresets;
   teamId?: string;
   teamRole?: string;
+  icon?: string;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
   createdAt: string;

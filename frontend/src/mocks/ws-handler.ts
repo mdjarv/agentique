@@ -30,6 +30,8 @@ import {
   MOCK_PROJECT_TAGS,
   MOCK_SESSIONS,
   MOCK_TAGS,
+  MOCK_TEAMS,
+  MOCK_TEAM_TIMELINES,
   MOCK_TURNS,
   PROJECT_IDS,
   SESSION_IDS,
@@ -663,11 +665,42 @@ index abc1234..def5678 100644
     case "session.set-model":
     case "session.set-permission":
     case "session.set-auto-approve":
+    case "session.set-icon":
     case "session.resolve-approval":
     case "session.resolve-question":
     case "session.interrupt":
     case "project.fetch":
     case "project.push":
+      respond(client, msg.id);
+      break;
+
+    case "team.list": {
+      const teams = MOCK_TEAMS[p.projectId as string] ?? [];
+      respond(client, msg.id, teams);
+      break;
+    }
+
+    case "team.info": {
+      const allTeams = Object.values(MOCK_TEAMS).flat();
+      const team = allTeams.find((t) => t.id === p.teamId);
+      if (team) respond(client, msg.id, team);
+      else respondError(client, msg.id, "team not found");
+      break;
+    }
+
+    case "team.timeline": {
+      const events = MOCK_TEAM_TIMELINES[p.teamId as string] ?? [];
+      respond(client, msg.id, events);
+      break;
+    }
+
+    case "team.create":
+    case "team.delete":
+    case "team.dissolve":
+    case "team.join":
+    case "team.leave":
+    case "team.send-message":
+    case "team.create-swarm":
       respond(client, msg.id);
       break;
 

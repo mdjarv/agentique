@@ -1,7 +1,8 @@
-import { ArrowRight, Bot } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { memo } from "react";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { getSessionIconComponent } from "~/lib/session-icons";
 
 // Deterministic color palette for agent avatars.
 type AgentColor = {
@@ -81,8 +82,10 @@ interface AgentMessageProps {
   direction: "sent" | "received";
   senderName: string;
   senderSessionId: string;
+  senderIcon?: string;
   targetName: string;
   targetSessionId: string;
+  targetIcon?: string;
   content: string;
 }
 
@@ -90,12 +93,15 @@ export const AgentMessage = memo(function AgentMessage({
   direction,
   senderName,
   senderSessionId,
+  senderIcon,
   targetName,
   targetSessionId,
+  targetIcon,
   content,
 }: AgentMessageProps) {
   if (direction === "sent") {
     const color = getAgentColor(targetSessionId);
+    const TargetIcon = getSessionIconComponent(targetIcon);
     return (
       <div className="flex gap-3 justify-end max-md:flex-col max-md:gap-1">
         <div className="flex-1 max-w-[85%] max-md:max-w-full min-w-0 flex flex-col items-end">
@@ -109,7 +115,7 @@ export const AgentMessage = memo(function AgentMessage({
         </div>
         <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
           <AvatarFallback className={`${color.bg} ${color.text}`}>
-            <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
+            <TargetIcon className="h-4 w-4 max-md:h-3 max-md:w-3" />
           </AvatarFallback>
         </Avatar>
       </div>
@@ -117,11 +123,12 @@ export const AgentMessage = memo(function AgentMessage({
   }
 
   const color = getAgentColor(senderSessionId);
+  const SenderIcon = getSessionIconComponent(senderIcon);
   return (
     <div className="flex gap-3 max-md:flex-col max-md:gap-1">
       <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
         <AvatarFallback className={`${color.bg} ${color.text}`}>
-          <Bot className="h-4 w-4 max-md:h-3 max-md:w-3" />
+          <SenderIcon className="h-4 w-4 max-md:h-3 max-md:w-3" />
         </AvatarFallback>
       </Avatar>
       <div className="flex-1 max-w-[85%] max-md:max-w-full min-w-0">

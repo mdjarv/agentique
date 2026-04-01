@@ -6,6 +6,7 @@ import type {
   SessionInfo,
   Tag,
 } from "~/lib/generated-types";
+import type { TeamInfo, TimelineEvent } from "~/lib/team-actions";
 import type { PendingApproval, PendingQuestion } from "~/stores/chat-store";
 
 // --- Timestamp helpers ---
@@ -48,7 +49,11 @@ const T = {
   infra: "ttt00003-0000-4000-8000-000000000003",
 } as const;
 
-export { S as SESSION_IDS, P as PROJECT_IDS, T as TAG_IDS };
+const TM = {
+  authTeam: "eee00001-0000-4000-8000-000000000001",
+} as const;
+
+export { S as SESSION_IDS, P as PROJECT_IDS, T as TAG_IDS, TM as TEAM_IDS };
 
 // --- Tags ---
 
@@ -153,6 +158,9 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     commitsBehind: 0,
     mergeStatus: "clean" as const,
     hasUncommitted: true,
+    teamId: TM.authTeam,
+    teamRole: "worker",
+    icon: "shield",
     turnCount: 2,
     totalCost: 0,
     createdAt: hoursAgo(6),
@@ -174,6 +182,9 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     commitsAhead: 1,
     commitsBehind: 0,
     hasUncommitted: false,
+    teamId: TM.authTeam,
+    teamRole: "lead",
+    icon: "brain",
     turnCount: 1,
     totalCost: 0,
     createdAt: hoursAgo(2),
@@ -256,6 +267,9 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     commitsAhead: 5,
     commitsBehind: 0,
     hasUncommitted: false,
+    teamId: TM.authTeam,
+    teamRole: "worker",
+    icon: "database",
     turnCount: 3,
     totalCost: 0,
     createdAt: hoursAgo(4),
@@ -1378,4 +1392,103 @@ export const MOCK_TURNS: Record<string, MockTurn[]> = {
   [S.imageGallery]: imageGalleryTurns,
   [S.schedulerTests]: schedulerTestsTurns,
   [S.queryOptimizer]: queryOptimizerTurns,
+};
+
+// --- Teams ---
+
+export const MOCK_TEAMS: Record<string, TeamInfo[]> = {
+  [P.agentique]: [
+    {
+      id: TM.authTeam,
+      projectId: P.agentique,
+      name: "Auth refactor team",
+      createdAt: hoursAgo(6),
+      members: [
+        {
+          sessionId: S.wsReconnect,
+          name: "Fix WebSocket reconnect",
+          role: "lead",
+          state: "running",
+          connected: true,
+          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-ws-reconnect",
+        },
+        {
+          sessionId: S.authRefactor,
+          name: "Refactor auth middleware",
+          role: "worker",
+          state: "idle",
+          connected: true,
+          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-auth-refactor",
+        },
+        {
+          sessionId: S.queryOptimizer,
+          name: "Optimize query planner",
+          role: "worker",
+          state: "idle",
+          connected: true,
+          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
+        },
+      ],
+    },
+  ],
+};
+
+export const MOCK_TEAM_TIMELINES: Record<string, TimelineEvent[]> = {
+  [TM.authTeam]: [
+    {
+      direction: "sent",
+      fromUser: true,
+      senderSessionId: S.authRefactor,
+      senderName: "You",
+      targetSessionId: S.wsReconnect,
+      targetName: "Fix WebSocket reconnect",
+      content:
+        "Start the auth refactor. Replace `ValidateToken()` with the new `jwt.Verify()` API.",
+    },
+    {
+      direction: "received",
+      senderSessionId: S.wsReconnect,
+      senderName: "Fix WebSocket reconnect",
+      targetSessionId: S.authRefactor,
+      targetName: "Refactor auth middleware",
+      content:
+        "Got it. I'll coordinate the workers. The new API supports audience validation — I'll make sure both workers account for that.",
+    },
+    {
+      direction: "received",
+      senderSessionId: S.wsReconnect,
+      senderName: "Fix WebSocket reconnect",
+      targetSessionId: S.authRefactor,
+      targetName: "Refactor auth middleware",
+      content:
+        "Auth middleware worker: start by replacing `ValidateToken()` with `jwt.Verify()` and add audience validation.",
+    },
+    {
+      direction: "received",
+      senderSessionId: S.authRefactor,
+      senderName: "Refactor auth middleware",
+      targetSessionId: S.wsReconnect,
+      targetName: "Fix WebSocket reconnect",
+      content:
+        "Done — switched to `jwt.Verify()` with audience check. Also added structured error types for expired and malformed tokens. See commit a82f1c3.",
+    },
+    {
+      direction: "received",
+      senderSessionId: S.wsReconnect,
+      senderName: "Fix WebSocket reconnect",
+      targetSessionId: S.queryOptimizer,
+      targetName: "Optimize query planner",
+      content:
+        "Can you check if the planner init can run concurrently with the new token validation? Auth middleware is updated.",
+    },
+    {
+      direction: "received",
+      senderSessionId: S.queryOptimizer,
+      senderName: "Optimize query planner",
+      targetSessionId: S.wsReconnect,
+      targetName: "Fix WebSocket reconnect",
+      content:
+        "Yes — planner init is side-effect-free. I've exported `InitPlanner()` so you can call it concurrently with token validation. See commit 3a1f2b9.",
+    },
+  ],
 };

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, GitBranch, Plus, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Plus, Star } from "lucide-react";
 import { type ReactNode, memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -9,10 +9,9 @@ import { setProjectFavorite } from "~/lib/project-actions";
 import { getTagColor } from "~/lib/tag-colors";
 import type { Project } from "~/lib/types";
 import { cn, getErrorMessage } from "~/lib/utils";
-import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
+import { useAppStore } from "~/stores/app-store";
 import { type ChatState, type SessionData, useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
-import { GitIndicators } from "./GitIndicators";
 import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { SessionRow } from "./SessionRow";
@@ -66,7 +65,6 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
 }) {
   const meta = useChatStore((s) => s.sessions[id]?.meta);
   const hasUnseenCompletion = useChatStore((s) => s.sessions[id]?.hasUnseenCompletion ?? false);
-  const hasUnreadTeamMessage = useChatStore((s) => s.sessions[id]?.hasUnreadTeamMessage ?? false);
   const hasPendingInput = useChatStore(
     (s) => !!(s.sessions[id]?.pendingApproval || s.sessions[id]?.pendingQuestion),
   );
@@ -87,18 +85,9 @@ const SidebarSessionRow = memo(function SidebarSessionRow({
         isPlanning={isPlanning}
         isActive={id === activeSessionId}
         hasDraft={hasDraft}
-        worktreeBranch={meta.worktreeBranch}
-        hasDirtyWorktree={meta.hasDirtyWorktree}
         worktreeMerged={meta.worktreeMerged}
         commitsAhead={meta.commitsAhead}
-        commitsBehind={meta.commitsBehind}
-        branchMissing={meta.branchMissing}
-        hasUncommitted={meta.hasUncommitted}
-        mergeStatus={meta.mergeStatus}
         gitOperation={meta.gitOperation}
-        prUrl={meta.prUrl}
-        teamId={meta.teamId}
-        hasUnreadTeamMessage={hasUnreadTeamMessage}
         onClick={handleClick}
       />
     </SessionHoverCard>
@@ -190,7 +179,7 @@ function CompletedSection({
         ) : (
           <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform" />
         )}
-        <span className="text-xs font-semibold tracking-widest text-muted-foreground/70 uppercase group-hover:text-muted-foreground">
+        <span className="text-xs font-medium tracking-wide text-muted-foreground/70 uppercase group-hover:text-muted-foreground">
           Completed
         </span>
         <span className="text-xs text-muted-foreground/60 ml-auto">{ids.length}</span>
@@ -278,23 +267,6 @@ function ActiveSessionIndicators({ counts }: { counts: ActiveSessionCounts }) {
         </span>
       )}
     </span>
-  );
-}
-
-// --- Project git status row ---
-
-function ProjectGitStatusRow({ gitStatus }: { gitStatus: ProjectGitStatus }) {
-  return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className="font-mono truncate text-foreground/80">{gitStatus.branch}</span>
-      <GitIndicators
-        uncommittedCount={gitStatus.uncommittedCount}
-        aheadCount={gitStatus.aheadRemote}
-        behindCount={gitStatus.behindRemote}
-        className="ml-auto"
-      />
-    </div>
   );
 }
 
@@ -411,19 +383,21 @@ export function ProjectTreeItem({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleToggleFavorite}
-                  className={cn(
-                    "shrink-0 transition-colors cursor-pointer",
-                    isFavorite
-                      ? "text-warning"
-                      : "text-muted-foreground/30 opacity-0 group-hover:opacity-100",
-                  )}
-                  title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                >
-                  <Star className="size-3.5" fill={isFavorite ? "currentColor" : "none"} />
-                </button>
+                {isExpanded && (
+                  <button
+                    type="button"
+                    onClick={handleToggleFavorite}
+                    className={cn(
+                      "shrink-0 transition-colors cursor-pointer",
+                      isFavorite
+                        ? "text-muted-foreground/60"
+                        : "text-muted-foreground/30 opacity-0 group-hover:opacity-100",
+                    )}
+                    title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                  >
+                    <Star className="size-3.5" fill={isFavorite ? "currentColor" : "none"} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -437,25 +411,37 @@ export function ProjectTreeItem({
                 >
                   {project.name}
                 </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeSidebar();
-                    navigate({
-                      to: "/project/$projectSlug/files",
-                      params: { projectSlug: project.slug },
-                    });
-                  }}
-                  className="shrink-0 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-colors hover:text-foreground cursor-pointer"
-                  title="Browse files"
-                >
-                  <FolderOpen className="size-3.5" />
-                </button>
-                <ProjectTagBadges projectId={project.id} />
-                <ActiveSessionIndicators counts={sessionCounts} />
+                {isExpanded && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeSidebar();
+                      navigate({
+                        to: "/project/$projectSlug/files",
+                        params: { projectSlug: project.slug },
+                      });
+                    }}
+                    className="shrink-0 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-colors hover:text-foreground cursor-pointer"
+                    title="Browse files"
+                  >
+                    <FolderOpen className="size-3.5" />
+                  </button>
+                )}
+                {isExpanded ? (
+                  <>
+                    <ProjectTagBadges projectId={project.id} />
+                    <ActiveSessionIndicators counts={sessionCounts} />
+                  </>
+                ) : (
+                  sessionCounts.pendingApproval > 0 && (
+                    <span
+                      className="ml-auto inline-block h-2 w-2 rounded-full bg-orange animate-pulse shrink-0"
+                      title={`${sessionCounts.pendingApproval} awaiting approval`}
+                    />
+                  )
+                )}
               </div>
-              {isExpanded && gitStatus?.branch && <ProjectGitStatusRow gitStatus={gitStatus} />}
             </div>
           </div>
         </div>
@@ -463,7 +449,7 @@ export function ProjectTreeItem({
 
       {/* Sessions + new chat */}
       {isExpanded && (
-        <div ref={sessionsRef} className="ml-4 mr-2 mt-1 space-y-0.5">
+        <div ref={sessionsRef} className="ml-6 mr-2 mt-1 space-y-1">
           <SessionGroups
             sessionIds={sessionIds}
             activeSessionId={activeSessionId}

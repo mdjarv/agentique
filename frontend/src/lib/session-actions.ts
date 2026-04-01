@@ -165,6 +165,15 @@ export async function setSessionModel(
   useChatStore.getState().setSessionModel(sessionId, model);
 }
 
+export async function setSessionIcon(
+  ws: WsClient,
+  sessionId: string,
+  icon: string | undefined,
+): Promise<void> {
+  await ws.request("session.set-icon", { sessionId, icon: icon ?? "" });
+  useChatStore.getState().setSessionIcon(sessionId, icon);
+}
+
 export async function getSessionDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
   return ws.request<DiffResult>("session.diff", { sessionId });
 }

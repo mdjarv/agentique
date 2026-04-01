@@ -184,6 +184,7 @@ export const SessionInfoSchema = z.object({
   behaviorPresets: BehaviorPresetsSchema,
   teamId: z.string().optional(),
   teamRole: z.string().optional(),
+  icon: z.string().optional(),
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
   createdAt: z.string(),

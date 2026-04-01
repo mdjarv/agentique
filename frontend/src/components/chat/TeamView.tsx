@@ -1,12 +1,14 @@
-import { Send, Trash2, Users } from "lucide-react";
+import { Send, Trash2, User, Users } from "lucide-react";
 import { type UIEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getAgentColor } from "~/components/chat/AgentMessage";
 import { Markdown } from "~/components/chat/Markdown";
+import { SessionStatusBadge } from "~/components/layout/SessionStatusBadge";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
 import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { getSessionIconComponent } from "~/lib/session-icons";
 import {
   type TimelineEvent,
   dissolveTeam,
@@ -86,7 +88,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
 
   if (!team) return null;
 
-  const otherMembers = team.members.filter((m) => m.sessionId !== sessionId);
+  const allMembers = team.members;
 
   return (
     <div className="flex flex-col h-full">
@@ -110,29 +112,24 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
         <div ref={membersRef} className="flex flex-col gap-1">
           {team.members.map((member) => {
             const color = getAgentColor(member.sessionId);
-            const isSelf = member.sessionId === sessionId;
             const sessionData = sessions[member.sessionId];
             const state = sessionData?.meta.state ?? member.state;
+            const Icon = getSessionIconComponent(sessionData?.meta.icon);
             return (
               <div
                 key={member.sessionId}
                 className="flex items-center gap-2 text-xs px-1 py-0.5 rounded"
               >
-                <div className={cn("h-2 w-2 rounded-full shrink-0", color.bg)} />
-                <span className={cn("truncate", isSelf && "font-medium")}>
-                  {member.name || "Unnamed"}
-                  {isSelf && " (you)"}
-                </span>
+                <Icon className={cn("h-3.5 w-3.5 shrink-0", color.text)} />
+                <span className="truncate">{member.name || "Unnamed"}</span>
                 {member.role && (
                   <span className="text-muted-foreground truncate">{member.role}</span>
                 )}
-                <span
-                  className={cn(
-                    "ml-auto text-[10px] capitalize shrink-0",
-                    state === "running" ? "text-primary" : "text-muted-foreground",
-                  )}
-                >
-                  {state}
+                <span className="ml-auto shrink-0">
+                  <SessionStatusBadge
+                    state={state as import("~/stores/chat-store").SessionState}
+                    connected={sessionData?.meta.connected ?? member.connected}
+                  />
                 </span>
               </div>
             );
@@ -150,25 +147,41 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
           <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>
         )}
         {timeline.map((event, i) => {
-          const color = getAgentColor(event.senderSessionId);
-          const isSelf = event.senderSessionId === sessionId;
           const key = `${event.senderSessionId}-${i}`;
+
+          if (event.fromUser) {
+            return (
+              <div key={key} className="flex gap-3 flex-row-reverse">
+                <Avatar className="h-8 w-8 shrink-0">
+                  <AvatarFallback className="bg-primary/20 text-primary">
+                    <User className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="max-w-[80%]">
+                  <div className="rounded-lg px-4 py-2 text-xs bg-gradient-to-br from-primary/18 to-primary/10 border border-primary/15 shadow-lg shadow-black/30">
+                    <Markdown content={event.content} />
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          const color = getAgentColor(event.senderSessionId);
+          const senderMeta = sessions[event.senderSessionId]?.meta;
+          const SenderIcon = getSessionIconComponent(senderMeta?.icon);
           return (
-            <div key={key} className={cn("flex gap-2", isSelf && "flex-row-reverse")}>
-              <Avatar className="h-5 w-5 shrink-0">
-                <AvatarFallback className={cn("text-[10px] font-bold", color.bg, color.text)}>
-                  {(event.senderName || "?")[0]?.toUpperCase()}
+            <div key={key} className="flex gap-3">
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className={cn(color.bg, color.text)}>
+                  <SenderIcon className="h-4 w-4" />
                 </AvatarFallback>
               </Avatar>
-              <div className={cn("max-w-[80%]", isSelf && "text-right")}>
-                <span className={cn("text-[10px] block mb-0.5", color.text)}>
+              <div className="max-w-[80%]">
+                <span className={cn("text-[10px] font-medium block mb-0.5", color.text)}>
                   {event.senderName}
                 </span>
                 <div
-                  className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs border",
-                    `bg-gradient-to-br ${color.from} ${color.to} ${color.border}`,
-                  )}
+                  className={`rounded-lg px-4 py-2 text-xs bg-gradient-to-br ${color.from} ${color.to} shadow-lg shadow-black/30 border ${color.border}`}
                 >
                   <Markdown content={event.content} />
                 </div>
@@ -186,7 +199,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
           className="w-full text-xs bg-background border rounded px-2 py-1"
         >
           <option value="">Send to...</option>
-          {otherMembers.map((m) => (
+          {allMembers.map((m) => (
             <option key={m.sessionId} value={m.sessionId}>
               {m.name || "Unnamed"}
               {m.role && ` (${m.role})`}
