@@ -18,6 +18,7 @@ import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project
 import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files"
 import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/project.$projectSlug.session.new"
 import { Route as ProjectProjectSlugSessionSessionShortIdRouteImport } from "./routes/project.$projectSlug.session.$sessionShortId"
+import { Route as ProjectProjectSlugChannelChannelIdRouteImport } from "./routes/project.$projectSlug.channel.$channelId"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -67,6 +68,12 @@ const ProjectProjectSlugSessionSessionShortIdRoute =
     path: "/session/$sessionShortId",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any)
+const ProjectProjectSlugChannelChannelIdRoute =
+  ProjectProjectSlugChannelChannelIdRouteImport.update({
+    id: "/channel/$channelId",
+    path: "/channel/$channelId",
+    getParentRoute: () => ProjectProjectSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
@@ -76,6 +83,7 @@ export interface FileRoutesByFullPath {
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/channel/$channelId": typeof ProjectProjectSlugChannelChannelIdRoute
   "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
   "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
@@ -86,6 +94,7 @@ export interface FileRoutesByTo {
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/channel/$channelId": typeof ProjectProjectSlugChannelChannelIdRoute
   "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
   "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
@@ -98,6 +107,7 @@ export interface FileRoutesById {
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute
   "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute
   "/project/$projectSlug/": typeof ProjectProjectSlugIndexRoute
+  "/project/$projectSlug/channel/$channelId": typeof ProjectProjectSlugChannelChannelIdRoute
   "/project/$projectSlug/session/$sessionShortId": typeof ProjectProjectSlugSessionSessionShortIdRoute
   "/project/$projectSlug/session/new": typeof ProjectProjectSlugSessionNewRoute
 }
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
     | "/project/$projectSlug/"
+    | "/project/$projectSlug/channel/$channelId"
     | "/project/$projectSlug/session/$sessionShortId"
     | "/project/$projectSlug/session/new"
   fileRoutesByTo: FileRoutesByTo
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
     | "/project/$projectSlug"
+    | "/project/$projectSlug/channel/$channelId"
     | "/project/$projectSlug/session/$sessionShortId"
     | "/project/$projectSlug/session/new"
   id:
@@ -132,6 +144,7 @@ export interface FileRouteTypes {
     | "/project/$projectSlug/files"
     | "/project/$projectSlug_/settings"
     | "/project/$projectSlug/"
+    | "/project/$projectSlug/channel/$channelId"
     | "/project/$projectSlug/session/$sessionShortId"
     | "/project/$projectSlug/session/new"
   fileRoutesById: FileRoutesById
@@ -209,12 +222,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectProjectSlugSessionSessionShortIdRouteImport
       parentRoute: typeof ProjectProjectSlugRoute
     }
+    "/project/$projectSlug/channel/$channelId": {
+      id: "/project/$projectSlug/channel/$channelId"
+      path: "/channel/$channelId"
+      fullPath: "/project/$projectSlug/channel/$channelId"
+      preLoaderRoute: typeof ProjectProjectSlugChannelChannelIdRouteImport
+      parentRoute: typeof ProjectProjectSlugRoute
+    }
   }
 }
 
 interface ProjectProjectSlugRouteChildren {
   ProjectProjectSlugFilesRoute: typeof ProjectProjectSlugFilesRoute
   ProjectProjectSlugIndexRoute: typeof ProjectProjectSlugIndexRoute
+  ProjectProjectSlugChannelChannelIdRoute: typeof ProjectProjectSlugChannelChannelIdRoute
   ProjectProjectSlugSessionSessionShortIdRoute: typeof ProjectProjectSlugSessionSessionShortIdRoute
   ProjectProjectSlugSessionNewRoute: typeof ProjectProjectSlugSessionNewRoute
 }
@@ -222,6 +243,8 @@ interface ProjectProjectSlugRouteChildren {
 const ProjectProjectSlugRouteChildren: ProjectProjectSlugRouteChildren = {
   ProjectProjectSlugFilesRoute: ProjectProjectSlugFilesRoute,
   ProjectProjectSlugIndexRoute: ProjectProjectSlugIndexRoute,
+  ProjectProjectSlugChannelChannelIdRoute:
+    ProjectProjectSlugChannelChannelIdRoute,
   ProjectProjectSlugSessionSessionShortIdRoute:
     ProjectProjectSlugSessionSessionShortIdRoute,
   ProjectProjectSlugSessionNewRoute: ProjectProjectSlugSessionNewRoute,
