@@ -1,4 +1,5 @@
 import type {
+  BranchListResult,
   Project,
   ProjectCommitResult,
   ProjectGitStatus,
@@ -31,6 +32,25 @@ export async function commitProject(
   message: string,
 ): Promise<ProjectCommitResult> {
   return ws.request<ProjectCommitResult>("project.commit", { projectId, message });
+}
+
+export async function listProjectBranches(
+  ws: WsClient,
+  projectId: string,
+): Promise<BranchListResult> {
+  return ws.request<BranchListResult>("project.list-branches", { projectId });
+}
+
+export async function checkoutProjectBranch(
+  ws: WsClient,
+  projectId: string,
+  branch: string,
+): Promise<ProjectGitStatus> {
+  return ws.request<ProjectGitStatus>("project.checkout", { projectId, branch });
+}
+
+export async function pullProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return ws.request<ProjectGitStatus>("project.pull", { projectId });
 }
 
 export async function getTrackedFiles(

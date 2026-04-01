@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, GitBranch, RefreshCw } from "lucide-react";
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, RefreshCw } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -9,10 +9,17 @@ import {
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { createTag, fetchProject, pushProject, setProjectTags } from "~/lib/project-actions";
+import {
+  createTag,
+  fetchProject,
+  pullProject,
+  pushProject,
+  setProjectTags,
+} from "~/lib/project-actions";
 import { getErrorMessage } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { ActionItem } from "./ActionItem";
+import { BranchSelector } from "./BranchSelector";
 import { TagInput, nextTagColor } from "./TagInput";
 
 interface ProjectHoverCardProps {
@@ -35,6 +42,7 @@ export function ProjectHoverCard({
   const ws = useWebSocket();
   const [pushing, setPushing] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const projectTagIds = useAppStore(
     useShallow((s) =>
       s.projectTags.filter((pt) => pt.project_id === projectId).map((pt) => pt.tag_id),
@@ -102,10 +110,28 @@ export function ProjectHoverCard({
     }
   }, [ws, projectId]);
 
+  const handlePull = useCallback(async () => {
+    setPulling(true);
+    try {
+      const status = await pullProject(ws, projectId);
+      useAppStore.getState().setProjectGitStatus(status);
+      toast.success("Pulled");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Pull failed"));
+    } finally {
+      setPulling(false);
+    }
+  }, [ws, projectId]);
+
+  const handleBranchChanged = useCallback((status: ProjectGitStatus) => {
+    useAppStore.getState().setProjectGitStatus(status);
+  }, []);
+
   const ahead = gitStatus && gitStatus.aheadRemote > 0;
   const behind = gitStatus && gitStatus.behindRemote > 0;
   const dirty = gitStatus && gitStatus.uncommittedCount > 0;
   const canPush = ahead && gitStatus.hasRemote;
+  const canPull = behind && gitStatus?.hasRemote;
   const canFetch = gitStatus?.hasRemote;
 
   return (
@@ -126,10 +152,12 @@ export function ProjectHoverCard({
         {/* Git info */}
         {gitStatus?.branch && (
           <div className="px-3 py-2 border-b">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <GitBranch className="size-3 shrink-0" />
-              <span className="truncate font-mono">{gitStatus.branch}</span>
-            </div>
+            <BranchSelector
+              projectId={projectId}
+              currentBranch={gitStatus.branch}
+              isDirty={!!dirty}
+              onBranchChanged={handleBranchChanged}
+            />
             {(ahead || behind || dirty) && (
               <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                 {dirty && (
@@ -161,8 +189,16 @@ export function ProjectHoverCard({
         />
 
         {/* Actions */}
-        {(canPush || canFetch) && (
+        {(canPush || canPull || canFetch) && (
           <div className="py-1">
+            {canPull && (
+              <ActionItem
+                icon={ArrowDownToLine}
+                label={pulling ? "Pulling..." : "Pull"}
+                onClick={handlePull}
+                disabled={pulling}
+              />
+            )}
             {canPush && (
               <ActionItem
                 icon={ArrowUpToLine}
