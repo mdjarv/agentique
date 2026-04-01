@@ -43,6 +43,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent {
     messageId: raw.messageId as string | undefined,
     attachments: type === "user_message" ? parseAttachments(raw.attachments) : undefined,
     direction: raw.direction as "sent" | "received" | undefined,
+    fromUser: raw.fromUser as boolean | undefined,
     senderSessionId: raw.senderSessionId as string | undefined,
     senderName: raw.senderName as string | undefined,
     targetSessionId: raw.targetSessionId as string | undefined,

@@ -32,6 +32,7 @@ export interface ChatEvent {
     | "task";
   content?: string;
   direction?: "sent" | "received";
+  fromUser?: boolean;
   senderSessionId?: string;
   senderName?: string;
   targetSessionId?: string;

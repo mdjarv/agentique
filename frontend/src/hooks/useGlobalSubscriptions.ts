@@ -190,6 +190,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
         if (teamId) {
           useTeamStore.getState().appendTimelineEvent(teamId, {
             direction: event.direction ?? "received",
+            fromUser: event.fromUser,
             senderSessionId: event.senderSessionId ?? "",
             senderName: event.senderName ?? "",
             targetSessionId: event.targetSessionId ?? "",

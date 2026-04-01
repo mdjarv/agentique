@@ -238,33 +238,35 @@ export const ChannelPanel = memo(function ChannelPanel({
         })}
       </div>
 
-      {/* Composer */}
-      <div className="shrink-0 border-t px-3 py-2">
-        <div className="flex gap-1.5">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleBroadcast();
-              }
-            }}
-            placeholder="Broadcast to all members..."
-            rows={1}
-            className="flex-1 text-xs bg-background border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring resize-none"
-          />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 self-end"
-            disabled={!message.trim() || sending}
-            onClick={handleBroadcast}
-          >
-            <Send className="h-3.5 w-3.5" />
-          </Button>
+      {/* Composer — hidden when archived */}
+      {!isArchived && (
+        <div className="shrink-0 border-t px-3 py-2">
+          <div className="flex gap-1.5">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleBroadcast();
+                }
+              }}
+              placeholder="Broadcast to all members..."
+              rows={1}
+              className="flex-1 text-xs bg-background border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 self-end"
+              disabled={!message.trim() || sending}
+              onClick={handleBroadcast}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 });
