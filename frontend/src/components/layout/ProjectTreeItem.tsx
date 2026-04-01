@@ -244,10 +244,9 @@ function ChannelGroup({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       useAppStore.getState().setSidebarOpen(false);
-      // Route created by Phase 1b — cast to bypass TanStack Router type check until then
       navigate({
-        to: "/project/$projectSlug/channel/$channelId" as string,
-        params: { projectSlug, channelId: teamId } as Record<string, string>,
+        to: "/project/$projectSlug/channel/$channelId",
+        params: { projectSlug, channelId: teamId },
       });
     },
     [navigate, projectSlug, teamId],
