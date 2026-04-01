@@ -433,6 +433,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
+    const unsubTeamUpdated = ws.subscribe("team.updated", (payload: any) => {
+      useTeamStore.getState().addTeam(payload);
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload
     const unsubTeamJoined = ws.subscribe("team.member-joined", (payload: any) => {
       if (payload.team) {
         useTeamStore.getState().addTeam(payload.team);
@@ -508,6 +513,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
       unsubTeamCreated();
       unsubTeamDeleted();
       unsubTeamDissolved();
+      unsubTeamUpdated();
       unsubTeamJoined();
       unsubTeamLeft();
       unsubReconnect();

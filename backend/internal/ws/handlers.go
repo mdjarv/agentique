@@ -406,6 +406,12 @@ func (c *conn) handleTeamDissolve(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleTeamDissolveKeep(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamDissolveKeepPayload) (struct{}, error) {
+		return struct{}{}, c.svc.DissolveTeamKeepChannel(c.ctx, p.TeamID)
+	})
+}
+
 func (c *conn) handleTeamJoin(msg ClientMessage) {
 	handleRequest(c, msg, func(p TeamJoinPayload) (session.TeamInfo, error) {
 		return c.svc.JoinTeam(c.ctx, p.SessionID, p.TeamID, p.Role)

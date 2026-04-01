@@ -39,6 +39,10 @@ export async function dissolveTeam(ws: WsClient, teamId: string): Promise<void> 
   await ws.request("team.dissolve", { teamId });
 }
 
+export async function dissolveTeamKeepChannel(ws: WsClient, teamId: string): Promise<void> {
+  await ws.request("team.dissolve-keep", { teamId });
+}
+
 export async function joinTeam(
   ws: WsClient,
   sessionId: string,

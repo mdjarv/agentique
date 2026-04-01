@@ -218,6 +218,15 @@ function useChannelSessionCounts(sessionIds: string[]): ActiveSessionCounts {
   );
 }
 
+function useChannelHasUnread(sessionIds: string[]): boolean {
+  return useChatStore((s) => {
+    for (const id of sessionIds) {
+      if (s.sessions[id]?.hasUnreadTeamMessage) return true;
+    }
+    return false;
+  });
+}
+
 function ChannelGroup({
   teamId,
   sessionIds,
@@ -235,6 +244,7 @@ function ChannelGroup({
   const [expanded, setExpanded] = useState(true);
   const teamName = useTeamStore((s) => s.teams[teamId]?.name ?? "Channel");
   const counts = useChannelSessionCounts(sessionIds);
+  const hasUnread = useChannelHasUnread(sessionIds);
 
   const handleHeaderClick = useCallback(() => {
     setExpanded((v) => !v);
@@ -274,7 +284,13 @@ function ChannelGroup({
         >
           {teamName}
         </span>
-        <span className="text-xs text-muted-foreground/60 ml-auto shrink-0">
+        {hasUnread && (
+          <span
+            className="ml-auto inline-block h-1.5 w-1.5 rounded-full bg-warning shrink-0"
+            title="Unread team messages"
+          />
+        )}
+        <span className={cn("text-xs text-muted-foreground/60 shrink-0", !hasUnread && "ml-auto")}>
           {sessionIds.length}
         </span>
         {!expanded && <ActiveSessionIndicators counts={counts} />}

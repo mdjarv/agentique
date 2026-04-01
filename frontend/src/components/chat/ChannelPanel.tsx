@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Send, User, Users } from "lucide-react";
+import { Archive, Send, Trash2, User, Users } from "lucide-react";
 import { type UIEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AGENT_COLORS, type AgentColor } from "~/components/chat/AgentMessage";
@@ -10,7 +10,13 @@ import { Button } from "~/components/ui/button";
 import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { getSessionIconComponent } from "~/lib/session-icons";
-import { type TimelineEvent, broadcastToTeam, getTeamTimeline } from "~/lib/team-actions";
+import {
+  type TimelineEvent,
+  broadcastToTeam,
+  dissolveTeam,
+  dissolveTeamKeepChannel,
+  getTeamTimeline,
+} from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -41,6 +47,32 @@ export const ChannelPanel = memo(function ChannelPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [membersRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
   useMergedAutoAnimate(scrollRef, ANIMATE_DEFAULT);
+  const [keepLoading, setKeepLoading] = useState(false);
+  const [dissolveLoading, setDissolveLoading] = useState(false);
+
+  const isArchived = useMemo(() => !!team && team.members.every((m) => m.role === "lead"), [team]);
+
+  const handleKeep = useCallback(async () => {
+    setKeepLoading(true);
+    try {
+      await dissolveTeamKeepChannel(ws, channelId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to archive channel"));
+    } finally {
+      setKeepLoading(false);
+    }
+  }, [ws, channelId]);
+
+  const handleDissolve = useCallback(async () => {
+    setDissolveLoading(true);
+    try {
+      await dissolveTeam(ws, channelId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to dissolve team"));
+    } finally {
+      setDissolveLoading(false);
+    }
+  }, [ws, channelId]);
 
   // Load timeline on mount
   useEffect(() => {
@@ -103,13 +135,38 @@ export const ChannelPanel = memo(function ChannelPanel({
   if (!team) return null;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Member list */}
+    <div className={cn("flex flex-col h-full", isArchived && "opacity-75")}>
+      {/* Header with name + lifecycle actions */}
       <div className="shrink-0 border-b px-3 py-2">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Users className="h-3 w-3" />
           <span className="font-medium">{team.name || "Channel"}</span>
           <span>({team.members.length})</span>
+          {isArchived && (
+            <span className="text-[10px] text-muted-foreground/60 italic ml-1">archived</span>
+          )}
+          {!isArchived && (
+            <span className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleKeep}
+                disabled={keepLoading || dissolveLoading}
+                title="Archive — stop workers, keep channel history"
+                className="p-1 rounded hover:bg-accent/50 text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
+              >
+                <Archive className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={handleDissolve}
+                disabled={keepLoading || dissolveLoading}
+                title="Dissolve — stop workers and delete channel"
+                className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </span>
+          )}
         </div>
         <div ref={membersRef} className="flex flex-col gap-1">
           {team.members.map((member) => (

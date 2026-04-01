@@ -604,6 +604,10 @@ type TeamDissolvePayload struct {
 	TeamID string `json:"teamId"`
 }
 
+type TeamDissolveKeepPayload struct {
+	TeamID string `json:"teamId"`
+}
+
 type TeamJoinPayload struct {
 	SessionID string `json:"sessionId"`
 	TeamID    string `json:"teamId"`
@@ -656,6 +660,13 @@ func (p *TeamDeletePayload) Validate() error {
 }
 
 func (p *TeamDissolvePayload) Validate() error {
+	if p.TeamID == "" {
+		return errTeamIDRequired
+	}
+	return nil
+}
+
+func (p *TeamDissolveKeepPayload) Validate() error {
 	if p.TeamID == "" {
 		return errTeamIDRequired
 	}
