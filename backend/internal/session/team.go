@@ -370,21 +370,61 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 	return nil
 }
 
+// BroadcastToTeam sends a user-authored message to every member of a team.
+func (s *Service) BroadcastToTeam(ctx context.Context, teamID, content string) error {
+	team, err := s.queries.GetTeam(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("team not found: %w", err)
+	}
+
+	members, err := s.queries.ListTeamMembers(ctx, sql.NullString{String: teamID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("list members: %w", err)
+	}
+
+	for _, m := range members {
+		event := WireAgentMessageEvent{
+			Type:     "agent_message",
+			FromUser: true,
+			Content:  content,
+		}
+		s.persistAgentMessage(ctx, m.ID, team.ProjectID, event)
+
+		if live := s.mgr.Get(m.ID); live != nil {
+			if err := live.cliSess.SendMessage(content); err != nil {
+				slog.Warn("broadcast CLI delivery failed", "session_id", m.ID, "error", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // GetTeamTimeline returns all agent messages across team members.
-// Deduplicates by keeping only the "sent" copy of each message.
+// Deduplicates agent-to-agent messages by keeping only the "sent" copy.
+// User broadcast messages (FromUser=true) are always included.
 func (s *Service) GetTeamTimeline(ctx context.Context, teamID string) ([]WireAgentMessageEvent, error) {
 	events, err := s.queries.ListAgentMessagesByTeam(ctx, sql.NullString{String: teamID, Valid: true})
 	if err != nil {
 		return nil, fmt.Errorf("list agent messages: %w", err)
 	}
 
+	seen := make(map[string]bool)
 	messages := make([]WireAgentMessageEvent, 0, len(events)/2+1)
 	for _, e := range events {
 		var msg WireAgentMessageEvent
 		if err := json.Unmarshal([]byte(e.Data), &msg); err != nil {
 			continue
 		}
-		if msg.Direction == DirectionSent {
+		if msg.FromUser {
+			// Deduplicate user broadcasts (one per member) by content+session.
+			key := "user:" + msg.Content
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			messages = append(messages, msg)
+		} else if msg.Direction == DirectionSent {
 			messages = append(messages, msg)
 		}
 	}

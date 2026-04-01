@@ -446,6 +446,12 @@ func (c *conn) handleTeamSendMessage(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleTeamBroadcast(msg ClientMessage) {
+	handleRequest(c, msg, func(p TeamBroadcastPayload) (struct{}, error) {
+		return struct{}{}, c.svc.BroadcastToTeam(c.ctx, p.TeamID, p.Content)
+	})
+}
+
 func (c *conn) handleTeamCreateSwarm(msg ClientMessage) {
 	handleRequest(c, msg, func(p TeamCreateSwarmPayload) (session.CreateSwarmResult, error) {
 		return c.svc.CreateSwarm(c.ctx, session.CreateSwarmParams{

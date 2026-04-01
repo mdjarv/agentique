@@ -1,15 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
-import { User, Users } from "lucide-react";
-import { type UIEvent, memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { Send, User, Users } from "lucide-react";
+import { type UIEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AGENT_COLORS, type AgentColor } from "~/components/chat/AgentMessage";
 import { Markdown } from "~/components/chat/Markdown";
 import { SessionStatusBadge } from "~/components/layout/SessionStatusBadge";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { Button } from "~/components/ui/button";
 import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { getSessionIconComponent } from "~/lib/session-icons";
-import { type TimelineEvent, getTeamTimeline } from "~/lib/team-actions";
+import { type TimelineEvent, broadcastToTeam, getTeamTimeline } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -72,6 +73,22 @@ export const ChannelPanel = memo(function ChannelPanel({
     }
     return map;
   }, [team?.members]);
+
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const handleBroadcast = useCallback(async () => {
+    if (!message.trim()) return;
+    setSending(true);
+    try {
+      await broadcastToTeam(ws, channelId, message.trim());
+      setMessage("");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to send message"));
+    } finally {
+      setSending(false);
+    }
+  }, [ws, channelId, message]);
 
   const handleMemberClick = useCallback(
     (sessionId: string) => {
@@ -162,6 +179,34 @@ export const ChannelPanel = memo(function ChannelPanel({
             </div>
           );
         })}
+      </div>
+
+      {/* Composer */}
+      <div className="shrink-0 border-t px-3 py-2">
+        <div className="flex gap-1.5">
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleBroadcast();
+              }
+            }}
+            placeholder="Broadcast to all members..."
+            rows={1}
+            className="flex-1 text-xs bg-background border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring resize-none"
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 self-end"
+            disabled={!message.trim() || sending}
+            onClick={handleBroadcast}
+          >
+            <Send className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -73,6 +73,14 @@ export async function sendTeamMessage(
   await ws.request("team.send-message", { senderSessionId, targetSessionId, content });
 }
 
+export async function broadcastToTeam(
+  ws: WsClient,
+  teamId: string,
+  content: string,
+): Promise<void> {
+  await ws.request("team.broadcast", { teamId, content });
+}
+
 export interface SwarmMemberSpec {
   name: string;
   prompt: string;

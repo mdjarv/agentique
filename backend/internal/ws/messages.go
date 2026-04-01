@@ -638,6 +638,7 @@ var (
 	errTeamSessionIDRequired       = errors.New("sessionId is required")
 	errTeamSessionAndTeamRequired  = errors.New("sessionId and teamId are required")
 	errTeamSendMessageRequired     = errors.New("senderSessionId, targetSessionId, and content are required")
+	errTeamBroadcastRequired       = errors.New("teamId and content are required")
 )
 
 func (p *TeamCreatePayload) Validate() error {
@@ -703,11 +704,23 @@ func (p *TeamSendMessagePayload) Validate() error {
 	return nil
 }
 
+type TeamBroadcastPayload struct {
+	TeamID  string `json:"teamId"`
+	Content string `json:"content"`
+}
+
 type TeamCreateSwarmPayload struct {
 	ProjectID     string                     `json:"projectId"`
 	TeamName      string                     `json:"teamName"`
 	LeadSessionID string                     `json:"leadSessionId"`
 	Members       []session.SwarmMemberSpec  `json:"members"`
+}
+
+func (p *TeamBroadcastPayload) Validate() error {
+	if p.TeamID == "" || p.Content == "" {
+		return errTeamBroadcastRequired
+	}
+	return nil
 }
 
 func (p *TeamCreateSwarmPayload) Validate() error {

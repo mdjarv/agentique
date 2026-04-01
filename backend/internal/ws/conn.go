@@ -231,6 +231,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleTeamTimeline(msg)
 	case "team.send-message":
 		c.handleTeamSendMessage(msg)
+	case "team.broadcast":
+		c.handleTeamBroadcast(msg)
 	case "team.create-swarm":
 		c.handleTeamCreateSwarm(msg)
 	default:

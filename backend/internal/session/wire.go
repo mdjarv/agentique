@@ -109,6 +109,7 @@ type WireAgentMessageEvent struct {
 	TargetSessionID string `json:"targetSessionId"`
 	TargetName      string `json:"targetName"`
 	Content         string `json:"content"`
+	FromUser        bool   `json:"fromUser,omitempty"`
 }
 
 // WireUserMessageEvent represents a user message injected mid-turn via SendMessage.
