@@ -1,3 +1,4 @@
+import { CheckCircle } from "lucide-react";
 import { memo, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -16,6 +17,7 @@ interface ToolUseBlockProps {
   projectPath?: string;
   worktreePath?: string;
   resultContent?: ToolContentBlock[];
+  onImageClick?: (src: string) => void;
 }
 
 function stripPrefix(path: string, projectPath?: string, worktreePath?: string): string {
@@ -224,6 +226,52 @@ function DetailView({ detail }: { detail: Detail }) {
   }
 }
 
+// --- Result content renderer ---
+
+function ResultContentView({
+  content,
+  onImageClick,
+}: {
+  content: ToolContentBlock[];
+  onImageClick?: (src: string) => void;
+}) {
+  const textContent = content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("");
+  const images = content.filter((b) => b.type === "image");
+
+  if (!textContent && images.length === 0) return null;
+
+  return (
+    <div className="border-t">
+      {images.length > 0 && (
+        <div className="flex gap-2 flex-wrap p-2">
+          {images.map((img) => (
+            <button
+              key={img.url}
+              type="button"
+              className="p-0 border-none bg-transparent cursor-pointer"
+              onClick={() => img.url && onImageClick?.(img.url)}
+            >
+              <img
+                src={img.url}
+                alt="Tool result"
+                className="max-h-64 max-w-full rounded border object-contain"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+      {textContent && (
+        <pre className="p-2 overflow-x-auto text-foreground/70 whitespace-pre-wrap max-h-64 overflow-y-auto text-[0.7rem] leading-relaxed">
+          {textContent}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // --- Main component ---
 
 export const ToolUseBlock = memo(function ToolUseBlock({
@@ -235,6 +283,7 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   projectPath,
   worktreePath,
   resultContent,
+  onImageClick,
 }: ToolUseBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const streamingInput = useStreamingStore((s) =>
@@ -245,7 +294,9 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const detail = isStreaming
     ? null
     : buildDetail(name, input, projectPath, worktreePath, resultContent);
-  const hasDetail = detail !== null;
+  const hasResultContent = (resultContent ?? []).length > 0;
+  const hasDetail = detail !== null || hasResultContent;
+  const showResultContent = hasResultContent && detail?.kind !== "bash";
 
   return (
     <div className="border rounded-md bg-muted/50 text-xs overflow-hidden">
@@ -263,8 +314,14 @@ export const ToolUseBlock = memo(function ToolUseBlock({
         ) : (
           <span className="text-muted-foreground/70 truncate min-w-0">{summary}</span>
         )}
+        {hasResultContent && !isStreaming && (
+          <CheckCircle className="h-3 w-3 shrink-0 text-success/70" />
+        )}
       </ExpandableRow>
       {expanded && detail && <DetailView detail={detail} />}
+      {expanded && showResultContent && resultContent && (
+        <ResultContentView content={resultContent} onImageClick={onImageClick} />
+      )}
     </div>
   );
 });

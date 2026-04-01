@@ -10,7 +10,6 @@ import { PromptGroupProvider } from "~/components/chat/PromptCard";
 import { SubagentActivity } from "~/components/chat/SubagentActivity";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
-import { ToolResultBlock } from "~/components/chat/ToolResultBlock";
 import { ToolUseBlock, formatSummary } from "~/components/chat/ToolUseBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
@@ -19,8 +18,6 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { Attachment, ChatEvent, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
-
-const EMBEDDED_RESULT_TOOLS = new Set(["Bash", "Edit", "Write", "Glob", "TodoWrite"]);
 
 // --- Segment types ---
 
@@ -423,18 +420,11 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 projectPath={projectPath}
                 worktreePath={worktreePath}
                 resultContent={item.result?.contentBlocks}
+                onImageClick={setLightboxSrc}
               />
               {item.taskEvents && item.taskEvents.length > 0 && (
                 <SubagentActivity taskEvents={item.taskEvents} />
               )}
-              {item.result &&
-                !EMBEDDED_RESULT_TOOLS.has(item.use.toolName ?? "") &&
-                (item.result.contentBlocks ?? []).length > 0 && (
-                  <ToolResultBlock
-                    content={item.result.contentBlocks ?? []}
-                    onImageClick={setLightboxSrc}
-                  />
-                )}
             </div>
           ),
         )}
