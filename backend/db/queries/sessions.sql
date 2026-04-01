@@ -35,6 +35,9 @@ UPDATE sessions SET completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), update
 -- name: UnsetSessionCompleted :exec
 UPDATE sessions SET completed_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UnsetWorktreeMerged :exec
+UPDATE sessions SET worktree_merged = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UpdateWorktreeBaseSHA :exec
 UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

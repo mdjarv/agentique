@@ -271,6 +271,15 @@ func (q *Queries) UnsetSessionCompleted(ctx context.Context, id string) error {
 	return err
 }
 
+const unsetWorktreeMerged = `-- name: UnsetWorktreeMerged :exec
+UPDATE sessions SET worktree_merged = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+func (q *Queries) UnsetWorktreeMerged(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, unsetWorktreeMerged, id)
+	return err
+}
+
 const updateClaudeSessionID = `-- name: UpdateClaudeSessionID :exec
 UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

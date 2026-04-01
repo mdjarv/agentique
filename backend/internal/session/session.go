@@ -306,6 +306,8 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	s.queryCount++
 	wasCompleted := s.completedAt != ""
 	s.completedAt = ""
+	wasMerged := s.worktreeMerged
+	s.worktreeMerged = false
 	s.mu.Unlock()
 
 	turnIndex := s.pipeline.AdvanceTurn()
@@ -320,6 +322,20 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	if wasCompleted {
 		if err := s.queries.UnsetSessionCompleted(context.Background(), s.ID); err != nil {
 			slog.Error("persist session uncompleted failed", "session_id", s.ID, "error", err)
+		}
+	}
+	if wasMerged {
+		if err := s.queries.UnsetWorktreeMerged(context.Background(), s.ID); err != nil {
+			slog.Error("persist unset worktree merged failed", "session_id", s.ID, "error", err)
+		}
+		// Update base SHA to current main HEAD so diffs only show new changes.
+		if project, err := s.queries.GetProject(context.Background(), s.ProjectID); err == nil {
+			if headSHA, err := gitops.HeadCommitHash(project.Path); err == nil {
+				_ = s.queries.UpdateWorktreeBaseSHA(context.Background(), store.UpdateWorktreeBaseSHAParams{
+					WorktreeBaseSha: sql.NullString{String: headSHA, Valid: true},
+					ID:              s.ID,
+				})
+			}
 		}
 	}
 

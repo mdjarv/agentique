@@ -62,6 +62,7 @@ type Querier interface {
 	SetSessionTeam(ctx context.Context, arg SetSessionTeamParams) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
+	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
 	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error
 	UpdateProjectBehaviorPresets(ctx context.Context, arg UpdateProjectBehaviorPresetsParams) (Project, error)

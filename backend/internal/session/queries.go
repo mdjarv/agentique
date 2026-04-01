@@ -70,4 +70,6 @@ type sessionQueries interface {
 	GetProject(ctx context.Context, id string) (store.Project, error)
 	SetSessionCompleted(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
+	UnsetWorktreeMerged(ctx context.Context, id string) error
+	UpdateWorktreeBaseSHA(ctx context.Context, arg store.UpdateWorktreeBaseSHAParams) error
 }
