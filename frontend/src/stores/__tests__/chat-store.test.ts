@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { type ChatEvent, type SessionMetadata, useChatStore } from "~/stores/chat-store";
+import {
+  type ChatEvent,
+  type SessionMetadata,
+  _clearPendingStateUpdates,
+  useChatStore,
+} from "~/stores/chat-store";
 
 function makeMeta(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
   return {
@@ -29,6 +34,7 @@ function makeEvent(overrides: Partial<ChatEvent> & Pick<ChatEvent, "type">): Cha
 
 describe("chat-store", () => {
   beforeEach(() => {
+    _clearPendingStateUpdates();
     useChatStore.setState({
       sessions: {},
       activeSessionId: null,
@@ -366,6 +372,85 @@ describe("chat-store", () => {
       const s = useChatStore.getState().sessions["sess-1"];
       expect(s?.meta.state).toBe("running");
       expect(s?.turns).toHaveLength(1); // preserved
+    });
+  });
+
+  // --- Pending state buffer ---
+
+  describe("flushPendingState", () => {
+    it("applies buffered state when session is created", () => {
+      // State arrives before session.created — gets buffered
+      useChatStore.getState().setSessionState("sess-1", "running", { gitVersion: 2 });
+      expect(useChatStore.getState().sessions["sess-1"]).toBeUndefined();
+
+      // session.created adds session, then flush applies buffered state
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().flushPendingState("sess-1");
+
+      const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+      expect(meta?.state).toBe("running");
+      expect(meta?.gitVersion).toBe(2);
+    });
+
+    it("keeps highest version when multiple updates buffered", () => {
+      useChatStore.getState().setSessionState("sess-1", "idle", { gitVersion: 1 });
+      useChatStore.getState().setSessionState("sess-1", "running", { gitVersion: 2 });
+      // Lower version should not overwrite
+      useChatStore.getState().setSessionState("sess-1", "idle", { gitVersion: 1 });
+
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().flushPendingState("sess-1");
+
+      expect(useChatStore.getState().sessions["sess-1"]?.meta.state).toBe("running");
+    });
+
+    it("no-ops when nothing is buffered", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().flushPendingState("sess-1");
+      expect(useChatStore.getState().sessions["sess-1"]?.meta.state).toBe("idle");
+    });
+  });
+
+  // --- setSessions stale overwrite protection ---
+
+  describe("setSessions stale overwrite protection", () => {
+    it("preserves live state when existing gitVersion >= incoming", () => {
+      useChatStore.getState().addSession(makeMeta({ gitVersion: 3, state: "running", connected: true }));
+
+      // Simulate stale session.list response with lower gitVersion
+      useChatStore.getState().setSessions(
+        [makeMeta({ gitVersion: 2, state: "idle", connected: false })],
+        "proj-1",
+      );
+
+      const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+      expect(meta?.state).toBe("running");
+      expect(meta?.connected).toBe(true);
+      expect(meta?.gitVersion).toBe(3);
+    });
+
+    it("accepts incoming state when gitVersion is higher", () => {
+      useChatStore.getState().addSession(makeMeta({ gitVersion: 1, state: "running" }));
+
+      useChatStore.getState().setSessions(
+        [makeMeta({ gitVersion: 5, state: "idle" })],
+        "proj-1",
+      );
+
+      const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+      expect(meta?.state).toBe("idle");
+      expect(meta?.gitVersion).toBe(5);
+    });
+
+    it("accepts incoming state when existing gitVersion is 0 (initial load)", () => {
+      useChatStore.getState().addSession(makeMeta({ gitVersion: 0, state: "idle" }));
+
+      useChatStore.getState().setSessions(
+        [makeMeta({ gitVersion: 2, state: "running" })],
+        "proj-1",
+      );
+
+      expect(useChatStore.getState().sessions["sess-1"]?.meta.state).toBe("running");
     });
   });
 

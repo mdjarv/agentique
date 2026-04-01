@@ -266,6 +266,8 @@ export function useGlobalSubscriptions(projects: Project[]) {
         ...payload,
         state: payload.state as SessionMetadata["state"],
       } as SessionMetadata);
+      // Apply any state updates that arrived before this session.created event.
+      useChatStore.getState().flushPendingState(payload.id);
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: untyped server push payload

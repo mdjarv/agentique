@@ -105,14 +105,15 @@ type Session struct {
 
 
 type sessionParams struct {
-	id                string
-	projectID         string
-	cliSess           CLISession
-	queries           sessionQueries
-	broadcast         func(pushType string, payload any)
-	turnIndex         int
-	workDir           string
-	initialGitVersion int64
+	id                    string
+	projectID             string
+	cliSess               CLISession
+	queries               sessionQueries
+	broadcast             func(pushType string, payload any)
+	turnIndex             int
+	workDir               string
+	initialGitVersion     int64
+	broadcastInitialState bool // true for Resume (frontend has session), false for Create (session.created carries state)
 }
 
 func newSession(p sessionParams) *Session {
@@ -197,7 +198,9 @@ func newSession(p sessionParams) *Session {
 			}
 		},
 	})
-	s.broadcastState(StateIdle)
+	if p.broadcastInitialState {
+		s.broadcastState(StateIdle)
+	}
 	if s.cliSess != nil {
 		s.startEventLoop()
 	}

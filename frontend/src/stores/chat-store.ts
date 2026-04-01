@@ -163,6 +163,38 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   compacting: false,
 });
 
+// --- Pending state buffer ---
+// Buffers session.state updates that arrive before session.created.
+type StateExtras = Partial<
+  Pick<
+    SessionMetadata,
+    | "connected"
+    | "hasDirtyWorktree"
+    | "worktreeMerged"
+    | "completedAt"
+    | "hasUncommitted"
+    | "commitsAhead"
+    | "commitsBehind"
+    | "branchMissing"
+    | "mergeStatus"
+    | "mergeConflictFiles"
+    | "gitOperation"
+    | "gitVersion"
+    | "worktreeBranch"
+    | "worktreePath"
+  >
+>;
+interface PendingStateEntry {
+  state: SessionState;
+  extras?: StateExtras;
+}
+const pendingStateUpdates = new Map<string, PendingStateEntry>();
+
+// Exported for tests.
+export function _clearPendingStateUpdates(): void {
+  pendingStateUpdates.clear();
+}
+
 // --- Todo extraction helpers ---
 
 function parseTodoItems(input: unknown): TodoItem[] | null {
@@ -289,6 +321,7 @@ export interface ChatState {
       >
     >,
   ) => void;
+  flushPendingState: (sessionId: string) => void;
   setSessionName: (sessionId: string, name: string) => void;
   setSessionModel: (sessionId: string, model: string) => void;
   setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
@@ -335,11 +368,19 @@ export const useChatStore = create<ChatState>((set) => ({
         const tagged = { ...meta, projectId };
         const existing = s.sessions[meta.id];
         if (existing) {
+          // Preserve live state/gitVersion when the frontend has a newer version
+          // than the session.list response (which reads state from DB and may lag).
+          const existingV = existing.meta.gitVersion ?? 0;
+          const incomingV = tagged.gitVersion ?? 0;
+          const keepState = existingV > 0 && existingV >= incomingV;
+          const mergedMeta = keepState
+            ? { ...tagged, state: existing.meta.state, connected: existing.meta.connected, gitVersion: existingV }
+            : tagged;
           sessions[meta.id] = {
             ...existing,
-            meta: tagged,
-            planMode: tagged.permissionMode === "plan",
-            autoApproveMode: (tagged.autoApproveMode as AutoApproveMode) ?? "manual",
+            meta: mergedMeta,
+            planMode: mergedMeta.permissionMode === "plan",
+            autoApproveMode: (mergedMeta.autoApproveMode as AutoApproveMode) ?? "manual",
             pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
             pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
           };
@@ -359,6 +400,13 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => ({
       sessions: { ...s.sessions, [meta.id]: emptySessionData(meta) },
     })),
+
+  flushPendingState: (sessionId) => {
+    const pending = pendingStateUpdates.get(sessionId);
+    if (!pending) return;
+    pendingStateUpdates.delete(sessionId);
+    useChatStore.getState().setSessionState(sessionId, pending.state, pending.extras);
+  },
 
   removeSession: (id) =>
     set((s) => {
@@ -398,7 +446,16 @@ export const useChatStore = create<ChatState>((set) => ({
   setSessionState: (sessionId, state, extras) =>
     set((s) => {
       const session = s.sessions[sessionId];
-      if (!session) return s;
+      if (!session) {
+        // Buffer for when addSession creates this session (race: state arrives before created).
+        const existing = pendingStateUpdates.get(sessionId);
+        const incomingV = extras?.gitVersion ?? 0;
+        const existingV = existing?.extras?.gitVersion ?? 0;
+        if (!existing || incomingV >= existingV) {
+          pendingStateUpdates.set(sessionId, { state, extras });
+        }
+        return s;
+      }
 
       // Reject stale updates via monotonic version.
       const incoming = extras?.gitVersion ?? 0;

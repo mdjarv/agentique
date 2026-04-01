@@ -196,13 +196,14 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 
 	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
-		id:                p.SessionID,
-		projectID:         p.ProjectID,
-		queries:           m.queries,
-		broadcast:         m.broadcastFunc(p.ProjectID),
-		turnIndex:         turnIndex,
-		workDir:           p.WorkDir,
-		initialGitVersion: p.InitialGitVersion,
+		id:                    p.SessionID,
+		projectID:             p.ProjectID,
+		queries:               m.queries,
+		broadcast:             m.broadcastFunc(p.ProjectID),
+		turnIndex:             turnIndex,
+		workDir:               p.WorkDir,
+		initialGitVersion:     p.InitialGitVersion,
+		broadcastInitialState: true, // frontend already has this session, needs state push
 	})
 	sess.mu.Lock()
 	sess.queryCount = turnIndex + 1
