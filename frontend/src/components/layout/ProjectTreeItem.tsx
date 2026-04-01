@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, FolderOpen, Plus, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Hash, Plus, Star } from "lucide-react";
 import { type ReactNode, memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -11,6 +11,7 @@ import type { Project } from "~/lib/types";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type ChatState, type SessionData, useChatStore } from "~/stores/chat-store";
+import { useTeamStore } from "~/stores/team-store";
 import { useUIStore } from "~/stores/ui-store";
 import { ProjectHoverCard } from "./ProjectHoverCard";
 import { SessionHoverCard } from "./SessionHoverCard";
@@ -98,11 +99,13 @@ function SessionGroups({
   sessionIds,
   activeSessionId,
   onSessionClick,
+  projectSlug,
   newChatButton,
 }: {
   sessionIds: string[];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
+  projectSlug: string;
   newChatButton: ReactNode;
 }) {
   // Subscribed here (not in ProjectTreeItem) so the parent doesn't re-render on turn events.
@@ -111,10 +114,21 @@ function SessionGroups({
 
   const active: string[] = [];
   const completed: string[] = [];
+  const activeChannelGroups = new Map<string, string[]>();
+  const completedChannelGroups = new Map<string, string[]>();
 
   for (const id of sessionIds) {
     const meta = sessions[id]?.meta;
     if (!meta) continue;
+
+    if (meta.teamId) {
+      const targetMap = meta.completedAt ? completedChannelGroups : activeChannelGroups;
+      const group = targetMap.get(meta.teamId);
+      if (group) group.push(id);
+      else targetMap.set(meta.teamId, [id]);
+      continue;
+    }
+
     if (meta.completedAt) {
       completed.push(id);
     } else {
@@ -122,8 +136,23 @@ function SessionGroups({
     }
   }
 
+  // Merge channel groups: if all members are completed, show in completed section
+  const channelGroups = new Map<string, { ids: string[]; allCompleted: boolean }>();
+  for (const [teamId, ids] of activeChannelGroups) {
+    const completedIds = completedChannelGroups.get(teamId);
+    const allIds = completedIds ? [...ids, ...completedIds] : ids;
+    channelGroups.set(teamId, { ids: allIds, allCompleted: false });
+    completedChannelGroups.delete(teamId);
+  }
+  for (const [teamId, ids] of completedChannelGroups) {
+    channelGroups.set(teamId, { ids, allCompleted: true });
+  }
+
   const { promoted, rest } = partitionActiveSessions(active, sessions);
   const sortedCompleted = sortCompletedByDate(completed, sessions);
+
+  const activeChannelEntries = [...channelGroups.entries()].filter(([, g]) => !g.allCompleted);
+  const completedChannelEntries = [...channelGroups.entries()].filter(([, g]) => g.allCompleted);
 
   return (
     <>
@@ -145,27 +174,143 @@ function SessionGroups({
           onSessionClick={onSessionClick}
         />
       ))}
-      {sortedCompleted.length > 0 && (
-        <CompletedSection
-          ids={sortedCompleted}
+      {activeChannelEntries.map(([teamId, { ids }]) => (
+        <ChannelGroup
+          key={teamId}
+          teamId={teamId}
+          sessionIds={ids}
           activeSessionId={activeSessionId}
           onSessionClick={onSessionClick}
+          projectSlug={projectSlug}
+        />
+      ))}
+      {(sortedCompleted.length > 0 || completedChannelEntries.length > 0) && (
+        <CompletedSection
+          ids={sortedCompleted}
+          channelEntries={completedChannelEntries}
+          activeSessionId={activeSessionId}
+          onSessionClick={onSessionClick}
+          projectSlug={projectSlug}
         />
       )}
     </>
   );
 }
 
-function CompletedSection({
-  ids,
+function useChannelSessionCounts(sessionIds: string[]): ActiveSessionCounts {
+  return useChatStore(
+    useShallow((s) => {
+      let running = 0;
+      let pendingApproval = 0;
+      let idle = 0;
+
+      for (const id of sessionIds) {
+        const data = s.sessions[id];
+        if (!data) continue;
+        if (data.meta.worktreeMerged) continue;
+        if (data.pendingApproval || data.pendingQuestion) pendingApproval++;
+        else if (data.meta.state === "running") running++;
+        else if (data.meta.state === "idle") idle++;
+      }
+
+      return { running, pendingApproval, idle };
+    }),
+  );
+}
+
+function ChannelGroup({
+  teamId,
+  sessionIds,
   activeSessionId,
   onSessionClick,
+  projectSlug,
 }: {
-  ids: string[];
+  teamId: string;
+  sessionIds: string[];
   activeSessionId: string | undefined;
   onSessionClick: (id: string) => void;
+  projectSlug: string;
+}) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(true);
+  const teamName = useTeamStore((s) => s.teams[teamId]?.name ?? "Channel");
+  const counts = useChannelSessionCounts(sessionIds);
+
+  const handleHeaderClick = useCallback(() => {
+    setExpanded((v) => !v);
+  }, []);
+
+  const handleNameClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      useAppStore.getState().setSidebarOpen(false);
+      // Route created by Phase 1b — cast to bypass TanStack Router type check until then
+      navigate({
+        to: "/project/$projectSlug/channel/$channelId" as string,
+        params: { projectSlug, channelId: teamId } as Record<string, string>,
+      });
+    },
+    [navigate, projectSlug, teamId],
+  );
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={handleHeaderClick}
+        className="group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left cursor-pointer hover:bg-sidebar-accent/50 transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+        )}
+        <Hash className="size-3 shrink-0 text-muted-foreground/70" />
+        <span
+          onClick={handleNameClick}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleNameClick(e as unknown as React.MouseEvent);
+          }}
+          className="text-sm font-medium text-muted-foreground truncate hover:text-sidebar-foreground hover:underline"
+        >
+          {teamName}
+        </span>
+        <span className="text-xs text-muted-foreground/60 ml-auto shrink-0">
+          {sessionIds.length}
+        </span>
+        {!expanded && <ActiveSessionIndicators counts={counts} />}
+      </button>
+      {expanded && (
+        <div className="ml-4">
+          {sessionIds.map((id) => (
+            <SidebarSessionRow
+              key={id}
+              id={id}
+              activeSessionId={activeSessionId}
+              onSessionClick={onSessionClick}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompletedSection({
+  ids,
+  channelEntries,
+  activeSessionId,
+  onSessionClick,
+  projectSlug,
+}: {
+  ids: string[];
+  channelEntries: [string, { ids: string[]; allCompleted: boolean }][];
+  activeSessionId: string | undefined;
+  onSessionClick: (id: string) => void;
+  projectSlug: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const totalCount = ids.length + channelEntries.reduce((sum, [, g]) => sum + g.ids.length, 0);
 
   return (
     <>
@@ -182,17 +327,30 @@ function CompletedSection({
         <span className="text-xs font-medium tracking-wide text-muted-foreground/70 uppercase group-hover:text-muted-foreground">
           Completed
         </span>
-        <span className="text-xs text-muted-foreground/60 ml-auto">{ids.length}</span>
+        <span className="text-xs text-muted-foreground/60 ml-auto">{totalCount}</span>
       </button>
-      {expanded &&
-        ids.map((id) => (
-          <SidebarSessionRow
-            key={id}
-            id={id}
-            activeSessionId={activeSessionId}
-            onSessionClick={onSessionClick}
-          />
-        ))}
+      {expanded && (
+        <>
+          {channelEntries.map(([teamId, { ids: channelIds }]) => (
+            <ChannelGroup
+              key={teamId}
+              teamId={teamId}
+              sessionIds={channelIds}
+              activeSessionId={activeSessionId}
+              onSessionClick={onSessionClick}
+              projectSlug={projectSlug}
+            />
+          ))}
+          {ids.map((id) => (
+            <SidebarSessionRow
+              key={id}
+              id={id}
+              activeSessionId={activeSessionId}
+              onSessionClick={onSessionClick}
+            />
+          ))}
+        </>
+      )}
     </>
   );
 }
@@ -454,6 +612,7 @@ export function ProjectTreeItem({
             sessionIds={sessionIds}
             activeSessionId={activeSessionId}
             onSessionClick={handleSessionClick}
+            projectSlug={project.slug}
             newChatButton={
               <button
                 type="button"
