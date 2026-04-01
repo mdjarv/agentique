@@ -5,10 +5,10 @@ import {
   Circle,
   CircleHelp,
   Loader,
-  LogOut,
   Pause,
   RefreshCw,
   TriangleAlert,
+  User,
 } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -104,11 +104,10 @@ export function SidebarFooter() {
   const hasAny = displayOrder.some((s) => counts[s] > 0);
 
   return (
-    <div className="px-3 py-2 border-t border-sidebar-border space-y-1">
+    <div className="px-3 py-2 border-t border-sidebar-border space-y-1.5">
       <UsageBars />
-      <ClaudeAccountRow activeSessions={counts.running + counts.idle + counts.approval} />
       {hasAny && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 pl-7">
           {displayOrder.map((state) => {
             const count = counts[state];
             if (count === 0) return null;
@@ -133,7 +132,8 @@ export function SidebarFooter() {
           })}
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <ClaudeAccountRow activeSessions={counts.running + counts.idle + counts.approval} />
+      <div className="flex items-center gap-2">
         <ConnectionIndicator />
         {authEnabled && user && (
           <button
@@ -143,11 +143,15 @@ export function SidebarFooter() {
               clearAuth();
               window.location.reload();
             }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="ml-auto flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
             title={`Sign out ${user.displayName}`}
           >
             <span className="truncate max-w-24">{user.displayName}</span>
-            <LogOut className="size-3 shrink-0" />
+            <Avatar className="h-5 w-5 shrink-0">
+              <AvatarFallback className="bg-primary/20 text-primary">
+                <User className="h-3 w-3" />
+              </AvatarFallback>
+            </Avatar>
           </button>
         )}
       </div>
@@ -248,7 +252,7 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 function ClaudeAvatar() {
   return (
     <Avatar className="h-5 w-5 shrink-0">
-      <AvatarFallback className="bg-primary/15 text-primary">
+      <AvatarFallback className="bg-amber-500/20 text-amber-400">
         <Bot className="h-3 w-3" />
       </AvatarFallback>
     </Avatar>
