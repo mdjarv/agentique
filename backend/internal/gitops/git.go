@@ -315,6 +315,64 @@ func HeadCommitHash(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// ListBranches returns local and remote-only branch names.
+// Remote branches that already have a local counterpart are excluded from the remote list.
+func ListBranches(dir string) (local []string, remote []string, err error) {
+	localOut, err := gitStdout(dir, "branch", "--format=%(refname:short)")
+	if err != nil {
+		return nil, nil, fmt.Errorf("git branch failed: %w", err)
+	}
+	localSet := make(map[string]struct{})
+	for line := range strings.SplitSeq(strings.TrimSpace(string(localOut)), "\n") {
+		if b := strings.TrimSpace(line); b != "" {
+			local = append(local, b)
+			localSet[b] = struct{}{}
+		}
+	}
+
+	remoteOut, err := gitStdout(dir, "branch", "-r", "--format=%(refname:short)")
+	if err != nil {
+		// No remotes is fine — just return local branches.
+		return local, nil, nil
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(remoteOut)), "\n") {
+		ref := strings.TrimSpace(line)
+		if ref == "" || strings.HasSuffix(ref, "/HEAD") {
+			continue
+		}
+		// Strip remote prefix to get the short name.
+		short := ref
+		if _, after, ok := strings.Cut(ref, "/"); ok {
+			short = after
+		}
+		if _, exists := localSet[short]; exists {
+			continue
+		}
+		remote = append(remote, short)
+	}
+	return local, remote, nil
+}
+
+// CheckoutBranch switches to the given branch.
+// Handles both local branches and auto-creation of tracking branches from remote.
+func CheckoutBranch(dir, branch string) error {
+	out, err := gitRun(dir, "checkout", branch)
+	if err != nil {
+		return fmt.Errorf("git checkout failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// UpstreamRef returns the upstream tracking ref for the current branch (e.g. "origin/main").
+// Returns empty string and nil if no upstream is configured.
+func UpstreamRef(dir string) (string, error) {
+	out, err := gitStdout(dir, "rev-parse", "--abbrev-ref", "@{u}")
+	if err != nil {
+		return "", nil
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // BranchExists returns true if the given local branch exists in the repo.
 func BranchExists(dir, branch string) bool {
 	_, err := gitRun(dir, "rev-parse", "--verify", "refs/heads/"+branch)

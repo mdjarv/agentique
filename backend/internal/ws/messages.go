@@ -202,6 +202,19 @@ type ProjectCommitPayload struct {
 	Message   string `json:"message"`
 }
 
+type ProjectListBranchesPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectCheckoutPayload struct {
+	ProjectID string `json:"projectId"`
+	Branch    string `json:"branch"`
+}
+
+type ProjectPullPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
 type ProjectTrackedFilesPayload struct {
 	ProjectID string `json:"projectId"`
 }
@@ -472,6 +485,29 @@ func (p *ProjectFetchPayload) Validate() error {
 }
 
 func (p *ProjectPushPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+func (p *ProjectListBranchesPayload) Validate() error {
+	if p.ProjectID == "" {
+		return errProjectIDRequired
+	}
+	return nil
+}
+
+var errProjectIDAndBranchRequired = errors.New("projectId and branch are required")
+
+func (p *ProjectCheckoutPayload) Validate() error {
+	if p.ProjectID == "" || p.Branch == "" {
+		return errProjectIDAndBranchRequired
+	}
+	return nil
+}
+
+func (p *ProjectPullPayload) Validate() error {
 	if p.ProjectID == "" {
 		return errProjectIDRequired
 	}

@@ -116,12 +116,6 @@ export const WireUserMessageEventSchema = z.object({
   attachments: z.array(QueryAttachmentSchema).optional(),
 });
 
-export const WireMessageDeliveryEventSchema = z.object({
-  type: z.literal("message_delivery"),
-  status: z.string(),
-  messageId: z.string(),
-});
-
 export const WireQuestionOptionSchema = z.object({
   label: z.string(),
   description: z.string().optional(),
@@ -316,6 +310,11 @@ export const ProjectCommitResultSchema = z.object({
   commitHash: z.string(),
 });
 
+export const BranchListResultSchema = z.object({
+  local: z.array(z.string()),
+  remote: z.array(z.string()),
+});
+
 export const ProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -505,6 +504,19 @@ export const ProjectCommitPayloadSchema = z.object({
   message: z.string(),
 });
 
+export const ProjectListBranchesPayloadSchema = z.object({
+  projectId: z.string(),
+});
+
+export const ProjectCheckoutPayloadSchema = z.object({
+  projectId: z.string(),
+  branch: z.string(),
+});
+
+export const ProjectPullPayloadSchema = z.object({
+  projectId: z.string(),
+});
+
 export const ProjectTrackedFilesPayloadSchema = z.object({
   projectId: z.string(),
 });
@@ -560,5 +572,4 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireCompactBoundaryEventSchema,
   WireContextManagementEventSchema,
   WireUserMessageEventSchema,
-  WireMessageDeliveryEventSchema,
 ]);

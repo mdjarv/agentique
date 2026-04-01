@@ -188,6 +188,79 @@ func (g *GitService) Commands(ctx context.Context, projectID string) (CommandsRe
 	return CommandsResult{Commands: cmds}, nil
 }
 
+// BranchListResult contains local and remote-only branch names.
+type BranchListResult struct {
+	Local  []string `json:"local"`
+	Remote []string `json:"remote"`
+}
+
+// ListBranches returns local and remote-only branch names for a project.
+func (g *GitService) ListBranches(ctx context.Context, projectID string) (BranchListResult, error) {
+	project, err := g.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return BranchListResult{}, fmt.Errorf("project not found")
+	}
+	local, remote, err := gitops.ListBranches(project.Path)
+	if err != nil {
+		return BranchListResult{}, fmt.Errorf("list branches: %w", err)
+	}
+	return BranchListResult{Local: local, Remote: remote}, nil
+}
+
+// Checkout switches to the given branch in the project root.
+// Refuses if there are uncommitted changes.
+func (g *GitService) Checkout(ctx context.Context, projectID, branch string) (ProjectGitStatus, error) {
+	project, err := g.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("project not found")
+	}
+
+	dirty, err := gitops.HasUncommittedChanges(project.Path)
+	if err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("failed to check changes: %w", err)
+	}
+	if dirty {
+		return ProjectGitStatus{}, fmt.Errorf("cannot switch branches: uncommitted changes exist")
+	}
+
+	if err := gitops.CheckoutBranch(project.Path, branch); err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("checkout failed: %w", err)
+	}
+
+	slog.Info("project checkout", "project_id", projectID, "branch", branch)
+
+	status := g.computeStatus(projectID, project.Path)
+	g.hub.Broadcast(projectID, "project.git-status", status)
+	return status, nil
+}
+
+// Pull fetches from remote and fast-forward merges the upstream tracking branch.
+func (g *GitService) Pull(ctx context.Context, projectID string) (ProjectGitStatus, error) {
+	project, err := g.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("project not found")
+	}
+
+	if err := gitops.Fetch(project.Path); err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	upstream, err := gitops.UpstreamRef(project.Path)
+	if err != nil || upstream == "" {
+		return ProjectGitStatus{}, fmt.Errorf("no upstream tracking branch configured")
+	}
+
+	if _, err := gitops.MergeBranch(project.Path, upstream); err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("pull failed (not fast-forwardable?): %w", err)
+	}
+
+	slog.Info("project pull", "project_id", projectID, "upstream", upstream)
+
+	status := g.computeStatus(projectID, project.Path)
+	g.hub.Broadcast(projectID, "project.git-status", status)
+	return status, nil
+}
+
 // BroadcastStatus computes and broadcasts the project git status.
 // Safe to call from goroutines.
 func (g *GitService) BroadcastStatus(ctx context.Context, projectID string) {

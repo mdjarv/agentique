@@ -189,6 +189,12 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleProjectPush(msg)
 	case "project.commit":
 		c.handleProjectCommit(msg)
+	case "project.list-branches":
+		c.handleProjectListBranches(msg)
+	case "project.checkout":
+		c.handleProjectCheckout(msg)
+	case "project.pull":
+		c.handleProjectPull(msg)
 	case "project.tracked-files":
 		c.handleProjectTrackedFiles(msg)
 	case "project.commands":

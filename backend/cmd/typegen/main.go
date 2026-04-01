@@ -348,6 +348,7 @@ func main() {
 	g.register(projpkg.TrackedFilesResult{}, "TrackedFilesResult")
 	g.register(projpkg.CommandsResult{}, "CommandsResult")
 	g.register(projpkg.CommitResult{}, "ProjectCommitResult")
+	g.register(projpkg.BranchListResult{}, "BranchListResult")
 
 	// ── Store types (sqlc — uses snake_case JSON tags) ──
 
@@ -390,6 +391,9 @@ func main() {
 	g.register(ws.ProjectFetchPayload{}, "ProjectFetchPayload")
 	g.register(ws.ProjectPushPayload{}, "ProjectPushPayload")
 	g.register(ws.ProjectCommitPayload{}, "ProjectCommitPayload")
+	g.register(ws.ProjectListBranchesPayload{}, "ProjectListBranchesPayload")
+	g.register(ws.ProjectCheckoutPayload{}, "ProjectCheckoutPayload")
+	g.register(ws.ProjectPullPayload{}, "ProjectPullPayload")
 	g.register(ws.ProjectTrackedFilesPayload{}, "ProjectTrackedFilesPayload")
 	g.register(ws.ProjectCommandsPayload{}, "ProjectCommandsPayload")
 	g.register(ws.ProjectReorderPayload{}, "ProjectReorderPayload")

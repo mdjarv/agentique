@@ -241,6 +241,24 @@ func (c *conn) handleProjectCommit(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleProjectListBranches(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectListBranchesPayload) (project.BranchListResult, error) {
+		return c.projectGitSvc.ListBranches(c.ctx, p.ProjectID)
+	})
+}
+
+func (c *conn) handleProjectCheckout(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectCheckoutPayload) (project.ProjectGitStatus, error) {
+		return c.projectGitSvc.Checkout(c.ctx, p.ProjectID, p.Branch)
+	})
+}
+
+func (c *conn) handleProjectPull(msg ClientMessage) {
+	handleRequest(c, msg, func(p ProjectPullPayload) (project.ProjectGitStatus, error) {
+		return c.projectGitSvc.Pull(c.ctx, p.ProjectID)
+	})
+}
+
 func (c *conn) handleProjectTrackedFiles(msg ClientMessage) {
 	handleRequest(c, msg, func(p ProjectTrackedFilesPayload) (project.TrackedFilesResult, error) {
 		return c.projectGitSvc.TrackedFiles(c.ctx, p.ProjectID)

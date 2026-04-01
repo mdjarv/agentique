@@ -114,12 +114,6 @@ export interface WireUserMessageEvent {
   attachments?: QueryAttachment[];
 }
 
-export interface WireMessageDeliveryEvent {
-  type: "message_delivery";
-  status: string;
-  messageId: string;
-}
-
 export interface WireQuestionOption {
   label: string;
   description?: string;
@@ -314,6 +308,11 @@ export interface ProjectCommitResult {
   commitHash: string;
 }
 
+export interface BranchListResult {
+  local: string[];
+  remote: string[];
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -503,6 +502,19 @@ export interface ProjectCommitPayload {
   message: string;
 }
 
+export interface ProjectListBranchesPayload {
+  projectId: string;
+}
+
+export interface ProjectCheckoutPayload {
+  projectId: string;
+  branch: string;
+}
+
+export interface ProjectPullPayload {
+  projectId: string;
+}
+
 export interface ProjectTrackedFilesPayload {
   projectId: string;
 }
@@ -557,5 +569,4 @@ export type WireEvent =
   | WireCompactStatusEvent
   | WireCompactBoundaryEvent
   | WireContextManagementEvent
-  | WireUserMessageEvent
-  | WireMessageDeliveryEvent;
+  | WireUserMessageEvent;
