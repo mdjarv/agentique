@@ -17,10 +17,14 @@ export async function claudeLogout(): Promise<void> {
   if (!res.ok) throw new Error("Logout failed");
 }
 
-export async function claudeLogin(): Promise<void> {
+export interface ClaudeLoginResult {
+  status: string;
+  url?: string;
+}
+
+export async function claudeLogin(): Promise<ClaudeLoginResult> {
   const res = await fetch("/api/claude-account/login", { method: "POST" });
-  if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error ?? "Login failed");
-  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error ?? "Login failed");
+  return data;
 }

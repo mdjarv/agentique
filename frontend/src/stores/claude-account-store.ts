@@ -54,7 +54,15 @@ export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
   loginAccount: async () => {
     set({ switching: true });
     try {
-      await claudeLogin();
+      const result = await claudeLogin();
+      if (result.url) {
+        window.open(result.url, "_blank");
+      }
+      if (result.status === "already_logged_in") {
+        await get().fetchStatus();
+        set({ switching: false });
+        return;
+      }
       await pollUntilLoggedIn(set);
     } catch {
       set({ switching: false });
