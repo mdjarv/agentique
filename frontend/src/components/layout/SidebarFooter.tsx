@@ -1,5 +1,6 @@
 import {
   BellDot,
+  Bot,
   Check,
   Circle,
   CircleHelp,
@@ -21,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { logout } from "~/lib/auth-api";
 import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
@@ -168,7 +170,8 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   if (switching) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <ClaudeAvatar />
         <Loader className="size-3 shrink-0 animate-spin" />
         <span>Waiting for browser login...</span>
       </div>
@@ -177,12 +180,13 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   if (!loggedIn) {
     return (
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Claude: not authenticated</span>
+      <div className="flex items-center gap-2 text-xs">
+        <ClaudeAvatar />
+        <span className="text-muted-foreground">Not authenticated</span>
         <button
           type="button"
           onClick={loginAccount}
-          className="text-primary hover:text-primary/80 transition-colors"
+          className="ml-auto text-primary hover:text-primary/80 transition-colors"
         >
           Login
         </button>
@@ -200,14 +204,15 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   return (
     <>
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground truncate max-w-40" title={label ?? undefined}>
+      <div className="flex items-center gap-2 text-xs">
+        <ClaudeAvatar />
+        <span className="text-muted-foreground truncate" title={label ?? undefined}>
           {label}
         </span>
         <button
           type="button"
           onClick={handleSwitch}
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
           title="Switch Claude account"
         >
           <RefreshCw className="size-3" />
@@ -237,5 +242,15 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+function ClaudeAvatar() {
+  return (
+    <Avatar className="h-5 w-5 shrink-0">
+      <AvatarFallback className="bg-primary/15 text-primary">
+        <Bot className="h-3 w-3" />
+      </AvatarFallback>
+    </Avatar>
   );
 }
