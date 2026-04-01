@@ -152,7 +152,7 @@ export function SidebarFooter() {
               clearAuth();
               window.location.reload();
             }}
-            className="ml-auto text-xs text-muted-foreground/60 hover:text-foreground transition-colors"
+            className="ml-auto cursor-pointer rounded px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
             title={`Sign out ${user.displayName}`}
           >
             Sign out
@@ -200,7 +200,7 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
         <button
           type="button"
           onClick={loginAccount}
-          className="ml-auto text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors"
+          className="ml-auto cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
         >
           Login
         </button>
@@ -225,7 +225,7 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
       <button
         type="button"
         onClick={handleSwitch}
-        className="ml-auto text-muted-foreground/60 hover:text-foreground transition-colors shrink-0"
+        className="ml-auto cursor-pointer rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors shrink-0"
         title="Switch Claude account"
       >
         <RefreshCw className="size-3" />
