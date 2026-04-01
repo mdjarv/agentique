@@ -16,13 +16,13 @@ import {
   sendTeamMessage,
 } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
-import type { SessionMetadata } from "~/stores/chat-store";
+import type { SessionData, SessionState } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
 
 interface TeamViewProps {
   sessionId: string;
   teamId: string;
-  sessions: Record<string, { meta: SessionMetadata }>;
+  sessions: Record<string, SessionData>;
 }
 
 const EMPTY_TIMELINE: TimelineEvent[] = [];
@@ -126,28 +126,30 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
-        <div ref={membersRef} className="flex flex-col gap-1">
+        <div ref={membersRef} className="flex flex-col gap-0.5">
           {team.members.map((member) => {
-            const color = colorBySession.get(member.sessionId) ?? FALLBACK_COLOR;
-            const sessionData = sessions[member.sessionId];
-            const state = sessionData?.meta.state ?? member.state;
-            const Icon = getSessionIconComponent(sessionData?.meta.icon);
+            const isSelf = member.sessionId === sessionId;
+            const sd = sessions[member.sessionId];
+            const state = (sd?.meta.state ?? member.state) as SessionState;
             return (
               <div
                 key={member.sessionId}
-                className="flex items-center gap-2 text-xs px-1 py-0.5 rounded"
+                className="flex items-center gap-1.5 text-xs px-1 py-1 rounded hover:bg-accent/50 transition-colors"
               >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", color.text)} />
-                <span className="truncate">{member.name || "Unnamed"}</span>
-                {member.role && (
-                  <span className="text-muted-foreground truncate">{member.role}</span>
-                )}
-                <span className="ml-auto shrink-0">
-                  <SessionStatusBadge
-                    state={state as import("~/stores/chat-store").SessionState}
-                    connected={sessionData?.meta.connected ?? member.connected}
-                  />
+                <SessionStatusBadge
+                  state={state ?? "idle"}
+                  connected={sd?.meta.connected ?? member.connected}
+                  hasPendingApproval={!!sd?.pendingApproval}
+                  isPlanning={sd?.planMode ?? false}
+                  gitOperation={sd?.meta.gitOperation}
+                />
+                <span className={cn("truncate", isSelf && "font-medium")}>
+                  {member.name || "Unnamed"}
+                  {isSelf && <span className="text-muted-foreground font-normal"> (you)</span>}
                 </span>
+                {member.role && (
+                  <span className="text-muted-foreground text-[10px] shrink-0">{member.role}</span>
+                )}
               </div>
             );
           })}
@@ -158,7 +160,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
       >
         {timeline.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>

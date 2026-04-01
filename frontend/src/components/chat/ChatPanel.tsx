@@ -42,7 +42,7 @@ import {
 import { loadSessionHistory } from "~/lib/session-history";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import type { Attachment, AutoApproveMode, SessionMetadata, Turn } from "~/stores/chat-store";
+import type { Attachment, AutoApproveMode, SessionData, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -60,7 +60,7 @@ const resumePlaceholders: Record<string, string> = {
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
 const EMPTY_TURNS: Turn[] = [];
-const EMPTY_SESSIONS: Record<string, { meta: SessionMetadata }> = {};
+const EMPTY_SESSIONS: Record<string, SessionData> = {};
 
 export function ChatPanel({ projectId, sessionId }: ChatPanelProps) {
   const navigate = useNavigate();
