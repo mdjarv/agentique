@@ -104,10 +104,10 @@ export function SidebarFooter() {
   const hasAny = displayOrder.some((s) => counts[s] > 0);
 
   return (
-    <div className="px-3 py-2 border-t border-sidebar-border space-y-1.5">
+    <div className="px-3 py-2 border-t border-sidebar-border">
       <UsageBars />
       {hasAny && (
-        <div className="flex items-center gap-3 pl-7">
+        <div className="flex items-center gap-3 py-1">
           {displayOrder.map((state) => {
             const count = counts[state];
             if (count === 0) return null;
@@ -132,10 +132,19 @@ export function SidebarFooter() {
           })}
         </div>
       )}
-      <ClaudeAccountRow activeSessions={counts.running + counts.idle + counts.approval} />
-      <div className="flex items-center gap-2">
-        <ConnectionIndicator />
-        {authEnabled && user && (
+      <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-sidebar-border/50">
+        <ClaudeAccountRow activeSessions={counts.running + counts.idle + counts.approval} />
+      </div>
+      {authEnabled && user && (
+        <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-sidebar-border/50">
+          <Avatar className="h-5 w-5 shrink-0">
+            <AvatarFallback className="bg-primary/20 text-primary">
+              <User className="h-3 w-3" />
+            </AvatarFallback>
+          </Avatar>
+          <span className="text-xs text-muted-foreground truncate max-w-28">
+            {user.displayName}
+          </span>
           <button
             type="button"
             onClick={async () => {
@@ -143,18 +152,19 @@ export function SidebarFooter() {
               clearAuth();
               window.location.reload();
             }}
-            className="ml-auto flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="ml-auto text-xs text-muted-foreground/60 hover:text-foreground transition-colors"
             title={`Sign out ${user.displayName}`}
           >
-            <span className="truncate max-w-24">{user.displayName}</span>
-            <Avatar className="h-5 w-5 shrink-0">
-              <AvatarFallback className="bg-primary/20 text-primary">
-                <User className="h-3 w-3" />
-              </AvatarFallback>
-            </Avatar>
+            Sign out
           </button>
-        )}
-      </div>
+          <ConnectionIndicator />
+        </div>
+      )}
+      {!authEnabled && (
+        <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-sidebar-border/50">
+          <ConnectionIndicator />
+        </div>
+      )}
     </div>
   );
 }
@@ -174,27 +184,27 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   if (switching) {
     return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <>
         <ClaudeAvatar />
-        <Loader className="size-3 shrink-0 animate-spin" />
-        <span>Waiting for browser login...</span>
-      </div>
+        <Loader className="size-3 shrink-0 animate-spin text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Waiting for login...</span>
+      </>
     );
   }
 
   if (!loggedIn) {
     return (
-      <div className="flex items-center gap-2 text-xs">
+      <>
         <ClaudeAvatar />
-        <span className="text-muted-foreground">Not authenticated</span>
+        <span className="text-xs text-muted-foreground/60">Not authenticated</span>
         <button
           type="button"
           onClick={loginAccount}
-          className="ml-auto text-primary hover:text-primary/80 transition-colors"
+          className="ml-auto text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors"
         >
           Login
         </button>
-      </div>
+      </>
     );
   }
 
@@ -208,20 +218,18 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   return (
     <>
-      <div className="flex items-center gap-2 text-xs">
-        <ClaudeAvatar />
-        <span className="text-muted-foreground truncate" title={label ?? undefined}>
-          {label}
-        </span>
-        <button
-          type="button"
-          onClick={handleSwitch}
-          className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
-          title="Switch Claude account"
-        >
-          <RefreshCw className="size-3" />
-        </button>
-      </div>
+      <ClaudeAvatar />
+      <span className="text-xs text-muted-foreground truncate" title={label ?? undefined}>
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={handleSwitch}
+        className="ml-auto text-muted-foreground/60 hover:text-foreground transition-colors shrink-0"
+        title="Switch Claude account"
+      >
+        <RefreshCw className="size-3" />
+      </button>
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
