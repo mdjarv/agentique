@@ -6,14 +6,26 @@ import {
   Loader,
   LogOut,
   Pause,
+  RefreshCw,
   TriangleAlert,
 } from "lucide-react";
-import type { ComponentType } from "react";
+import { type ComponentType, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { logout } from "~/lib/auth-api";
 import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useClaudeAccountStore } from "~/stores/claude-account-store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 import { UsageBars } from "./UsageBars";
 
@@ -90,8 +102,9 @@ export function SidebarFooter() {
   const hasAny = displayOrder.some((s) => counts[s] > 0);
 
   return (
-    <div className="px-3 py-2 border-t border-sidebar-border">
+    <div className="px-3 py-2 border-t border-sidebar-border space-y-1">
       <UsageBars />
+      <ClaudeAccountRow activeSessions={counts.running + counts.idle + counts.approval} />
       {hasAny && (
         <div className="flex items-center gap-3">
           {displayOrder.map((state) => {
@@ -137,5 +150,92 @@ export function SidebarFooter() {
         )}
       </div>
     </div>
+  );
+}
+
+function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
+  const { loggedIn, email, orgName, loading, switching, fetchStatus, switchAccount, loginAccount } =
+    useClaudeAccountStore();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  if (loading) return null;
+
+  const label = email ? (orgName ? `${email} (${orgName})` : email) : null;
+
+  if (switching) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader className="size-3 shrink-0 animate-spin" />
+        <span>Waiting for browser login...</span>
+      </div>
+    );
+  }
+
+  if (!loggedIn) {
+    return (
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Claude: not authenticated</span>
+        <button
+          type="button"
+          onClick={loginAccount}
+          className="text-primary hover:text-primary/80 transition-colors"
+        >
+          Login
+        </button>
+      </div>
+    );
+  }
+
+  const handleSwitch = () => {
+    if (activeSessions > 0) {
+      setConfirmOpen(true);
+    } else {
+      switchAccount();
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground truncate max-w-40" title={label ?? undefined}>
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={handleSwitch}
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          title="Switch Claude account"
+        >
+          <RefreshCw className="size-3" />
+        </button>
+      </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch Claude account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              There {activeSessions === 1 ? "is" : "are"} {activeSessions} active session
+              {activeSessions === 1 ? "" : "s"}. Switching accounts won't stop them, but they may
+              encounter authentication errors.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false);
+                switchAccount();
+              }}
+            >
+              Switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
