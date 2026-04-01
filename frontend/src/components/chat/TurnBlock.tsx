@@ -530,12 +530,7 @@ function AgentSectionContent({
   className: string;
   children: ReactNode;
 }) {
-  const [animateRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
-  return (
-    <div ref={animateRef} className={className}>
-      {children}
-    </div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
 // --- Main component ---
