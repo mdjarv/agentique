@@ -1,7 +1,7 @@
 import { Send, Trash2, User, Users } from "lucide-react";
-import { type UIEvent, memo, useCallback, useEffect, useRef, useState } from "react";
+import { type UIEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { getAgentColor } from "~/components/chat/AgentMessage";
+import { AGENT_COLORS, type AgentColor } from "~/components/chat/AgentMessage";
 import { Markdown } from "~/components/chat/Markdown";
 import { SessionStatusBadge } from "~/components/layout/SessionStatusBadge";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
@@ -26,6 +26,13 @@ interface TeamViewProps {
 }
 
 const EMPTY_TIMELINE: TimelineEvent[] = [];
+const FALLBACK_COLOR: AgentColor = AGENT_COLORS[0] ?? {
+  bg: "bg-amber-500/20",
+  text: "text-amber-400",
+  border: "border-amber-500/20",
+  from: "from-amber-500/12",
+  to: "to-amber-500/6",
+};
 
 export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: TeamViewProps) {
   const ws = useWebSocket();
@@ -86,6 +93,16 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
     }
   }, [ws, teamId]);
 
+  // Assign colors by member index to guarantee no duplicates
+  const colorBySession = useMemo(() => {
+    const map = new Map<string, (typeof AGENT_COLORS)[number]>();
+    for (let i = 0; i < (team?.members.length ?? 0); i++) {
+      const m = team?.members[i];
+      if (m) map.set(m.sessionId, AGENT_COLORS[i % AGENT_COLORS.length] ?? FALLBACK_COLOR);
+    }
+    return map;
+  }, [team?.members]);
+
   if (!team) return null;
 
   const allMembers = team.members;
@@ -111,7 +128,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
         </div>
         <div ref={membersRef} className="flex flex-col gap-1">
           {team.members.map((member) => {
-            const color = getAgentColor(member.sessionId);
+            const color = colorBySession.get(member.sessionId) ?? FALLBACK_COLOR;
             const sessionData = sessions[member.sessionId];
             const state = sessionData?.meta.state ?? member.state;
             const Icon = getSessionIconComponent(sessionData?.meta.icon);
@@ -166,7 +183,7 @@ export const TeamView = memo(function TeamView({ sessionId, teamId, sessions }: 
             );
           }
 
-          const color = getAgentColor(event.senderSessionId);
+          const color = colorBySession.get(event.senderSessionId) ?? FALLBACK_COLOR;
           const senderMeta = sessions[event.senderSessionId]?.meta;
           const SenderIcon = getSessionIconComponent(senderMeta?.icon);
           return (

@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { getSessionIconComponent } from "~/lib/session-icons";
 
 // Deterministic color palette for agent avatars.
-type AgentColor = {
+export type AgentColor = {
   bg: string;
   text: string;
   border: string;
@@ -21,7 +21,7 @@ const DEFAULT_COLOR: AgentColor = {
   to: "to-amber-500/6",
 };
 
-const AGENT_COLORS: AgentColor[] = [
+export const AGENT_COLORS: AgentColor[] = [
   {
     bg: "bg-amber-500/20",
     text: "text-amber-400",
