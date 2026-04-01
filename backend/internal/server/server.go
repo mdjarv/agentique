@@ -98,6 +98,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/claude-account", cah.HandleStatus)
 	mux.HandleFunc("POST /api/claude-account/logout", cah.HandleLogout)
 	mux.HandleFunc("POST /api/claude-account/login", cah.HandleLogin)
+	mux.HandleFunc("POST /api/claude-account/login/cancel", cah.HandleLoginCancel)
 
 	fsh := &filesystem.Handler{}
 	mux.HandleFunc("GET /api/filesystem/browse", fsh.HandleBrowse)

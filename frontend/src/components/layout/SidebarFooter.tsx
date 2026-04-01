@@ -170,8 +170,18 @@ export function SidebarFooter() {
 }
 
 function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
-  const { loggedIn, email, orgName, loading, switching, fetchStatus, switchAccount, loginAccount } =
-    useClaudeAccountStore();
+  const {
+    loggedIn,
+    email,
+    orgName,
+    loading,
+    switching,
+    loginUrl,
+    fetchStatus,
+    switchAccount,
+    loginAccount,
+    cancelLogin,
+  } = useClaudeAccountStore();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -184,11 +194,33 @@ function ClaudeAccountRow({ activeSessions }: { activeSessions: number }) {
 
   if (switching) {
     return (
-      <>
-        <ClaudeAvatar />
-        <Loader className="size-3 shrink-0 animate-spin text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Waiting for login...</span>
-      </>
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex items-center gap-2">
+          <ClaudeAvatar />
+          <Loader className="size-3 shrink-0 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Waiting for login...</span>
+          <button
+            type="button"
+            onClick={cancelLogin}
+            className="ml-auto cursor-pointer rounded px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+        {loginUrl && (
+          <a
+            href={loginUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-primary/70 hover:text-primary hover:underline truncate pl-7"
+          >
+            Open login page manually
+          </a>
+        )}
+        <p className="text-[10px] text-muted-foreground/60 pl-7 leading-tight">
+          To use a different account, sign out of claude.ai first.
+        </p>
+      </div>
     );
   }
 

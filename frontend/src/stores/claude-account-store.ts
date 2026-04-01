@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { claudeLogin, claudeLogout, getClaudeAccount } from "~/lib/claude-account-api";
+import {
+  claudeLogin,
+  claudeLoginCancel,
+  claudeLogout,
+  getClaudeAccount,
+} from "~/lib/claude-account-api";
 
 interface ClaudeAccountState {
   loggedIn: boolean;
@@ -8,14 +13,18 @@ interface ClaudeAccountState {
   subscriptionType: string | null;
   loading: boolean;
   switching: boolean;
+  loginUrl: string | null;
 
   fetchStatus: () => Promise<void>;
   switchAccount: () => Promise<void>;
   loginAccount: () => Promise<void>;
+  cancelLogin: () => Promise<void>;
 }
 
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 5 * 60 * 1000;
+
+let pollAbortController: AbortController | null = null;
 
 export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
   loggedIn: false,
@@ -24,6 +33,7 @@ export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
   subscriptionType: null,
   loading: true,
   switching: false,
+  loginUrl: null,
 
   fetchStatus: async () => {
     try {
@@ -47,7 +57,7 @@ export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
       set({ loggedIn: false, email: null, orgName: null, subscriptionType: null });
       await get().loginAccount();
     } catch {
-      set({ switching: false });
+      set({ switching: false, loginUrl: null });
     }
   },
 
@@ -55,30 +65,40 @@ export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
     set({ switching: true });
     try {
       const result = await claudeLogin();
-      if (result.url) {
-        window.open(result.url, "_blank");
-      }
+      set({ loginUrl: result.url ?? null });
       if (result.status === "already_logged_in") {
         await get().fetchStatus();
-        set({ switching: false });
+        set({ switching: false, loginUrl: null });
         return;
       }
-      await pollUntilLoggedIn(set);
+      pollAbortController = new AbortController();
+      await pollUntilLoggedIn(set, pollAbortController.signal);
     } catch {
-      set({ switching: false });
+      set({ switching: false, loginUrl: null });
     }
+  },
+
+  cancelLogin: async () => {
+    pollAbortController?.abort();
+    pollAbortController = null;
+    try {
+      await claudeLoginCancel();
+    } catch {
+      // best effort
+    }
+    set({ switching: false, loginUrl: null });
   },
 }));
 
 type SetFn = (partial: Partial<ClaudeAccountState>) => void;
 
-async function pollUntilLoggedIn(set: SetFn): Promise<void> {
+async function pollUntilLoggedIn(set: SetFn, signal: AbortSignal): Promise<void> {
   const deadline = Date.now() + POLL_TIMEOUT;
 
   return new Promise<void>((resolve) => {
     const check = async () => {
-      if (Date.now() > deadline) {
-        set({ switching: false });
+      if (signal.aborted || Date.now() > deadline) {
+        set({ switching: false, loginUrl: null });
         resolve();
         return;
       }
@@ -90,6 +110,7 @@ async function pollUntilLoggedIn(set: SetFn): Promise<void> {
           orgName: account.orgName ?? null,
           subscriptionType: account.subscriptionType ?? null,
           switching: false,
+          loginUrl: null,
         });
         resolve();
         return;

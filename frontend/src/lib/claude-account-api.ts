@@ -28,3 +28,8 @@ export async function claudeLogin(): Promise<ClaudeLoginResult> {
   if (!res.ok) throw new Error(data?.error ?? "Login failed");
   return data;
 }
+
+export async function claudeLoginCancel(): Promise<void> {
+  const res = await fetch("/api/claude-account/login/cancel", { method: "POST" });
+  if (!res.ok) throw new Error("Cancel failed");
+}

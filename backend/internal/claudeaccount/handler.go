@@ -13,8 +13,9 @@ import (
 
 // Handler serves Claude CLI account status and manages login/logout flows.
 type Handler struct {
-	mu      sync.Mutex
-	loginFn context.CancelFunc // non-nil while a login flow is active
+	mu        sync.Mutex
+	loginFn   context.CancelFunc      // non-nil while a login flow is active
+	loginProc *claudecli.LoginProcess // non-nil while waiting for OAuth completion
 }
 
 type statusResponse struct {
@@ -85,7 +86,11 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Wait for the login to complete in the background.
+	// Store process for cancellation, then wait in background.
+	h.mu.Lock()
+	h.loginProc = proc
+	h.mu.Unlock()
+
 	go func() {
 		defer h.clearLogin()
 		if err := proc.Wait(); err != nil {
@@ -99,11 +104,30 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleLoginCancel aborts an in-progress login flow.
+func (h *Handler) HandleLoginCancel(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	proc := h.loginProc
+	h.mu.Unlock()
+
+	if proc == nil {
+		respond.JSON(w, http.StatusOK, map[string]string{"status": "no_login_in_progress"})
+		return
+	}
+
+	if err := proc.Cancel(); err != nil {
+		slog.Error("failed to cancel login process", "error", err)
+	}
+	h.clearLogin()
+	respond.JSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
 func (h *Handler) clearLogin() {
 	h.mu.Lock()
 	if h.loginFn != nil {
 		h.loginFn()
 		h.loginFn = nil
 	}
+	h.loginProc = nil
 	h.mu.Unlock()
 }
