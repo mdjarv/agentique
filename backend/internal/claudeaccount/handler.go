@@ -71,7 +71,7 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	h.loginFn = cancel
 	h.mu.Unlock()
 
-	proc, err := claudecli.AuthLogin(ctx)
+	proc, err := claudecli.AuthLogin(ctx, claudecli.WithNoBrowser())
 	if err != nil {
 		h.clearLogin()
 		slog.Error("claude auth login failed to start", "error", err)

@@ -65,6 +65,9 @@ export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
     set({ switching: true });
     try {
       const result = await claudeLogin();
+      if (result.url) {
+        window.open(result.url, "_blank");
+      }
       set({ loginUrl: result.url ?? null });
       if (result.status === "already_logged_in") {
         await get().fetchStatus();
