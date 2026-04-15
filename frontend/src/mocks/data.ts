@@ -1,4 +1,4 @@
-import type { ChannelInfo, TimelineEvent } from "~/lib/channel-actions";
+import type { ChannelInfo, ChannelMessage } from "~/lib/channel-actions";
 import type {
   BehaviorPresets,
   Project,
@@ -1697,62 +1697,72 @@ export const MOCK_CHANNELS: Record<string, ChannelInfo[]> = {
   ],
 };
 
-export const MOCK_CHANNEL_TIMELINES: Record<string, TimelineEvent[]> = {
+export const MOCK_CHANNEL_TIMELINES: Record<string, ChannelMessage[]> = {
   [TM.authTeam]: [
     {
-      direction: "sent",
-      fromUser: true,
-      senderSessionId: S.authRefactor,
+      id: "msg-mock-1",
+      channelId: TM.authTeam,
+      senderType: "user",
+      senderId: "",
       senderName: "You",
-      targetSessionId: S.wsReconnect,
-      targetName: "Fix WebSocket reconnect",
       content:
         "Start the auth refactor. Replace `ValidateToken()` with the new `jwt.Verify()` API.",
+      createdAt: "2024-01-01T10:00:00Z",
     },
     {
-      direction: "received",
-      senderSessionId: S.wsReconnect,
+      id: "msg-mock-2",
+      channelId: TM.authTeam,
+      senderType: "session",
+      senderId: S.wsReconnect,
       senderName: "Fix WebSocket reconnect",
-      targetSessionId: S.authRefactor,
-      targetName: "Refactor auth middleware",
       content:
         "Got it. I'll coordinate the workers. The new API supports audience validation — I'll make sure both workers account for that.",
+      metadata: { targetSessionId: S.authRefactor, targetName: "Refactor auth middleware" },
+      createdAt: "2024-01-01T10:01:00Z",
     },
     {
-      direction: "received",
-      senderSessionId: S.wsReconnect,
+      id: "msg-mock-3",
+      channelId: TM.authTeam,
+      senderType: "session",
+      senderId: S.wsReconnect,
       senderName: "Fix WebSocket reconnect",
-      targetSessionId: S.authRefactor,
-      targetName: "Refactor auth middleware",
       content:
         "Auth middleware worker: start by replacing `ValidateToken()` with `jwt.Verify()` and add audience validation.",
+      metadata: { targetSessionId: S.authRefactor, targetName: "Refactor auth middleware" },
+      createdAt: "2024-01-01T10:02:00Z",
     },
     {
-      direction: "received",
-      senderSessionId: S.authRefactor,
+      id: "msg-mock-4",
+      channelId: TM.authTeam,
+      senderType: "session",
+      senderId: S.authRefactor,
       senderName: "Refactor auth middleware",
-      targetSessionId: S.wsReconnect,
-      targetName: "Fix WebSocket reconnect",
       content:
         "Done — switched to `jwt.Verify()` with audience check. Also added structured error types for expired and malformed tokens. See commit a82f1c3.",
+      metadata: { targetSessionId: S.wsReconnect, targetName: "Fix WebSocket reconnect" },
+      createdAt: "2024-01-01T10:03:00Z",
     },
     {
-      direction: "received",
-      senderSessionId: S.wsReconnect,
+      id: "msg-mock-5",
+      channelId: TM.authTeam,
+      senderType: "session",
+      senderId: S.wsReconnect,
       senderName: "Fix WebSocket reconnect",
-      targetSessionId: S.queryOptimizer,
-      targetName: "Optimize query planner",
       content:
         "Can you check if the planner init can run concurrently with the new token validation? Auth middleware is updated.",
+      metadata: { targetSessionId: S.queryOptimizer, targetName: "Optimize query planner" },
+      createdAt: "2024-01-01T10:04:00Z",
     },
     {
-      direction: "received",
-      senderSessionId: S.queryOptimizer,
+      id: "msg-mock-6",
+      channelId: TM.authTeam,
+      senderType: "session",
+      senderId: S.queryOptimizer,
       senderName: "Optimize query planner",
-      targetSessionId: S.wsReconnect,
-      targetName: "Fix WebSocket reconnect",
       content:
         "Yes — planner init is side-effect-free. I've exported `InitPlanner()` so you can call it concurrently with token validation. See commit 3a1f2b9.",
+      metadata: { targetSessionId: S.wsReconnect, targetName: "Fix WebSocket reconnect" },
+      createdAt: "2024-01-01T10:05:00Z",
     },
   ],
 };

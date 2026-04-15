@@ -19,6 +19,23 @@ export interface ChannelMember {
 
 export type AgentMessageType = "plan" | "progress" | "done" | "message";
 
+/** Unified channel message from the messages table. */
+export interface ChannelMessage {
+  id: string;
+  channelId: string;
+  senderType: "session" | "user";
+  senderId: string;
+  senderName: string;
+  content: string;
+  messageType?: AgentMessageType;
+  metadata?: { targetSessionId?: string; targetName?: string; [key: string]: unknown };
+  createdAt: string;
+}
+
+/**
+ * Legacy timeline event shape — kept during transition for backward compat.
+ * @deprecated Use ChannelMessage instead.
+ */
 export interface TimelineEvent {
   direction: "sent" | "received";
   fromUser?: boolean;
@@ -78,8 +95,8 @@ export async function getChannelInfo(ws: WsClient, channelId: string): Promise<C
 export async function getChannelTimeline(
   ws: WsClient,
   channelId: string,
-): Promise<TimelineEvent[]> {
-  return ws.request<TimelineEvent[]>("channel.timeline", { channelId });
+): Promise<ChannelMessage[]> {
+  return ws.request<ChannelMessage[]>("channel.timeline", { channelId });
 }
 
 export async function sendChannelMessage(

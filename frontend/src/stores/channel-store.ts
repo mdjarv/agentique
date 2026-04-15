@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { ChannelInfo, ChannelMember, TimelineEvent } from "~/lib/channel-actions";
+import type { ChannelInfo, ChannelMember, ChannelMessage } from "~/lib/channel-actions";
 
 interface ChannelState {
   channels: Record<string, ChannelInfo>;
-  timelines: Record<string, TimelineEvent[]>;
+  timelines: Record<string, ChannelMessage[]>;
 
   setChannels: (channels: ChannelInfo[]) => void;
   mergeChannels: (channels: ChannelInfo[]) => void;
@@ -15,8 +15,8 @@ interface ChannelState {
   removeMember: (channelId: string, sessionId: string) => void;
   updateMemberState: (sessionId: string, state: string, connected?: boolean) => void;
 
-  setTimeline: (channelId: string, events: TimelineEvent[]) => void;
-  appendTimelineEvent: (channelId: string, event: TimelineEvent) => void;
+  setTimeline: (channelId: string, events: ChannelMessage[]) => void;
+  appendTimelineEvent: (channelId: string, event: ChannelMessage) => void;
 
   getChannelForSession: (sessionId: string) => ChannelInfo | undefined;
   getChannelsForSession: (sessionId: string) => ChannelInfo[];

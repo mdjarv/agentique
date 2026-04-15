@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ChannelInfo, ChannelMember, TimelineEvent } from "~/lib/channel-actions";
+import type { ChannelInfo, ChannelMember, ChannelMessage } from "~/lib/channel-actions";
 import { useChannelStore } from "~/stores/channel-store";
 
 function makeMember(overrides: Partial<ChannelMember> = {}): ChannelMember {
@@ -24,14 +24,15 @@ function makeChannel(overrides: Partial<ChannelInfo> = {}): ChannelInfo {
   };
 }
 
-function makeEvent(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
+function makeEvent(overrides: Partial<ChannelMessage> = {}): ChannelMessage {
   return {
-    direction: "sent",
-    senderSessionId: "sess-1",
+    id: `msg-${Math.random().toString(36).slice(2)}`,
+    channelId: "ch-1",
+    senderType: "session",
+    senderId: "sess-1",
     senderName: "Worker",
-    targetSessionId: "sess-2",
-    targetName: "Lead",
     content: "hello",
+    createdAt: "2024-01-01T00:00:00Z",
     ...overrides,
   };
 }

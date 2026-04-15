@@ -14,10 +14,10 @@ import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   broadcastToChannel,
+  type ChannelMessage,
   dissolveChannel,
   dissolveChannelKeepHistory,
   getChannelTimeline,
-  type TimelineEvent,
 } from "~/lib/channel-actions";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -35,22 +35,23 @@ interface TimelineGroup {
   senderName: string;
   fromUser: boolean;
   senderSessionId: string;
-  events: TimelineEvent[];
+  events: ChannelMessage[];
 }
 
-function groupTimelineEvents(timeline: TimelineEvent[]): TimelineGroup[] {
+function groupTimelineEvents(timeline: ChannelMessage[]): TimelineGroup[] {
   const groups: TimelineGroup[] = [];
   for (const event of timeline) {
-    const senderId = event.fromUser ? "__user__" : event.senderSessionId;
+    const isUser = event.senderType === "user";
+    const senderId = isUser ? "__user__" : event.senderId;
     const lastGroup = groups[groups.length - 1];
     if (lastGroup && lastGroup.senderId === senderId) {
       lastGroup.events.push(event);
     } else {
       groups.push({
         senderId,
-        senderName: event.fromUser ? "You" : event.senderName,
-        fromUser: !!event.fromUser,
-        senderSessionId: event.senderSessionId,
+        senderName: isUser ? "You" : event.senderName,
+        fromUser: isUser,
+        senderSessionId: event.senderId,
         events: [event],
       });
     }
@@ -58,7 +59,7 @@ function groupTimelineEvents(timeline: TimelineEvent[]): TimelineGroup[] {
   return groups;
 }
 
-const EMPTY_TIMELINE: TimelineEvent[] = [];
+const EMPTY_TIMELINE: ChannelMessage[] = [];
 
 export const ChannelPanel = memo(function ChannelPanel({
   projectSlug,

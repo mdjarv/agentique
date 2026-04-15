@@ -110,18 +110,23 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         const chatStore = useChatStore.getState();
         const channelIds = chatStore.sessions[sid]?.meta.channelIds;
         if (channelIds && channelIds.length > 0) {
-          const timelineEvent = {
-            direction: event.direction ?? ("received" as const),
-            fromUser: event.fromUser,
-            senderSessionId: event.senderSessionId ?? "",
+          // Convert legacy agent_message event to ChannelMessage shape.
+          const channelMessage = {
+            id: `evt-${sid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            channelId: channelIds[0] ?? "",
+            senderType: (event.fromUser ? "user" : "session") as "session" | "user",
+            senderId: event.senderSessionId ?? "",
             senderName: event.senderName ?? "",
-            targetSessionId: event.targetSessionId ?? "",
-            targetName: event.targetName ?? "",
             content: event.content ?? "",
             messageType: event.messageType,
+            metadata: {
+              targetSessionId: event.targetSessionId ?? "",
+              targetName: event.targetName ?? "",
+            },
+            createdAt: new Date().toISOString(),
           };
           for (const chId of channelIds) {
-            useChannelStore.getState().appendTimelineEvent(chId, timelineEvent);
+            useChannelStore.getState().appendTimelineEvent(chId, channelMessage);
           }
           if (chatStore.activeSessionId !== sid) {
             chatStore.setUnreadChannelMessage(sid, true);
