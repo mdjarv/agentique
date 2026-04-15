@@ -74,6 +74,14 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
   echo ""
 fi
 
+# Restart service if running
+if systemctl --user is-active agentique &>/dev/null; then
+  echo "Service is running, restarting..."
+  systemctl --user restart agentique
+  echo "Service restarted."
+  echo ""
+fi
+
 # Run doctor to check dependencies
 echo "Checking dependencies..."
 echo ""
