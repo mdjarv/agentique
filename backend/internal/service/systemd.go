@@ -56,15 +56,28 @@ func installSystemd(binaryPath string) error {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 
-	cmds := [][]string{
+	// Reload unit file and enable (idempotent, does not start).
+	for _, args := range [][]string{
 		{"systemctl", "--user", "daemon-reload"},
-		{"systemctl", "--user", "enable", "--now", serviceName},
-	}
-	for _, args := range cmds {
+		{"systemctl", "--user", "enable", serviceName},
+	} {
 		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 			return fmt.Errorf("%s: %w\n%s", strings.Join(args, " "), err, out)
 		}
 	}
+
+	// Start only if not already running — never restart behind the user's back.
+	out, _ := exec.Command("systemctl", "--user", "is-active", serviceName).Output()
+	if strings.TrimSpace(string(out)) != "active" {
+		if out, err := exec.Command("systemctl", "--user", "start", serviceName).CombinedOutput(); err != nil {
+			return fmt.Errorf("systemctl start: %w\n%s", err, out)
+		}
+	}
+
+	// Enable lingering so the user service survives SSH disconnects.
+	// Without this, systemd kills all --user services when the last
+	// login session closes (e.g. closing an SSH connection).
+	exec.Command("loginctl", "enable-linger").CombinedOutput()
 
 	return nil
 }

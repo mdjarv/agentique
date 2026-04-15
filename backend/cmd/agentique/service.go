@@ -56,23 +56,10 @@ var serviceLogsCmd = &cobra.Command{
 }
 
 func runServiceInstall(cmd *cobra.Command, args []string) error {
-	// Check if already installed.
-	st, err := service.GetStatus()
-	if err != nil {
-		return err
-	}
-	if st.Installed {
-		if st.Running {
-			fmt.Printf("Service already installed and running (PID %d)\n", st.PID)
-		} else {
-			fmt.Println("Service already installed but not running")
-		}
-		fmt.Printf("  Unit: %s\n", st.UnitPath)
-		return nil
-	}
+	before, _ := service.GetStatus()
 
 	exe, _ := os.Executable()
-	if !isStandardBinPath(exe) {
+	if !before.Installed && !isStandardBinPath(exe) {
 		fmt.Printf("Warning: binary is at %s\n", exe)
 		fmt.Println("  The service unit will reference this path.")
 		fmt.Println("  Consider moving it first:")
@@ -94,17 +81,23 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("install: %w", err)
 	}
 
-	st, _ = service.GetStatus()
-	fmt.Println("Service installed and started")
-	fmt.Printf("  Unit: %s\n", st.UnitPath)
-	if st.Running {
-		fmt.Printf("  PID:  %d\n", st.PID)
+	after, _ := service.GetStatus()
+	fmt.Printf("  Unit: %s\n", after.UnitPath)
+
+	if before.Running {
+		fmt.Println("Service unit updated")
+		fmt.Println("  Restart when ready: agentique service restart")
+	} else {
+		fmt.Println("Service installed and started")
+		if after.Running {
+			fmt.Printf("  PID:  %d\n", after.PID)
+		}
+		fmt.Println("\nUseful commands:")
+		fmt.Println("  agentique service status    — check status")
+		fmt.Println("  agentique service restart   — restart after upgrade")
+		fmt.Println("  agentique service logs      — stream logs")
+		fmt.Println("  agentique service uninstall — remove service")
 	}
-	fmt.Println("\nUseful commands:")
-	fmt.Println("  agentique service status    — check status")
-	fmt.Println("  agentique service restart   — restart after upgrade")
-	fmt.Println("  agentique service logs      — stream logs")
-	fmt.Println("  agentique service uninstall — remove service")
 	return nil
 }
 

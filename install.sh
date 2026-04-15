@@ -101,11 +101,9 @@ case "$SHELL_NAME" in
     ;;
 esac
 
-# Restart service if running
-if systemctl --user is-active agentique &>/dev/null; then
-  echo "Service is running, restarting..."
-  systemctl --user restart agentique
-  echo "Service restarted."
+# Re-install service if already set up (updates unit file without restarting)
+if systemctl --user is-enabled agentique &>/dev/null; then
+  "${INSTALL_DIR}/agentique" service install
   echo ""
 fi
 
