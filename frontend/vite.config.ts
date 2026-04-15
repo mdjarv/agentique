@@ -20,7 +20,17 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Only precache the app shell — lazy-loaded chunks (mermaid, katex,
+        // diagram renderers ≈ 1500 files) are fetched on demand via the network.
+        globPatterns: [
+          "index.html",
+          "assets/index-*.js",
+          "assets/vendor-*.js",
+          "assets/index-*.css",
+          "*.png",
+          "*.svg",
+          "*.ico",
+        ],
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api\//, /^\/ws$/],
         runtimeCaching: [
