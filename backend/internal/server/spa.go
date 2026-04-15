@@ -47,6 +47,12 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ct)
 	}
 
+	// Service worker and manifest must not be aggressively cached —
+	// stale sw.js prevents PWA auto-updates from being detected.
+	if p == "sw.js" || ext == ".webmanifest" {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, f)
 }
