@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "sessionId": "recorded-plan-approval-001",
+    "sessionName": "Add login page",
+    "projectName": "Fixture Project",
+    "projectPath": "/tmp/fixture-project",
+    "model": "sonnet",
+    "capturedAt": "2026-03-29T11:00:00Z"
+  },
+  "turns": [
+    {
+      "prompt": "Add a login page to the app",
+      "scenario": {
+        "events": [
+          { "delay": 0, "event": { "type": "thinking", "content": "The user wants a login page. Let me explore the project structure first, then create a plan." } },
+          { "delay": 5, "event": { "type": "text", "content": "Let me look at the project structure before creating a plan." } },
+          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-glob-001", "toolName": "Glob", "toolInput": { "pattern": "src/**/*.tsx" } } },
+          { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-glob-001", "content": [{ "type": "text", "text": "src/App.tsx\nsrc/pages/Home.tsx" }] } },
+          { "delay": 5, "event": { "type": "text", "content": "I see the project has a pages directory. Here is my plan for adding the login page." } },
+          { "delay": 5, "event": { "type": "tool_use", "toolId": "tool-exitplan-001", "toolName": "ExitPlanMode", "toolInput": { "plan": "## Login Page Plan\n\n1. Create LoginPage component\n2. Add form with email and password fields\n3. Add routing to /login" } } },
+          { "delay": 5, "event": { "type": "tool_result", "toolId": "tool-exitplan-001", "content": [{ "type": "text", "text": "Plan approved by user" }] } },
+          { "delay": 5, "event": { "type": "text", "content": "Plan approved. I will now create the login page component with email and password fields." } },
+          { "delay": 5, "event": { "type": "result", "stopReason": "end_turn", "cost": 0.015, "duration": 2800, "usage": { "inputTokens": 900, "outputTokens": 250 } } }
+        ]
+      }
+    }
+  ]
+}

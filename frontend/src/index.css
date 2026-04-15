@@ -1,0 +1,952 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-bright: var(--foreground-bright);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-agent: var(--agent);
+  --color-orange: var(--orange);
+  --color-teal: var(--teal);
+  --color-muted-foreground-dim: var(--muted-foreground-dim);
+  --color-muted-foreground-faint: var(--muted-foreground-faint);
+  --color-foreground-dim: var(--foreground-dim);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+ * Tokyo Night (Dark) palette
+ * https://github.com/enkia/tokyo-night-vscode-theme
+ *
+ * Background:    #1a1b26
+ * Background-alt:#16161e (terminal bg / deeper surfaces)
+ * Surface:       #24283b (editor selection, cards)
+ * Border:        #3b4261
+ * Comment:       #565f89
+ * Foreground:    #a9b1d6
+ * Foreground-br: #c0caf5 (bright text)
+ * Red:           #f7768e
+ * Green:         #9ece6a
+ * Yellow:        #e0af68
+ * Blue:          #7aa2f7
+ * Magenta:       #bb9af7
+ * Cyan:          #7dcfff
+ * Orange:        #ff9e64
+ */
+
+:root {
+  /* Tokyo Night (Dark) as the default (and only) theme */
+  --background: #0c0d14;
+  --foreground: #a9b1d6;
+  --foreground-bright: #c0caf5;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1f2335;
+  --popover-foreground: #a9b1d6;
+  --primary: #5e9eff;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #6b7394;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --success: #9ece6a;
+  --warning: #e0af68;
+  --info: #7dcfff;
+  --agent: #c990f0;
+  --orange: #ff9e64;
+  --teal: #73daca;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #5e9eff;
+  --sidebar: #1e2030;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #5e9eff;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #13141e;
+  --sidebar-accent-foreground: #c0caf5;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #5e9eff;
+  --muted-foreground-dim: #616a8e;
+  --muted-foreground-faint: #565f89;
+  --foreground-dim: #8891b5;
+  --radius: 0.625rem;
+}
+
+/* Keep .dark class identical so shadcn components work in dark mode */
+.dark {
+  --background: #0c0d14;
+  --foreground: #a9b1d6;
+  --foreground-bright: #c0caf5;
+  --card: #16161e;
+  --card-foreground: #a9b1d6;
+  --popover: #1f2335;
+  --popover-foreground: #a9b1d6;
+  --primary: #5e9eff;
+  --primary-foreground: #1a1b26;
+  --secondary: #24283b;
+  --secondary-foreground: #a9b1d6;
+  --muted: #24283b;
+  --muted-foreground: #6b7394;
+  --accent: #24283b;
+  --accent-foreground: #a9b1d6;
+  --destructive: #f7768e;
+  --destructive-foreground: #1a1b26;
+  --success: #9ece6a;
+  --warning: #e0af68;
+  --info: #7dcfff;
+  --agent: #c990f0;
+  --orange: #ff9e64;
+  --teal: #73daca;
+  --border: #3b4261;
+  --input: #3b4261;
+  --ring: #5e9eff;
+  --sidebar: #1e2030;
+  --sidebar-foreground: #a9b1d6;
+  --sidebar-primary: #5e9eff;
+  --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #13141e;
+  --sidebar-accent-foreground: #c0caf5;
+  --sidebar-border: #3b4261;
+  --sidebar-ring: #5e9eff;
+  --muted-foreground-dim: #6b7394;
+  --muted-foreground-faint: #565f89;
+  --foreground-dim: #8891b5;
+}
+
+/*
+ * Catppuccin Latte
+ * https://github.com/catppuccin/catppuccin
+ *
+ * Base:     #eff1f5   Mantle:   #e6e9ef   Crust:    #dce0e8
+ * Surface0: #ccd0da   Surface1: #bcc0cc   Surface2: #acb0be
+ * Overlay0: #9ca0b0   Overlay1: #8c8fa1   Overlay2: #7c7f93
+ * Subtext0: #6c6f85   Subtext1: #5c5f77   Text:     #4c4f69
+ */
+.light {
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --foreground-bright: #303245;
+  --card: #e6e9ef;
+  --card-foreground: #4c4f69;
+  --popover: #dce0e8;
+  --popover-foreground: #4c4f69;
+  --primary: #1e66f5;
+  --primary-foreground: #eff1f5;
+  --secondary: #dce0e8;
+  --secondary-foreground: #4c4f69;
+  --muted: #e6e9ef;
+  --muted-foreground: #6c6f85;
+  --accent: #dce0e8;
+  --accent-foreground: #4c4f69;
+  --destructive: #d20f39;
+  --destructive-foreground: #eff1f5;
+  --success: #40a02b;
+  --warning: #df8e1d;
+  --info: #209fb5;
+  --agent: #8839ef;
+  --orange: #fe640b;
+  --teal: #179299;
+  --border: #bcc0cc;
+  --input: #bcc0cc;
+  --ring: #1e66f5;
+  --sidebar: hsl(228 15% 98%);
+  --sidebar-foreground: #4c4f69;
+  --sidebar-primary: #1e66f5;
+  --sidebar-primary-foreground: #eff1f5;
+  --sidebar-accent: hsl(228 15% 90%);
+  --sidebar-accent-foreground: hsl(228 30% 20%);
+  --sidebar-border: hsl(228 18% 68%);
+  --sidebar-ring: #1e66f5;
+  --muted-foreground-dim: #7c7f93;
+  --muted-foreground-faint: #9ca0b0;
+  --foreground-dim: #5c5f77;
+}
+
+/* Global grain texture + subtle gradient overlay (behind content for backdrop-blur) */
+#root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(
+      180deg,
+      hsl(230 19% 15% / 0.15) 0%,
+      transparent 30%,
+      hsl(230 19% 10% / 0.2) 100%
+    ),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:
+    100% 100%,
+    256px 256px;
+  background-repeat: no-repeat, repeat;
+  opacity: 0.07;
+}
+
+#root {
+  position: relative;
+  isolation: isolate;
+}
+
+.light #root::before {
+  background-image:
+    linear-gradient(180deg, hsl(230 15% 85% / 0.2) 0%, transparent 30%, hsl(230 15% 80% / 0.25) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.08;
+}
+
+/* --- Chat pane frosted glass --- */
+.chat-frost {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Colorful blobs — primary blob uses project color, accents are muted complements */
+.chat-frost::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  --frost-base: var(--agent, hsl(230 50% 55%));
+  /* Analogous palette: ±25° hue rotation creates natural harmony.
+     Warm accent rotates toward higher perceived brightness (+25°),
+     cool accent toward lower (-25°). Saturation bumped on both to
+     compensate for the lighter/darker lightness shifts (U-curve). */
+  --frost-warm: hsl(from var(--frost-base) calc(h + 25) calc(s * 1.1) calc(l * 1.15));
+  --frost-cool: hsl(from var(--frost-base) calc(h - 25) calc(s * 1.1) calc(l * 0.85));
+  background:
+    radial-gradient(ellipse 70% 60% at 15% 20%, color-mix(in srgb, var(--frost-base), transparent 70%), transparent 70%),
+    radial-gradient(ellipse 55% 65% at 80% 70%, color-mix(in srgb, var(--frost-base), transparent 80%), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 85% 15%, color-mix(in srgb, var(--frost-warm), transparent 75%), transparent 70%),
+    radial-gradient(ellipse 50% 55% at 20% 80%, color-mix(in srgb, var(--frost-cool), transparent 75%), transparent 70%);
+  filter: blur(50px);
+  pointer-events: none;
+}
+
+.light .chat-frost::before {
+  background:
+    radial-gradient(ellipse 70% 60% at 15% 20%, color-mix(in srgb, var(--frost-base), transparent 65%), transparent 70%),
+    radial-gradient(ellipse 55% 65% at 80% 70%, color-mix(in srgb, var(--frost-base), transparent 75%), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 85% 15%, color-mix(in srgb, var(--frost-warm), transparent 70%), transparent 70%),
+    radial-gradient(ellipse 50% 55% at 20% 80%, color-mix(in srgb, var(--frost-cool), transparent 70%), transparent 70%);
+}
+
+/* Ensure chat content paints above the frost layers */
+.chat-frost > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Override Tailwind v4 universal reset for typography prose elements.
+   The prose plugin uses :where() (0 specificity) which loses to * { margin: 0 }.
+   This restores paragraph/list/heading margins inside .prose blocks. */
+.prose p,
+.prose ul,
+.prose ol,
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6,
+.prose pre,
+.prose blockquote,
+.prose hr,
+.prose table {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+.prose p:first-child,
+.prose h1:first-child,
+.prose h2:first-child,
+.prose h3:first-child {
+  margin-top: 0;
+}
+.prose p:last-child,
+.prose blockquote:last-child,
+.prose table:last-child {
+  margin-bottom: 0;
+}
+.prose blockquote:first-child,
+.prose table:first-child {
+  margin-top: 0;
+}
+
+/* --- Tables --- */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0.375rem;
+}
+
+.prose thead th {
+  background: var(--background);
+  color: var(--foreground-bright);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prose tbody td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  vertical-align: top;
+}
+
+.prose tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--background) 40%, transparent);
+}
+
+.prose tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.prose tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* --- Blockquotes --- */
+.prose blockquote {
+  border-left: 3px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  padding: 0.5rem 1rem;
+  border-radius: 0 0.25rem 0.25rem 0;
+  color: var(--foreground);
+  font-style: normal;
+}
+
+.prose blockquote p:first-child {
+  margin-top: 0;
+}
+
+.prose blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Links --- */
+.prose a {
+  color: var(--primary);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+.prose a:hover {
+  text-decoration: underline;
+}
+
+/* --- Horizontal rules --- */
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  opacity: 0.5;
+}
+
+/* --- Headings --- */
+.prose h1 {
+  font-size: 1.25rem;
+  color: var(--foreground-bright);
+  font-weight: 700;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  padding-bottom: 0.3em;
+}
+
+.prose h2 {
+  font-size: 1.1rem;
+  color: var(--foreground-bright);
+  font-weight: 600;
+}
+
+.prose h3 {
+  font-size: 1rem;
+  color: var(--foreground-bright);
+  font-weight: 600;
+}
+
+.prose h4,
+.prose h5,
+.prose h6 {
+  font-size: 0.875rem;
+  color: var(--foreground-bright);
+  font-weight: 600;
+}
+
+/* --- Lists --- */
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+}
+
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+}
+
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+/* --- Task lists (GFM) --- */
+.prose ul:has(> li > input[type="checkbox"]) {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+
+.prose li > input[type="checkbox"] {
+  appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  position: relative;
+  cursor: default;
+}
+
+.prose li > input[type="checkbox"]:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.prose li > input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 2.5px;
+  top: 0.5px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--primary-foreground);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* --- Base prose text --- */
+.prose {
+  color: var(--foreground);
+}
+
+.prose strong {
+  color: var(--foreground-bright);
+  font-weight: 600;
+}
+
+/* --- Inline code --- */
+.prose :not(pre) > code {
+  background: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.8em;
+  color: var(--foreground-bright);
+}
+
+/* --- Code blocks --- */
+.prose pre {
+  background: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+
+/* --- Code block wrapper (copy button positioning) --- */
+.prose .code-block-wrapper {
+  position: relative;
+  margin: 1em 0;
+}
+
+.prose .code-block-wrapper:first-child {
+  margin-top: 0;
+}
+
+.prose .code-block-wrapper:last-child {
+  margin-bottom: 0;
+}
+
+.prose .code-block-wrapper pre {
+  margin: 0;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.5rem;
+  width: 1.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  color: var(--muted-foreground);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .code-copy-btn {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
+.code-copy-btn:hover {
+  color: var(--foreground-bright);
+}
+
+/* --- Mermaid diagrams --- */
+.prose .mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0.5rem;
+}
+
+.prose .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* --- Strikethrough (GFM) --- */
+.prose del {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* --- User message prose variant --- */
+.prose-user {
+  color: inherit;
+}
+
+.prose-user h1,
+.prose-user h2,
+.prose-user h3,
+.prose-user h4,
+.prose-user h5,
+.prose-user h6 {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.prose-user strong {
+  color: inherit;
+}
+
+.prose-user a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.prose-user :not(pre) > code {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: inherit;
+}
+
+.prose-user blockquote {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: inherit;
+}
+
+.prose-user pre {
+  border-color: color-mix(in srgb, var(--primary) 15%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.prose-user del {
+  color: inherit;
+  opacity: 0.6;
+}
+
+.prose-user hr {
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* --- Typing indicator dots --- */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* --- Compaction progress bar animation --- */
+@keyframes stripe-scroll {
+  to {
+    background-position: 16px 0;
+  }
+}
+
+.compact-stripes {
+  background-image: linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--primary) 25%, transparent) 25%,
+    color-mix(in srgb, var(--primary) 12%, transparent) 25%,
+    color-mix(in srgb, var(--primary) 12%, transparent) 50%,
+    color-mix(in srgb, var(--primary) 25%, transparent) 50%,
+    color-mix(in srgb, var(--primary) 25%, transparent) 75%,
+    color-mix(in srgb, var(--primary) 12%, transparent) 75%
+  );
+  background-size: 16px 16px;
+  animation: stripe-scroll 0.6s linear infinite;
+}
+
+/* --- Shimmer press (new-session button) --- */
+.shimmer-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 75%
+  );
+  translate: -100% 0;
+  pointer-events: none;
+}
+
+.shimmer-btn.shimmer-active::after {
+  animation: shimmer-sweep 0.5s ease forwards;
+}
+
+@keyframes shimmer-sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-btn::after {
+    display: none;
+  }
+}
+
+/* --- Mic pulse (dictation active) --- */
+@keyframes mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--destructive) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--destructive) 0%, transparent);
+  }
+}
+
+.mic-pulse {
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-pulse {
+    animation: none;
+  }
+}
+
+/* --- Sidebar shadow (light mode depth) --- */
+.light .bg-sidebar\/80 {
+  box-shadow:
+    2px 0 12px hsl(228 20% 50% / 0.12),
+    4px 0 24px hsl(228 20% 50% / 0.06);
+}
+
+/* --- Sidebar row states --- */
+
+/* Dark: subtle darkening for selected, even subtler for hover */
+.sidebar-row-selected {
+  background: hsl(230 19% 8% / 0.5);
+}
+
+.group\/row:hover > .sidebar-row-hover {
+  background: hsl(230 19% 8% / 0.25);
+}
+
+/* Light: opaque surfaces on the lightness scale: base(85) < hover(91) < selected(96).
+   Ring shadow on selected gives "lifted card" depth cue. */
+.light .sidebar-row-selected {
+  background: hsl(228 20% 93%);
+  box-shadow:
+    0 1px 3px hsl(228 20% 50% / 0.08),
+    0 0 0 1px hsl(228 15% 85% / 0.5);
+}
+
+.light .group\/row:hover > .sidebar-row-hover {
+  background: hsl(228 15% 95%);
+}
+
+/* --- Todo progress bar (sidebar) --- */
+
+/* Dark mode: bright emerald glows on dark sidebar */
+:root {
+  --todo-bar-from: rgb(16 185 129 / 0.6);
+  --todo-bar-to: rgb(52 211 153 / 0.9);
+  --todo-track: rgb(52 211 153 / 0.1);
+  --todo-spark: rgb(167 243 208);
+  --todo-spark-glow: rgb(52 211 153 / 0.8);
+  --todo-spark-glow-soft: rgb(52 211 153 / 0.35);
+  --todo-spark-glow-dim: rgb(52 211 153 / 0.6);
+  --todo-spark-glow-dim-soft: rgb(52 211 153 / 0.25);
+  --todo-spark-glow-bright: rgb(52 211 153 / 0.9);
+  --todo-spark-glow-bright-soft: rgb(52 211 153 / 0.4);
+  --todo-flash-mid: rgb(52 211 153 / 0.25);
+  --todo-flash-edge: rgb(52 211 153 / 0.15);
+  --todo-particle: rgb(167 243 208);
+  --todo-particle-glow: rgb(52 211 153 / 0.7);
+}
+
+/* Light mode: deeper, more saturated emerald that pops on pale sidebar.
+   Hue rotated slightly toward teal (lower perceived brightness) for richness. */
+/* Light mode: jewel-tone emerald — high saturation at low lightness creates
+   the same "alive" energy as dark mode's neon glow, via color intensity
+   rather than luminance contrast. Hue rotated 2-4° toward teal for richness. */
+.light {
+  --todo-bar-from: hsl(162 90% 28% / 0.85);
+  --todo-bar-to: hsl(158 85% 32% / 0.95);
+  --todo-track: hsl(160 40% 35% / 0.15);
+  --todo-spark: hsl(160 85% 30%);
+  --todo-spark-glow: hsl(158 80% 32% / 0.6);
+  --todo-spark-glow-soft: hsl(158 70% 34% / 0.25);
+  --todo-spark-glow-dim: hsl(158 70% 34% / 0.4);
+  --todo-spark-glow-dim-soft: hsl(158 60% 36% / 0.15);
+  --todo-spark-glow-bright: hsl(158 90% 28% / 0.75);
+  --todo-spark-glow-bright-soft: hsl(158 75% 32% / 0.35);
+  --todo-flash-mid: hsl(160 70% 35% / 0.15);
+  --todo-flash-edge: hsl(160 55% 38% / 0.08);
+  --todo-particle: hsl(160 85% 30%);
+  --todo-particle-glow: hsl(158 80% 32% / 0.5);
+}
+
+.todo-track {
+  background: var(--todo-track);
+}
+
+.todo-bar {
+  background: linear-gradient(90deg, var(--todo-bar-from), var(--todo-bar-to));
+}
+
+.todo-bar-spark {
+  width: 2px;
+  height: 3px;
+  margin-left: -1px;
+  margin-top: -1.5px;
+  border-radius: 1px;
+  background: var(--todo-spark);
+  box-shadow:
+    0 0 3px 1px var(--todo-spark-glow),
+    0 0 6px 2px var(--todo-spark-glow-soft);
+  animation: todo-spark-flicker 1.2s ease-in-out infinite;
+}
+
+@keyframes todo-spark-flicker {
+  0%,
+  100% {
+    opacity: 0.7;
+    box-shadow:
+      0 0 2px 1px var(--todo-spark-glow-dim),
+      0 0 4px 1px var(--todo-spark-glow-dim-soft);
+  }
+  50% {
+    opacity: 1;
+    box-shadow:
+      0 0 4px 1px var(--todo-spark-glow-bright),
+      0 0 8px 3px var(--todo-spark-glow-bright-soft);
+  }
+}
+
+.todo-complete-flash {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--todo-flash-edge) 30%,
+    var(--todo-flash-mid) 50%,
+    var(--todo-flash-edge) 70%,
+    transparent 100%
+  );
+  animation: todo-complete-sweep 0.8s ease-out forwards;
+}
+
+@keyframes todo-complete-sweep {
+  0% {
+    opacity: 0;
+    translate: -100% 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 100% 0;
+  }
+}
+
+/* --- Spark burst particles --- */
+.todo-particle {
+  border-radius: 50%;
+  background: var(--todo-particle);
+  box-shadow: 0 0 3px 1px var(--todo-particle-glow);
+  animation: todo-particle-fly ease-out forwards;
+}
+
+@keyframes todo-particle-fly {
+  0% {
+    translate: 0 0;
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    translate: var(--dx) var(--dy);
+    opacity: 0;
+    scale: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-bar-spark {
+    animation: none;
+  }
+  .todo-complete-flash {
+    animation: none;
+    display: none;
+  }
+  .todo-particle {
+    display: none;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  code,
+  pre,
+  kbd,
+  samp,
+  textarea {
+    @apply font-mono;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}

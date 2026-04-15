@@ -1,0 +1,380 @@
+import { ChevronLeft, ChevronRight, MessageSquare, Send } from "lucide-react";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "~/components/ui/button";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { resolveQuestion } from "~/lib/session/actions";
+import { cn, getErrorMessage } from "~/lib/utils";
+import type { PendingQuestion, Question } from "~/stores/chat-store";
+
+interface QuestionBannerProps {
+  sessionId: string;
+  pending: PendingQuestion;
+}
+
+function OptionCard({
+  label,
+  description,
+  selected,
+  onClick,
+}: {
+  label: string;
+  description?: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "text-left rounded-md border px-3 py-2.5 text-sm transition-colors cursor-pointer",
+        selected
+          ? "bg-background border-agent/50 ring-1 ring-agent/25 shadow-[0_0_12px_rgba(187,154,247,0.25)]"
+          : "bg-background/60 border-transparent hover:bg-background/80 hover:border-border/40",
+      )}
+    >
+      <span className={cn("font-medium", selected && "text-agent")}>{label}</span>
+      {description && <p className="text-xs text-foreground-dim mt-0.5">{description}</p>}
+    </button>
+  );
+}
+
+function OptionsInput({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (question.multiSelect) {
+    const selected = new Set(value ? value.split("\n") : []);
+    return (
+      <div className="flex flex-col gap-1.5">
+        {question.options?.map((opt) => (
+          <OptionCard
+            key={opt.label}
+            label={opt.label}
+            description={opt.description}
+            selected={selected.has(opt.label)}
+            onClick={() => {
+              const next = new Set(selected);
+              if (next.has(opt.label)) {
+                next.delete(opt.label);
+              } else {
+                next.add(opt.label);
+              }
+              onChange([...next].join("\n"));
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {question.options?.map((opt) => (
+        <OptionCard
+          key={opt.label}
+          label={opt.label}
+          description={opt.description}
+          selected={value === opt.label}
+          onClick={() => onChange(opt.label)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function QuestionInput({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const hasOptions = question.options && question.options.length > 0;
+  const [customMode, setCustomMode] = useState(false);
+
+  if (!hasOptions) {
+    return (
+      <textarea
+        className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm resize-none"
+        placeholder="Type your response..."
+        rows={2}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  if (customMode) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <textarea
+          ref={(el) => el?.focus()}
+          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm resize-none"
+          placeholder="Type your response..."
+          rows={3}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="self-start text-xs text-agent hover:text-agent/80"
+          onClick={() => {
+            onChange("");
+            setCustomMode(false);
+          }}
+        >
+          Back to options
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <OptionsInput question={question} value={value} onChange={onChange} />
+      <button
+        type="button"
+        className="self-start text-xs text-foreground-dim hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-background/40 transition-colors"
+        onClick={() => {
+          onChange("");
+          setCustomMode(true);
+        }}
+      >
+        <MessageSquare className="h-3 w-3" />
+        Custom response
+      </button>
+    </div>
+  );
+}
+
+function StepDots({
+  questions,
+  current,
+  answeredSteps,
+  onNavigate,
+}: {
+  questions: Question[];
+  current: number;
+  answeredSteps: Set<number>;
+  onNavigate: (step: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5" role="tablist" aria-label="Question steps">
+      {questions.map((q, i) => (
+        <button
+          key={q.question}
+          type="button"
+          role="tab"
+          aria-selected={i === current}
+          aria-label={`Question ${i + 1}`}
+          className={cn(
+            "h-2 w-2 rounded-full transition-colors",
+            "p-0 before:content-[''] before:absolute before:inset-[-6px] relative",
+            i === current ? "bg-agent" : answeredSteps.has(i) ? "bg-agent/50" : "bg-foreground/20",
+          )}
+          onClick={() => onNavigate(i)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SingleQuestionBanner({
+  question,
+  value,
+  onChange,
+  onSubmit,
+  submitting,
+  answered,
+}: {
+  question: Question;
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  answered: boolean;
+}) {
+  return (
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          {question.header && (
+            <span className="text-xs font-semibold uppercase tracking-wide text-agent">
+              {question.header}
+            </span>
+          )}
+          <span className="text-sm font-medium">{question.question}</span>
+          <QuestionInput question={question} value={value} onChange={onChange} />
+        </div>
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            className="h-7 px-3 bg-agent hover:bg-agent/90 text-background"
+            disabled={!answered || submitting}
+            onClick={onSubmit}
+          >
+            <Send className="h-3.5 w-3.5 mr-1" />
+            Submit
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WizardQuestionBanner({
+  questions,
+  answers,
+  setAnswer,
+  onSubmit,
+  submitting,
+  allAnswered,
+}: {
+  questions: Question[];
+  answers: Record<string, string>;
+  setAnswer: (questionText: string, value: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  allAnswered: boolean;
+}) {
+  const [step, setStep] = useState(0);
+  const total = questions.length;
+  const q = questions[step];
+  if (!q) return null;
+  const currentValue = answers[q.question] ?? "";
+  const currentAnswered = currentValue.trim() !== "";
+  const isLast = step === total - 1;
+
+  const answeredSteps = new Set(
+    questions.reduce<number[]>((acc, question, i) => {
+      if ((answers[question.question] ?? "").trim() !== "") acc.push(i);
+      return acc;
+    }, []),
+  );
+
+  return (
+    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+      <div className="flex flex-col gap-2">
+        {/* Header: step label + dots */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {step + 1} / {total}
+          </span>
+          <StepDots
+            questions={questions}
+            current={step}
+            answeredSteps={answeredSteps}
+            onNavigate={setStep}
+          />
+        </div>
+
+        {/* Current question */}
+        <div className="flex flex-col gap-1.5">
+          {q.header && (
+            <span className="text-xs font-semibold uppercase tracking-wide text-agent">
+              {q.header}
+            </span>
+          )}
+          <span className="text-sm font-medium">{q.question}</span>
+          <QuestionInput
+            key={q.question}
+            question={q}
+            value={currentValue}
+            onChange={(v) => setAnswer(q.question, v)}
+          />
+        </div>
+
+        {/* Navigation */}
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-muted-foreground hover:text-foreground"
+            disabled={step === 0}
+            onClick={() => setStep(step - 1)}
+          >
+            <ChevronLeft className="h-4 w-4 mr-0.5" />
+            Back
+          </Button>
+
+          {isLast ? (
+            <Button
+              size="sm"
+              className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
+              disabled={!allAnswered || submitting}
+              onClick={onSubmit}
+            >
+              <Send className="h-3.5 w-3.5 mr-1" />
+              Submit
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
+              disabled={!currentAnswered}
+              onClick={() => setStep(step + 1)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-0.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
+  const ws = useWebSocket();
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const setAnswer = useCallback((questionText: string, value: string) => {
+    setAnswers((prev) => ({ ...prev, [questionText]: value }));
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    setSubmitting(true);
+    resolveQuestion(ws, sessionId, pending.questionId, answers).catch((err) => {
+      setSubmitting(false);
+      toast.error(getErrorMessage(err, "Failed to submit answer"));
+    });
+  }, [ws, sessionId, pending.questionId, answers]);
+
+  const allAnswered = pending.questions.every((q) => (answers[q.question] ?? "").trim() !== "");
+
+  if (pending.questions.length === 1) {
+    const q = pending.questions[0];
+    if (!q) return null;
+    return (
+      <SingleQuestionBanner
+        question={q}
+        value={answers[q.question] ?? ""}
+        onChange={(v) => setAnswer(q.question, v)}
+        onSubmit={handleSubmit}
+        submitting={submitting}
+        answered={(answers[q.question] ?? "").trim() !== ""}
+      />
+    );
+  }
+
+  return (
+    <WizardQuestionBanner
+      questions={pending.questions}
+      answers={answers}
+      setAnswer={setAnswer}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      allAnswered={allAnswered}
+    />
+  );
+}

@@ -1,0 +1,240 @@
+import { useNavigate } from "@tanstack/react-router";
+import { FolderOpen, FolderPlus, Plus, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
+import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { useIsMobile } from "~/hooks/useIsMobile";
+import { createProject, type PathValidation, validatePath } from "~/lib/api";
+import { useAppStore } from "~/stores/app-store";
+
+/** Extract the last directory component from a path (cross-platform). */
+function dirName(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, "");
+  const parts = trimmed.split(/[/\\]/);
+  return parts[parts.length - 1] ?? "";
+}
+
+const LAST_PARENT_DIR_KEY = "agentique:last-project-parent-dir";
+
+function parentDir(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, "");
+  const lastSlash = trimmed.lastIndexOf("/");
+  return lastSlash > 0 ? trimmed.slice(0, lastSlash) : "/";
+}
+
+function getLastParentDir(): string | undefined {
+  try {
+    return localStorage.getItem(LAST_PARENT_DIR_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveLastParentDir(projectPath: string): void {
+  try {
+    localStorage.setItem(LAST_PARENT_DIR_KEY, parentDir(projectPath));
+  } catch {
+    // ignore
+  }
+}
+
+interface NewProjectDialogProps {
+  trigger?: React.ReactNode;
+}
+
+export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [nameManuallySet, setNameManuallySet] = useState(false);
+  const [path, setPath] = useState("");
+  const [error, setError] = useState("");
+  const [validation, setValidation] = useState<PathValidation | null>(null);
+  const validationController = useRef<AbortController | null>(null);
+  const addProject = useAppStore((s) => s.addProject);
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const [showBrowser, setShowBrowser] = useState(!isMobile);
+
+  const handlePathChange = useCallback(
+    (newPath: string) => {
+      setPath(newPath);
+      setError("");
+      if (!nameManuallySet) {
+        setName(dirName(newPath));
+      }
+    },
+    [nameManuallySet],
+  );
+
+  // Debounced path validation
+  useEffect(() => {
+    setValidation(null);
+
+    const trimmed = path.trim();
+    if (!trimmed?.startsWith("/")) return;
+
+    const timer = setTimeout(() => {
+      validationController.current?.abort();
+      const controller = new AbortController();
+      validationController.current = controller;
+
+      validatePath(trimmed)
+        .then((result) => {
+          if (!controller.signal.aborted) {
+            setValidation(result);
+          }
+        })
+        .catch((err) => {
+          // Ignore abort errors; log others
+          if (err instanceof Error && err.name !== "AbortError") {
+            console.error("validatePath failed", err);
+          }
+        });
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [path]);
+
+  const handleNameChange = (newName: string) => {
+    setName(newName);
+    setNameManuallySet(newName !== "");
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      const project = await createProject(name, path);
+      saveLastParentDir(path);
+      addProject(project);
+      setName("");
+      setPath("");
+      setNameManuallySet(false);
+      setOpen(false);
+      navigate({
+        to: "/project/$projectSlug",
+        params: { projectSlug: project.slug },
+      });
+    } catch {
+      setError("Failed to create project.");
+    }
+  };
+
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      setName("");
+      setPath("");
+      setNameManuallySet(false);
+      setError("");
+      setValidation(null);
+      setShowBrowser(!isMobile);
+    }
+  };
+
+  const willCreate = validation !== null && !validation.exists && validation.parentExists;
+  const parentMissing = validation !== null && !validation.exists && !validation.parentExists;
+  const canCreate = path.trim() !== "" && !parentMissing;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {trigger ? (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      ) : isMobile ? (
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label="New project">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </DialogTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="New project">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>New project</TooltipContent>
+        </Tooltip>
+      )}
+      <DialogContent className={showBrowser ? "sm:max-w-2xl" : undefined}>
+        <DialogHeader>
+          <DialogTitle>Create New Project</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="project-path">Directory</Label>
+            <div className="flex gap-2">
+              <Input
+                id="project-path"
+                value={path}
+                onChange={(e) => handlePathChange(e.target.value)}
+                placeholder="/home/user/my-project"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setShowBrowser(!showBrowser)}
+                title={showBrowser ? "Hide browser" : "Browse"}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
+            {willCreate && (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <FolderPlus className="h-3.5 w-3.5 shrink-0" />
+                Directory will be created and initialized with git
+              </p>
+            )}
+            {parentMissing && (
+              <p className="flex items-center gap-1.5 text-sm text-destructive">
+                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                Parent directory does not exist
+              </p>
+            )}
+          </div>
+          {showBrowser && (
+            <DirectoryBrowser initialPath={getLastParentDir()} onSelect={handlePathChange} />
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="project-name">Name</Label>
+            <Input
+              id="project-name"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Auto-filled from directory"
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={!canCreate}>
+              Create
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

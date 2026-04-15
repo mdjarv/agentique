@@ -1,0 +1,486 @@
+{
+  "metadata": {
+    "sessionId": "23428422-afff-4301-a64f-0e541b5c1cf2",
+    "sessionName": "E2E fixture: tool-diversity (turn 1)",
+    "projectName": "agentique",
+    "projectPath": "/home/user/git/agentique",
+    "model": "opus",
+    "capturedAt": "2026-03-29T09:28:48Z"
+  },
+  "turns": [
+    {
+      "prompt": "Create a helper function `formatDuration(ms: number): string` in `frontend/src/lib/format.ts` that formats milliseconds into human-readable strings:\n- \u003c1000ms: \"0.Xs\" (one decimal)\n- 1-59s: \"Xs\" or \"X.Xs\"\n- 60s+: \"Xm Ys\"\n\nAlso create `frontend/src/lib/__tests__/format.test.ts` with tests covering edge cases (0, fractional, exact minutes, large values).\n\nUse TodoWrite to track your progress through the subtasks.",
+      "scenario": {
+        "events": [
+          {
+            "delay": 0,
+            "event": {
+              "content": "Let me start by exploring the existing codebase to understand patterns and then plan the implementation.",
+              "type": "thinking"
+            }
+          },
+          {
+            "delay": 491,
+            "event": {
+              "category": "meta",
+              "toolId": "toolu_01HwwdGBsxjUizuEL4w3v8Gk",
+              "toolInput": {
+                "max_results": 1,
+                "query": "select:TodoWrite"
+              },
+              "toolName": "ToolSearch",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 5371,
+            "event": {
+              "category": "task",
+              "toolId": "toolu_01Vj7sP8i2GYYhy27Z5Nhje1",
+              "toolInput": {
+                "todos": [
+                  {
+                    "activeForm": "Exploring existing code patterns",
+                    "content": "Explore existing format.ts and test patterns",
+                    "status": "in_progress"
+                  },
+                  {
+                    "activeForm": "Creating formatDuration helper",
+                    "content": "Create formatDuration helper in format.ts",
+                    "status": "pending"
+                  },
+                  {
+                    "activeForm": "Creating format tests",
+                    "content": "Create format.test.ts with edge case coverage",
+                    "status": "pending"
+                  },
+                  {
+                    "activeForm": "Running tests and checks",
+                    "content": "Run tests and check",
+                    "status": "pending"
+                  }
+                ]
+              },
+              "toolName": "TodoWrite",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 10207,
+            "event": {
+              "category": "file_read",
+              "toolId": "toolu_01HRN3NwHiUMnmaH9EXf9TNf",
+              "toolInput": {
+                "pattern": "frontend/src/lib/format*.ts"
+              },
+              "toolName": "Glob",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 10360,
+            "event": {
+              "category": "file_read",
+              "toolId": "toolu_018GpY2H8VQZxnTCX9DEaHDN",
+              "toolInput": {
+                "pattern": "frontend/src/lib/__tests__/*.test.ts"
+              },
+              "toolName": "Glob",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 14893,
+            "event": {
+              "category": "file_read",
+              "toolId": "toolu_01JdNpSEWPj5498XHGfkRFt6",
+              "toolInput": {
+                "file_path": "/tmp/fixture-project/frontend/src/lib/__tests__/events.test.ts",
+                "limit": 30
+              },
+              "toolName": "Read",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 15578,
+            "event": {
+              "category": "file_read",
+              "toolId": "toolu_01BVZ8VR6x6J9LQXhVRi7yoU",
+              "toolInput": {
+                "output_mode": "content",
+                "path": "frontend/src",
+                "pattern": "formatDuration|format.*duration|duration.*format"
+              },
+              "toolName": "Grep",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 19660,
+            "event": {
+              "content": "Good — no existing `format.ts` and no existing duration formatting. I have the test pattern from `events.test.ts`.",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 20314,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_015sZ8Gp7KaZgzSnnwj4fsDi",
+              "toolInput": {
+                "command": "ls /tmp/fixture-project/frontend/src/lib/",
+                "description": "List lib directory contents"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 25725,
+            "event": {
+              "category": "task",
+              "toolId": "toolu_01A83XPcKUiFtoD8fGBFaAbJ",
+              "toolInput": {
+                "todos": [
+                  {
+                    "activeForm": "Exploring existing code patterns",
+                    "content": "Explore existing format.ts and test patterns",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating formatDuration helper",
+                    "content": "Create formatDuration helper in format.ts",
+                    "status": "in_progress"
+                  },
+                  {
+                    "activeForm": "Creating format tests",
+                    "content": "Create format.test.ts with edge case coverage",
+                    "status": "pending"
+                  },
+                  {
+                    "activeForm": "Running tests and checks",
+                    "content": "Run tests and check",
+                    "status": "pending"
+                  }
+                ]
+              },
+              "toolName": "TodoWrite",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 32408,
+            "event": {
+              "category": "file_write",
+              "toolId": "toolu_01BFzxHeUeahuNQq6FjnrKHE",
+              "toolInput": {
+                "content": "/**\n * Format milliseconds into a human-readable duration string.\n * - \u003c1s: \"0.Xs\"\n * - 1-59s: \"Xs\" or \"X.Xs\"\n * - 60s+: \"Xm Ys\"\n */\nexport function formatDuration(ms: number): string {\n  const totalSeconds = ms / 1000;\n\n  if (totalSeconds \u003c 1) {\n    return `${totalSeconds.toFixed(1)}s`;\n  }\n\n  if (totalSeconds \u003c 60) {\n    const rounded = Math.round(totalSeconds * 10) / 10;\n    return rounded % 1 === 0 ? `${rounded}s` : `${rounded.toFixed(1)}s`;\n  }\n\n  const minutes = Math.floor(totalSeconds / 60);\n  const seconds = Math.round(totalSeconds % 60);\n  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;\n}\n",
+                "file_path": "/tmp/fixture-project/frontend/src/lib/format.ts"
+              },
+              "toolName": "Write",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 39066,
+            "event": {
+              "category": "task",
+              "toolId": "toolu_01BEc7WSWrCsepszuMrnYM6Y",
+              "toolInput": {
+                "todos": [
+                  {
+                    "activeForm": "Exploring existing code patterns",
+                    "content": "Explore existing format.ts and test patterns",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating formatDuration helper",
+                    "content": "Create formatDuration helper in format.ts",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating format tests",
+                    "content": "Create format.test.ts with edge case coverage",
+                    "status": "in_progress"
+                  },
+                  {
+                    "activeForm": "Running tests and checks",
+                    "content": "Run tests and check",
+                    "status": "pending"
+                  }
+                ]
+              },
+              "toolName": "TodoWrite",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 48076,
+            "event": {
+              "category": "file_write",
+              "toolId": "toolu_0156mkMV727xi99PT1dUNNJt",
+              "toolInput": {
+                "content": "import { describe, expect, it } from \"vitest\";\nimport { formatDuration } from \"~/lib/format\";\n\ndescribe(\"formatDuration\", () =\u003e {\n  it(\"formats 0ms\", () =\u003e {\n    expect(formatDuration(0)).toBe(\"0.0s\");\n  });\n\n  it(\"formats sub-second values with one decimal\", () =\u003e {\n    expect(formatDuration(100)).toBe(\"0.1s\");\n    expect(formatDuration(500)).toBe(\"0.5s\");\n    expect(formatDuration(999)).toBe(\"1.0s\");\n  });\n\n  it(\"formats exact seconds without decimal\", () =\u003e {\n    expect(formatDuration(1000)).toBe(\"1s\");\n    expect(formatDuration(5000)).toBe(\"5s\");\n    expect(formatDuration(30000)).toBe(\"30s\");\n  });\n\n  it(\"formats fractional seconds with one decimal\", () =\u003e {\n    expect(formatDuration(1500)).toBe(\"1.5s\");\n    expect(formatDuration(12300)).toBe(\"12.3s\");\n    expect(formatDuration(59900)).toBe(\"59.9s\");\n  });\n\n  it(\"formats exact minutes without seconds\", () =\u003e {\n    expect(formatDuration(60000)).toBe(\"1m\");\n    expect(formatDuration(120000)).toBe(\"2m\");\n    expect(formatDuration(300000)).toBe(\"5m\");\n  });\n\n  it(\"formats minutes and seconds\", () =\u003e {\n    expect(formatDuration(61000)).toBe(\"1m 1s\");\n    expect(formatDuration(90000)).toBe(\"1m 30s\");\n    expect(formatDuration(125000)).toBe(\"2m 5s\");\n  });\n\n  it(\"formats large values\", () =\u003e {\n    expect(formatDuration(3600000)).toBe(\"60m\");\n    expect(formatDuration(3661000)).toBe(\"61m 1s\");\n  });\n\n  it(\"rounds seconds in minute range\", () =\u003e {\n    expect(formatDuration(61500)).toBe(\"1m 2s\");\n    expect(formatDuration(119400)).toBe(\"1m 59s\");\n  });\n});\n",
+                "file_path": "/tmp/fixture-project/frontend/src/lib/__tests__/format.test.ts"
+              },
+              "toolName": "Write",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 52835,
+            "event": {
+              "category": "task",
+              "toolId": "toolu_01BNNaKaYBSWn7QSvpU3tM8N",
+              "toolInput": {
+                "todos": [
+                  {
+                    "activeForm": "Exploring existing code patterns",
+                    "content": "Explore existing format.ts and test patterns",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating formatDuration helper",
+                    "content": "Create formatDuration helper in format.ts",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating format tests",
+                    "content": "Create format.test.ts with edge case coverage",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Running tests and checks",
+                    "content": "Run tests and check",
+                    "status": "in_progress"
+                  }
+                ]
+              },
+              "toolName": "TodoWrite",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 57894,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_01TNfpMY5WLv5S6groaCCaC6",
+              "toolInput": {
+                "command": "npx vitest run --reporter=verbose frontend/src/lib/__tests__/format.test.ts 2\u003e\u00261",
+                "description": "Run format tests"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 63010,
+            "event": {
+              "content": "Need to run from the frontend directory. Let me check how the existing test runs.",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 63618,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_01KuNhgW3CkfuJ6GaLcUt3Eh",
+              "toolInput": {
+                "command": "cd /tmp/fixture-project/frontend \u0026\u0026 npx vitest run --reporter=verbose src/lib/__tests__/format.test.ts 2\u003e\u00261",
+                "description": "Run format tests from frontend dir"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 68784,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_017uvtA9yDL3XNkNjNh43tiD",
+              "toolInput": {
+                "command": "cd /tmp/fixture-project/frontend \u0026\u0026 npm install 2\u003e\u00261 | tail -5",
+                "description": "Install frontend dependencies"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 75598,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_012NHYXseAkeXTE3HJQDeY9A",
+              "toolInput": {
+                "command": "npx vitest run --reporter=verbose src/lib/__tests__/format.test.ts 2\u003e\u00261",
+                "description": "Run format tests"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 80108,
+            "event": {
+              "content": "All 8 tests pass. Now run `just check`.",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 80676,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_01VasT5A3okGsK9Fz6YJDNUN",
+              "toolInput": {
+                "command": "cd /tmp/fixture-project \u0026\u0026 just check 2\u003e\u00261",
+                "description": "Run biome + tsc checks"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 87456,
+            "event": {
+              "content": "All checks pass. Committing.",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 89303,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_01PYPW79L4EXjF1gW45mcS24",
+              "toolInput": {
+                "command": "git add frontend/src/lib/format.ts frontend/src/lib/__tests__/format.test.ts \u0026\u0026 git commit -m \"$(cat \u003c\u003c'EOF'\nAdd formatDuration helper + tests\nEOF\n)\"",
+                "description": "Commit new files"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 94916,
+            "event": {
+              "category": "task",
+              "toolId": "toolu_019e6hMgfz2bxQDo6bAh5355",
+              "toolInput": {
+                "todos": [
+                  {
+                    "activeForm": "Exploring existing code patterns",
+                    "content": "Explore existing format.ts and test patterns",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating formatDuration helper",
+                    "content": "Create formatDuration helper in format.ts",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Creating format tests",
+                    "content": "Create format.test.ts with edge case coverage",
+                    "status": "completed"
+                  },
+                  {
+                    "activeForm": "Running tests and checks",
+                    "content": "Run tests and check",
+                    "status": "completed"
+                  }
+                ]
+              },
+              "toolName": "TodoWrite",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 100599,
+            "event": {
+              "content": "Done. Created:\n\n- **`frontend/src/lib/format.ts`** — `formatDuration(ms)` with three ranges: sub-second (`0.5s`), seconds (`12.3s`), minutes (`2m 5s`)\n- **`frontend/src/lib/__tests__/format.test.ts`** — 8 tests covering 0ms, fractional ms, exact seconds, fractional seconds, exact minutes, minutes+seconds, large values, and rounding at boundaries\n\nAll tests pass, `just check` clean.",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 100629,
+            "event": {
+              "contextWindow": 200000,
+              "cost": 0.44003774999999995,
+              "duration": 106042,
+              "inputTokens": 30670,
+              "outputTokens": 128,
+              "stopReason": "end_turn",
+              "type": "result",
+              "usage": {
+                "CacheCreateTokens": 19199,
+                "CacheReadTokens": 471918,
+                "InputTokens": 22,
+                "OutputTokens": 3359
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "prompt": "Run the tests with npx vitest run src/lib/__tests__/format.test.ts from the frontend directory. Fix any failures. Then grep for existing inline duration formatting in the frontend (patterns like duration / 1000 or toFixed) and tell me which files could be refactored to use the new helper.",
+      "scenario": {
+        "events": [
+          {
+            "delay": 0,
+            "event": {
+              "category": "command",
+              "toolId": "toolu_01LGu3iGrZz2SnYDT1RvmYas",
+              "toolInput": {
+                "command": "cd /tmp/fixture-project/frontend \u0026\u0026 npx vitest run --reporter=verbose src/lib/__tests__/format.test.ts 2\u003e\u00261",
+                "description": "Run format tests from frontend dir"
+              },
+              "toolName": "Bash",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 1702,
+            "event": {
+              "category": "file_read",
+              "toolId": "toolu_01CQ3zr5w9iTFbG4NwT2AcS8",
+              "toolInput": {
+                "-n": true,
+                "glob": "*.{ts,tsx}",
+                "output_mode": "content",
+                "path": "/tmp/fixture-project/frontend/src",
+                "pattern": "duration\\s*/\\s*1000|\\.toFixed|durationMs|duration_ms|elapsed.*1000|1000.*elapsed"
+              },
+              "toolName": "Grep",
+              "type": "tool_use"
+            }
+          },
+          {
+            "delay": 6932,
+            "event": {
+              "content": "All 8 tests pass, no failures.\n\nOne file has inline duration formatting that could use the new helper:\n\n- **`src/components/chat/TurnBlock.tsx:637`** — `(resultEvent.duration / 1000).toFixed(1)}s` — this is exactly the pattern `formatDuration` replaces.\n\nThe other `.toFixed` hits are unrelated (file sizes in `fileUtils.ts`, token counts in `ContextBar.tsx`, cost formatting in `TurnBlock.tsx:640`).",
+              "type": "text"
+            }
+          },
+          {
+            "delay": 6951,
+            "event": {
+              "contextWindow": 200000,
+              "cost": 0.489282,
+              "duration": 11043,
+              "inputTokens": 31923,
+              "outputTokens": 123,
+              "stopReason": "end_turn",
+              "type": "result",
+              "usage": {
+                "CacheCreateTokens": 1253,
+                "CacheReadTokens": 61536,
+                "InputTokens": 4,
+                "OutputTokens": 425
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
