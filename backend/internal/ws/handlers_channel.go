@@ -55,7 +55,7 @@ func (c *conn) handleChannelInfo(msg ClientMessage) {
 }
 
 func (c *conn) handleChannelTimeline(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p ChannelTimelinePayload) ([]session.WireAgentMessageEvent, error) {
+	handleRequest(c, msg, func(ctx context.Context, p ChannelTimelinePayload) ([]session.WireChannelMessage, error) {
 		return c.svc.GetChannelTimeline(ctx, p.ChannelID)
 	})
 }

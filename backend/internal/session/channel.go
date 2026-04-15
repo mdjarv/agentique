@@ -327,7 +327,171 @@ func (s *Service) ListChannels(ctx context.Context, projectID string) ([]Channel
 	return infos, nil
 }
 
+// ChannelMessageParams is the unified input for sending any channel message.
+type ChannelMessageParams struct {
+	ChannelID   string
+	SenderType  string // "session" or "user"
+	SenderID    string // session ID (agent) or "" (user)
+	SenderName  string
+	Content     string
+	MessageType string          // "message", "plan", "progress", "done"
+	Metadata    json.RawMessage // target info, threading, etc.
+	Recipients  []string        // session IDs to deliver to
+}
+
+// SendChannelMessage persists a message once in the messages table, creates
+// delivery records, attempts live CLI delivery, and broadcasts via WebSocket.
+// During the transition period it also writes legacy agent_message session_events.
+func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams) (store.Message, error) {
+	if p.MessageType == "" {
+		p.MessageType = "message"
+	}
+	metadataStr := "{}"
+	if len(p.Metadata) > 0 {
+		metadataStr = string(p.Metadata)
+	}
+
+	msgID := uuid.New().String()
+	msg, err := s.queries.InsertMessage(ctx, store.InsertMessageParams{
+		ID:          msgID,
+		ChannelID:   p.ChannelID,
+		SenderType:  p.SenderType,
+		SenderID:    p.SenderID,
+		SenderName:  p.SenderName,
+		Content:     p.Content,
+		MessageType: p.MessageType,
+		Metadata:    metadataStr,
+	})
+	if err != nil {
+		return store.Message{}, fmt.Errorf("insert message: %w", err)
+	}
+
+	// Look up project ID for WS broadcasts.
+	ch, err := s.queries.GetChannel(ctx, p.ChannelID)
+	if err != nil {
+		return msg, fmt.Errorf("channel not found: %w", err)
+	}
+
+	// Fan-out: create delivery records and attempt live delivery.
+	for _, recipientID := range p.Recipients {
+		_ = s.queries.InsertMessageDelivery(ctx, store.InsertMessageDeliveryParams{
+			MessageID:          msg.ID,
+			RecipientSessionID: recipientID,
+			Status:             "pending",
+		})
+
+		delivered := false
+		if live := s.mgr.Get(recipientID); live != nil {
+			if live.State() == StateIdle {
+				if err := live.setState(StateRunning); err != nil {
+					slog.Warn("message state transition failed", "target", recipientID, "error", err)
+				}
+			}
+
+			formatted := formatChannelMessageForCLI(p.SenderName, p.Content, p.MessageType)
+			if err := live.cliSess.SendMessage(formatted); err != nil {
+				slog.Warn("message CLI delivery failed", "target", recipientID, "error", err)
+				if live.State() == StateRunning {
+					_ = live.setState(StateIdle)
+				}
+			} else {
+				delivered = true
+			}
+		}
+
+		if delivered {
+			_ = s.queries.UpdateDeliveryStatus(ctx, store.UpdateDeliveryStatusParams{
+				Status:             "delivered",
+				MessageID:          msg.ID,
+				RecipientSessionID: recipientID,
+			})
+		}
+	}
+
+	// --- Dual-write: legacy agent_message session_events ---
+	s.writeLegacyAgentMessageEvents(ctx, ch.ProjectID, msg, p)
+
+	// Broadcast the unified channel message to all project WS clients.
+	wireMsg := messageToWire(msg)
+	s.hub.Broadcast(ch.ProjectID, "channel.message", wireMsg)
+
+	return msg, nil
+}
+
+// writeLegacyAgentMessageEvents writes old-style agent_message session_events
+// during the transition period so the existing frontend still works.
+func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID string, msg store.Message, p ChannelMessageParams) {
+	// Extract target info from metadata for directed messages.
+	var meta struct {
+		TargetSessionID string `json:"targetSessionId"`
+		TargetName      string `json:"targetName"`
+	}
+	if len(p.Metadata) > 0 {
+		_ = json.Unmarshal(p.Metadata, &meta)
+	}
+
+	if p.SenderType == "user" {
+		// Broadcast: persist one copy per recipient with fromUser=true.
+		for _, recipientID := range p.Recipients {
+			event := WireAgentMessageEvent{
+				Type:      "agent_message",
+				ChannelID: p.ChannelID,
+				FromUser:  true,
+				Content:   p.Content,
+			}
+			s.persistAgentMessageWithID(ctx, recipientID, projectID, event, msg.ID)
+		}
+	} else {
+		// Directed agent→agent: dual-copy (sent on sender, received on target).
+		base := WireAgentMessageEvent{
+			Type:            "agent_message",
+			ChannelID:       p.ChannelID,
+			SenderSessionID: p.SenderID,
+			SenderName:      p.SenderName,
+			TargetSessionID: meta.TargetSessionID,
+			TargetName:      meta.TargetName,
+			Content:         p.Content,
+			MessageType:     p.MessageType,
+		}
+
+		sentEvent := base
+		sentEvent.Direction = DirectionSent
+		s.persistAgentMessageWithID(ctx, p.SenderID, projectID, sentEvent, msg.ID)
+
+		for _, recipientID := range p.Recipients {
+			recvEvent := base
+			recvEvent.Direction = DirectionReceived
+			s.persistAgentMessageWithID(ctx, recipientID, projectID, recvEvent, msg.ID)
+		}
+	}
+}
+
+// persistAgentMessageWithID persists a legacy agent_message event linked to a canonical message.
+func (s *Service) persistAgentMessageWithID(ctx context.Context, sessionID, projectID string, event WireAgentMessageEvent, messageID string) {
+	live := s.mgr.Get(sessionID)
+	turnIndex := int64(0)
+	seq := int64(0)
+	if live != nil {
+		t, sq := live.pipeline.AllocSeq()
+		turnIndex = int64(t)
+		seq = int64(sq)
+	}
+	eventData, _ := json.Marshal(event)
+	if err := s.queries.InsertEventWithMessageID(ctx, store.InsertEventWithMessageIDParams{
+		SessionID: sessionID,
+		TurnIndex: turnIndex,
+		Seq:       seq,
+		Type:      "agent_message",
+		Data:      string(eventData),
+		MessageID: sqlNullString(messageID),
+	}); err != nil {
+		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
+	}
+	s.hub.Broadcast(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
+}
+
 // persistAgentMessage persists an agent message event on a session and broadcasts it.
+// Kept for backward compatibility during migration — new code should use SendChannelMessage.
 func (s *Service) persistAgentMessage(ctx context.Context, sessionID, projectID string, event WireAgentMessageEvent) {
 	live := s.mgr.Get(sessionID)
 	turnIndex := int64(0)
@@ -351,6 +515,7 @@ func (s *Service) persistAgentMessage(ctx context.Context, sessionID, projectID 
 }
 
 // RouteAgentMessage delivers a message from one session to another within the same channel.
+// Now a wrapper around SendChannelMessage.
 func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) error {
 	senderSess, err := s.queries.GetSession(ctx, p.SenderSessionID)
 	if err != nil {
@@ -361,7 +526,7 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 		return fmt.Errorf("target not found: %w", err)
 	}
 
-	// Find a shared channel. If p.ChannelID is set, verify both are members.
+	// Find a shared channel.
 	channelID := p.ChannelID
 	if channelID == "" {
 		channelID, err = s.findSharedChannel(ctx, p.SenderSessionID, p.TargetSessionID)
@@ -369,69 +534,44 @@ func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) 
 			return err
 		}
 	} else {
-		// Verify both sessions are members of the specified channel.
-		senderChannels, _ := s.queries.ListSessionChannels(ctx, p.SenderSessionID)
-		targetChannels, _ := s.queries.ListSessionChannels(ctx, p.TargetSessionID)
-		senderIn := false
-		targetIn := false
-		for _, c := range senderChannels {
+		if err := s.verifyChannelMembership(ctx, channelID, p.SenderSessionID, p.TargetSessionID); err != nil {
+			return err
+		}
+	}
+
+	metadata, _ := json.Marshal(map[string]string{
+		"targetSessionId": p.TargetSessionID,
+		"targetName":      targetSess.Name,
+	})
+
+	_, err = s.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "session",
+		SenderID:    p.SenderSessionID,
+		SenderName:  senderSess.Name,
+		Content:     p.Content,
+		MessageType: p.MessageType,
+		Metadata:    metadata,
+		Recipients:  []string{p.TargetSessionID},
+	})
+	return err
+}
+
+// verifyChannelMembership checks both sessions are members of the channel.
+func (s *Service) verifyChannelMembership(ctx context.Context, channelID string, sessionIDs ...string) error {
+	for _, sid := range sessionIDs {
+		channels, _ := s.queries.ListSessionChannels(ctx, sid)
+		found := false
+		for _, c := range channels {
 			if c.ChannelID == channelID {
-				senderIn = true
+				found = true
+				break
 			}
 		}
-		for _, c := range targetChannels {
-			if c.ChannelID == channelID {
-				targetIn = true
-			}
-		}
-		if !senderIn || !targetIn {
-			return fmt.Errorf("sender and target must be in the same channel")
+		if !found {
+			return fmt.Errorf("session %s is not a member of channel %s", sid, channelID)
 		}
 	}
-
-	base := WireAgentMessageEvent{
-		Type:            "agent_message",
-		ChannelID:       channelID,
-		SenderSessionID: p.SenderSessionID,
-		SenderName:      senderSess.Name,
-		TargetSessionID: p.TargetSessionID,
-		TargetName:      targetSess.Name,
-		Content:         p.Content,
-		MessageType:     p.MessageType,
-	}
-
-	// Persist outgoing copy on sender.
-	sentEvent := base
-	sentEvent.Direction = DirectionSent
-	s.persistAgentMessage(ctx, p.SenderSessionID, senderSess.ProjectID, sentEvent)
-
-	// Persist incoming copy on target.
-	recvEvent := base
-	recvEvent.Direction = DirectionReceived
-	s.persistAgentMessage(ctx, p.TargetSessionID, targetSess.ProjectID, recvEvent)
-
-	// Deliver to the target's CLI via SendMessage.
-	if live := s.mgr.Get(p.TargetSessionID); live != nil {
-		// If the target is idle, transition to running so the UI reflects
-		// activity. OnTurnComplete will transition back when Claude finishes.
-		// Skip if already running — SendMessage just appends to the current turn.
-		if live.State() == StateIdle {
-			if err := live.setState(StateRunning); err != nil {
-				slog.Warn("agent message state transition failed", "target", p.TargetSessionID, "error", err)
-			}
-		}
-
-		formatted := formatAgentMessageWithType(senderSess.Name, p.Content, p.MessageType)
-		if err := live.cliSess.SendMessage(formatted); err != nil {
-			slog.Warn("agent message CLI delivery failed", "target", p.TargetSessionID, "error", err)
-			// Best-effort revert: if the CLI rejected the message and the session
-			// was idle before, try to restore idle so it's not stuck in running.
-			if live.State() == StateRunning {
-				_ = live.setState(StateIdle)
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -458,40 +598,48 @@ func (s *Service) findSharedChannel(ctx context.Context, sessionA, sessionB stri
 }
 
 // BroadcastToChannel sends a user-authored message to every member of a channel.
+// Now a wrapper around SendChannelMessage.
 func (s *Service) BroadcastToChannel(ctx context.Context, channelID, content string) error {
-	ch, err := s.queries.GetChannel(ctx, channelID)
-	if err != nil {
-		return fmt.Errorf("channel not found: %w", err)
-	}
-
 	members, err := s.queries.ListChannelMemberSessions(ctx, channelID)
 	if err != nil {
 		return fmt.Errorf("list members: %w", err)
 	}
 
+	recipientIDs := make([]string, 0, len(members))
 	for _, m := range members {
-		event := WireAgentMessageEvent{
-			Type:      "agent_message",
-			ChannelID: channelID,
-			FromUser:  true,
-			Content:   content,
-		}
-		s.persistAgentMessage(ctx, m.ID, ch.ProjectID, event)
-
-		if live := s.mgr.Get(m.ID); live != nil {
-			if err := live.cliSess.SendMessage(content); err != nil {
-				slog.Warn("broadcast CLI delivery failed", "session_id", m.ID, "error", err)
-			}
-		}
+		recipientIDs = append(recipientIDs, m.ID)
 	}
 
-	return nil
+	_, err = s.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "user",
+		SenderID:    "",
+		SenderName:  "",
+		Content:     content,
+		MessageType: "message",
+		Recipients:  recipientIDs,
+	})
+	return err
 }
 
-// GetChannelTimeline returns all agent messages across channel members.
-// Deduplicates agent-to-agent messages by keeping only the "sent" copy.
-// User broadcast messages (FromUser=true) are always included.
-func (s *Service) GetChannelTimeline(ctx context.Context, channelID string) ([]WireAgentMessageEvent, error) {
+// GetChannelTimeline returns all messages for a channel, reading from the
+// canonical messages table. No deduplication needed.
+func (s *Service) GetChannelTimeline(ctx context.Context, channelID string) ([]WireChannelMessage, error) {
+	msgs, err := s.queries.ListMessagesByChannel(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("list messages: %w", err)
+	}
+
+	result := make([]WireChannelMessage, 0, len(msgs))
+	for _, m := range msgs {
+		result = append(result, messageToWire(m))
+	}
+	return result, nil
+}
+
+// GetChannelTimelineLegacy returns agent messages using the old dual-copy model.
+// Used as fallback for channels that predate the migration.
+func (s *Service) GetChannelTimelineLegacy(ctx context.Context, channelID string) ([]WireAgentMessageEvent, error) {
 	events, err := s.queries.ListAgentMessagesByChannel(ctx, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("list agent messages: %w", err)
@@ -516,6 +664,34 @@ func (s *Service) GetChannelTimeline(ctx context.Context, channelID string) ([]W
 		}
 	}
 	return messages, nil
+}
+
+// messageToWire converts a store.Message to the wire format.
+func messageToWire(m store.Message) WireChannelMessage {
+	var metadata json.RawMessage
+	if m.Metadata != "" && m.Metadata != "{}" {
+		metadata = json.RawMessage(m.Metadata)
+	}
+	return WireChannelMessage{
+		ID:          m.ID,
+		ChannelID:   m.ChannelID,
+		SenderType:  m.SenderType,
+		SenderID:    m.SenderID,
+		SenderName:  m.SenderName,
+		Content:     m.Content,
+		MessageType: m.MessageType,
+		Metadata:    metadata,
+		CreatedAt:   m.CreatedAt,
+	}
+}
+
+// formatChannelMessageForCLI wraps a message with type prefix and sender name for CLI delivery.
+func formatChannelMessageForCLI(senderName, content, msgType string) string {
+	if senderName == "" {
+		// User broadcast — deliver content directly.
+		return content
+	}
+	return formatAgentMessageWithType(senderName, content, msgType)
 }
 
 func (s *Service) buildChannelInfo(ctx context.Context, ch store.Channel) (ChannelInfo, error) {

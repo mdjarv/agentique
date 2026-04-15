@@ -115,6 +115,22 @@ type WireAgentMessageEvent struct {
 	FromUser        bool   `json:"fromUser,omitempty"`
 }
 
+// WireChannelMessage is the unified wire format for channel timeline messages.
+// Replaces WireAgentMessageEvent for timeline reads — no direction/dedup needed.
+type WireChannelMessage struct {
+	ID          string          `json:"id"`
+	ChannelID   string          `json:"channelId"`
+	SenderType  string          `json:"senderType"`  // "session" or "user"
+	SenderID    string          `json:"senderId"`
+	SenderName  string          `json:"senderName"`
+	Content     string          `json:"content"`
+	MessageType string          `json:"messageType,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt   string          `json:"createdAt"`
+}
+
+func (e WireChannelMessage) WireType() string { return "channel_message" }
+
 // WireUserMessageEvent represents a user message injected mid-turn via SendMessage.
 type WireUserMessageEvent struct {
 	Type        string            `json:"type"`

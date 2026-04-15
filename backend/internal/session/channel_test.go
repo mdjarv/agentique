@@ -184,9 +184,12 @@ func (s *ChannelSuite) TestChannel_RouteMessage_BroadcastEvents() {
 	})
 	s.Require().NoError(err)
 
-	// Should broadcast session.event for both sender and target.
-	msgs := s.Broadcaster.MessagesOfType("session.event")
-	s.GreaterOrEqual(len(msgs), 2, "expected at least 2 session.event broadcasts (sent + received)")
+	// Dual-write broadcasts session.event for both sender and target (legacy),
+	// plus a channel.message broadcast for the unified timeline.
+	sessionEvts := s.Broadcaster.MessagesOfType("session.event")
+	s.GreaterOrEqual(len(sessionEvts), 2, "expected at least 2 session.event broadcasts (sent + received)")
+	channelMsgs := s.Broadcaster.MessagesOfType("channel.message")
+	s.GreaterOrEqual(len(channelMsgs), 1, "expected at least 1 channel.message broadcast")
 }
 
 // --- wireAgentMessageCallback tests ---
@@ -250,7 +253,7 @@ func (s *ChannelSuite) TestChannel_CallbackUnknownTarget() {
 
 // --- GetChannelTimeline tests ---
 
-func (s *ChannelSuite) TestChannel_Timeline_DeduplicatesSent() {
+func (s *ChannelSuite) TestChannel_Timeline_SingleEntry() {
 	leadID, _ := s.createNamedSession("Lead")
 	workerID, _ := s.createNamedSession("Worker")
 	channelID := s.createChannelWithMembers("test-team", leadID, workerID)
@@ -263,9 +266,10 @@ func (s *ChannelSuite) TestChannel_Timeline_DeduplicatesSent() {
 
 	timeline, err := s.svc.GetChannelTimeline(context.Background(), channelID)
 	s.Require().NoError(err)
-	s.Len(timeline, 1, "timeline should deduplicate — only 'sent' copy")
-	s.Equal(DirectionSent, timeline[0].Direction)
+	s.Len(timeline, 1, "messages table stores one row per message")
 	s.Equal("timeline test", timeline[0].Content)
+	s.Equal("session", timeline[0].SenderType)
+	s.Equal("Lead", timeline[0].SenderName)
 }
 
 // --- JoinChannel context injection test ---
