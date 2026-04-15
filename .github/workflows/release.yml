@@ -23,13 +23,29 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ hashFiles('backend/**/*.go', 'backend/go.sum') }}
+          restore-keys: go-build-
+
+      - name: Cache frontend build
+        id: frontend-cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/dist
+          key: frontend-dist-${{ hashFiles('frontend/src/**', 'frontend/package-lock.json', 'frontend/vite.config.ts', 'frontend/tsconfig.json', 'frontend/index.html') }}
+
       - uses: actions/setup-node@v4
+        if: steps.frontend-cache.outputs.cache-hit != 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
+        if: steps.frontend-cache.outputs.cache-hit != 'true'
         run: cd frontend && npm ci && npm run build
 
       - name: Embed frontend into backend
