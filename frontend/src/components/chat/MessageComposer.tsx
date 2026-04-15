@@ -70,8 +70,9 @@ interface MessageComposerProps {
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
   stashedText?: string;
+  stashDepth?: number;
   onStash?: (text: string) => void;
-  onUnstash?: () => void;
+  onUnstash?: () => string | undefined;
 }
 
 const PERMISSION_OPTIONS: ToolbarDropdownOption[] = PERMISSION_MODES.map((m) => ({
@@ -118,6 +119,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onEmptySubmit,
       templatePicker,
       stashedText,
+      stashDepth,
       onStash,
       onUnstash,
     },
@@ -287,15 +289,27 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Ctrl/Cmd+S → stash current input
-      if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.shiftKey && onStash) {
+      // Ctrl/Cmd+S → stash current input, or pop stash if input is empty
+      if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
         const trimmed = text.trim();
-        if (trimmed) {
+        if (trimmed && onStash) {
           onStash(trimmed);
           setText("");
           if (textareaRef.current) {
             textareaRef.current.style.height = "auto";
+          }
+        } else if (!trimmed && onUnstash) {
+          const restored = onUnstash();
+          if (restored) {
+            setText(restored);
+            requestAnimationFrame(() => {
+              const el = textareaRef.current;
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+              }
+            });
           }
         }
         return;
@@ -391,22 +405,27 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
               <button
                 type="button"
                 onClick={() => {
-                  onUnstash?.();
-                  setText(stashedText);
-                  requestAnimationFrame(() => {
-                    const el = textareaRef.current;
-                    if (el) {
-                      el.style.height = "auto";
-                      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-                      el.focus();
-                    }
-                  });
+                  const restored = onUnstash?.();
+                  if (restored) {
+                    setText(restored);
+                    requestAnimationFrame(() => {
+                      const el = textareaRef.current;
+                      if (el) {
+                        el.style.height = "auto";
+                        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+                        el.focus();
+                      }
+                    });
+                  }
                 }}
                 className="flex items-center gap-1.5 mx-3 mt-2 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors cursor-pointer group"
                 title="Click to restore stashed text"
               >
                 <ClipboardPaste className="h-3 w-3 shrink-0" />
                 <span className="truncate max-w-[300px]">{stashedText}</span>
+                {(stashDepth ?? 0) > 1 && (
+                  <span className="text-primary/70 shrink-0 font-medium">({stashDepth})</span>
+                )}
                 <span className="text-primary/50 group-hover:text-primary/70 shrink-0">
                   ⌃S restore
                 </span>

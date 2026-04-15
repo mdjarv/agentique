@@ -263,14 +263,16 @@ func (s *Service) JoinChannel(ctx context.Context, sessionID, channelID, role st
 	}
 	s.hub.Broadcast(ch.ProjectID, "channel.member-joined", payload)
 
-	// Wire callbacks and inject channel context into a live session.
+	// Wire callbacks for the joining session.
 	if live := s.mgr.Get(sessionID); live != nil {
 		s.wireAgentMessageCallback(live, channelID)
 		if role == "lead" {
 			s.wireDissolveChannelCallback(live, channelID)
 		}
-		go s.injectChannelContext(context.Background(), live, channelID)
 	}
+
+	// Re-inject channel context to ALL live members so everyone sees the updated roster.
+	s.refreshChannelContext(ctx, channelID)
 
 	return info, buildErr
 }

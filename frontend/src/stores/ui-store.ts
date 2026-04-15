@@ -34,7 +34,7 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
 
 interface UIState {
   drafts: Record<string, string>;
-  stashes: Record<string, string>;
+  stashes: Record<string, string[]>;
   collapsedProjectIds: string[];
   rightPanelCollapsed: boolean;
   browserPanelWidth: number;
@@ -43,7 +43,8 @@ interface UIState {
 
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
-  setStash: (sessionId: string, text: string) => void;
+  pushStash: (sessionId: string, text: string) => void;
+  popStash: (sessionId: string) => string | undefined;
   clearStash: (sessionId: string) => void;
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
@@ -54,7 +55,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       drafts: {},
       stashes: {},
       collapsedProjectIds: readLegacyCollapsedProjects(),
@@ -79,14 +80,27 @@ export const useUIStore = create<UIState>()(
           return { drafts: rest };
         }),
 
-      setStash: (sessionId, text) =>
+      pushStash: (sessionId: string, text: string) =>
         set((s) => {
-          if (!text) {
-            const { [sessionId]: _, ...rest } = s.stashes;
-            return { stashes: rest };
-          }
-          return { stashes: { ...s.stashes, [sessionId]: text } };
+          const trimmed = text.trim();
+          if (!trimmed) return s;
+          const stack = s.stashes[sessionId] ?? [];
+          return { stashes: { ...s.stashes, [sessionId]: [...stack, trimmed] } };
         }),
+
+      popStash: (sessionId: string) => {
+        const stack = get().stashes[sessionId];
+        if (!stack?.length) return undefined;
+        const popped = stack[stack.length - 1];
+        const rest = stack.slice(0, -1);
+        if (rest.length === 0) {
+          const { [sessionId]: _, ...others } = get().stashes;
+          set({ stashes: others });
+        } else {
+          set({ stashes: { ...get().stashes, [sessionId]: rest } });
+        }
+        return popped;
+      },
 
       clearStash: (sessionId) =>
         set((s) => {
@@ -118,7 +132,21 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: "agentique:ui",
+      version: 1,
       storage: createJSONStorage(() => localStorage),
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown>;
+        if (version === 0 && state.stashes) {
+          // Migrate stashes from Record<string, string> → Record<string, string[]>
+          const old = state.stashes as Record<string, string | string[]>;
+          const migrated: Record<string, string[]> = {};
+          for (const [k, v] of Object.entries(old)) {
+            migrated[k] = typeof v === "string" ? [v] : v;
+          }
+          state.stashes = migrated;
+        }
+        return state;
+      },
       partialize: (state) => ({
         drafts: state.drafts,
         stashes: state.stashes,

@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/service"
 )
 
 var (
@@ -37,25 +41,68 @@ func main() {
 	}
 }
 
-// runStatus checks server health and shows active session summary.
+// runStatus shows server connection info and active session summary.
 func runStatus(cmd *cobra.Command, args []string) error {
-	base := baseURL()
+	fmt.Printf("agentique %s\n\n", version)
+
+	// Load config to show resolved settings.
+	cfg, _ := config.Load(config.Path())
+	resolvedAddr := addr
+	if !cmd.Flags().Changed("addr") && cfg.Server.Addr != "" {
+		resolvedAddr = cfg.Server.Addr
+	}
+
+	tlsEnabled := cfg.Server.TLSCert != "" && cfg.Server.TLSKey != ""
+	scheme := "http"
+	if tlsEnabled {
+		scheme = "https"
+	}
+
+	authEnabled := !cfg.Server.DisableAuth
+	host, port, _ := net.SplitHostPort(resolvedAddr)
+	if host == "" || host == "0.0.0.0" {
+		host = "localhost"
+	}
+	url := fmt.Sprintf("%s://%s:%s", scheme, host, port)
+
+	// Service status.
+	st, err := service.GetStatus()
+	if err == nil && st.Installed {
+		if st.Running {
+			fmt.Printf("  Service:  running (PID %d)\n", st.PID)
+		} else {
+			fmt.Printf("  Service:  installed, not running\n")
+		}
+	} else {
+		fmt.Printf("  Service:  not installed\n")
+	}
+
+	fmt.Printf("  Address:  %s\n", resolvedAddr)
+	fmt.Printf("  URL:      %s\n", url)
+	fmt.Printf("  TLS:      %v\n", tlsEnabled)
+	fmt.Printf("  Auth:     %v\n", authEnabled)
+
+	// Override addr for API calls below.
+	if !strings.Contains(resolvedAddr, "://") {
+		resolvedAddr = scheme + "://" + resolvedAddr
+	}
+	base := strings.TrimRight(resolvedAddr, "/")
 
 	// Health check.
 	client := &http.Client{Timeout: 2 * time.Second}
-	_, err := client.Get(base + "/api/health")
+	_, err = client.Get(base + "/api/health")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Agentique not running at %s\n", addr)
+		fmt.Printf("  Health:   unreachable\n")
+		fmt.Fprintf(os.Stderr, "\nServer not responding at %s\n", url)
 		fmt.Fprintf(os.Stderr, "Start with: agentique serve\n")
 		return nil
 	}
+	fmt.Printf("  Health:   ok\n")
 
-	fmt.Printf("Agentique running at %s\n\n", addr)
-
-	// Fetch projects.
+	// Fetch projects + sessions summary.
 	projects, err := fetchJSON[[]projectBrief](client, base+"/api/projects")
 	if err != nil {
-		return fmt.Errorf("failed to fetch projects: %w", err)
+		return nil
 	}
 
 	projectByID := make(map[string]projectBrief)
@@ -63,18 +110,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		projectByID[p.ID] = p
 	}
 
-	// Fetch all sessions.
 	sessions, err := fetchJSON[[]sessionBrief](client, base+"/api/sessions")
 	if err != nil {
-		return fmt.Errorf("failed to fetch sessions: %w", err)
+		return nil
 	}
 
+	fmt.Println()
 	if len(sessions) == 0 {
 		fmt.Println("  No sessions")
 		return nil
 	}
 
-	// Group by project.
 	byProject := make(map[string][]sessionBrief)
 	for _, s := range sessions {
 		byProject[s.ProjectID] = append(byProject[s.ProjectID], s)

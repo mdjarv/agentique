@@ -275,19 +275,23 @@ func (s *ChannelSuite) TestChannel_JoinInjectsContext() {
 	workerID, _ := s.createNamedSession("Worker")
 	s.createChannelWithMembers("test-team", leadID, workerID)
 
-	// injectChannelContext runs in a goroutine — give it a moment.
-	time.Sleep(100 * time.Millisecond)
-
-	// Both sessions should have received channel context via SendMessage.
-	leadSent := leadMock.SentMessages()
-	var found bool
-	for _, msg := range leadSent {
-		if contains(msg, "Worker") && contains(msg, "SendMessage") {
-			found = true
-			break
+	// injectChannelContext runs in a goroutine — poll until it delivers.
+	deadline := time.After(2 * time.Second)
+	for {
+		leadSent := leadMock.SentMessages()
+		for _, msg := range leadSent {
+			if contains(msg, "Worker") && contains(msg, "SendMessage") {
+				return // success
+			}
+		}
+		select {
+		case <-deadline:
+			s.Fail("lead should have received channel context mentioning Worker")
+			return
+		default:
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	s.True(found, "lead should have received channel context mentioning Worker")
 }
 
 // --- End-to-end pipeline → routing tests ---

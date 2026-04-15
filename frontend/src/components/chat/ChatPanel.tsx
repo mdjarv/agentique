@@ -130,7 +130,9 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = meta?.state ?? "idle";
   const draft = useUIStore((s) => s.drafts[sessionId] ?? "");
-  const stashedText = useUIStore((s) => s.stashes[sessionId] ?? "");
+  const stashStack = useUIStore((s) => s.stashes[sessionId]);
+  const stashedText = stashStack?.[stashStack.length - 1] ?? "";
+  const stashDepth = stashStack?.length ?? 0;
   const hasTodos = todos !== null && todos.length > 0;
   const isWorktree = !!meta?.worktreeBranch;
   const isDirty = meta?.hasUncommitted || meta?.hasDirtyWorktree;
@@ -241,28 +243,26 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
 
   const handleStash = useCallback(
     (text: string) => {
-      useUIStore.getState().setStash(sessionId, text);
+      useUIStore.getState().pushStash(sessionId, text);
       useUIStore.getState().clearDraft(sessionId);
-      toast("Prompt stashed", { description: "Will restore after you send a message" });
+      toast("Prompt stashed", { description: "Ctrl+S on empty input to restore" });
     },
     [sessionId],
   );
 
-  const handleUnstash = useCallback(() => {
-    useUIStore.getState().clearStash(sessionId);
+  const handleUnstash = useCallback((): string | undefined => {
+    return useUIStore.getState().popStash(sessionId);
   }, [sessionId]);
 
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
-      const store = useUIStore.getState();
-      store.clearDraft(sessionId);
-      const stashed = store.stashes[sessionId];
+      useUIStore.getState().clearDraft(sessionId);
       try {
         await enqueueMessage(ws, sessionId, prompt, attachments);
         setActiveTab("chat");
-        if (stashed) {
-          useUIStore.getState().clearStash(sessionId);
-          composerRef.current?.setText(stashed);
+        const popped = useUIStore.getState().popStash(sessionId);
+        if (popped) {
+          composerRef.current?.setText(popped);
         }
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to send message");
@@ -440,6 +440,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
             effort={(meta.effort as EffortLevel) ?? ""}
             onEmptySubmit={isResumable ? handleResume : undefined}
             stashedText={stashedText || undefined}
+            stashDepth={stashDepth}
             onStash={handleStash}
             onUnstash={handleUnstash}
           />

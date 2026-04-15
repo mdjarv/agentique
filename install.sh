@@ -32,8 +32,12 @@ CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
 
 # Check for existing install
 if [ -f "${INSTALL_DIR}/agentique" ]; then
-  EXISTING="$("${INSTALL_DIR}/agentique" version 2>/dev/null || echo "unknown")"
-  echo "Upgrading agentique (${EXISTING} -> ${TAG})"
+  EXISTING="$("${INSTALL_DIR}/agentique" --version 2>/dev/null | awk '{print $2}' || echo "")"
+  if [ "$EXISTING" = "$TAG" ]; then
+    echo "agentique ${TAG} already installed."
+    exit 0
+  fi
+  echo "Upgrading agentique (${EXISTING:-unknown} -> ${TAG})"
 else
   echo "Installing agentique ${TAG}..."
 fi
