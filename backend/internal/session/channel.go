@@ -490,30 +490,6 @@ func (s *Service) persistAgentMessageWithID(ctx context.Context, sessionID, proj
 	s.hub.Broadcast(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
 }
 
-// persistAgentMessage persists an agent message event on a session and broadcasts it.
-// Kept for backward compatibility during migration — new code should use SendChannelMessage.
-func (s *Service) persistAgentMessage(ctx context.Context, sessionID, projectID string, event WireAgentMessageEvent) {
-	live := s.mgr.Get(sessionID)
-	turnIndex := int64(0)
-	seq := int64(0)
-	if live != nil {
-		t, sq := live.pipeline.AllocSeq()
-		turnIndex = int64(t)
-		seq = int64(sq)
-	}
-	eventData, _ := json.Marshal(event)
-	if err := s.queries.InsertEvent(ctx, store.InsertEventParams{
-		SessionID: sessionID,
-		TurnIndex: turnIndex,
-		Seq:       seq,
-		Type:      "agent_message",
-		Data:      string(eventData),
-	}); err != nil {
-		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
-	}
-	s.hub.Broadcast(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
-}
-
 // RouteAgentMessage delivers a message from one session to another within the same channel.
 // Now a wrapper around SendChannelMessage.
 func (s *Service) RouteAgentMessage(ctx context.Context, p AgentMessagePayload) error {
@@ -635,35 +611,6 @@ func (s *Service) GetChannelTimeline(ctx context.Context, channelID string) ([]W
 		result = append(result, messageToWire(m))
 	}
 	return result, nil
-}
-
-// GetChannelTimelineLegacy returns agent messages using the old dual-copy model.
-// Used as fallback for channels that predate the migration.
-func (s *Service) GetChannelTimelineLegacy(ctx context.Context, channelID string) ([]WireAgentMessageEvent, error) {
-	events, err := s.queries.ListAgentMessagesByChannel(ctx, channelID)
-	if err != nil {
-		return nil, fmt.Errorf("list agent messages: %w", err)
-	}
-
-	seen := make(map[string]bool)
-	messages := make([]WireAgentMessageEvent, 0, len(events)/2+1)
-	for _, e := range events {
-		var msg WireAgentMessageEvent
-		if err := json.Unmarshal([]byte(e.Data), &msg); err != nil {
-			continue
-		}
-		if msg.FromUser {
-			key := "user:" + msg.Content
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			messages = append(messages, msg)
-		} else if msg.Direction == DirectionSent {
-			messages = append(messages, msg)
-		}
-	}
-	return messages, nil
 }
 
 // messageToWire converts a store.Message to the wire format.

@@ -81,8 +81,6 @@ type serviceQueries interface {
 	RemoveSessionFromAllChannels(ctx context.Context, sessionID string) error
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]store.ListChannelMemberSessionsRow, error)
 	ListSessionChannels(ctx context.Context, sessionID string) ([]store.ListSessionChannelsRow, error)
-	ListAgentMessagesByChannel(ctx context.Context, channelID string) ([]store.SessionEvent, error)
-
 	// Unified message queries
 	InsertMessage(ctx context.Context, arg store.InsertMessageParams) (store.Message, error)
 	GetMessage(ctx context.Context, id string) (store.Message, error)
