@@ -1,6 +1,9 @@
 -- name: InsertEvent :exec
 INSERT INTO session_events (session_id, turn_index, seq, type, data) VALUES (?, ?, ?, ?, ?);
 
+-- name: InsertEventWithMessageID :exec
+INSERT INTO session_events (session_id, turn_index, seq, type, data, message_id) VALUES (?, ?, ?, ?, ?, ?);
+
 -- name: ListEventsBySession :many
 SELECT * FROM session_events WHERE session_id = ? ORDER BY turn_index, seq;
 
