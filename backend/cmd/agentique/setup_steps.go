@@ -9,6 +9,7 @@ const (
 	stepAuth
 	stepProject
 	stepSaveConfig
+	stepCompletion
 	stepServiceInstall
 	stepSummary
 )
@@ -33,6 +34,7 @@ func buildSteps(networkMode bool) []step {
 	steps = append(steps,
 		step{stepProject, "First project", "Path to your first project (optional)"},
 		step{stepSaveConfig, "Save configuration", "Writing config file"},
+		step{stepCompletion, "Shell completions", "Install tab completion for your shell?"},
 		step{stepServiceInstall, "System service", "Install as a system service?"},
 		step{stepSummary, "Setup complete", ""},
 	)

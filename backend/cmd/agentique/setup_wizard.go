@@ -198,6 +198,20 @@ func (m wizardModel) initStep() (wizardModel, tea.Cmd) {
 		m.phase = phaseAction
 		return m, m.action.Init()
 
+	case stepCompletion:
+		shell := detectShell()
+		if shell == "" {
+			// Unknown shell, skip.
+			m.current++
+			return m.initStep()
+		}
+		m.choice = newChoiceModel(s.title, []string{
+			fmt.Sprintf("Yes, install for %s", shell),
+			"No, skip",
+		}, 0)
+		m.phase = phaseChoice
+		return m, nil
+
 	case stepServiceInstall:
 		m.choice = newChoiceModel(s.title, []string{
 			"Yes, install as system service (auto-starts on login)",
@@ -321,6 +335,20 @@ func (m wizardModel) handleChoiceResult(selected int) (tea.Model, tea.Cmd) {
 	case stepAuth:
 		m.cfg.Server.DisableAuth = selected == 1
 		return m.advance()
+
+	case stepCompletion:
+		if selected == 1 {
+			return m.advance()
+		}
+		shell := detectShell()
+		m.action = newActionModel(
+			fmt.Sprintf("Installing %s completions", shell),
+			func() (string, error) {
+				return installCompletion(shell)
+			},
+		)
+		m.phase = phaseAction
+		return m, m.action.Init()
 
 	case stepServiceInstall:
 		if selected == 1 {
@@ -468,6 +496,9 @@ func (m wizardModel) handleActionResult() (tea.Model, tea.Cmd) {
 		return m.advance()
 
 	case stepSaveConfig:
+		return m.advance()
+
+	case stepCompletion:
 		return m.advance()
 
 	case stepServiceInstall:
