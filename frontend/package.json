@@ -22,7 +22,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "lucide-react": "^0.500.0",
+    "lucide-react": "^1.8.0",
     "mermaid": "^11.13.0",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
@@ -38,7 +38,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.10",
+    "@biomejs/biome": "^2.4.12",
     "@playwright/test": "^1.52.0",
     "@tailwindcss/vite": "^4.1.0",
     "@tanstack/router-plugin": "^1.120.0",
@@ -50,7 +50,7 @@
     "jsdom": "^29.0.1",
     "msw": "^2.12.14",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.8.0",
+    "typescript": "^6.0.2",
     "vite": "^6.3.0",
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.1.2"
