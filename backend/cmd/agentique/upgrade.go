@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -20,19 +19,11 @@ var upgradeCmd = &cobra.Command{
 func runUpgrade(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Current version: %s\n", version)
 	fmt.Println()
-	fmt.Println("Automatic upgrades are not yet available.")
+	fmt.Println("To upgrade, run the install script:")
 	fmt.Println()
-	fmt.Println("To upgrade manually:")
-
-	exe, err := os.Executable()
-	if err != nil {
-		exe = "/path/to/agentique"
-	}
-
-	fmt.Printf("  1. Download the new binary\n")
-	fmt.Printf("  2. Replace the current binary:\n")
-	fmt.Printf("       cp agentique-linux-amd64 %s\n", exe)
-	fmt.Printf("  3. Restart the service:\n")
-	fmt.Printf("       agentique service restart\n")
+	fmt.Println("  curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash")
+	fmt.Println()
+	fmt.Println("This downloads the latest release, updates the service unit,")
+	fmt.Println("and prints a reminder to restart when ready.")
 	return nil
 }
