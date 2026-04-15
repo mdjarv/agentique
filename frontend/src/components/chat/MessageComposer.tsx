@@ -1,4 +1,5 @@
 import {
+  ClipboardPaste,
   FileText,
   FolderOpen,
   Gauge,
@@ -68,6 +69,9 @@ interface MessageComposerProps {
   onEffortChange?: (value: EffortLevel) => void;
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
+  stashedText?: string;
+  onStash?: (text: string) => void;
+  onUnstash?: () => void;
 }
 
 const PERMISSION_OPTIONS: ToolbarDropdownOption[] = PERMISSION_MODES.map((m) => ({
@@ -113,6 +117,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onEffortChange,
       onEmptySubmit,
       templatePicker,
+      stashedText,
+      onStash,
+      onUnstash,
     },
     ref,
   ) {
@@ -280,6 +287,19 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Ctrl/Cmd+S → stash current input
+      if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.shiftKey && onStash) {
+        e.preventDefault();
+        const trimmed = text.trim();
+        if (trimmed) {
+          onStash(trimmed);
+          setText("");
+          if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+          }
+        }
+        return;
+      }
       // Ctrl/Cmd+Shift+M → toggle dictation
       if (e.key === "M" && e.shiftKey && (e.ctrlKey || e.metaKey) && speech.isSupported) {
         e.preventDefault();
@@ -367,6 +387,31 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
           >
+            {stashedText && (
+              <button
+                type="button"
+                onClick={() => {
+                  onUnstash?.();
+                  setText(stashedText);
+                  requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    if (el) {
+                      el.style.height = "auto";
+                      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+                      el.focus();
+                    }
+                  });
+                }}
+                className="flex items-center gap-1.5 mx-3 mt-2 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors cursor-pointer group"
+                title="Click to restore stashed text"
+              >
+                <ClipboardPaste className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[300px]">{stashedText}</span>
+                <span className="text-primary/50 group-hover:text-primary/70 shrink-0">
+                  ⌃S restore
+                </span>
+              </button>
+            )}
             <textarea
               ref={textareaRef}
               autoFocus

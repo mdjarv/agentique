@@ -34,6 +34,7 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
 
 interface UIState {
   drafts: Record<string, string>;
+  stashes: Record<string, string>;
   collapsedProjectIds: string[];
   rightPanelCollapsed: boolean;
   browserPanelWidth: number;
@@ -42,6 +43,8 @@ interface UIState {
 
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
+  setStash: (sessionId: string, text: string) => void;
+  clearStash: (sessionId: string) => void;
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
@@ -53,6 +56,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       drafts: {},
+      stashes: {},
       collapsedProjectIds: readLegacyCollapsedProjects(),
       rightPanelCollapsed: true,
       browserPanelWidth: 500,
@@ -73,6 +77,22 @@ export const useUIStore = create<UIState>()(
           if (!(sessionId in s.drafts)) return s;
           const { [sessionId]: _, ...rest } = s.drafts;
           return { drafts: rest };
+        }),
+
+      setStash: (sessionId, text) =>
+        set((s) => {
+          if (!text) {
+            const { [sessionId]: _, ...rest } = s.stashes;
+            return { stashes: rest };
+          }
+          return { stashes: { ...s.stashes, [sessionId]: text } };
+        }),
+
+      clearStash: (sessionId) =>
+        set((s) => {
+          if (!(sessionId in s.stashes)) return s;
+          const { [sessionId]: _, ...rest } = s.stashes;
+          return { stashes: rest };
         }),
 
       setProjectCollapsed: (projectId, collapsed) =>
@@ -101,6 +121,7 @@ export const useUIStore = create<UIState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         drafts: state.drafts,
+        stashes: state.stashes,
         collapsedProjectIds: state.collapsedProjectIds,
         rightPanelCollapsed: state.rightPanelCollapsed,
         browserPanelWidth: state.browserPanelWidth,

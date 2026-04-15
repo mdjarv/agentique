@@ -130,6 +130,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = meta?.state ?? "idle";
   const draft = useUIStore((s) => s.drafts[sessionId] ?? "");
+  const stashedText = useUIStore((s) => s.stashes[sessionId] ?? "");
   const hasTodos = todos !== null && todos.length > 0;
   const isWorktree = !!meta?.worktreeBranch;
   const isDirty = meta?.hasUncommitted || meta?.hasDirtyWorktree;
@@ -238,12 +239,31 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     [sessionId],
   );
 
+  const handleStash = useCallback(
+    (text: string) => {
+      useUIStore.getState().setStash(sessionId, text);
+      useUIStore.getState().clearDraft(sessionId);
+      toast("Prompt stashed", { description: "Will restore after you send a message" });
+    },
+    [sessionId],
+  );
+
+  const handleUnstash = useCallback(() => {
+    useUIStore.getState().clearStash(sessionId);
+  }, [sessionId]);
+
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
-      useUIStore.getState().clearDraft(sessionId);
+      const store = useUIStore.getState();
+      store.clearDraft(sessionId);
+      const stashed = store.stashes[sessionId];
       try {
         await enqueueMessage(ws, sessionId, prompt, attachments);
         setActiveTab("chat");
+        if (stashed) {
+          useUIStore.getState().clearStash(sessionId);
+          composerRef.current?.setText(stashed);
+        }
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to send message");
         toast.error(msg, {
@@ -419,6 +439,9 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
             onModelChange={handleModelChange}
             effort={(meta.effort as EffortLevel) ?? ""}
             onEmptySubmit={isResumable ? handleResume : undefined}
+            stashedText={stashedText || undefined}
+            onStash={handleStash}
+            onUnstash={handleUnstash}
           />
         </>
       )}
