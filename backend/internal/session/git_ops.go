@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
 // GitVersion returns the current git version counter.

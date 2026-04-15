@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/allbin/agentique/backend/internal/httperror"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

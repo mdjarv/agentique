@@ -3,9 +3,9 @@ package ws
 import (
 	"context"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/session"
 )
 
 func (c *conn) handleSessionCreate(msg ClientMessage) {

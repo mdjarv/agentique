@@ -3,7 +3,7 @@ package ws
 import (
 	"context"
 
-	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/session"
 )
 
 func (c *conn) handleChannelCreate(msg ClientMessage) {

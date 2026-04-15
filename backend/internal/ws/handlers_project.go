@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 func (c *conn) handleProjectSubscribe(msg ClientMessage) {

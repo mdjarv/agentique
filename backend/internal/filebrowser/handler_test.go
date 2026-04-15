@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/allbin/agentique/backend/internal/filebrowser"
-	"github.com/allbin/agentique/backend/internal/testutil"
+	"github.com/mdjarv/agentique/backend/internal/filebrowser"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 func setup(t *testing.T) (*filebrowser.Handler, string, string) {

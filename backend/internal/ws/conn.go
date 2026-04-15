@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/logging"
-	"github.com/allbin/agentique/backend/internal/persona"
-	"github.com/allbin/agentique/backend/internal/project"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
-	"github.com/allbin/agentique/backend/internal/team"
+	"github.com/mdjarv/agentique/backend/internal/logging"
+	"github.com/mdjarv/agentique/backend/internal/persona"
+	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/gorilla/websocket"
 )
 

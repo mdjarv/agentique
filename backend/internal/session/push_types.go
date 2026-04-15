@@ -3,7 +3,7 @@ package session
 import (
 	"encoding/json"
 
-	"github.com/allbin/agentique/backend/internal/browser"
+	"github.com/mdjarv/agentique/backend/internal/browser"
 )
 
 // Typed push event payloads.

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
 // CLISession abstracts a claudecli-go interactive session for testability.

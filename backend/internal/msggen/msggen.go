@@ -10,7 +10,7 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
 const maxRetries = 2 // 3 total attempts

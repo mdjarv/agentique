@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
 const maxDiffBytes = 500 * 1024 // 500KB

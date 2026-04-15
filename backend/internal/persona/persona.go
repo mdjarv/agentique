@@ -14,8 +14,8 @@ import (
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // Broadcaster sends push messages to all connected WebSocket clients.

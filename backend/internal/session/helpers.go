@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
 // branchStatusQuerier abstracts git queries needed by computeBranchStatus.

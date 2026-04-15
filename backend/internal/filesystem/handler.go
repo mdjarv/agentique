@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
 
 // Handler handles filesystem browsing HTTP requests.

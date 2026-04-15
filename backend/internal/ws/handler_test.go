@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	dbpkg "github.com/allbin/agentique/backend/db"
-	"github.com/allbin/agentique/backend/internal/server"
-	"github.com/allbin/agentique/backend/internal/session"
-	"github.com/allbin/agentique/backend/internal/store"
-	"github.com/allbin/agentique/backend/internal/ws"
+	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/server"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
 func newID() string { return uuid.New().String() }

@@ -1,6 +1,6 @@
 package project
 
-import "github.com/allbin/agentique/backend/internal/gitops"
+import "github.com/mdjarv/agentique/backend/internal/gitops"
 
 // projectGitOps abstracts git operations for testability.
 type projectGitOps interface {

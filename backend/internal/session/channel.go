@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
 

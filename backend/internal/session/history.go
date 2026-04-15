@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // NormalizeEventJSON rewrites legacy JSON keys to the current wire format.

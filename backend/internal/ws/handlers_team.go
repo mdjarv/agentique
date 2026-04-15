@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/persona"
-	"github.com/allbin/agentique/backend/internal/team"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/persona"
+	"github.com/mdjarv/agentique/backend/internal/team"
 )
 
 // requireTeams returns true if the teams feature is available. If not, it sends

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/allbin/agentique/backend/internal/browser"
+	"github.com/mdjarv/agentique/backend/internal/browser"
 )
 
 // BrowserService handles browser lifecycle operations for sessions.

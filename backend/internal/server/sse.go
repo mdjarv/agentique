@@ -1,6 +1,6 @@
 package server
 
-import "github.com/allbin/agentique/backend/internal/session"
+import "github.com/mdjarv/agentique/backend/internal/session"
 
 // sseListener adapts hub broadcasts into SSEEvent channel writes.
 type sseListener struct {

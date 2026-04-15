@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/httperror"
-	"github.com/allbin/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
 // FilesHandler serves persistent session files (screenshots, exports, etc.).

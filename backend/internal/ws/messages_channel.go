@@ -3,7 +3,7 @@ package ws
 import (
 	"errors"
 
-	"github.com/allbin/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/session"
 )
 
 // --- Channel payloads ---

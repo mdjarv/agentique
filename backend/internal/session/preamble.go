@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/paths"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // preambleIdentity is always emitted — establishes Agentique context.

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os/exec"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
-	"github.com/allbin/agentique/backend/internal/msggen"
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // Broadcaster sends push messages to all WebSocket clients for a project.

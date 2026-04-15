@@ -5,8 +5,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/allbin/agentique/backend/internal/config"
-	"github.com/allbin/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
 type summaryModel struct {

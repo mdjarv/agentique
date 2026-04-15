@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/allbin/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
 
 // Handler serves Claude CLI account status and manages login/logout flows.

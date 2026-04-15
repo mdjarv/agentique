@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/allbin/agentique/backend/internal/config"
-	"github.com/allbin/agentique/backend/internal/paths"
-	"github.com/allbin/agentique/backend/internal/service"
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/service"
 )
 
 // wizardPhase tracks what sub-model is currently active.

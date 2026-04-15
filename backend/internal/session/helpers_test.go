@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/allbin/agentique/backend/internal/gitops"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
 type mockBranchQuerier struct {

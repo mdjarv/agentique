@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/allbin/agentique/backend/internal/doctor"
+	"github.com/mdjarv/agentique/backend/internal/doctor"
 )
 
 // doctorDoneMsg is sent when all checks complete.

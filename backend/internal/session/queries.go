@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 
-	"github.com/allbin/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // ---------------------------------------------------------------------------
