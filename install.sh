@@ -78,6 +78,29 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
   echo ""
 fi
 
+# Install shell completions
+SHELL_NAME="$(basename "${SHELL:-}")"
+case "$SHELL_NAME" in
+  fish)
+    COMP_DIR="$HOME/.config/fish/completions"
+    mkdir -p "$COMP_DIR"
+    "${INSTALL_DIR}/agentique" completion fish > "$COMP_DIR/agentique.fish" 2>/dev/null && \
+      echo "Installed fish completions to $COMP_DIR/agentique.fish" || true
+    ;;
+  zsh)
+    COMP_DIR="$HOME/.zsh/completions"
+    mkdir -p "$COMP_DIR"
+    "${INSTALL_DIR}/agentique" completion zsh > "$COMP_DIR/_agentique" 2>/dev/null && \
+      echo "Installed zsh completions to $COMP_DIR/_agentique" || true
+    ;;
+  bash)
+    COMP_DIR="$HOME/.local/share/bash-completion/completions"
+    mkdir -p "$COMP_DIR"
+    "${INSTALL_DIR}/agentique" completion bash > "$COMP_DIR/agentique" 2>/dev/null && \
+      echo "Installed bash completions to $COMP_DIR/agentique" || true
+    ;;
+esac
+
 # Restart service if running
 if systemctl --user is-active agentique &>/dev/null; then
   echo "Service is running, restarting..."
