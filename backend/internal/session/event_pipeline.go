@@ -354,7 +354,7 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 		} else if p.onPlanTransition != nil {
 			p.onPlanTransition("default")
 		}
-	case "SendMessage":
+	case ChannelSendMessageTool:
 		if p.onSendMessage != nil {
 			to, body, msgType, err := parseSendMessageInput(tue.ToolInput)
 			if err != nil {

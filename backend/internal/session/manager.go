@@ -123,9 +123,8 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 	}
 	// Always pass permission mode explicitly to override user's Claude Code settings.
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
-	if len(params.MCPConfigs) > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMCPConfig(params.MCPConfigs...))
-	}
+	// Merge all MCP configs into a single call (WithMCPConfig overwrites, not appends).
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(params.MCPConfigs)...))
 
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered session creation. The WS conn context cancels on
@@ -267,9 +266,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		resumePermMode = "default"
 	}
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(resumePermMode)))
-	if len(p.MCPConfigs) > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMCPConfig(p.MCPConfigs...))
-	}
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(p.MCPConfigs)...))
 
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered the resume. See Create() for rationale.
@@ -351,9 +348,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		permMode = "default"
 	}
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
-	if len(p.MCPConfigs) > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMCPConfig(p.MCPConfigs...))
-	}
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(p.MCPConfigs)...))
 
 	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
 	if err != nil {
@@ -501,6 +496,13 @@ func (m *Manager) CloseAll() {
 		}(s)
 	}
 	wg.Wait()
+}
+
+// combineMCPConfigs prepends the channel messaging MCP server config
+// to any additional MCP configs (e.g. browser). Returns a single slice
+// suitable for a single WithMCPConfig call.
+func combineMCPConfigs(extra []string) []string {
+	return append([]string{ChannelMCPConfig()}, extra...)
 }
 
 func (m *Manager) broadcastFunc(projectID string) func(string, any) {

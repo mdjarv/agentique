@@ -311,7 +311,7 @@ func (s *ChannelSuite) TestChannel_E2E_PipelineRoutesMessage() {
 	// Inject a SendMessage ToolUseEvent through the mock CLI — this is what
 	// Claude actually produces when it calls SendMessage.
 	input, _ := json.Marshal(map[string]string{"to": "Bob", "message": "pipeline e2e test"})
-	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_e2e", "SendMessage", json.RawMessage(input))))
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_e2e", ChannelSendMessageTool, json.RawMessage(input))))
 
 	// Give the async pipeline goroutine time to process.
 	time.Sleep(200 * time.Millisecond)
@@ -352,7 +352,7 @@ func (s *ChannelSuite) TestChannel_E2E_Bidirectional() {
 	s.Require().NoError(lead.Query(context.Background(), "task 1", nil))
 
 	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "lead says hi"})
-	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_l2w", "SendMessage", json.RawMessage(input))))
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_l2w", ChannelSendMessageTool, json.RawMessage(input))))
 	time.Sleep(200 * time.Millisecond)
 	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), lead, StateIdle)
@@ -367,7 +367,7 @@ func (s *ChannelSuite) TestChannel_E2E_Bidirectional() {
 	s.Require().NoError(worker.Query(context.Background(), "task 2", nil))
 
 	input2, _ := json.Marshal(map[string]string{"to": "Lead", "message": "worker says hi"})
-	s.Require().NoError(workerMock.Inject(testutil.ToolUseEvent("tu_w2l", "SendMessage", json.RawMessage(input2))))
+	s.Require().NoError(workerMock.Inject(testutil.ToolUseEvent("tu_w2l", ChannelSendMessageTool, json.RawMessage(input2))))
 	time.Sleep(200 * time.Millisecond)
 	s.Require().NoError(workerMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), worker, StateIdle)
@@ -421,7 +421,7 @@ func (s *ChannelSuite) TestChannel_LeaveTeam_StopsRouting() {
 	s.Require().NoError(lead.Query(context.Background(), "more work", nil))
 
 	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "after leave"})
-	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_left", "SendMessage", json.RawMessage(input))))
+	s.Require().NoError(leadMock.Inject(testutil.ToolUseEvent("tu_left", ChannelSendMessageTool, json.RawMessage(input))))
 	time.Sleep(200 * time.Millisecond)
 	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), lead, StateIdle)
@@ -459,7 +459,7 @@ func (s *ChannelSuite) TestChannel_Resume_RewireCallback() {
 	// Inject a SendMessage ToolUseEvent through the new mock CLI.
 	resumedMock := s.Connector.Last()
 	input, _ := json.Marshal(map[string]string{"to": "Worker", "message": "after resume"})
-	s.Require().NoError(resumedMock.Inject(testutil.ToolUseEvent("tu_resume", "SendMessage", json.RawMessage(input))))
+	s.Require().NoError(resumedMock.Inject(testutil.ToolUseEvent("tu_resume", ChannelSendMessageTool, json.RawMessage(input))))
 	time.Sleep(200 * time.Millisecond)
 	s.Require().NoError(resumedMock.Inject(testutil.ResultEvent(0.01)))
 

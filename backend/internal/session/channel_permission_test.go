@@ -29,7 +29,7 @@ func newPermTestSession(autoApprove, permMode string) *Session {
 		broadcast: func(string, any) {},
 	}
 	s.toolInterceptors = map[string]toolInterceptor{
-		"SendMessage": s.interceptSendMessage,
+		ChannelSendMessageTool: s.interceptSendMessage,
 		"AskTeammate": s.interceptAskTeammate,
 	}
 	return s
@@ -54,7 +54,7 @@ func TestHandleToolPermission_SendMessage_DeniesWithSuccess(t *testing.T) {
 			sess := newPermTestSession(m.auto, m.perm)
 			defer sess.cancelCtx()
 
-			resp, err := sess.handleToolPermission("SendMessage", sendMessageInput("Worker", "hello"))
+			resp, err := sess.handleToolPermission(ChannelSendMessageTool, sendMessageInput("Worker", "hello"))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -81,7 +81,7 @@ func TestHandleToolPermission_SendMessage_NeverBlocks(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		resp, err := sess.handleToolPermission("SendMessage", sendMessageInput("peer", "hi"))
+		resp, err := sess.handleToolPermission(ChannelSendMessageTool, sendMessageInput("peer", "hi"))
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -122,7 +122,7 @@ func TestHandleToolPermission_SendMessage_FullAutoDoesNotBypass(t *testing.T) {
 	}
 
 	// SendMessage should still be denied (intercepted before bypass check).
-	smResp, err := sess.handleToolPermission("SendMessage", sendMessageInput("peer", "hi"))
+	smResp, err := sess.handleToolPermission(ChannelSendMessageTool, sendMessageInput("peer", "hi"))
 	if err != nil {
 		t.Fatalf("SendMessage: unexpected error: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestHandleToolPermission_SendMessage_LeadVsWorker(t *testing.T) {
 			sess := newPermTestSession(cfg.auto, cfg.perm)
 			defer sess.cancelCtx()
 
-			resp, err := sess.handleToolPermission("SendMessage", sendMessageInput("Target", "message"))
+			resp, err := sess.handleToolPermission(ChannelSendMessageTool, sendMessageInput("Target", "message"))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -177,7 +177,7 @@ func TestHandleToolPermission_SendMessage_SpawnTarget(t *testing.T) {
 
 	// No onSpawnWorkers callback set — should get error about no callback.
 	input := sendMessageInput("@spawn", `{"channelName":"test","workers":[{"name":"W1","prompt":"do stuff"}]}`)
-	resp, err := sess.handleToolPermission("SendMessage", input)
+	resp, err := sess.handleToolPermission(ChannelSendMessageTool, input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

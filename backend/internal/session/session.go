@@ -186,8 +186,8 @@ func newSession(p sessionParams) *Session {
 		},
 	}
 	s.toolInterceptors = map[string]toolInterceptor{
-		"SendMessage":  s.interceptSendMessage,
-		"AskTeammate":  s.interceptAskTeammate,
+		ChannelSendMessageTool: s.interceptSendMessage,
+		"AskTeammate":          s.interceptAskTeammate,
 		"ExitPlanMode": func(json.RawMessage) (*claudecli.PermissionResponse, error) {
 			return &claudecli.PermissionResponse{Allow: true}, nil
 		},

@@ -4,11 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 )
+
+// ChannelMCPServerName is the MCP server name for Agentique's channel messaging.
+const ChannelMCPServerName = "agentique-channel"
+
+// ChannelSendMessageTool is the full MCP-prefixed tool name that Claude calls.
+const ChannelSendMessageTool = "mcp__" + ChannelMCPServerName + "__SendMessage"
+
+// ChannelMCPConfig returns the MCP config JSON that starts the agentique
+// mcp-channel server. The server exposes a SendMessage tool so channel
+// participants can communicate.
+func ChannelMCPConfig() string {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "agentique" // fallback
+	} else {
+		exe, _ = filepath.EvalSymlinks(exe)
+	}
+	return fmt.Sprintf(`{"mcpServers":{%q:{"command":%q,"args":["mcp-channel"]}}}`,
+		ChannelMCPServerName, exe)
+}
 
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
 type SpawnWorkersRequest struct {

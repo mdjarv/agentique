@@ -283,7 +283,7 @@ func TestPipelineSendMessageRouting(t *testing.T) {
 	pipeline.trackToolUse(WireToolUseEvent{
 		Type:     "tool_use",
 		ToolID:   "tu_123",
-		ToolName: "SendMessage",
+		ToolName: ChannelSendMessageTool,
 		ToolInput: input,
 	})
 
@@ -325,7 +325,7 @@ func TestPipelineSendMessageSkipsSpawn(t *testing.T) {
 	pipeline.trackToolUse(WireToolUseEvent{
 		Type:      "tool_use",
 		ToolID:    "tu_456",
-		ToolName:  "SendMessage",
+		ToolName:  ChannelSendMessageTool,
 		ToolInput: input,
 	})
 
