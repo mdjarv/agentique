@@ -20,6 +20,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={{.BinaryPath}} serve
+Environment=PATH={{.Path}}
 Restart=on-failure
 RestartSec=5
 
@@ -40,7 +41,14 @@ func installSystemd(binaryPath string) error {
 	}
 
 	var buf bytes.Buffer
-	if err := unitTemplate.Execute(&buf, struct{ BinaryPath string }{binaryPath}); err != nil {
+	data := struct {
+		BinaryPath string
+		Path       string
+	}{
+		BinaryPath: binaryPath,
+		Path:       os.Getenv("PATH"),
+	}
+	if err := unitTemplate.Execute(&buf, data); err != nil {
 		return fmt.Errorf("render unit template: %w", err)
 	}
 
