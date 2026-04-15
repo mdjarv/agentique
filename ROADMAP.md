@@ -4,7 +4,7 @@
 
 A lightweight GUI for managing concurrent Claude Code agents across multiple projects.
 Inspired by [pingdotgg/t3code](https://github.com/pingdotgg/t3code) but purpose-built for Claude Code,
-with a Go backend leveraging [allbin/claudecli-go](https://github.com/allbin/claudecli-go).
+with a Go backend leveraging [mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go).
 
 ## Why not just use t3code?
 
@@ -257,4 +257,4 @@ When merging a worktree branch, the project root must be clean (no uncommitted c
 
 - `Events()` is session-lifetime, not per-turn. Detect turn boundaries via `ResultEvent`.
 - Claude CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
-- Source: [github.com/allbin/claudecli-go](https://github.com/allbin/claudecli-go)
+- Source: [github.com/mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go)

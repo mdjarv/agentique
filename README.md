@@ -1,6 +1,6 @@
 # Agentique
 
-A GUI for managing concurrent Claude Code agents across multiple projects. Go backend wraps [claudecli-go](https://github.com/allbin/claudecli-go), React frontend connects via WebSocket, deploys as a single embedded binary.
+A GUI for managing concurrent Claude Code agents across multiple projects. Go backend wraps [claudecli-go](https://github.com/mdjarv/claudecli-go), React frontend connects via WebSocket, deploys as a single embedded binary.
 
 ## Prerequisites
 
@@ -8,13 +8,29 @@ A GUI for managing concurrent Claude Code agents across multiple projects. Go ba
 - **git** on PATH
 - **gh** (optional -- needed for PR creation from the UI)
 
-## Quick Start (Binary)
+## Install
 
-1. Download the binary for your platform
-2. Make it executable: `chmod +x agentique-*`
-3. Run: `./agentique-linux-amd64 serve`
-4. Open http://localhost:9201
-5. Add your projects via the + button in the sidebar
+```bash
+curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
+```
+
+Installs to `~/.local/bin/agentique`. Override with `INSTALL_DIR`:
+
+```bash
+INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
+```
+
+The install script verifies checksums and runs `agentique doctor` to check dependencies.
+
+## Usage
+
+```bash
+agentique serve              # Start on localhost:9201
+agentique serve --addr 0.0.0.0:9201  # Bind all interfaces
+agentique doctor             # Check dependencies
+```
+
+Open http://localhost:9201 and add projects via the + button in the sidebar.
 
 ## Quick Start (Development)
 
@@ -73,7 +89,7 @@ Frontend connects WebSocket directly to `:9201` (bypasses Vite proxy for reliabi
 ### Backend
 
 - **HTTP/WS server:** net/http + gorilla/websocket
-- **Claude integration:** github.com/allbin/claudecli-go
+- **Claude integration:** github.com/mdjarv/claudecli-go
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
 - **Query generation:** sqlc
 - **Migrations:** goose
