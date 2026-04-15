@@ -446,7 +446,7 @@ function ProjectDirtySection({
                         onClick={() => onSelectFile(f.path)}
                         className="font-mono truncate min-w-0 text-[11px] hover:text-foreground transition-colors text-left flex"
                       >
-                        <FilePath path={f.path} className="flex" />
+                        <FilePath path={f.path} className="truncate min-w-0 flex" />
                       </button>
                     ) : (
                       <FilePath
