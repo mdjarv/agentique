@@ -33,13 +33,14 @@ type CreateParams struct {
 	Effort          string
 	MaxBudget       float64
 	MaxTurns        int
-	Projects           []ProjectInfo
-	BehaviorPresets    BehaviorPresets
-	ChannelPreambles   []*ChannelPreambleInfo
-	TeamPreambles      []*TeamPreambleInfo
-	AgentProfileID     string
-	MCPConfigs         []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled     bool
+	Projects              []ProjectInfo
+	BehaviorPresets       BehaviorPresets
+	ChannelPreambles      []*ChannelPreambleInfo
+	TeamPreambles         []*TeamPreambleInfo
+	AgentProfileID        string
+	MCPConfigs            []string // inline JSON or file paths for --mcp-config
+	BrowserEnabled        bool
+	SystemPromptAdditions string // from persona config; appended to the session preamble
 }
 
 // Manager manages the lifecycle of claudecli-go sessions.
@@ -107,7 +108,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions)),
 	}
 	if params.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(params.Name))
@@ -246,7 +247,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled) + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, "") + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
@@ -329,7 +330,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled) + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, "") + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))

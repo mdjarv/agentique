@@ -316,20 +316,50 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 
 	name := p.Name
 
-	model := p.Model
-	if model == "" {
-		model = "opus"
-	}
-
-	// Resolve behavior presets: use explicit values if provided, else project defaults.
-	presets := p.BehaviorPresets
-	if presets.IsZero() {
-		presets = ParsePresets(project.DefaultBehaviorPresets)
-	}
-
 	allProjects, _ := s.queries.ListProjects(ctx)
 	projectInfos := ProjectInfoFromStore(allProjects)
 	tc := s.resolveTeamContext(ctx, p.AgentProfileID)
+
+	// Parse persona config from agent profile. Non-zero values act as
+	// defaults — explicit CreateSessionParams always take precedence.
+	var pc PersonaConfig
+	if tc != nil {
+		pc = parsePersonaConfig(tc.profile.Config)
+	}
+
+	model := p.Model
+	if model == "" {
+		if pc.Model != "" {
+			model = pc.Model
+		} else {
+			model = "opus"
+		}
+	}
+
+	effort := p.Effort
+	if effort == "" {
+		effort = pc.Effort
+	}
+
+	autoApproveMode := p.AutoApproveMode
+	if autoApproveMode == "" {
+		autoApproveMode = pc.AutoApproveMode
+	}
+
+	// Resolve behavior presets: explicit > persona config > project defaults.
+	presets := p.BehaviorPresets
+	if presets.IsZero() && !pc.BehaviorPresets.IsZero() {
+		presets = BehaviorPresets{
+			AutoCommit:         pc.BehaviorPresets.AutoCommit,
+			SuggestParallel:    pc.BehaviorPresets.SuggestParallel,
+			PlanFirst:          pc.BehaviorPresets.PlanFirst,
+			Terse:              pc.BehaviorPresets.Terse,
+			CustomInstructions: pc.BehaviorPresets.CustomInstructions,
+		}
+	}
+	if presets.IsZero() {
+		presets = ParsePresets(project.DefaultBehaviorPresets)
+	}
 
 	// Pre-allocate a browser port so the Playwright MCP config can be baked
 	// into the CLI process. Chrome isn't started yet — it launches when the
@@ -347,25 +377,26 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	sess, err := s.mgr.Create(ctx, CreateParams{
-		ID:              sessionID,
-		ProjectID:       p.ProjectID,
-		Name:            name,
-		WorkDir:         workDir,
-		WorktreePath:    worktreePath,
-		WorktreeBranch:  worktreeBranch,
-		WorktreeBaseSHA: worktreeBaseSHA,
-		Model:           model,
-		PlanMode:        p.PlanMode,
-		AutoApproveMode: p.AutoApproveMode,
-		Effort:          p.Effort,
-		MaxBudget:       p.MaxBudget,
-		MaxTurns:        p.MaxTurns,
-		Projects:        projectInfos,
-		BehaviorPresets: presets,
-		TeamPreambles:   tc.toPreambles(),
-		AgentProfileID:  p.AgentProfileID,
-		MCPConfigs:      mcpConfigs,
-		BrowserEnabled:  s.browserSvc != nil,
+		ID:                    sessionID,
+		ProjectID:             p.ProjectID,
+		Name:                  name,
+		WorkDir:               workDir,
+		WorktreePath:          worktreePath,
+		WorktreeBranch:        worktreeBranch,
+		WorktreeBaseSHA:       worktreeBaseSHA,
+		Model:                 model,
+		PlanMode:              p.PlanMode,
+		AutoApproveMode:       autoApproveMode,
+		Effort:                effort,
+		MaxBudget:             p.MaxBudget,
+		MaxTurns:              p.MaxTurns,
+		Projects:              projectInfos,
+		BehaviorPresets:       presets,
+		TeamPreambles:         tc.toPreambles(),
+		AgentProfileID:        p.AgentProfileID,
+		MCPConfigs:            mcpConfigs,
+		BrowserEnabled:        s.browserSvc != nil,
+		SystemPromptAdditions: pc.SystemPromptAdditions,
 	})
 	if err != nil {
 		if worktreePath != "" {
@@ -393,8 +424,12 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	// Resolve agent profile metadata for the broadcast + result.
+	// Use tc.profile directly if available to avoid a redundant DB query.
 	var profileName, profileAvatar string
-	if p.AgentProfileID != "" {
+	if tc != nil {
+		profileName = tc.profile.Name
+		profileAvatar = tc.profile.Avatar
+	} else if p.AgentProfileID != "" {
 		if ap, err := s.queries.GetAgentProfile(ctx, p.AgentProfileID); err == nil {
 			profileName = ap.Name
 			profileAvatar = ap.Avatar
@@ -410,7 +445,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Model:           model,
 		PermissionMode:  sess.PermissionMode(),
 		AutoApproveMode: sess.AutoApproveMode(),
-		Effort:          p.Effort,
+		Effort:          effort,
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
 		WorktreePath:    worktreePath,
@@ -431,7 +466,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Model:              model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
-		Effort:             p.Effort,
+		Effort:             effort,
 		MaxBudget:          p.MaxBudget,
 		MaxTurns:           p.MaxTurns,
 		WorktreePath:       worktreePath,
@@ -1181,6 +1216,31 @@ func generateSessionName(runner msggen.Runner, prompt string) string {
 		name = name[:50]
 	}
 	return name
+}
+
+// PersonaConfig holds session-creation defaults parsed from an agent profile's
+// config JSON. Fields mirror CreateSessionParams where applicable — non-zero
+// values act as defaults that explicit params override.
+type PersonaConfig struct {
+	Model                 string          `json:"model,omitempty"`
+	Effort                string          `json:"effort,omitempty"`
+	AutoApproveMode       string          `json:"autoApproveMode,omitempty"`
+	BehaviorPresets       BehaviorPresets `json:"behaviorPresets"`
+	SystemPromptAdditions string          `json:"systemPromptAdditions,omitempty"`
+	CommunicationMode     string          `json:"communicationMode,omitempty"`
+}
+
+// parsePersonaConfig unmarshals the profile's config JSON into a PersonaConfig.
+// Returns zero-value PersonaConfig on empty/malformed JSON.
+func parsePersonaConfig(raw string) PersonaConfig {
+	var pc PersonaConfig
+	if raw == "" || raw == "{}" {
+		return pc
+	}
+	if err := json.Unmarshal([]byte(raw), &pc); err != nil {
+		slog.Warn("malformed persona config JSON", "error", err)
+	}
+	return pc
 }
 
 // resolvedTeam holds a team and its members (excluding the profile itself).

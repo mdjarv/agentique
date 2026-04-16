@@ -49,11 +49,13 @@ func NewService(queries serviceQueries, hub Broadcaster) *Service {
 
 // AgentProfileConfig holds session-creation defaults for an agent profile.
 type AgentProfileConfig struct {
-	Model           string          `json:"model,omitempty"`
-	PermissionMode  string          `json:"permissionMode,omitempty"`
-	AutoApproveMode string          `json:"autoApproveMode,omitempty"`
-	Effort          string          `json:"effort,omitempty"`
-	BehaviorPresets BehaviorPresets `json:"behaviorPresets"`
+	Model                  string          `json:"model,omitempty"`
+	PermissionMode         string          `json:"permissionMode,omitempty"`
+	AutoApproveMode        string          `json:"autoApproveMode,omitempty"`
+	Effort                 string          `json:"effort,omitempty"`
+	BehaviorPresets        BehaviorPresets `json:"behaviorPresets"`
+	SystemPromptAdditions  string          `json:"systemPromptAdditions,omitempty"`
+	CommunicationMode      string          `json:"communicationMode,omitempty"`
 }
 
 // BehaviorPresets mirrors session.BehaviorPresets for agent profile config.

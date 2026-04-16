@@ -201,8 +201,9 @@ type TeamPreambleMember struct {
 
 // buildPreamble returns the system prompt preamble for a session.
 // Snippets are conditionally included based on the behavior presets.
+// systemPromptAdditions comes from the agent profile's persona config.
 // globalExtra is appended at the end if non-empty (e.g., dev-mode safety instructions).
-func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, channels []*ChannelPreambleInfo, teams []*TeamPreambleInfo, globalExtra string, browserEnabled bool) string {
+func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, channels []*ChannelPreambleInfo, teams []*TeamPreambleInfo, globalExtra string, browserEnabled bool, systemPromptAdditions string) string {
 	s := preambleIdentity
 
 	if presets.SuggestParallel {
@@ -279,6 +280,10 @@ func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, pre
 
 	if hasTeam {
 		s += preambleAskTeammate
+	}
+
+	if systemPromptAdditions != "" {
+		s += "\n\n" + systemPromptAdditions
 	}
 
 	if browserEnabled {

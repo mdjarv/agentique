@@ -9,7 +9,7 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 	// DefaultPresets (suggestParallel=true, autoCommit=true) with a worktree
 	// should produce the same output as the old hardcoded preamble.
 	projects := []ProjectInfo{{Name: "MyProject", Slug: "my-project"}}
-	got := buildPreamble("test-session-id", "session-abc123", projects, DefaultPresets(), nil, nil, "", false)
+	got := buildPreamble("test-session-id", "session-abc123", projects, DefaultPresets(), nil, nil, "", false, "")
 
 	// Must contain identity
 	if !strings.Contains(got, "You are running inside Agentique") {
@@ -37,7 +37,7 @@ func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
 		{Name: "Frontend", Slug: "frontend"},
 		{Name: "Backend", Slug: "backend"},
 	}
-	got := buildPreamble("sess-id", "main", projects, DefaultPresets(), nil, nil, "", false)
+	got := buildPreamble("sess-id", "main", projects, DefaultPresets(), nil, nil, "", false, "")
 
 	if !strings.Contains(got, "Available projects:") {
 		t.Error("missing cross-project instructions")
@@ -56,7 +56,7 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 		{Name: "A", Slug: "a"},
 		{Name: "B", Slug: "b"},
 	}
-	got := buildPreamble("sess-id", "branch", projects, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "branch", projects, presets, nil, nil, "", false, "")
 
 	if strings.Contains(got, "suggest session prompts") {
 		t.Error("parallel suggestion text should be excluded")
@@ -73,7 +73,7 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 
 func TestBuildPreamble_AutoCommitOff(t *testing.T) {
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: false}
-	got := buildPreamble("sess-id", "session-xyz", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "session-xyz", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, "")
 
 	if strings.Contains(got, "Commit after each milestone") {
 		t.Error("commit instructions should be excluded when autoCommit is off")
@@ -82,7 +82,7 @@ func TestBuildPreamble_AutoCommitOff(t *testing.T) {
 
 func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: true}
-	got := buildPreamble("sess-id", "", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, "")
 
 	if strings.Contains(got, "Commit after each milestone") {
 		t.Error("commit instructions should be excluded when no worktree branch")
@@ -91,7 +91,7 @@ func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
 
 func TestBuildPreamble_PlanFirst(t *testing.T) {
 	presets := BehaviorPresets{PlanFirst: true}
-	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, "")
 
 	if !strings.Contains(got, "Plan before implementing") {
 		t.Error("plan-first snippet missing")
@@ -100,7 +100,7 @@ func TestBuildPreamble_PlanFirst(t *testing.T) {
 
 func TestBuildPreamble_Terse(t *testing.T) {
 	presets := BehaviorPresets{Terse: true}
-	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, "")
 
 	if !strings.Contains(got, "Terse mode") {
 		t.Error("terse snippet missing")
@@ -109,7 +109,7 @@ func TestBuildPreamble_Terse(t *testing.T) {
 
 func TestBuildPreamble_CustomInstructions(t *testing.T) {
 	presets := BehaviorPresets{CustomInstructions: "Only touch backend files."}
-	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, "")
 
 	if !strings.Contains(got, "Only touch backend files.") {
 		t.Error("custom instructions not appended")
@@ -118,7 +118,7 @@ func TestBuildPreamble_CustomInstructions(t *testing.T) {
 
 func TestBuildPreamble_AllOff(t *testing.T) {
 	presets := BehaviorPresets{}
-	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false)
+	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, "")
 
 	// Should only contain identity
 	if !strings.Contains(got, "You are running inside Agentique") {
@@ -147,7 +147,7 @@ func TestBuildPreamble_ChannelContext(t *testing.T) {
 			{Name: "frontend-agent", Role: "", WorktreePath: "/tmp/wt2"},
 		},
 	}
-	got := buildPreamble("sess-id", "", nil, presets, []*ChannelPreambleInfo{ch}, nil, "", false)
+	got := buildPreamble("sess-id", "", nil, presets, []*ChannelPreambleInfo{ch}, nil, "", false, "")
 
 	if !strings.Contains(got, "Channel Coordination") {
 		t.Error("missing channel section header")
@@ -170,7 +170,7 @@ func TestBuildPreamble_ChannelContext(t *testing.T) {
 }
 
 func TestBuildPreamble_GlobalExtra(t *testing.T) {
-	got := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "Do not touch the production database.", false)
+	got := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "Do not touch the production database.", false, "")
 
 	if !strings.Contains(got, "Do not touch the production database.") {
 		t.Error("global extra not appended")
@@ -178,8 +178,8 @@ func TestBuildPreamble_GlobalExtra(t *testing.T) {
 }
 
 func TestBuildPreamble_GlobalExtraEmpty(t *testing.T) {
-	with := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false)
-	without := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false)
+	with := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
+	without := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
 	if with != without {
 		t.Error("empty global extra should produce identical output")
 	}
@@ -198,7 +198,7 @@ func TestBuildPreamble_DelegationAlwaysPresent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildPreamble("sess-id", "", nil, tt.presets, nil, nil, "", false)
+			got := buildPreamble("sess-id", "", nil, tt.presets, nil, nil, "", false, "")
 			if !strings.Contains(got, "## Delegation") {
 				t.Error("delegation section must always be present")
 			}
@@ -220,7 +220,7 @@ func TestBuildPreamble_TeamIdentity(t *testing.T) {
 			{Name: "DevOps", Role: ""},
 		},
 	}
-	got := buildPreamble("sess-id", "", nil, presets, nil, []*TeamPreambleInfo{team}, "", false)
+	got := buildPreamble("sess-id", "", nil, presets, nil, []*TeamPreambleInfo{team}, "", false, "")
 
 	if !strings.Contains(got, "Team Identity") {
 		t.Error("missing team section header")
@@ -246,7 +246,7 @@ func TestBuildPreamble_TeamIdentity(t *testing.T) {
 }
 
 func TestBuildPreamble_SessionFiles(t *testing.T) {
-	got := buildPreamble("abc-123-def", "", nil, BehaviorPresets{}, nil, nil, "", false)
+	got := buildPreamble("abc-123-def", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
 
 	if !strings.Contains(got, "## Session Files") {
 		t.Error("missing session files section")
@@ -263,10 +263,26 @@ func TestBuildPreamble_SessionFiles(t *testing.T) {
 }
 
 func TestBuildPreamble_SessionFilesEmptyID(t *testing.T) {
-	got := buildPreamble("", "", nil, BehaviorPresets{}, nil, nil, "", false)
+	got := buildPreamble("", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
 
 	if strings.Contains(got, "## Session Files") {
 		t.Error("session files section should be excluded when session ID is empty")
+	}
+}
+
+func TestBuildPreamble_SystemPromptAdditions(t *testing.T) {
+	got := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, "You are a senior backend developer. Always write tests.")
+
+	if !strings.Contains(got, "You are a senior backend developer. Always write tests.") {
+		t.Error("systemPromptAdditions not included in preamble")
+	}
+}
+
+func TestBuildPreamble_SystemPromptAdditionsEmpty(t *testing.T) {
+	with := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
+	without := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, "")
+	if with != without {
+		t.Error("empty systemPromptAdditions should produce identical output")
 	}
 }
 
