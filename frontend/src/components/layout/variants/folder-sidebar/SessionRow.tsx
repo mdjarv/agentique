@@ -2,6 +2,7 @@ import { Hash } from "lucide-react";
 import { memo } from "react";
 import { cn, relativeTime } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
+import { PulseStatus } from "../../session/PulseStatus";
 import { type BadgeState, resolveSessionState } from "../../session/SessionBadge";
 import { SessionStatusBadge } from "../../session/SessionStatusBadge";
 import type { TodoProgress } from "./types";
@@ -56,9 +57,12 @@ function SessionRowLayout({
 
   return (
     <>
-      <span className={cn("truncate flex-1 text-sm", nameClassName)}>
-        {data.meta.name || "Untitled"}
-      </span>
+      <div className="truncate flex-1 min-w-0">
+        <span className={cn("block truncate text-sm", nameClassName)}>
+          {data.meta.name || "Untitled"}
+        </span>
+        {data.meta.state === "running" && <PulseStatus sessionId={data.meta.id} />}
+      </div>
       <span className="flex items-center gap-1.5 shrink-0 ml-auto">
         {extraMeta}
         {isResting ? <TimeStamp meta={data.meta} /> : <RightIndicator data={data} />}

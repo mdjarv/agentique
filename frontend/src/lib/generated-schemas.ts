@@ -623,6 +623,16 @@ export const PushTurnStartedSchema = z.object({
   attachments: z.array(QueryAttachmentSchema).optional(),
 });
 
+export const PushSessionPulseSchema = z.object({
+  sessionId: z.string(),
+  lastToolCategory: z.string().optional(),
+  lastFilePath: z.string().optional(),
+  toolCallCount: z.number(),
+  commitCount: z.number(),
+  errorCount: z.number(),
+  turnStartedAt: z.number(),
+});
+
 export const ChannelMemberSchema = z.object({
   sessionId: z.string(),
   name: z.string(),
@@ -751,6 +761,7 @@ export const pushSchemaMap = {
   "session.question-resolved": PushQuestionResolvedSchema,
   "session.permission-mode-changed": PushPermissionModeChangedSchema,
   "session.turn-started": PushTurnStartedSchema,
+  "session.pulse": PushSessionPulseSchema,
   "project.git-status": ProjectGitStatusSchema,
   "project.updated": ProjectSchema,
   "channel.created": ChannelInfoSchema,

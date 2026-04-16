@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,18 @@ type PipelineConfig struct {
 	OnSendMessage     func(toolUseID, targetName, content, msgType string)
 }
 
+// pulseState holds in-memory activity counters for the session pulse broadcast.
+// Protected by EventPipeline.mu.
+type pulseState struct {
+	lastToolCategory string
+	lastFilePath     string
+	toolCallCount    int
+	commitCount      int
+	errorCount       int
+	turnStartedAt   int64 // epoch ms
+	dirty            bool  // true when state changed since last broadcast
+}
+
 // EventPipeline processes raw CLI events through a linear sequence of stages:
 // init capture, wire conversion, transient filtering, persistence, tool tracking,
 // broadcasting, and state transitions.
@@ -51,6 +64,8 @@ type EventPipeline struct {
 	seqInTurn         int
 	toolCategories    map[string]string
 	pendingMessageIDs []string // FIFO queue of messageIds awaiting replay confirmation
+	pulse             pulseState
+	pulseTimer        *time.Timer // debounce timer for pulse broadcast
 
 	onClaudeSessionID func(string)
 	onPlanTransition  func(string)
@@ -215,12 +230,14 @@ func (p *EventPipeline) processUserEvent(ue *claudecli.UserEvent) {
 }
 
 // AdvanceTurn increments the turn index, resets the sequence counter,
-// and returns the new turn index. Called by Session.Query().
+// initializes pulse state for the new turn, and returns the new turn index.
+// Called by Session.Query().
 func (p *EventPipeline) AdvanceTurn() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.turnIndex++
 	p.seqInTurn = 0
+	p.pulse = pulseState{turnStartedAt: time.Now().UnixMilli()}
 	return p.turnIndex
 }
 
@@ -336,7 +353,19 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 	}
 	p.mu.Lock()
 	p.toolCategories[tue.ToolID] = tue.Category
+	// Pulse: count tool calls, track last category and file path.
+	if tue.ParentToolUseID == "" {
+		p.pulse.toolCallCount++
+		p.pulse.lastToolCategory = tue.Category
+		if tue.Category == "file_write" {
+			if fp := extractFilePath(tue.ToolInput); fp != "" {
+				p.pulse.lastFilePath = fp
+			}
+		}
+		p.pulse.dirty = true
+	}
 	p.mu.Unlock()
+	p.schedulePulseBroadcast()
 
 	// Subagent tool uses don't affect parent session plan mode.
 	if tue.ParentToolUseID != "" {
@@ -380,6 +409,18 @@ func (p *EventPipeline) trackToolResult(wireEvent any) {
 	if (cat == "command" || cat == "file_write") && p.onWriteToolResult != nil {
 		p.onWriteToolResult()
 	}
+
+	// Pulse: detect git commits from command tool results.
+	if cat == "command" {
+		text := toolResultText(tr.Content)
+		if looksLikeCommit(text) {
+			p.mu.Lock()
+			p.pulse.commitCount++
+			p.pulse.dirty = true
+			p.mu.Unlock()
+			p.schedulePulseBroadcast()
+		}
+	}
 }
 
 func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
@@ -387,6 +428,9 @@ func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
 		p.mu.Unlock()
+		// Broadcast final pulse before resetting, then clear.
+		p.broadcastPulseNow()
+		p.resetPulse()
 		if p.onTurnComplete != nil {
 			p.onTurnComplete()
 		}
@@ -402,10 +446,103 @@ func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 			"fatal", errEv.Fatal,
 			"error", errEv.Error(),
 		)
+		// Pulse: count errors.
+		p.mu.Lock()
+		p.pulse.errorCount++
+		p.pulse.dirty = true
+		p.mu.Unlock()
+		p.schedulePulseBroadcast()
+
 		if errEv.Fatal && p.onFatalError != nil {
 			p.onFatalError(errEv.Err)
 		}
 	}
+}
+
+// --- Pulse helpers ---
+
+const pulseDebounce = 2 * time.Second
+
+// schedulePulseBroadcast schedules a debounced pulse broadcast. Each call
+// resets the timer; the broadcast fires once after pulseDebounce of quiet.
+func (p *EventPipeline) schedulePulseBroadcast() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pulseTimer != nil {
+		p.pulseTimer.Stop()
+	}
+	p.pulseTimer = time.AfterFunc(pulseDebounce, func() {
+		p.broadcastPulseNow()
+	})
+}
+
+// broadcastPulseNow sends the current pulse state immediately if dirty.
+func (p *EventPipeline) broadcastPulseNow() {
+	p.mu.Lock()
+	if !p.pulse.dirty {
+		p.mu.Unlock()
+		return
+	}
+	payload := PushSessionPulse{
+		SessionID:        p.sessionID,
+		LastToolCategory: p.pulse.lastToolCategory,
+		LastFilePath:     p.pulse.lastFilePath,
+		ToolCallCount:    p.pulse.toolCallCount,
+		CommitCount:      p.pulse.commitCount,
+		ErrorCount:       p.pulse.errorCount,
+		TurnStartedAt:   p.pulse.turnStartedAt,
+	}
+	p.pulse.dirty = false
+	if p.pulseTimer != nil {
+		p.pulseTimer.Stop()
+		p.pulseTimer = nil
+	}
+	p.mu.Unlock()
+	p.sink.Broadcast("session.pulse", payload)
+}
+
+// resetPulse clears pulse state (called on turn completion).
+func (p *EventPipeline) resetPulse() {
+	p.mu.Lock()
+	if p.pulseTimer != nil {
+		p.pulseTimer.Stop()
+		p.pulseTimer = nil
+	}
+	p.pulse = pulseState{}
+	p.mu.Unlock()
+}
+
+// StopPulseTimer cancels any pending pulse broadcast. Called on session close.
+func (p *EventPipeline) StopPulseTimer() {
+	p.mu.Lock()
+	if p.pulseTimer != nil {
+		p.pulseTimer.Stop()
+		p.pulseTimer = nil
+	}
+	p.mu.Unlock()
+}
+
+// extractFilePath pulls the file_path from a tool_use input JSON.
+// Returns "" if the field is absent or not a string.
+func extractFilePath(input json.RawMessage) string {
+	var obj struct {
+		FilePath string `json:"file_path"`
+	}
+	if json.Unmarshal(input, &obj) == nil && obj.FilePath != "" {
+		return obj.FilePath
+	}
+	return ""
+}
+
+// looksLikeCommit checks if a command output contains evidence of a git commit.
+func looksLikeCommit(text string) bool {
+	// git commit output: "[branch hash] message"
+	// Look for the common pattern of a successful commit.
+	return strings.Contains(text, "create mode") ||
+		strings.Contains(text, "file changed") ||
+		strings.Contains(text, "files changed") ||
+		strings.Contains(text, "insertions(+)") ||
+		strings.Contains(text, "deletions(-)")
 }
 
 // --- Pure helpers ---

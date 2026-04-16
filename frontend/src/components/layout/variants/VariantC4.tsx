@@ -26,6 +26,7 @@ import type { Project } from "~/lib/types";
 import { cn, relativeTime } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
+import { PulseStatus } from "../session/PulseStatus";
 import { type BadgeState, SessionBadge } from "../session/SessionBadge";
 import { SessionStatusBadge } from "../session/SessionStatusBadge";
 
@@ -83,16 +84,19 @@ const SessionRow = memo(function SessionRow({
         isPlanning={data.planMode}
         gitOperation={meta.gitOperation}
       />
-      <span
-        className={cn(
-          "truncate flex-1",
-          !meta.name && "italic text-muted-foreground",
-          faded && "text-muted-foreground line-through decoration-muted-foreground/50",
-          data.hasUnseenCompletion && "font-semibold text-foreground-bright",
-        )}
-      >
-        {meta.name || "Untitled"}
-      </span>
+      <div className="truncate flex-1 min-w-0">
+        <span
+          className={cn(
+            "block truncate",
+            !meta.name && "italic text-muted-foreground",
+            faded && "text-muted-foreground line-through decoration-muted-foreground/50",
+            data.hasUnseenCompletion && "font-semibold text-foreground-bright",
+          )}
+        >
+          {meta.name || "Untitled"}
+        </span>
+        {meta.state === "running" && <PulseStatus sessionId={sessionId} />}
+      </div>
       <span className="flex items-center gap-1.5 shrink-0 ml-auto">
         {todosInProgress && (
           <span className="text-[10px] text-muted-foreground tabular-nums">

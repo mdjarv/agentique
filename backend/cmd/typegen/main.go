@@ -447,6 +447,7 @@ func main() {
 	pushUserQuestion := g.register(session.PushUserQuestion{}, "PushUserQuestion")
 	pushQuestionResolved := g.register(session.PushQuestionResolved{}, "PushQuestionResolved")
 	pushTurnStarted := g.register(session.PushTurnStarted{}, "PushTurnStarted")
+	pushSessionPulse := g.register(session.PushSessionPulse{}, "PushSessionPulse")
 
 	// Channel push types (ChannelMember before ChannelInfo — leaf-first).
 	g.register(session.ChannelMember{}, "ChannelMember")
@@ -485,6 +486,7 @@ func main() {
 	g.addPushEvent("session.question-resolved", pushQuestionResolved)
 	g.addPushEvent("session.permission-mode-changed", pushPermissionMode)
 	g.addPushEvent("session.turn-started", pushTurnStarted)
+	g.addPushEvent("session.pulse", pushSessionPulse)
 
 	// Project events.
 	g.addPushEvent("project.git-status", projectGitStatusRef)

@@ -728,6 +728,7 @@ func (s *Session) Close() {
 
 	s.cancelCtx()
 	s.stopGitRefreshTimer()
+	s.pipeline.StopPulseTimer()
 
 	// Close CLI session to stop the process and close Events channel.
 	s.mu.Lock()

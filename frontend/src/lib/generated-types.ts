@@ -622,6 +622,16 @@ export interface PushTurnStarted {
   attachments?: QueryAttachment[];
 }
 
+export interface PushSessionPulse {
+  sessionId: string;
+  lastToolCategory?: string;
+  lastFilePath?: string;
+  toolCallCount: number;
+  commitCount: number;
+  errorCount: number;
+  turnStartedAt: number;
+}
+
 export interface ChannelMember {
   sessionId: string;
   name: string;
@@ -749,6 +759,7 @@ export interface PushEventMap {
   "session.question-resolved": PushQuestionResolved;
   "session.permission-mode-changed": PushPermissionModeChanged;
   "session.turn-started": PushTurnStarted;
+  "session.pulse": PushSessionPulse;
   "project.git-status": ProjectGitStatus;
   "project.updated": Project;
   "channel.created": ChannelInfo;

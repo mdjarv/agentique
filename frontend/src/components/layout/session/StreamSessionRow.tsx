@@ -136,6 +136,7 @@ export const StreamSessionRow = memo(function StreamSessionRow({
     <div className="group/stream-row">
       <SessionRow
         ref={setNodeRef}
+        sessionId={sessionId}
         name={meta.name}
         state={meta.state}
         connected={meta.connected}

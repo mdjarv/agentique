@@ -119,3 +119,16 @@ type PushBrowserStopped struct {
 	SessionID string `json:"sessionId"`
 	Reason    string `json:"reason"`
 }
+
+// PushSessionPulse carries a compact activity snapshot for a running session.
+// Broadcast as "session.pulse" on a debounced ~2s interval while the session
+// is actively processing events. In-memory only — not persisted.
+type PushSessionPulse struct {
+	SessionID        string `json:"sessionId"`
+	LastToolCategory string `json:"lastToolCategory,omitempty"`
+	LastFilePath     string `json:"lastFilePath,omitempty"`
+	ToolCallCount    int    `json:"toolCallCount"`
+	CommitCount      int    `json:"commitCount"`
+	ErrorCount       int    `json:"errorCount"`
+	TurnStartedAt   int64  `json:"turnStartedAt"` // epoch ms
+}

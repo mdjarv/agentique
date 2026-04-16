@@ -7,6 +7,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
 import type { SessionMetadata } from "~/stores/chat-types";
+import { usePulseStore } from "~/stores/pulse-store";
 
 /** Subscribes to session lifecycle WS events: state, created, deleted, renamed, pr-updated. */
 export function useSessionLifecycleSubscription(
@@ -20,7 +21,13 @@ export function useSessionLifecycleSubscription(
       const prevMeta = store.sessions[sid]?.meta;
       const wasActive = store.activeSessionId === sid;
 
-      store.setSessionState(sid, payload.state as SessionMetadata["state"], {
+      // Clear pulse when session leaves running state.
+      const newState = payload.state as SessionMetadata["state"];
+      if (newState !== "running") {
+        usePulseStore.getState().clearPulse(sid);
+      }
+
+      store.setSessionState(sid, newState, {
         connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
@@ -99,12 +106,17 @@ export function useSessionLifecycleSubscription(
       useChatStore.getState().setSessionPrUrl(payload.sessionId, payload.prUrl);
     });
 
+    const unsubPulse = ws.subscribe("session.pulse", (payload) => {
+      usePulseStore.getState().setPulse(payload.sessionId, payload);
+    });
+
     return () => {
       unsubState();
       unsubCreated();
       unsubRenamed();
       unsubDeleted();
       unsubPrUpdated();
+      unsubPulse();
     };
   }, [ws, navigate]);
 }

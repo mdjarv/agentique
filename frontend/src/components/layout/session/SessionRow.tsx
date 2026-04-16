@@ -2,9 +2,11 @@ import { forwardRef, memo, type Ref } from "react";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
+import { PulseStatus } from "./PulseStatus";
 import { SessionStatusBadge } from "./SessionStatusBadge";
 
 interface SessionRowProps {
+  sessionId: string;
   name: string;
   state: SessionState;
   connected?: boolean;
@@ -39,6 +41,7 @@ function getAccentColor(isActive: boolean): string | undefined {
 export const SessionRow = memo(
   forwardRef(function SessionRow(
     {
+      sessionId,
       name,
       state,
       connected,
@@ -109,6 +112,7 @@ export const SessionRow = memo(
           >
             {name || "Untitled"}
           </span>
+          {state === "running" && <PulseStatus sessionId={sessionId} />}
           {hasMeta && (
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground-faint">
               {projectSlug && (
