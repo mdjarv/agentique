@@ -279,13 +279,13 @@ export const ChannelPanel = memo(function ChannelPanel({
           const isLastForSender = lastGroupIndexBySender.get(group.senderId) === gi;
 
           return (
-            <div key={`g-${group.senderId}-${gi}`} className={gi > 0 ? "mt-4" : ""}>
+            <div key={`g-${group.events[0]?.id ?? gi}`} className={gi > 0 ? "mt-4" : ""}>
               {group.events.map((event, ei) => {
                 const isFirst = ei === 0;
                 if (isFirst) {
                   return (
                     <div
-                      key={`${group.senderId}-${gi}-${ei}`}
+                      key={event.id}
                       className="flex gap-3 items-start -mx-3 px-3 py-0.5 rounded hover:bg-accent/20"
                     >
                       <Avatar className="h-8 w-8 shrink-0 mt-0.5">
@@ -315,10 +315,7 @@ export const ChannelPanel = memo(function ChannelPanel({
                   );
                 }
                 return (
-                  <div
-                    key={`${group.senderId}-${gi}-${ei}`}
-                    className="-mx-3 px-3 py-0.5 rounded hover:bg-accent/20"
-                  >
+                  <div key={event.id} className="-mx-3 px-3 py-0.5 rounded hover:bg-accent/20">
                     <div className="text-xs text-foreground pl-11">
                       {event.messageType && event.messageType !== "message" && (
                         <span className="text-[9px] uppercase tracking-wide text-muted-foreground/60 mr-1">

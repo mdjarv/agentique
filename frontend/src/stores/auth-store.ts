@@ -8,6 +8,7 @@ interface AuthState {
   authenticated: boolean;
   user: AuthUser | null;
   userCount: number;
+  credentialCount: number;
   loading: boolean;
   checkAuth: () => Promise<void>;
   setAuthenticated: (user: AuthUser) => void;
@@ -19,6 +20,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   authenticated: false,
   user: null,
   userCount: 0,
+  credentialCount: 0,
   loading: true,
 
   checkAuth: async () => {
@@ -29,6 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         authenticated: status.authenticated,
         user: status.user ?? null,
         userCount: status.userCount,
+        credentialCount: status.credentialCount,
         loading: false,
       });
     } catch {

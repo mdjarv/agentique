@@ -36,9 +36,16 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	credCount, err := s.queries.CountWebAuthnCredentials(r.Context())
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("count credentials", err))
+		return
+	}
+
 	resp := map[string]any{
-		"authEnabled": true,
-		"userCount":   count,
+		"authEnabled":     true,
+		"userCount":       count,
+		"credentialCount": credCount,
 	}
 
 	session, err := s.validateSession(r)
@@ -75,25 +82,52 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	count, err := s.queries.CountUsers(ctx)
+	userCount, err := s.queries.CountUsers(ctx)
 	if err != nil {
 		httperror.RespondError(w, httperror.Internal("count users", err))
 		return
 	}
 
-	isAdmin := int64(0)
+	credCount, err := s.queries.CountWebAuthnCredentials(ctx)
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("count credentials", err))
+		return
+	}
+
+	var authUser *User
 	inviteToken := ""
 
-	if count == 0 {
+	switch {
+	case userCount == 0:
 		// First user — no invite needed, becomes admin.
-		isAdmin = 1
-	} else {
-		// Subsequent users need a valid invite token OR existing auth.
+		userID := generateUUID()
+		user, err := s.queries.CreateUser(ctx, store.CreateUserParams{
+			ID:          userID,
+			DisplayName: req.DisplayName,
+			IsAdmin:     1,
+		})
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("create user", err))
+			return
+		}
+		authUser = &User{User: user}
+
+	case credCount == 0:
+		// Rekey mode — users exist but all credentials were cleared.
+		// Match by display name to let existing users re-register.
+		existing, err := s.queries.GetUserByDisplayName(ctx, req.DisplayName)
+		if err != nil {
+			httperror.RespondError(w, httperror.BadRequest("no user found with that display name"))
+			return
+		}
+		authUser = &User{User: existing}
+
+	default:
+		// Normal flow — need invite token or existing auth session.
 		session, authErr := s.validateSession(r)
 		if authErr == nil && session != nil {
 			// Authenticated user adding another passkey — handled below.
 		} else {
-			// Need invite token.
 			if req.InviteToken == "" {
 				httperror.RespondError(w, httperror.BadRequest("invite token required"))
 				return
@@ -105,21 +139,19 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 			}
 			inviteToken = req.InviteToken
 		}
-	}
 
-	// Create the user.
-	userID := generateUUID()
-	user, err := s.queries.CreateUser(ctx, store.CreateUserParams{
-		ID:          userID,
-		DisplayName: req.DisplayName,
-		IsAdmin:     isAdmin,
-	})
-	if err != nil {
-		httperror.RespondError(w, httperror.Internal("create user", err))
-		return
+		userID := generateUUID()
+		user, err := s.queries.CreateUser(ctx, store.CreateUserParams{
+			ID:          userID,
+			DisplayName: req.DisplayName,
+			IsAdmin:     0,
+		})
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("create user", err))
+			return
+		}
+		authUser = &User{User: user}
 	}
-
-	authUser := &User{User: user}
 
 	opts := []webauthn.RegistrationOption{
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
@@ -133,8 +165,8 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ceremonyKey := "reg:" + userID
-	s.saveCeremony(ceremonyKey, session, userID)
+	ceremonyKey := "reg:" + authUser.ID
+	s.saveCeremony(ceremonyKey, session, authUser.ID)
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"options":     creation,

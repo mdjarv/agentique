@@ -21,6 +21,17 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countWebAuthnCredentials = `-- name: CountWebAuthnCredentials :one
+SELECT COUNT(*) FROM webauthn_credentials
+`
+
+func (q *Queries) CountWebAuthnCredentials(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWebAuthnCredentials)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuthSession = `-- name: CreateAuthSession :exec
 INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)
 `
@@ -102,6 +113,24 @@ func (q *Queries) CreateWebAuthnCredential(ctx context.Context, arg CreateWebAut
 		arg.BackupEligible,
 		arg.BackupState,
 	)
+	return err
+}
+
+const deleteAllAuthSessions = `-- name: DeleteAllAuthSessions :exec
+DELETE FROM auth_sessions
+`
+
+func (q *Queries) DeleteAllAuthSessions(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllAuthSessions)
+	return err
+}
+
+const deleteAllWebAuthnCredentials = `-- name: DeleteAllWebAuthnCredentials :exec
+DELETE FROM webauthn_credentials
+`
+
+func (q *Queries) DeleteAllWebAuthnCredentials(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllWebAuthnCredentials)
 	return err
 }
 

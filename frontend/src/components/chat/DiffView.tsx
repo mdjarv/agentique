@@ -1,5 +1,5 @@
 import { FileMinus, FilePlus, FileSymlink, FileText } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { FilePath } from "~/components/chat/git/FilePath";
 import type { DiffResult } from "~/lib/session/actions";
@@ -67,14 +67,17 @@ function HunkHeader({ line }: { line: string }) {
 }
 
 export function DiffLines({ text }: { text: string }) {
-  const lines = text.split("\n");
+  const keyed = useMemo(
+    () => text.split("\n").map((line, n) => ({ key: `L${n + 1}`, line })),
+    [text],
+  );
   return (
     <pre className="text-xs leading-relaxed overflow-x-auto">
-      {lines.map((line, idx) => {
+      {keyed.map(({ key, line }) => {
         const isHunk = line.startsWith("@@");
         return (
           <div
-            key={`${idx}:${line.slice(0, 20)}`}
+            key={key}
             className={isHunk ? "px-3 bg-primary/5 py-0.5 mt-1 first:mt-0" : classifyLine(line)}
           >
             {isHunk ? <HunkHeader line={line} /> : line}

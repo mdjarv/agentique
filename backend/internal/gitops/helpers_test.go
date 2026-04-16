@@ -30,6 +30,8 @@ func initGitRepo(t *testing.T) string {
 
 	run("init")
 	run("checkout", "-b", "main")
+	run("config", "user.name", "test")
+	run("config", "user.email", "test@test.com")
 
 	// Create a file and commit so HEAD exists.
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hello"), 0644); err != nil {

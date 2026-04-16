@@ -119,7 +119,7 @@ export function FolderSidebar() {
       setExpandedFolders((prev) => {
         const next = { ...prev };
         if (oldName in next) {
-          next[newName] = next[oldName]!;
+          next[newName] = next[oldName] ?? true;
           delete next[oldName];
         }
         return next;
@@ -274,7 +274,8 @@ export function FolderSidebar() {
 
   const isDragActive = !!draggedId;
   const isDragProject = isDragActive && !draggedId?.startsWith("folder-sort:");
-  const dragSourceFolder = isDragProject ? (projectFolderMap.get(draggedId!) ?? null) : null;
+  const dragSourceFolder =
+    isDragProject && draggedId ? (projectFolderMap.get(draggedId) ?? null) : null;
 
   // ── Helpers for toggle callbacks ──
 
@@ -303,22 +304,20 @@ export function FolderSidebar() {
           <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
             {focusMode ? (
               // Focus mode: flat list of expanded projects, no folders
-              <>
-                {[...orderedFolders.flatMap((f) => f.projects), ...ungrouped]
-                  .filter((e) => isProjectExpanded(e.project.id, e.active.length > 0))
-                  .map((entry) => (
-                    <DraggableProject
-                      key={entry.project.id}
-                      entry={entry}
-                      expanded
-                      compact
-                      onToggle={() => toggleProject(entry.project.id)}
-                      onExpand={() => expandProject(entry.project.id)}
-                      onSessionClick={handleSessionClick}
-                      level={LEVEL.project}
-                    />
-                  ))}
-              </>
+              [...orderedFolders.flatMap((f) => f.projects), ...ungrouped]
+                .filter((e) => isProjectExpanded(e.project.id, e.active.length > 0))
+                .map((entry) => (
+                  <DraggableProject
+                    key={entry.project.id}
+                    entry={entry}
+                    expanded
+                    compact
+                    onToggle={() => toggleProject(entry.project.id)}
+                    onExpand={() => expandProject(entry.project.id)}
+                    onSessionClick={handleSessionClick}
+                    level={LEVEL.project}
+                  />
+                ))
             ) : (
               <>
                 {orderedFolders.map((folder, folderIdx) => {

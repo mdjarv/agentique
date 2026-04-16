@@ -16,6 +16,7 @@ type Querier interface {
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	CountWebAuthnCredentials(ctx context.Context) (int64, error)
 	CreateAgentProfile(ctx context.Context, arg CreateAgentProfileParams) (AgentProfile, error)
 	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
@@ -27,6 +28,8 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error
 	DeleteAgentProfile(ctx context.Context, id string) error
+	DeleteAllAuthSessions(ctx context.Context) error
+	DeleteAllWebAuthnCredentials(ctx context.Context) error
 	DeleteAuthSession(ctx context.Context, token string) error
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error

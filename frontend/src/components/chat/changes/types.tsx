@@ -58,6 +58,7 @@ export function groupFiles(
 }
 
 const TOTAL_BLOCKS = 5;
+const BLOCK_POSITIONS = Array.from({ length: TOTAL_BLOCKS }, (_, i) => i);
 
 function blockColor(pos: number, greenCount: number): string {
   return pos < greenCount ? "bg-success" : "bg-destructive";
@@ -71,8 +72,8 @@ export function DiffStatBar({ insertions, deletions }: { insertions: number; del
 
   return (
     <span className="inline-flex items-center gap-px">
-      {Array.from({ length: TOTAL_BLOCKS }, (_, i) => (
-        <span key={i} className={cn("inline-block h-2 w-2 rounded-[1px]", blockColor(i, g))} />
+      {BLOCK_POSITIONS.map((pos) => (
+        <span key={pos} className={cn("inline-block h-2 w-2 rounded-[1px]", blockColor(pos, g))} />
       ))}
     </span>
   );

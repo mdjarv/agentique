@@ -12,6 +12,7 @@ export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;
   userCount: number;
+  credentialCount: number;
   user?: AuthUser;
 }
 

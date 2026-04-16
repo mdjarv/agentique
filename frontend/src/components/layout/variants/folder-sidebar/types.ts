@@ -34,7 +34,7 @@ export interface TodoProgress {
 const INDENT_CLASSES = ["pl-0", "pl-5", "pl-10", "pl-15", "pl-20", "pl-25"] as const;
 
 export function indentClass(level: number): string {
-  return INDENT_CLASSES[level] ?? INDENT_CLASSES[INDENT_CLASSES.length - 1]!;
+  return INDENT_CLASSES[level] ?? INDENT_CLASSES[INDENT_CLASSES.length - 1] ?? "pl-25";
 }
 
 /** Named levels for readability. */

@@ -56,3 +56,12 @@ UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', '
 
 -- name: ListInviteTokens :many
 SELECT * FROM invite_tokens WHERE created_by = ? ORDER BY created_at DESC;
+
+-- name: CountWebAuthnCredentials :one
+SELECT COUNT(*) FROM webauthn_credentials;
+
+-- name: DeleteAllWebAuthnCredentials :exec
+DELETE FROM webauthn_credentials;
+
+-- name: DeleteAllAuthSessions :exec
+DELETE FROM auth_sessions;
