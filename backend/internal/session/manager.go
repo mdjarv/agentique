@@ -198,9 +198,10 @@ type ResumeParams struct {
 	BehaviorPresets   BehaviorPresets
 	ChannelPreambles  []*ChannelPreambleInfo
 	TeamPreambles     []*TeamPreambleInfo
-	ExtraPreamble     string   // appended to system prompt (e.g. fresh-worktree notice)
-	MCPConfigs        []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled    bool
+	ExtraPreamble         string   // appended to system prompt (e.g. fresh-worktree notice)
+	MCPConfigs            []string // inline JSON or file paths for --mcp-config
+	BrowserEnabled        bool
+	SystemPromptAdditions string // from persona config; appended to session preamble
 }
 
 // Resume reconnects to an existing Claude session using WithResume().
@@ -247,7 +248,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, "") + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
@@ -330,7 +331,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, "") + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))

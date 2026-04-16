@@ -1040,6 +1040,12 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	channelPreambles := s.buildAllChannelPreambles(ctx, sessionID)
 	resumeTC := s.resolveTeamContext(ctx, nullStr(dbSess.AgentProfileID))
 
+	// Re-apply persona config on resume so SystemPromptAdditions persist.
+	var resumePC PersonaConfig
+	if resumeTC != nil {
+		resumePC = parsePersonaConfig(resumeTC.profile.Config)
+	}
+
 	params := ResumeParams{
 		SessionID:         sessionID,
 		ClaudeSessionID:   claudeSessID,
@@ -1058,8 +1064,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		BehaviorPresets:   ParsePresets(dbSess.BehaviorPresets),
 		ChannelPreambles:  channelPreambles,
 		TeamPreambles:     resumeTC.toPreambles(),
-		ExtraPreamble:     extraPreamble,
-		BrowserEnabled:    s.browserSvc != nil,
+		ExtraPreamble:         extraPreamble,
+		BrowserEnabled:        s.browserSvc != nil,
+		SystemPromptAdditions: resumePC.SystemPromptAdditions,
 	}
 
 	// Re-add browser MCP config on resume so the Playwright server starts with the CLI.
@@ -1263,10 +1270,15 @@ func (s *Service) resolveTeamContext(ctx context.Context, agentProfileID string)
 	}
 	profile, err := s.queries.GetAgentProfile(ctx, agentProfileID)
 	if err != nil {
+		slog.Warn("resolve team context: profile not found", "profile_id", agentProfileID, "error", err)
 		return nil
 	}
 	teams, err := s.queries.ListTeamsForAgent(ctx, agentProfileID)
-	if err != nil || len(teams) == 0 {
+	if err != nil {
+		slog.Warn("resolve team context: list teams failed", "profile_id", agentProfileID, "error", err)
+		return nil
+	}
+	if len(teams) == 0 {
 		return nil
 	}
 	tc := &teamContextData{profile: profile}
