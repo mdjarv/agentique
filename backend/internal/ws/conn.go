@@ -214,6 +214,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleProjectReorder(msg)
 	case "project.set-favorite":
 		c.handleProjectSetFavorite(msg)
+	case "project.activity":
+		c.handleProjectActivity(msg)
 	case "browser.status":
 		c.handleBrowserStatus(msg)
 	case "browser.launch":

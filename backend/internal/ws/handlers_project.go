@@ -3,9 +3,11 @@ package ws
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -100,6 +102,34 @@ func (c *conn) handleProjectReorder(msg ClientMessage) {
 			}
 		}
 		return struct{}{}, nil
+	})
+}
+
+func (c *conn) handleProjectActivity(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p ProjectActivityPayload) ([]session.ActivityItem, error) {
+		since := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.000")
+		rows, err := c.queries.ListRecentActivityByProject(ctx, store.ListRecentActivityByProjectParams{
+			ProjectID: p.ProjectID,
+			Since:     since,
+		})
+		if err != nil {
+			return nil, err
+		}
+		items := make([]session.ActivityItem, len(rows))
+		for i, r := range rows {
+			items[i] = session.ActivityItem{
+				Kind:       r.Kind,
+				ItemID:     r.ItemID,
+				SourceID:   r.SourceID,
+				SourceName: r.SourceName,
+				Content:    r.Content,
+				EventType:  r.EventType,
+				Category:   r.Category,
+				FilePath:   r.FilePath,
+				CreatedAt:  r.CreatedAt,
+			}
+		}
+		return items, nil
 	})
 }
 

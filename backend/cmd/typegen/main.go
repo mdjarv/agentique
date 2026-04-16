@@ -430,6 +430,7 @@ func main() {
 	g.register(ws.ProjectSetFavoritePayload{}, "ProjectSetFavoritePayload")
 	g.register(ws.ProjectUncommittedFilesPayload{}, "ProjectUncommittedFilesPayload")
 	g.register(ws.ProjectDiscardPayload{}, "ProjectDiscardPayload")
+	g.register(ws.ProjectActivityPayload{}, "ProjectActivityPayload")
 
 	// ── Push event payload types ──
 
@@ -465,6 +466,9 @@ func main() {
 
 	// Persona push types.
 	personaInteractionRef := g.register(persona.InteractionInfo{}, "PersonaInteractionInfo")
+
+	// Activity feed types.
+	activityItemRef := g.register(session.ActivityItem{}, "ActivityItem")
 
 	// Browser push types.
 	pushBrowserFrame := g.register(session.PushBrowserFrame{}, "PushBrowserFrame")
@@ -512,6 +516,9 @@ func main() {
 
 	// Persona events.
 	g.addPushEvent("persona.interaction", personaInteractionRef)
+
+	// Activity events.
+	g.addPushEvent("project.activity-item", activityItemRef)
 
 	// Browser events.
 	g.addPushEvent("browser.frame", pushBrowserFrame)

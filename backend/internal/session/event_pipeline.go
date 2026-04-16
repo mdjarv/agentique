@@ -33,6 +33,7 @@ type PipelineConfig struct {
 	OnTurnComplete    func()
 	OnFatalError      func(err error)
 	OnSendMessage     func(toolUseID, targetName, content, msgType string)
+	OnActivityEvent   func(wireEvent any) // called for result/error events (activity feed)
 }
 
 // pulseState holds in-memory activity counters for the session pulse broadcast.
@@ -74,6 +75,7 @@ type EventPipeline struct {
 	onTurnComplete    func()
 	onFatalError      func(error)
 	onSendMessage     func(string, string, string, string)
+	onActivityEvent   func(any)
 }
 
 // NewEventPipeline creates an event pipeline. Does not start any goroutines.
@@ -91,6 +93,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onTurnComplete:    cfg.OnTurnComplete,
 		onFatalError:      cfg.OnFatalError,
 		onSendMessage:     cfg.OnSendMessage,
+		onActivityEvent:   cfg.OnActivityEvent,
 	}
 }
 
@@ -165,6 +168,14 @@ func (p *EventPipeline) emitWireEvent(wireEvent any) {
 
 	// Stage 7: Broadcast to all project clients.
 	p.sink.Broadcast("session.event", PushSessionEvent{SessionID: p.sessionID, Event: wireEvent})
+
+	// Stage 8: Activity feed — emit for result/error events.
+	if p.onActivityEvent != nil {
+		switch wireEvent.(type) {
+		case WireResultEvent, WireErrorEvent:
+			p.onActivityEvent(wireEvent)
+		}
+	}
 }
 
 // PushPendingMessage enqueues a messageId for replay confirmation.

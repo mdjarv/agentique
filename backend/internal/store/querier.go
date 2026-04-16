@@ -72,6 +72,7 @@ type Querier interface {
 	ListPersonaInteractionsForProfile(ctx context.Context, arg ListPersonaInteractionsForProfileParams) ([]PersonaInteraction, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListPromptTemplates(ctx context.Context) ([]PromptTemplate, error)
+	ListRecentActivityByProject(ctx context.Context, arg ListRecentActivityByProjectParams) ([]ListRecentActivityByProjectRow, error)
 	ListRecentEventsBySession(ctx context.Context, arg ListRecentEventsBySessionParams) ([]SessionEvent, error)
 	ListSessionChannels(ctx context.Context, sessionID string) ([]ListSessionChannelsRow, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)

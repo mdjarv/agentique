@@ -282,6 +282,29 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 			}
 		},
+		OnActivityEvent: func(wireEvent any) {
+			item := ActivityItem{
+				Kind:      "event",
+				SourceID:  s.ID,
+				CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000"),
+			}
+			// Fetch session name from DB (low-frequency: only result/error events).
+			if dbSess, err := s.queries.GetSession(context.Background(), s.ID); err == nil {
+				item.SourceName = dbSess.Name
+			}
+			switch e := wireEvent.(type) {
+			case WireResultEvent:
+				item.ItemID = fmt.Sprintf("ev-%d", time.Now().UnixMilli())
+				item.EventType = "result"
+			case WireErrorEvent:
+				item.ItemID = fmt.Sprintf("ev-%d", time.Now().UnixMilli())
+				item.Content = truncate(e.Content, 200)
+				item.EventType = "error"
+			default:
+				return
+			}
+			s.broadcast("project.activity-item", item)
+		},
 	}
 }
 

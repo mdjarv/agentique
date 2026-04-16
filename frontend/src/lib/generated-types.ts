@@ -559,6 +559,10 @@ export interface ProjectDiscardPayload {
   projectId: string;
 }
 
+export interface ProjectActivityPayload {
+  projectId: string;
+}
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -678,6 +682,8 @@ export interface AgentProfileConfig {
   autoApproveMode?: string;
   effort?: string;
   behaviorPresets: TeamBehaviorPresets;
+  systemPromptAdditions?: string;
+  communicationMode?: string;
 }
 
 export interface AgentProfileInfo {
@@ -717,6 +723,18 @@ export interface PersonaInteractionInfo {
   response: string;
   redirectTo: string;
   responseTimeMs: number;
+  createdAt: string;
+}
+
+export interface ActivityItem {
+  kind: string;
+  itemId: string;
+  sourceId: string;
+  sourceName: string;
+  content: string;
+  eventType: string;
+  category?: string;
+  filePath?: string;
   createdAt: string;
 }
 
@@ -775,6 +793,7 @@ export interface PushEventMap {
   "team.updated": TeamInfo;
   "team.deleted": PushIDOnly;
   "persona.interaction": PersonaInteractionInfo;
+  "project.activity-item": ActivityItem;
   "browser.frame": PushBrowserFrame;
   "browser.stopped": PushBrowserStopped;
 }

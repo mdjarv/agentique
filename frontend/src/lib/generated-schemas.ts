@@ -345,6 +345,7 @@ export const ProjectSchema = z.object({
   color: z.string(),
   icon: z.string(),
   folder: z.string(),
+  max_sessions: z.number(),
 });
 
 export const PromptTemplateSchema = z.object({
@@ -560,6 +561,10 @@ export const ProjectDiscardPayloadSchema = z.object({
   projectId: z.string(),
 });
 
+export const ProjectActivityPayloadSchema = z.object({
+  projectId: z.string(),
+});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -679,6 +684,8 @@ export const AgentProfileConfigSchema = z.object({
   autoApproveMode: z.string().optional(),
   effort: z.string().optional(),
   behaviorPresets: TeamBehaviorPresetsSchema,
+  systemPromptAdditions: z.string().optional(),
+  communicationMode: z.string().optional(),
 });
 
 export const AgentProfileInfoSchema = z.object({
@@ -718,6 +725,18 @@ export const PersonaInteractionInfoSchema = z.object({
   response: z.string(),
   redirectTo: z.string(),
   responseTimeMs: z.number(),
+  createdAt: z.string(),
+});
+
+export const ActivityItemSchema = z.object({
+  kind: z.string(),
+  itemId: z.string(),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  content: z.string(),
+  eventType: z.string(),
+  category: z.string().optional(),
+  filePath: z.string().optional(),
   createdAt: z.string(),
 });
 
@@ -777,6 +796,7 @@ export const pushSchemaMap = {
   "team.updated": TeamInfoSchema,
   "team.deleted": PushIDOnlySchema,
   "persona.interaction": PersonaInteractionInfoSchema,
+  "project.activity-item": ActivityItemSchema,
   "browser.frame": PushBrowserFrameSchema,
   "browser.stopped": PushBrowserStoppedSchema,
 } as const;

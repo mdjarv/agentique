@@ -70,6 +70,10 @@ type ProjectSetFavoritePayload struct {
 	Favorite  bool   `json:"favorite"`
 }
 
+type ProjectActivityPayload struct {
+	ProjectID string `json:"projectId"`
+}
+
 // --- Project validation errors ---
 
 var (
@@ -160,5 +164,9 @@ func (p *ProjectDiscardPayload) Validate() error {
 }
 
 func (p *ProjectGenerateCommitMsgPayload) Validate() error {
+	return validateProjectID(p.ProjectID)
+}
+
+func (p *ProjectActivityPayload) Validate() error {
 	return validateProjectID(p.ProjectID)
 }

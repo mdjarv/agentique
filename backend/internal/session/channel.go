@@ -415,6 +415,17 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 	wireMsg := messageToWire(msg)
 	s.hub.Broadcast(ch.ProjectID, "channel.message", wireMsg)
 
+	// Broadcast activity-item for the project activity feed.
+	s.hub.Broadcast(ch.ProjectID, "project.activity-item", ActivityItem{
+		Kind:       "message",
+		ItemID:     msg.ID,
+		SourceID:   msg.ChannelID,
+		SourceName: msg.SenderName,
+		Content:    truncate(msg.Content, 200),
+		EventType:  msg.MessageType,
+		CreatedAt:  msg.CreatedAt,
+	})
+
 	return msg, nil
 }
 
