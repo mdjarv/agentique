@@ -1,3 +1,4 @@
+import type { AgentMessageType } from "~/lib/channel-actions";
 import type {
   Attachment,
   ChatEvent,
@@ -9,6 +10,8 @@ import type {
   ToolResultEvent,
   ToolUseEvent,
 } from "~/stores/chat-types";
+
+const CHANNEL_SEND_TOOL = "mcp__agentique-channel__SendMessage";
 
 // --- Segment types ---
 
@@ -50,6 +53,13 @@ export interface AgentMessageSegment {
   targetSessionId: string;
   targetIcon?: string;
 }
+export interface ChannelSendSegment {
+  kind: "channel_send";
+  to: string;
+  message: string;
+  messageType?: AgentMessageType;
+  toolId: string;
+}
 
 export type Segment =
   | ActivitySegment
@@ -57,7 +67,8 @@ export type Segment =
   | ErrorSegment
   | CompactSegment
   | UserMessageSegment
-  | AgentMessageSegment;
+  | AgentMessageSegment
+  | ChannelSendSegment;
 export type SegmentKind = Segment["kind"];
 
 // --- Classification ---
@@ -96,8 +107,10 @@ export function buildSegments(
   const segments: Segment[] = [];
   let resultEvent: ResultEvent | undefined;
 
-  // First pass: collect task events indexed by parent toolUseId
+  // First pass: collect task events indexed by parent toolUseId,
+  // and identify channel-send tool IDs so we can suppress their results.
   const taskEventsByToolUseId = new Map<string, TaskEvent[]>();
+  const channelSendToolIds = new Set<string>();
   for (const event of events) {
     if (event.type === "task" && event.toolUseId) {
       let list = taskEventsByToolUseId.get(event.toolUseId);
@@ -106,6 +119,9 @@ export function buildSegments(
         taskEventsByToolUseId.set(event.toolUseId, list);
       }
       list.push(event);
+    }
+    if (event.type === "tool_use" && event.toolName === CHANNEL_SEND_TOOL) {
+      channelSendToolIds.add(event.toolId);
     }
   }
 
@@ -117,10 +133,24 @@ export function buildSegments(
     }
     if (kind === "skip") continue;
 
+    // Intercept channel SendMessage tool_use → channel_send segment
+    if (event.type === "tool_use" && event.toolName === CHANNEL_SEND_TOOL) {
+      const input = event.toolInput as { to?: string; message?: string; type?: string } | null;
+      segments.push({
+        kind: "channel_send",
+        to: input?.to ?? "",
+        message: input?.message ?? "",
+        messageType: (input?.type as AgentMessageType) ?? undefined,
+        toolId: event.toolId,
+      });
+      continue;
+    }
+
     const last = segments[segments.length - 1];
 
-    // tool_result: find matching tool_use in any segment (may cross segment boundaries).
+    // tool_result: suppress results for channel sends; otherwise attach to matching tool_use.
     if (event.type === "tool_result") {
+      if (channelSendToolIds.has(event.toolId)) continue;
       for (let s = segments.length - 1; s >= 0; s--) {
         const seg = segments[s];
         if (seg?.kind !== "activity") continue;
@@ -243,6 +273,8 @@ export function segmentKey(seg: Segment, i: number): string {
       return `user-msg-${i}`;
     case "agent_message":
       return `agent-msg-${i}`;
+    case "channel_send":
+      return `ch-send-${seg.toolId}`;
   }
 }
 

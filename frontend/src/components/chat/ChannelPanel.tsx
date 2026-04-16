@@ -1,17 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  AlertCircle,
-  Archive,
-  Check,
-  GitCommitHorizontal,
-  Hash,
-  MapIcon,
-  SendHorizonal,
-  Trash2,
-  User,
-  Users,
-} from "lucide-react";
-import type { ComponentType } from "react";
+import { Archive, Hash, SendHorizonal, Trash2, User, Users } from "lucide-react";
 import { memo, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -24,7 +12,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import type { AgentMessageType } from "~/lib/channel-actions";
 import {
   broadcastToChannel,
   type ChannelMessage,
@@ -32,59 +19,12 @@ import {
   dissolveChannelKeepHistory,
   getChannelTimeline,
 } from "~/lib/channel-actions";
+import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
-
-interface MessageTypeStyle {
-  border: string;
-  badge: string;
-  icon?: ComponentType<{ className?: string }>;
-}
-
-const MESSAGE_TYPE_STYLES: Record<string, MessageTypeStyle> = {
-  plan: {
-    border: "border-l-2 border-l-blue-400/40",
-    badge: "text-blue-500/70 bg-blue-500/10",
-    icon: MapIcon,
-  },
-  progress: { border: "", badge: "text-muted-foreground/60 bg-foreground/5" },
-  done: {
-    border: "border-l-2 border-l-emerald-400/50",
-    badge: "text-emerald-600/70 bg-emerald-500/10",
-    icon: Check,
-  },
-  clarification: {
-    border: "border-l-2 border-l-amber-400/50",
-    badge: "text-amber-600/70 bg-amber-500/10",
-    icon: AlertCircle,
-  },
-  introduction: {
-    border: "border-l-2 border-l-muted-foreground/20",
-    badge: "text-muted-foreground/50 bg-muted-foreground/10",
-  },
-};
-
-const DEFAULT_STYLE: MessageTypeStyle = {
-  border: "",
-  badge: "text-muted-foreground/60 bg-foreground/5",
-};
-
-function getMessageStyle(event: {
-  messageType?: AgentMessageType;
-  metadata?: Record<string, unknown>;
-}): MessageTypeStyle {
-  const type = event.messageType;
-  if (!type || type === "message") return DEFAULT_STYLE;
-  const style = MESSAGE_TYPE_STYLES[type] ?? DEFAULT_STYLE;
-  // Show commit icon for progress messages with commit metadata
-  if (type === "progress" && event.metadata?.commits) {
-    return { ...style, icon: GitCommitHorizontal };
-  }
-  return style;
-}
 
 interface ChannelPanelProps {
   projectSlug: string;
@@ -343,7 +283,7 @@ export const ChannelPanel = memo(function ChannelPanel({
             <div key={`g-${group.events[0]?.id ?? gi}`} className={gi > 0 ? "mt-4" : ""}>
               {group.events.map((event, ei) => {
                 const isFirst = ei === 0;
-                const mts = getMessageStyle(event);
+                const mts = getMessageTypeStyle(event.messageType, !!event.metadata?.commits);
                 const MtIcon = mts.icon;
                 const isIntro = event.messageType === "introduction";
                 if (isFirst) {

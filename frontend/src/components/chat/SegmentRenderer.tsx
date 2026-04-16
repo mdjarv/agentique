@@ -1,4 +1,4 @@
-import { Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
 import { memo, useState } from "react";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
@@ -10,14 +10,17 @@ import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
+import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import type {
   ActivityItem,
   ActivitySegment,
   AgentMessageSegment,
+  ChannelSendSegment,
   ErrorSegment,
   Segment,
 } from "~/lib/segments";
 import { segmentKey } from "~/lib/segments";
+import { cn } from "~/lib/utils";
 import type { CompactBoundaryEvent, ToolUseEvent } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -273,6 +276,38 @@ function AgentMessageWithIcons({ seg }: { seg: AgentMessageSegment }) {
   );
 }
 
+function ChannelSendView({ seg }: { seg: ChannelSendSegment }) {
+  const mts = getMessageTypeStyle(seg.messageType);
+  const MtIcon = mts.icon;
+  return (
+    <div
+      className={cn(
+        "ml-4 pl-3 py-1.5 text-xs text-muted-foreground",
+        mts.border || "border-l-2 border-l-border",
+      )}
+    >
+      <span className="flex items-center gap-1 mb-0.5">
+        <ArrowRight className="size-2.5" />
+        <span className="font-medium">{seg.to}</span>
+        {seg.messageType && seg.messageType !== "message" && (
+          <span
+            className={cn(
+              "text-[9px] uppercase tracking-wide px-1 py-px rounded inline-flex items-center gap-0.5",
+              mts.badge,
+            )}
+          >
+            {MtIcon && <MtIcon className="size-2.5" />}
+            {seg.messageType}
+          </span>
+        )}
+      </span>
+      <div className="text-foreground/80">
+        <Markdown content={seg.message} />
+      </div>
+    </div>
+  );
+}
+
 // --- Main renderer ---
 
 interface SegmentRendererProps {
@@ -367,6 +402,10 @@ export function SegmentRenderer({
 
   if (seg.kind === "agent_message") {
     return <AgentMessageWithIcons key={key} seg={seg} />;
+  }
+
+  if (seg.kind === "channel_send") {
+    return <ChannelSendView key={key} seg={seg} />;
   }
 
   return null;
