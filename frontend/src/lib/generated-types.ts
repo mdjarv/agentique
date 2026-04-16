@@ -634,6 +634,8 @@ export interface PushSessionPulse {
   commitCount: number;
   errorCount: number;
   turnStartedAt: number;
+  todoTotal: number;
+  todoCompleted: number;
 }
 
 export interface ChannelMember {

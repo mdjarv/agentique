@@ -8,6 +8,8 @@ export interface PulseData {
   commitCount: number;
   errorCount: number;
   turnStartedAt: number;
+  todoTotal: number;
+  todoCompleted: number;
 }
 
 interface PulseStore {
@@ -30,6 +32,8 @@ export const usePulseStore = create<PulseStore>((set) => ({
           commitCount: pulse.commitCount,
           errorCount: pulse.errorCount,
           turnStartedAt: pulse.turnStartedAt,
+          todoTotal: pulse.todoTotal,
+          todoCompleted: pulse.todoCompleted,
         },
       },
     })),

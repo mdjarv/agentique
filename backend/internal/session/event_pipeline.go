@@ -46,6 +46,8 @@ type pulseState struct {
 	errorCount       int
 	turnStartedAt   int64 // epoch ms
 	dirty            bool  // true when state changed since last broadcast
+	todoTotal        int   // total unique tasks tracked this session
+	todoCompleted    int   // tasks with completed status
 }
 
 // EventPipeline processes raw CLI events through a linear sequence of stages:
@@ -67,6 +69,7 @@ type EventPipeline struct {
 	pendingMessageIDs []string // FIFO queue of messageIds awaiting replay confirmation
 	pulse             pulseState
 	pulseTimer        *time.Timer // debounce timer for pulse broadcast
+	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
 
 	onClaudeSessionID func(string)
 	onPlanTransition  func(string)
@@ -86,6 +89,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		sink:              cfg.Sink,
 		turnIndex:         cfg.InitialTurnIndex,
 		toolCategories:    make(map[string]string),
+		taskStatus:        make(map[string]bool),
 		onClaudeSessionID: cfg.OnClaudeSessionID,
 		onPlanTransition:  cfg.OnPlanTransition,
 		onExitPlanMode:    cfg.OnExitPlanMode,
@@ -150,6 +154,10 @@ func (p *EventPipeline) emitWireEvent(wireEvent any) {
 		re.Timestamp = time.Now().UnixMilli()
 		wireEvent = re
 	}
+
+	// Track task events for todo progress (before transient filtering so
+	// task_progress events are counted even though they skip DB).
+	p.trackTaskEvent(wireEvent)
 
 	// Stage 3: Transient events — broadcast only, skip DB.
 	if isTransient(wireEvent) {
@@ -248,7 +256,12 @@ func (p *EventPipeline) AdvanceTurn() int {
 	defer p.mu.Unlock()
 	p.turnIndex++
 	p.seqInTurn = 0
-	p.pulse = pulseState{turnStartedAt: time.Now().UnixMilli()}
+	// Preserve todo counts across turn boundaries — they track session-level task progress.
+	p.pulse = pulseState{
+		turnStartedAt: time.Now().UnixMilli(),
+		todoTotal:     p.pulse.todoTotal,
+		todoCompleted: p.pulse.todoCompleted,
+	}
 	return p.turnIndex
 }
 
@@ -434,6 +447,42 @@ func (p *EventPipeline) trackToolResult(wireEvent any) {
 	}
 }
 
+func (p *EventPipeline) trackTaskEvent(wireEvent any) {
+	te, ok := wireEvent.(WireTaskEvent)
+	if !ok {
+		return
+	}
+	if te.TaskID == "" {
+		return
+	}
+
+	p.mu.Lock()
+	switch te.Subtype {
+	case "task_started":
+		if _, seen := p.taskStatus[te.TaskID]; !seen {
+			p.taskStatus[te.TaskID] = false
+		}
+	case "task_progress", "task_notification":
+		if te.Status == "completed" || te.Status == "done" {
+			p.taskStatus[te.TaskID] = true
+		}
+	}
+
+	// Recompute pulse todo counts.
+	total, completed := 0, 0
+	for _, done := range p.taskStatus {
+		total++
+		if done {
+			completed++
+		}
+	}
+	p.pulse.todoTotal = total
+	p.pulse.todoCompleted = completed
+	p.pulse.dirty = true
+	p.mu.Unlock()
+	p.schedulePulseBroadcast()
+}
+
 func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 	if _, ok := event.(*claudecli.ResultEvent); ok {
 		p.mu.Lock()
@@ -502,6 +551,8 @@ func (p *EventPipeline) broadcastPulseNow() {
 		CommitCount:      p.pulse.commitCount,
 		ErrorCount:       p.pulse.errorCount,
 		TurnStartedAt:   p.pulse.turnStartedAt,
+		TodoTotal:        p.pulse.todoTotal,
+		TodoCompleted:    p.pulse.todoCompleted,
 	}
 	p.pulse.dirty = false
 	if p.pulseTimer != nil {

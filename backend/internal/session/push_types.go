@@ -144,5 +144,7 @@ type PushSessionPulse struct {
 	ToolCallCount    int    `json:"toolCallCount"`
 	CommitCount      int    `json:"commitCount"`
 	ErrorCount       int    `json:"errorCount"`
-	TurnStartedAt   int64  `json:"turnStartedAt"` // epoch ms
+	TurnStartedAt   int64  `json:"turnStartedAt"`    // epoch ms
+	TodoTotal        int    `json:"todoTotal"`         // unique tasks seen
+	TodoCompleted    int    `json:"todoCompleted"`     // tasks with completed status
 }

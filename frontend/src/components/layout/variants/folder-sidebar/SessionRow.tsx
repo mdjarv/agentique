@@ -7,7 +7,15 @@ import { type BadgeState, resolveSessionState } from "../../session/SessionBadge
 import { SessionStatusBadge } from "../../session/SessionStatusBadge";
 import type { TodoProgress } from "./types";
 
-const RESTING_STATES: ReadonlySet<BadgeState> = new Set(["idle", "done", "stopped"]);
+/** States that show timestamp instead of the right-side status badge.
+ *  Running/planning use the left border + pulse text instead. */
+const TIMESTAMP_STATES: ReadonlySet<BadgeState> = new Set([
+  "idle",
+  "done",
+  "stopped",
+  "running",
+  "planning",
+]);
 
 function sessionTime(meta: SessionData["meta"]): string {
   if (meta.completedAt) return relativeTime(meta.completedAt);
@@ -53,7 +61,7 @@ function SessionRowLayout({
     hasPendingApproval: !!(data.pendingApproval || data.pendingQuestion),
     isPlanning: data.planMode,
   });
-  const isResting = RESTING_STATES.has(badgeState);
+  const showTimestamp = TIMESTAMP_STATES.has(badgeState);
 
   return (
     <>
@@ -65,7 +73,7 @@ function SessionRowLayout({
       </div>
       <span className="flex items-center gap-1.5 shrink-0 ml-auto">
         {extraMeta}
-        {isResting ? <TimeStamp meta={data.meta} /> : <RightIndicator data={data} />}
+        {showTimestamp ? <TimeStamp meta={data.meta} /> : <RightIndicator data={data} />}
       </span>
     </>
   );

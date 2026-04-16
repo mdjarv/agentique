@@ -636,6 +636,8 @@ export const PushSessionPulseSchema = z.object({
   commitCount: z.number(),
   errorCount: z.number(),
   turnStartedAt: z.number(),
+  todoTotal: z.number(),
+  todoCompleted: z.number(),
 });
 
 export const ChannelMemberSchema = z.object({

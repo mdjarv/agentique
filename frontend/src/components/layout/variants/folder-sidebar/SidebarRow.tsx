@@ -4,6 +4,15 @@ import { TodoProgressBar } from "./TodoProgressBar";
 import type { TodoProgress } from "./types";
 import { indentClass } from "./types";
 
+export type BorderState = "running" | "approval" | "failed" | "none";
+
+const BORDER_CLASS: Record<BorderState, string> = {
+  running: "bg-teal/60 animate-[border-pulse_2.5s_ease-in-out_infinite]",
+  approval: "bg-orange/60 animate-[border-pulse_1.8s_ease-in-out_infinite]",
+  failed: "bg-destructive/70",
+  none: "",
+};
+
 interface SidebarRowProps extends React.HTMLAttributes<HTMLElement> {
   indent: number;
   selected?: boolean;
@@ -12,11 +21,23 @@ interface SidebarRowProps extends React.HTMLAttributes<HTMLElement> {
   /** Suppress hover/selected background highlight. */
   plain?: boolean;
   todoProgress?: TodoProgress;
+  borderState?: BorderState;
   children: React.ReactNode;
 }
 
 export const SidebarRow = forwardRef<HTMLElement, SidebarRowProps>(function SidebarRow(
-  { indent, selected, compact, as = "button", plain, todoProgress, className, children, ...props },
+  {
+    indent,
+    selected,
+    compact,
+    as = "button",
+    plain,
+    todoProgress,
+    borderState = "none",
+    className,
+    children,
+    ...props
+  },
   ref,
 ) {
   const Tag = as;
@@ -35,6 +56,15 @@ export const SidebarRow = forwardRef<HTMLElement, SidebarRowProps>(function Side
       )}
       {...props}
     >
+      {/* Left state border */}
+      {borderState !== "none" && (
+        <div
+          className={cn(
+            "absolute left-0 top-1 bottom-1 w-[2px] rounded-full",
+            BORDER_CLASS[borderState],
+          )}
+        />
+      )}
       {/* Hover/selected highlight */}
       {!plain && (
         <div

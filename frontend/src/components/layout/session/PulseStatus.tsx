@@ -56,11 +56,17 @@ export const PulseStatus = memo(function PulseStatus({ sessionId }: PulseStatusP
   if (!pulse) return null;
 
   const text = formatPulse(pulse);
-  if (!text) return null;
+  const taskBadge = pulse.todoTotal > 0 ? `${pulse.todoCompleted}/${pulse.todoTotal} tasks` : "";
+
+  if (!text && !taskBadge) return null;
+
+  const parts = [text, taskBadge].filter(Boolean).join(" · ");
 
   return (
-    <span className="block truncate text-[10px] text-muted-foreground-faint" title={text}>
-      {text}
+    <span className="block truncate text-[10px] text-muted-foreground-faint" title={parts}>
+      {text && <span>{text}</span>}
+      {text && taskBadge && <span> · </span>}
+      {taskBadge && <span className="tabular-nums text-muted-foreground">{taskBadge}</span>}
     </span>
   );
 });
