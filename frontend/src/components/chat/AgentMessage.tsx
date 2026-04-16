@@ -134,7 +134,7 @@ interface AgentMessageProps {
   targetSessionId: string;
   targetIcon?: string;
   content: string;
-  messageType?: "plan" | "progress" | "done" | "message";
+  messageType?: import("~/lib/channel-actions").AgentMessageType;
 }
 
 export const AgentMessage = memo(function AgentMessage({

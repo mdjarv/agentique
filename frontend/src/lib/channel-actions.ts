@@ -17,7 +17,13 @@ export interface ChannelMember {
   worktreePath?: string;
 }
 
-export type AgentMessageType = "plan" | "progress" | "done" | "message";
+export type AgentMessageType =
+  | "plan"
+  | "progress"
+  | "done"
+  | "message"
+  | "clarification"
+  | "introduction";
 
 /** Unified channel message from the messages table. */
 export interface ChannelMessage {
