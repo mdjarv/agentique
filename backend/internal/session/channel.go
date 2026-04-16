@@ -419,9 +419,17 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 }
 
 // writeLegacyAgentMessageEvents writes old-style agent_message session_events
-// during the transition period so the existing frontend still works.
+// during the transition period. Only the "sent" copy on the sender's session is
+// written (needed for inline turn display). Received copies and user broadcast
+// copies are no longer needed — the messages table + channel.message WS events
+// are the source of truth for channel timelines.
 func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID string, msg store.Message, p ChannelMessageParams) {
-	// Extract target info from metadata for directed messages.
+	if p.SenderType == "user" {
+		// User broadcasts: no session_events needed — messages table is source of truth.
+		return
+	}
+
+	// Agent→agent: write only the "sent" copy on the sender's session.
 	var meta struct {
 		TargetSessionID string `json:"targetSessionId"`
 		TargetName      string `json:"targetName"`
@@ -430,40 +438,18 @@ func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID s
 		_ = json.Unmarshal(p.Metadata, &meta)
 	}
 
-	if p.SenderType == "user" {
-		// Broadcast: persist one copy per recipient with fromUser=true.
-		for _, recipientID := range p.Recipients {
-			event := WireAgentMessageEvent{
-				Type:      "agent_message",
-				ChannelID: p.ChannelID,
-				FromUser:  true,
-				Content:   p.Content,
-			}
-			s.persistAgentMessageWithID(ctx, recipientID, projectID, event, msg.ID)
-		}
-	} else {
-		// Directed agent→agent: dual-copy (sent on sender, received on target).
-		base := WireAgentMessageEvent{
-			Type:            "agent_message",
-			ChannelID:       p.ChannelID,
-			SenderSessionID: p.SenderID,
-			SenderName:      p.SenderName,
-			TargetSessionID: meta.TargetSessionID,
-			TargetName:      meta.TargetName,
-			Content:         p.Content,
-			MessageType:     p.MessageType,
-		}
-
-		sentEvent := base
-		sentEvent.Direction = DirectionSent
-		s.persistAgentMessageWithID(ctx, p.SenderID, projectID, sentEvent, msg.ID)
-
-		for _, recipientID := range p.Recipients {
-			recvEvent := base
-			recvEvent.Direction = DirectionReceived
-			s.persistAgentMessageWithID(ctx, recipientID, projectID, recvEvent, msg.ID)
-		}
+	sentEvent := WireAgentMessageEvent{
+		Type:            "agent_message",
+		ChannelID:       p.ChannelID,
+		SenderSessionID: p.SenderID,
+		SenderName:      p.SenderName,
+		TargetSessionID: meta.TargetSessionID,
+		TargetName:      meta.TargetName,
+		Content:         p.Content,
+		MessageType:     p.MessageType,
+		Direction:       DirectionSent,
 	}
+	s.persistAgentMessageWithID(ctx, p.SenderID, projectID, sentEvent, msg.ID)
 }
 
 // persistAgentMessageWithID persists a legacy agent_message event linked to a canonical message.

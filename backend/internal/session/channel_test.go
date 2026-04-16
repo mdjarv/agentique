@@ -68,7 +68,7 @@ func (s *ChannelSuite) findAgentMessages(sessionID string) []WireAgentMessageEve
 
 // --- RouteAgentMessage tests ---
 
-func (s *ChannelSuite) TestChannel_RouteMessage_PersistsBothCopies() {
+func (s *ChannelSuite) TestChannel_RouteMessage_PersistsSenderCopyOnly() {
 	leadID, _ := s.createNamedSession("Lead")
 	workerID, _ := s.createNamedSession("Worker")
 	s.createChannelWithMembers("test-team", leadID, workerID)
@@ -88,13 +88,9 @@ func (s *ChannelSuite) TestChannel_RouteMessage_PersistsBothCopies() {
 	s.Equal("Worker", senderMsgs[0].TargetName)
 	s.Equal("hello worker", senderMsgs[0].Content)
 
-	// Target should have a "received" copy.
+	// Target should have no agent_message events — messages table is source of truth.
 	targetMsgs := s.findAgentMessages(workerID)
-	s.Require().Len(targetMsgs, 1)
-	s.Equal(DirectionReceived, targetMsgs[0].Direction)
-	s.Equal("Lead", targetMsgs[0].SenderName)
-	s.Equal("Worker", targetMsgs[0].TargetName)
-	s.Equal("hello worker", targetMsgs[0].Content)
+	s.Empty(targetMsgs, "received copies no longer written")
 }
 
 func (s *ChannelSuite) TestChannel_RouteMessage_LiveDelivery() {
@@ -133,14 +129,14 @@ func (s *ChannelSuite) TestChannel_RouteMessage_OfflineTarget() {
 	})
 	s.Require().NoError(err)
 
-	// Events should still be persisted on both sides.
+	// Only sender gets a "sent" copy.
 	senderMsgs := s.findAgentMessages(leadID)
 	s.Require().Len(senderMsgs, 1)
 	s.Equal(DirectionSent, senderMsgs[0].Direction)
 
+	// No received copy on offline target.
 	targetMsgs := s.findAgentMessages(offlineSess.ID)
-	s.Require().Len(targetMsgs, 1)
-	s.Equal(DirectionReceived, targetMsgs[0].Direction)
+	s.Empty(targetMsgs, "received copies no longer written")
 
 	// No CLI mock exists for offline session — no panic, no error.
 }
@@ -184,12 +180,11 @@ func (s *ChannelSuite) TestChannel_RouteMessage_BroadcastEvents() {
 	})
 	s.Require().NoError(err)
 
-	// Dual-write broadcasts session.event for both sender and target (legacy),
-	// plus a channel.message broadcast for the unified timeline.
+	// Legacy: only sender's "sent" session.event. Plus a channel.message broadcast.
 	sessionEvts := s.Broadcaster.MessagesOfType("session.event")
-	s.GreaterOrEqual(len(sessionEvts), 2, "expected at least 2 session.event broadcasts (sent + received)")
+	s.Len(sessionEvts, 1, "expected 1 session.event broadcast (sender sent copy only)")
 	channelMsgs := s.Broadcaster.MessagesOfType("channel.message")
-	s.GreaterOrEqual(len(channelMsgs), 1, "expected at least 1 channel.message broadcast")
+	s.Len(channelMsgs, 1, "expected 1 channel.message broadcast")
 }
 
 // --- wireAgentMessageCallback tests ---
@@ -212,14 +207,13 @@ func (s *ChannelSuite) TestChannel_CallbackRoutesViaName() {
 	err := cb(leadID, "Worker", "routed via callback", "message")
 	s.Require().NoError(err)
 
-	// Verify the message was persisted on both sessions.
+	// Verify: sender has a "sent" copy, target has none.
 	senderMsgs := s.findAgentMessages(leadID)
 	s.Require().Len(senderMsgs, 1)
 	s.Equal("routed via callback", senderMsgs[0].Content)
 
 	targetMsgs := s.findAgentMessages(workerID)
-	s.Require().Len(targetMsgs, 1)
-	s.Equal("routed via callback", targetMsgs[0].Content)
+	s.Empty(targetMsgs, "received copies no longer written")
 
 	// Verify CLI delivery on the worker's mock.
 	sent := workerMock.SentMessages()
@@ -324,14 +318,13 @@ func (s *ChannelSuite) TestChannel_E2E_PipelineRoutesMessage() {
 	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), lead, StateIdle)
 
-	// Verify: events persisted on both sessions.
+	// Verify: sender has a "sent" copy, target has none (messages table is source of truth).
 	senderMsgs := s.findAgentMessages(leadID)
 	s.Require().NotEmpty(senderMsgs, "sender should have a 'sent' agent_message event")
 	s.Equal("pipeline e2e test", senderMsgs[0].Content)
 
 	targetMsgs := s.findAgentMessages(workerID)
-	s.Require().NotEmpty(targetMsgs, "target should have a 'received' agent_message event")
-	s.Equal("pipeline e2e test", targetMsgs[0].Content)
+	s.Empty(targetMsgs, "received copies no longer written")
 
 	// Verify: Bob's CLI mock received the formatted message.
 	var delivered bool
@@ -376,19 +369,14 @@ func (s *ChannelSuite) TestChannel_E2E_Bidirectional() {
 	s.Require().NoError(workerMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), worker, StateIdle)
 
-	// Verify: Lead has 1 sent + 1 received message.
+	// Verify: each session has only its own "sent" copy.
 	leadMsgs := s.findAgentMessages(leadID)
-	s.Require().Len(leadMsgs, 2, "lead should have sent + received messages")
-	directions := map[string]bool{}
-	for _, m := range leadMsgs {
-		directions[m.Direction] = true
-	}
-	s.True(directions[DirectionSent], "lead should have a 'sent' message")
-	s.True(directions[DirectionReceived], "lead should have a 'received' message")
+	s.Require().Len(leadMsgs, 1, "lead should have 1 sent message only")
+	s.Equal(DirectionSent, leadMsgs[0].Direction)
 
-	// Verify: Worker has 1 received + 1 sent message.
 	workerMsgs := s.findAgentMessages(workerID)
-	s.Require().Len(workerMsgs, 2, "worker should have received + sent messages")
+	s.Require().Len(workerMsgs, 1, "worker should have 1 sent message only")
+	s.Equal(DirectionSent, workerMsgs[0].Direction)
 
 	// Verify: Lead's CLI received worker's message.
 	var leadGotMsg bool
@@ -408,14 +396,14 @@ func (s *ChannelSuite) TestChannel_LeaveTeam_StopsRouting() {
 	workerID, _ := s.createNamedSession("Worker")
 	channelID := s.createChannelWithMembers("leave-team", leadID, workerID)
 
-	// Verify routing works before leaving.
+	// Verify routing works before leaving (sender gets sent copy).
 	err := s.svc.RouteAgentMessage(context.Background(), AgentMessagePayload{
 		SenderSessionID: leadID,
 		TargetSessionID: workerID,
 		Content:         "before leave",
 	})
 	s.Require().NoError(err)
-	s.Require().Len(s.findAgentMessages(workerID), 1)
+	s.Require().Len(s.findAgentMessages(leadID), 1, "sender should have sent copy")
 
 	// Leave the channel.
 	s.Require().NoError(s.svc.LeaveChannel(context.Background(), leadID, channelID))
@@ -430,10 +418,10 @@ func (s *ChannelSuite) TestChannel_LeaveTeam_StopsRouting() {
 	s.Require().NoError(leadMock.Inject(testutil.ResultEvent(0.01)))
 	waitForState(s.T(), lead, StateIdle)
 
-	// Worker should still only have the 1 message from before leaving.
-	workerMsgs := s.findAgentMessages(workerID)
-	s.Len(workerMsgs, 1, "no new messages should arrive after leaving channel")
-	s.Equal("before leave", workerMsgs[0].Content)
+	// Lead should still only have the 1 sent message from before leaving.
+	leadMsgs := s.findAgentMessages(leadID)
+	s.Len(leadMsgs, 1, "no new messages should be sent after leaving channel")
+	s.Equal("before leave", leadMsgs[0].Content)
 }
 
 // TestChannel_Resume_RewireCallback verifies that when a session in a channel is
@@ -441,7 +429,7 @@ func (s *ChannelSuite) TestChannel_LeaveTeam_StopsRouting() {
 // route correctly again.
 func (s *ChannelSuite) TestChannel_Resume_RewireCallback() {
 	leadID, _ := s.createNamedSession("Lead")
-	workerID, _ := s.createNamedSession("Worker")
+	workerID, workerMock := s.createNamedSession("Worker")
 	s.createChannelWithMembers("resume-team", leadID, workerID)
 
 	// Stop the lead session.
@@ -470,16 +458,26 @@ func (s *ChannelSuite) TestChannel_Resume_RewireCallback() {
 	lead := s.mgr.Get(leadID)
 	waitForState(s.T(), lead, StateIdle)
 
-	// Verify: Worker received the message from the resumed session.
-	workerMsgs := s.findAgentMessages(workerID)
+	// Verify: sender has "sent" copy, worker has no agent_message events (received copies removed).
+	senderMsgs := s.findAgentMessages(leadID)
 	var found bool
-	for _, m := range workerMsgs {
+	for _, m := range senderMsgs {
 		if m.Content == "after resume" {
 			found = true
 			break
 		}
 	}
-	s.True(found, "worker should receive message from resumed lead session")
+	s.True(found, "lead should have a 'sent' event for the message after resume")
+
+	// Worker receives the message via CLI delivery, not via session_events.
+	var cliDelivered bool
+	for _, msg := range workerMock.SentMessages() {
+		if contains(msg, "after resume") {
+			cliDelivered = true
+			break
+		}
+	}
+	s.True(cliDelivered, "worker CLI should have received the message via live delivery")
 }
 
 // TestChannel_Resume_ReplaysPendingDeliveries verifies that messages sent to an

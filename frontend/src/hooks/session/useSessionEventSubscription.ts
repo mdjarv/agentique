@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { useWebSocket } from "~/hooks/useWebSocket";
 import { fromWireAttachment } from "~/lib/attachment-utils";
+import type { ChannelMessage } from "~/lib/channel-actions";
 import { parseServerEvent } from "~/lib/events";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -106,34 +107,6 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
 
       useChatStore.getState().handleServerEvent(sid, event);
 
-      if (event.type === "agent_message") {
-        const chatStore = useChatStore.getState();
-        const channelIds = chatStore.sessions[sid]?.meta.channelIds;
-        if (channelIds && channelIds.length > 0) {
-          // Convert legacy agent_message event to ChannelMessage shape.
-          const channelMessage = {
-            id: `evt-${sid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            channelId: channelIds[0] ?? "",
-            senderType: (event.fromUser ? "user" : "session") as "session" | "user",
-            senderId: event.senderSessionId ?? "",
-            senderName: event.senderName ?? "",
-            content: event.content ?? "",
-            messageType: event.messageType,
-            metadata: {
-              targetSessionId: event.targetSessionId ?? "",
-              targetName: event.targetName ?? "",
-            },
-            createdAt: new Date().toISOString(),
-          };
-          for (const chId of channelIds) {
-            useChannelStore.getState().appendTimelineEvent(chId, channelMessage);
-          }
-          if (chatStore.activeSessionId !== sid) {
-            chatStore.setUnreadChannelMessage(sid, true);
-          }
-        }
-      }
-
       if (event.type === "tool_use") {
         streaming.clearToolInput(sid, event.toolId);
       }
@@ -141,6 +114,22 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
         clearToolBlockIndex(sid);
+      }
+    });
+
+    const unsubChannelMessage = ws.subscribe("channel.message", (payload) => {
+      const msg = payload as ChannelMessage;
+      useChannelStore.getState().appendTimelineEvent(msg.channelId, msg);
+
+      // Mark member sessions as having unread channel messages.
+      const chatStore = useChatStore.getState();
+      const channel = useChannelStore.getState().channels[msg.channelId];
+      if (channel) {
+        for (const member of channel.members) {
+          if (member.sessionId !== chatStore.activeSessionId) {
+            chatStore.setUnreadChannelMessage(member.sessionId, true);
+          }
+        }
       }
     });
 
@@ -163,6 +152,7 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
 
     return () => {
       unsubEvent();
+      unsubChannelMessage();
       unsubTurnStarted();
     };
   }, [ws]);
