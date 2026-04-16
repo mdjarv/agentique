@@ -1045,6 +1045,10 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
 	// Wire persona context for AskTeammate if session is team-bound.
 	s.wirePersonaContext(sess, nullStr(dbSess.AgentProfileID), resumeTC)
+	// Replay any messages that were sent while the session was offline.
+	if len(channelMemberships) > 0 {
+		go s.replayPendingDeliveries(context.Background(), sess)
+	}
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
 	}
@@ -1052,6 +1056,48 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		sess.MarkCompleted()
 	}
 	return sess, nil
+}
+
+// replayPendingDeliveries delivers messages that arrived while the session was
+// offline. Must be called after the CLI is connected and channel callbacks are
+// wired. Messages are replayed in chronological order (created_at ASC from the
+// query). Each successful delivery updates the record to "delivered".
+func (s *Service) replayPendingDeliveries(ctx context.Context, sess *Session) {
+	pending, err := s.queries.ListPendingDeliveriesForSession(ctx, sess.ID)
+	if err != nil {
+		slog.Warn("failed to list pending deliveries", "session_id", sess.ID, "error", err)
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	sess.mu.Lock()
+	cli := sess.cliSess
+	sess.mu.Unlock()
+	if cli == nil {
+		slog.Warn("replay skipped: no CLI session", "session_id", sess.ID)
+		return
+	}
+
+	slog.Info("replaying pending deliveries", "session_id", sess.ID, "count", len(pending))
+
+	for _, d := range pending {
+		formatted := formatChannelMessageForCLI(d.SenderName, d.Content, d.MessageType)
+		if err := cli.SendMessage(formatted); err != nil {
+			slog.Warn("pending delivery replay failed",
+				"session_id", sess.ID, "message_id", d.MessageID, "error", err)
+			continue
+		}
+		if err := s.queries.UpdateDeliveryStatus(ctx, store.UpdateDeliveryStatusParams{
+			Status:             "delivered",
+			MessageID:          d.MessageID,
+			RecipientSessionID: sess.ID,
+		}); err != nil {
+			slog.Warn("pending delivery status update failed",
+				"session_id", sess.ID, "message_id", d.MessageID, "error", err)
+		}
+	}
 }
 
 // RenameSession updates the session name in DB and broadcasts the change.

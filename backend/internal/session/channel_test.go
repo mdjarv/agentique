@@ -482,6 +482,67 @@ func (s *ChannelSuite) TestChannel_Resume_RewireCallback() {
 	s.True(found, "worker should receive message from resumed lead session")
 }
 
+// TestChannel_Resume_ReplaysPendingDeliveries verifies that messages sent to an
+// offline session are replayed when the session resumes.
+func (s *ChannelSuite) TestChannel_Resume_ReplaysPendingDeliveries() {
+	ctx := context.Background()
+	leadID, _ := s.createNamedSession("Lead")
+	workerID, _ := s.createNamedSession("Worker")
+	channelID := s.createChannelWithMembers("replay-team", leadID, workerID)
+
+	// Stop the worker so it's offline.
+	s.Require().NoError(s.mgr.Stop(ctx, workerID))
+	s.False(s.mgr.IsLive(workerID))
+
+	// Send a message to the offline worker via SendChannelMessage.
+	_, err := s.svc.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "session",
+		SenderID:    leadID,
+		SenderName:  "Lead",
+		Content:     "you missed this",
+		MessageType: "message",
+		Recipients:  []string{workerID},
+	})
+	s.Require().NoError(err)
+
+	// Verify delivery is pending.
+	pending, err := s.Queries.ListPendingDeliveriesForSession(ctx, workerID)
+	s.Require().NoError(err)
+	s.Require().Len(pending, 1)
+	s.Equal("you missed this", pending[0].Content)
+
+	// Give the worker a Claude session ID so resume works.
+	s.Require().NoError(s.Queries.UpdateClaudeSessionID(ctx,
+		store.UpdateClaudeSessionIDParams{
+			ClaudeSessionID: sqlNullString("claude-replay-test"),
+			ID:              workerID,
+		}))
+
+	// Resume the worker via QuerySession (triggers lazy resume).
+	s.Require().NoError(s.svc.QuerySession(ctx, workerID, "I'm back", nil))
+	s.True(s.mgr.IsLive(workerID))
+
+	// Give the async replay goroutine time to deliver.
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify: the pending message was delivered to the worker's CLI.
+	workerMock := s.Connector.Last()
+	var found bool
+	for _, msg := range workerMock.SentMessages() {
+		if contains(msg, "you missed this") {
+			found = true
+			break
+		}
+	}
+	s.True(found, "worker CLI should have received the replayed message; got: %v", workerMock.SentMessages())
+
+	// Verify: delivery status updated to "delivered".
+	pending, err = s.Queries.ListPendingDeliveriesForSession(ctx, workerID)
+	s.Require().NoError(err)
+	s.Empty(pending, "no pending deliveries should remain after replay")
+}
+
 // --- M:N membership tests ---
 
 func (s *ChannelSuite) TestChannel_JoinMultiple() {
