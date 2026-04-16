@@ -516,6 +516,12 @@
   color: var(--foreground);
 }
 
+/* Prism token class names (e.g. "table", "inline") collide with Tailwind
+   utility classes. Force all token spans inside code blocks to inline. */
+.prose pre code .token {
+  display: inline !important;
+}
+
 /* --- Code block wrapper (copy button positioning) --- */
 .prose .code-block-wrapper {
   position: relative;

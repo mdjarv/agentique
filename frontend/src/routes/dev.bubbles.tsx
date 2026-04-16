@@ -150,6 +150,11 @@ function ChatSample() {
         />
       </AgentBubble>
 
+      <UserMessage
+        prompt={`Add this to your biome config:\n\n\`\`\`toml\n[rule.exported]\nlevel = "warn"\n\`\`\`\n\nThat should fix the lint issue.`}
+        deliveryStatus="delivered"
+      />
+
       <UserMessage prompt="any update on the fix?" deliveryStatus="sending" />
     </div>
   );
