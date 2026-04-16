@@ -25,6 +25,10 @@ SELECT
     se.created_at
 FROM session_events se
 LEFT JOIN channel_members cm ON cm.session_id = se.session_id
+JOIN channels ch ON ch.id = COALESCE(
+        NULLIF(json_extract(se.data, '$.channelId'), ''),
+        cm.channel_id
+     )
 WHERE se.type = 'agent_message'
   AND se.message_id IS NULL
   AND (
