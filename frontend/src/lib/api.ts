@@ -49,6 +49,7 @@ export async function updateProject(
     color?: string;
     icon?: string;
     folder?: string;
+    maxSessions?: number;
   },
 ): Promise<Project> {
   const res = await fetch(`${BASE}/projects/${id}`, {

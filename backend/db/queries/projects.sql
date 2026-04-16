@@ -34,5 +34,8 @@ UPDATE projects SET icon = ?, updated_at = datetime('now') WHERE id = ? RETURNIN
 -- name: UpdateProjectFolder :one
 UPDATE projects SET folder = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateProjectMaxSessions :one
+UPDATE projects SET max_sessions = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?;

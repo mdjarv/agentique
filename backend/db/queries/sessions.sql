@@ -67,5 +67,9 @@ WHERE agent_profile_id = ?
   AND state NOT IN ('done', 'stopped', 'failed')
 ORDER BY created_at DESC LIMIT 1;
 
+-- name: CountActiveSessionsByProject :one
+SELECT COUNT(*) FROM sessions
+WHERE project_id = ? AND completed_at IS NULL AND state NOT IN ('done', 'stopped', 'failed');
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

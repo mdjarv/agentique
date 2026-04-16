@@ -100,6 +100,7 @@ type Project struct {
 	Color                  string `json:"color"`
 	Icon                   string `json:"icon"`
 	Folder                 string `json:"folder"`
+	MaxSessions            int64  `json:"max_sessions"`
 }
 
 type PromptTemplate struct {

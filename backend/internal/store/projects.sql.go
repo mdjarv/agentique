@@ -10,7 +10,7 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+INSERT INTO projects (id, name, path, slug) VALUES (?, ?, ?, ?) RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type CreateProjectParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
@@ -58,7 +59,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder FROM projects WHERE id = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -80,12 +81,13 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder FROM projects WHERE slug = ?
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -107,12 +109,13 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder FROM projects ORDER BY sort_order ASC, updated_at DESC
+SELECT id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions FROM projects ORDER BY sort_order ASC, updated_at DESC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -140,6 +143,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.Color,
 			&i.Icon,
 			&i.Folder,
+			&i.MaxSessions,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +159,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 const updateProjectBehaviorPresets = `-- name: UpdateProjectBehaviorPresets :one
-UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectBehaviorPresetsParams struct {
@@ -182,12 +186,13 @@ func (q *Queries) UpdateProjectBehaviorPresets(ctx context.Context, arg UpdatePr
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectColor = `-- name: UpdateProjectColor :one
-UPDATE projects SET color = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET color = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectColorParams struct {
@@ -214,12 +219,13 @@ func (q *Queries) UpdateProjectColor(ctx context.Context, arg UpdateProjectColor
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectFavorite = `-- name: UpdateProjectFavorite :one
-UPDATE projects SET favorite = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET favorite = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectFavoriteParams struct {
@@ -246,12 +252,13 @@ func (q *Queries) UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFa
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectFolder = `-- name: UpdateProjectFolder :one
-UPDATE projects SET folder = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET folder = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectFolderParams struct {
@@ -278,12 +285,13 @@ func (q *Queries) UpdateProjectFolder(ctx context.Context, arg UpdateProjectFold
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectIcon = `-- name: UpdateProjectIcon :one
-UPDATE projects SET icon = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET icon = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectIconParams struct {
@@ -310,12 +318,46 @@ func (q *Queries) UpdateProjectIcon(ctx context.Context, arg UpdateProjectIconPa
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
+	)
+	return i, err
+}
+
+const updateProjectMaxSessions = `-- name: UpdateProjectMaxSessions :one
+UPDATE projects SET max_sessions = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
+`
+
+type UpdateProjectMaxSessionsParams struct {
+	MaxSessions int64  `json:"max_sessions"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) UpdateProjectMaxSessions(ctx context.Context, arg UpdateProjectMaxSessionsParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectMaxSessions, arg.MaxSessions, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultModel,
+		&i.DefaultPermissionMode,
+		&i.DefaultSystemPrompt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.SortOrder,
+		&i.DefaultBehaviorPresets,
+		&i.Favorite,
+		&i.Color,
+		&i.Icon,
+		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectName = `-- name: UpdateProjectName :one
-UPDATE projects SET name = ?, slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET name = ?, slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectNameParams struct {
@@ -343,12 +385,13 @@ func (q *Queries) UpdateProjectName(ctx context.Context, arg UpdateProjectNamePa
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }
 
 const updateProjectSlug = `-- name: UpdateProjectSlug :one
-UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder
+UPDATE projects SET slug = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_model, default_permission_mode, default_system_prompt, created_at, updated_at, slug, sort_order, default_behavior_presets, favorite, color, icon, folder, max_sessions
 `
 
 type UpdateProjectSlugParams struct {
@@ -375,6 +418,7 @@ func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugPa
 		&i.Color,
 		&i.Icon,
 		&i.Folder,
+		&i.MaxSessions,
 	)
 	return i, err
 }

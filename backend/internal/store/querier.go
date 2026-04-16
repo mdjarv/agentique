@@ -13,6 +13,7 @@ type Querier interface {
 	AddChannelMember(ctx context.Context, arg AddChannelMemberParams) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
+	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAgentProfile(ctx context.Context, arg CreateAgentProfileParams) (AgentProfile, error)
@@ -96,6 +97,7 @@ type Querier interface {
 	UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFavoriteParams) (Project, error)
 	UpdateProjectFolder(ctx context.Context, arg UpdateProjectFolderParams) (Project, error)
 	UpdateProjectIcon(ctx context.Context, arg UpdateProjectIconParams) (Project, error)
+	UpdateProjectMaxSessions(ctx context.Context, arg UpdateProjectMaxSessionsParams) (Project, error)
 	UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) (Project, error)
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error

@@ -23,9 +23,10 @@ import (
 
 // Sentinel errors for session operations.
 var (
-	ErrNotFound   = errors.New("session not found")
-	ErrNotLive    = errors.New("session not live")
-	ErrNoClaudeID = errors.New("session has no Claude session ID")
+	ErrNotFound          = errors.New("session not found")
+	ErrNotLive           = errors.New("session not live")
+	ErrNoClaudeID        = errors.New("session has no Claude session ID")
+	ErrSessionLimitReached = errors.New("project session limit reached")
 )
 
 // WireQuestionOption is a selectable option within a question.
@@ -267,6 +268,16 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	project, err := s.queries.GetProject(ctx, p.ProjectID)
 	if err != nil {
 		return CreateSessionResult{}, fmt.Errorf("project not found: %w", err)
+	}
+
+	if project.MaxSessions > 0 {
+		activeCount, countErr := s.queries.CountActiveSessionsByProject(ctx, p.ProjectID)
+		if countErr != nil {
+			return CreateSessionResult{}, fmt.Errorf("count active sessions: %w", countErr)
+		}
+		if activeCount >= project.MaxSessions {
+			return CreateSessionResult{}, fmt.Errorf("%w: %d/%d active sessions for project %q", ErrSessionLimitReached, activeCount, project.MaxSessions, project.Name)
+		}
 	}
 
 	sessionID := uuid.New().String()

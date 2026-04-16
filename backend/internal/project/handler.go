@@ -36,6 +36,7 @@ type updateProjectRequest struct {
 	Color           *string                 `json:"color,omitempty"`
 	Icon            *string                 `json:"icon,omitempty"`
 	Folder          *string                 `json:"folder,omitempty"`
+	MaxSessions     *int64                  `json:"maxSessions,omitempty"`
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -159,7 +160,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == nil && req.Slug == nil && req.BehaviorPresets == nil && req.Color == nil && req.Icon == nil && req.Folder == nil {
+	if req.Name == nil && req.Slug == nil && req.BehaviorPresets == nil && req.Color == nil && req.Icon == nil && req.Folder == nil && req.MaxSessions == nil {
 		httperror.RespondError(w, httperror.BadRequest("no fields to update"))
 		return
 	}
@@ -270,6 +271,21 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			httperror.RespondError(w, httperror.Internal("update folder", err))
+			return
+		}
+	}
+
+	if req.MaxSessions != nil {
+		if *req.MaxSessions < 0 {
+			httperror.RespondError(w, httperror.BadRequest("maxSessions must be non-negative"))
+			return
+		}
+		project, err = h.Queries.UpdateProjectMaxSessions(r.Context(), store.UpdateProjectMaxSessionsParams{
+			ID:          id,
+			MaxSessions: *req.MaxSessions,
+		})
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("update max sessions", err))
 			return
 		}
 	}

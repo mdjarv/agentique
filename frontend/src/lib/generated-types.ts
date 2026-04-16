@@ -343,6 +343,7 @@ export interface Project {
   color: string;
   icon: string;
   folder: string;
+  max_sessions: number;
 }
 
 export interface PromptTemplate {

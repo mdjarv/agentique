@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const countActiveSessionsByProject = `-- name: CountActiveSessionsByProject :one
+SELECT COUNT(*) FROM sessions
+WHERE project_id = ? AND completed_at IS NULL AND state NOT IN ('done', 'stopped', 'failed')
+`
+
+func (q *Queries) CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveSessionsByProject, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve_mode, effort, max_budget, max_turns, behavior_presets, agent_profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, completed_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id
