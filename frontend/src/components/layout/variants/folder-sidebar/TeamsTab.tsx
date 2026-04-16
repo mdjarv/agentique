@@ -4,6 +4,7 @@ import { memo, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PulseStatus } from "~/components/layout/session/PulseStatus";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
+import { ActivityFeed } from "~/components/layout/variants/folder-sidebar/ActivityFeed";
 import type { ChannelInfo, ChannelMember } from "~/lib/channel-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -163,6 +164,12 @@ export function TeamsTab() {
     return Array.from(groups.values());
   }, [channelList, projects]);
 
+  // Collect unique project IDs from channels for activity feeds.
+  const projectIds = useMemo(
+    () => [...new Set(channelList.map((ch) => ch.projectId))],
+    [channelList],
+  );
+
   if (channelList.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
@@ -180,6 +187,9 @@ export function TeamsTab() {
           projectSlug={g.slug}
           channels={g.channels}
         />
+      ))}
+      {projectIds.map((pid) => (
+        <ActivityFeed key={pid} projectId={pid} />
       ))}
     </div>
   );
