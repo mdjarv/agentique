@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +24,7 @@ var cleanupCmd = &cobra.Command{
 }
 
 func runCleanup(cmd *cobra.Command, args []string) error {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := apiClient()
 	base := baseURL()
 
 	projects, err := fetchJSON[[]projectBrief](client, base+"/api/projects")

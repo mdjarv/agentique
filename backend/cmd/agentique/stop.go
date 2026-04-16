@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -21,7 +19,7 @@ var stopCmd = &cobra.Command{
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := apiClient()
 	target, err := resolveSession(client, args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

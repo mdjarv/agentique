@@ -240,7 +240,7 @@ func resolveBackupEntry(entries []backupEntry, arg string) (backupEntry, error) 
 }
 
 func isServerRunning() bool {
-	client := &http.Client{Timeout: time.Second}
+	client := apiClient()
 	resp, err := client.Get(baseURL() + "/api/health")
 	if err != nil {
 		return false

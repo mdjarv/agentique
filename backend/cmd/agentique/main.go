@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -82,14 +83,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  TLS:      %v\n", tlsEnabled)
 	fmt.Printf("  Auth:     %v\n", authEnabled)
 
-	// Override addr for API calls below.
-	if !strings.Contains(resolvedAddr, "://") {
-		resolvedAddr = scheme + "://" + resolvedAddr
-	}
-	base := strings.TrimRight(resolvedAddr, "/")
-
-	// Health check.
-	client := &http.Client{Timeout: 2 * time.Second}
+	base := baseURL()
+	client := apiClient()
 	_, err = client.Get(base + "/api/health")
 	if err != nil {
 		fmt.Printf("  Health:   unreachable\n")
@@ -161,11 +156,29 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func baseURL() string {
+	cfg, _ := config.Load(config.Path())
 	a := addr
+	if cfg.Server.Addr != "" {
+		a = cfg.Server.Addr
+	}
 	if !strings.Contains(a, "://") {
-		a = "http://" + a
+		scheme := "http"
+		if cfg.Server.TLSCert != "" && cfg.Server.TLSKey != "" {
+			scheme = "https"
+		}
+		a = scheme + "://" + a
 	}
 	return strings.TrimRight(a, "/")
+}
+
+// apiClient returns an HTTP client suitable for local API calls.
+// Skips TLS verification when the server uses TLS (cert may be self-signed).
+func apiClient() *http.Client {
+	cfg, _ := config.Load(config.Path())
+	tlsEnabled := cfg.Server.TLSCert != "" && cfg.Server.TLSKey != ""
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: tlsEnabled} //nolint:gosec
+	return &http.Client{Timeout: 5 * time.Second, Transport: transport}
 }
 
 func fetchJSON[T any](client *http.Client, url string) (T, error) {

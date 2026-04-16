@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -31,7 +29,7 @@ type historyTurn struct {
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := apiClient()
 	target, err := resolveSession(client, args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

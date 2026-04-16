@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -36,7 +34,7 @@ var sessionsCmd = &cobra.Command{
 
 func runSessions(cmd *cobra.Command, args []string) error {
 	base := baseURL()
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := apiClient()
 
 	// Fetch projects for slug resolution and display.
 	projects, err := fetchJSON[[]projectBrief](client, base+"/api/projects")

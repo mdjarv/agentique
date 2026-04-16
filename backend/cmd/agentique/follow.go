@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -24,7 +23,7 @@ var followCmd = &cobra.Command{
 }
 
 func runFollow(cmd *cobra.Command, args []string) error {
-	client := &http.Client{}
+	client := apiClient()
 	target, err := resolveSession(client, args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

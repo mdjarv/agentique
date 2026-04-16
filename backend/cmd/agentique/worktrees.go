@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +18,7 @@ var worktreesCmd = &cobra.Command{
 }
 
 func runWorktrees(cmd *cobra.Command, args []string) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := apiClient()
 	base := baseURL()
 
 	projects, err := fetchJSON[[]projectBrief](client, base+"/api/projects")
