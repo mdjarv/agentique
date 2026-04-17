@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
+	"charm.land/lipgloss/v2"
+	"charm.land/log/v2"
 )
 
 // LevelTrace is below Debug, for high-frequency messages like ws polling.
