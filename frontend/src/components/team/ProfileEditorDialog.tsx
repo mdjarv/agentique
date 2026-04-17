@@ -25,6 +25,12 @@ import {
   PERMISSION_MODES,
 } from "~/lib/composer-constants";
 import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
+import {
+  DEFAULT_PRESETS,
+  emptyPersonaConfig,
+  hydratePersonaConfig,
+  stripPersonaConfig,
+} from "~/lib/persona-config";
 import { MODEL_LABELS, MODELS } from "~/lib/session/actions";
 import type { AgentProfileConfig, AgentProfileInfo } from "~/lib/team-actions";
 import { createAgentProfile, generateAgentProfile, updateAgentProfile } from "~/lib/team-actions";
@@ -32,61 +38,6 @@ import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { AutoApproveMode } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
-
-const DEFAULT_PRESETS: BehaviorPresets = {
-  autoCommit: false,
-  suggestParallel: false,
-  planFirst: false,
-  terse: false,
-};
-
-function emptyConfig(): AgentProfileConfig {
-  return {
-    model: "",
-    effort: "",
-    autoApproveMode: "",
-    behaviorPresets: { ...DEFAULT_PRESETS },
-    systemPromptAdditions: "",
-  };
-}
-
-function hydrateConfig(c: AgentProfileConfig | undefined): AgentProfileConfig {
-  const base = emptyConfig();
-  if (!c) return base;
-  return {
-    model: c.model ?? "",
-    effort: c.effort ?? "",
-    autoApproveMode: c.autoApproveMode ?? "",
-    behaviorPresets: { ...DEFAULT_PRESETS, ...(c.behaviorPresets ?? {}) },
-    systemPromptAdditions: c.systemPromptAdditions ?? "",
-  };
-}
-
-function stripConfig(c: AgentProfileConfig): AgentProfileConfig {
-  const out: AgentProfileConfig = {};
-  if (c.model) out.model = c.model;
-  if (c.effort) out.effort = c.effort;
-  if (c.autoApproveMode) out.autoApproveMode = c.autoApproveMode;
-  const bp = c.behaviorPresets;
-  if (
-    bp &&
-    (bp.autoCommit ||
-      bp.suggestParallel ||
-      bp.planFirst ||
-      bp.terse ||
-      bp.customInstructions?.trim())
-  ) {
-    out.behaviorPresets = {
-      autoCommit: bp.autoCommit,
-      suggestParallel: bp.suggestParallel,
-      planFirst: bp.planFirst,
-      terse: bp.terse,
-      ...(bp.customInstructions?.trim() ? { customInstructions: bp.customInstructions } : {}),
-    };
-  }
-  if (c.systemPromptAdditions?.trim()) out.systemPromptAdditions = c.systemPromptAdditions;
-  return out;
-}
 
 export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo }) {
   const ws = useWebSocket();
@@ -99,7 +50,9 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
   const [description, setDescription] = useState(profile?.description ?? "");
   const [projectId, setProjectId] = useState(profile?.projectId ?? "");
   const [avatar, setAvatar] = useState(profile?.avatar ?? "");
-  const [config, setConfig] = useState<AgentProfileConfig>(() => hydrateConfig(profile?.config));
+  const [config, setConfig] = useState<AgentProfileConfig>(() =>
+    hydratePersonaConfig(profile?.config),
+  );
   const [generating, setGenerating] = useState(false);
   const [brief, setBrief] = useState("");
   const [showBrief, setShowBrief] = useState(false);
@@ -163,7 +116,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
         description,
         projectId,
         avatar,
-        config: JSON.stringify(stripConfig(config)),
+        config: JSON.stringify(stripPersonaConfig(config)),
       };
       if (isEdit && profile) {
         const updated = await updateAgentProfile(ws, { id: profile.id, ...params });
@@ -179,7 +132,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
         setDescription("");
         setProjectId("");
         setAvatar("");
-        setConfig(emptyConfig());
+        setConfig(emptyPersonaConfig());
       }
     } catch (e) {
       toast.error(getErrorMessage(e, "Operation failed"));
@@ -197,7 +150,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
         setDescription(profile.description);
         setProjectId(profile.projectId);
         setAvatar(profile.avatar);
-        setConfig(hydrateConfig(profile.config));
+        setConfig(hydratePersonaConfig(profile.config));
       }
       if (!nextOpen) {
         setBrief("");
