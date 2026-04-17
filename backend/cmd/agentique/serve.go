@@ -200,6 +200,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 		slog.Info("test mode: auth disabled, mock CLI enabled")
 	}
 
+	if err := config.ValidateDevURLs(fileCfg.DevURLs); err != nil {
+		slog.Error("invalid dev-urls config", "error", err)
+		os.Exit(1)
+	}
+
+	// MCP endpoint URL the spawned Claude subprocess uses to reach /mcp.
+	// Always targets localhost — MCP is loopback-only for the local CLI.
+	_, mcpPort, _ := net.SplitHostPort(addr)
+	if mcpPort == "" {
+		mcpPort = "9201"
+	}
+	mcpInternalURL := fmt.Sprintf("http://127.0.0.1:%s/mcp", mcpPort)
+
 	cfg := server.Config{
 		AuthEnabled:       !disableAuth,
 		TestMode:          testMode,
@@ -208,6 +221,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		DB:                db,
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
+		DevURLSlots:         fileCfg.DevURLs,
+		MCPInternalURL:      mcpInternalURL,
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

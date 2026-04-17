@@ -9,6 +9,8 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/mdjarv/agentique/backend/internal/devurls"
+	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -53,6 +55,12 @@ type Manager struct {
 	connector      CLIConnector
 	gitStatus      branchStatusQuerier
 	GlobalPreamble string // extra system prompt appended to every session
+
+	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
+	// manager falls back to the legacy stdio mcp-channel transport.
+	mcpTokens   *mcphttp.TokenStore
+	mcpInternalURL string
+	devURLs     *devurls.Store
 }
 
 // NewManager creates a new session manager.
@@ -69,6 +77,18 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster Broadcaster, con
 
 // SetBranchStatusQuerier overrides the default git status querier (for testing).
 func (m *Manager) SetBranchStatusQuerier(q branchStatusQuerier) { m.gitStatus = q }
+
+// SetMCPHTTP wires the HTTP MCP token store and the internal URL spawned
+// Claude subprocesses use to reach /mcp. When tokens or url is empty the
+// manager falls back to the stdio mcp-channel transport.
+func (m *Manager) SetMCPHTTP(tokens *mcphttp.TokenStore, internalURL string) {
+	m.mcpTokens = tokens
+	m.mcpInternalURL = internalURL
+}
+
+// SetDevURLStore wires the dev URL lease store so leases can be released on
+// session destroy.
+func (m *Manager) SetDevURLStore(store *devurls.Store) { m.devURLs = store }
 
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
 func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, error) {
@@ -125,7 +145,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 	// Always pass permission mode explicitly to override user's Claude Code settings.
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
 	// Merge all MCP configs into a single call (WithMCPConfig overwrites, not appends).
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(params.MCPConfigs)...))
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(id, params.MCPConfigs)...))
 
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered session creation. The WS conn context cancels on
@@ -268,7 +288,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		resumePermMode = "default"
 	}
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(resumePermMode)))
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(p.MCPConfigs)...))
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(p.SessionID, p.MCPConfigs)...))
 
 	// Use background context: the CLI process must outlive the WS connection
 	// that triggered the resume. See Create() for rationale.
@@ -350,7 +370,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		permMode = "default"
 	}
 	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(combineMCPConfigs(p.MCPConfigs)...))
+	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(p.SessionID, p.MCPConfigs)...))
 
 	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
 	if err != nil {
@@ -401,6 +421,7 @@ func (m *Manager) Evict(id string) {
 	if sess != nil {
 		sess.Close()
 	}
+	m.releaseSessionResources(id)
 }
 
 // Stop closes a live session and marks it as stopped in DB.
@@ -417,12 +438,27 @@ func (m *Manager) Stop(_ context.Context, id string) error {
 		sess.Close()
 	}
 
+	m.releaseSessionResources(id)
+
 	return store.RetryWrite(func() error {
 		return m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 			State: string(StateStopped),
 			ID:    id,
 		})
 	})
+}
+
+// releaseSessionResources frees any dev URL lease and revokes the MCP bearer
+// token for the given session. Safe to call multiple times (idempotent).
+func (m *Manager) releaseSessionResources(sessionID string) {
+	if m.devURLs != nil {
+		if freed := m.devURLs.Release(sessionID); len(freed) > 0 {
+			slog.Info("released dev URL slots on session end", "session_id", sessionID, "slots", freed)
+		}
+	}
+	if m.mcpTokens != nil {
+		m.mcpTokens.Revoke(sessionID)
+	}
 }
 
 // ListByProject returns session metadata from DB.
@@ -500,9 +536,26 @@ func (m *Manager) CloseAll() {
 	wg.Wait()
 }
 
-// combineMCPConfigs prepends the channel messaging MCP server config
-// to any additional MCP configs (e.g. browser). Returns a single slice
-// suitable for a single WithMCPConfig call.
+// buildMCPConfigs prepends the agentique MCP server config (HTTP if a token
+// store is wired, stdio mcp-channel otherwise) to any additional MCP configs.
+// Returns a single slice suitable for a single WithMCPConfig call.
+//
+// Per-session token is minted on each call when HTTP transport is active.
+func (m *Manager) buildMCPConfigs(sessionID string, extra []string) []string {
+	first := ChannelMCPConfig()
+	if m.mcpTokens != nil && m.mcpInternalURL != "" {
+		tok, err := m.mcpTokens.Mint(sessionID)
+		if err != nil {
+			slog.Warn("mcp token mint failed, falling back to stdio", "session_id", sessionID, "error", err)
+		} else {
+			first = AgentiqueMCPHTTPConfig(m.mcpInternalURL, tok)
+		}
+	}
+	return append([]string{first}, extra...)
+}
+
+// combineMCPConfigs is the legacy entry point for tests/callers that lack a
+// Manager reference. Prefer Manager.buildMCPConfigs in production.
 func combineMCPConfigs(extra []string) []string {
 	return append([]string{ChannelMCPConfig()}, extra...)
 }

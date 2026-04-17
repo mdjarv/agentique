@@ -12,15 +12,30 @@ import (
 	"github.com/google/uuid"
 )
 
-// ChannelMCPServerName is the MCP server name for Agentique's channel messaging.
+// ChannelMCPServerName is the legacy stdio MCP server name for channel messaging.
+// Used as a fallback when the HTTP MCP transport is not wired.
 const ChannelMCPServerName = "agentique-channel"
 
-// ChannelSendMessageTool is the full MCP-prefixed tool name that Claude calls.
+// AgentiqueMCPServerName is the unified HTTP MCP server name. Tools live under
+// the "mcp__agentique__" prefix when this transport is active.
+const AgentiqueMCPServerName = "agentique"
+
+// ChannelSendMessageTool is the full tool name for SendMessage on the legacy
+// stdio transport. Permission interceptor keys on this string.
 const ChannelSendMessageTool = "mcp__" + ChannelMCPServerName + "__SendMessage"
 
-// ChannelMCPConfig returns the MCP config JSON that starts the agentique
-// mcp-channel server. The server exposes a SendMessage tool so channel
-// participants can communicate.
+// AgentiqueSendMessageTool is the SendMessage tool name on the HTTP MCP transport.
+const AgentiqueSendMessageTool = "mcp__" + AgentiqueMCPServerName + "__SendMessage"
+
+// AgentiqueAcquireDevURLTool / Release / List — auto-allowed tools served via HTTP MCP.
+const (
+	AgentiqueAcquireDevURLTool = "mcp__" + AgentiqueMCPServerName + "__AcquireDevUrl"
+	AgentiqueReleaseDevURLTool = "mcp__" + AgentiqueMCPServerName + "__ReleaseDevUrl"
+	AgentiqueListDevURLsTool   = "mcp__" + AgentiqueMCPServerName + "__ListDevUrls"
+)
+
+// ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio
+// mcp-channel server. Used as fallback when HTTP MCP is not wired.
 func ChannelMCPConfig() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -30,6 +45,29 @@ func ChannelMCPConfig() string {
 	}
 	return fmt.Sprintf(`{"mcpServers":{%q:{"command":%q,"args":["mcp-channel"]}}}`,
 		ChannelMCPServerName, exe)
+}
+
+// AgentiqueMCPHTTPConfig returns the MCP config JSON that connects Claude to
+// the in-process /mcp endpoint over HTTP, authenticated with a per-session
+// bearer token.
+func AgentiqueMCPHTTPConfig(internalURL, token string) string {
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			AgentiqueMCPServerName: map[string]any{
+				"type": "http",
+				"url":  internalURL,
+				"headers": map[string]any{
+					"Authorization": "Bearer " + token,
+				},
+			},
+		},
+	}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		// Should not happen; return an empty config as last resort.
+		return `{"mcpServers":{}}`
+	}
+	return string(b)
 }
 
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).

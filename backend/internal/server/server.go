@@ -12,10 +12,13 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -44,6 +47,15 @@ type Config struct {
 	ExperimentalTeams bool
 	// ExperimentalBrowser enables the per-session Chrome browser panel.
 	ExperimentalBrowser bool
+
+	// DevURLSlots is the configured pool of leasable dev URL slots. Empty
+	// disables the AcquireDevUrl tool path (slots will report all-busy).
+	DevURLSlots []config.DevURLSlot
+
+	// MCPInternalURL is the URL spawned Claude subprocesses use to reach the
+	// agentique HTTP MCP endpoint (e.g. "http://localhost:19201/mcp"). Must
+	// be reachable from the local machine; not exposed publicly.
+	MCPInternalURL string
 }
 
 func devModePreamble(dbPath string) string {
@@ -85,7 +97,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = session.RealBlockingRunner()
 	}
 
+	devStore := devurls.NewStore(cfg.DevURLSlots)
+	mcpTokens := mcphttp.NewTokenStore()
+
 	mgr := session.NewManager(cfg.DB, queries, hub, connector)
+	mgr.SetMCPHTTP(mcpTokens, cfg.MCPInternalURL)
+	mgr.SetDevURLStore(devStore)
 	if cfg.DevMode && cfg.DBPath != "" {
 		mgr.GlobalPreamble = devModePreamble(cfg.DBPath)
 	}
@@ -175,6 +192,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Hub: hub, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
 	mux.Handle("GET /ws", wsh)
+
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore)
+	// Register explicit methods so the pattern doesn't conflict with the SPA
+	// catch-all "GET /". The handler dispatches on method internally.
+	mux.Handle("POST /mcp", mcpHandler)
+	mux.Handle("GET /mcp", mcpHandler)
+	mux.Handle("DELETE /mcp", mcpHandler)
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})

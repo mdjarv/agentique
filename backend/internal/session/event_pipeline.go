@@ -407,7 +407,7 @@ func (p *EventPipeline) trackToolUse(wireEvent any) {
 		} else if p.onPlanTransition != nil {
 			p.onPlanTransition("default")
 		}
-	case ChannelSendMessageTool:
+	case ChannelSendMessageTool, AgentiqueSendMessageTool:
 		if p.onSendMessage != nil {
 			to, body, msgType, err := parseSendMessageInput(tue.ToolInput)
 			if err != nil {

@@ -185,12 +185,20 @@ func newSession(p sessionParams) *Session {
 			gitStatus:  p.gitStatus,
 		},
 	}
+	allow := func(json.RawMessage) (*claudecli.PermissionResponse, error) {
+		return &claudecli.PermissionResponse{Allow: true}, nil
+	}
 	s.toolInterceptors = map[string]toolInterceptor{
-		ChannelSendMessageTool: s.interceptSendMessage,
-		"AskTeammate":          s.interceptAskTeammate,
-		"ExitPlanMode": func(json.RawMessage) (*claudecli.PermissionResponse, error) {
-			return &claudecli.PermissionResponse{Allow: true}, nil
-		},
+		// Both legacy stdio and new HTTP MCP tool names map to the same handler.
+		// Only one MCP server is active per session, so only one name will fire.
+		ChannelSendMessageTool:   s.interceptSendMessage,
+		AgentiqueSendMessageTool: s.interceptSendMessage,
+		"AskTeammate":            s.interceptAskTeammate,
+		"ExitPlanMode":           allow,
+		// Dev URL tools on HTTP MCP: auto-allow so they execute via /mcp.
+		AgentiqueAcquireDevURLTool: allow,
+		AgentiqueReleaseDevURLTool: allow,
+		AgentiqueListDevURLsTool:   allow,
 	}
 	s.pipeline = NewEventPipeline(buildPipelineConfig(s, p))
 	if p.broadcastInitialState {
