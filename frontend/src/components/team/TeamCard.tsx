@@ -6,6 +6,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { AgentProfileInfo, TeamInfo } from "~/lib/team-actions";
 import { addTeamMember, deleteTeam, removeTeamMember } from "~/lib/team-actions";
 import { getErrorMessage } from "~/lib/utils";
+import { useTeamStore } from "~/stores/team-store";
 import { TeamFormDialog } from "./TeamFormDialog";
 import { TeamMemberRow } from "./TeamMemberRow";
 
@@ -26,11 +27,12 @@ export function TeamCard({
   const handleAddMember = useCallback(
     async (profileId: string) => {
       try {
-        await addTeamMember(ws, {
+        const updated = await addTeamMember(ws, {
           teamId: team.id,
           agentProfileId: profileId,
           sortOrder: team.members.length,
         });
+        useTeamStore.getState().updateTeam(updated);
       } catch (e) {
         toast.error(getErrorMessage(e, "Operation failed"));
       }
@@ -41,7 +43,8 @@ export function TeamCard({
   const handleRemoveMember = useCallback(
     async (profileId: string) => {
       try {
-        await removeTeamMember(ws, { teamId: team.id, agentProfileId: profileId });
+        const updated = await removeTeamMember(ws, { teamId: team.id, agentProfileId: profileId });
+        useTeamStore.getState().updateTeam(updated);
       } catch (e) {
         toast.error(getErrorMessage(e, "Operation failed"));
       }
@@ -52,6 +55,7 @@ export function TeamCard({
   const handleDelete = useCallback(async () => {
     try {
       await deleteTeam(ws, team.id);
+      useTeamStore.getState().removeTeam(team.id);
       toast.success("Team deleted");
     } catch (e) {
       toast.error(getErrorMessage(e, "Operation failed"));

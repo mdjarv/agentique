@@ -7,6 +7,8 @@ import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBad
 import { ActivityFeed } from "~/components/layout/variants/folder-sidebar/ActivityFeed";
 import { ProfileEditorDialog } from "~/components/team/ProfileEditorDialog";
 import { ProfileRow } from "~/components/team/ProfileRow";
+import { TeamCard } from "~/components/team/TeamCard";
+import { CreateTeamTrigger, TeamFormDialog } from "~/components/team/TeamFormDialog";
 import type { ChannelInfo, ChannelMember } from "~/lib/channel-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -146,10 +148,12 @@ export function TeamsTab() {
   const channels = useChannelStore(useShallow((s) => s.channels));
   const projects = useAppStore(useShallow((s) => s.projects));
   const profiles = useTeamStore(useShallow((s) => s.profiles));
+  const teams = useTeamStore(useShallow((s) => s.teams));
   const profilesLoaded = useTeamStore((s) => s.loaded);
 
   const channelList = useMemo(() => Object.values(channels), [channels]);
   const profileList = useMemo(() => Object.values(profiles), [profiles]);
+  const teamList = useMemo(() => Object.values(teams), [teams]);
 
   // Group channels by project.
   const grouped = useMemo(() => {
@@ -191,6 +195,27 @@ export function TeamsTab() {
           />
         ))
       )}
+
+      {/* Teams */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
+            Teams
+          </h3>
+          <TeamFormDialog trigger={<CreateTeamTrigger />} />
+        </div>
+        {!profilesLoaded ? (
+          <p className="text-xs text-muted-foreground/60 px-2">Loading...</p>
+        ) : teamList.length === 0 ? (
+          <p className="text-xs text-muted-foreground/60 px-2">No teams yet</p>
+        ) : (
+          <div className="space-y-1.5 px-1">
+            {teamList.map((team) => (
+              <TeamCard key={team.id} team={team} allProfiles={profileList} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Agent Profiles */}
       <div className="space-y-1">

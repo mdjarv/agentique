@@ -19,6 +19,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { TeamInfo } from "~/lib/team-actions";
 import { createTeam, updateTeam } from "~/lib/team-actions";
 import { getErrorMessage } from "~/lib/utils";
+import { useTeamStore } from "~/stores/team-store";
 
 export function CreateTeamTrigger() {
   return (
@@ -38,9 +39,11 @@ export function TeamFormDialog({ team, trigger }: { team?: TeamInfo; trigger: Re
   const handleSubmit = useCallback(async () => {
     try {
       if (isEdit && team) {
-        await updateTeam(ws, { id: team.id, name, description });
+        const updated = await updateTeam(ws, { id: team.id, name, description });
+        useTeamStore.getState().updateTeam(updated);
       } else {
-        await createTeam(ws, { name, description });
+        const created = await createTeam(ws, { name, description });
+        useTeamStore.getState().addTeam(created);
       }
       setOpen(false);
       if (!isEdit) {
