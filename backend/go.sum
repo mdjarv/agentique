@@ -8,6 +8,8 @@ github.com/allbin/claudecli-go v0.0.0-20260410095648-9203c46dda52 h1:uQZmfvEgDPS
 github.com/allbin/claudecli-go v0.0.0-20260410095648-9203c46dda52/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/claudecli-go v0.0.0-20260417060450-49a9181eb669 h1:Chvjo5lexFk1QEuIAIWfRyWHAYeIYMkEBpZkxp9BSNk=
 github.com/allbin/claudecli-go v0.0.0-20260417060450-49a9181eb669/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260417062052-439ac836186b h1:+1D04ICJJKj3zXP2lSjN/igWJ8gEK4XpQGeI4/1KJuI=
+github.com/allbin/claudecli-go v0.0.0-20260417062052-439ac836186b/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
