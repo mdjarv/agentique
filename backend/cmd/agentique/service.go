@@ -14,6 +14,8 @@ import (
 func init() {
 	serviceCmd.AddCommand(serviceInstallCmd)
 	serviceCmd.AddCommand(serviceUninstallCmd)
+	serviceCmd.AddCommand(serviceStartCmd)
+	serviceCmd.AddCommand(serviceStopCmd)
 	serviceCmd.AddCommand(serviceRestartCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
 	serviceCmd.AddCommand(serviceLogsCmd)
@@ -35,6 +37,18 @@ var serviceUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Stop and remove the Agentique service",
 	RunE:  runServiceUninstall,
+}
+
+var serviceStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the Agentique service",
+	RunE:  runServiceStart,
+}
+
+var serviceStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the Agentique service",
+	RunE:  runServiceStop,
 }
 
 var serviceRestartCmd = &cobra.Command{
@@ -94,10 +108,56 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println("\nUseful commands:")
 		fmt.Println("  agentique service status    — check status")
+		fmt.Println("  agentique service start     — start service")
+		fmt.Println("  agentique service stop      — stop service")
 		fmt.Println("  agentique service restart   — restart after upgrade")
 		fmt.Println("  agentique service logs      — stream logs")
 		fmt.Println("  agentique service uninstall — remove service")
 	}
+	return nil
+}
+
+func runServiceStart(cmd *cobra.Command, args []string) error {
+	st, err := service.GetStatus()
+	if err != nil {
+		return err
+	}
+	if !st.Installed {
+		fmt.Println("Service not installed")
+		return nil
+	}
+	if st.Running {
+		fmt.Printf("Service already running (PID %d)\n", st.PID)
+		return nil
+	}
+	if err := service.Start(); err != nil {
+		return fmt.Errorf("start: %w", err)
+	}
+	st, _ = service.GetStatus()
+	fmt.Println("Service started")
+	if st.Running {
+		fmt.Printf("  PID: %d\n", st.PID)
+	}
+	return nil
+}
+
+func runServiceStop(cmd *cobra.Command, args []string) error {
+	st, err := service.GetStatus()
+	if err != nil {
+		return err
+	}
+	if !st.Installed {
+		fmt.Println("Service not installed")
+		return nil
+	}
+	if !st.Running {
+		fmt.Println("Service not running")
+		return nil
+	}
+	if err := service.Stop(); err != nil {
+		return fmt.Errorf("stop: %w", err)
+	}
+	fmt.Println("Service stopped")
 	return nil
 }
 

@@ -132,6 +132,22 @@ func restartSystemd() error {
 	return nil
 }
 
+func startSystemd() error {
+	out, err := exec.Command("systemctl", "--user", "start", serviceName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl start: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func stopSystemd() error {
+	out, err := exec.Command("systemctl", "--user", "stop", serviceName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl stop: %w\n%s", err, out)
+	}
+	return nil
+}
+
 func logsSystemd() *exec.Cmd {
 	return exec.Command("journalctl", "--user", "-u", serviceName, "-f", "--no-pager")
 }

@@ -70,6 +70,30 @@ func Restart() error {
 	}
 }
 
+// Start starts the service.
+func Start() error {
+	switch runtime.GOOS {
+	case "linux":
+		return startSystemd()
+	case "darwin":
+		return startLaunchd()
+	default:
+		return unsupportedError()
+	}
+}
+
+// Stop stops the service.
+func Stop() error {
+	switch runtime.GOOS {
+	case "linux":
+		return stopSystemd()
+	case "darwin":
+		return stopLaunchd()
+	default:
+		return unsupportedError()
+	}
+}
+
 // LogsCmd returns an exec.Cmd that streams service logs.
 // The caller is responsible for running it (e.g. cmd.Run() with stdout/stderr wired up).
 func LogsCmd() (*exec.Cmd, error) {
