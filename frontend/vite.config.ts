@@ -9,8 +9,16 @@ import { VitePWA } from "vite-plugin-pwa";
 const certPath = path.resolve(__dirname, "../certs");
 const useTls = process.env.VITE_TLS !== "false" && fs.existsSync(path.join(certPath, "server.crt"));
 
-const backendOrigin = useTls ? "https://localhost:9201" : "http://localhost:9201";
-const backendWs = useTls ? "wss://localhost:9201" : "ws://localhost:9201";
+// Backend port: default 9201 (local dev). Override via VITE_BACKEND_PORT (e.g.
+// 19201 when targeting the installed agentique service from a remote dev slot).
+const backendPort = process.env.VITE_BACKEND_PORT ?? "9201";
+const backendOrigin = useTls ? `https://localhost:${backendPort}` : `http://localhost:${backendPort}`;
+const backendWs = useTls ? `wss://localhost:${backendPort}` : `ws://localhost:${backendPort}`;
+
+// Public host for remote dev slots. When set, Vite HMR client connects via
+// wss://<host>:443 (through the reverse proxy) instead of the local port.
+const publicHost = process.env.VITE_PUBLIC_HOST ?? "";
+const frontendPort = Number(process.env.VITE_PORT ?? 9200);
 
 export default defineConfig({
   logLevel: "warn",
@@ -71,12 +79,19 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 9200,
+    port: frontendPort,
     allowedHosts: true,
     ...(useTls && {
       https: {
         cert: path.join(certPath, "server.crt"),
         key: path.join(certPath, "server.key"),
+      },
+    }),
+    ...(publicHost && {
+      hmr: {
+        protocol: "wss",
+        clientPort: 443,
+        host: publicHost,
       },
     }),
     proxy: {

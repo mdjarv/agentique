@@ -40,6 +40,16 @@ dev-frontend-tls:
 dev-mock:
     cd frontend && VITE_TLS=false VITE_MSW=true npx vite --port 9210
 
+# Remote dev slot: Vite bound to the given port, HMR via wss://<host>:443,
+# API/WS proxied to the installed agentique service (default port 19201).
+# Acquire {port, host} from the AcquireDevUrl MCP tool first.
+dev-frontend-remote port host backend-port="19201":
+    cd frontend && VITE_TLS=false \
+        VITE_PORT={{port}} \
+        VITE_PUBLIC_HOST={{host}} \
+        VITE_BACKEND_PORT={{backend-port}} \
+        npm run dev
+
 # Stop dev servers
 stop:
     -lsof -ti:9200 | xargs kill 2>/dev/null
