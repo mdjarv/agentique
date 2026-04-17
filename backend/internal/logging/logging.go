@@ -46,7 +46,7 @@ func InitWithMode(levelStr string, jsonLogPath string, mode OutputMode) {
 	var handler slog.Handler
 	switch mode {
 	case OutputJournald:
-		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+		handler = initJournaldHandler(level)
 	case OutputStdout:
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	default: // OutputFile
@@ -62,6 +62,19 @@ func detectMode() OutputMode {
 		return OutputJournald
 	}
 	return OutputFile
+}
+
+// initJournaldHandler produces human-readable lines for systemd-journald.
+// Journald prefixes its own timestamp, so we omit ours. No color (not a TTY).
+func initJournaldHandler(level slog.Level) slog.Handler {
+	handler := log.NewWithOptions(os.Stderr, log.Options{
+		Level:           log.Level(level),
+		ReportTimestamp: false,
+	})
+	styles := log.DefaultStyles()
+	styles.Levels[log.Level(LevelTrace)] = lipgloss.NewStyle().SetString("TRAC")
+	handler.SetStyles(styles)
+	return handler
 }
 
 func initCharmHandler(level slog.Level, jsonLogPath string) slog.Handler {
