@@ -10,6 +10,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/allbin/claudecli-go v0.0.0-20260417062052-439ac836186b h1:+1D04ICJJKj3zXP2lSjN/igWJ8gEK4XpQGeI4/1KJuI=
 github.com/allbin/claudecli-go v0.0.0-20260417062052-439ac836186b/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260417111724-4a6e3c3689bb h1:V0iJVPtNr8qeZA+9EYVzte0XCWnJTz5CJi6PNS8wzuY=
+github.com/allbin/claudecli-go v0.0.0-20260417111724-4a6e3c3689bb/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
