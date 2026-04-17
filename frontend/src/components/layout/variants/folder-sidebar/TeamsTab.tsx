@@ -5,11 +5,14 @@ import { useShallow } from "zustand/react/shallow";
 import { PulseStatus } from "~/components/layout/session/PulseStatus";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
 import { ActivityFeed } from "~/components/layout/variants/folder-sidebar/ActivityFeed";
+import { ProfileEditorDialog } from "~/components/team/ProfileEditorDialog";
+import { ProfileRow } from "~/components/team/ProfileRow";
 import type { ChannelInfo, ChannelMember } from "~/lib/channel-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
+import { useTeamStore } from "~/stores/team-store";
 
 /** True when every member in channel is idle/done/stopped/disconnected. */
 function isChannelDimmed(members: ChannelMember[], sessions: Record<string, SessionData>): boolean {
@@ -142,8 +145,11 @@ function ProjectChannelGroup({
 export function TeamsTab() {
   const channels = useChannelStore(useShallow((s) => s.channels));
   const projects = useAppStore(useShallow((s) => s.projects));
+  const profiles = useTeamStore(useShallow((s) => s.profiles));
+  const profilesLoaded = useTeamStore((s) => s.loaded);
 
   const channelList = useMemo(() => Object.values(channels), [channels]);
+  const profileList = useMemo(() => Object.values(profiles), [profiles]);
 
   // Group channels by project.
   const grouped = useMemo(() => {
@@ -170,24 +176,43 @@ export function TeamsTab() {
     [channelList],
   );
 
-  if (channelList.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        No active teams
-      </div>
-    );
-  }
-
   return (
-    <div className="flex-1 overflow-y-auto min-h-0 py-2 px-2 space-y-3">
-      {grouped.map((g) => (
-        <ProjectChannelGroup
-          key={g.slug}
-          projectName={g.name}
-          projectSlug={g.slug}
-          channels={g.channels}
-        />
-      ))}
+    <div className="flex-1 overflow-y-auto min-h-0 py-2 px-2 space-y-4">
+      {/* Channels */}
+      {channelList.length === 0 ? (
+        <p className="text-xs text-muted-foreground/70 px-2">No active channels</p>
+      ) : (
+        grouped.map((g) => (
+          <ProjectChannelGroup
+            key={g.slug}
+            projectName={g.name}
+            projectSlug={g.slug}
+            channels={g.channels}
+          />
+        ))
+      )}
+
+      {/* Agent Profiles */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
+            Agent Profiles
+          </h3>
+          <ProfileEditorDialog />
+        </div>
+        {!profilesLoaded ? (
+          <p className="text-xs text-muted-foreground/60 px-2">Loading...</p>
+        ) : profileList.length === 0 ? (
+          <p className="text-xs text-muted-foreground/60 px-2">No profiles yet</p>
+        ) : (
+          <div className="space-y-0.5">
+            {profileList.map((profile) => (
+              <ProfileRow key={profile.id} profile={profile} />
+            ))}
+          </div>
+        )}
+      </div>
+
       {projectIds.map((pid) => (
         <ActivityFeed key={pid} projectId={pid} />
       ))}

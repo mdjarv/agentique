@@ -6,6 +6,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { AgentProfileInfo } from "~/lib/team-actions";
 import { deleteAgentProfile } from "~/lib/team-actions";
 import { getErrorMessage } from "~/lib/utils";
+import { useTeamStore } from "~/stores/team-store";
 import { LaunchResumeButton } from "./LaunchResumeButton";
 import { ProfileEditorDialog } from "./ProfileEditorDialog";
 import { AgentStatusDot, useProfileActiveSession } from "./team-utils";
@@ -21,6 +22,7 @@ export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
   const handleDelete = useCallback(async () => {
     try {
       await deleteAgentProfile(ws, profile.id);
+      useTeamStore.getState().removeProfile(profile.id);
       toast.success("Profile deleted");
     } catch (e) {
       toast.error(getErrorMessage(e, "Operation failed"));

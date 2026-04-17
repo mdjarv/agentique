@@ -31,6 +31,7 @@ import { createAgentProfile, generateAgentProfile, updateAgentProfile } from "~/
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { AutoApproveMode } from "~/stores/chat-store";
+import { useTeamStore } from "~/stores/team-store";
 
 const DEFAULT_PRESETS: BehaviorPresets = {
   autoCommit: false,
@@ -165,9 +166,11 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
         config: JSON.stringify(stripConfig(config)),
       };
       if (isEdit && profile) {
-        await updateAgentProfile(ws, { id: profile.id, ...params });
+        const updated = await updateAgentProfile(ws, { id: profile.id, ...params });
+        useTeamStore.getState().updateProfile(updated);
       } else {
-        await createAgentProfile(ws, params);
+        const created = await createAgentProfile(ws, params);
+        useTeamStore.getState().addProfile(created);
       }
       setOpen(false);
       if (!isEdit) {
