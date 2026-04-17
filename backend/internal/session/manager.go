@@ -90,6 +90,31 @@ func (m *Manager) SetMCPHTTP(tokens *mcphttp.TokenStore, internalURL string) {
 // session destroy.
 func (m *Manager) SetDevURLStore(store *devurls.Store) { m.devURLs = store }
 
+// devURLsPreamble returns a system-prompt section documenting the dev URL
+// capability when at least one slot is configured. Empty string otherwise.
+func (m *Manager) devURLsPreamble() string {
+	if m.devURLs == nil {
+		return ""
+	}
+	if len(m.devURLs.Slots()) == 0 {
+		return ""
+	}
+	return preambleDevURLs
+}
+
+const preambleDevURLs = `
+
+## Public Dev URL
+
+You can expose any local HTTP service to a public HTTPS URL via the ` + "`AcquireDevUrl`" + ` MCP tool.
+
+- Returns ` + "`{url, port, publicHost}`" + ` — bind your service to the returned port on ` + "`127.0.0.1`" + ` (or ` + "`0.0.0.0`" + `) and it is reachable at the URL.
+- URLs are TLS-terminated with a valid Let's Encrypt certificate, so features requiring HTTPS (passkeys/WebAuthn, secure cookies, service workers, camera/mic, etc.) work.
+- Use for: web UI iteration with hot reload, demoing running output to the user, exposing an API you want to hit from an external client, any "I need the user to click through this" moment.
+- Slots are shared across sessions. Call ` + "`ListDevUrls`" + ` first if you suspect contention; call ` + "`ReleaseDevUrl`" + ` when done. Slots auto-release when the session ends.
+`
+
+
 // Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
 func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, error) {
 	id := params.ID
@@ -128,7 +153,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions)),
+		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble()),
 	}
 	if params.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(params.Name))
@@ -268,7 +293,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble() + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
@@ -351,7 +376,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble() + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))

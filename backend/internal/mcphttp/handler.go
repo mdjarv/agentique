@@ -148,6 +148,9 @@ func (h *Handler) dispatchTool(_ context.Context, sessionID string, raw json.Raw
 }
 
 func (h *Handler) handleAcquireDev(sessionID string) toolResult {
+	if len(h.dev.Slots()) == 0 {
+		return toolError("No dev URL slots are configured on this server. Ask the operator to add [[dev-urls]] entries to agentique config.")
+	}
 	lease, err := h.dev.Acquire(sessionID)
 	if err != nil {
 		if errors.Is(err, devurls.ErrAllBusy) {
@@ -157,8 +160,19 @@ func (h *Handler) handleAcquireDev(sessionID string) toolResult {
 		return toolError("acquire failed: " + err.Error())
 	}
 	msg := fmt.Sprintf(
-		"Acquired dev URL slot %q.\nPublic URL: %s\nLocal port: %d\nPublic host: %s\n\nStart Vite with:\n  just dev-frontend-remote %d %s\n\nThe URL will be live as soon as Vite is listening on the local port. Call ReleaseDevUrl when done (or it will auto-release when this session ends).",
-		lease.Slot, lease.URL, lease.Port, lease.PublicHost, lease.Port, lease.PublicHost,
+		"Acquired dev URL slot %q.\n"+
+			"Public URL: %s (TLS-terminated by the reverse proxy)\n"+
+			"Local port: %d\n"+
+			"Public host: %s\n\n"+
+			"Bind any HTTP service to 127.0.0.1:%d (or 0.0.0.0:%d) and it becomes reachable at the URL. Examples:\n"+
+			"  - Vite dev server:  `just dev-frontend-remote %d %s` (Agentique) or `vite --port %d --host`\n"+
+			"  - Go HTTP server:   pass `--addr :%d` or `http.ListenAndServe(\":%d\", ...)`\n"+
+			"  - Any bind-to-port process works (static file servers, tunneled demos, etc.)\n\n"+
+			"Release with ReleaseDevUrl when done (auto-released at session end).",
+		lease.Slot, lease.URL, lease.Port, lease.PublicHost,
+		lease.Port, lease.Port,
+		lease.Port, lease.PublicHost, lease.Port,
+		lease.Port, lease.Port,
 	)
 	return toolText(msg)
 }
@@ -219,17 +233,17 @@ func (h *Handler) toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        ToolAcquireDev,
-			"description": "Lease a publicly-routable dev URL for this session's frontend dev server. Returns a URL, port, and a justfile command to start Vite. Idempotent — re-calling returns the existing lease.",
+			"description": "Lease a publicly-routable HTTPS URL that points at a local TCP port on this machine. Bind any HTTP service to the returned port and it becomes reachable at the returned URL (TLS terminated by the reverse proxy — valid certificate, so HTTPS-only features like passkeys/WebAuthn, secure cookies, and service workers work). Returns {slot, url, publicHost, port}. Idempotent — re-calling returns the existing lease for this session.",
 			"inputSchema": emptySchema,
 		},
 		{
 			"name":        ToolReleaseDev,
-			"description": "Release any dev URL slot leased by this session. Idempotent.",
+			"description": "Release any dev URL slot leased by this session. Idempotent — no-op if nothing is held. Slots also auto-release when the session ends.",
 			"inputSchema": emptySchema,
 		},
 		{
 			"name":        ToolListDevURLs,
-			"description": "List all configured dev URL slots and their current holders.",
+			"description": "List all configured dev URL slots and their current holders (free or held by a specific session). Useful to check for contention before calling AcquireDevUrl.",
 			"inputSchema": emptySchema,
 		},
 	}
