@@ -137,9 +137,15 @@ Session files directory (persistent, survives worktree deletion):
 
 **Workflow:**
 1. Save or copy the file to the session files directory above.
-2. Embed it using ONLY this markdown pattern (no other URLs or paths will work):
+2. Link it using the appropriate markdown syntax (no other URLs or paths will work):
+
+   For **images** (png, jpg, gif, svg, webp) — use image embed syntax:
 
        ![description](/api/sessions/%s/files/filename.png)
+
+   For **other files** (markdown, text, JSON, CSV, etc.) — use link syntax:
+
+       [filename.md](/api/sessions/%s/files/filename.md)
 
 **IMPORTANT:** Never link to ` + "`localhost`" + `, ` + "`127.0.0.1`" + `, or any other host/port directly. The ONLY way the user can see files is through ` + "`/api/sessions/`" + `.
 
@@ -292,7 +298,7 @@ func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, pre
 
 	if sessionID != "" {
 		filesDir := filepath.Join(paths.SessionFilesDir(), sessionID)
-		s += fmt.Sprintf(preambleSessionFiles, filesDir, sessionID)
+		s += fmt.Sprintf(preambleSessionFiles, filesDir, sessionID, sessionID)
 	}
 
 	if globalExtra != "" {

@@ -260,6 +260,9 @@ func TestBuildPreamble_SessionFiles(t *testing.T) {
 	if !strings.Contains(got, "session-files") {
 		t.Error("missing files directory path")
 	}
+	if !strings.Contains(got, "[filename.md](/api/sessions/abc-123-def/files/filename.md)") {
+		t.Error("missing link syntax example for non-image files")
+	}
 }
 
 func TestBuildPreamble_SessionFilesEmptyID(t *testing.T) {
