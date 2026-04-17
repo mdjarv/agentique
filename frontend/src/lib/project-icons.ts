@@ -37,6 +37,7 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
+import { dynamicIconImports } from "lucide-react/dynamic";
 
 export interface ProjectIconDef {
   id: string;
@@ -111,7 +112,6 @@ export function cacheProjectIcon(id: string, component: LucideIcon): void {
 export async function preloadProjectIcon(iconId: string): Promise<void> {
   if (!iconId || staticMap.has(iconId) || dynamicCache.has(iconId)) return;
   try {
-    const { dynamicIconImports } = await import("lucide-react/dynamic");
     const importFn = dynamicIconImports[iconId as keyof typeof dynamicIconImports];
     if (!importFn) return;
     const mod = await importFn();

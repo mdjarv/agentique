@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { DynamicIcon, type IconName, iconNames } from "lucide-react/dynamic";
+import { DynamicIcon, dynamicIconImports, type IconName, iconNames } from "lucide-react/dynamic";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { cacheProjectIcon, getProjectIcon, PROJECT_ICONS } from "~/lib/project-icons";
@@ -32,7 +32,6 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
       // Cache the icon so the rail can render it synchronously
       if (id && !getProjectIcon(id)) {
         try {
-          const { dynamicIconImports } = await import("lucide-react/dynamic");
           const importFn = dynamicIconImports[id as IconName];
           if (importFn) {
             const mod = await importFn();

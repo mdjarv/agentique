@@ -13,6 +13,7 @@ const backendOrigin = useTls ? "https://localhost:9201" : "http://localhost:9201
 const backendWs = useTls ? "wss://localhost:9201" : "ws://localhost:9201";
 
 export default defineConfig({
+  logLevel: "warn",
   plugins: [
     tanstackRouter({ quoteStyle: "double", semicolons: true }),
     react(),
@@ -98,13 +99,18 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    chunkSizeWarningLimit: 800,
+    // Mermaid (lazy-loaded via dynamic import) is ~2.7MB and will trigger this warning;
+    // limit set so the warning fires only for that genuinely-large chunk.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom"],
-          markdown: ["react-markdown", "remark-gfm", "remark-breaks", "react-syntax-highlighter"],
-          mermaid: ["mermaid"],
+        manualChunks(id) {
+          if (!id.includes("/node_modules/")) return;
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor";
+          if (/\/node_modules\/(react-markdown|remark-gfm|remark-breaks|react-syntax-highlighter)\//.test(id)) {
+            return "markdown";
+          }
+          if (id.includes("/node_modules/mermaid/")) return "mermaid";
         },
       },
     },

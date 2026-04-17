@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Hash, Unlink } from "lucide-react";
 import { useCallback } from "react";
+import { toast } from "sonner";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -10,6 +11,7 @@ import {
 } from "~/components/ui/context-menu";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { dissolveChannel } from "~/lib/channel-actions";
+import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { CompletedSessionsBlock } from "./CompletedSessionsBlock";
 import {
@@ -46,8 +48,6 @@ export function ChannelSessions({
       try {
         await dissolveChannel(ws, channelId);
       } catch (err) {
-        const { toast } = await import("sonner");
-        const { getErrorMessage } = await import("~/lib/utils");
         toast.error(getErrorMessage(err, "Failed to dissolve channel"));
       }
     },
