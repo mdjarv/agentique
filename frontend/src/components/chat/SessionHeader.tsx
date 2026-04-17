@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
+import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
 import { IconPicker } from "~/components/chat/IconPicker";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -81,8 +82,9 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
   const canRestart = canStop || meta.state === "stopped" || meta.state === "failed";
 
   const [activeDialog, setActiveDialog] = useState<
-    "none" | "delete" | "create-channel" | "join-channel"
+    "none" | "delete" | "create-channel" | "join-channel" | "rename"
   >("none");
+  const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [channelName, setChannelName] = useState("");
@@ -128,6 +130,18 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
       });
     } else {
       setEditName(meta.name);
+    }
+  };
+
+  const handleRename = async (newName: string) => {
+    setRenaming(true);
+    try {
+      await renameSession(ws, meta.id, newName);
+      setActiveDialog("none");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Rename failed"));
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -432,21 +446,15 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
                 </DropdownMenuItem>
               )}
               {(canStop || canRestart) && <DropdownMenuSeparator />}
+              <DropdownMenuItem onClick={() => setActiveDialog("rename")} className="text-xs gap-2">
+                <Pencil className="h-3.5 w-3.5" />
+                Rename session...
+              </DropdownMenuItem>
               {isMobile && (
-                <>
-                  <DropdownMenuItem onClick={() => setEditing(true)} className="text-xs gap-2">
-                    <Pencil className="h-3.5 w-3.5" />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => copyRef(sessionRef)} className="text-xs gap-2">
-                    {refCopied ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                    Copy ref ({sessionRef})
-                  </DropdownMenuItem>
-                </>
+                <DropdownMenuItem onClick={() => copyRef(sessionRef)} className="text-xs gap-2">
+                  {refCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  Copy ref ({sessionRef})
+                </DropdownMenuItem>
               )}
               {isWorktree && !isBusy && (
                 <DropdownMenuItem
@@ -506,6 +514,14 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
         sessionName={meta.name}
         onDelete={handleDelete}
         deleting={deleting}
+      />
+      <RenameSessionDialog
+        open={activeDialog === "rename"}
+        onOpenChange={(open) => setActiveDialog(open ? "rename" : "none")}
+        sessionId={meta.id}
+        currentName={meta.name}
+        onSubmit={handleRename}
+        saving={renaming}
       />
       <CreateChannelDialog
         open={activeDialog === "create-channel"}

@@ -176,6 +176,8 @@ func (c *conn) dispatch(msg ClientMessage) {
 		c.handleSessionRefreshGit(msg)
 	case "session.generate-commit-message":
 		c.handleSessionGenerateCommitMsg(msg)
+	case "session.generate-name":
+		c.handleSessionGenerateName(msg)
 	case "session.commit-log":
 		c.handleSessionCommitLog(msg)
 	case "session.uncommitted-files":

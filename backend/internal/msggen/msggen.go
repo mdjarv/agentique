@@ -159,6 +159,51 @@ func PRDescription(ctx context.Context, runner Runner, sessionName, summary, dif
 	return parsePRDescription(result.Text), nil
 }
 
+// SessionTitle asks Haiku for a short 2-4 word title summarizing a session,
+// given the sequence of user-role messages. Returns a trimmed, quote-stripped
+// title capped at 60 chars, or an error if the model call fails.
+func SessionTitle(ctx context.Context, runner Runner, userTurns []string) (string, error) {
+	if len(userTurns) == 0 {
+		return "", fmt.Errorf("no user turns")
+	}
+
+	const maxTurnChars = 600
+	var joined strings.Builder
+	for i, turn := range userTurns {
+		if len(turn) > maxTurnChars {
+			turn = turn[:maxTurnChars] + "…"
+		}
+		fmt.Fprintf(&joined, "Message %d:\n%s\n\n", i+1, turn)
+	}
+
+	prompt := "Generate a concise 2-4 word title for this coding session, " +
+		"focusing on the main task (not the opening question). " +
+		"Title case. No quotes, no punctuation, no trailing period.\n\n" +
+		"User messages in the session:\n\n" + joined.String() +
+		"Respond with ONLY the title."
+
+	result, err := RunWithRetry(ctx, runner, prompt,
+		claudecli.WithModel(claudecli.ModelHaiku),
+		claudecli.WithMaxTurns(1),
+		claudecli.WithBuiltinTools(""),
+		claudecli.WithSkipVersionCheck(),
+		claudecli.WithStrictMCPConfig(),
+		claudecli.WithDisableSlashCommands(),
+		claudecli.WithSettingSources(""),
+	)
+	if err != nil {
+		return "", fmt.Errorf("haiku generation failed: %w", err)
+	}
+
+	name := strings.TrimSpace(result.Text)
+	name = strings.Trim(name, "\"'")
+	name = strings.TrimRight(name, ".")
+	if len(name) > 60 {
+		name = name[:60]
+	}
+	return name, nil
+}
+
 func parseCommitMessage(text string) CommitMessageResult {
 	text = strings.TrimSpace(text)
 

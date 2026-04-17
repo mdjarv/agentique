@@ -139,6 +139,14 @@ type SessionGenerateCommitMsgPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionGenerateNamePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SessionGenerateNameResult struct {
+	Name string `json:"name"`
+}
+
 type SessionMarkDonePayload struct {
 	SessionID string `json:"sessionId"`
 }
@@ -358,6 +366,10 @@ func (p *SessionGeneratePRDescPayload) Validate() error {
 }
 
 func (p *SessionGenerateCommitMsgPayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionGenerateNamePayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 

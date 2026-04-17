@@ -216,6 +216,16 @@ func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionGenerateName(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionGenerateNamePayload) (SessionGenerateNameResult, error) {
+		name, err := c.svc.GenerateSessionName(ctx, p.SessionID)
+		if err != nil {
+			return SessionGenerateNameResult{}, err
+		}
+		return SessionGenerateNameResult{Name: name}, nil
+	})
+}
+
 // --- Message injection handler ---
 
 func (c *conn) handleSessionEnqueue(msg ClientMessage) {

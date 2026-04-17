@@ -291,6 +291,13 @@ export async function generatePRDescription(
   return ws.request<PRDescriptionResult>("session.generate-pr-description", { sessionId }, 120_000);
 }
 
+export async function generateSessionName(
+  ws: WsClient,
+  sessionId: string,
+): Promise<{ name: string }> {
+  return ws.request<{ name: string }>("session.generate-name", { sessionId }, 120_000);
+}
+
 export async function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.mark-done", { sessionId });
 }

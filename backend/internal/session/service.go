@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -1177,8 +1176,11 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 		return
 	}
 
-	name := generateSessionName(s.runner, prompt)
-	if name == "" {
+	name, err := msggen.SessionTitle(context.Background(), s.runner, []string{prompt})
+	if err != nil || name == "" {
+		if err != nil {
+			slog.Warn("auto-rename haiku failed", "error", err)
+		}
 		return
 	}
 	if err := s.queries.UpdateSessionName(context.Background(), store.UpdateSessionNameParams{
@@ -1191,38 +1193,46 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 	s.hub.Broadcast(projectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
 }
 
-// generateSessionName calls Haiku to generate a short title from a prompt.
-func generateSessionName(runner msggen.Runner, prompt string) string {
-	p := prompt
-	if len(p) > 500 {
-		p = p[:500]
-	}
-	namePrompt := "Generate a short 2-4 word title for this coding task. " +
-		"Respond with ONLY the title, no quotes or punctuation:\n\n" + p
-
-	result, err := msggen.RunWithRetry(context.Background(), runner, namePrompt,
-		claudecli.WithModel(claudecli.ModelHaiku),
-		claudecli.WithMaxTurns(1),
-		claudecli.WithBuiltinTools(""),
-		claudecli.WithSkipVersionCheck(),
-		claudecli.WithStrictMCPConfig(),
-		claudecli.WithDisableSlashCommands(),
-		claudecli.WithSettingSources(""),
-	)
+// GenerateSessionName regenerates a title from the full session transcript.
+// Reads the parent CLI's jsonl, extracts user-role messages, and asks Haiku
+// for a concise title. Does NOT persist — caller passes the returned name
+// through RenameSession if they accept it.
+func (s *Service) GenerateSessionName(ctx context.Context, sessionID string) (string, error) {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		slog.Warn("auto-rename haiku failed", "error", err)
-		return ""
+		return "", ErrNotFound
+	}
+	claudeSessionID := ""
+	if dbSess.ClaudeSessionID.Valid {
+		claudeSessionID = dbSess.ClaudeSessionID.String
+	}
+	workDir := dbSess.WorkDir
+	if dbSess.WorktreePath.Valid && dbSess.WorktreePath.String != "" {
+		workDir = dbSess.WorktreePath.String
 	}
 
-	name := strings.TrimSpace(result.Text)
-	name = strings.Trim(name, "\"'")
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		return "", fmt.Errorf("user home: %w", homeErr)
+	}
+
+	var turns []string
+	if claudeSessionID != "" && workDir != "" {
+		turns, _ = readUserTurns(home, workDir, claudeSessionID, 20, 8000)
+	}
+
+	if len(turns) == 0 {
+		return "", fmt.Errorf("no user messages available yet")
+	}
+
+	name, err := msggen.SessionTitle(ctx, s.runner, turns)
+	if err != nil {
+		return "", err
+	}
 	if name == "" {
-		return ""
+		return "", fmt.Errorf("empty title from model")
 	}
-	if len(name) > 50 {
-		name = name[:50]
-	}
-	return name
+	return name, nil
 }
 
 // PersonaConfig holds session-creation defaults parsed from an agent profile's
