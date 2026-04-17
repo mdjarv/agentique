@@ -111,6 +111,51 @@ release: frontend-build
     echo "Release binary in dist/:"
     ls -lh dist/
 
+# Install locally from source (mirrors install.sh but uses local build)
+install: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+    mkdir -p "$INSTALL_DIR"
+    cp agentique "${INSTALL_DIR}/agentique"
+    chmod +x "${INSTALL_DIR}/agentique"
+    VERSION="$("${INSTALL_DIR}/agentique" --version 2>/dev/null | awk '{print $2}' || echo unknown)"
+    echo "Installed agentique ${VERSION} to ${INSTALL_DIR}/agentique"
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
+      echo ""
+      echo "WARNING: ${INSTALL_DIR} is not in your PATH. Add it:"
+      echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+      echo ""
+    fi
+    SHELL_NAME="$(basename "${SHELL:-}")"
+    case "$SHELL_NAME" in
+      fish)
+        COMP_DIR="$HOME/.config/fish/completions"
+        mkdir -p "$COMP_DIR"
+        "${INSTALL_DIR}/agentique" completion fish > "$COMP_DIR/agentique.fish" 2>/dev/null && \
+          echo "Installed fish completions to $COMP_DIR/agentique.fish" || true
+        ;;
+      zsh)
+        COMP_DIR="$HOME/.zsh/completions"
+        mkdir -p "$COMP_DIR"
+        "${INSTALL_DIR}/agentique" completion zsh > "$COMP_DIR/_agentique" 2>/dev/null && \
+          echo "Installed zsh completions to $COMP_DIR/_agentique" || true
+        ;;
+      bash)
+        COMP_DIR="$HOME/.local/share/bash-completion/completions"
+        mkdir -p "$COMP_DIR"
+        "${INSTALL_DIR}/agentique" completion bash > "$COMP_DIR/agentique" 2>/dev/null && \
+          echo "Installed bash completions to $COMP_DIR/agentique" || true
+        ;;
+    esac
+    if systemctl --user is-enabled agentique &>/dev/null; then
+      "${INSTALL_DIR}/agentique" service install
+      echo ""
+    fi
+    echo "Checking dependencies..."
+    echo ""
+    "${INSTALL_DIR}/agentique" doctor || true
+
 # Clean build artifacts
 clean:
     rm -rf frontend/dist
