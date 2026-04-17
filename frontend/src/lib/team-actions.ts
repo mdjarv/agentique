@@ -15,6 +15,7 @@ export interface AgentProfileConfig {
     terse: boolean;
     customInstructions?: string;
   };
+  systemPromptAdditions?: string;
 }
 
 export interface AgentProfileInfo {
