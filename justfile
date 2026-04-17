@@ -52,10 +52,19 @@ frontend-build:
     cd frontend && npm ci && npm run build
 
 backend-build: frontend-build
+    #!/usr/bin/env bash
+    set -euo pipefail
     rm -rf backend/internal/server/frontend_dist
     mkdir -p backend/internal/server/frontend_dist
     cp -r frontend/dist/* backend/internal/server/frontend_dist/
-    cd backend && go build -o ../agentique ./cmd/agentique
+    # Stamp version so isRelease() is true and the binary uses paths.DBPath()
+    # (XDG data dir) instead of a cwd-relative "agentique.db".
+    VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo local)"
+    COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    cd backend && go build \
+        -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+        -o ../agentique ./cmd/agentique
 
 # Test
 test-backend:
@@ -117,8 +126,12 @@ install: build
     set -euo pipefail
     INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
     mkdir -p "$INSTALL_DIR"
-    cp agentique "${INSTALL_DIR}/agentique"
-    chmod +x "${INSTALL_DIR}/agentique"
+    # Atomic replace via rename(2) — works even if the binary is currently running
+    # (kernel unlinks the busy inode; the running process keeps it; path now points
+    # to a fresh inode). Plain cp would fail with "Text file busy".
+    cp agentique "${INSTALL_DIR}/agentique.new"
+    chmod +x "${INSTALL_DIR}/agentique.new"
+    mv "${INSTALL_DIR}/agentique.new" "${INSTALL_DIR}/agentique"
     VERSION="$("${INSTALL_DIR}/agentique" --version 2>/dev/null | awk '{print $2}' || echo unknown)"
     echo "Installed agentique ${VERSION} to ${INSTALL_DIR}/agentique"
     if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
@@ -150,6 +163,11 @@ install: build
     esac
     if systemctl --user is-enabled agentique &>/dev/null; then
       "${INSTALL_DIR}/agentique" service install
+      if systemctl --user is-active agentique &>/dev/null; then
+        echo ""
+        echo "Service is running the OLD binary. To pick up this build, run:"
+        echo "  agentique service restart"
+      fi
       echo ""
     fi
     echo "Checking dependencies..."
