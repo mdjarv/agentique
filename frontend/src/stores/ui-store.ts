@@ -30,7 +30,7 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
   planMode: false,
   autoApproveMode: "fullAuto",
   model: "opus[1m]",
-  effort: "",
+  effort: "xhigh",
 };
 
 interface UIState {

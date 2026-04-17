@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/allbin/claudecli-go v0.0.0-20260410095648-9203c46dda52
+	github.com/allbin/claudecli-go v0.0.0-20260417060450-49a9181eb669
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
