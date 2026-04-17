@@ -32,9 +32,9 @@ export type ModelId = (typeof MODELS)[number];
 export const MODEL_LABELS: Record<ModelId, string> = {
   haiku: "Haiku 4.5",
   sonnet: "Sonnet 4.6",
-  opus: "Opus 4.6",
+  opus: "Opus 4.7",
   "sonnet[1m]": "Sonnet 4.6 (1M)",
-  "opus[1m]": "Opus 4.6 (1M)",
+  "opus[1m]": "Opus 4.7 (1M)",
 };
 
 export interface CreateSessionOpts {
