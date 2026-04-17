@@ -27,7 +27,14 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Try to open the requested file.
 	f, err := h.fs.Open(p)
 	if err != nil {
-		// File not found -- serve index.html as SPA fallback.
+		// Missing asset-style requests must 404, not fall back to index.html.
+		// Serving HTML for a .js/.css request produces a MIME mismatch in the
+		// browser and can mask stale-PWA precache bugs by trapping the client
+		// in a loop where no new module ever loads.
+		if isAssetRequest(p) {
+			http.NotFound(w, r)
+			return
+		}
 		h.serveIndex(w)
 		return
 	}
@@ -55,6 +62,17 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, f)
+}
+
+// isAssetRequest reports whether the path looks like a static asset (has a
+// non-.html extension or sits under assets/). Navigation requests to SPA
+// routes have no extension and must still fall back to index.html.
+func isAssetRequest(p string) bool {
+	if strings.HasPrefix(p, "assets/") {
+		return true
+	}
+	ext := filepath.Ext(p)
+	return ext != "" && ext != ".html"
 }
 
 func (h *spaHandler) serveIndex(w http.ResponseWriter) {
