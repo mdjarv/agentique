@@ -7,6 +7,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -21,6 +22,47 @@ type Config struct {
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
 	Experimental ExperimentalConfig `toml:"experimental"`
+	DevURLs      []DevURLSlot       `toml:"dev-urls"`
+}
+
+// DevURLSlot describes one publicly-routable dev frontend URL.
+// Sessions can lease a slot to expose a Vite dev server externally.
+type DevURLSlot struct {
+	Slot       string `toml:"slot"`
+	Port       int    `toml:"port"`
+	PublicHost string `toml:"public-host"`
+}
+
+// ValidateDevURLs checks that slots have non-empty fields, valid port ranges,
+// and unique (slot, port, public-host) tuples.
+func ValidateDevURLs(slots []DevURLSlot) error {
+	seenSlot := map[string]bool{}
+	seenPort := map[int]bool{}
+	seenHost := map[string]bool{}
+	for i, s := range slots {
+		if s.Slot == "" {
+			return fmt.Errorf("dev-urls[%d]: slot name is required", i)
+		}
+		if s.Port < 1 || s.Port > 65535 {
+			return fmt.Errorf("dev-urls[%d] (%s): port must be 1-65535, got %d", i, s.Slot, s.Port)
+		}
+		if s.PublicHost == "" {
+			return fmt.Errorf("dev-urls[%d] (%s): public-host is required", i, s.Slot)
+		}
+		if seenSlot[s.Slot] {
+			return fmt.Errorf("dev-urls: duplicate slot name %q", s.Slot)
+		}
+		if seenPort[s.Port] {
+			return fmt.Errorf("dev-urls: duplicate port %d", s.Port)
+		}
+		if seenHost[s.PublicHost] {
+			return fmt.Errorf("dev-urls: duplicate public-host %q", s.PublicHost)
+		}
+		seenSlot[s.Slot] = true
+		seenPort[s.Port] = true
+		seenHost[s.PublicHost] = true
+	}
+	return nil
 }
 
 type ExperimentalConfig struct {
