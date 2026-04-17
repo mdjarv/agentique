@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // choiceDoneMsg is sent when the user confirms a selection.
@@ -30,7 +30,7 @@ func newChoiceModel(title string, options []string, defaultIdx int) choiceModel 
 func (m choiceModel) Init() tea.Cmd { return nil }
 
 func (m choiceModel) Update(msg tea.Msg) (choiceModel, tea.Cmd) {
-	if msg, ok := msg.(tea.KeyMsg); ok {
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {

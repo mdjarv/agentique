@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/paths"
@@ -74,7 +74,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -95,7 +95,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) View() string {
+func (m wizardModel) View() tea.View {
 	var b strings.Builder
 
 	// Header with step progress.
@@ -125,7 +125,9 @@ func (m wizardModel) View() string {
 		b.WriteString(m.summary.View())
 	}
 
-	return b.String()
+	v := tea.NewView(b.String())
+	v.AltScreen = true
+	return v
 }
 
 // --- Step initialization ---

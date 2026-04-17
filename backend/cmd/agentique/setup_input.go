@@ -3,8 +3,8 @@ package main
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 // inputDoneMsg is sent when the user confirms text input.
@@ -39,7 +39,7 @@ func (m inputModel) Init() tea.Cmd {
 }
 
 func (m inputModel) Update(msg tea.Msg) (inputModel, tea.Cmd) {
-	if msg, ok := msg.(tea.KeyMsg); ok {
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case "enter":
 			val := strings.TrimSpace(m.input.Value())

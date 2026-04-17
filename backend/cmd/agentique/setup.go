@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ var setupCmd = &cobra.Command{
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	p := tea.NewProgram(newWizardModel(), tea.WithAltScreen())
+	p := tea.NewProgram(newWizardModel())
 	m, err := p.Run()
 	if err != nil {
 		return fmt.Errorf("setup: %w", err)
