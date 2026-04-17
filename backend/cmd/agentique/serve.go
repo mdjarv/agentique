@@ -226,7 +226,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID
-		cfg.RPOrigins = []string{rpOrigin}
 		if cfg.RPID == "" {
 			host, _, _ := net.SplitHostPort(addr)
 			if host == "" || host == "0.0.0.0" {
@@ -239,8 +238,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			if host == "" || host == "0.0.0.0" {
 				host = "localhost"
 			}
-			cfg.RPOrigins = []string{fmt.Sprintf("%s://%s:%s", scheme, host, port)}
+			rpOrigin = fmt.Sprintf("%s://%s:%s", scheme, host, port)
 		}
+		fileCfg.Server.RPOrigin = rpOrigin
+		cfg.RPOrigins = fileCfg.AllRPOrigins()
 	}
 	srv, err := server.New(queries, cfg)
 	if err != nil {

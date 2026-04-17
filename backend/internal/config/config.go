@@ -33,6 +33,30 @@ type DevURLSlot struct {
 	PublicHost string `toml:"public-host"`
 }
 
+// AllRPOrigins returns every origin the WebAuthn RP allowlist should accept:
+// the primary Server.RPOrigin plus "https://<public-host>" for each configured
+// dev-url slot. Empty origins are skipped and duplicates are removed, preserving
+// first-seen order (primary origin first).
+func (c *Config) AllRPOrigins() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(o string) {
+		if o == "" || seen[o] {
+			return
+		}
+		seen[o] = true
+		out = append(out, o)
+	}
+	add(c.Server.RPOrigin)
+	for _, s := range c.DevURLs {
+		if s.PublicHost == "" {
+			continue
+		}
+		add("https://" + s.PublicHost)
+	}
+	return out
+}
+
 // ValidateDevURLs checks that slots have non-empty fields, valid port ranges,
 // and unique (slot, port, public-host) tuples.
 func ValidateDevURLs(slots []DevURLSlot) error {

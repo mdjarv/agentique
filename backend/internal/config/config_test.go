@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -117,6 +118,79 @@ func TestValidateDevURLs(t *testing.T) {
 			}
 			if !contains(err.Error(), tc.wantErr) {
 				t.Errorf("want error containing %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestAllRPOrigins(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want []string
+	}{
+		{
+			name: "no dev-urls, only primary",
+			cfg: Config{
+				Server: ServerConfig{RPOrigin: "https://main.example.com"},
+			},
+			want: []string{"https://main.example.com"},
+		},
+		{
+			name: "no dev-urls, no primary",
+			cfg:  Config{},
+			want: []string{},
+		},
+		{
+			name: "several dev-urls plus primary",
+			cfg: Config{
+				Server: ServerConfig{RPOrigin: "https://main.example.com"},
+				DevURLs: []DevURLSlot{
+					{Slot: "dev1", Port: 9210, PublicHost: "dev1.example.com"},
+					{Slot: "dev2", Port: 9211, PublicHost: "dev2.example.com"},
+					{Slot: "dev3", Port: 9212, PublicHost: "dev3.example.com"},
+				},
+			},
+			want: []string{
+				"https://main.example.com",
+				"https://dev1.example.com",
+				"https://dev2.example.com",
+				"https://dev3.example.com",
+			},
+		},
+		{
+			name: "dev-url host duplicates primary",
+			cfg: Config{
+				Server: ServerConfig{RPOrigin: "https://main.example.com"},
+				DevURLs: []DevURLSlot{
+					{Slot: "dev1", Port: 9210, PublicHost: "main.example.com"},
+					{Slot: "dev2", Port: 9211, PublicHost: "dev2.example.com"},
+				},
+			},
+			want: []string{
+				"https://main.example.com",
+				"https://dev2.example.com",
+			},
+		},
+		{
+			name: "dev-urls only, no primary",
+			cfg: Config{
+				DevURLs: []DevURLSlot{
+					{Slot: "dev1", Port: 9210, PublicHost: "dev1.example.com"},
+				},
+			},
+			want: []string{"https://dev1.example.com"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.AllRPOrigins()
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("AllRPOrigins() = %v, want %v", got, tc.want)
 			}
 		})
 	}
