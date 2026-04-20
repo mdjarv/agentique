@@ -98,18 +98,25 @@ const AVATAR_EMOJI = [
   "🦖",
 ];
 
+const DEFAULT_AVATAR = "🤖";
+
 function AvatarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  const displayed = value || DEFAULT_AVATAR;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-input bg-transparent text-lg shadow-sm hover:bg-muted/50"
+          className={cn(
+            "flex h-9 w-9 items-center justify-center rounded-md border border-input bg-transparent text-lg shadow-sm transition-colors hover:bg-muted/50",
+            !value && "opacity-60",
+          )}
           aria-label="Pick avatar"
+          title={value ? "Change avatar" : "Default avatar — click to change"}
         >
-          {value || <span className="text-xs text-muted-foreground">pick</span>}
+          {displayed}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3" align="start">
@@ -183,7 +190,11 @@ function SectionHeading({ title, hint }: { title: string; hint: string }) {
 }
 
 function Helper({ children }: { children: ReactNode }) {
-  return <p className="mt-1 text-[11px] text-muted-foreground-faint">{children}</p>;
+  return <p className="mt-1.5 text-[11px] text-muted-foreground-faint">{children}</p>;
+}
+
+function Field({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("space-y-1.5", className)}>{children}</div>;
 }
 
 export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo }) {
@@ -340,7 +351,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
             />
 
             <div className="flex items-end gap-3">
-              <div className="flex-1">
+              <Field className="flex-1">
                 <Label htmlFor="profile-name">Name</Label>
                 <Input
                   id="profile-name"
@@ -349,14 +360,14 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                   placeholder="Backend Expert"
                   autoFocus
                 />
-              </div>
-              <div>
+              </Field>
+              <Field>
                 <Label>Avatar</Label>
                 <AvatarPicker value={avatar} onChange={setAvatar} />
-              </div>
+              </Field>
             </div>
 
-            <div>
+            <Field>
               <Label htmlFor="profile-role">Role</Label>
               <Input
                 id="profile-role"
@@ -364,9 +375,9 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 onChange={(e) => setRole(e.target.value)}
                 placeholder="backend architect"
               />
-            </div>
+            </Field>
 
-            <div>
+            <Field>
               <Label htmlFor="profile-desc">Description</Label>
               <Textarea
                 id="profile-desc"
@@ -375,9 +386,9 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 placeholder="Handles API endpoints, database migrations, and backend infrastructure."
                 rows={3}
               />
-            </div>
+            </Field>
 
-            <div>
+            <Field>
               <Label htmlFor="profile-project">Home Project</Label>
               <select
                 id="profile-project"
@@ -393,7 +404,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 ))}
               </select>
               <Helper>Sessions launched from this profile start in this project's worktree.</Helper>
-            </div>
+            </Field>
 
             {projectId && (
               <div className="space-y-2">
@@ -440,49 +451,56 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
               hint="Applied when launching a session from this profile. Explicit launch overrides still win."
             />
 
-            {/* Runtime chips row — mirrors the composer toolbar. */}
-            <div className="flex flex-wrap items-center gap-1 rounded-md border bg-card/40 px-2 py-1.5">
-              <ToolbarDropdown
-                value={config.model ?? ""}
-                onChange={(v) => setConfig((c) => ({ ...c, model: v }))}
-                options={MODEL_OPTIONS}
-              />
-              <div className="h-4 w-px bg-border shrink-0" />
-              <ToolbarDropdown
-                value={config.effort ?? ""}
-                onChange={(v) => setConfig((c) => ({ ...c, effort: v }))}
-                options={EFFORT_OPTIONS}
-                icon={<Gauge className="h-3 w-3" />}
-                triggerColor={
-                  config.effort ? EFFORT_COLORS[config.effort as EffortLevel] : undefined
-                }
-              />
-              <div className="h-4 w-px bg-border shrink-0" />
-              <ToolbarDropdown
-                value={config.autoApproveMode ?? ""}
-                onChange={(v) => setConfig((c) => ({ ...c, autoApproveMode: v }))}
-                options={PERMISSION_OPTIONS}
-                icon={
-                  config.autoApproveMode === "fullAuto" ? (
-                    <ShieldAlert className="h-3 w-3" />
-                  ) : config.autoApproveMode ? (
-                    <ShieldCheck className="h-3 w-3" />
-                  ) : undefined
-                }
-                triggerColor={
-                  config.autoApproveMode
-                    ? PERMISSION_COLORS[config.autoApproveMode as AutoApproveMode]
-                    : undefined
-                }
-                triggerBgColor={
-                  config.autoApproveMode
-                    ? PERMISSION_BG[config.autoApproveMode as AutoApproveMode]
-                    : undefined
-                }
-              />
+            {/* Runtime chips — each chip labelled above. */}
+            <div className="grid grid-cols-3 gap-3">
+              <Field>
+                <Label className="text-xs text-muted-foreground font-normal">Model</Label>
+                <ToolbarDropdown
+                  value={config.model ?? ""}
+                  onChange={(v) => setConfig((c) => ({ ...c, model: v }))}
+                  options={MODEL_OPTIONS}
+                />
+              </Field>
+              <Field>
+                <Label className="text-xs text-muted-foreground font-normal">Effort</Label>
+                <ToolbarDropdown
+                  value={config.effort ?? ""}
+                  onChange={(v) => setConfig((c) => ({ ...c, effort: v }))}
+                  options={EFFORT_OPTIONS}
+                  icon={<Gauge className="h-3 w-3" />}
+                  triggerColor={
+                    config.effort ? EFFORT_COLORS[config.effort as EffortLevel] : undefined
+                  }
+                />
+              </Field>
+              <Field>
+                <Label className="text-xs text-muted-foreground font-normal">Permission</Label>
+                <ToolbarDropdown
+                  value={config.autoApproveMode ?? ""}
+                  onChange={(v) => setConfig((c) => ({ ...c, autoApproveMode: v }))}
+                  options={PERMISSION_OPTIONS}
+                  icon={
+                    config.autoApproveMode === "fullAuto" ? (
+                      <ShieldAlert className="h-3 w-3" />
+                    ) : config.autoApproveMode ? (
+                      <ShieldCheck className="h-3 w-3" />
+                    ) : undefined
+                  }
+                  triggerColor={
+                    config.autoApproveMode
+                      ? PERMISSION_COLORS[config.autoApproveMode as AutoApproveMode]
+                      : undefined
+                  }
+                  triggerBgColor={
+                    config.autoApproveMode
+                      ? PERMISSION_BG[config.autoApproveMode as AutoApproveMode]
+                      : undefined
+                  }
+                />
+              </Field>
             </div>
 
-            <div>
+            <Field>
               <Label htmlFor="profile-system-prompt">System prompt additions</Label>
               <Textarea
                 id="profile-system-prompt"
@@ -494,9 +512,9 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 rows={5}
               />
               <Helper>Appended to every session preamble. Use for persistent role context.</Helper>
-            </div>
+            </Field>
 
-            <div className="space-y-2">
+            <Field>
               <Label>Behavior presets</Label>
               <div className="space-y-1.5">
                 {presetDefs.map((def) => {
@@ -532,8 +550,11 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                   );
                 })}
               </div>
-              <div>
-                <Label htmlFor="profile-custom-instructions" className="text-xs">
+              <Field>
+                <Label
+                  htmlFor="profile-custom-instructions"
+                  className="text-xs text-muted-foreground font-normal"
+                >
                   Custom instructions
                 </Label>
                 <Textarea
@@ -543,8 +564,8 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                   placeholder="Additional preset instructions (e.g., 'only touch backend files')..."
                   rows={2}
                 />
-              </div>
-            </div>
+              </Field>
+            </Field>
           </div>
         </div>
         <DialogFooter>
