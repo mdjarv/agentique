@@ -19,6 +19,7 @@ type WireTextEvent struct {
 type WireThinkingEvent struct {
 	Type            string `json:"type"`
 	Content         string `json:"content"`
+	Signature       string `json:"signature,omitempty"`
 	ParentToolUseID string `json:"parentToolUseId,omitempty"`
 }
 
@@ -226,7 +227,7 @@ func ToWireEvent(event claudecli.Event, model string) any {
 	case *claudecli.TextEvent:
 		return WireTextEvent{Type: "text", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
 	case *claudecli.ThinkingEvent:
-		return WireThinkingEvent{Type: "thinking", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
+		return WireThinkingEvent{Type: "thinking", Content: e.Content, Signature: e.Signature, ParentToolUseID: e.ParentToolUseID}
 	case *claudecli.ToolUseEvent:
 		return WireToolUseEvent{
 			Type:            "tool_use",

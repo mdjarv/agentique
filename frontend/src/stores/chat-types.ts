@@ -29,6 +29,7 @@ export interface TextEvent extends BaseChatEvent {
 export interface ThinkingEvent extends BaseChatEvent {
   type: "thinking";
   content: string;
+  signature?: string;
 }
 
 export interface ToolUseEvent extends BaseChatEvent {

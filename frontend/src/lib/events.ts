@@ -72,6 +72,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         id,
         type: "thinking",
         content: (raw.content as string) ?? "",
+        signature: raw.signature as string | undefined,
         timestamp,
         parentToolUseId,
       } satisfies ThinkingEvent;

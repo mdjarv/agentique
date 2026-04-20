@@ -148,7 +148,11 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
       >
         {segment.items.map((item) =>
           item.kind === "thinking" ? (
-            <ThinkingBlock key={item.event.id} content={item.event.content ?? ""} />
+            <ThinkingBlock
+              key={item.event.id}
+              content={item.event.content ?? ""}
+              signature={item.event.signature}
+            />
           ) : (
             <div key={item.use.id} className="space-y-1.5">
               <ToolUseBlock
