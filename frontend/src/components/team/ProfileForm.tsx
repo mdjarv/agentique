@@ -255,17 +255,23 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
       const result = await generateAgentProfile(ws, {
         projectId,
         brief: brief.trim() || undefined,
+        name: name.trim() || undefined,
+        role: role.trim() || undefined,
+        description: description.trim() || undefined,
+        avatar: avatar.trim() || undefined,
       });
-      setName(result.name);
-      setRole(result.role);
-      setDescription(result.description);
-      setAvatar(result.avatar);
+      // Don't overwrite fields the user has already filled. The backend also
+      // echoes hints verbatim, but this protects against any drift.
+      if (!name.trim()) setName(result.name);
+      if (!role.trim()) setRole(result.role);
+      if (!description.trim()) setDescription(result.description);
+      if (!avatar.trim()) setAvatar(result.avatar);
     } catch (e) {
       toast.error(getErrorMessage(e, "Failed to generate profile"));
     } finally {
       setGenerating(false);
     }
-  }, [ws, projectId, brief, generating]);
+  }, [ws, projectId, brief, generating, name, role, description, avatar]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -385,7 +391,11 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
                   ) : (
                     <Sparkles className="h-3.5 w-3.5" />
                   )}
-                  {generating ? "Generating..." : "Generate from project"}
+                  {generating
+                    ? "Generating..."
+                    : name.trim() || role.trim() || description.trim() || avatar.trim()
+                      ? "Fill in the rest"
+                      : "Generate from project"}
                 </Button>
                 <button
                   type="button"

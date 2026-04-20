@@ -184,7 +184,14 @@ export interface GenerateProfileResult {
 
 export function generateAgentProfile(
   ws: WsClient,
-  params: { projectId: string; brief?: string },
+  params: {
+    projectId: string;
+    brief?: string;
+    name?: string;
+    role?: string;
+    description?: string;
+    avatar?: string;
+  },
 ): Promise<GenerateProfileResult> {
   return ws.request<GenerateProfileResult>("agent-profile.generate", params, 60000);
 }

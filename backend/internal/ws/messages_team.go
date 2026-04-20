@@ -70,8 +70,12 @@ type PersonaListPayload struct {
 }
 
 type ProfileGeneratePayload struct {
-	ProjectID string `json:"projectId"`
-	Brief     string `json:"brief"`
+	ProjectID   string `json:"projectId"`
+	Brief       string `json:"brief"`
+	Name        string `json:"name,omitempty"`
+	Role        string `json:"role,omitempty"`
+	Description string `json:"description,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
 }
 
 // --- Team validation errors ---

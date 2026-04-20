@@ -347,6 +347,14 @@ type GenerateProfileInput struct {
 	ClaudeMD    string   // contents of CLAUDE.md (may be empty)
 	FileTree    []string // git-tracked file paths
 	Brief       string   // optional user-provided brief
+
+	// Hints from the user's in-progress draft. Non-empty values are treated
+	// as authoritative — the model must keep them verbatim and align the
+	// remaining fields around them.
+	Name        string
+	Role        string
+	Description string
+	Avatar      string
 }
 
 // GenerateProfileResult is the parsed profile suggestion.
@@ -409,11 +417,43 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 		b.WriteString("\n\n")
 	}
 
+	hasDraft := input.Name != "" || input.Role != "" || input.Description != "" || input.Avatar != ""
+	if hasDraft {
+		b.WriteString("## User's Draft (authoritative — keep verbatim)\n")
+		b.WriteString(
+			"The user has already filled some fields. Treat each non-empty value below as a binding constraint: ",
+		)
+		b.WriteString(
+			"echo it back unchanged and shape the remaining fields around it. ",
+		)
+		b.WriteString(
+			"For example, if ROLE is \"Architect\" the rest of the profile must describe an architect persona.\n\n",
+		)
+		if input.Name != "" {
+			fmt.Fprintf(&b, "- NAME: %s\n", input.Name)
+		}
+		if input.Role != "" {
+			fmt.Fprintf(&b, "- ROLE: %s\n", input.Role)
+		}
+		if input.Description != "" {
+			fmt.Fprintf(&b, "- DESCRIPTION: %s\n", input.Description)
+		}
+		if input.Avatar != "" {
+			fmt.Fprintf(&b, "- AVATAR: %s\n", input.Avatar)
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString("## Task\n\n")
 	b.WriteString("Generate a suggested agent profile. Consider:\n")
 	b.WriteString("- The project's primary language and framework (inferred from files)\n")
 	b.WriteString("- Key conventions from CLAUDE.md if available\n")
 	b.WriteString("- The user's request if provided\n")
+	if hasDraft {
+		b.WriteString(
+			"- The user's draft above — any field the user already filled MUST be echoed verbatim; only generate the missing ones and keep them consistent with the draft\n",
+		)
+	}
 	b.WriteString("- What kind of specialist would be most productive on this codebase\n\n")
 
 	b.WriteString("Respond in EXACTLY this format. Each field starts on its own line. No other text.\n\n")

@@ -179,6 +179,10 @@ func (c *conn) handleProfileGenerate(msg ClientMessage) {
 			ClaudeMD:    claudeMD,
 			FileTree:    files,
 			Brief:       p.Brief,
+			Name:        p.Name,
+			Role:        p.Role,
+			Description: p.Description,
+			Avatar:      p.Avatar,
 		})
 	})
 }
