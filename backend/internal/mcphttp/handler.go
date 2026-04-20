@@ -12,8 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
@@ -30,11 +33,12 @@ var ErrNoSSEStream = httperror.MethodNotAllowed("no SSE stream at this endpoint"
 // Tool name constants for SendMessage interception parity. Other tools execute
 // in-process via the handler's dispatcher.
 const (
-	ServerName       = "agentique"
-	ToolSendMessage  = "SendMessage"
-	ToolAcquireDev   = "AcquireDevUrl"
-	ToolReleaseDev   = "ReleaseDevUrl"
-	ToolListDevURLs  = "ListDevUrls"
+	ServerName      = "agentique"
+	ToolSendMessage = "SendMessage"
+	ToolAcquireDev  = "AcquireDevUrl"
+	ToolReleaseDev  = "ReleaseDevUrl"
+	ToolListDevURLs = "ListDevUrls"
+	ToolKillDevPort = "KillDevUrlPort"
 
 	// SendMessageToolFullName is the MCP-prefixed name Claude uses when
 	// invoking the tool. Permission interceptor keys on this string.
@@ -44,6 +48,9 @@ const (
 	AcquireDevURLToolFullName = "mcp__" + ServerName + "__" + ToolAcquireDev
 	ReleaseDevURLToolFullName = "mcp__" + ServerName + "__" + ToolReleaseDev
 	ListDevURLsToolFullName   = "mcp__" + ServerName + "__" + ToolListDevURLs
+	// KillDevPortToolFullName is NOT auto-approved: killing a process is
+	// destructive, so the user must confirm each invocation.
+	KillDevPortToolFullName = "mcp__" + ServerName + "__" + ToolKillDevPort
 )
 
 // Handler serves the /mcp endpoint.
@@ -154,6 +161,8 @@ func (h *Handler) dispatchTool(_ context.Context, sessionID string, raw json.Raw
 		return h.handleReleaseDev(sessionID), nil
 	case ToolListDevURLs:
 		return h.handleListDevURLs(), nil
+	case ToolKillDevPort:
+		return h.handleKillDevPort(p.Arguments), nil
 	default:
 		return nil, &jsonrpcError{Code: -32602, Message: "unknown tool: " + p.Name}
 	}
@@ -163,14 +172,15 @@ func (h *Handler) handleAcquireDev(sessionID string) toolResult {
 	if len(h.dev.Slots()) == 0 {
 		return toolError("No dev URL slots are configured on this server. Ask the operator to add [[dev-urls]] entries to agentique config.")
 	}
-	lease, err := h.dev.Acquire(sessionID)
+	res, err := h.dev.Acquire(sessionID)
 	if err != nil {
 		if errors.Is(err, devurls.ErrAllBusy) {
-			holders := summarizeHolders(h.dev.Slots())
-			return toolError("All dev URL slots are currently in use. Holders: " + holders)
+			return toolError("All dev URL slots are currently in use.\n" + summarizeSlotState(h.dev.Slots()) + "\n\n" +
+				"Use KillDevUrlPort with a specific slot name to reclaim a port held by an external/orphan process (requires user confirmation).")
 		}
 		return toolError("acquire failed: " + err.Error())
 	}
+	lease := res.Lease
 	msg := fmt.Sprintf(
 		"Acquired dev URL slot %q.\n"+
 			"Public URL: %s (TLS-terminated by the reverse proxy)\n"+
@@ -186,6 +196,11 @@ func (h *Handler) handleAcquireDev(sessionID string) toolResult {
 		lease.Port, lease.PublicHost, lease.Port,
 		lease.Port, lease.Port,
 	)
+	if len(res.Skipped) > 0 {
+		msg += "\n\nNote: skipped these slots because their ports are bound by external/orphan processes:\n" +
+			formatConflicts(res.Skipped) +
+			"\nConsider calling KillDevUrlPort to clean them up."
+	}
 	return toolText(msg)
 }
 
@@ -202,15 +217,68 @@ func (h *Handler) handleListDevURLs() toolResult {
 	if len(infos) == 0 {
 		return toolText("No dev URL slots are configured.")
 	}
-	var lines []string
-	for _, i := range infos {
-		holder := i.HolderSessionID
-		if holder == "" {
-			holder = "(free)"
-		}
-		lines = append(lines, fmt.Sprintf("- %s → %s (port %d) — held by %s", i.Slot, i.URL, i.Port, holder))
+	return toolText("Dev URL slots:\n" + summarizeSlotState(infos))
+}
+
+// handleKillDevPort terminates the process listening on the given slot's TCP
+// port. Not auto-approved — Claude must prompt the user before calling this.
+func (h *Handler) handleKillDevPort(raw json.RawMessage) toolResult {
+	var p struct {
+		Slot string `json:"slot"`
 	}
-	return toolText("Dev URL slots:\n" + strings.Join(lines, "\n"))
+	if err := json.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Slot) == "" {
+		return toolError("KillDevUrlPort requires { slot: \"<slot name>\" }. Use ListDevUrls to see configured slots.")
+	}
+	slot, ok := h.dev.FindSlot(p.Slot)
+	if !ok {
+		return toolError(fmt.Sprintf("unknown slot %q", p.Slot))
+	}
+	owner, err := devurls.FindPortOwner(slot.Port)
+	if err != nil {
+		return toolError(fmt.Sprintf("lookup owner for port %d: %v", slot.Port, err))
+	}
+	if owner == nil {
+		// Nothing bound. Also clear any stale lease so the slot is actually reusable.
+		h.dev.ReleaseSlot(slot.Slot)
+		return toolText(fmt.Sprintf("Port %d is already free. Cleared any stale lease on slot %q.", slot.Port, slot.Slot))
+	}
+
+	proc, err := os.FindProcess(owner.PID)
+	if err != nil {
+		return toolError(fmt.Sprintf("find process %d: %v", owner.PID, err))
+	}
+	_ = proc.Signal(syscall.SIGTERM)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !pidAlive(owner.PID) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	killed := false
+	if pidAlive(owner.PID) {
+		_ = proc.Signal(syscall.SIGKILL)
+		time.Sleep(200 * time.Millisecond)
+		killed = pidAlive(owner.PID) // true means KILL also failed
+	}
+
+	// Clear any lease tracking this slot — whoever held it is gone now.
+	h.dev.ReleaseSlot(slot.Slot)
+
+	if killed {
+		return toolError(fmt.Sprintf("Sent SIGTERM+SIGKILL to pid %d but it is still alive. Manual intervention needed.", owner.PID))
+	}
+	return toolText(fmt.Sprintf("Killed pid %d (%s). Slot %q (port %d) is free — retry AcquireDevUrl.",
+		owner.PID, owner.Describe(), slot.Slot, slot.Port))
+}
+
+func pidAlive(pid int) bool {
+	// On Linux, signal 0 probes existence without affecting the process.
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 // toolDefinitions describes each tool in MCP form.
@@ -255,8 +323,22 @@ func (h *Handler) toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        ToolListDevURLs,
-			"description": "List all configured dev URL slots and their current holders (free or held by a specific session). Useful to check for contention before calling AcquireDevUrl.",
+			"description": "List all configured dev URL slots, their current holders, and whether each port is actually bound. Includes external-owner details (pid, cmdline, cwd) when a port is bound by a process not tracked by the lease store — useful for spotting orphans that need KillDevUrlPort.",
 			"inputSchema": emptySchema,
+		},
+		{
+			"name":        ToolKillDevPort,
+			"description": "Terminate the process currently listening on a dev URL slot's TCP port. Use when AcquireDevUrl skipped a slot or ListDevUrls reports an external/orphan owner. SIGTERM → 2s wait → SIGKILL. Destructive — requires user confirmation each call. After success, retry AcquireDevUrl.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"slot": map[string]any{
+						"type":        "string",
+						"description": "Slot name (e.g. \"dev1\"). See ListDevUrls for configured slots.",
+					},
+				},
+				"required": []string{"slot"},
+			},
 		},
 	}
 }
@@ -313,15 +395,30 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-func summarizeHolders(infos []devurls.SlotInfo) string {
-	holders := make([]string, 0, len(infos))
-	for _, i := range infos {
-		holder := i.HolderSessionID
-		if holder == "" {
-			holder = "(free)"
+func summarizeSlotState(infos []devurls.SlotInfo) string {
+	sorted := make([]devurls.SlotInfo, len(infos))
+	copy(sorted, infos)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Slot < sorted[j].Slot })
+	lines := make([]string, 0, len(sorted))
+	for _, i := range sorted {
+		status := "(free)"
+		switch {
+		case i.HolderSessionID != "" && i.PortBusy:
+			status = fmt.Sprintf("held by %s (port bound)", i.HolderSessionID)
+		case i.HolderSessionID != "" && !i.PortBusy:
+			status = fmt.Sprintf("leased by %s but port is NOT bound — stale lease", i.HolderSessionID)
+		case i.HolderSessionID == "" && i.PortBusy:
+			status = "external owner — " + i.ExternalOwner.Describe()
 		}
-		holders = append(holders, fmt.Sprintf("%s=%s", i.Slot, holder))
+		lines = append(lines, fmt.Sprintf("- %s → %s (port %d): %s", i.Slot, i.URL, i.Port, status))
 	}
-	sort.Strings(holders)
-	return strings.Join(holders, ", ")
+	return strings.Join(lines, "\n")
+}
+
+func formatConflicts(cs []devurls.SlotConflict) string {
+	lines := make([]string, 0, len(cs))
+	for _, c := range cs {
+		lines = append(lines, fmt.Sprintf("- %s (port %d): %s", c.Slot, c.Port, c.Owner.Describe()))
+	}
+	return strings.Join(lines, "\n")
 }

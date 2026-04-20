@@ -18,9 +18,12 @@ import (
 // (Acquire) → tools/call (Release).
 func TestFullSessionLifecycle(t *testing.T) {
 	tokens := NewTokenStore()
-	store := devurls.NewStore([]config.DevURLSlot{
+	store := devurls.NewStoreWithProbes([]config.DevURLSlot{
 		{Slot: "dev1", Port: 9210, PublicHost: "dev1.example.com"},
-	})
+	},
+		func(int) error { return nil },
+		func(int) (*devurls.PortOwner, error) { return nil, nil },
+	)
 	h := NewHandler(tokens, store)
 
 	ts := httptest.NewServer(h)
@@ -105,10 +108,13 @@ func TestFullSessionLifecycle(t *testing.T) {
 // each other's leases via the MCP.
 func TestCrossSessionIsolation(t *testing.T) {
 	tokens := NewTokenStore()
-	store := devurls.NewStore([]config.DevURLSlot{
+	store := devurls.NewStoreWithProbes([]config.DevURLSlot{
 		{Slot: "dev1", Port: 9210, PublicHost: "dev1.example.com"},
 		{Slot: "dev2", Port: 9211, PublicHost: "dev2.example.com"},
-	})
+	},
+		func(int) error { return nil },
+		func(int) (*devurls.PortOwner, error) { return nil, nil },
+	)
 	h := NewHandler(tokens, store)
 
 	tokA, _ := tokens.Mint("sess-A")

@@ -17,10 +17,12 @@ import (
 const slotConfigJSON = `[{"slot":"dev1","port":9210,"host":"dev1.example.com"}]`
 
 func twoSlotStore() *devurls.Store {
-	return devurls.NewStore([]config.DevURLSlot{
+	alwaysFree := func(int) error { return nil }
+	noOwner := func(int) (*devurls.PortOwner, error) { return nil, nil }
+	return devurls.NewStoreWithProbes([]config.DevURLSlot{
 		{Slot: "dev1", Port: 9210, PublicHost: "dev1.example.com"},
 		{Slot: "dev2", Port: 9211, PublicHost: "dev2.example.com"},
-	})
+	}, alwaysFree, noOwner)
 }
 
 // rpcCall hits the handler with a JSON-RPC POST and returns parsed result.

@@ -27,6 +27,23 @@ type Lease struct {
 	AcquiredAt time.Time
 }
 
+// SlotConflict describes a slot that Acquire bypassed because its TCP port was
+// already bound by a process not tracked by this Store (an orphan from a prior
+// server run, or an unrelated service that happened to grab the port).
+type SlotConflict struct {
+	Slot  string
+	Port  int
+	Owner *PortOwner // may be nil if /proc lookup failed
+}
+
+// AcquireResult is returned by Acquire. Lease is non-nil on success. Skipped
+// lists slots that were bypassed because their ports were externally bound,
+// so callers can surface cleanup suggestions even on the happy path.
+type AcquireResult struct {
+	Lease   *Lease
+	Skipped []SlotConflict
+}
+
 // SlotInfo describes a configured slot and its current holder, if any.
 type SlotInfo struct {
 	Slot            string
@@ -35,6 +52,14 @@ type SlotInfo struct {
 	URL             string
 	HolderSessionID string
 	AcquiredAt      time.Time
+	// PortBusy is true when the TCP port is actually bound right now.
+	// Combined with HolderSessionID this distinguishes healthy leases
+	// (held + busy), free slots (no holder + free), and externally-held
+	// ports that need cleanup (no holder + busy).
+	PortBusy bool
+	// ExternalOwner is populated when PortBusy is true and no lease
+	// tracks the port, i.e. the owner is outside this Store's control.
+	ExternalOwner *PortOwner
 }
 
 // Store tracks lease state for a fixed set of slots.
@@ -43,21 +68,38 @@ type Store struct {
 	slots []config.DevURLSlot
 	held  map[string]*Lease // slot → lease
 	now   func() time.Time
+
+	// probe is injectable for tests. Returns nil if port is free, error if busy.
+	probe func(port int) error
+	// findOwner is injectable for tests. May return nil,nil when port is free.
+	findOwner func(port int) (*PortOwner, error)
 }
 
 // NewStore creates a Store with the given slot config. A nil/empty slot list
 // is allowed — every Acquire will then fail with ErrAllBusy.
 func NewStore(slots []config.DevURLSlot) *Store {
+	return NewStoreWithProbes(slots, ProbePort, FindPortOwner)
+}
+
+// NewStoreWithProbes is like NewStore but lets callers inject the port-probe
+// and owner-lookup functions. Intended for tests — production code should use
+// NewStore.
+func NewStoreWithProbes(slots []config.DevURLSlot, probe func(port int) error, findOwner func(port int) (*PortOwner, error)) *Store {
 	return &Store{
-		slots: slots,
-		held:  make(map[string]*Lease),
-		now:   time.Now,
+		slots:     slots,
+		held:      make(map[string]*Lease),
+		now:       time.Now,
+		probe:     probe,
+		findOwner: findOwner,
 	}
 }
 
-// Acquire leases the first free slot to the given session. If the session
-// already holds a slot, the existing lease is returned (idempotent).
-func (s *Store) Acquire(sessionID string) (*Lease, error) {
+// Acquire leases the first free slot to the given session. A slot is eligible
+// when no lease holds it AND its TCP port is not currently bound. Slots that
+// are free in the lease map but whose ports are externally bound are added to
+// Skipped so callers can report the conflict. If the session already holds a
+// slot, the existing lease is returned (idempotent, no probing).
+func (s *Store) Acquire(sessionID string) (*AcquireResult, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("acquire: sessionID is required")
 	}
@@ -67,12 +109,22 @@ func (s *Store) Acquire(sessionID string) (*Lease, error) {
 	// Idempotent: same session, return current lease.
 	for _, lease := range s.held {
 		if lease.SessionID == sessionID {
-			return lease, nil
+			return &AcquireResult{Lease: lease}, nil
 		}
 	}
 
+	var skipped []SlotConflict
 	for _, slot := range s.slots {
 		if _, taken := s.held[slot.Slot]; taken {
+			continue
+		}
+		if err := s.probe(slot.Port); err != nil {
+			owner, _ := s.findOwner(slot.Port)
+			skipped = append(skipped, SlotConflict{
+				Slot:  slot.Slot,
+				Port:  slot.Port,
+				Owner: owner,
+			})
 			continue
 		}
 		lease := &Lease{
@@ -84,9 +136,9 @@ func (s *Store) Acquire(sessionID string) (*Lease, error) {
 			AcquiredAt: s.now(),
 		}
 		s.held[slot.Slot] = lease
-		return lease, nil
+		return &AcquireResult{Lease: lease, Skipped: skipped}, nil
 	}
-	return nil, ErrAllBusy
+	return &AcquireResult{Skipped: skipped}, ErrAllBusy
 }
 
 // Release frees any slots held by the given session. Returns the slot names
@@ -106,6 +158,19 @@ func (s *Store) Release(sessionID string) []string {
 	return freed
 }
 
+// ReleaseSlot clears any lease on the given slot, regardless of which session
+// holds it. Intended for admin/UI use after killing an externally-held port.
+// Returns true if a lease was cleared.
+func (s *Store) ReleaseSlot(slot string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.held[slot]; !ok {
+		return false
+	}
+	delete(s.held, slot)
+	return true
+}
+
 // List returns a snapshot of all currently-held leases.
 func (s *Store) List() []*Lease {
 	s.mu.Lock()
@@ -120,27 +185,54 @@ func (s *Store) List() []*Lease {
 	return out
 }
 
-// Slots returns the configured slots and their current holder (if any).
-// Slot order matches the config.
+// Slots returns the configured slots, their current holder (if any), and
+// whether the underlying TCP port is actually bound. Slot order matches the
+// config. Port probing happens outside the store lock so slow /proc reads
+// don't block Acquire/Release.
 func (s *Store) Slots() []SlotInfo {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	slots := make([]config.DevURLSlot, len(s.slots))
+	copy(slots, s.slots)
+	held := make(map[string]*Lease, len(s.held))
+	for k, v := range s.held {
+		held[k] = v
+	}
+	s.mu.Unlock()
 
-	out := make([]SlotInfo, 0, len(s.slots))
-	for _, slot := range s.slots {
+	out := make([]SlotInfo, 0, len(slots))
+	for _, slot := range slots {
 		info := SlotInfo{
 			Slot:       slot.Slot,
 			Port:       slot.Port,
 			PublicHost: slot.PublicHost,
 			URL:        publicURL(slot.PublicHost),
 		}
-		if lease, ok := s.held[slot.Slot]; ok {
+		if lease, ok := held[slot.Slot]; ok {
 			info.HolderSessionID = lease.SessionID
 			info.AcquiredAt = lease.AcquiredAt
+		}
+		if err := s.probe(slot.Port); err != nil {
+			info.PortBusy = true
+			if info.HolderSessionID == "" {
+				owner, _ := s.findOwner(slot.Port)
+				info.ExternalOwner = owner
+			}
 		}
 		out = append(out, info)
 	}
 	return out
+}
+
+// FindSlot looks up a configured slot by name. Returns zero value + false if unknown.
+func (s *Store) FindSlot(name string) (config.DevURLSlot, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, slot := range s.slots {
+		if slot.Slot == name {
+			return slot, true
+		}
+	}
+	return config.DevURLSlot{}, false
 }
 
 func publicURL(host string) string {
