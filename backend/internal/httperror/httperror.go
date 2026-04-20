@@ -1,3 +1,8 @@
+// Package httperror provides HTTP-aware error types, a classifier that maps
+// arbitrary errors to status codes, and a handler adapter so handlers can
+// return errors instead of writing responses manually. A single choke point
+// (RespondError) owns status-code selection, response body encoding, and
+// leveled logging — callers just return a typed error.
 package httperror
 
 import (
@@ -11,18 +16,43 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// Error is an HTTP-aware error that carries a status code and user-facing message.
+// Error is an HTTP-aware error carrying the status code, a user-facing
+// message, an optional wrapped cause, and an optional log-level override.
+// When LogLevel is nil the responder picks a level from the status code
+// (5xx → Error, 4xx → Warn, else Info).
 type Error struct {
-	Status  int
-	Message string
-	Cause   error
+	Status   int
+	Message  string
+	Cause    error
+	LogLevel *slog.Level
 }
 
 func (e *Error) Error() string { return e.Message }
 func (e *Error) Unwrap() error { return e.Cause }
 
+// WithLogLevel returns a copy of e with an explicit log level. Use this for
+// expected non-2xx responses that shouldn't pollute logs at warn level —
+// e.g. protocol handshake probes.
+func (e *Error) WithLogLevel(l slog.Level) *Error {
+	copy := *e
+	copy.LogLevel = &l
+	return &copy
+}
+
+// WithCause returns a copy of e with an attached cause for Unwrap / errors.Is
+// chains. The message is not modified so user-facing text stays clean.
+func (e *Error) WithCause(cause error) *Error {
+	copy := *e
+	copy.Cause = cause
+	return &copy
+}
+
 func BadRequest(msg string) *Error {
 	return &Error{Status: http.StatusBadRequest, Message: msg}
+}
+
+func Unauthorized(msg string) *Error {
+	return &Error{Status: http.StatusUnauthorized, Message: msg}
 }
 
 func Forbidden(msg string) *Error {
@@ -31,6 +61,10 @@ func Forbidden(msg string) *Error {
 
 func NotFound(msg string) *Error {
 	return &Error{Status: http.StatusNotFound, Message: msg}
+}
+
+func MethodNotAllowed(msg string) *Error {
+	return &Error{Status: http.StatusMethodNotAllowed, Message: msg}
 }
 
 func Conflict(msg string) *Error {
@@ -69,16 +103,45 @@ func JSON(w http.ResponseWriter, status int, data any) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// RespondError classifies err into an HTTP status code and writes a JSON error response.
-// 5xx errors are logged at Error level; 4xx at Warn.
+// RespondError classifies err, logs at the appropriate level, and writes a
+// JSON error response. 5xx default to Error level, 4xx to Warn; errors can
+// override via WithLogLevel for expected non-2xx (e.g. protocol probes).
 func RespondError(w http.ResponseWriter, err error) {
 	he := Classify(err)
 
-	if he.Status >= 500 {
-		slog.Error("http error", "status", he.Status, "error", he.Message, "cause", he.Cause)
-	} else {
-		slog.Warn("http error", "status", he.Status, "error", he.Message)
+	level := defaultLevel(he.Status)
+	if he.LogLevel != nil {
+		level = *he.LogLevel
 	}
 
+	slog.Log(nil, level, "http error",
+		"status", he.Status,
+		"error", he.Message,
+		"cause", he.Cause,
+	)
+
 	JSON(w, he.Status, map[string]string{"error": he.Message})
+}
+
+func defaultLevel(status int) slog.Level {
+	switch {
+	case status >= 500:
+		return slog.LevelError
+	case status >= 400:
+		return slog.LevelWarn
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// HandlerFunc is an http.Handler whose function signature returns an error.
+// Non-nil errors are handed to RespondError; nil means the handler already
+// wrote its response.
+type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
+
+// ServeHTTP implements http.Handler.
+func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := f(w, r); err != nil {
+		RespondError(w, err)
+	}
 }

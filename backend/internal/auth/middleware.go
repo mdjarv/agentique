@@ -3,6 +3,8 @@ package auth
 import (
 	"net/http"
 	"strings"
+
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
 
 // Middleware returns an HTTP middleware that enforces authentication.
@@ -16,7 +18,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 
 		session, err := s.validateSession(r)
 		if err != nil {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			httperror.RespondError(w, httperror.Unauthorized("unauthorized").WithCause(err))
 			return
 		}
 

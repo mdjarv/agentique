@@ -16,7 +16,16 @@ import (
 	"strings"
 
 	"github.com/mdjarv/agentique/backend/internal/devurls"
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
+
+// ErrNoSSEStream is returned from GET /mcp. The Streamable-HTTP MCP spec
+// requires clients to probe with GET to discover whether the server offers
+// a server→client SSE channel; a 405 reply means "no SSE, POST only" and
+// is part of the normal handshake on every session start. Log at debug so
+// the probe doesn't generate warn-level noise.
+var ErrNoSSEStream = httperror.MethodNotAllowed("no SSE stream at this endpoint").
+	WithLogLevel(slog.LevelDebug)
 
 // Tool name constants for SendMessage interception parity. Other tools execute
 // in-process via the handler's dispatcher.
@@ -48,50 +57,52 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store) *Handler {
 	return &Handler{tokens: tokens, dev: dev}
 }
 
-// ServeHTTP implements http.Handler. Streamable-HTTP transport: POST for
-// JSON-RPC messages, GET returns 405 (no server-initiated channel needed yet).
+// ServeHTTP implements http.Handler via httperror.HandlerFunc so the method
+// can return typed errors.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	httperror.HandlerFunc(h.serve).ServeHTTP(w, r)
+}
+
+// serve dispatches on method. Streamable-HTTP transport: POST for JSON-RPC
+// messages, GET returns ErrNoSSEStream (no server-initiated channel).
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request) error {
 	tok := bearer(r.Header.Get("Authorization"))
 	sessionID, ok := h.tokens.Lookup(tok)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return httperror.Unauthorized("unauthorized")
 	}
 
 	switch r.Method {
 	case http.MethodPost:
-		h.handlePost(w, r, sessionID)
+		return h.handlePost(w, r, sessionID)
 	case http.MethodGet:
-		// SSE channel for server→client messages — not implemented; per spec
-		// 405 indicates no SSE stream available at this endpoint.
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return ErrNoSSEStream
 	case http.MethodDelete:
-		// Optional: client signaling end of session. We tie lifetime to session
-		// destroy elsewhere, so just accept.
+		// Client signaling end of session. We tie lifetime to session destroy
+		// elsewhere, so just accept.
 		w.WriteHeader(http.StatusAccepted)
+		return nil
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return httperror.MethodNotAllowed("method not allowed")
 	}
 }
 
-func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request, sessionID string) {
+func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request, sessionID string) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
-		return
+		return httperror.BadRequest("read body").WithCause(err)
 	}
 
 	var req jsonrpcRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "invalid jsonrpc", http.StatusBadRequest)
-		return
+		return httperror.BadRequest("invalid jsonrpc").WithCause(err)
 	}
 
 	// Notifications and responses (no id) per spec → 202, no body.
 	isNotification := len(req.ID) == 0 || string(req.ID) == "null"
 	if isNotification {
 		w.WriteHeader(http.StatusAccepted)
-		return
+		return nil
 	}
 
 	resp := jsonrpcResponse{JSONRPC: "2.0", ID: req.ID}
@@ -119,6 +130,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request, sessionID s
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		slog.Warn("mcphttp: write response", "error", err)
 	}
+	return nil
 }
 
 type toolCallParams struct {

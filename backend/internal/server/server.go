@@ -287,7 +287,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		if origin != "" {
 			// When auth is enabled, only allow configured origins.
 			if len(s.allowedOrigins) > 0 && !s.allowedOrigins[origin] {
-				http.Error(w, "origin not allowed", http.StatusForbidden)
+				httperror.RespondError(w, httperror.Forbidden("origin not allowed"))
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -318,9 +318,13 @@ func (sw *statusWriter) WriteHeader(code int) {
 	sw.ResponseWriter.WriteHeader(code)
 }
 
+// requestLogger emits one access-log line per HTTP request at debug level.
+// Status-based severity and error details are owned by httperror.RespondError
+// — so migrated handlers produce a richer "http error" log at warn/error
+// level alongside this trace.
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip logging for WebSocket upgrades (logged in ws package) and static assets.
+		// Skip logging for WebSocket upgrades (logged in ws package).
 		if r.Header.Get("Upgrade") == "websocket" {
 			next.ServeHTTP(w, r)
 			return
@@ -329,20 +333,12 @@ func requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
-		duration := time.Since(start)
 
-		level := slog.LevelDebug
-		if sw.status >= 500 {
-			level = slog.LevelError
-		} else if sw.status >= 400 {
-			level = slog.LevelWarn
-		}
-
-		slog.Log(r.Context(), level, "http",
+		slog.Log(r.Context(), slog.LevelDebug, "http",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sw.status,
-			"duration", duration,
+			"duration", time.Since(start),
 		)
 	})
 }

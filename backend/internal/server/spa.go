@@ -8,6 +8,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
 
 // spaHandler serves a single-page application from an embedded filesystem.
@@ -32,7 +34,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// browser and can mask stale-PWA precache bugs by trapping the client
 		// in a loop where no new module ever loads.
 		if isAssetRequest(p) {
-			http.NotFound(w, r)
+			httperror.RespondError(w, httperror.NotFound("asset not found").WithCause(err))
 			return
 		}
 		h.serveIndex(w)
@@ -78,7 +80,7 @@ func isAssetRequest(p string) bool {
 func (h *spaHandler) serveIndex(w http.ResponseWriter) {
 	f, err := h.fs.Open("index.html")
 	if err != nil {
-		http.Error(w, "index.html not found", http.StatusInternalServerError)
+		httperror.RespondError(w, httperror.Internal("index.html not found", err))
 		return
 	}
 	defer f.Close()
