@@ -473,7 +473,7 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 	b.WriteString("NAME: <2-3 word agent name>\n")
 	b.WriteString("ROLE: <concise role, e.g. \"backend architect\" or \"fullstack developer\">\n")
 	b.WriteString("DESCRIPTION: <2-4 sentences about expertise, focus areas, and working style. Reference specific technologies from the project.>\n")
-	b.WriteString("AVATAR: <single emoji>\n")
+	b.WriteString("AVATAR: <one simple, single-codepoint emoji such as 🤖 🧠 🔧 🔍 📝 📊 🎨 🚀 ⚡ 💻 🎯 🧙 🦉 🦊 🐙 🦖. No variation selectors (U+FE0F), no ZWJ sequences, no skin-tone modifiers.>\n")
 	b.WriteString("SYSTEM_PROMPT: <3-6 sentences appended to every session preamble. Define the agent's voice, priorities, and guardrails. Written as direct instructions (\"You are...\", \"Always...\"). Leave the line blank after the colon if nothing meaningful to add.>\n")
 	b.WriteString("CUSTOM_INSTRUCTIONS: <optional 1-3 sentences of preset-level tweaks like \"only touch backend files\". Leave blank if none.>\n")
 	b.WriteString("CONFIG: <JSON with behaviorPresets only, e.g. {\"autoCommit\": true, \"suggestParallel\": false, \"planFirst\": false, \"terse\": true}>\n")

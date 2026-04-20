@@ -64,30 +64,25 @@ const PERMISSION_OPTIONS: ToolbarDropdownOption[] = [
   })),
 ];
 
+// Curated single-codepoint emoji palette. No variation selectors (U+FE0F)
+// and no ZWJ sequences — those render inconsistently across OS versions
+// and look out of place next to the simpler glyphs.
 const AVATAR_EMOJI = [
   "🤖",
   "🧠",
-  "🛠️",
   "🔧",
-  "🧪",
-  "🧬",
   "🔍",
   "📝",
   "📊",
   "🎨",
-  "🖼️",
   "🚀",
   "⚡",
-  "🛡️",
   "💻",
-  "🗄️",
   "🎯",
   "🧙",
   "🦉",
   "🦊",
   "🐙",
-  "🐝",
-  "🐳",
   "🦖",
 ];
 
@@ -114,8 +109,8 @@ function AvatarPicker({ value, onChange }: { value: string; onChange: (v: string
           {displayed}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" align="start">
-        <div className="grid grid-cols-6 gap-1">
+      <PopoverContent className="w-56 p-3" align="start">
+        <div className="grid grid-cols-4 gap-1">
           {AVATAR_EMOJI.map((e) => (
             <button
               key={e}
