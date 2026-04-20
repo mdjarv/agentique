@@ -1,4 +1,5 @@
 import { Loader2, Sparkles, UserPlus } from "lucide-react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -13,7 +14,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Separator } from "~/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Textarea } from "~/components/ui/textarea";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listPresetDefinitions } from "~/lib/api";
@@ -34,10 +35,125 @@ import {
 import { MODEL_LABELS, MODELS } from "~/lib/session/actions";
 import type { AgentProfileConfig, AgentProfileInfo } from "~/lib/team-actions";
 import { createAgentProfile, generateAgentProfile, updateAgentProfile } from "~/lib/team-actions";
-import { getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { AutoApproveMode } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
+
+const AVATAR_EMOJI = [
+  "🤖",
+  "🧠",
+  "🛠️",
+  "🔧",
+  "🧪",
+  "🧬",
+  "🔍",
+  "📝",
+  "📊",
+  "🎨",
+  "🖼️",
+  "🚀",
+  "⚡",
+  "🛡️",
+  "💻",
+  "🗄️",
+  "🎯",
+  "🧙",
+  "🦉",
+  "🦊",
+  "🐙",
+  "🐝",
+  "🐳",
+  "🦖",
+];
+
+function AvatarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState("");
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-md border border-input bg-transparent text-lg shadow-sm hover:bg-muted/50"
+          aria-label="Pick avatar"
+        >
+          {value || <span className="text-xs text-muted-foreground">pick</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3" align="start">
+        <div className="grid grid-cols-6 gap-1">
+          {AVATAR_EMOJI.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => {
+                onChange(e);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-muted",
+                value === e && "bg-muted ring-1 ring-primary",
+              )}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-1.5">
+          <Input
+            placeholder="Custom emoji"
+            value={custom}
+            onChange={(ev) => setCustom(ev.target.value)}
+            className="h-7 text-sm"
+            maxLength={4}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7"
+            disabled={!custom.trim()}
+            onClick={() => {
+              onChange(custom.trim());
+              setCustom("");
+              setOpen(false);
+            }}
+          >
+            Set
+          </Button>
+        </div>
+        {value && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+            className="mt-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear avatar
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function SectionHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="space-y-1">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
+      <p className="text-xs text-muted-foreground-faint leading-snug">{hint}</p>
+    </div>
+  );
+}
+
+function Helper({ children }: { children: ReactNode }) {
+  return <p className="mt-1 text-[11px] text-muted-foreground-faint">{children}</p>;
+}
 
 export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo }) {
   const ws = useWebSocket();
@@ -175,7 +291,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Agent Profile" : "New Agent Profile"}</DialogTitle>
           <DialogDescription>
@@ -184,11 +300,16 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
               : "Create a persistent agent identity with session defaults."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 overflow-y-auto pr-1 -mr-1">
-          {/* Identity */}
-          <div className="space-y-3">
-            <div className="grid grid-cols-[1fr_80px] gap-3">
-              <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pr-1 -mr-1">
+          {/* ── Identity column ───────────────────────── */}
+          <div className="space-y-4">
+            <SectionHeading
+              title="Identity"
+              hint="Name and role reach the agent through its session preamble. Description and avatar are display-only."
+            />
+
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
                 <Label htmlFor="profile-name">Name</Label>
                 <Input
                   id="profile-name"
@@ -199,16 +320,11 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 />
               </div>
               <div>
-                <Label htmlFor="profile-avatar">Avatar</Label>
-                <Input
-                  id="profile-avatar"
-                  value={avatar}
-                  onChange={(e) => setAvatar(e.target.value)}
-                  placeholder="🤖"
-                  className="text-center"
-                />
+                <Label>Avatar</Label>
+                <AvatarPicker value={avatar} onChange={setAvatar} />
               </div>
             </div>
+
             <div>
               <Label htmlFor="profile-role">Role</Label>
               <Input
@@ -218,6 +334,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 placeholder="backend architect"
               />
             </div>
+
             <div>
               <Label htmlFor="profile-desc">Description</Label>
               <Textarea
@@ -228,6 +345,7 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 rows={3}
               />
             </div>
+
             <div>
               <Label htmlFor="profile-project">Home Project</Label>
               <select
@@ -243,7 +361,9 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                   </option>
                 ))}
               </select>
+              <Helper>Sessions launched from this profile start in this project's worktree.</Helper>
             </div>
+
             {projectId && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -282,16 +402,12 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
             )}
           </div>
 
-          <Separator />
-
-          {/* Session defaults */}
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-medium">Session defaults</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Applied when a session is created from this profile. Explicit overrides still win.
-              </p>
-            </div>
+          {/* ── Behavior column ───────────────────────── */}
+          <div className="space-y-4">
+            <SectionHeading
+              title="Session defaults"
+              hint="Applied when launching a session from this profile. Explicit launch overrides still win."
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -344,48 +460,45 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 ))}
               </select>
             </div>
-          </div>
 
-          <Separator />
-
-          {/* Behavior presets */}
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-medium">Behavior presets</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Override the project's preset toggles for sessions launched from this profile.
-              </p>
-            </div>
             <div className="space-y-2">
-              {presetDefs.map((def) => {
-                const key = def.key as keyof BehaviorPresets;
-                const active = !!bp[key];
-                return (
-                  <button
-                    key={def.key}
-                    type="button"
-                    onClick={() => togglePreset(key)}
-                    className="flex items-start gap-3 w-full text-left rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50"
-                  >
-                    <div
-                      className={`mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
-                        active ? "bg-primary" : "bg-muted-foreground/30"
-                      } relative`}
+              <Label>Behavior presets</Label>
+              <div className="space-y-1.5">
+                {presetDefs.map((def) => {
+                  const key = def.key as keyof BehaviorPresets;
+                  const active = !!bp[key];
+                  return (
+                    <button
+                      key={def.key}
+                      type="button"
+                      onClick={() => togglePreset(key)}
+                      className="flex items-start gap-3 w-full text-left rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50"
                     >
                       <div
-                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          active ? "translate-x-4" : "translate-x-0.5"
-                        }`}
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{def.title}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{def.description}</div>
-                    </div>
-                  </button>
-                );
-              })}
+                        className={cn(
+                          "mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors relative",
+                          active ? "bg-primary" : "bg-muted-foreground/30",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                            active ? "translate-x-4" : "translate-x-0.5",
+                          )}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{def.title}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {def.description}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
             <div>
               <Label htmlFor="profile-custom-instructions">Custom instructions</Label>
               <Textarea
@@ -396,25 +509,20 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                 rows={2}
               />
             </div>
-          </div>
 
-          <Separator />
-
-          {/* System prompt additions */}
-          <div className="space-y-2">
             <div>
-              <h3 className="text-sm font-medium">System prompt additions</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Appended to the session preamble. Use for persistent role context.
-              </p>
+              <Label htmlFor="profile-system-prompt">System prompt additions</Label>
+              <Textarea
+                id="profile-system-prompt"
+                value={config.systemPromptAdditions ?? ""}
+                onChange={(e) =>
+                  setConfig((c) => ({ ...c, systemPromptAdditions: e.target.value }))
+                }
+                placeholder="You are a senior backend architect. Prioritize correctness over speed..."
+                rows={4}
+              />
+              <Helper>Appended to every session preamble. Use for persistent role context.</Helper>
             </div>
-            <Textarea
-              id="profile-system-prompt"
-              value={config.systemPromptAdditions ?? ""}
-              onChange={(e) => setConfig((c) => ({ ...c, systemPromptAdditions: e.target.value }))}
-              placeholder="You are a senior backend architect. Prioritize correctness over speed..."
-              rows={4}
-            />
           </div>
         </div>
         <DialogFooter>
