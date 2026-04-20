@@ -40,6 +40,13 @@ export default defineConfig({
           "*.svg",
           "*.ico",
         ],
+        // Activate a new SW as soon as it finishes installing, without
+        // waiting for every tab to close. Combined with the reload-on-update
+        // logic in main.tsx, this eliminates the "Ctrl+R still shows the old
+        // build" trap where the old SW keeps serving a stale precache.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api\//, /^\/ws$/],
         runtimeCaching: [

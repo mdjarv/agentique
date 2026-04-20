@@ -5,10 +5,15 @@ import { createRoot } from "react-dom/client";
 import { router } from "./router";
 import "./index.css";
 
-// Auto-update SW: check every 60s, reload immediately when a new version is available.
-// This ensures phones always run the latest version without manual refresh.
-registerSW({
+// Auto-update SW: check every 60s. When a new SW finishes installing, it
+// activates immediately (skipWaiting + clientsClaim in vite.config), then
+// we force a reload so the page runs against the new precache. Without this,
+// Ctrl+R keeps hitting the old SW's cache until every tab closes.
+const updateSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    updateSW(true);
+  },
   onRegisteredSW(_url, registration) {
     if (registration) {
       setInterval(() => registration.update(), 60_000);
