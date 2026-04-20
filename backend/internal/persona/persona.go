@@ -351,19 +351,23 @@ type GenerateProfileInput struct {
 	// Hints from the user's in-progress draft. Non-empty values are treated
 	// as authoritative — the model must keep them verbatim and align the
 	// remaining fields around them.
-	Name        string
-	Role        string
-	Description string
-	Avatar      string
+	Name                  string
+	Role                  string
+	Description           string
+	Avatar                string
+	SystemPromptAdditions string
+	CustomInstructions    string
 }
 
 // GenerateProfileResult is the parsed profile suggestion.
 type GenerateProfileResult struct {
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	Description string `json:"description"`
-	Avatar      string `json:"avatar"`
-	Config      string `json:"config"` // JSON string of suggested config
+	Name                  string `json:"name"`
+	Role                  string `json:"role"`
+	Description           string `json:"description"`
+	Avatar                string `json:"avatar"`
+	SystemPromptAdditions string `json:"systemPromptAdditions"`
+	CustomInstructions    string `json:"customInstructions"`
+	Config                string `json:"config"` // JSON string of suggested behaviorPresets
 }
 
 // GenerateProfile uses Haiku to suggest an agent profile based on project context.
@@ -417,7 +421,8 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 		b.WriteString("\n\n")
 	}
 
-	hasDraft := input.Name != "" || input.Role != "" || input.Description != "" || input.Avatar != ""
+	hasDraft := input.Name != "" || input.Role != "" || input.Description != "" ||
+		input.Avatar != "" || input.SystemPromptAdditions != "" || input.CustomInstructions != ""
 	if hasDraft {
 		b.WriteString("## User's Draft (authoritative — keep verbatim)\n")
 		b.WriteString(
@@ -441,6 +446,12 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 		if input.Avatar != "" {
 			fmt.Fprintf(&b, "- AVATAR: %s\n", input.Avatar)
 		}
+		if input.SystemPromptAdditions != "" {
+			fmt.Fprintf(&b, "- SYSTEM_PROMPT:\n%s\n", indent(input.SystemPromptAdditions, "  "))
+		}
+		if input.CustomInstructions != "" {
+			fmt.Fprintf(&b, "- CUSTOM_INSTRUCTIONS:\n%s\n", indent(input.CustomInstructions, "  "))
+		}
 		b.WriteString("\n")
 	}
 
@@ -456,62 +467,76 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 	}
 	b.WriteString("- What kind of specialist would be most productive on this codebase\n\n")
 
-	b.WriteString("Respond in EXACTLY this format. Each field starts on its own line. No other text.\n\n")
+	b.WriteString("Respond in EXACTLY this format. Each field starts on its own line with its label. ")
+	b.WriteString("Multi-line fields (DESCRIPTION, SYSTEM_PROMPT, CUSTOM_INSTRUCTIONS) continue until the next label. ")
+	b.WriteString("No other text before, between, or after the fields.\n\n")
 	b.WriteString("NAME: <2-3 word agent name>\n")
 	b.WriteString("ROLE: <concise role, e.g. \"backend architect\" or \"fullstack developer\">\n")
 	b.WriteString("DESCRIPTION: <2-4 sentences about expertise, focus areas, and working style. Reference specific technologies from the project.>\n")
 	b.WriteString("AVATAR: <single emoji>\n")
-	b.WriteString("CONFIG: <JSON, e.g. {\"autoCommit\": true, \"planFirst\": false, \"terse\": true}>\n")
+	b.WriteString("SYSTEM_PROMPT: <3-6 sentences appended to every session preamble. Define the agent's voice, priorities, and guardrails. Written as direct instructions (\"You are...\", \"Always...\"). Leave the line blank after the colon if nothing meaningful to add.>\n")
+	b.WriteString("CUSTOM_INSTRUCTIONS: <optional 1-3 sentences of preset-level tweaks like \"only touch backend files\". Leave blank if none.>\n")
+	b.WriteString("CONFIG: <JSON with behaviorPresets only, e.g. {\"autoCommit\": true, \"suggestParallel\": false, \"planFirst\": false, \"terse\": true}>\n")
 
 	return b.String()
+}
+
+// indent prefixes every line of s with prefix.
+func indent(s, prefix string) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return strings.Join(lines, "\n")
 }
 
 func parseProfileResponse(text string) GenerateProfileResult {
 	text = strings.TrimSpace(text)
 	var result GenerateProfileResult
 
-	lines := strings.Split(text, "\n")
-	var descLines []string
-	inDescription := false
+	var descLines, systemPromptLines, customInstLines []string
+	// current tracks which multi-line field we're accumulating into.
+	// "" means we're not inside a multi-line field.
+	current := ""
 
-	for _, line := range lines {
+	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 
-		if val, ok := strings.CutPrefix(trimmed, "NAME:"); ok {
-			result.Name = strings.TrimSpace(val)
-			inDescription = false
-			continue
-		}
-		if val, ok := strings.CutPrefix(trimmed, "ROLE:"); ok {
-			result.Role = strings.TrimSpace(val)
-			inDescription = false
-			continue
-		}
-		if val, ok := strings.CutPrefix(trimmed, "DESCRIPTION:"); ok {
-			inDescription = true
-			if rest := strings.TrimSpace(val); rest != "" {
-				descLines = append(descLines, rest)
+		switch {
+		case matchField(trimmed, "NAME:", &result.Name):
+			current = ""
+		case matchField(trimmed, "ROLE:", &result.Role):
+			current = ""
+		case matchField(trimmed, "AVATAR:", &result.Avatar):
+			current = ""
+		case matchField(trimmed, "CONFIG:", &result.Config):
+			current = ""
+		case startsMultiline(trimmed, "DESCRIPTION:", &descLines):
+			current = "description"
+		case startsMultiline(trimmed, "SYSTEM_PROMPT:", &systemPromptLines):
+			current = "systemPrompt"
+		case startsMultiline(trimmed, "CUSTOM_INSTRUCTIONS:", &customInstLines):
+			current = "customInst"
+		default:
+			switch current {
+			case "description":
+				descLines = append(descLines, line)
+			case "systemPrompt":
+				systemPromptLines = append(systemPromptLines, line)
+			case "customInst":
+				customInstLines = append(customInstLines, line)
 			}
-			continue
-		}
-		if val, ok := strings.CutPrefix(trimmed, "AVATAR:"); ok {
-			result.Avatar = strings.TrimSpace(val)
-			inDescription = false
-			continue
-		}
-		if val, ok := strings.CutPrefix(trimmed, "CONFIG:"); ok {
-			result.Config = strings.TrimSpace(val)
-			inDescription = false
-			continue
-		}
-		if inDescription {
-			descLines = append(descLines, line)
 		}
 	}
 
 	result.Description = strings.TrimSpace(strings.Join(descLines, "\n"))
+	result.SystemPromptAdditions = strings.TrimSpace(strings.Join(systemPromptLines, "\n"))
+	result.CustomInstructions = strings.TrimSpace(strings.Join(customInstLines, "\n"))
 
-	// Validate CONFIG is valid JSON.
+	// Validate CONFIG is valid JSON; fall back to "{}" on parse failure.
 	if result.Config != "" {
 		var tmp map[string]any
 		if json.Unmarshal([]byte(result.Config), &tmp) != nil {
@@ -522,6 +547,30 @@ func parseProfileResponse(text string) GenerateProfileResult {
 	}
 
 	return result
+}
+
+// matchField returns true and writes into dst when trimmed starts with prefix.
+// Used for single-line fields (NAME/ROLE/AVATAR/CONFIG).
+func matchField(trimmed, prefix string, dst *string) bool {
+	val, ok := strings.CutPrefix(trimmed, prefix)
+	if !ok {
+		return false
+	}
+	*dst = strings.TrimSpace(val)
+	return true
+}
+
+// startsMultiline returns true and seeds lines with any content on the
+// same line as the label, when trimmed begins with prefix.
+func startsMultiline(trimmed, prefix string, lines *[]string) bool {
+	val, ok := strings.CutPrefix(trimmed, prefix)
+	if !ok {
+		return false
+	}
+	if rest := strings.TrimSpace(val); rest != "" {
+		*lines = append(*lines, rest)
+	}
+	return true
 }
 
 // formatFileTree produces a compact tree representation grouped by top-level directory.

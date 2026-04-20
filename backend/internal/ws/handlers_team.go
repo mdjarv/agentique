@@ -175,14 +175,16 @@ func (c *conn) handleProfileGenerate(msg ClientMessage) {
 		}
 
 		return c.personaSvc.GenerateProfile(ctx, persona.GenerateProfileInput{
-			ProjectName: proj.Name,
-			ClaudeMD:    claudeMD,
-			FileTree:    files,
-			Brief:       p.Brief,
-			Name:        p.Name,
-			Role:        p.Role,
-			Description: p.Description,
-			Avatar:      p.Avatar,
+			ProjectName:           proj.Name,
+			ClaudeMD:              claudeMD,
+			FileTree:              files,
+			Brief:                 p.Brief,
+			Name:                  p.Name,
+			Role:                  p.Role,
+			Description:           p.Description,
+			Avatar:                p.Avatar,
+			SystemPromptAdditions: p.SystemPromptAdditions,
+			CustomInstructions:    p.CustomInstructions,
 		})
 	})
 }

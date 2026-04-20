@@ -179,6 +179,8 @@ export interface GenerateProfileResult {
   role: string;
   description: string;
   avatar: string;
+  systemPromptAdditions: string;
+  customInstructions: string;
   config: string;
 }
 
@@ -191,6 +193,8 @@ export function generateAgentProfile(
     role?: string;
     description?: string;
     avatar?: string;
+    systemPromptAdditions?: string;
+    customInstructions?: string;
   },
 ): Promise<GenerateProfileResult> {
   return ws.request<GenerateProfileResult>("agent-profile.generate", params, 60000);

@@ -252,6 +252,8 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
     if (!projectId || generating) return;
     setGenerating(true);
     try {
+      const currentSystemPrompt = config.systemPromptAdditions ?? "";
+      const currentCustomInstructions = config.behaviorPresets?.customInstructions ?? "";
       const result = await generateAgentProfile(ws, {
         projectId,
         brief: brief.trim() || undefined,
@@ -259,19 +261,56 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
         role: role.trim() || undefined,
         description: description.trim() || undefined,
         avatar: avatar.trim() || undefined,
+        systemPromptAdditions: currentSystemPrompt.trim() || undefined,
+        customInstructions: currentCustomInstructions.trim() || undefined,
       });
-      // Don't overwrite fields the user has already filled. The backend also
-      // echoes hints verbatim, but this protects against any drift.
+      // Fill only blank fields. Backend echoes hints verbatim, but this
+      // still protects against any drift in the model's output.
       if (!name.trim()) setName(result.name);
       if (!role.trim()) setRole(result.role);
       if (!description.trim()) setDescription(result.description);
       if (!avatar.trim()) setAvatar(result.avatar);
+
+      // Merge blank-only into config: systemPromptAdditions, customInstructions,
+      // and any preset toggles the user hasn't touched (still at DEFAULT_PRESETS).
+      let mergedPresets: BehaviorPresets | null = null;
+      if (result.config) {
+        try {
+          const parsed = JSON.parse(result.config) as Partial<BehaviorPresets>;
+          mergedPresets = parsed && typeof parsed === "object" ? (parsed as BehaviorPresets) : null;
+        } catch {
+          // ignore malformed JSON; backend already falls back to {} but belt-and-suspenders.
+        }
+      }
+
+      setConfig((c) => {
+        const nextBp: BehaviorPresets = {
+          ...DEFAULT_PRESETS,
+          ...(c.behaviorPresets ?? {}),
+        };
+        if (mergedPresets) {
+          for (const key of ["autoCommit", "suggestParallel", "planFirst", "terse"] as const) {
+            // Only flip a preset if the user has it at default (false) and the
+            // generator wants it true. Never overwrite a user-set toggle.
+            if (!nextBp[key] && mergedPresets[key]) nextBp[key] = true;
+          }
+        }
+        if (!nextBp.customInstructions?.trim() && result.customInstructions?.trim()) {
+          nextBp.customInstructions = result.customInstructions;
+        }
+        return {
+          ...c,
+          behaviorPresets: nextBp,
+          systemPromptAdditions:
+            c.systemPromptAdditions?.trim() || result.systemPromptAdditions || "",
+        };
+      });
     } catch (e) {
       toast.error(getErrorMessage(e, "Failed to generate profile"));
     } finally {
       setGenerating(false);
     }
-  }, [ws, projectId, brief, generating, name, role, description, avatar]);
+  }, [ws, projectId, brief, generating, name, role, description, avatar, config]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -393,7 +432,12 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
                   )}
                   {generating
                     ? "Generating..."
-                    : name.trim() || role.trim() || description.trim() || avatar.trim()
+                    : name.trim() ||
+                        role.trim() ||
+                        description.trim() ||
+                        avatar.trim() ||
+                        config.systemPromptAdditions?.trim() ||
+                        config.behaviorPresets?.customInstructions?.trim()
                       ? "Fill in the rest"
                       : "Generate from project"}
                 </Button>
