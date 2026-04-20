@@ -1,7 +1,8 @@
-import { Loader2, Sparkles, UserPlus } from "lucide-react";
+import { Gauge, Loader2, ShieldAlert, ShieldCheck, Sparkles, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ToolbarDropdown, type ToolbarDropdownOption } from "~/components/chat/ToolbarDropdown";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -19,9 +20,13 @@ import { Textarea } from "~/components/ui/textarea";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listPresetDefinitions } from "~/lib/api";
 import {
+  EFFORT_COLORS,
   EFFORT_LABELS,
   EFFORT_LEVELS,
   type EffortLevel,
+  PERMISSION_BG,
+  PERMISSION_COLORS,
+  PERMISSION_DESCRIPTIONS,
   PERMISSION_LABELS,
   PERMISSION_MODES,
 } from "~/lib/composer-constants";
@@ -39,6 +44,32 @@ import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { AutoApproveMode } from "~/stores/chat-store";
 import { useTeamStore } from "~/stores/team-store";
+
+const MODEL_OPTIONS: ToolbarDropdownOption[] = [
+  { value: "", label: "Project default" },
+  ...MODELS.map((m) => ({ value: m, label: MODEL_LABELS[m] })),
+];
+
+const EFFORT_OPTIONS: ToolbarDropdownOption[] = [
+  { value: "", label: "Project default" },
+  ...EFFORT_LEVELS.filter((l): l is Exclude<EffortLevel, ""> => l !== "").map((l) => ({
+    value: l,
+    label: EFFORT_LABELS[l],
+    color: EFFORT_COLORS[l],
+  })),
+];
+
+const PERMISSION_OPTIONS: ToolbarDropdownOption[] = [
+  { value: "", label: "Project default" },
+  ...PERMISSION_MODES.map((m) => ({
+    value: m,
+    label: PERMISSION_LABELS[m],
+    icon:
+      m === "fullAuto" ? <ShieldAlert className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />,
+    color: PERMISSION_COLORS[m],
+    description: PERMISSION_DESCRIPTIONS[m],
+  })),
+];
 
 const AVATAR_EMOJI = [
   "🤖",
@@ -409,56 +440,60 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
               hint="Applied when launching a session from this profile. Explicit launch overrides still win."
             />
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="profile-model">Model</Label>
-                <select
-                  id="profile-model"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  value={config.model ?? ""}
-                  onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
-                >
-                  <option value="">Project default</option>
-                  {MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {MODEL_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="profile-effort">Effort</Label>
-                <select
-                  id="profile-effort"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  value={config.effort ?? ""}
-                  onChange={(e) => setConfig((c) => ({ ...c, effort: e.target.value }))}
-                >
-                  <option value="">Project default</option>
-                  {EFFORT_LEVELS.filter((l): l is Exclude<EffortLevel, ""> => l !== "").map((l) => (
-                    <option key={l} value={l}>
-                      {EFFORT_LABELS[l]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Runtime chips row — mirrors the composer toolbar. */}
+            <div className="flex flex-wrap items-center gap-1 rounded-md border bg-card/40 px-2 py-1.5">
+              <ToolbarDropdown
+                value={config.model ?? ""}
+                onChange={(v) => setConfig((c) => ({ ...c, model: v }))}
+                options={MODEL_OPTIONS}
+              />
+              <div className="h-4 w-px bg-border shrink-0" />
+              <ToolbarDropdown
+                value={config.effort ?? ""}
+                onChange={(v) => setConfig((c) => ({ ...c, effort: v }))}
+                options={EFFORT_OPTIONS}
+                icon={<Gauge className="h-3 w-3" />}
+                triggerColor={
+                  config.effort ? EFFORT_COLORS[config.effort as EffortLevel] : undefined
+                }
+              />
+              <div className="h-4 w-px bg-border shrink-0" />
+              <ToolbarDropdown
+                value={config.autoApproveMode ?? ""}
+                onChange={(v) => setConfig((c) => ({ ...c, autoApproveMode: v }))}
+                options={PERMISSION_OPTIONS}
+                icon={
+                  config.autoApproveMode === "fullAuto" ? (
+                    <ShieldAlert className="h-3 w-3" />
+                  ) : config.autoApproveMode ? (
+                    <ShieldCheck className="h-3 w-3" />
+                  ) : undefined
+                }
+                triggerColor={
+                  config.autoApproveMode
+                    ? PERMISSION_COLORS[config.autoApproveMode as AutoApproveMode]
+                    : undefined
+                }
+                triggerBgColor={
+                  config.autoApproveMode
+                    ? PERMISSION_BG[config.autoApproveMode as AutoApproveMode]
+                    : undefined
+                }
+              />
             </div>
 
             <div>
-              <Label htmlFor="profile-autoapprove">Permission mode</Label>
-              <select
-                id="profile-autoapprove"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                value={config.autoApproveMode ?? ""}
-                onChange={(e) => setConfig((c) => ({ ...c, autoApproveMode: e.target.value }))}
-              >
-                <option value="">Project default</option>
-                {PERMISSION_MODES.map((m: AutoApproveMode) => (
-                  <option key={m} value={m}>
-                    {PERMISSION_LABELS[m]}
-                  </option>
-                ))}
-              </select>
+              <Label htmlFor="profile-system-prompt">System prompt additions</Label>
+              <Textarea
+                id="profile-system-prompt"
+                value={config.systemPromptAdditions ?? ""}
+                onChange={(e) =>
+                  setConfig((c) => ({ ...c, systemPromptAdditions: e.target.value }))
+                }
+                placeholder="You are a senior backend architect. Prioritize correctness over speed..."
+                rows={5}
+              />
+              <Helper>Appended to every session preamble. Use for persistent role context.</Helper>
             </div>
 
             <div className="space-y-2">
@@ -497,31 +532,18 @@ export function ProfileEditorDialog({ profile }: { profile?: AgentProfileInfo })
                   );
                 })}
               </div>
-            </div>
-
-            <div>
-              <Label htmlFor="profile-custom-instructions">Custom instructions</Label>
-              <Textarea
-                id="profile-custom-instructions"
-                value={bp.customInstructions ?? ""}
-                onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="Additional preset instructions (e.g., 'only touch backend files')..."
-                rows={2}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="profile-system-prompt">System prompt additions</Label>
-              <Textarea
-                id="profile-system-prompt"
-                value={config.systemPromptAdditions ?? ""}
-                onChange={(e) =>
-                  setConfig((c) => ({ ...c, systemPromptAdditions: e.target.value }))
-                }
-                placeholder="You are a senior backend architect. Prioritize correctness over speed..."
-                rows={4}
-              />
-              <Helper>Appended to every session preamble. Use for persistent role context.</Helper>
+              <div>
+                <Label htmlFor="profile-custom-instructions" className="text-xs">
+                  Custom instructions
+                </Label>
+                <Textarea
+                  id="profile-custom-instructions"
+                  value={bp.customInstructions ?? ""}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  placeholder="Additional preset instructions (e.g., 'only touch backend files')..."
+                  rows={2}
+                />
+              </div>
             </div>
           </div>
         </div>
