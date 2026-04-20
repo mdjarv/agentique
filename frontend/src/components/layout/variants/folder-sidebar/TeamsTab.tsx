@@ -1,14 +1,11 @@
-import { useNavigate } from "@tanstack/react-router";
-import { Hash, Users } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Hash, UserPlus, Users } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PulseStatus } from "~/components/layout/session/PulseStatus";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
 import { ActivityFeed } from "~/components/layout/variants/folder-sidebar/ActivityFeed";
-import { ProfileEditorDialog } from "~/components/team/ProfileEditorDialog";
 import { ProfileRow } from "~/components/team/ProfileRow";
-import { TeamCard } from "~/components/team/TeamCard";
-import { CreateTeamTrigger, TeamFormDialog } from "~/components/team/TeamFormDialog";
 import type { ChannelInfo, ChannelMember } from "~/lib/channel-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -148,12 +145,10 @@ export function TeamsTab() {
   const channels = useChannelStore(useShallow((s) => s.channels));
   const projects = useAppStore(useShallow((s) => s.projects));
   const profiles = useTeamStore(useShallow((s) => s.profiles));
-  const teams = useTeamStore(useShallow((s) => s.teams));
   const profilesLoaded = useTeamStore((s) => s.loaded);
 
   const channelList = useMemo(() => Object.values(channels), [channels]);
   const profileList = useMemo(() => Object.values(profiles), [profiles]);
-  const teamList = useMemo(() => Object.values(teams), [teams]);
 
   // Group channels by project.
   const grouped = useMemo(() => {
@@ -196,34 +191,19 @@ export function TeamsTab() {
         ))
       )}
 
-      {/* Teams */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
-            Teams
-          </h3>
-          <TeamFormDialog trigger={<CreateTeamTrigger />} />
-        </div>
-        {!profilesLoaded ? (
-          <p className="text-xs text-muted-foreground/60 px-2">Loading...</p>
-        ) : teamList.length === 0 ? (
-          <p className="text-xs text-muted-foreground/60 px-2">No teams yet</p>
-        ) : (
-          <div className="space-y-1.5 px-1">
-            {teamList.map((team) => (
-              <TeamCard key={team.id} team={team} allProfiles={profileList} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Agent Profiles */}
+      {/* Agent Profiles (compact) */}
       <div className="space-y-1">
         <div className="flex items-center justify-between px-2">
           <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
             Agent Profiles
           </h3>
-          <ProfileEditorDialog />
+          <Link
+            to="/teams/personas/new"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            title="New agent profile"
+          >
+            <UserPlus className="size-3" />
+          </Link>
         </div>
         {!profilesLoaded ? (
           <p className="text-xs text-muted-foreground/60 px-2">Loading...</p>

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
@@ -8,7 +9,6 @@ import { deleteAgentProfile } from "~/lib/team-actions";
 import { getErrorMessage } from "~/lib/utils";
 import { useTeamStore } from "~/stores/team-store";
 import { LaunchResumeButton } from "./LaunchResumeButton";
-import { ProfileEditorDialog } from "./ProfileEditorDialog";
 import { AgentStatusDot, useProfileActiveSession } from "./team-utils";
 
 export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
@@ -35,7 +35,13 @@ export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
         <AgentStatusDot profileId={profile.id} />
         {profile.avatar && <span className="text-sm">{profile.avatar}</span>}
         <div className="min-w-0">
-          <ProfileEditorDialog profile={profile} />
+          <Link
+            to="/teams/personas/$profileId"
+            params={{ profileId: profile.id }}
+            className="font-medium hover:underline block truncate"
+          >
+            {profile.name || "Unnamed"}
+          </Link>
           <div className="text-muted-foreground truncate">
             {profile.role}
             {project && <span className="ml-1">· {project.name}</span>}

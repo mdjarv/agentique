@@ -5,7 +5,6 @@ import type { ModelId } from "~/lib/session/actions";
 import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type Theme = "light" | "dark" | "system";
-export type SidebarTab = "sessions" | "teams";
 
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
 
@@ -39,8 +38,6 @@ interface UIState {
   collapsedProjectIds: string[];
   rightPanelCollapsed: boolean;
   browserPanelWidth: number;
-  /** NOT persisted — defaults to "sessions" on load. */
-  sidebarTab: SidebarTab;
   theme: Theme;
 
   setDraft: (sessionId: string, text: string) => void;
@@ -51,7 +48,6 @@ interface UIState {
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
-  setSidebarTab: (tab: SidebarTab) => void;
   setTheme: (theme: Theme) => void;
 }
 
@@ -63,7 +59,6 @@ export const useUIStore = create<UIState>()(
       collapsedProjectIds: readLegacyCollapsedProjects(),
       rightPanelCollapsed: true,
       browserPanelWidth: 500,
-      sidebarTab: "sessions" as SidebarTab,
       theme: "dark" as Theme,
 
       setDraft: (sessionId, text) =>
@@ -127,8 +122,6 @@ export const useUIStore = create<UIState>()(
 
       setBrowserPanelWidth: (width) =>
         set({ browserPanelWidth: Math.max(300, Math.min(900, width)) }),
-
-      setSidebarTab: (tab) => set({ sidebarTab: tab }),
 
       setTheme: (theme) => set({ theme }),
     }),

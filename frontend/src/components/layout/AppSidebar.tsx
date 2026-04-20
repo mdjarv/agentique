@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { Cpu, FileText, Hash, LayoutList } from "lucide-react";
 
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
@@ -6,7 +6,6 @@ import { SidebarFooter } from "~/components/layout/SidebarFooter";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { useChannelStore } from "~/stores/channel-store";
-import { type SidebarTab, useUIStore } from "~/stores/ui-store";
 import { FolderSidebar } from "./variants/FolderSidebar";
 import { TeamsTab } from "./variants/folder-sidebar/TeamsTab";
 
@@ -15,13 +14,14 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className }: AppSidebarProps) {
-  const sidebarTab = useUIStore((s) => s.sidebarTab);
+  const pathname = useLocation({ select: (l) => l.pathname });
+  const isTeams = pathname.startsWith("/teams");
 
   return (
     <div className={cn("bg-sidebar/80 backdrop-blur-md flex h-full flex-col", className)}>
       <SidebarHeader />
-      <SidebarTabBar active={sidebarTab} />
-      {sidebarTab === "teams" ? <TeamsTab /> : <FolderSidebar />}
+      <SidebarTabBar isTeams={isTeams} />
+      {isTeams ? <TeamsTab /> : <FolderSidebar />}
       <SidebarFooter />
     </div>
   );
@@ -57,35 +57,27 @@ function SidebarHeader() {
   );
 }
 
-const TAB_ITEMS: { id: SidebarTab; label: string; icon: typeof LayoutList }[] = [
-  { id: "sessions", label: "Sessions", icon: LayoutList },
-  { id: "teams", label: "Teams", icon: Hash },
-];
-
-function SidebarTabBar({ active }: { active: SidebarTab }) {
+function SidebarTabBar({ isTeams }: { isTeams: boolean }) {
   const channelCount = useChannelStore((s) => Object.keys(s.channels).length);
+
+  const baseClass =
+    "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer";
+  const activeClass = "bg-primary/10 text-primary font-medium";
+  const inactiveClass = "text-muted-foreground hover:text-foreground hover:bg-muted/30";
 
   return (
     <div className="flex items-center border-b px-2 gap-0.5 h-8 shrink-0">
-      {TAB_ITEMS.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => useUIStore.getState().setSidebarTab(id)}
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer",
-            active === id
-              ? "bg-primary/10 text-primary font-medium"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/30",
-          )}
-        >
-          <Icon className="size-3.5" />
-          {label}
-          {id === "teams" && channelCount > 0 && (
-            <span className="text-[10px] tabular-nums text-primary/60 ml-0.5">{channelCount}</span>
-          )}
-        </button>
-      ))}
+      <Link to="/" className={cn(baseClass, !isTeams ? activeClass : inactiveClass)}>
+        <LayoutList className="size-3.5" />
+        Sessions
+      </Link>
+      <Link to="/teams" className={cn(baseClass, isTeams ? activeClass : inactiveClass)}>
+        <Hash className="size-3.5" />
+        Teams
+        {channelCount > 0 && (
+          <span className="text-[10px] tabular-nums text-primary/60 ml-0.5">{channelCount}</span>
+        )}
+      </Link>
     </div>
   );
 }
