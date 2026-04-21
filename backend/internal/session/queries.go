@@ -87,6 +87,7 @@ type serviceQueries interface {
 	GetMessage(ctx context.Context, id string) (store.Message, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]store.Message, error)
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
+	CountSessionIntroductionsInChannel(ctx context.Context, arg store.CountSessionIntroductionsInChannelParams) (int64, error)
 	InsertEventWithMessageID(ctx context.Context, arg store.InsertEventWithMessageIDParams) error
 
 	// Delivery queries

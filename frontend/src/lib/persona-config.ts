@@ -15,6 +15,7 @@ export function emptyPersonaConfig(): AgentProfileConfig {
     autoApproveMode: "",
     behaviorPresets: { ...DEFAULT_PRESETS },
     systemPromptAdditions: "",
+    capabilities: [],
   };
 }
 
@@ -28,6 +29,7 @@ export function hydratePersonaConfig(c: AgentProfileConfig | undefined): AgentPr
     autoApproveMode: c.autoApproveMode ?? "",
     behaviorPresets: { ...DEFAULT_PRESETS, ...(c.behaviorPresets ?? {}) },
     systemPromptAdditions: c.systemPromptAdditions ?? "",
+    capabilities: c.capabilities ?? [],
   };
 }
 
@@ -55,5 +57,7 @@ export function stripPersonaConfig(c: AgentProfileConfig): AgentProfileConfig {
     };
   }
   if (c.systemPromptAdditions?.trim()) out.systemPromptAdditions = c.systemPromptAdditions;
+  const caps = c.capabilities?.map((s) => s.trim()).filter(Boolean);
+  if (caps && caps.length > 0) out.capabilities = caps;
   return out;
 }

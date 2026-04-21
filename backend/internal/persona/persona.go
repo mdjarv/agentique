@@ -357,17 +357,19 @@ type GenerateProfileInput struct {
 	Avatar                string
 	SystemPromptAdditions string
 	CustomInstructions    string
+	Capabilities          []string
 }
 
 // GenerateProfileResult is the parsed profile suggestion.
 type GenerateProfileResult struct {
-	Name                  string `json:"name"`
-	Role                  string `json:"role"`
-	Description           string `json:"description"`
-	Avatar                string `json:"avatar"`
-	SystemPromptAdditions string `json:"systemPromptAdditions"`
-	CustomInstructions    string `json:"customInstructions"`
-	Config                string `json:"config"` // JSON string of suggested behaviorPresets
+	Name                  string   `json:"name"`
+	Role                  string   `json:"role"`
+	Description           string   `json:"description"`
+	Avatar                string   `json:"avatar"`
+	SystemPromptAdditions string   `json:"systemPromptAdditions"`
+	CustomInstructions    string   `json:"customInstructions"`
+	Capabilities          []string `json:"capabilities"`
+	Config                string   `json:"config"` // JSON string of suggested behaviorPresets
 }
 
 // GenerateProfile uses Haiku to suggest an agent profile based on project context.
@@ -422,7 +424,8 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 	}
 
 	hasDraft := input.Name != "" || input.Role != "" || input.Description != "" ||
-		input.Avatar != "" || input.SystemPromptAdditions != "" || input.CustomInstructions != ""
+		input.Avatar != "" || input.SystemPromptAdditions != "" || input.CustomInstructions != "" ||
+		len(input.Capabilities) > 0
 	if hasDraft {
 		b.WriteString("## User's Draft (authoritative — keep verbatim)\n")
 		b.WriteString(
@@ -452,6 +455,9 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 		if input.CustomInstructions != "" {
 			fmt.Fprintf(&b, "- CUSTOM_INSTRUCTIONS:\n%s\n", indent(input.CustomInstructions, "  "))
 		}
+		if len(input.Capabilities) > 0 {
+			fmt.Fprintf(&b, "- CAPABILITIES: %s\n", strings.Join(input.Capabilities, ", "))
+		}
 		b.WriteString("\n")
 	}
 
@@ -476,6 +482,7 @@ func buildProfilePrompt(input GenerateProfileInput) string {
 	b.WriteString("AVATAR: <one simple, single-codepoint emoji such as 🤖 🧠 🔧 🔍 📝 📊 🎨 🚀 ⚡ 💻 🎯 🧙 🦉 🦊 🐙 🦖. No variation selectors (U+FE0F), no ZWJ sequences, no skin-tone modifiers.>\n")
 	b.WriteString("SYSTEM_PROMPT: <3-6 sentences appended to every session preamble. Define the agent's voice, priorities, and guardrails. Written as direct instructions (\"You are...\", \"Always...\"). Leave the line blank after the colon if nothing meaningful to add.>\n")
 	b.WriteString("CUSTOM_INSTRUCTIONS: <optional 1-3 sentences of preset-level tweaks like \"only touch backend files\". Leave blank if none.>\n")
+	b.WriteString("CAPABILITIES: <comma-separated list of 3-6 short kebab-case tags describing what this agent does well, e.g. \"go-backend, sqlc-migrations, channel-routing\". Used by teammates to route work.>\n")
 	b.WriteString("CONFIG: <JSON with behaviorPresets only, e.g. {\"autoCommit\": true, \"suggestParallel\": false, \"planFirst\": false, \"terse\": true}>\n")
 
 	return b.String()
@@ -498,6 +505,7 @@ func parseProfileResponse(text string) GenerateProfileResult {
 	var result GenerateProfileResult
 
 	var descLines, systemPromptLines, customInstLines []string
+	var capabilitiesRaw string
 	// current tracks which multi-line field we're accumulating into.
 	// "" means we're not inside a multi-line field.
 	current := ""
@@ -511,6 +519,8 @@ func parseProfileResponse(text string) GenerateProfileResult {
 		case matchField(trimmed, "ROLE:", &result.Role):
 			current = ""
 		case matchField(trimmed, "AVATAR:", &result.Avatar):
+			current = ""
+		case matchField(trimmed, "CAPABILITIES:", &capabilitiesRaw):
 			current = ""
 		case matchField(trimmed, "CONFIG:", &result.Config):
 			current = ""
@@ -535,6 +545,7 @@ func parseProfileResponse(text string) GenerateProfileResult {
 	result.Description = strings.TrimSpace(strings.Join(descLines, "\n"))
 	result.SystemPromptAdditions = strings.TrimSpace(strings.Join(systemPromptLines, "\n"))
 	result.CustomInstructions = strings.TrimSpace(strings.Join(customInstLines, "\n"))
+	result.Capabilities = parseCapabilities(capabilitiesRaw)
 
 	// Validate CONFIG is valid JSON; fall back to "{}" on parse failure.
 	if result.Config != "" {
@@ -547,6 +558,26 @@ func parseProfileResponse(text string) GenerateProfileResult {
 	}
 
 	return result
+}
+
+// parseCapabilities splits a comma-separated capability list, trims each tag,
+// and drops empties. Returns nil when the input is empty/whitespace.
+func parseCapabilities(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if tag := strings.TrimSpace(p); tag != "" {
+			out = append(out, tag)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // matchField returns true and writes into dst when trimmed starts with prefix.

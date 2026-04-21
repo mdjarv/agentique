@@ -14,6 +14,7 @@ type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
+	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CountWebAuthnCredentials(ctx context.Context) (int64, error)

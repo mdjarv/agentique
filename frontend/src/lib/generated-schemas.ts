@@ -42,6 +42,7 @@ export const WireTextEventSchema = z.object({
 export const WireThinkingEventSchema = z.object({
   type: z.literal("thinking"),
   content: z.string(),
+  signature: z.string().optional(),
   parentToolUseId: z.string().optional(),
 });
 
@@ -688,6 +689,7 @@ export const AgentProfileConfigSchema = z.object({
   behaviorPresets: TeamBehaviorPresetsSchema,
   systemPromptAdditions: z.string().optional(),
   communicationMode: z.string().optional(),
+  capabilities: z.array(z.string()).optional(),
 });
 
 export const AgentProfileInfoSchema = z.object({

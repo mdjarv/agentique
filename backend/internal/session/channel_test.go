@@ -172,6 +172,8 @@ func (s *ChannelSuite) TestChannel_RouteMessage_BroadcastEvents() {
 	workerID, _ := s.createNamedSession("Worker")
 	s.createChannelWithMembers("test-team", leadID, workerID)
 
+	// Reset AFTER the joins — intro messages broadcast during join should not
+	// pollute this test's assertions about routed-message broadcasts.
 	s.Broadcaster.Reset()
 	err := s.svc.RouteAgentMessage(context.Background(), AgentMessagePayload{
 		SenderSessionID: leadID,
@@ -260,10 +262,17 @@ func (s *ChannelSuite) TestChannel_Timeline_SingleEntry() {
 
 	timeline, err := s.svc.GetChannelTimeline(context.Background(), channelID)
 	s.Require().NoError(err)
-	s.Len(timeline, 1, "messages table stores one row per message")
-	s.Equal("timeline test", timeline[0].Content)
-	s.Equal("session", timeline[0].SenderType)
-	s.Equal("Lead", timeline[0].SenderName)
+	// Filter out intros — each join emits one informational intro message.
+	var routed []WireChannelMessage
+	for _, m := range timeline {
+		if m.MessageType != "introduction" {
+			routed = append(routed, m)
+		}
+	}
+	s.Len(routed, 1, "messages table stores one row per routed message")
+	s.Equal("timeline test", routed[0].Content)
+	s.Equal("session", routed[0].SenderType)
+	s.Equal("Lead", routed[0].SenderName)
 }
 
 // --- JoinChannel context injection test ---
@@ -539,6 +548,58 @@ func (s *ChannelSuite) TestChannel_Resume_ReplaysPendingDeliveries() {
 	pending, err = s.Queries.ListPendingDeliveriesForSession(ctx, workerID)
 	s.Require().NoError(err)
 	s.Empty(pending, "no pending deliveries should remain after replay")
+}
+
+// --- Introduction tests ---
+
+func (s *ChannelSuite) TestChannel_JoinEmitsIntroduction() {
+	leadID, _ := s.createNamedSession("Lead")
+	channelID := s.createChannelWithMembers("intro-team", leadID)
+
+	timeline, err := s.svc.GetChannelTimeline(context.Background(), channelID)
+	s.Require().NoError(err)
+
+	var intros []WireChannelMessage
+	for _, m := range timeline {
+		if m.MessageType == "introduction" {
+			intros = append(intros, m)
+		}
+	}
+	s.Require().Len(intros, 1, "one intro per joining session")
+	s.Equal(leadID, intros[0].SenderID)
+	s.Equal("Lead", intros[0].SenderName)
+	s.Contains(intros[0].Content, "Lead")
+}
+
+func (s *ChannelSuite) TestChannel_JoinIntroductionIsDedupedOnRejoin() {
+	ctx := context.Background()
+	leadID, _ := s.createNamedSession("Lead")
+	channelID := s.createChannelWithMembers("dedup-team", leadID)
+
+	// Rejoin: leave and join again. The second join must NOT re-emit an intro.
+	s.Require().NoError(s.svc.LeaveChannel(ctx, leadID, channelID))
+	_, err := s.svc.JoinChannel(ctx, leadID, channelID, "")
+	s.Require().NoError(err)
+
+	timeline, err := s.svc.GetChannelTimeline(ctx, channelID)
+	s.Require().NoError(err)
+	var intros int
+	for _, m := range timeline {
+		if m.MessageType == "introduction" && m.SenderID == leadID {
+			intros++
+		}
+	}
+	s.Equal(1, intros, "rejoin should not re-emit intro")
+}
+
+func (s *ChannelSuite) TestChannel_JoinIntroductionNotInSessionEvents() {
+	leadID, _ := s.createNamedSession("Lead")
+	s.createChannelWithMembers("sev-team", leadID)
+
+	// Intros must not land in per-session agent_message events — they are
+	// channel metadata, not agent-to-agent routing.
+	msgs := s.findAgentMessages(leadID)
+	s.Empty(msgs, "intros should not write legacy agent_message events")
 }
 
 // --- M:N membership tests ---

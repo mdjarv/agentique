@@ -9,6 +9,26 @@ import (
 	"context"
 )
 
+const countSessionIntroductionsInChannel = `-- name: CountSessionIntroductionsInChannel :one
+SELECT COUNT(*) FROM messages
+WHERE channel_id = ?
+  AND sender_type = 'session'
+  AND sender_id = ?
+  AND message_type = 'introduction'
+`
+
+type CountSessionIntroductionsInChannelParams struct {
+	ChannelID string `json:"channel_id"`
+	SenderID  string `json:"sender_id"`
+}
+
+func (q *Queries) CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionIntroductionsInChannel, arg.ChannelID, arg.SenderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteMessagesByChannel = `-- name: DeleteMessagesByChannel :exec
 DELETE FROM messages WHERE channel_id = ?
 `

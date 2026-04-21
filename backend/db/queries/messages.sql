@@ -11,3 +11,10 @@ SELECT * FROM messages WHERE channel_id = ? ORDER BY created_at ASC;
 
 -- name: DeleteMessagesByChannel :exec
 DELETE FROM messages WHERE channel_id = ?;
+
+-- name: CountSessionIntroductionsInChannel :one
+SELECT COUNT(*) FROM messages
+WHERE channel_id = ?
+  AND sender_type = 'session'
+  AND sender_id = ?
+  AND message_type = 'introduction';

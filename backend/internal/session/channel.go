@@ -271,10 +271,105 @@ func (s *Service) JoinChannel(ctx context.Context, sessionID, channelID, role st
 		}
 	}
 
+	// Emit a structured introduction message once per (session, channel) pair.
+	// Runs before refreshChannelContext so teammates see the intro before the
+	// roster re-injection.
+	s.emitIntroduction(ctx, dbSess, ch.ID, role)
+
 	// Re-inject channel context to ALL live members so everyone sees the updated roster.
 	s.refreshChannelContext(ctx, channelID)
 
 	return info, buildErr
+}
+
+// emitIntroduction posts a messageType=introduction message to the channel on
+// behalf of the joining session. Deduped: only the first join per (session,
+// channel) produces an intro — later rejoins are silent.
+func (s *Service) emitIntroduction(ctx context.Context, dbSess store.Session, channelID, memberRole string) {
+	count, err := s.queries.CountSessionIntroductionsInChannel(ctx, store.CountSessionIntroductionsInChannelParams{
+		ChannelID: channelID,
+		SenderID:  dbSess.ID,
+	})
+	if err != nil {
+		slog.Warn("intro dedup check failed", "session_id", dbSess.ID, "channel_id", channelID, "error", err)
+		return
+	}
+	if count > 0 {
+		return
+	}
+
+	content, metadata := s.buildIntroPayload(ctx, dbSess, memberRole)
+
+	if _, err := s.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "session",
+		SenderID:    dbSess.ID,
+		SenderName:  dbSess.Name,
+		Content:     content,
+		MessageType: "introduction",
+		Metadata:    metadata,
+		// No recipients — intro is informational and shouldn't wake peers.
+	}); err != nil {
+		slog.Warn("intro emit failed", "session_id", dbSess.ID, "channel_id", channelID, "error", err)
+	}
+}
+
+// buildIntroPayload returns the markdown content and JSON metadata for a
+// session's introduction. Pulls role, worktree, avatar, and capabilities from
+// the linked agent profile when present; falls back to plain session fields
+// otherwise.
+func (s *Service) buildIntroPayload(ctx context.Context, dbSess store.Session, memberRole string) (string, json.RawMessage) {
+	role := memberRole
+	avatar := ""
+	var capabilities []string
+	agentProfileID := ""
+
+	if dbSess.AgentProfileID.Valid && dbSess.AgentProfileID.String != "" {
+		agentProfileID = dbSess.AgentProfileID.String
+		if ap, err := s.queries.GetAgentProfile(ctx, agentProfileID); err == nil {
+			if ap.Role != "" {
+				role = ap.Role
+			}
+			avatar = ap.Avatar
+			pc := parsePersonaConfig(ap.Config)
+			capabilities = pc.Capabilities
+		}
+	}
+
+	worktree := nullStr(dbSess.WorktreePath)
+
+	var sb strings.Builder
+	header := dbSess.Name
+	if avatar != "" {
+		header = avatar + " " + header
+	}
+	fmt.Fprintf(&sb, "**%s** joined", header)
+	if role != "" {
+		fmt.Fprintf(&sb, " as _%s_", role)
+	}
+	sb.WriteString(".\n")
+	if len(capabilities) > 0 {
+		fmt.Fprintf(&sb, "\n**Capabilities:** %s\n", strings.Join(capabilities, ", "))
+	}
+	if worktree != "" {
+		fmt.Fprintf(&sb, "\n**Worktree:** `%s`\n", worktree)
+	}
+
+	meta := map[string]any{
+		"name":         dbSess.Name,
+		"role":         role,
+		"memberRole":   memberRole,
+		"worktreePath": worktree,
+		"capabilities": capabilities,
+	}
+	if agentProfileID != "" {
+		meta["agentProfileId"] = agentProfileID
+	}
+	if avatar != "" {
+		meta["avatar"] = avatar
+	}
+	metaJSON, _ := json.Marshal(meta)
+	return sb.String(), metaJSON
 }
 
 // LeaveChannel removes a session from a specific channel.
@@ -437,6 +532,11 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID string, msg store.Message, p ChannelMessageParams) {
 	if p.SenderType == "user" {
 		// User broadcasts: no session_events needed — messages table is source of truth.
+		return
+	}
+	if p.MessageType == "introduction" {
+		// Intros are informational channel metadata, not agent-to-agent routing.
+		// They should not appear in per-session event timelines.
 		return
 	}
 

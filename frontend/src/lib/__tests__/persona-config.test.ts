@@ -15,6 +15,7 @@ describe("emptyPersonaConfig", () => {
     expect(c.autoApproveMode).toBe("");
     expect(c.systemPromptAdditions).toBe("");
     expect(c.behaviorPresets).toEqual(DEFAULT_PRESETS);
+    expect(c.capabilities).toEqual([]);
   });
 
   it("returns a fresh presets object each call", () => {
@@ -126,6 +127,21 @@ describe("stripPersonaConfig", () => {
     expect(stripPersonaConfig(input).systemPromptAdditions).toBe("You are a backend expert.");
   });
 
+  it("drops empty capabilities array", () => {
+    const input: AgentProfileConfig = { capabilities: [] };
+    expect(stripPersonaConfig(input)).toEqual({});
+  });
+
+  it("drops capabilities containing only whitespace entries", () => {
+    const input: AgentProfileConfig = { capabilities: ["  ", ""] };
+    expect(stripPersonaConfig(input).capabilities).toBeUndefined();
+  });
+
+  it("trims capabilities and keeps non-empty ones", () => {
+    const input: AgentProfileConfig = { capabilities: ["  go-backend ", "react", "  "] };
+    expect(stripPersonaConfig(input).capabilities).toEqual(["go-backend", "react"]);
+  });
+
   it("round-trips: strip → hydrate produces equivalent config", () => {
     const input: AgentProfileConfig = {
       model: "opus",
@@ -133,6 +149,7 @@ describe("stripPersonaConfig", () => {
       autoApproveMode: "fullAuto",
       behaviorPresets: { ...DEFAULT_PRESETS, planFirst: true, customInstructions: "use TDD" },
       systemPromptAdditions: "Be terse.",
+      capabilities: ["go-backend", "sqlc-migrations"],
     };
     const stripped = stripPersonaConfig(input);
     const hydrated = hydratePersonaConfig(stripped);
@@ -142,5 +159,6 @@ describe("stripPersonaConfig", () => {
     expect(hydrated.behaviorPresets?.planFirst).toBe(true);
     expect(hydrated.behaviorPresets?.customInstructions).toBe("use TDD");
     expect(hydrated.systemPromptAdditions).toBe("Be terse.");
+    expect(hydrated.capabilities).toEqual(["go-backend", "sqlc-migrations"]);
   });
 });

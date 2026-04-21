@@ -185,6 +185,7 @@ func (c *conn) handleProfileGenerate(msg ClientMessage) {
 			Avatar:                p.Avatar,
 			SystemPromptAdditions: p.SystemPromptAdditions,
 			CustomInstructions:    p.CustomInstructions,
+			Capabilities:          p.Capabilities,
 		})
 	})
 }

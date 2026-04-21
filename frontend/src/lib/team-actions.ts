@@ -16,6 +16,7 @@ export interface AgentProfileConfig {
     customInstructions?: string;
   };
   systemPromptAdditions?: string;
+  capabilities?: string[];
 }
 
 export interface AgentProfileInfo {
@@ -181,6 +182,7 @@ export interface GenerateProfileResult {
   avatar: string;
   systemPromptAdditions: string;
   customInstructions: string;
+  capabilities: string[];
   config: string;
 }
 
@@ -195,6 +197,7 @@ export function generateAgentProfile(
     avatar?: string;
     systemPromptAdditions?: string;
     customInstructions?: string;
+    capabilities?: string[];
   },
 ): Promise<GenerateProfileResult> {
   return ws.request<GenerateProfileResult>("agent-profile.generate", params, 60000);

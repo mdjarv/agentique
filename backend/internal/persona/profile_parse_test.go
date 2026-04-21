@@ -12,6 +12,7 @@ SYSTEM_PROMPT: You are a senior backend architect.
 Prioritize correctness over speed.
 Always explain trade-offs.
 CUSTOM_INSTRUCTIONS: Only touch backend files.
+CAPABILITIES: go-backend, sqlc-migrations, channel-routing
 CONFIG: {"autoCommit": true, "terse": true}`
 	got := parseProfileResponse(raw)
 
@@ -37,6 +38,41 @@ CONFIG: {"autoCommit": true, "terse": true}`
 	}
 	if got.Config != `{"autoCommit": true, "terse": true}` {
 		t.Errorf("Config = %q", got.Config)
+	}
+	wantCaps := []string{"go-backend", "sqlc-migrations", "channel-routing"}
+	if len(got.Capabilities) != len(wantCaps) {
+		t.Fatalf("Capabilities = %v, want %v", got.Capabilities, wantCaps)
+	}
+	for i, w := range wantCaps {
+		if got.Capabilities[i] != w {
+			t.Errorf("Capabilities[%d] = %q, want %q", i, got.Capabilities[i], w)
+		}
+	}
+}
+
+func TestParseCapabilities(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"   ", nil},
+		{"go", []string{"go"}},
+		{"  go , react  ,  ", []string{"go", "react"}},
+		{",,", nil},
+		{"a,b,c", []string{"a", "b", "c"}},
+	}
+	for _, c := range cases {
+		got := parseCapabilities(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("parseCapabilities(%q) = %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("parseCapabilities(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+			}
+		}
 	}
 }
 
@@ -98,6 +134,7 @@ func TestBuildProfilePrompt_IncludesDraftHints(t *testing.T) {
 		Role:                  "Architect",
 		SystemPromptAdditions: "You love DDD.",
 		CustomInstructions:    "Only backend.",
+		Capabilities:          []string{"go", "react"},
 	})
 	// Must include the authoritative-draft section and each hint.
 	for _, want := range []string{
@@ -107,6 +144,7 @@ func TestBuildProfilePrompt_IncludesDraftHints(t *testing.T) {
 		"You love DDD.",
 		"CUSTOM_INSTRUCTIONS:",
 		"Only backend.",
+		"CAPABILITIES: go, react",
 	} {
 		if !containsSubstring(out, want) {
 			t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, out)

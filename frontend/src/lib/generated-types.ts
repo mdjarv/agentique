@@ -40,6 +40,7 @@ export interface WireTextEvent {
 export interface WireThinkingEvent {
   type: "thinking";
   content: string;
+  signature?: string;
   parentToolUseId?: string;
 }
 
@@ -686,6 +687,7 @@ export interface AgentProfileConfig {
   behaviorPresets: TeamBehaviorPresets;
   systemPromptAdditions?: string;
   communicationMode?: string;
+  capabilities?: string[];
 }
 
 export interface AgentProfileInfo {

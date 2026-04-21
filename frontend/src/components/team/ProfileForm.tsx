@@ -168,6 +168,67 @@ function AvatarPicker({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
+function CapabilitiesInput({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  const commit = () => {
+    const raw = draft.trim();
+    if (!raw) return;
+    const tags = raw
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && !value.includes(t));
+    if (tags.length > 0) onChange([...value, ...tags]);
+    setDraft("");
+  };
+
+  const remove = (tag: string) => onChange(value.filter((t) => t !== tag));
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 shadow-sm min-h-9">
+      {value.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-xs"
+        >
+          {tag}
+          <button
+            type="button"
+            onClick={() => remove(tag)}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={`Remove ${tag}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Backspace" && draft === "" && value.length > 0) {
+            const last = value[value.length - 1];
+            if (last !== undefined) remove(last);
+          }
+        }}
+        onBlur={commit}
+        placeholder={value.length === 0 ? "go-backend, react-ui, ..." : ""}
+        className="flex-1 min-w-[80px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+      />
+    </div>
+  );
+}
+
 function SectionHeading({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="space-y-1">
@@ -243,12 +304,17 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
     }));
   }, []);
 
+  const setCapabilities = useCallback((caps: string[]) => {
+    setConfig((prev) => ({ ...prev, capabilities: caps }));
+  }, []);
+
   const handleGenerate = useCallback(async () => {
     if (!projectId || generating) return;
     setGenerating(true);
     try {
       const currentSystemPrompt = config.systemPromptAdditions ?? "";
       const currentCustomInstructions = config.behaviorPresets?.customInstructions ?? "";
+      const currentCapabilities = config.capabilities ?? [];
       const result = await generateAgentProfile(ws, {
         projectId,
         brief: brief.trim() || undefined,
@@ -258,6 +324,7 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
         avatar: avatar.trim() || undefined,
         systemPromptAdditions: currentSystemPrompt.trim() || undefined,
         customInstructions: currentCustomInstructions.trim() || undefined,
+        capabilities: currentCapabilities.length > 0 ? currentCapabilities : undefined,
       });
       // Fill only blank fields. Backend echoes hints verbatim, but this
       // still protects against any drift in the model's output.
@@ -293,11 +360,14 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
         if (!nextBp.customInstructions?.trim() && result.customInstructions?.trim()) {
           nextBp.customInstructions = result.customInstructions;
         }
+        const existingCaps = c.capabilities ?? [];
+        const nextCaps = existingCaps.length > 0 ? existingCaps : (result.capabilities ?? []);
         return {
           ...c,
           behaviorPresets: nextBp,
           systemPromptAdditions:
             c.systemPromptAdditions?.trim() || result.systemPromptAdditions || "",
+          capabilities: nextCaps,
         };
       });
     } catch (e) {
@@ -432,7 +502,8 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
                         description.trim() ||
                         avatar.trim() ||
                         config.systemPromptAdditions?.trim() ||
-                        config.behaviorPresets?.customInstructions?.trim()
+                        config.behaviorPresets?.customInstructions?.trim() ||
+                        (config.capabilities ?? []).length > 0
                       ? "Fill in the rest"
                       : "Generate from project"}
                 </Button>
@@ -463,6 +534,15 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
             title="Session defaults"
             hint="Applied when launching a session from this profile. Explicit launch overrides still win."
           />
+
+          <Field>
+            <Label>Capabilities</Label>
+            <CapabilitiesInput value={config.capabilities ?? []} onChange={setCapabilities} />
+            <Helper>
+              Short tags teammates use to route work (e.g. <code>go-backend</code>,{" "}
+              <code>sqlc-migrations</code>). Shown in channel introductions.
+            </Helper>
+          </Field>
 
           <div className="grid grid-cols-3 gap-3">
             <Field>

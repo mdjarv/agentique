@@ -1245,6 +1245,7 @@ type PersonaConfig struct {
 	BehaviorPresets       BehaviorPresets `json:"behaviorPresets"`
 	SystemPromptAdditions string          `json:"systemPromptAdditions,omitempty"`
 	CommunicationMode     string          `json:"communicationMode,omitempty"`
+	Capabilities          []string        `json:"capabilities,omitempty"`
 }
 
 // parsePersonaConfig unmarshals the profile's config JSON into a PersonaConfig.
