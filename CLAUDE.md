@@ -45,3 +45,26 @@ The live SQLite database is at `~/.local/share/agentique/agentique.db`. Sessions
 
 - sqlc generates type-safe query code from SQL in `backend/db/queries/` — do not edit generated files.
 - Migrations in `backend/db/migrations/` (goose, sequential numbering).
+
+## Channels, Hierarchy, and Coordination
+
+The `messages` table is the source of truth for channel timelines. `session_events` is maintained for legacy agent-message display, but informational channel metadata (`messageType: "introduction"`, `messageType: "spawn"`) is **not** written to session events — see `writeLegacyAgentMessageEvents` in `session/channel.go`. When adding a new informational message type, extend that skip list.
+
+**Introductions.** Every session join emits one intro message per (session, channel) pair, deduped via `CountSessionIntroductionsInChannel`. Intro metadata carries `name`, `role`, `worktreePath`, `capabilities`, `agentProfileId`, `avatar`. Capabilities come from the session's linked agent profile (`PersonaConfig.capabilities`).
+
+**Agent-initiated spawning (`@spawn`).** Authorization runs before UI approval via `SpawnAuthCallback`:
+- Channel lead (any channel) → auto-approve, no UI prompt
+- Worker (member but not lead) → reject with "ask your lead" deny message
+- Not in any channel → existing UI approval flow
+
+`SpawnWorkersRequest.channelId` is optional — when set, the lead must already be a lead in that channel and workers join it; when empty, a fresh channel is created. Every successful spawn (auto or UI-approved) emits `messageType: "spawn"` to the target channel.
+
+**Hierarchy.** `sessions.parent_session_id` populated by `CreateSwarm` and `extendSwarm` with the lead's ID. `DeleteSession` walks descendants depth-first, calling itself recursively so each child gets its full cleanup pass (stop, worktree, branch, files, broadcast) before the parent row is removed. The `ON DELETE CASCADE` FK is a safety net, not the primary cleanup mechanism — relying on it alone would leave worktrees orphaned on disk.
+
+**Dissolve vs. Delete (leads).** Two distinct teardown paths:
+- `DissolveChannel` — stops workers, removes their worktrees/branches, deletes the channel; **lead survives as a regular session** with its worktree and history intact. Use when you want to keep the lead's output.
+- `DeleteSession` on a lead — cascades through `parent_session_id` and wipes the entire subtree including the lead. Use when the whole branch of work is done.
+
+Both are exposed on each lead node in the `/teams` hierarchy tree.
+
+**Additive principle.** All team coordination features are channel-only and must not modify existing session rendering, event pipeline mutations, or turn management for sessions outside a channel.

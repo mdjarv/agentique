@@ -135,6 +135,37 @@ Frontend:
 
 ---
 
+### M5: Channel Coordination & Agent Hierarchy [DONE]
+
+**Goal:** Turn channels from flat membership lists into first-class coordination surfaces — agents introduce themselves with structured capabilities, leads can spawn workers autonomously, and the resulting tree is observable and actionable in the UI.
+
+**Channel introductions:**
+- [x] `messageType: "introduction"` emitted once per (session, channel) pair on join, deduped via a message-count query
+- [x] Intro content includes avatar, role, worktree path, capabilities; structured metadata in `messages.metadata` for programmatic consumption
+- [x] Intros excluded from the legacy per-session `agent_message` event writer so they don't pollute single-session timelines
+- [x] `PersonaConfig.capabilities` added (backend + frontend); capability tag input in `ProfileForm`; generate prompt parses `CAPABILITIES:` field
+
+**Agent-initiated spawning:**
+- [x] `SpawnAuthCallback` on `Session` decides UI approval / auto-approve / reject before the approval flow runs
+- [x] Channel leads auto-approve `@spawn`; workers get a structured reject explaining to ask the lead; non-channel sessions keep the existing UI approval flow
+- [x] `SpawnWorkersRequest.channelId` lets a lead add workers to an existing channel instead of creating a fresh one
+- [x] `messageType: "spawn"` audit message emitted to the target channel on every successful spawn (both UI-approved and auto-approved)
+
+**Dynamic hierarchy:**
+- [x] `sessions.parent_session_id` column with `ON DELETE CASCADE` FK (migration 033)
+- [x] `CreateSwarm` / `extendSwarm` populate the parent pointer with the lead's ID
+- [x] `DeleteSession` walks descendants depth-first, running the full cleanup path (stop, worktree, branch, files, broadcast) for each child before the parent row disappears; FK cascade is the fallback
+- [x] `SessionInfo.parentSessionId` on the wire type; `buildSessionHierarchy` + `countDescendants` helpers
+
+**Teams tab UI:**
+- [x] "Session hierarchy" collapsible tree section on `/teams`, sorted alphabetically, hides solo sessions
+- [x] Clickable node labels navigate to `/project/$projectSlug/session/$sessionShortId`
+- [x] State dot per node (running / idle / merging / failed / done) driven by the live Zustand sessions map
+- [x] Trash button with cascade-count confirmation ("N descendant(s) will be deleted")
+- [x] Scissors button on channel-lead nodes that invokes `dissolveChannel` — stops workers, cleans worktrees, deletes channel, keeps the lead alive
+
+---
+
 ## Investigations
 
 ### Prompt Handoff: Sessions Spawning Sessions
@@ -227,10 +258,11 @@ Frontend:
 | Phase | Focus | Key Deliverables |
 |---|---|---|
 | **0: Visibility** | Agent profiles + team panel | **Done.** `agent_profiles` / `teams` tables, profile editor UI, team panel in sidebar, session→profile binding, preamble team context injection |
-| **1: Personas** | Discovery + triage | `persona/` package, `AskTeammate` tool, persona REST endpoint, interaction logging, persona Q&A visible in team panel |
-| **2: DMs** | Cross-project messaging | `team_messages` table, SendMessage routing extension (swarm-first fallback to team), message queue for offline agents, user-gated delivery |
-| **3: Group channels** | Team-wide chat | `team_channels` table, broadcast to channel, channel history injection on resume |
-| **4: Autonomy** | Persona-gated auto-spawn | Persona confidence threshold as autonomy dial, concurrent session cap, merge gating, audit log |
+| **1: Personas** | Discovery + triage | **Done.** `persona/` package, `AskTeammate` tool, persona query via Haiku, interaction logging, profile generation (`agent-profile.generate`) |
+| **2: Channels** | Multi-agent coordination | **Done** (M5 above). Unified `messages` + `message_deliveries` tables, channel CRUD, `@spawn` worker delegation with lead auto-approval, structured introductions with capabilities, `parent_session_id` hierarchy tree, clickable hierarchy with delete-cascade and dissolve actions |
+| **3: Cross-project DMs** | Cross-project messaging | `channels.project_id` currently NOT NULL — make nullable or add junction table. Metadata-driven 1:1 routing or lightweight auto-created 1:1 channels. Message queue for offline agents already in place via `message_deliveries` |
+| **4: Topology presets** | Named preamble modes | `PersonaConfig.communicationMode` field exists but unused. Inject different routing instructions per mode: `spoke` (default), `mesh` (workers talk directly), `spoke+request` (workers ask lead before peer messaging). No routing enforcement — preamble text only |
+| **5: Autonomy tuning** | Gated auto-spawn policy | Persona confidence threshold as autonomy dial, concurrent session cap already enforced via `max_sessions`, spawn idempotency key, partial-failure reporting in spawn audit messages |
 
 **Key design decisions:**
 - User-gated for MVP — messages queue for offline agents, user decides when to spawn
