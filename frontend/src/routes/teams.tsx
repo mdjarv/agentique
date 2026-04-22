@@ -6,6 +6,7 @@ import {
   MessageSquare,
   Network,
   Plus,
+  Scissors,
   Trash2,
   UserPlus,
   Users,
@@ -28,6 +29,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { dissolveChannel } from "~/lib/channel-actions";
 import { deleteSession } from "~/lib/session/actions";
 import {
   buildSessionHierarchy,
@@ -235,7 +237,9 @@ function HierarchyNode({
 }) {
   const [expanded, setExpanded] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [dissolveOpen, setDissolveOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [dissolving, setDissolving] = useState(false);
   const ws = useWebSocket();
   const hasChildren = node.children.length > 0;
   const project = projects.find((p) => p.id === node.session.projectId);
@@ -244,6 +248,16 @@ function HierarchyNode({
   const stateColor = stateDotColor(node.session.state);
   const shortId = node.session.id.split("-")[0] ?? node.session.id;
   const descendantCount = countDescendants(node);
+
+  // Channels this session is a lead of — used to expose the Dissolve action
+  // only where it has a defined effect.
+  const leadChannelIds = useMemo(() => {
+    const roles = node.session.channelRoles ?? {};
+    return Object.entries(roles)
+      .filter(([, role]) => role === "lead")
+      .map(([id]) => id);
+  }, [node.session.channelRoles]);
+  const canDissolve = leadChannelIds.length > 0;
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -259,6 +273,28 @@ function HierarchyNode({
       toast.error(getErrorMessage(err, "Delete failed"));
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDissolve = async () => {
+    setDissolving(true);
+    try {
+      // Dissolve every channel this session leads. Typically there's only
+      // one (the worker channel), but we don't want to silently ignore
+      // additional lead memberships.
+      for (const chId of leadChannelIds) {
+        await dissolveChannel(ws, chId);
+      }
+      toast.success(
+        leadChannelIds.length === 1
+          ? `Dissolved ${node.session.name}'s channel`
+          : `Dissolved ${leadChannelIds.length} channels led by ${node.session.name}`,
+      );
+      setDissolveOpen(false);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Dissolve failed"));
+    } finally {
+      setDissolving(false);
     }
   };
 
@@ -311,9 +347,28 @@ function HierarchyNode({
         {projectName && (
           <span className="truncate text-[10px] text-muted-foreground">{projectName}</span>
         )}
+        {canDissolve && (
+          <button
+            type="button"
+            aria-label={`Dissolve channel led by ${node.session.name}`}
+            title="Dissolve — stop workers, keep this session"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDissolveOpen(true);
+            }}
+            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-600 group-hover:opacity-100 focus:opacity-100"
+          >
+            <Scissors className="size-3" />
+          </button>
+        )}
         <button
           type="button"
           aria-label={`Delete ${node.session.name}`}
+          title={
+            descendantCount > 0
+              ? `Delete — remove this session and ${descendantCount} descendant(s)`
+              : "Delete — remove this session"
+          }
           onClick={(e) => {
             e.stopPropagation();
             setConfirmOpen(true);
@@ -353,6 +408,28 @@ function HierarchyNode({
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleting}>
               {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={dissolveOpen} onOpenChange={setDissolveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Dissolve {node.session.name}'s channel?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stops every worker in{" "}
+              {leadChannelIds.length === 1
+                ? "the channel"
+                : `${leadChannelIds.length} channels led by this session`}
+              , removes their worktrees and branches, and deletes the channel.{" "}
+              <strong>{node.session.name} itself stays alive</strong> as a regular session — its
+              worktree and history are preserved. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dissolving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDissolve} disabled={dissolving}>
+              {dissolving ? "Dissolving…" : "Dissolve"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
