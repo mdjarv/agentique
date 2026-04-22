@@ -23,7 +23,8 @@ export type AgentMessageType =
   | "done"
   | "message"
   | "clarification"
-  | "introduction";
+  | "introduction"
+  | "spawn";
 
 /** Unified channel message from the messages table. */
 export interface ChannelMessage {

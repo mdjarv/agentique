@@ -71,9 +71,14 @@ func AgentiqueMCPHTTPConfig(internalURL, token string) string {
 }
 
 // SpawnWorkersRequest is the parsed body from SendMessage({to: "@spawn", ...}).
+//
+// If ChannelID is non-empty, the workers are added to that existing channel
+// (sender must already be a lead there). If ChannelID is empty, a new channel
+// is created using ChannelName (or a default derived from the sender's name).
 type SpawnWorkersRequest struct {
-	ChannelName string           `json:"channelName"`
-	Workers  []SpawnWorkerEntry  `json:"workers"`
+	ChannelID   string             `json:"channelId,omitempty"`
+	ChannelName string             `json:"channelName"`
+	Workers     []SpawnWorkerEntry `json:"workers"`
 }
 
 // SpawnWorkerEntry describes a single worker to spawn.
@@ -82,6 +87,21 @@ type SpawnWorkerEntry struct {
 	Role   string `json:"role"`
 	Prompt string `json:"prompt"`
 }
+
+// SpawnDecision is the result of authorizing a SendMessage({to:"@spawn",...}).
+type SpawnDecision int
+
+const (
+	// SpawnDecisionPrompt means the regular UI approval flow should run.
+	SpawnDecisionPrompt SpawnDecision = iota
+	// SpawnDecisionAuto means the sender is trusted (channel lead) — bypass UI
+	// approval and execute the spawn directly.
+	SpawnDecisionAuto
+	// SpawnDecisionReject means the spawn is not permitted for this sender
+	// (e.g. a worker asking to spawn). The intercepted SendMessage must be
+	// denied with Reason as the message.
+	SpawnDecisionReject
+)
 
 // SetAgentMessageCallback sets the callback for routing SendMessage tool invocations
 // within a specific channel. Multiple channels can have callbacks simultaneously.
@@ -178,6 +198,16 @@ func (s *Session) interceptAskTeammate(input json.RawMessage) (*claudecli.Permis
 func (s *Session) SetSpawnWorkersCallback(cb func(senderID string, req SpawnWorkersRequest) error) {
 	s.mu.Lock()
 	s.channel.onSpawnWorkers = cb
+	s.mu.Unlock()
+}
+
+// SetSpawnAuthCallback sets the authorization callback for @spawn. The
+// callback runs before any UI approval: it decides whether to auto-approve
+// (channel lead), reject (worker), or fall back to the regular prompt flow
+// (session not in any channel).
+func (s *Session) SetSpawnAuthCallback(cb func(senderID string, req SpawnWorkersRequest) (SpawnDecision, string)) {
+	s.mu.Lock()
+	s.channel.onAuthorizeSpawn = cb
 	s.mu.Unlock()
 }
 
@@ -335,6 +365,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 
 	s.mu.Lock()
 	cb := s.channel.onSpawnWorkers
+	authCb := s.channel.onAuthorizeSpawn
 	s.mu.Unlock()
 
 	if cb == nil {
@@ -344,6 +375,44 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 		}, nil
 	}
 
+	// Ask the service whether this spawn can bypass UI approval, must be
+	// rejected outright, or should fall through to the human prompt flow.
+	decision := SpawnDecisionPrompt
+	var rejectReason string
+	if authCb != nil {
+		decision, rejectReason = authCb(s.ID, req)
+	}
+	switch decision {
+	case SpawnDecisionReject:
+		slog.Info("spawn rejected by authorizer", "session_id", s.ID, "reason", rejectReason)
+		msg := rejectReason
+		if msg == "" {
+			msg = "Worker spawning is not available for this session."
+		}
+		return &claudecli.PermissionResponse{Allow: false, DenyMessage: msg}, nil
+	case SpawnDecisionAuto:
+		slog.Info("spawn auto-approved (channel lead)", "session_id", s.ID, "workers", len(req.Workers))
+		if err := cb(s.ID, req); err != nil {
+			return &claudecli.PermissionResponse{
+				Allow:       false,
+				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
+			}, nil
+		}
+		var names []string
+		for _, w := range req.Workers {
+			names = append(names, w.Name)
+		}
+		return &claudecli.PermissionResponse{
+			Allow: false,
+			DenyMessage: fmt.Sprintf(
+				"Auto-approved: spawned %d workers: %s. They are working in separate worktrees. "+
+					"Each worker will message you shortly with their plan before starting work. "+
+					"Wait for all workers to check in before proceeding.",
+				len(req.Workers), strings.Join(names, ", ")),
+		}, nil
+	}
+
+	// SpawnDecisionPrompt — existing UI approval flow.
 	// Marshal the request as the tool input for the approval UI.
 	inputJSON, _ := json.Marshal(req)
 

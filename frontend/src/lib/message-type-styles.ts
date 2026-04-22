@@ -1,4 +1,4 @@
-import { AlertCircle, Check, GitCommitHorizontal, MapIcon } from "lucide-react";
+import { AlertCircle, Check, GitCommitHorizontal, MapIcon, UsersRound } from "lucide-react";
 import type { ComponentType } from "react";
 import type { AgentMessageType } from "~/lib/channel-actions";
 
@@ -28,6 +28,11 @@ export const MESSAGE_TYPE_STYLES: Record<string, MessageTypeStyle> = {
   introduction: {
     border: "border-l-2 border-l-muted-foreground/20",
     badge: "text-muted-foreground/50 bg-muted-foreground/10",
+  },
+  spawn: {
+    border: "border-l-2 border-l-violet-400/40",
+    badge: "text-violet-500/70 bg-violet-500/10",
+    icon: UsersRound,
   },
 };
 

@@ -534,9 +534,9 @@ func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID s
 		// User broadcasts: no session_events needed — messages table is source of truth.
 		return
 	}
-	if p.MessageType == "introduction" {
-		// Intros are informational channel metadata, not agent-to-agent routing.
-		// They should not appear in per-session event timelines.
+	if p.MessageType == "introduction" || p.MessageType == "spawn" {
+		// Informational channel metadata, not agent-to-agent routing.
+		// Should not appear in per-session event timelines.
 		return
 	}
 
@@ -965,51 +965,218 @@ func (s *Service) refreshChannelContext(ctx context.Context, channelID string) {
 }
 
 // wireSpawnWorkersCallback sets up the SpawnWorkers interception callback on a
-// live session. On approval, it creates a swarm with the session as lead.
+// live session. On approval, it creates (or extends) a swarm with the session
+// as lead.
 func (s *Service) wireSpawnWorkersCallback(sess *Session, projectID string) {
 	sess.SetSpawnWorkersCallback(func(senderID string, req SpawnWorkersRequest) error {
-		// Look up current channels — if the session is already in one, add workers there.
-		// Otherwise, create a new channel.
-		channelName := req.ChannelName
-		if channelName == "" {
-			dbSess, err := s.queries.GetSession(context.Background(), senderID)
-			if err != nil {
-				return fmt.Errorf("sender not found: %w", err)
-			}
-			channelName = dbSess.Name + " workers"
-		}
-
-		dbSess, err := s.queries.GetSession(context.Background(), senderID)
-		if err != nil {
-			return fmt.Errorf("sender not found: %w", err)
-		}
-
-		// Inherit the lead's auto-approve mode and behavior presets so workers
-		// don't need manual approval for every tool call.
-		leadAutoApprove := dbSess.AutoApproveMode
-		leadPresets := ParsePresets(dbSess.BehaviorPresets)
-		// Workers always get auto-commit since they're in worktrees.
-		leadPresets.AutoCommit = true
-
-		members := make([]SwarmMemberSpec, len(req.Workers))
-		for i, w := range req.Workers {
-			members[i] = SwarmMemberSpec{
-				Name:            w.Name,
-				Role:            w.Role,
-				Prompt:          w.Prompt,
-				AutoApproveMode: leadAutoApprove,
-				BehaviorPresets: leadPresets,
-			}
-		}
-
-		_, err = s.CreateSwarm(context.Background(), CreateSwarmParams{
-			ProjectID:     projectID,
-			ChannelName:   channelName,
-			LeadSessionID: senderID,
-			Members:       members,
-		})
-		return err
+		return s.executeSpawn(context.Background(), senderID, projectID, req)
 	})
+	sess.SetSpawnAuthCallback(func(senderID string, req SpawnWorkersRequest) (SpawnDecision, string) {
+		return s.authorizeSpawn(context.Background(), senderID, req)
+	})
+}
+
+// authorizeSpawn decides how a SendMessage({to:"@spawn",...}) from senderID
+// should be handled — auto-approve for leads, reject for workers, or fall
+// through to the UI prompt when the session isn't in any channel yet.
+//
+// If the request names a specific ChannelID, the sender must be a lead in that
+// channel; otherwise being lead in any channel is enough.
+func (s *Service) authorizeSpawn(ctx context.Context, senderID string, req SpawnWorkersRequest) (SpawnDecision, string) {
+	memberships, err := s.queries.ListSessionChannels(ctx, senderID)
+	if err != nil {
+		slog.Warn("spawn auth: list channels failed", "session_id", senderID, "error", err)
+		return SpawnDecisionPrompt, ""
+	}
+
+	// Explicit target channel — checked before the empty-membership fallback
+	// so a caller targeting a channel they aren't in gets a clear rejection,
+	// not a silent fall-through to the UI prompt.
+	if req.ChannelID != "" {
+		for _, m := range memberships {
+			if m.ChannelID != req.ChannelID {
+				continue
+			}
+			if m.Role == "lead" {
+				return SpawnDecisionAuto, ""
+			}
+			return SpawnDecisionReject, fmt.Sprintf(
+				"You are a %q in channel %q, not a lead — only leads can spawn workers. Ask the channel lead to spawn them for you via SendMessage.",
+				m.Role, req.ChannelID,
+			)
+		}
+		return SpawnDecisionReject, fmt.Sprintf(
+			"You are not a member of channel %q; you cannot spawn workers there.",
+			req.ChannelID,
+		)
+	}
+
+	if len(memberships) == 0 {
+		return SpawnDecisionPrompt, ""
+	}
+	for _, m := range memberships {
+		if m.Role == "lead" {
+			return SpawnDecisionAuto, ""
+		}
+	}
+	return SpawnDecisionReject, "You are a worker in this channel, not a lead. Only leads can spawn workers — ask your channel lead via SendMessage to spawn them for you."
+}
+
+// executeSpawn runs the actual worker-creation flow. Called either after UI
+// approval (SpawnDecisionPrompt path) or directly from the auto-approved path
+// (SpawnDecisionAuto).
+//
+// If req.ChannelID is set, the sender must already be a lead in that channel;
+// new workers join it. Otherwise a fresh channel is created using
+// req.ChannelName (or "{senderName} workers" when empty).
+func (s *Service) executeSpawn(ctx context.Context, senderID, projectID string, req SpawnWorkersRequest) error {
+	dbSess, err := s.queries.GetSession(ctx, senderID)
+	if err != nil {
+		return fmt.Errorf("sender not found: %w", err)
+	}
+
+	// Inherit the lead's auto-approve mode and behavior presets so workers
+	// don't need manual approval for every tool call.
+	leadAutoApprove := dbSess.AutoApproveMode
+	leadPresets := ParsePresets(dbSess.BehaviorPresets)
+	// Workers always get auto-commit since they're in worktrees.
+	leadPresets.AutoCommit = true
+
+	members := make([]SwarmMemberSpec, len(req.Workers))
+	for i, w := range req.Workers {
+		members[i] = SwarmMemberSpec{
+			Name:            w.Name,
+			Role:            w.Role,
+			Prompt:          w.Prompt,
+			AutoApproveMode: leadAutoApprove,
+			BehaviorPresets: leadPresets,
+		}
+	}
+
+	if req.ChannelID != "" {
+		return s.extendSwarm(ctx, projectID, req.ChannelID, senderID, dbSess.Name, members)
+	}
+
+	channelName := req.ChannelName
+	if channelName == "" {
+		channelName = dbSess.Name + " workers"
+	}
+	result, err := s.CreateSwarm(ctx, CreateSwarmParams{
+		ProjectID:     projectID,
+		ChannelName:   channelName,
+		LeadSessionID: senderID,
+		Members:       members,
+	})
+	if err != nil {
+		return err
+	}
+	s.emitSpawnAudit(ctx, result.ChannelID, senderID, dbSess.Name, members)
+	return nil
+}
+
+// extendSwarm adds new workers to an existing channel where senderID is
+// already a lead. Mirrors the worker-creation inner loop of CreateSwarm but
+// skips the channel-creation and lead-join steps.
+func (s *Service) extendSwarm(ctx context.Context, projectID, channelID, senderID, leadName string, members []SwarmMemberSpec) error {
+	slog.Info("swarm: extending existing channel",
+		"channel_id", channelID, "lead_id", senderID, "worker_count", len(members))
+
+	ch, err := s.queries.GetChannel(ctx, channelID)
+	if err != nil {
+		return fmt.Errorf("channel not found: %w", err)
+	}
+	if ch.ProjectID != projectID {
+		return fmt.Errorf("channel belongs to a different project")
+	}
+
+	existingMembers, err := s.queries.ListChannelMemberSessions(ctx, channelID)
+	if err != nil {
+		return fmt.Errorf("list channel members: %w", err)
+	}
+
+	// Build peer list for worker prompt framing — includes current members.
+	var peerNames []string
+	for _, m := range existingMembers {
+		if m.ID != senderID {
+			peerNames = append(peerNames, m.Name)
+		}
+	}
+	for _, member := range members {
+		peerNames = append(peerNames, member.Name)
+	}
+
+	for i, member := range members {
+		role := member.Role
+		if role == "" {
+			role = "worker"
+		}
+
+		result, cerr := s.CreateSession(ctx, CreateSessionParams{
+			ProjectID:       projectID,
+			Name:            member.Name,
+			Worktree:        true,
+			Model:           member.Model,
+			PlanMode:        member.PlanMode,
+			AutoApproveMode: member.AutoApproveMode,
+			Effort:          member.Effort,
+			BehaviorPresets: member.BehaviorPresets,
+		})
+		if cerr != nil {
+			slog.Warn("swarm: worker create failed", "index", i, "name", member.Name, "error", cerr)
+			continue
+		}
+
+		if _, jerr := s.JoinChannel(ctx, result.SessionID, channelID, role); jerr != nil {
+			slog.Warn("swarm: worker join failed", "session_id", result.SessionID, "error", jerr)
+		}
+
+		workerPrompt := member.Prompt
+		if leadName != "" {
+			var others []string
+			for _, n := range peerNames {
+				if n != member.Name {
+					others = append(others, n)
+				}
+			}
+			workerPrompt = buildWorkerPrompt(ch.Name, member.Role, leadName, others, member.Prompt)
+		}
+		if qerr := s.QuerySession(ctx, result.SessionID, workerPrompt, nil); qerr != nil {
+			slog.Warn("swarm: worker initial query failed", "session_id", result.SessionID, "error", qerr)
+		}
+	}
+
+	s.refreshChannelContext(ctx, channelID)
+	s.emitSpawnAudit(ctx, channelID, senderID, leadName, members)
+	return nil
+}
+
+// emitSpawnAudit writes a structured "spawn" message to the channel so that
+// retroactively inspecting the timeline reveals who created which workers.
+func (s *Service) emitSpawnAudit(ctx context.Context, channelID, senderID, senderName string, members []SwarmMemberSpec) {
+	names := make([]string, len(members))
+	for i, m := range members {
+		names[i] = m.Name
+	}
+
+	meta, _ := json.Marshal(map[string]any{
+		"spawnedBy":   senderID,
+		"workers":     names,
+		"workerCount": len(members),
+	})
+
+	content := fmt.Sprintf("**%s** spawned %d worker(s): %s", senderName, len(members), strings.Join(names, ", "))
+
+	if _, err := s.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "session",
+		SenderID:    senderID,
+		SenderName:  senderName,
+		Content:     content,
+		MessageType: "spawn",
+		Metadata:    meta,
+	}); err != nil {
+		slog.Warn("spawn audit emit failed", "channel_id", channelID, "error", err)
+	}
 }
 
 // wireDissolveChannelCallback sets up the @dissolve interception callback on a

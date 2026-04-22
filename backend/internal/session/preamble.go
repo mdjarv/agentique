@@ -64,7 +64,16 @@ SendMessage({to: "@spawn", message: JSON.stringify({
 })})
 ` + "```" + `
 
-The user must approve before workers are created. Workers join your channel and communicate via SendMessage.
+If you are already a lead in a channel and want to add more workers to it, pass that channel's id instead of a ` + "`channelName`" + ` so the new workers join your existing team:
+
+` + "```" + `
+SendMessage({to: "@spawn", message: JSON.stringify({
+  channelId: "<the current channel id>",
+  workers: [ ... ]
+})})
+` + "```" + `
+
+Channel leads spawn workers without user approval (gated only by the per-project session limit). New workers join the resulting channel and communicate via SendMessage. Non-lead workers cannot spawn — ask your lead via SendMessage instead.
 
 Workers use a ` + "`type`" + ` field in SendMessage to signal their status:
 - **plan:** Worker's initial plan before starting — wait for all workers to check in.

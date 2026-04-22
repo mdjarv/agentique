@@ -103,6 +103,7 @@ type sessionGitState struct {
 type sessionChannelState struct {
 	agentMessageCallbacks map[string]func(senderID, targetName, content, msgType string) error // keyed by channelID
 	onSpawnWorkers        func(senderID string, req SpawnWorkersRequest) error
+	onAuthorizeSpawn      func(senderID string, req SpawnWorkersRequest) (SpawnDecision, string)
 	onDissolveChannel     func(senderID string) error
 }
 
