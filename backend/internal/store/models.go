@@ -142,6 +142,7 @@ type Session struct {
 	ChannelRole     string         `json:"channel_role"`
 	AutoApproveMode string         `json:"auto_approve_mode"`
 	AgentProfileID  sql.NullString `json:"agent_profile_id"`
+	ParentSessionID sql.NullString `json:"parent_session_id"`
 }
 
 type SessionEvent struct {

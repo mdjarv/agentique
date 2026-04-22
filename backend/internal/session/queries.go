@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -65,6 +66,7 @@ type serviceQueries interface {
 	ListRecentEventsBySession(ctx context.Context, arg store.ListRecentEventsBySessionParams) ([]store.SessionEvent, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	UpdateSessionWorktree(ctx context.Context, arg store.UpdateSessionWorktreeParams) error
+	ListChildSessions(ctx context.Context, parentID sql.NullString) ([]store.Session, error)
 
 	// Agent profile / team queries (for preamble injection)
 	GetAgentProfile(ctx context.Context, id string) (store.AgentProfile, error)

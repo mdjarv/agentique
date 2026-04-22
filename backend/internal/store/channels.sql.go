@@ -113,7 +113,7 @@ func (q *Queries) ListAgentMessagesByChannel(ctx context.Context, channelID stri
 }
 
 const listChannelMemberSessions = `-- name: ListChannelMemberSessions :many
-SELECT s.id, s.project_id, s.name, s.work_dir, s.worktree_path, s.worktree_branch, s.state, s.created_at, s.updated_at, s.claude_session_id, s.worktree_base_sha, s.model, s.worktree_merged, s.permission_mode, s.auto_approve, s.pr_url, s.effort, s.max_budget, s.max_turns, s.last_query_at, s.completed_at, s.behavior_presets, s.channel_id, s.channel_role, s.auto_approve_mode, s.agent_profile_id, cm.role AS member_role FROM sessions s
+SELECT s.id, s.project_id, s.name, s.work_dir, s.worktree_path, s.worktree_branch, s.state, s.created_at, s.updated_at, s.claude_session_id, s.worktree_base_sha, s.model, s.worktree_merged, s.permission_mode, s.auto_approve, s.pr_url, s.effort, s.max_budget, s.max_turns, s.last_query_at, s.completed_at, s.behavior_presets, s.channel_id, s.channel_role, s.auto_approve_mode, s.agent_profile_id, s.parent_session_id, cm.role AS member_role FROM sessions s
 JOIN channel_members cm ON cm.session_id = s.id
 WHERE cm.channel_id = ?
 ORDER BY cm.joined_at ASC
@@ -146,6 +146,7 @@ type ListChannelMemberSessionsRow struct {
 	ChannelRole     string         `json:"channel_role"`
 	AutoApproveMode string         `json:"auto_approve_mode"`
 	AgentProfileID  sql.NullString `json:"agent_profile_id"`
+	ParentSessionID sql.NullString `json:"parent_session_id"`
 	MemberRole      string         `json:"member_role"`
 }
 
@@ -185,6 +186,7 @@ func (q *Queries) ListChannelMemberSessions(ctx context.Context, channelID strin
 			&i.ChannelRole,
 			&i.AutoApproveMode,
 			&i.AgentProfileID,
+			&i.ParentSessionID,
 			&i.MemberRole,
 		); err != nil {
 			return nil, err

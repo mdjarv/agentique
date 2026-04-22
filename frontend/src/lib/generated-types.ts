@@ -190,6 +190,7 @@ export interface SessionInfo {
   agentProfileId?: string;
   agentProfileName?: string;
   agentProfileAvatar?: string;
+  parentSessionId?: string;
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;

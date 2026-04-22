@@ -64,6 +64,7 @@ type Querier interface {
 	ListAllSessions(ctx context.Context) ([]Session, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
 	ListChannelsByProject(ctx context.Context, projectID string) ([]Channel, error)
+	ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error)
 	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error)
 	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)

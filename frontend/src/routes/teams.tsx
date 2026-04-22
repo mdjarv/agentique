@@ -1,15 +1,27 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Hash, MessageSquare, Plus, UserPlus, Users } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Hash,
+  MessageSquare,
+  Network,
+  Plus,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { TeamCard } from "~/components/team/TeamCard";
 import { TeamFormDialog } from "~/components/team/TeamFormDialog";
 import { Button } from "~/components/ui/button";
+import { buildSessionHierarchy, type HierarchyTreeNode } from "~/lib/session-hierarchy";
 import type { AgentProfileInfo } from "~/lib/team-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
+import { useChatStore } from "~/stores/chat-store";
+import type { SessionMetadata } from "~/stores/chat-types";
 import { useTeamStore } from "~/stores/team-store";
 
 export const Route = createFileRoute("/teams")({
@@ -22,10 +34,13 @@ function TeamsDashboard() {
   const profiles = useTeamStore(useShallow((s) => s.profiles));
   const teams = useTeamStore(useShallow((s) => s.teams));
   const loaded = useTeamStore((s) => s.loaded);
+  const sessionsMap = useChatStore(useShallow((s) => s.sessions));
 
   const channelList = useMemo(() => Object.values(channels), [channels]);
   const profileList = useMemo(() => Object.values(profiles), [profiles]);
   const teamList = useMemo(() => Object.values(teams), [teams]);
+
+  const hierarchy = useMemo(() => buildSessionHierarchy(sessionsMap), [sessionsMap]);
 
   const activeChannels = channelList.length;
   const totalTeams = teamList.length;
@@ -55,6 +70,17 @@ function TeamsDashboard() {
             <StatCard label="Teams" value={totalTeams} icon={Users} />
             <StatCard label="Agent profiles" value={totalProfiles} icon={MessageSquare} />
           </div>
+
+          {/* ── Hierarchy ─────────────────────────────── */}
+          {hierarchy.length > 0 && (
+            <Section title="Session hierarchy">
+              <div className="space-y-1">
+                {hierarchy.map((node) => (
+                  <HierarchyNode key={node.session.id} node={node} projects={projects} />
+                ))}
+              </div>
+            </Section>
+          )}
 
           {/* ── Teams ─────────────────────────────────── */}
           <Section
@@ -176,6 +202,81 @@ function EmptyState({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+// ─── Hierarchy ──────────────────────────────────────────
+
+function HierarchyNode({
+  node,
+  projects,
+  depth = 0,
+}: {
+  node: HierarchyTreeNode;
+  projects: { id: string; name: string }[];
+  depth?: number;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.children.length > 0;
+  const projectName = projects.find((p) => p.id === node.session.projectId)?.name ?? "";
+  const stateColor = stateDotColor(node.session.state);
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+      >
+        <button
+          type="button"
+          aria-label={expanded ? "Collapse" : "Expand"}
+          onClick={() => hasChildren && setExpanded((v) => !v)}
+          className={cn(
+            "flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground",
+            !hasChildren && "invisible",
+          )}
+        >
+          {hasChildren &&
+            (expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />)}
+        </button>
+        <span className={cn("size-2 shrink-0 rounded-full", stateColor)} />
+        <Network className="size-3 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium">{node.session.name}</span>
+        {hasChildren && (
+          <span className="text-[10px] text-muted-foreground tabular-nums">
+            {node.children.length}
+          </span>
+        )}
+        {projectName && (
+          <span className="ml-auto truncate text-[10px] text-muted-foreground">{projectName}</span>
+        )}
+      </div>
+      {hasChildren && expanded && (
+        <div>
+          {node.children.map((c) => (
+            <HierarchyNode key={c.session.id} node={c} projects={projects} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function stateDotColor(state: SessionMetadata["state"]): string {
+  switch (state) {
+    case "running":
+      return "bg-emerald-500";
+    case "idle":
+      return "bg-sky-500";
+    case "merging":
+      return "bg-amber-500";
+    case "failed":
+      return "bg-red-500";
+    case "done":
+    case "stopped":
+      return "bg-muted-foreground/40";
+    default:
+      return "bg-muted-foreground/40";
+  }
 }
 
 function ProfileCard({

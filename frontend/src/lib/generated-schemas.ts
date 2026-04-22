@@ -192,6 +192,7 @@ export const SessionInfoSchema = z.object({
   agentProfileId: z.string().optional(),
   agentProfileName: z.string().optional(),
   agentProfileAvatar: z.string().optional(),
+  parentSessionId: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),

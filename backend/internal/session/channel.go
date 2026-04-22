@@ -905,6 +905,7 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 			AutoApproveMode: member.AutoApproveMode,
 			Effort:          member.Effort,
 			BehaviorPresets: member.BehaviorPresets,
+			ParentSessionID: p.LeadSessionID,
 		})
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("member %d (%s): %v", i, member.Name, err))
@@ -918,6 +919,7 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 			"worker_role", role,
 			"session_id", result.SessionID,
 			"auto_approve", member.AutoApproveMode,
+			"parent_id", p.LeadSessionID,
 		)
 
 		if _, err := s.JoinChannel(ctx, result.SessionID, ch.ID, role); err != nil {
@@ -1120,6 +1122,7 @@ func (s *Service) extendSwarm(ctx context.Context, projectID, channelID, senderI
 			AutoApproveMode: member.AutoApproveMode,
 			Effort:          member.Effort,
 			BehaviorPresets: member.BehaviorPresets,
+			ParentSessionID: senderID,
 		})
 		if cerr != nil {
 			slog.Warn("swarm: worker create failed", "index", i, "name", member.Name, "error", cerr)

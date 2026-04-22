@@ -93,6 +93,7 @@ type SessionInfo struct {
 	AgentProfileID     string `json:"agentProfileId,omitempty"`
 	AgentProfileName   string `json:"agentProfileName,omitempty"`
 	AgentProfileAvatar string `json:"agentProfileAvatar,omitempty"`
+	ParentSessionID    string `json:"parentSessionId,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	UpdatedAt       string  `json:"updatedAt"`
 	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
@@ -113,6 +114,7 @@ type CreateSessionParams struct {
 	MaxTurns        int
 	BehaviorPresets BehaviorPresets
 	AgentProfileID  string // optional: bind session to a persistent agent profile
+	ParentSessionID string // optional: lead session that spawned this one (for hierarchy tree)
 	IdempotencyKey  string // optional: if set, duplicate creates return the cached result
 }
 
@@ -393,6 +395,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		BehaviorPresets:       presets,
 		TeamPreambles:         tc.toPreambles(),
 		AgentProfileID:        p.AgentProfileID,
+		ParentSessionID:       p.ParentSessionID,
 		MCPConfigs:            mcpConfigs,
 		BrowserEnabled:        s.browserSvc != nil,
 		SystemPromptAdditions: pc.SystemPromptAdditions,
@@ -453,6 +456,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		AgentProfileID:     p.AgentProfileID,
 		AgentProfileName:   profileName,
 		AgentProfileAvatar: profileAvatar,
+		ParentSessionID:    p.ParentSessionID,
 		CreatedAt:       createdAt,
 		UpdatedAt:       createdAt,
 	})
@@ -751,6 +755,8 @@ func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]co
 			}
 		}
 
+		info.ParentSessionID = nullStr(ss.ParentSessionID)
+
 		if summary, ok := costMap[ss.ID]; ok {
 			info.TotalCost = summary.TotalCost
 			info.TurnCount = int(summary.TurnCount)
@@ -851,9 +857,27 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string, limit int) (
 	}, nil
 }
 
-// DeleteSession stops a live session, removes its worktree/branch, and deletes from DB.
+// DeleteSession stops a live session, removes its worktree/branch, and deletes
+// from DB. Child sessions (workers spawned under a lead) are deleted first,
+// depth-first, so each one gets a full cleanup pass (stop, worktree, branch,
+// files, broadcast) before the parent row disappears. The ON DELETE CASCADE
+// on parent_session_id is a safety net for rows we fail to enumerate.
 func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	slog.Info("deleting session", "session_id", sessionID)
+
+	// Depth-first: delete descendants first so each child's worktree/branch
+	// gets cleaned up with the usual machinery. Failures are logged but do
+	// not block the parent delete — the FK cascade will wipe any leftover
+	// rows.
+	children, cerr := s.queries.ListChildSessions(ctx, sql.NullString{String: sessionID, Valid: true})
+	if cerr != nil {
+		slog.Warn("list children failed during delete", "session_id", sessionID, "error", cerr)
+	}
+	for _, child := range children {
+		if err := s.DeleteSession(ctx, child.ID); err != nil {
+			slog.Warn("child delete failed", "parent_id", sessionID, "child_id", child.ID, "error", err)
+		}
+	}
 
 	if s.browserSvc != nil {
 		s.browserSvc.StopBrowser(sessionID)

@@ -236,6 +236,60 @@ func (s *SpawnSuite) TestSendChannelMessage_SpawnType_SkipsLegacyEvents() {
 	}
 }
 
+// --- Hierarchy tests ---
+
+func (s *SpawnSuite) TestSpawn_SetsParentSessionID() {
+	s.initGitRepo()
+	ctx := context.Background()
+	leadID := s.seedSession("Lead")
+
+	err := s.svc.executeSpawn(ctx, leadID, s.Project.ID, SpawnWorkersRequest{
+		ChannelName: "hierarchy",
+		Workers:     []SpawnWorkerEntry{{Name: "W1", Prompt: "p"}},
+	})
+	s.Require().NoError(err)
+
+	children, err := s.Queries.ListChildSessions(ctx, sqlNullString(leadID))
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+	s.Equal("W1", children[0].Name)
+	s.Require().True(children[0].ParentSessionID.Valid)
+	s.Equal(leadID, children[0].ParentSessionID.String)
+}
+
+func (s *SpawnSuite) TestDeleteSession_CascadesToChildren() {
+	s.initGitRepo()
+	ctx := context.Background()
+	leadID := s.seedSession("Lead")
+
+	err := s.svc.executeSpawn(ctx, leadID, s.Project.ID, SpawnWorkersRequest{
+		ChannelName: "cascade",
+		Workers: []SpawnWorkerEntry{
+			{Name: "W1", Prompt: "p"},
+			{Name: "W2", Prompt: "p"},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Sanity: 3 sessions exist (lead + 2 workers) with correct parent links.
+	children, err := s.Queries.ListChildSessions(ctx, sqlNullString(leadID))
+	s.Require().NoError(err)
+	s.Require().Len(children, 2, "lead should have 2 children before delete")
+
+	// Delete the lead — descendants must go with it.
+	s.Require().NoError(s.svc.DeleteSession(ctx, leadID))
+
+	// Lead is gone.
+	_, err = s.Queries.GetSession(ctx, leadID)
+	s.Require().Error(err)
+
+	// Workers gone too.
+	for _, c := range children {
+		_, err := s.Queries.GetSession(ctx, c.ID)
+		s.Require().Error(err, "worker %q should be deleted with parent", c.Name)
+	}
+}
+
 // --- Ensure ListChannelsByProject still works (used by tests above) ---
 
 var _ = store.Channel{}

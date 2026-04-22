@@ -40,6 +40,7 @@ type CreateParams struct {
 	ChannelPreambles      []*ChannelPreambleInfo
 	TeamPreambles         []*TeamPreambleInfo
 	AgentProfileID        string
+	ParentSessionID       string // optional: lead session that spawned this worker
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
 	BrowserEnabled        bool
 	SystemPromptAdditions string // from persona config; appended to the session preamble
@@ -208,6 +209,10 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		AgentProfileID: sql.NullString{
 			String: params.AgentProfileID,
 			Valid:  params.AgentProfileID != "",
+		},
+		ParentSessionID: sql.NullString{
+			String: params.ParentSessionID,
+			Valid:  params.ParentSessionID != "",
 		},
 	})
 	if dbErr != nil {
