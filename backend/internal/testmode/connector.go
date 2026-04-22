@@ -158,6 +158,9 @@ func (s *Session) ProcessInfo() claudecli.ProcessInfo {
 	}
 }
 
+// Ping always succeeds for the testmode mock.
+func (s *Session) Ping(_ time.Duration) error { return nil }
+
 func (s *Session) Query(prompt string) error {
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)

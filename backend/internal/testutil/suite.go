@@ -192,6 +192,7 @@ type MockCLISession struct {
 	interrupted  bool
 	cliState     claudecli.State
 	lastStdoutAt time.Time
+	pingErr      error
 }
 
 func NewMockCLISession() *MockCLISession {
@@ -239,6 +240,21 @@ func (m *MockCLISession) SetLastStdoutAt(t time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastStdoutAt = t
+}
+
+// Ping returns pingErr (if set) or nil. Tests can simulate a hung readLoop
+// by calling SetPingError.
+func (m *MockCLISession) Ping(_ time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pingErr
+}
+
+// SetPingError makes Ping return the given error (use to simulate a wedged CLI).
+func (m *MockCLISession) SetPingError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pingErr = err
 }
 
 func (m *MockCLISession) Query(prompt string) error {

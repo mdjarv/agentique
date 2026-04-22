@@ -29,6 +29,11 @@ type CLISession interface {
 	// ProcessInfo exposes process-level metrics (notably LastStdoutAt) so the
 	// watchdog can detect stdout-level stalls independently of parsed events.
 	ProcessInfo() claudecli.ProcessInfo
+	// Ping sends a no-op control request and waits for the CLI's response,
+	// proving the read loop is alive (not just the process). Used by the
+	// watchdog as a final liveness escalation during long stdout-silent
+	// tool executions. A zero timeout uses the session's default.
+	Ping(timeout time.Duration) error
 }
 
 // cliAlive reports whether the CLI process is still running (not terminated or failed).

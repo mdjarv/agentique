@@ -49,6 +49,8 @@ func (m *mockCLISession) ProcessInfo() claudecli.ProcessInfo {
 	}
 }
 
+func (m *mockCLISession) Ping(_ time.Duration) error { return nil }
+
 func (m *mockCLISession) Events() <-chan claudecli.Event { return m.events }
 
 func (m *mockCLISession) Query(prompt string) error {

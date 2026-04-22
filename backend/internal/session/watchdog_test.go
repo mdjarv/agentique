@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -255,6 +256,73 @@ func (s *WatchdogSuite) TestStdoutStallEmitsInfoWarning() {
 	// Should only fire once per stall episode, not on every tick.
 	time.Sleep(200 * time.Millisecond)
 	s.Equal(1, s.countMatching("stdout silent"), "stdout-stall warning must not repeat")
+}
+
+// TestStdoutStallPingFailureFailsSession: when stdout is silent AND ping to
+// the CLI's read loop fails, the session is declared zombie and marked failed.
+func (s *WatchdogSuite) TestStdoutStallPingFailureFailsSession() {
+	sess := s.createSession()
+	s.Require().NoError(sess.Query(context.Background(), "wedged tool", nil))
+
+	mock := s.Connector.Last()
+	s.Require().NoError(mock.Inject(&claudecli.CLIStateChangeEvent{State: claudecli.ActivityAwaitingToolResult}))
+	s.Require().NoError(mock.Inject(testutil.ToolUseEvent("t1", "Bash", nil)))
+
+	mock.SetLastStdoutAt(time.Now().Add(-5 * time.Second))
+	mock.SetPingError(fmt.Errorf("timeout"))
+
+	s.Eventually(func() bool {
+		return sess.State() == StateFailed
+	}, 2*time.Second, 10*time.Millisecond, "expected session failure when Ping fails during stall")
+	s.Greater(s.countMatching("read loop unresponsive"), 0, "expected fatal broadcast about wedged read loop")
+}
+
+// TestToolProgressEnrichesStallWarning: a stdout-stall warning should include
+// the running tool's name and elapsed time when a ToolProgressEvent has been
+// observed.
+func (s *WatchdogSuite) TestToolProgressEnrichesStallWarning() {
+	sess := s.createSession()
+	s.Require().NoError(sess.Query(context.Background(), "running Bash", nil))
+
+	mock := s.Connector.Last()
+	s.Require().NoError(mock.Inject(&claudecli.CLIStateChangeEvent{State: claudecli.ActivityAwaitingToolResult}))
+	s.Require().NoError(mock.Inject(testutil.ToolUseEvent("t1", "Bash", nil)))
+	s.Require().NoError(mock.Inject(&claudecli.ToolProgressEvent{
+		ToolUseID: "t1",
+		ToolName:  "Bash",
+		Elapsed:   3 * time.Minute,
+	}))
+
+	mock.SetLastStdoutAt(time.Now().Add(-5 * time.Second))
+
+	s.Eventually(func() bool {
+		return s.countMatching("tool Bash still running") > 0
+	}, 2*time.Second, 10*time.Millisecond, "expected enriched stall warning with tool name")
+}
+
+// TestCLIExitEventInformsFatalBroadcast: when the CLI emits a CLIExitEvent
+// before closing its events channel, the session's fatal broadcast uses the
+// reason from that event (e.g. "killed by SIGKILL") instead of the generic
+// "exited unexpectedly" fallback.
+func (s *WatchdogSuite) TestCLIExitEventInformsFatalBroadcast() {
+	sess := s.createSession()
+	s.Require().NoError(sess.Query(context.Background(), "boom", nil))
+
+	mock := s.Connector.Last()
+	s.Require().NoError(mock.Inject(&claudecli.CLIExitEvent{
+		Reason:   claudecli.ExitReasonKilled,
+		ExitCode: -1,
+		Signal:   "SIGKILL",
+	}))
+	// Close the events channel to complete the death sequence.
+	_ = mock.Close()
+
+	s.Eventually(func() bool {
+		return sess.State() == StateFailed
+	}, 2*time.Second, 10*time.Millisecond)
+
+	s.Greater(s.countMatching("killed by SIGKILL"), 0, "fatal broadcast should name the signal")
+	s.Equal(0, s.countMatching("exited unexpectedly"), "should not fall back to generic message when reason is known")
 }
 
 // TestToolCompletionResumesThinkingTimeout: when the CLI returns to Thinking,

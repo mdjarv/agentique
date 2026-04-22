@@ -145,6 +145,11 @@ type Session struct {
 	// Protected by mu.
 	toolStallWarned bool
 
+	// lastToolProgress is the most recent ToolProgressEvent from claudecli-go.
+	// Used to enrich stall warnings with the running tool's name and elapsed time.
+	// Protected by mu.
+	lastToolProgress *claudecli.ToolProgressEvent
+
 	git     sessionGitState
 	channel sessionChannelState
 	persona sessionPersonaState
@@ -634,6 +639,7 @@ func (s *Session) startEventLoop() {
 		defer watchdog.Stop()
 		var warned bool
 		var lastEventType string
+		var lastExit *claudecli.CLIExitEvent
 		lastEventTime := time.Now()
 
 		for {
@@ -650,13 +656,19 @@ func (s *Session) startEventLoop() {
 						return
 					}
 					// If the CLI died while actively running, treat as unexpected failure.
+					// Prefer the CLIExitEvent's reason (landed immediately before close)
+					// for an actionable fatal message.
 					if st == StateRunning {
-						slog.Error("CLI process died unexpectedly while running", "session_id", s.ID)
+						msg := formatExitEvent(lastExit)
+						slog.Error("CLI process died while running",
+							"session_id", s.ID,
+							"message", msg,
+						)
 						s.broadcast("session.event", PushSessionEvent{
 							SessionID: s.ID,
 							Event: WireErrorEvent{
 								Type:    "error",
-								Content: "CLI process exited unexpectedly while running",
+								Content: msg,
 								Fatal:   true,
 							},
 						})
@@ -680,6 +692,9 @@ func (s *Session) startEventLoop() {
 				}
 				lastEventType = fmt.Sprintf("%T", event)
 				lastEventTime = time.Now()
+				if ex, ok := event.(*claudecli.CLIExitEvent); ok {
+					lastExit = ex
+				}
 				nextInterval := s.observeActivity(event)
 				watchdog.Reset(nextInterval)
 				warned = false
@@ -698,9 +713,8 @@ func (s *Session) startEventLoop() {
 
 				if act == claudecli.ActivityAwaitingToolResult {
 					// Tool executing: event silence is expected. Fail only if the CLI
-					// process has died. Emit an informational broadcast (non-fatal) if
-					// stdout has gone silent for an unusually long time — the process
-					// is alive but may be stuck on a dead syscall.
+					// process has died, or if a stdout-stall probe reveals the read
+					// loop is wedged (process alive but not responding to pings).
 					if !cliAlive(s.cliSess) {
 						slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
 						s.broadcast("session.event", PushSessionEvent{
@@ -716,7 +730,12 @@ func (s *Session) startEventLoop() {
 						}
 						return
 					}
-					s.maybeWarnToolStall()
+					if s.maybeHandleToolStall() == toolStallFatal {
+						if err := s.setState(StateFailed); err != nil {
+							slog.Error("state transition failed", "session_id", s.ID, "error", err)
+						}
+						return
+					}
 					watchdog.Reset(toolLivenessInterval)
 					continue
 				}
@@ -769,11 +788,15 @@ func (s *Session) startEventLoop() {
 func (s *Session) observeActivity(event claudecli.Event) time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cs, ok := event.(*claudecli.CLIStateChangeEvent); ok {
-		if cs.State != s.activityState {
+	switch e := event.(type) {
+	case *claudecli.CLIStateChangeEvent:
+		if e.State != s.activityState {
 			s.toolStallWarned = false
+			s.lastToolProgress = nil
 		}
-		s.activityState = cs.State
+		s.activityState = e.State
+	case *claudecli.ToolProgressEvent:
+		s.lastToolProgress = e
 	}
 	if s.activityState == claudecli.ActivityAwaitingToolResult {
 		return toolLivenessInterval
@@ -781,26 +804,67 @@ func (s *Session) observeActivity(event claudecli.Event) time.Duration {
 	return thinkingWarnAfter
 }
 
-// maybeWarnToolStall emits a single non-fatal broadcast if stdout has gone
-// silent for longer than toolStallWarnAfter while a tool is awaiting its
-// result. Subsequent checks for the same stall stay silent until the activity
-// state changes (see observeActivity).
-func (s *Session) maybeWarnToolStall() {
+// toolStallResult is returned by maybeHandleToolStall. "fatal" means the
+// watchdog escalated via Ping and confirmed the CLI's read loop is wedged —
+// the caller should fail the session.
+type toolStallResult int
+
+const (
+	toolStallNone toolStallResult = iota // no stall detected or duplicate warning suppressed
+	toolStallWarned                       // emitted a non-fatal info broadcast
+	toolStallFatal                        // Ping failed; CLI readLoop is wedged
+)
+
+const watchdogPingTimeout = 10 * time.Second
+
+// maybeHandleToolStall detects stdout stalls during tool execution and either
+// emits an informational warning (process + readLoop alive) or escalates to a
+// fatal signal (readLoop wedged, verified via Ping). Deduplicates repeat
+// warnings for the same stall episode via toolStallWarned.
+func (s *Session) maybeHandleToolStall() toolStallResult {
 	info := s.cliSess.ProcessInfo()
 	if info.LastStdoutAt.IsZero() {
-		return
+		return toolStallNone
 	}
 	silent := time.Since(info.LastStdoutAt)
 	if silent < toolStallWarnAfter {
-		return
+		return toolStallNone
 	}
+
 	s.mu.Lock()
 	if s.toolStallWarned {
 		s.mu.Unlock()
-		return
+		return toolStallNone
 	}
 	s.toolStallWarned = true
+	progress := s.lastToolProgress
 	s.mu.Unlock()
+
+	// Escalation: probe the CLI's read loop. A healthy CLI answers even if
+	// the running tool is wedged; if the ping fails, the readLoop is wedged
+	// too — that's a zombie and the session cannot recover.
+	if err := s.cliSess.Ping(watchdogPingTimeout); err != nil {
+		slog.Error("watchdog: ping failed during stdout stall",
+			"session_id", s.ID,
+			"stdout_silent", silent.Round(time.Second),
+			"error", err,
+		)
+		s.broadcast("session.event", PushSessionEvent{
+			SessionID: s.ID,
+			Event: WireErrorEvent{
+				Type:    "error",
+				Content: fmt.Sprintf("CLI read loop unresponsive (ping: %v) — session cannot recover", err),
+				Fatal:   true,
+			},
+		})
+		return toolStallFatal
+	}
+
+	content := fmt.Sprintf("tool still running — CLI stdout silent for %s", silent.Round(time.Second))
+	if progress != nil && progress.ToolName != "" {
+		content = fmt.Sprintf("tool %s still running (%s) — CLI stdout silent for %s",
+			progress.ToolName, progress.Elapsed.Round(time.Second), silent.Round(time.Second))
+	}
 	slog.Warn("watchdog: stdout stalled while tool running",
 		"session_id", s.ID,
 		"stdout_silent", silent.Round(time.Second),
@@ -809,10 +873,38 @@ func (s *Session) maybeWarnToolStall() {
 		SessionID: s.ID,
 		Event: WireErrorEvent{
 			Type:    "error",
-			Content: fmt.Sprintf("tool still running — CLI stdout silent for %s", silent.Round(time.Second)),
+			Content: content,
 			Fatal:   false,
 		},
 	})
+	return toolStallWarned
+}
+
+// formatExitEvent renders a user-facing description of why the CLI exited.
+// Used to give the fatal broadcast an actionable message instead of the
+// generic "CLI process exited unexpectedly".
+func formatExitEvent(e *claudecli.CLIExitEvent) string {
+	if e == nil {
+		return "CLI process exited unexpectedly while running"
+	}
+	switch e.Reason {
+	case claudecli.ExitReasonNormal:
+		return "CLI process exited (clean)"
+	case claudecli.ExitReasonKilled:
+		if e.Signal != "" {
+			return fmt.Sprintf("CLI process killed by %s", e.Signal)
+		}
+		return "CLI process killed"
+	case claudecli.ExitReasonCrashed:
+		msg := fmt.Sprintf("CLI process crashed (exit code %d)", e.ExitCode)
+		if e.Err != nil {
+			msg += fmt.Sprintf(": %v", e.Err)
+		}
+		return msg
+	case claudecli.ExitReasonContextCanceled:
+		return "CLI process terminated (context canceled)"
+	}
+	return fmt.Sprintf("CLI process exited (reason: %s, code: %d)", e.Reason, e.ExitCode)
 }
 
 // safeProcessEvent wraps pipeline.ProcessEvent with panic recovery so a single

@@ -16,6 +16,8 @@ github.com/allbin/claudecli-go v0.0.0-20260420070149-a803e64000a1 h1:lRZ35Yjt4lI
 github.com/allbin/claudecli-go v0.0.0-20260420070149-a803e64000a1/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/claudecli-go v0.0.0-20260422065117-9f2624e5d81e h1:2lgB/HrNsYvOXB1IPSmcO8opu81WAQOGyb/zBK0QZNA=
 github.com/allbin/claudecli-go v0.0.0-20260422065117-9f2624e5d81e/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e h1:j3LOKN7+Wn7LT2R57ku1JCZs2Q/hOKfz3CoXECUHQ/c=
+github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
