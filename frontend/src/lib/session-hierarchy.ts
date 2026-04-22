@@ -47,3 +47,12 @@ export function buildSessionHierarchy(
   roots.sort((a, b) => a.session.name.localeCompare(b.session.name));
   return roots;
 }
+
+/** countDescendants totals all nested children of a node (excluding itself). */
+export function countDescendants(node: HierarchyTreeNode): number {
+  let n = 0;
+  for (const c of node.children) {
+    n += 1 + countDescendants(c);
+  }
+  return n;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSessionHierarchy } from "~/lib/session-hierarchy";
+import { buildSessionHierarchy, countDescendants } from "~/lib/session-hierarchy";
 import type { SessionMetadata } from "~/stores/chat-types";
 
 function session(id: string, name: string, parent?: string): { meta: SessionMetadata } {
@@ -88,5 +88,42 @@ describe("buildSessionHierarchy", () => {
     };
     const tree = buildSessionHierarchy(sessions);
     expect(tree.map((n) => n.session.name)).toEqual(["Alpha", "Beta"]);
+  });
+});
+
+describe("countDescendants", () => {
+  it("returns 0 for a leaf node", () => {
+    const sessions = {
+      lead: session("lead", "Lead"),
+      w: session("w", "W", "lead"),
+    };
+    const [tree] = buildSessionHierarchy(sessions);
+    if (!tree) throw new Error("expected tree");
+    const first = tree.children[0];
+    if (!first) throw new Error("expected child");
+    expect(countDescendants(first)).toBe(0);
+  });
+
+  it("counts direct children only when there are no grandchildren", () => {
+    const sessions = {
+      lead: session("lead", "Lead"),
+      a: session("a", "A", "lead"),
+      b: session("b", "B", "lead"),
+    };
+    const [tree] = buildSessionHierarchy(sessions);
+    if (!tree) throw new Error("expected tree");
+    expect(countDescendants(tree)).toBe(2);
+  });
+
+  it("includes grandchildren and deeper", () => {
+    const sessions = {
+      lead: session("lead", "Lead"),
+      mid: session("mid", "Mid", "lead"),
+      leafA: session("leafA", "LeafA", "mid"),
+      leafB: session("leafB", "LeafB", "mid"),
+    };
+    const [tree] = buildSessionHierarchy(sessions);
+    if (!tree) throw new Error("expected tree");
+    expect(countDescendants(tree)).toBe(3);
   });
 });

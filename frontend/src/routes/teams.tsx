@@ -6,18 +6,36 @@ import {
   MessageSquare,
   Network,
   Plus,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { TeamCard } from "~/components/team/TeamCard";
 import { TeamFormDialog } from "~/components/team/TeamFormDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { buildSessionHierarchy, type HierarchyTreeNode } from "~/lib/session-hierarchy";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { deleteSession } from "~/lib/session/actions";
+import {
+  buildSessionHierarchy,
+  countDescendants,
+  type HierarchyTreeNode,
+} from "~/lib/session-hierarchy";
 import type { AgentProfileInfo } from "~/lib/team-actions";
-import { cn } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -212,18 +230,42 @@ function HierarchyNode({
   depth = 0,
 }: {
   node: HierarchyTreeNode;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; slug: string }[];
   depth?: number;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const ws = useWebSocket();
   const hasChildren = node.children.length > 0;
-  const projectName = projects.find((p) => p.id === node.session.projectId)?.name ?? "";
+  const project = projects.find((p) => p.id === node.session.projectId);
+  const projectName = project?.name ?? "";
+  const projectSlug = project?.slug ?? "";
   const stateColor = stateDotColor(node.session.state);
+  const shortId = node.session.id.split("-")[0] ?? node.session.id;
+  const descendantCount = countDescendants(node);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteSession(ws, node.session.id);
+      toast.success(
+        descendantCount > 0
+          ? `Deleted ${node.session.name} and ${descendantCount} descendant(s)`
+          : `Deleted ${node.session.name}`,
+      );
+      setConfirmOpen(false);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Delete failed"));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div>
       <div
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
+        className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
         style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
         <button
@@ -238,17 +280,48 @@ function HierarchyNode({
           {hasChildren &&
             (expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />)}
         </button>
-        <span className={cn("size-2 shrink-0 rounded-full", stateColor)} />
+        <span
+          className={cn("size-2 shrink-0 rounded-full", stateColor)}
+          title={`State: ${node.session.state}`}
+        />
         <Network className="size-3 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{node.session.name}</span>
-        {hasChildren && (
-          <span className="text-[10px] text-muted-foreground tabular-nums">
-            {node.children.length}
+        {projectSlug ? (
+          <Link
+            to="/project/$projectSlug/session/$sessionShortId"
+            params={{ projectSlug, sessionShortId: shortId }}
+            className="flex min-w-0 flex-1 items-center gap-2 truncate hover:underline"
+          >
+            <span className="truncate text-sm font-medium">{node.session.name}</span>
+            {hasChildren && (
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {node.children.length}
+              </span>
+            )}
+          </Link>
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+            <span className="truncate text-sm font-medium">{node.session.name}</span>
+            {hasChildren && (
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {node.children.length}
+              </span>
+            )}
           </span>
         )}
         {projectName && (
-          <span className="ml-auto truncate text-[10px] text-muted-foreground">{projectName}</span>
+          <span className="truncate text-[10px] text-muted-foreground">{projectName}</span>
         )}
+        <button
+          type="button"
+          aria-label={`Delete ${node.session.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmOpen(true);
+          }}
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+        >
+          <Trash2 className="size-3" />
+        </button>
       </div>
       {hasChildren && expanded && (
         <div>
@@ -257,6 +330,33 @@ function HierarchyNode({
           ))}
         </div>
       )}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {node.session.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {descendantCount > 0 ? (
+                <>
+                  This session has <strong>{descendantCount}</strong> descendant session
+                  {descendantCount === 1 ? "" : "s"} that will be deleted with it. Each descendant's
+                  worktree and branch will be removed. This cannot be undone.
+                </>
+              ) : (
+                <>
+                  This will stop the session, remove its worktree and branch, and clear its history.
+                  This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
