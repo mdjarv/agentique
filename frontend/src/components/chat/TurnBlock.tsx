@@ -26,7 +26,6 @@ interface TurnBlockProps {
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
-  showEvents?: boolean;
   postCompactTokens?: number;
 }
 
@@ -74,7 +73,6 @@ export const TurnBlock = memo(function TurnBlock({
   sessionState,
   projectPath,
   worktreePath,
-  showEvents = true,
   postCompactTokens,
 }: TurnBlockProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
@@ -132,10 +130,7 @@ export const TurnBlock = memo(function TurnBlock({
     return "";
   }, [isStreaming, currentAssistantText, committedText]);
 
-  const visibleSegmentCount = showEvents
-    ? segments.length
-    : segments.filter((s) => s.kind !== "activity").length;
-  const hasAssistantContent = visibleSegmentCount > 0 || streamingTail || isStreaming;
+  const hasAssistantContent = segments.length > 0 || streamingTail || isStreaming;
 
   const turnSections = useMemo(() => buildTurnSections(segments), [segments]);
 
@@ -195,7 +190,6 @@ export const TurnBlock = memo(function TurnBlock({
                       idx={idx}
                       totalSegments={segments.length}
                       isStreaming={isStreaming}
-                      showEvents={showEvents}
                       sessionId={sessionId}
                       projectId={projectId}
                       projectPath={projectPath}

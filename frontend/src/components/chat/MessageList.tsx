@@ -1,4 +1,4 @@
-import { ArrowDown, Loader2, Wrench } from "lucide-react";
+import { ArrowDown, Loader2 } from "lucide-react";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
@@ -186,18 +186,21 @@ export function MessageList({
   isBackfilling,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [animateRef, setAnimateEnabled] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
   const [following, setFollowing] = useState(true);
+  const followingRef = useRef(following);
+  followingRef.current = following;
   const prevSessionRef = useRef(sessionId);
   if (prevSessionRef.current !== sessionId) {
     prevSessionRef.current = sessionId;
     setFollowing(true);
+    followingRef.current = true;
     // Disable auto-animate during session switch so turn DOM swaps are instant
     // (avoids the zoom/slide effect from FLIP removal animations).
     setAnimateEnabled(false);
   }
-  const [showEvents, setShowEvents] = useState(true);
   const isAnyStreaming = useStreamingStore((s) => sessionId in s.texts);
   const hasIncompleteTurn = turns.length > 0 && !turns[turns.length - 1]?.complete;
 
@@ -207,6 +210,23 @@ export function MessageList({
   useEffect(() => {
     setAnimateEnabled(!isAnyStreaming && !hasIncompleteTurn);
   }, [isAnyStreaming, hasIncompleteTurn, setAnimateEnabled]);
+
+  // Re-pin bottom whenever content grows while the user is following. Handles
+  // layout deferrals on session switch: lazy-mounted turns, content-visibility
+  // size estimates resolving to real sizes, images/code highlighting settling
+  // across several frames. Without this, a single scroll-to-bottom fires before
+  // layout completes and the viewport ends up slightly above the last message.
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    const contentEl = contentRef.current;
+    if (!scrollEl || !contentEl) return;
+    const observer = new ResizeObserver(() => {
+      if (!followingRef.current) return;
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, []);
 
   // Pending user messages live in streamingEvents during streaming.
   const streamingEvents = useChatStore(
@@ -252,7 +272,13 @@ export function MessageList({
         onScroll={handleScroll}
         className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >
-        <div ref={animateRef} className="py-4 pl-5 pr-4 max-md:px-2 space-y-8 min-w-0">
+        <div
+          ref={(node) => {
+            animateRef(node);
+            contentRef.current = node;
+          }}
+          className="py-4 pl-5 pr-4 max-md:px-2 space-y-8 min-w-0"
+        >
           {isBackfilling && <HistoryBackfillIndicator />}
           {turns.map((turn, i) => {
             const eager = i >= turns.length - EAGER_TURN_COUNT;
@@ -279,7 +305,6 @@ export function MessageList({
                 sessionState={sessionState}
                 projectPath={projectPath}
                 worktreePath={worktreePath}
-                showEvents={showEvents}
                 postCompactTokens={postCompactTokens}
               />
             );
@@ -307,21 +332,8 @@ export function MessageList({
           <div ref={bottomRef} />
         </div>
       </div>
-      <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5 pointer-events-none">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={() => setShowEvents((v) => !v)}
-              className="rounded-full shadow-lg opacity-60 hover:opacity-100 transition-opacity h-7 w-7 pointer-events-auto"
-            >
-              <Wrench className={`h-3.5 w-3.5 ${showEvents ? "" : "text-muted-foreground"}`} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{showEvents ? "Hide tool events" : "Show tool events"}</TooltipContent>
-        </Tooltip>
-        {!following && (
+      {!following && (
+        <div className="absolute bottom-3 right-3 z-10 pointer-events-none">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -335,8 +347,8 @@ export function MessageList({
             </TooltipTrigger>
             <TooltipContent>Scroll to bottom</TooltipContent>
           </Tooltip>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

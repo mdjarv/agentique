@@ -74,20 +74,6 @@ function InFlightToolContent({
   );
 }
 
-export function InFlightToolStatus(props: {
-  event: ToolUseEvent;
-  sessionId: string;
-  projectPath?: string;
-  worktreePath?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground min-w-0">
-      <span className="w-3 shrink-0" />
-      <InFlightToolContent {...props} />
-    </div>
-  );
-}
-
 // --- Segment sub-renderers ---
 
 const ActivitySegmentView = memo(function ActivitySegmentView({
@@ -319,7 +305,6 @@ interface SegmentRendererProps {
   idx: number;
   totalSegments: number;
   isStreaming: boolean;
-  showEvents: boolean;
   sessionId: string;
   projectId: string;
   projectPath?: string;
@@ -334,7 +319,6 @@ export function SegmentRenderer({
   idx,
   totalSegments,
   isStreaming,
-  showEvents,
   sessionId,
   projectId,
   projectPath,
@@ -347,27 +331,6 @@ export function SegmentRenderer({
   const isLastSegment = isStreaming && idx === totalSegments - 1;
 
   if (seg.kind === "user_message") return null;
-
-  if (!showEvents && seg.kind === "activity") {
-    if (isLastSegment) {
-      const toolItems = seg.items.filter(
-        (it): it is ActivityItem & { kind: "tool" } => it.kind === "tool",
-      );
-      const inFlightTool = [...toolItems].reverse().find((t) => !t.result);
-      if (inFlightTool) {
-        return (
-          <InFlightToolStatus
-            key={key}
-            event={inFlightTool.use}
-            sessionId={sessionId}
-            projectPath={projectPath}
-            worktreePath={worktreePath}
-          />
-        );
-      }
-    }
-    return null;
-  }
 
   if (seg.kind === "activity") {
     return (
