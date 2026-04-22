@@ -37,6 +37,7 @@ interface UIState {
   stashes: Record<string, string[]>;
   expandedProjects: Record<string, boolean>;
   expandedFolders: Record<string, boolean>;
+  pinnedProjectIds: string[];
   sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
   browserPanelWidth: number;
@@ -52,6 +53,7 @@ interface UIState {
   setFolderExpanded: (folderName: string, expanded: boolean) => void;
   setManyFoldersExpanded: (folderNames: string[], expanded: boolean) => void;
   renameFolderExpanded: (oldName: string, newName: string) => void;
+  toggleProjectPinned: (projectId: string) => void;
   setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
@@ -65,6 +67,7 @@ export const useUIStore = create<UIState>()(
       stashes: {},
       expandedProjects: Object.fromEntries(readLegacyCollapsedProjects().map((id) => [id, false])),
       expandedFolders: {},
+      pinnedProjectIds: [],
       sidebarFocusMode: false,
       rightPanelCollapsed: true,
       browserPanelWidth: 500,
@@ -156,6 +159,16 @@ export const useUIStore = create<UIState>()(
           return { expandedFolders: { ...rest, [newName]: value ?? true } };
         }),
 
+      toggleProjectPinned: (projectId) =>
+        set((s) => {
+          const has = s.pinnedProjectIds.includes(projectId);
+          return {
+            pinnedProjectIds: has
+              ? s.pinnedProjectIds.filter((id) => id !== projectId)
+              : [...s.pinnedProjectIds, projectId],
+          };
+        }),
+
       setSidebarFocusMode: (enabled) => set({ sidebarFocusMode: enabled }),
 
       setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
@@ -167,7 +180,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: "agentique:ui",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
@@ -186,6 +199,13 @@ export const useUIStore = create<UIState>()(
           state.sidebarFocusMode = false;
           delete state.collapsedProjectIds;
         }
+        if (version < 3) {
+          // Seed pinned from explicitly-expanded projects (previous focus-mode proxy).
+          const expanded = (state.expandedProjects as Record<string, boolean>) ?? {};
+          state.pinnedProjectIds = Object.entries(expanded)
+            .filter(([, v]) => v === true)
+            .map(([id]) => id);
+        }
         return state;
       },
       partialize: (state) => ({
@@ -193,6 +213,7 @@ export const useUIStore = create<UIState>()(
         stashes: state.stashes,
         expandedProjects: state.expandedProjects,
         expandedFolders: state.expandedFolders,
+        pinnedProjectIds: state.pinnedProjectIds,
         sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
         browserPanelWidth: state.browserPanelWidth,

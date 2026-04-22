@@ -69,13 +69,17 @@ export function FolderSidebar() {
 
   const expandedFolders = useUIStore((s) => s.expandedFolders);
   const expandedProjects = useUIStore((s) => s.expandedProjects);
+  const pinnedProjectIds = useUIStore((s) => s.pinnedProjectIds);
   const focusMode = useUIStore((s) => s.sidebarFocusMode);
   const setFolderExpanded = useUIStore((s) => s.setFolderExpanded);
   const setManyFoldersExpanded = useUIStore((s) => s.setManyFoldersExpanded);
   const setProjectExpanded = useUIStore((s) => s.setProjectExpanded);
   const setManyProjectsExpanded = useUIStore((s) => s.setManyProjectsExpanded);
   const renameFolderExpanded = useUIStore((s) => s.renameFolderExpanded);
+  const toggleProjectPinned = useUIStore((s) => s.toggleProjectPinned);
   const setSidebarFocusMode = useUIStore((s) => s.setSidebarFocusMode);
+
+  const pinnedSet = useMemo(() => new Set(pinnedProjectIds), [pinnedProjectIds]);
 
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -294,19 +298,19 @@ export function FolderSidebar() {
     [setProjectExpanded],
   );
 
-  // Auto-pin active projects: when a project acquires an active session and
-  // the user has no explicit preference yet, record `true` so the project
-  // doesn't silently collapse later when the session ends.
+  // Sticky expand: once a project has an active session, record expand=true so
+  // the user's inline session view doesn't silently collapse when activity ends.
+  // Pin (for focus mode) is a separate, user-curated axis — see toggleProjectPinned.
   useEffect(() => {
-    const toPin: string[] = [];
+    const toExpand: string[] = [];
     const visit = (id: string, hasActive: boolean) => {
-      if (hasActive && !(id in expandedProjects)) toPin.push(id);
+      if (hasActive && !(id in expandedProjects)) toExpand.push(id);
     };
     for (const f of orderedFolders) {
       for (const e of f.projects) visit(e.project.id, e.active.length > 0);
     }
     for (const e of ungrouped) visit(e.project.id, e.active.length > 0);
-    if (toPin.length > 0) setManyProjectsExpanded(toPin, true);
+    if (toExpand.length > 0) setManyProjectsExpanded(toExpand, true);
   }, [orderedFolders, ungrouped, expandedProjects, setManyProjectsExpanded]);
 
   const allProjectIds = useMemo(() => {
@@ -341,14 +345,14 @@ export function FolderSidebar() {
             {focusMode ? (
               (() => {
                 const visible = [...orderedFolders.flatMap((f) => f.projects), ...ungrouped].filter(
-                  (e) => isProjectExpanded(e.project.id, e.active.length > 0),
+                  (e) => pinnedSet.has(e.project.id),
                 );
                 if (visible.length === 0) {
                   return (
                     <div className="px-3 py-6 text-[11px] text-muted-foreground-faint text-center leading-relaxed">
-                      No expanded projects.
+                      No pinned projects.
                       <br />
-                      Turn off focus mode to see all.
+                      Right-click a project to pin it.
                     </div>
                   );
                 }
@@ -356,10 +360,12 @@ export function FolderSidebar() {
                   <DraggableProject
                     key={entry.project.id}
                     entry={entry}
-                    expanded
+                    expanded={isProjectExpanded(entry.project.id, entry.active.length > 0)}
                     compact
+                    isPinned
                     onToggle={() => toggleProject(entry.project.id)}
                     onExpand={() => expandProject(entry.project.id)}
+                    onTogglePin={() => toggleProjectPinned(entry.project.id)}
                     onSessionClick={handleSessionClick}
                     level={LEVEL.project}
                   />
@@ -417,8 +423,10 @@ export function FolderSidebar() {
                                 entry.project.id,
                                 entry.active.length > 0,
                               )}
+                              isPinned={pinnedSet.has(entry.project.id)}
                               onToggle={() => toggleProject(entry.project.id)}
                               onExpand={() => expandProject(entry.project.id)}
+                              onTogglePin={() => toggleProjectPinned(entry.project.id)}
                               onSessionClick={handleSessionClick}
                               onMoveToUngrouped={() => setProjectFolder(entry.project.id, "")}
                               level={LEVEL.project}
@@ -450,8 +458,10 @@ export function FolderSidebar() {
                         key={entry.project.id}
                         entry={entry}
                         expanded={isProjectExpanded(entry.project.id, entry.active.length > 0)}
+                        isPinned={pinnedSet.has(entry.project.id)}
                         onToggle={() => toggleProject(entry.project.id)}
                         onExpand={() => expandProject(entry.project.id)}
+                        onTogglePin={() => toggleProjectPinned(entry.project.id)}
                         onSessionClick={handleSessionClick}
                         level={LEVEL.folder}
                       />

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Plus, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, Plus, Settings } from "lucide-react";
 import { memo, useCallback } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import type { ProjectColor } from "~/lib/project-colors";
@@ -14,6 +14,7 @@ export const ProjectContent = memo(function ProjectContent({
   icon,
   color,
   expanded,
+  isPinned,
   onToggle,
   onExpand,
   worstState,
@@ -23,6 +24,7 @@ export const ProjectContent = memo(function ProjectContent({
   icon: string;
   color: ProjectColor;
   expanded: boolean;
+  isPinned?: boolean;
   onToggle: () => void;
   onExpand: () => void;
   worstState: BadgeState | null;
@@ -87,6 +89,7 @@ export const ProjectContent = memo(function ProjectContent({
         <span className="text-sm font-semibold truncate" style={{ color: color.fg }}>
           {name}
         </span>
+        {isPinned && <Pin className="size-2.5 shrink-0 opacity-60" style={{ color: color.fg }} />}
         {!expanded && worstState && <SessionBadge state={worstState} size="md" pulse />}
       </button>
 

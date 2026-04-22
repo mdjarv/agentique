@@ -1,6 +1,6 @@
 import { useDraggable } from "@dnd-kit/core";
 import { Link } from "@tanstack/react-router";
-import { FolderMinus, Plus, Settings } from "lucide-react";
+import { FolderMinus, Pin, PinOff, Plus, Settings } from "lucide-react";
 import { memo } from "react";
 import {
   ContextMenu,
@@ -25,8 +25,10 @@ function useProjectGit(projectId: string): ProjectGitStatus | undefined {
 export const DraggableProject = memo(function DraggableProject({
   entry,
   expanded,
+  isPinned,
   onToggle,
   onExpand,
+  onTogglePin,
   onSessionClick,
   onMoveToUngrouped,
   level,
@@ -34,8 +36,10 @@ export const DraggableProject = memo(function DraggableProject({
 }: {
   entry: ProjectEntry;
   expanded: boolean;
+  isPinned?: boolean;
   onToggle: () => void;
   onExpand: () => void;
+  onTogglePin?: () => void;
   onSessionClick: (id: string) => void;
   onMoveToUngrouped?: () => void;
   level: number;
@@ -64,6 +68,7 @@ export const DraggableProject = memo(function DraggableProject({
           icon={entry.project.icon}
           color={entry.color}
           expanded={expanded}
+          isPinned={isPinned}
           onToggle={onToggle}
           onExpand={onExpand}
           worstState={entry.worstState}
@@ -103,6 +108,24 @@ export const DraggableProject = memo(function DraggableProject({
             <span>New session</span>
           </Link>
         </ContextMenuItem>
+        {onTogglePin && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={onTogglePin}>
+              {isPinned ? (
+                <>
+                  <PinOff className="size-3.5" />
+                  <span>Unpin from focus</span>
+                </>
+              ) : (
+                <>
+                  <Pin className="size-3.5" />
+                  <span>Pin to focus</span>
+                </>
+              )}
+            </ContextMenuItem>
+          </>
+        )}
         {onMoveToUngrouped && (
           <>
             <ContextMenuSeparator />
