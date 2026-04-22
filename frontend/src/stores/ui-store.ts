@@ -35,7 +35,9 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
 interface UIState {
   drafts: Record<string, string>;
   stashes: Record<string, string[]>;
-  collapsedProjectIds: string[];
+  expandedProjects: Record<string, boolean>;
+  expandedFolders: Record<string, boolean>;
+  sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
   browserPanelWidth: number;
   theme: Theme;
@@ -45,7 +47,10 @@ interface UIState {
   pushStash: (sessionId: string, text: string) => void;
   popStash: (sessionId: string) => string | undefined;
   clearStash: (sessionId: string) => void;
-  setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
+  setProjectExpanded: (projectId: string, expanded: boolean) => void;
+  setFolderExpanded: (folderName: string, expanded: boolean) => void;
+  renameFolderExpanded: (oldName: string, newName: string) => void;
+  setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
@@ -56,7 +61,9 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       drafts: {},
       stashes: {},
-      collapsedProjectIds: readLegacyCollapsedProjects(),
+      expandedProjects: Object.fromEntries(readLegacyCollapsedProjects().map((id) => [id, false])),
+      expandedFolders: {},
+      sidebarFocusMode: false,
       rightPanelCollapsed: true,
       browserPanelWidth: 500,
       theme: "dark" as Theme,
@@ -106,17 +113,20 @@ export const useUIStore = create<UIState>()(
           return { stashes: rest };
         }),
 
-      setProjectCollapsed: (projectId, collapsed) =>
+      setProjectExpanded: (projectId, expanded) =>
+        set((s) => ({ expandedProjects: { ...s.expandedProjects, [projectId]: expanded } })),
+
+      setFolderExpanded: (folderName, expanded) =>
+        set((s) => ({ expandedFolders: { ...s.expandedFolders, [folderName]: expanded } })),
+
+      renameFolderExpanded: (oldName, newName) =>
         set((s) => {
-          const has = s.collapsedProjectIds.includes(projectId);
-          if (collapsed && !has) {
-            return { collapsedProjectIds: [...s.collapsedProjectIds, projectId] };
-          }
-          if (!collapsed && has) {
-            return { collapsedProjectIds: s.collapsedProjectIds.filter((id) => id !== projectId) };
-          }
-          return s;
+          if (!(oldName in s.expandedFolders)) return s;
+          const { [oldName]: value, ...rest } = s.expandedFolders;
+          return { expandedFolders: { ...rest, [newName]: value ?? true } };
         }),
+
+      setSidebarFocusMode: (enabled) => set({ sidebarFocusMode: enabled }),
 
       setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
 
@@ -127,12 +137,11 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: "agentique:ui",
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version === 0 && state.stashes) {
-          // Migrate stashes from Record<string, string> → Record<string, string[]>
           const old = state.stashes as Record<string, string | string[]>;
           const migrated: Record<string, string[]> = {};
           for (const [k, v] of Object.entries(old)) {
@@ -140,12 +149,21 @@ export const useUIStore = create<UIState>()(
           }
           state.stashes = migrated;
         }
+        if (version < 2) {
+          const ids = (state.collapsedProjectIds as string[] | undefined) ?? [];
+          state.expandedProjects = Object.fromEntries(ids.map((id) => [id, false]));
+          state.expandedFolders = {};
+          state.sidebarFocusMode = false;
+          delete state.collapsedProjectIds;
+        }
         return state;
       },
       partialize: (state) => ({
         drafts: state.drafts,
         stashes: state.stashes,
-        collapsedProjectIds: state.collapsedProjectIds,
+        expandedProjects: state.expandedProjects,
+        expandedFolders: state.expandedFolders,
+        sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
         browserPanelWidth: state.browserPanelWidth,
         theme: state.theme,

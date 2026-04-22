@@ -23,6 +23,7 @@ import { updateProject } from "~/lib/api";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useUIStore } from "~/stores/ui-store";
 import { DraggableProject, DragOverlayProject } from "./folder-sidebar/DraggableProject";
 import { DropZone } from "./folder-sidebar/DropZone";
 import { FolderContent } from "./folder-sidebar/FolderHeader";
@@ -66,14 +67,17 @@ export function FolderSidebar() {
   const navigate = useNavigate();
   const { folders, ungrouped } = useFolderGroups();
 
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(folders.map((f) => [f.name, true])),
-  );
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const expandedFolders = useUIStore((s) => s.expandedFolders);
+  const expandedProjects = useUIStore((s) => s.expandedProjects);
+  const focusMode = useUIStore((s) => s.sidebarFocusMode);
+  const setFolderExpanded = useUIStore((s) => s.setFolderExpanded);
+  const setProjectExpanded = useUIStore((s) => s.setProjectExpanded);
+  const renameFolderExpanded = useUIStore((s) => s.renameFolderExpanded);
+  const setSidebarFocusMode = useUIStore((s) => s.setSidebarFocusMode);
+
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [localEmptyFolders, setLocalEmptyFolders] = useState<string[]>([]);
-  const [focusMode, setFocusMode] = useState(false);
 
   const projects = useAppStore((s) => s.projects);
 
@@ -116,14 +120,7 @@ export function FolderSidebar() {
       const inFolder = projects.filter((p) => p.folder === oldName);
       await Promise.all(inFolder.map((p) => setProjectFolder(p.id, newName)));
       setRenamingFolder(null);
-      setExpandedFolders((prev) => {
-        const next = { ...prev };
-        if (oldName in next) {
-          next[newName] = next[oldName] ?? true;
-          delete next[oldName];
-        }
-        return next;
-      });
+      renameFolderExpanded(oldName, newName);
       setLocalEmptyFolders((prev) => prev.map((f) => (f === oldName ? newName : f)));
       setFolderOrder((prev) => {
         const next = prev.map((f) => (f === oldName ? newName : f));
@@ -131,7 +128,7 @@ export function FolderSidebar() {
         return next;
       });
     },
-    [projects, setProjectFolder],
+    [projects, setProjectFolder, renameFolderExpanded],
   );
 
   const deleteFolder = useCallback(
@@ -143,12 +140,15 @@ export function FolderSidebar() {
     [projects, setProjectFolder],
   );
 
-  const createFolder = useCallback((name: string) => {
-    setCreatingFolder(false);
-    if (!name) return;
-    setLocalEmptyFolders((prev) => [...prev, name]);
-    setExpandedFolders((prev) => ({ ...prev, [name]: true }));
-  }, []);
+  const createFolder = useCallback(
+    (name: string) => {
+      setCreatingFolder(false);
+      if (!name) return;
+      setLocalEmptyFolders((prev) => [...prev, name]);
+      setFolderExpanded(name, true);
+    },
+    [setFolderExpanded],
+  );
 
   const allFolders = useMemo(() => {
     const realNames = new Set(folders.map((f) => f.name));
@@ -280,16 +280,16 @@ export function FolderSidebar() {
   // ── Helpers for toggle callbacks ──
 
   const toggleFolder = useCallback(
-    (name: string) => setExpandedFolders((prev) => ({ ...prev, [name]: !(prev[name] ?? true) })),
-    [],
+    (name: string) => setFolderExpanded(name, !(expandedFolders[name] ?? true)),
+    [expandedFolders, setFolderExpanded],
   );
   const toggleProject = useCallback(
-    (id: string) => setExpandedProjects((prev) => ({ ...prev, [id]: !prev[id] })),
-    [],
+    (id: string) => setProjectExpanded(id, !expandedProjects[id]),
+    [expandedProjects, setProjectExpanded],
   );
   const expandProject = useCallback(
-    (id: string) => setExpandedProjects((prev) => ({ ...prev, [id]: true })),
-    [],
+    (id: string) => setProjectExpanded(id, true),
+    [setProjectExpanded],
   );
 
   return (
@@ -303,10 +303,20 @@ export function FolderSidebar() {
         <div className="flex-1 overflow-y-auto min-h-0 py-2 px-2">
           <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
             {focusMode ? (
-              // Focus mode: flat list of expanded projects, no folders
-              [...orderedFolders.flatMap((f) => f.projects), ...ungrouped]
-                .filter((e) => isProjectExpanded(e.project.id, e.active.length > 0))
-                .map((entry) => (
+              (() => {
+                const visible = [...orderedFolders.flatMap((f) => f.projects), ...ungrouped].filter(
+                  (e) => isProjectExpanded(e.project.id, e.active.length > 0),
+                );
+                if (visible.length === 0) {
+                  return (
+                    <div className="px-3 py-6 text-[11px] text-muted-foreground-faint text-center leading-relaxed">
+                      No expanded projects.
+                      <br />
+                      Turn off focus mode to see all.
+                    </div>
+                  );
+                }
+                return visible.map((entry) => (
                   <DraggableProject
                     key={entry.project.id}
                     entry={entry}
@@ -317,7 +327,8 @@ export function FolderSidebar() {
                     onSessionClick={handleSessionClick}
                     level={LEVEL.project}
                   />
-                ))
+                ));
+              })()
             ) : (
               <>
                 {orderedFolders.map((folder, folderIdx) => {
@@ -459,7 +470,7 @@ export function FolderSidebar() {
             </button>
             <button
               type="button"
-              onClick={() => setFocusMode((v) => !v)}
+              onClick={() => setSidebarFocusMode(!focusMode)}
               title={focusMode ? "Show all projects" : "Show only expanded"}
               className={cn(
                 "flex items-center gap-1 px-1.5 py-1 text-[10px] transition-colors cursor-pointer rounded",
