@@ -26,6 +26,9 @@ type CLISession interface {
 	// as a process-liveness signal during tool execution (when event silence
 	// is expected and therefore not a valid stall signal).
 	State() claudecli.State
+	// ProcessInfo exposes process-level metrics (notably LastStdoutAt) so the
+	// watchdog can detect stdout-level stalls independently of parsed events.
+	ProcessInfo() claudecli.ProcessInfo
 }
 
 // cliAlive reports whether the CLI process is still running (not terminated or failed).

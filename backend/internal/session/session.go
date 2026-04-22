@@ -74,24 +74,18 @@ const (
 // Watchdog thresholds. Declared as vars so tests can shorten them without
 // waiting minutes of real time.
 //
-//   - thinkingWarnAfter / thinkingFailAfter apply to the Thinking state
-//     (no tool in flight). Event silence here signals a genuine stall.
-//   - toolLivenessInterval applies to the ToolExecuting state. Tools can
-//     legitimately run for minutes with no events; the only valid failure
-//     signal is the CLI process dying, which we poll on this cadence.
+//   - thinkingWarnAfter / thinkingFailAfter apply to ActivityThinking/Idle
+//     (no tool in flight). Event silence signals a genuine model stall.
+//   - toolLivenessInterval is the poll cadence during ActivityAwaitingToolResult.
+//     No event-silence timeout applies; the failure signal is the CLI process dying.
+//   - toolStallWarnAfter emits an informational broadcast if stdout stops moving
+//     for this long during tool execution (process alive but nothing happening).
 var (
 	thinkingWarnAfter    = 2 * time.Minute
 	thinkingFailAfter    = 5 * time.Minute
 	toolLivenessInterval = 60 * time.Second
+	toolStallWarnAfter   = 10 * time.Minute
 )
-
-// inFlightTool records a top-level tool_use that has not yet received its tool_result.
-// Subagent tools (ParentToolUseID != "") are not tracked — they live inside the parent
-// Agent tool and their lifecycle is bounded by it.
-type inFlightTool struct {
-	name      string
-	startedAt time.Time
-}
 
 // sessionGitState groups git/worktree-related fields of a Session.
 // Protected by the owning Session's mu.
@@ -139,11 +133,17 @@ type Session struct {
 	eventLoopDone  chan struct{}
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
 
-	// inFlightTools is the set of top-level tool_use calls awaiting their tool_result.
-	// Non-empty = ToolExecuting activity state (watchdog uses process liveness).
-	// Empty = Thinking activity state (watchdog uses event-silence timing).
+	// activityState mirrors the CLI's authoritative activity state, driven by
+	// CLIStateChangeEvent. Watchdog behavior depends on it:
+	//   ActivityThinking / ActivityIdle → event-silence timeout (model stall).
+	//   ActivityAwaitingToolResult     → process liveness + stdout-stall check.
 	// Protected by mu.
-	inFlightTools map[string]inFlightTool
+	activityState claudecli.ActivityState
+
+	// toolStallWarned avoids repeatedly broadcasting the same stdout-stall
+	// warning while a single tool remains stuck. Reset on activity state change.
+	// Protected by mu.
+	toolStallWarned bool
 
 	git     sessionGitState
 	channel sessionChannelState
@@ -205,7 +205,7 @@ func newSession(p sessionParams) *Session {
 		approvalState:  newApprovalState(),
 		eventLoopDone:  make(chan struct{}),
 		stateChangedCh: make(chan struct{}, 1),
-		inFlightTools:  make(map[string]inFlightTool),
+		activityState:  claudecli.ActivityIdle,
 		git: sessionGitState{
 			workDir:    p.workDir,
 			gitVersion: p.initialGitVersion,
@@ -680,7 +680,7 @@ func (s *Session) startEventLoop() {
 				}
 				lastEventType = fmt.Sprintf("%T", event)
 				lastEventTime = time.Now()
-				nextInterval := s.trackActivity(event)
+				nextInterval := s.observeActivity(event)
 				watchdog.Reset(nextInterval)
 				warned = false
 				s.safeProcessEvent(event)
@@ -688,7 +688,7 @@ func (s *Session) startEventLoop() {
 				s.mu.Lock()
 				st := s.state
 				waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
-				inFlight := len(s.inFlightTools)
+				act := s.activityState
 				s.mu.Unlock()
 
 				if st != StateRunning || waitingForUser {
@@ -696,15 +696,13 @@ func (s *Session) startEventLoop() {
 					continue
 				}
 
-				if inFlight > 0 {
-					// ToolExecuting: event silence is expected. Only fail if the CLI
-					// process itself has died (stream closure would reach the events
-					// case above; this path catches state transitions before that).
+				if act == claudecli.ActivityAwaitingToolResult {
+					// Tool executing: event silence is expected. Fail only if the CLI
+					// process has died. Emit an informational broadcast (non-fatal) if
+					// stdout has gone silent for an unusually long time — the process
+					// is alive but may be stuck on a dead syscall.
 					if !cliAlive(s.cliSess) {
-						slog.Error("watchdog: CLI process not alive while tools in flight",
-							"session_id", s.ID,
-							"in_flight", inFlight,
-						)
+						slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
 						s.broadcast("session.event", PushSessionEvent{
 							SessionID: s.ID,
 							Event: WireErrorEvent{
@@ -718,11 +716,12 @@ func (s *Session) startEventLoop() {
 						}
 						return
 					}
+					s.maybeWarnToolStall()
 					watchdog.Reset(toolLivenessInterval)
 					continue
 				}
 
-				// Thinking: event-silence timeout applies.
+				// Thinking / Idle: event-silence timeout applies.
 				sinceLastEvent := time.Since(lastEventTime)
 				if sinceLastEvent < thinkingWarnAfter {
 					// Timer fired but the window hasn't actually elapsed (possible
@@ -760,47 +759,60 @@ func (s *Session) startEventLoop() {
 	}()
 }
 
-// trackActivity updates the in-flight tool set for the given event and returns
-// the watchdog interval appropriate for the resulting activity state.
+// observeActivity syncs the local activity-state mirror from an incoming event
+// and returns the watchdog interval appropriate for the resulting state.
 //
-// Activity state is inferred from inFlightTools:
-//   - Non-empty → ToolExecuting: event silence is expected; interval is the
-//     liveness check cadence.
-//   - Empty → Thinking: streaming chunks are expected; interval is the warn threshold.
-//
-// Only top-level tool_use events (ParentToolUseID == "") are tracked. Subagent
-// tool calls live inside the parent Agent tool and share its lifecycle.
-func (s *Session) trackActivity(event claudecli.Event) time.Duration {
+// The authoritative signal is claudecli-go's CLIStateChangeEvent, emitted
+// immediately before the triggering event. This replaces earlier tool_use /
+// tool_result inference, which was correct but duplicated work the CLI wrapper
+// now does for us.
+func (s *Session) observeActivity(event claudecli.Event) time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	switch e := event.(type) {
-	case *claudecli.ToolUseEvent:
-		if e.ParentToolUseID == "" {
-			s.inFlightTools[e.ID] = inFlightTool{name: e.Name, startedAt: time.Now()}
+	if cs, ok := event.(*claudecli.CLIStateChangeEvent); ok {
+		if cs.State != s.activityState {
+			s.toolStallWarned = false
 		}
-	case *claudecli.ToolResultEvent:
-		if e.ParentToolUseID == "" && e.ToolUseID != "" {
-			delete(s.inFlightTools, e.ToolUseID)
-		}
-	case *claudecli.UserEvent:
-		// Real CLI output delivers tool_results as UserContent blocks on a UserEvent.
-		if e.ParentToolUseID == "" {
-			for _, c := range e.Content {
-				if c.Type == "tool_result" && c.ToolUseID != "" {
-					delete(s.inFlightTools, c.ToolUseID)
-				}
-			}
-		}
-	case *claudecli.ResultEvent:
-		// Turn complete — any remaining in-flight tools won't receive a result.
-		for k := range s.inFlightTools {
-			delete(s.inFlightTools, k)
-		}
+		s.activityState = cs.State
 	}
-	if len(s.inFlightTools) > 0 {
+	if s.activityState == claudecli.ActivityAwaitingToolResult {
 		return toolLivenessInterval
 	}
 	return thinkingWarnAfter
+}
+
+// maybeWarnToolStall emits a single non-fatal broadcast if stdout has gone
+// silent for longer than toolStallWarnAfter while a tool is awaiting its
+// result. Subsequent checks for the same stall stay silent until the activity
+// state changes (see observeActivity).
+func (s *Session) maybeWarnToolStall() {
+	info := s.cliSess.ProcessInfo()
+	if info.LastStdoutAt.IsZero() {
+		return
+	}
+	silent := time.Since(info.LastStdoutAt)
+	if silent < toolStallWarnAfter {
+		return
+	}
+	s.mu.Lock()
+	if s.toolStallWarned {
+		s.mu.Unlock()
+		return
+	}
+	s.toolStallWarned = true
+	s.mu.Unlock()
+	slog.Warn("watchdog: stdout stalled while tool running",
+		"session_id", s.ID,
+		"stdout_silent", silent.Round(time.Second),
+	)
+	s.broadcast("session.event", PushSessionEvent{
+		SessionID: s.ID,
+		Event: WireErrorEvent{
+			Type:    "error",
+			Content: fmt.Sprintf("tool still running — CLI stdout silent for %s", silent.Round(time.Second)),
+			Fatal:   false,
+		},
+	})
 }
 
 // safeProcessEvent wraps pipeline.ProcessEvent with panic recovery so a single

@@ -148,6 +148,16 @@ func (s *Session) State() claudecli.State {
 	return claudecli.StateRunning
 }
 
+// ProcessInfo returns a minimal snapshot. Tests that care about stall
+// detection should inject events directly instead of relying on timestamps.
+func (s *Session) ProcessInfo() claudecli.ProcessInfo {
+	return claudecli.ProcessInfo{
+		LastStdoutAt:  time.Now(),
+		ActivityState: claudecli.ActivityThinking,
+		Lifecycle:     s.State(),
+	}
+}
+
 func (s *Session) Query(prompt string) error {
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)

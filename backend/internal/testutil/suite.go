@@ -191,6 +191,7 @@ type MockCLISession struct {
 	permMode     claudecli.PermissionMode
 	interrupted  bool
 	cliState     claudecli.State
+	lastStdoutAt time.Time
 }
 
 func NewMockCLISession() *MockCLISession {
@@ -215,6 +216,29 @@ func (m *MockCLISession) SetCLIState(st claudecli.State) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cliState = st
+}
+
+// ProcessInfo returns a synthetic ProcessInfo. Tests exercising stall detection
+// can override LastStdoutAt via SetLastStdoutAt.
+func (m *MockCLISession) ProcessInfo() claudecli.ProcessInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	last := m.lastStdoutAt
+	if last.IsZero() {
+		last = time.Now()
+	}
+	return claudecli.ProcessInfo{
+		LastStdoutAt: last,
+		Lifecycle:    m.cliState,
+	}
+}
+
+// SetLastStdoutAt overrides the stdout timestamp returned by ProcessInfo.
+// Use to simulate a stdout-silent CLI during tool execution.
+func (m *MockCLISession) SetLastStdoutAt(t time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastStdoutAt = t
 }
 
 func (m *MockCLISession) Query(prompt string) error {

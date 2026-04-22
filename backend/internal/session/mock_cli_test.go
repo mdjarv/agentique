@@ -42,6 +42,13 @@ func (m *mockCLISession) setCLIState(st claudecli.State) {
 	m.cliState = st
 }
 
+func (m *mockCLISession) ProcessInfo() claudecli.ProcessInfo {
+	return claudecli.ProcessInfo{
+		LastStdoutAt: time.Now(),
+		Lifecycle:    m.State(),
+	}
+}
+
 func (m *mockCLISession) Events() <-chan claudecli.Event { return m.events }
 
 func (m *mockCLISession) Query(prompt string) error {
