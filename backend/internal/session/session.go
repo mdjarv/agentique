@@ -61,8 +61,6 @@ type pendingQuestion struct {
 
 const (
 	eventLoopShutdownTimeout = 3 * time.Second
-	watchdogWarnAfter        = 2 * time.Minute
-	watchdogFailAfter        = 5 * time.Minute
 
 	// Tool result truncation thresholds for DB storage.
 	maxToolResultDBSize = 10_000
@@ -72,6 +70,28 @@ const (
 	// Debounce window for mid-turn git status refresh after write-tool results.
 	gitRefreshDebounce = 500 * time.Millisecond
 )
+
+// Watchdog thresholds. Declared as vars so tests can shorten them without
+// waiting minutes of real time.
+//
+//   - thinkingWarnAfter / thinkingFailAfter apply to the Thinking state
+//     (no tool in flight). Event silence here signals a genuine stall.
+//   - toolLivenessInterval applies to the ToolExecuting state. Tools can
+//     legitimately run for minutes with no events; the only valid failure
+//     signal is the CLI process dying, which we poll on this cadence.
+var (
+	thinkingWarnAfter    = 2 * time.Minute
+	thinkingFailAfter    = 5 * time.Minute
+	toolLivenessInterval = 60 * time.Second
+)
+
+// inFlightTool records a top-level tool_use that has not yet received its tool_result.
+// Subagent tools (ParentToolUseID != "") are not tracked — they live inside the parent
+// Agent tool and their lifecycle is bounded by it.
+type inFlightTool struct {
+	name      string
+	startedAt time.Time
+}
 
 // sessionGitState groups git/worktree-related fields of a Session.
 // Protected by the owning Session's mu.
@@ -118,6 +138,12 @@ type Session struct {
 	completedAt    string // ISO8601 timestamp or "" if not completed
 	eventLoopDone  chan struct{}
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
+
+	// inFlightTools is the set of top-level tool_use calls awaiting their tool_result.
+	// Non-empty = ToolExecuting activity state (watchdog uses process liveness).
+	// Empty = Thinking activity state (watchdog uses event-silence timing).
+	// Protected by mu.
+	inFlightTools map[string]inFlightTool
 
 	git     sessionGitState
 	channel sessionChannelState
@@ -179,6 +205,7 @@ func newSession(p sessionParams) *Session {
 		approvalState:  newApprovalState(),
 		eventLoopDone:  make(chan struct{}),
 		stateChangedCh: make(chan struct{}, 1),
+		inFlightTools:  make(map[string]inFlightTool),
 		git: sessionGitState{
 			workDir:    p.workDir,
 			gitVersion: p.initialGitVersion,
@@ -603,7 +630,7 @@ func (s *Session) startEventLoop() {
 
 	go func() {
 		defer close(s.eventLoopDone)
-		watchdog := time.NewTimer(watchdogWarnAfter)
+		watchdog := time.NewTimer(thinkingWarnAfter)
 		defer watchdog.Stop()
 		var warned bool
 		var lastEventType string
@@ -653,25 +680,62 @@ func (s *Session) startEventLoop() {
 				}
 				lastEventType = fmt.Sprintf("%T", event)
 				lastEventTime = time.Now()
-				watchdog.Reset(watchdogWarnAfter)
+				nextInterval := s.trackActivity(event)
+				watchdog.Reset(nextInterval)
 				warned = false
 				s.safeProcessEvent(event)
 			case <-watchdog.C:
 				s.mu.Lock()
 				st := s.state
 				waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
+				inFlight := len(s.inFlightTools)
 				s.mu.Unlock()
+
 				if st != StateRunning || waitingForUser {
-					watchdog.Reset(watchdogWarnAfter)
+					watchdog.Reset(thinkingWarnAfter)
 					continue
 				}
-				sinceLastEvent := time.Since(lastEventTime).Round(time.Second)
+
+				if inFlight > 0 {
+					// ToolExecuting: event silence is expected. Only fail if the CLI
+					// process itself has died (stream closure would reach the events
+					// case above; this path catches state transitions before that).
+					if !cliAlive(s.cliSess) {
+						slog.Error("watchdog: CLI process not alive while tools in flight",
+							"session_id", s.ID,
+							"in_flight", inFlight,
+						)
+						s.broadcast("session.event", PushSessionEvent{
+							SessionID: s.ID,
+							Event: WireErrorEvent{
+								Type:    "error",
+								Content: "CLI process exited while a tool was running",
+								Fatal:   true,
+							},
+						})
+						if err := s.setState(StateFailed); err != nil {
+							slog.Error("state transition failed", "session_id", s.ID, "error", err)
+						}
+						return
+					}
+					watchdog.Reset(toolLivenessInterval)
+					continue
+				}
+
+				// Thinking: event-silence timeout applies.
+				sinceLastEvent := time.Since(lastEventTime)
+				if sinceLastEvent < thinkingWarnAfter {
+					// Timer fired but the window hasn't actually elapsed (possible
+					// when a previous reset races with a tick). Re-arm for remainder.
+					watchdog.Reset(thinkingWarnAfter - sinceLastEvent)
+					continue
+				}
 				if !warned {
 					warned = true
 					slog.Warn("watchdog: no activity",
 						"session_id", s.ID,
 						"last_event_type", lastEventType,
-						"since_last_event", sinceLastEvent,
+						"since_last_event", sinceLastEvent.Round(time.Second),
 					)
 					s.broadcast("session.event", PushSessionEvent{
 						SessionID: s.ID,
@@ -681,19 +745,62 @@ func (s *Session) startEventLoop() {
 							Fatal:   false,
 						},
 					})
-					watchdog.Reset(watchdogFailAfter - watchdogWarnAfter)
+					watchdog.Reset(thinkingFailAfter - thinkingWarnAfter)
 					continue
 				}
 				slog.Error("watchdog timeout, marking session failed",
 					"session_id", s.ID,
 					"last_event_type", lastEventType,
-					"since_last_event", sinceLastEvent,
+					"since_last_event", sinceLastEvent.Round(time.Second),
 				)
 				s.setState(StateFailed)
 				return
 			}
 		}
 	}()
+}
+
+// trackActivity updates the in-flight tool set for the given event and returns
+// the watchdog interval appropriate for the resulting activity state.
+//
+// Activity state is inferred from inFlightTools:
+//   - Non-empty → ToolExecuting: event silence is expected; interval is the
+//     liveness check cadence.
+//   - Empty → Thinking: streaming chunks are expected; interval is the warn threshold.
+//
+// Only top-level tool_use events (ParentToolUseID == "") are tracked. Subagent
+// tool calls live inside the parent Agent tool and share its lifecycle.
+func (s *Session) trackActivity(event claudecli.Event) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch e := event.(type) {
+	case *claudecli.ToolUseEvent:
+		if e.ParentToolUseID == "" {
+			s.inFlightTools[e.ID] = inFlightTool{name: e.Name, startedAt: time.Now()}
+		}
+	case *claudecli.ToolResultEvent:
+		if e.ParentToolUseID == "" && e.ToolUseID != "" {
+			delete(s.inFlightTools, e.ToolUseID)
+		}
+	case *claudecli.UserEvent:
+		// Real CLI output delivers tool_results as UserContent blocks on a UserEvent.
+		if e.ParentToolUseID == "" {
+			for _, c := range e.Content {
+				if c.Type == "tool_result" && c.ToolUseID != "" {
+					delete(s.inFlightTools, c.ToolUseID)
+				}
+			}
+		}
+	case *claudecli.ResultEvent:
+		// Turn complete — any remaining in-flight tools won't receive a result.
+		for k := range s.inFlightTools {
+			delete(s.inFlightTools, k)
+		}
+	}
+	if len(s.inFlightTools) > 0 {
+		return toolLivenessInterval
+	}
+	return thinkingWarnAfter
 }
 
 // safeProcessEvent wraps pipeline.ProcessEvent with panic recovery so a single

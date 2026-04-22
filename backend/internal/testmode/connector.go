@@ -137,6 +137,17 @@ func NewSession() *Session {
 
 func (s *Session) Events() <-chan claudecli.Event { return s.events }
 
+// State returns a lifecycle state for the mock CLI. Reports StateDone after
+// Close so the watchdog's liveness check treats a closed mock as dead.
+func (s *Session) State() claudecli.State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return claudecli.StateDone
+	}
+	return claudecli.StateRunning
+}
+
 func (s *Session) Query(prompt string) error {
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)

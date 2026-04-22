@@ -190,15 +190,32 @@ type MockCLISession struct {
 	model        claudecli.Model
 	permMode     claudecli.PermissionMode
 	interrupted  bool
+	cliState     claudecli.State
 }
 
 func NewMockCLISession() *MockCLISession {
 	return &MockCLISession{
-		Events_: make(chan claudecli.Event, 64),
+		Events_:  make(chan claudecli.Event, 64),
+		cliState: claudecli.StateRunning,
 	}
 }
 
 func (m *MockCLISession) Events() <-chan claudecli.Event { return m.Events_ }
+
+// State returns the simulated CLI lifecycle state. Defaults to StateRunning;
+// tests can call SetCLIState to simulate process death.
+func (m *MockCLISession) State() claudecli.State {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cliState
+}
+
+// SetCLIState overrides the simulated CLI state (e.g. to StateFailed or StateDone).
+func (m *MockCLISession) SetCLIState(st claudecli.State) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cliState = st
+}
 
 func (m *MockCLISession) Query(prompt string) error {
 	m.mu.Lock()

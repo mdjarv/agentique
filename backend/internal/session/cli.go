@@ -22,6 +22,18 @@ type CLISession interface {
 	ReconnectMCPServerWait(serverName string, timeout time.Duration) error
 	Interrupt() error
 	Close() error
+	// State returns the CLI's own lifecycle state. The watchdog uses this
+	// as a process-liveness signal during tool execution (when event silence
+	// is expected and therefore not a valid stall signal).
+	State() claudecli.State
+}
+
+// cliAlive reports whether the CLI process is still running (not terminated or failed).
+// Used by the watchdog during tool execution, where event silence is expected
+// and the only valid stall signal is the CLI itself going away.
+func cliAlive(s CLISession) bool {
+	st := s.State()
+	return st != claudecli.StateDone && st != claudecli.StateFailed
 }
 
 // CLIConnector creates new CLI sessions.

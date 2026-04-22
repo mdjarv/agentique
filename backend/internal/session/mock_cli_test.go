@@ -20,12 +20,26 @@ type mockCLISession struct {
 	model        claudecli.Model
 	permMode     claudecli.PermissionMode
 	interrupted  bool
+	cliState     claudecli.State // tests can flip this to simulate process death
 }
 
 func newMockCLISession() *mockCLISession {
 	return &mockCLISession{
-		events: make(chan claudecli.Event, 64),
+		events:   make(chan claudecli.Event, 64),
+		cliState: claudecli.StateRunning,
 	}
+}
+
+func (m *mockCLISession) State() claudecli.State {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cliState
+}
+
+func (m *mockCLISession) setCLIState(st claudecli.State) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cliState = st
 }
 
 func (m *mockCLISession) Events() <-chan claudecli.Event { return m.events }
