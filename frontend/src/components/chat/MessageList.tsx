@@ -1,5 +1,14 @@
 import { ArrowDown, Loader2 } from "lucide-react";
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Button } from "~/components/ui/button";
@@ -13,6 +22,9 @@ const SCROLL_THRESHOLD = 48;
 const EAGER_TURN_COUNT = 4;
 const EMPTY_PENDING: ChatEvent[] = [];
 const EMPTY_USER_MESSAGES: UserMessageEvent[] = [];
+
+/** Per-session scroll position, preserved across tab switches and remounts. */
+const scrollMemory = new Map<string, { scrollTop: number; atBottom: boolean }>();
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
@@ -53,7 +65,10 @@ function LazyTurn({
     return () => observer.disconnect();
   }, [visible, scrollRoot]);
 
-  if (!visible) return <div ref={ref} className="min-h-[4rem]" style={CONTENT_VISIBILITY_STYLE} />;
+  // Placeholder height matches containIntrinsicSize so scrollHeight estimates
+  // correctly before turns mount — prevents large cumulative layout shift as
+  // IntersectionObserver fires turn-by-turn.
+  if (!visible) return <div ref={ref} className="min-h-[200px]" style={CONTENT_VISIBILITY_STYLE} />;
   return <div style={CONTENT_VISIBILITY_STYLE}>{children}</div>;
 }
 
@@ -188,19 +203,44 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const pendingRestoreRef = useRef<number | null>(null);
   const [animateRef, setAnimateEnabled] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
-  const [following, setFollowing] = useState(true);
+  const savedInitial = scrollMemory.get(sessionId);
+  const initialFollowing = !savedInitial || savedInitial.atBottom;
+  const [following, setFollowing] = useState(initialFollowing);
   const followingRef = useRef(following);
   followingRef.current = following;
   const prevSessionRef = useRef(sessionId);
   if (prevSessionRef.current !== sessionId) {
+    const prevId = prevSessionRef.current;
     prevSessionRef.current = sessionId;
-    setFollowing(true);
-    followingRef.current = true;
+    // Flush outgoing session's live scroll state in case a throttled rAF was
+    // still pending when the user swapped tabs.
+    const el = scrollRef.current;
+    if (el) {
+      scrollMemory.set(prevId, { scrollTop: el.scrollTop, atBottom: isNearBottom(el) });
+    }
+    const saved = scrollMemory.get(sessionId);
+    const restoreToBottom = !saved || saved.atBottom;
+    setFollowing(restoreToBottom);
+    followingRef.current = restoreToBottom;
+    pendingRestoreRef.current = restoreToBottom ? null : saved.scrollTop;
     // Disable auto-animate during session switch so turn DOM swaps are instant
     // (avoids the zoom/slide effect from FLIP removal animations).
     setAnimateEnabled(false);
   }
+
+  // Restore saved scroll position after layout for session switches where the
+  // user was mid-scroll. Runs every render; sentinel ref makes it a no-op
+  // outside actual switches.
+  useLayoutEffect(() => {
+    const pending = pendingRestoreRef.current;
+    if (pending == null) return;
+    pendingRestoreRef.current = null;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = pending;
+  });
   const isAnyStreaming = useStreamingStore((s) => sessionId in s.texts);
   const hasIncompleteTurn = turns.length > 0 && !turns[turns.length - 1]?.complete;
 
@@ -239,14 +279,32 @@ export function MessageList({
     );
   }, [streamingEvents]);
 
+  const scrollRafRef = useRef<number | null>(null);
   const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setFollowing(isNearBottom(el));
-  }, []);
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      const atBottom = isNearBottom(el);
+      setFollowing(atBottom);
+      scrollMemory.set(sessionId, { scrollTop: el.scrollTop, atBottom });
+    });
+  }, [sessionId]);
+
+  useEffect(
+    () => () => {
+      if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current);
+    },
+    [],
+  );
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const behavior: ScrollBehavior = dist > SMOOTH_SCROLL_MAX_PX ? "instant" : "smooth";
+    bottomRef.current?.scrollIntoView({ behavior });
     setFollowing(true);
   }, []);
 
