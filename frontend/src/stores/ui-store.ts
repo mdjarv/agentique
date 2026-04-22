@@ -48,7 +48,9 @@ interface UIState {
   popStash: (sessionId: string) => string | undefined;
   clearStash: (sessionId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
+  setManyProjectsExpanded: (projectIds: string[], expanded: boolean) => void;
   setFolderExpanded: (folderName: string, expanded: boolean) => void;
+  setManyFoldersExpanded: (folderNames: string[], expanded: boolean) => void;
   renameFolderExpanded: (oldName: string, newName: string) => void;
   setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
@@ -116,8 +118,36 @@ export const useUIStore = create<UIState>()(
       setProjectExpanded: (projectId, expanded) =>
         set((s) => ({ expandedProjects: { ...s.expandedProjects, [projectId]: expanded } })),
 
+      setManyProjectsExpanded: (projectIds, expanded) =>
+        set((s) => {
+          if (projectIds.length === 0) return s;
+          const next = { ...s.expandedProjects };
+          let changed = false;
+          for (const id of projectIds) {
+            if (next[id] !== expanded) {
+              next[id] = expanded;
+              changed = true;
+            }
+          }
+          return changed ? { expandedProjects: next } : s;
+        }),
+
       setFolderExpanded: (folderName, expanded) =>
         set((s) => ({ expandedFolders: { ...s.expandedFolders, [folderName]: expanded } })),
+
+      setManyFoldersExpanded: (folderNames, expanded) =>
+        set((s) => {
+          if (folderNames.length === 0) return s;
+          const next = { ...s.expandedFolders };
+          let changed = false;
+          for (const name of folderNames) {
+            if (next[name] !== expanded) {
+              next[name] = expanded;
+              changed = true;
+            }
+          }
+          return changed ? { expandedFolders: next } : s;
+        }),
 
       renameFolderExpanded: (oldName, newName) =>
         set((s) => {

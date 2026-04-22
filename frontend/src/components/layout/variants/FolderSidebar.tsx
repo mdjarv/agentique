@@ -17,8 +17,8 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, EyeOff, FolderPlus } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, FolderPlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { updateProject } from "~/lib/api";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -71,7 +71,9 @@ export function FolderSidebar() {
   const expandedProjects = useUIStore((s) => s.expandedProjects);
   const focusMode = useUIStore((s) => s.sidebarFocusMode);
   const setFolderExpanded = useUIStore((s) => s.setFolderExpanded);
+  const setManyFoldersExpanded = useUIStore((s) => s.setManyFoldersExpanded);
   const setProjectExpanded = useUIStore((s) => s.setProjectExpanded);
+  const setManyProjectsExpanded = useUIStore((s) => s.setManyProjectsExpanded);
   const renameFolderExpanded = useUIStore((s) => s.renameFolderExpanded);
   const setSidebarFocusMode = useUIStore((s) => s.setSidebarFocusMode);
 
@@ -292,6 +294,40 @@ export function FolderSidebar() {
     [setProjectExpanded],
   );
 
+  // Auto-pin active projects: when a project acquires an active session and
+  // the user has no explicit preference yet, record `true` so the project
+  // doesn't silently collapse later when the session ends.
+  useEffect(() => {
+    const toPin: string[] = [];
+    const visit = (id: string, hasActive: boolean) => {
+      if (hasActive && !(id in expandedProjects)) toPin.push(id);
+    };
+    for (const f of orderedFolders) {
+      for (const e of f.projects) visit(e.project.id, e.active.length > 0);
+    }
+    for (const e of ungrouped) visit(e.project.id, e.active.length > 0);
+    if (toPin.length > 0) setManyProjectsExpanded(toPin, true);
+  }, [orderedFolders, ungrouped, expandedProjects, setManyProjectsExpanded]);
+
+  const allProjectIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const f of orderedFolders) for (const e of f.projects) ids.push(e.project.id);
+    for (const e of ungrouped) ids.push(e.project.id);
+    return ids;
+  }, [orderedFolders, ungrouped]);
+
+  const allFolderNames = useMemo(() => orderedFolders.map((f) => f.name), [orderedFolders]);
+
+  const collapseAll = useCallback(() => {
+    setManyFoldersExpanded(allFolderNames, false);
+    setManyProjectsExpanded(allProjectIds, false);
+  }, [allFolderNames, allProjectIds, setManyFoldersExpanded, setManyProjectsExpanded]);
+
+  const expandAll = useCallback(() => {
+    setManyFoldersExpanded(allFolderNames, true);
+    setManyProjectsExpanded(allProjectIds, true);
+  }, [allFolderNames, allProjectIds, setManyFoldersExpanded, setManyProjectsExpanded]);
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <DndContext
@@ -468,20 +504,38 @@ export function FolderSidebar() {
               <FolderPlus className="size-3" />
               New folder
             </button>
-            <button
-              type="button"
-              onClick={() => setSidebarFocusMode(!focusMode)}
-              title={focusMode ? "Show all projects" : "Show only expanded"}
-              className={cn(
-                "flex items-center gap-1 px-1.5 py-1 text-[10px] transition-colors cursor-pointer rounded",
-                focusMode
-                  ? "text-primary bg-primary/10 hover:bg-primary/20"
-                  : "text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30",
-              )}
-            >
-              {focusMode ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-              Focus
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={collapseAll}
+                title="Collapse all"
+                className="flex items-center px-1 py-1 text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30 transition-colors cursor-pointer rounded"
+              >
+                <ChevronsDownUp className="size-3" />
+              </button>
+              <button
+                type="button"
+                onClick={expandAll}
+                title="Expand all"
+                className="flex items-center px-1 py-1 text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30 transition-colors cursor-pointer rounded"
+              >
+                <ChevronsUpDown className="size-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarFocusMode(!focusMode)}
+                title={focusMode ? "Show all projects" : "Show only expanded"}
+                className={cn(
+                  "flex items-center gap-1 px-1.5 py-1 text-[10px] transition-colors cursor-pointer rounded",
+                  focusMode
+                    ? "text-primary bg-primary/10 hover:bg-primary/20"
+                    : "text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30",
+                )}
+              >
+                {focusMode ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                Focus
+              </button>
+            </div>
           </div>
         )}
       </div>
