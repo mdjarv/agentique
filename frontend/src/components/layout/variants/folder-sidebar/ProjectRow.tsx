@@ -95,8 +95,15 @@ export const ProjectContent = memo(function ProjectContent({
         {!expanded && worstState && <SessionBadge state={worstState} size="md" pulse />}
       </button>
 
-      {/* Actions: pin (visible when pinned, hover otherwise) + settings (hover) + new session (always) */}
+      {/* Actions: settings (hover) + pin (visible when pinned, hover otherwise) + new session (always) */}
       <span className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={handleSettings}
+          className="size-5 rounded-md flex items-center justify-center cursor-pointer text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/proj:opacity-100 transition-opacity"
+        >
+          <Settings className="size-3" />
+        </button>
         {onTogglePin && (
           <button
             type="button"
@@ -116,13 +123,6 @@ export const ProjectContent = memo(function ProjectContent({
             <Pin className={cn("size-3", isPinned && "fill-current")} />
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleSettings}
-          className="size-5 rounded-md flex items-center justify-center cursor-pointer text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/proj:opacity-100 transition-opacity"
-        >
-          <Settings className="size-3" />
-        </button>
         <button
           type="button"
           onClick={handleNewSession}
