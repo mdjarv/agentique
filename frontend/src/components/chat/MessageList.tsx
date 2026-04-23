@@ -205,6 +205,16 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null);
   const pendingRestoreRef = useRef<number | null>(null);
   const [animateRef, setAnimateEnabled] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
+  // animateRef is stable but calls setState internally; an inline ref callback
+  // would change identity each render, causing React to re-invoke it and loop
+  // on setState (max update depth, error #185).
+  const setContentRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      animateRef(node);
+      contentRef.current = node;
+    },
+    [animateRef],
+  );
   const savedInitial = scrollMemory.get(sessionId);
   const initialFollowing = !savedInitial || savedInitial.atBottom;
   const [following, setFollowing] = useState(initialFollowing);
@@ -330,13 +340,7 @@ export function MessageList({
         onScroll={handleScroll}
         className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >
-        <div
-          ref={(node) => {
-            animateRef(node);
-            contentRef.current = node;
-          }}
-          className="py-4 pl-5 pr-4 max-md:px-2 space-y-8 min-w-0"
-        >
+        <div ref={setContentRef} className="py-4 pl-5 pr-4 max-md:px-2 space-y-8 min-w-0">
           {isBackfilling && <HistoryBackfillIndicator />}
           {turns.map((turn, i) => {
             const eager = i >= turns.length - EAGER_TURN_COUNT;
