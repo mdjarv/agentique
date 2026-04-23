@@ -71,6 +71,7 @@ export const DraggableProject = memo(function DraggableProject({
           isPinned={isPinned}
           onToggle={onToggle}
           onExpand={onExpand}
+          onTogglePin={onTogglePin}
           worstState={entry.worstState}
         />
       </SidebarRow>

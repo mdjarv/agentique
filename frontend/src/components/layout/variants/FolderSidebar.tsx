@@ -322,15 +322,22 @@ export function FolderSidebar() {
 
   const allFolderNames = useMemo(() => orderedFolders.map((f) => f.name), [orderedFolders]);
 
-  const collapseAll = useCallback(() => {
-    setManyFoldersExpanded(allFolderNames, false);
-    setManyProjectsExpanded(allProjectIds, false);
-  }, [allFolderNames, allProjectIds, setManyFoldersExpanded, setManyProjectsExpanded]);
+  const anythingExpanded = useMemo(() => {
+    if (allFolderNames.some((n) => expandedFolders[n] ?? true)) return true;
+    return allProjectIds.some((id) => expandedProjects[id] === true);
+  }, [allFolderNames, allProjectIds, expandedFolders, expandedProjects]);
 
-  const expandAll = useCallback(() => {
-    setManyFoldersExpanded(allFolderNames, true);
-    setManyProjectsExpanded(allProjectIds, true);
-  }, [allFolderNames, allProjectIds, setManyFoldersExpanded, setManyProjectsExpanded]);
+  const toggleCollapseAll = useCallback(() => {
+    const next = !anythingExpanded;
+    setManyFoldersExpanded(allFolderNames, next);
+    setManyProjectsExpanded(allProjectIds, next);
+  }, [
+    anythingExpanded,
+    allFolderNames,
+    allProjectIds,
+    setManyFoldersExpanded,
+    setManyProjectsExpanded,
+  ]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -517,19 +524,15 @@ export function FolderSidebar() {
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                onClick={collapseAll}
-                title="Collapse all"
+                onClick={toggleCollapseAll}
+                title={anythingExpanded ? "Collapse all" : "Expand all"}
                 className="flex items-center px-1 py-1 text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30 transition-colors cursor-pointer rounded"
               >
-                <ChevronsDownUp className="size-3" />
-              </button>
-              <button
-                type="button"
-                onClick={expandAll}
-                title="Expand all"
-                className="flex items-center px-1 py-1 text-muted-foreground-faint hover:text-muted-foreground hover:bg-sidebar-accent/30 transition-colors cursor-pointer rounded"
-              >
-                <ChevronsUpDown className="size-3" />
+                {anythingExpanded ? (
+                  <ChevronsDownUp className="size-3" />
+                ) : (
+                  <ChevronsUpDown className="size-3" />
+                )}
               </button>
               <button
                 type="button"

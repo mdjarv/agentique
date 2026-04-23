@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Pin, Plus, Settings } from "lucide-react";
 import { memo, useCallback } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import type { ProjectColor } from "~/lib/project-colors";
+import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type BadgeState, SessionBadge } from "../../session/SessionBadge";
 import { IconSlot } from "./IconSlot";
@@ -17,6 +18,7 @@ export const ProjectContent = memo(function ProjectContent({
   isPinned,
   onToggle,
   onExpand,
+  onTogglePin,
   worstState,
 }: {
   slug: string;
@@ -27,6 +29,7 @@ export const ProjectContent = memo(function ProjectContent({
   isPinned?: boolean;
   onToggle: () => void;
   onExpand: () => void;
+  onTogglePin?: () => void;
   worstState: BadgeState | null;
 }) {
   const navigate = useNavigate();
@@ -89,12 +92,30 @@ export const ProjectContent = memo(function ProjectContent({
         <span className="text-sm font-semibold truncate" style={{ color: color.fg }}>
           {name}
         </span>
-        {isPinned && <Pin className="size-2.5 shrink-0 opacity-60" style={{ color: color.fg }} />}
         {!expanded && worstState && <SessionBadge state={worstState} size="md" pulse />}
       </button>
 
-      {/* Actions: settings (hover-only) + new session (always visible) */}
+      {/* Actions: pin (visible when pinned, hover otherwise) + settings (hover) + new session (always) */}
       <span className="flex items-center gap-0.5 shrink-0">
+        {onTogglePin && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            title={isPinned ? "Unpin from focus" : "Pin to focus"}
+            className={cn(
+              "size-5 rounded-md flex items-center justify-center cursor-pointer transition-all",
+              isPinned
+                ? "opacity-100 hover:scale-110"
+                : "opacity-0 group-hover/proj:opacity-60 hover:!opacity-100 text-muted-foreground hover:text-foreground",
+            )}
+            style={isPinned ? { color: color.fg } : undefined}
+          >
+            <Pin className={cn("size-3", isPinned && "fill-current")} />
+          </button>
+        )}
         <button
           type="button"
           onClick={handleSettings}
