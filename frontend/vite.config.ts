@@ -29,10 +29,12 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       workbox: {
-        // Only precache the app shell — lazy-loaded chunks (mermaid, katex,
-        // diagram renderers ≈ 1500 files) are fetched on demand via the network.
+        // Precache hashed assets only. index.html is intentionally excluded —
+        // a precached index.html points at hashed js bundles that get evicted
+        // on the next deploy, so a stale SW would serve HTML referencing 404s
+        // (or the wrong-version bundle). NetworkFirst on navigations below
+        // keeps HTML fresh while still allowing offline fallback.
         globPatterns: [
-          "index.html",
           "assets/index-*.js",
           "assets/vendor-*.js",
           "assets/index-*.css",
@@ -47,9 +49,26 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws$/],
+        // Disable the default navigateFallback (which registers a precache-bound
+        // NavigationRoute that would claim navigations before our NetworkFirst
+        // handler sees them, and index.html is no longer in the precache anyway).
+        // NetworkFirst below handles all navigations and caches the response for
+        // offline use.
+        navigateFallback: null,
         runtimeCaching: [
+          {
+            // Always try network for navigations so fresh index.html (with
+            // current asset hashes) wins over any cached copy. Falls back to
+            // cache after 3s — preserves offline behavior. API and WS are
+            // never navigations, so no denylist needed here.
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "html",
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 4 },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
             handler: "CacheFirst",
