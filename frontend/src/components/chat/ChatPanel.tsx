@@ -355,6 +355,8 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
         hasPendingInput={!!pendingApproval || !!pendingQuestion}
         tabBar={tabBarElement}
         accentColor={agentColor}
+        git={git}
+        projectGitStatus={projectGitStatus}
       />
 
       {/* Tab bar — mobile only (desktop renders inline in header) */}

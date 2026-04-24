@@ -21,6 +21,7 @@ import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDial
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
 import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
 import { IconPicker } from "~/components/chat/IconPicker";
+import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
@@ -33,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -55,7 +57,7 @@ import {
 } from "~/lib/session/actions";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
+import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { useBrowserStore } from "~/stores/browser-store";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -69,9 +71,20 @@ interface SessionHeaderProps {
   tabBar?: React.ReactNode;
   /** Project accent color hex for the top border. */
   accentColor?: string;
+  /** Git actions for the session — enables inline merge dropdown on desktop. */
+  git?: ReturnType<typeof useGitActions>;
+  /** Project-level git status — used to surface uncommitted-dirty warning on merge. */
+  projectGitStatus?: ProjectGitStatus;
 }
 
-export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: SessionHeaderProps) {
+export function SessionHeader({
+  meta,
+  hasPendingInput,
+  tabBar,
+  accentColor,
+  git,
+  projectGitStatus,
+}: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
   const browserEnabled = useFeatureStore((s) => s.features.browser);
@@ -250,6 +263,13 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
 
   const SessionIcon = getSessionIconComponent(meta.icon);
 
+  const ahead = meta.commitsAhead ?? 0;
+  const behind = meta.commitsBehind ?? 0;
+  const isMerged = meta.worktreeMerged && ahead === 0 && behind === 0;
+  const canMerge = !!git && isWorktree && !meta.branchMissing && !isMerged && ahead > 0 && !isBusy;
+  const projectDirty = !!projectGitStatus && projectGitStatus.uncommittedCount > 0;
+  const hasUncommitted = !!git?.uncommittedFiles && git.uncommittedFiles.length > 0;
+
   return (
     <>
       <PageHeader accentColor={accentColor}>
@@ -398,6 +418,19 @@ export function SessionHeader({ meta, hasPendingInput, tabBar, accentColor }: Se
           {isMobile && <ConnectionIndicator />}
 
           {!isMobile && browserEnabled && <BrowserToggle sessionId={meta.id} />}
+
+          {!isMobile && git && canMerge && (
+            <MergeDropdown
+              git={git}
+              projectDirty={projectDirty}
+              className={cn(
+                "h-7 px-2 text-xs border",
+                meta.mergeStatus === "clean" && !hasUncommitted
+                  ? "bg-success/10 text-success border-success/30 hover:bg-success/20"
+                  : "hover:bg-accent",
+              )}
+            />
+          )}
 
           {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
             <Button
