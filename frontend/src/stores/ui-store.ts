@@ -40,6 +40,7 @@ interface UIState {
   pinnedProjectIds: string[];
   sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
+  todoSidebarCollapsed: boolean;
   browserPanelWidth: number;
   theme: Theme;
 
@@ -56,6 +57,7 @@ interface UIState {
   toggleProjectPinned: (projectId: string) => void;
   setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
+  setTodoSidebarCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
 }
@@ -70,6 +72,7 @@ export const useUIStore = create<UIState>()(
       pinnedProjectIds: [],
       sidebarFocusMode: false,
       rightPanelCollapsed: true,
+      todoSidebarCollapsed: false,
       browserPanelWidth: 500,
       theme: "dark" as Theme,
 
@@ -173,6 +176,8 @@ export const useUIStore = create<UIState>()(
 
       setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
 
+      setTodoSidebarCollapsed: (collapsed) => set({ todoSidebarCollapsed: collapsed }),
+
       setBrowserPanelWidth: (width) =>
         set({ browserPanelWidth: Math.max(300, Math.min(900, width)) }),
 
@@ -216,6 +221,7 @@ export const useUIStore = create<UIState>()(
         pinnedProjectIds: state.pinnedProjectIds,
         sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
+        todoSidebarCollapsed: state.todoSidebarCollapsed,
         browserPanelWidth: state.browserPanelWidth,
         theme: state.theme,
       }),

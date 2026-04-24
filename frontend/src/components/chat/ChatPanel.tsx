@@ -15,11 +15,13 @@ import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageC
 import { MessageList } from "~/components/chat/MessageList";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { SessionTabBar } from "~/components/chat/SessionTabBar";
+import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
 import { TodosView } from "~/components/chat/TodosView";
 import { StatusPage } from "~/components/layout/PageHeader";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
 import { useSessionState } from "~/hooks/session/useSessionState";
+import { useIsLarge } from "~/hooks/useIsLarge";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -312,21 +314,27 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
 
   const isResumable = resumableStates.has(sessionState);
   const isMobile = useIsMobile();
+  const isLarge = useIsLarge();
+  const todoSidebarCollapsed = useUIStore((s) => s.todoSidebarCollapsed);
+  const setTodoSidebarCollapsed = useUIStore((s) => s.setTodoSidebarCollapsed);
 
   if (!meta) {
     return <StatusPage message="Loading session..." />;
   }
   const uncommittedCount = git.uncommittedFiles?.length ?? 0;
   const hasGitContent = isWorktree || isDirty || hasRemoteChanges || hasChanges;
-  const showTabs = hasTodos || hasGitContent || hasChanges;
+  const hideTodosTab = isLarge && hasTodos;
+  const effectiveTab: SessionTab = hideTodosTab && activeTab === "todos" ? "chat" : activeTab;
+  const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
+  const showTabs = (hasTodos && !hideTodosTab) || hasGitContent || hasChanges;
   const ahead = isWorktree ? (meta?.commitsAhead ?? 0) : (projectGitStatus?.aheadRemote ?? 0);
   const behind = isWorktree ? (meta?.commitsBehind ?? 0) : (projectGitStatus?.behindRemote ?? 0);
 
   const tabBarElement = showTabs ? (
     <SessionTabBar
-      activeTab={activeTab}
+      activeTab={effectiveTab}
       onTabChange={setActiveTab}
-      hasTodos={hasTodos}
+      hasTodos={hasTodos && !hideTodosTab}
       todosCompleted={todos?.filter((t) => t.status === "completed").length}
       todosTotal={todos?.length}
       hasGitContent={hasGitContent}
@@ -364,90 +372,103 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
         <div className="shrink-0 flex gap-1 px-2 py-1 border-b text-xs">{tabBarElement}</div>
       )}
 
-      {/* Tab content */}
-      {activeTab === "todos" && hasTodos ? (
-        <TodosView todos={todos} />
-      ) : activeTab === "changes" && hasGitContent ? (
-        <ChangesView
-          meta={meta}
-          git={git}
-          mainBranch={mainBranch}
-          projectGitStatus={projectGitStatus}
-          projectGitActions={projectGitActions}
-          committedDiff={git.diffResult}
-          uncommittedDiff={git.uncommittedDiffResult}
-          sessionState={sessionState}
-          onSendMessage={handleSend}
-          onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
-          expandFile={expandFile}
-          onExpandFileConsumed={handleExpandFileConsumed}
-        />
-      ) : (
-        <>
-          <MessageList
-            turns={turns}
-            sessionId={sessionId}
-            projectId={projectId}
-            sessionState={sessionState}
-            projectPath={project?.path}
-            worktreePath={meta.worktreePath}
-            isLoadingHistory={isLoadingHistory}
-          />
-          {pendingApproval && (
-            <ApprovalBannerSwitch
-              sessionId={sessionId}
-              approval={pendingApproval}
-              onStartFresh={handleStartFresh}
-              projectPath={project?.path}
-              worktreePath={meta.worktreePath}
+      {/* Tab content + optional desktop todo sidebar */}
+      <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {effectiveTab === "todos" && hasTodos ? (
+            <TodosView todos={todos} />
+          ) : effectiveTab === "changes" && hasGitContent ? (
+            <ChangesView
+              meta={meta}
+              git={git}
+              mainBranch={mainBranch}
+              projectGitStatus={projectGitStatus}
+              projectGitActions={projectGitActions}
+              committedDiff={git.diffResult}
+              uncommittedDiff={git.uncommittedDiffResult}
+              sessionState={sessionState}
+              onSendMessage={handleSend}
+              onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
+              expandFile={expandFile}
+              onExpandFileConsumed={handleExpandFileConsumed}
             />
-          )}
-          {pendingQuestion && <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />}
+          ) : (
+            <>
+              <MessageList
+                turns={turns}
+                sessionId={sessionId}
+                projectId={projectId}
+                sessionState={sessionState}
+                projectPath={project?.path}
+                worktreePath={meta.worktreePath}
+                isLoadingHistory={isLoadingHistory}
+              />
+              {pendingApproval && (
+                <ApprovalBannerSwitch
+                  sessionId={sessionId}
+                  approval={pendingApproval}
+                  onStartFresh={handleStartFresh}
+                  projectPath={project?.path}
+                  worktreePath={meta.worktreePath}
+                />
+              )}
+              {pendingQuestion && (
+                <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
+              )}
 
-          {(contextUsage || compacting) && (
-            <ContextBar usage={contextUsage} compacting={compacting} />
+              {(contextUsage || compacting) && (
+                <ContextBar usage={contextUsage} compacting={compacting} />
+              )}
+              {isResumable && (
+                <ResumeBanner
+                  state={sessionState as "stopped" | "failed" | "done"}
+                  onResume={handleResume}
+                  resuming={resuming}
+                  branchMissing={meta?.branchMissing}
+                />
+              )}
+              <MessageComposer
+                key={sessionId}
+                projectId={projectId}
+                ref={composerRef}
+                onSend={handleSend}
+                initialText={draft}
+                onTextPersist={handleTextPersist}
+                disabled={sessionState === "merging" || compacting}
+                isRunning={sessionState === "running"}
+                onInterrupt={handleInterrupt}
+                placeholder={
+                  compacting
+                    ? "Compacting context..."
+                    : sessionState === "merging"
+                      ? "Git operation in progress..."
+                      : resumePlaceholders[sessionState]
+                }
+                worktree={isWorktree}
+                planMode={planMode}
+                onPlanModeChange={handlePlanModeChange}
+                autoApproveMode={autoApproveMode}
+                onAutoApproveModeChange={handleAutoApproveModeChange}
+                model={(meta.model as ModelId) ?? undefined}
+                onModelChange={handleModelChange}
+                effort={(meta.effort as EffortLevel) ?? ""}
+                onEmptySubmit={isResumable ? handleResume : undefined}
+                stashedText={stashedText || undefined}
+                stashDepth={stashDepth}
+                onStash={handleStash}
+                onUnstash={handleUnstash}
+              />
+            </>
           )}
-          {isResumable && (
-            <ResumeBanner
-              state={sessionState as "stopped" | "failed" | "done"}
-              onResume={handleResume}
-              resuming={resuming}
-              branchMissing={meta?.branchMissing}
-            />
-          )}
-          <MessageComposer
-            key={sessionId}
-            projectId={projectId}
-            ref={composerRef}
-            onSend={handleSend}
-            initialText={draft}
-            onTextPersist={handleTextPersist}
-            disabled={sessionState === "merging" || compacting}
-            isRunning={sessionState === "running"}
-            onInterrupt={handleInterrupt}
-            placeholder={
-              compacting
-                ? "Compacting context..."
-                : sessionState === "merging"
-                  ? "Git operation in progress..."
-                  : resumePlaceholders[sessionState]
-            }
-            worktree={isWorktree}
-            planMode={planMode}
-            onPlanModeChange={handlePlanModeChange}
-            autoApproveMode={autoApproveMode}
-            onAutoApproveModeChange={handleAutoApproveModeChange}
-            model={(meta.model as ModelId) ?? undefined}
-            onModelChange={handleModelChange}
-            effort={(meta.effort as EffortLevel) ?? ""}
-            onEmptySubmit={isResumable ? handleResume : undefined}
-            stashedText={stashedText || undefined}
-            stashDepth={stashDepth}
-            onStash={handleStash}
-            onUnstash={handleUnstash}
-          />
-        </>
-      )}
+        </div>
+        {showTodoSidebar &&
+          todos &&
+          (todoSidebarCollapsed ? (
+            <CollapsedTodoStrip todos={todos} onExpand={() => setTodoSidebarCollapsed(false)} />
+          ) : (
+            <TodoPanel todos={todos} onCollapse={() => setTodoSidebarCollapsed(true)} />
+          ))}
+      </div>
 
       {/* Dialogs */}
       <CreatePRDialog
