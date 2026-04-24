@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown, ExternalLink, Loader2, Play, Users2 } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, Loader2, Play, Users2 } from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { ProjectPill } from "~/components/ui/project-pill";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session/actions";
@@ -516,10 +517,20 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
   const isLong = prompt.split("\n").length > 6 || prompt.length > 400;
   const shown = !isLong || expanded ? prompt : `${prompt.slice(0, 250)}...`;
 
+  const { copied, copy } = useCopyToClipboard();
+
   return (
-    <div className="not-prose my-3 rounded-lg border border-border/60 border-l-[3px] border-l-primary bg-primary/[0.06]">
+    <div className="not-prose group relative my-3 rounded-lg border border-border/60 border-l-[3px] border-l-primary bg-primary/[0.06]">
+      <button
+        type="button"
+        onClick={() => copy(prompt)}
+        aria-label={copied ? "Copied" : "Copy prompt"}
+        className="absolute top-2 right-2 inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background/80 text-muted-foreground opacity-0 pointer-events-none transition-opacity hover:text-foreground-bright group-hover:opacity-100 group-hover:pointer-events-auto"
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </button>
       <div className="px-4 py-3 space-y-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pr-8">
           <div className="font-medium text-sm">{title}</div>
           {isCrossProject && targetProject && <ProjectPill slug={targetProject.slug} />}
           {invalidSlug && (
