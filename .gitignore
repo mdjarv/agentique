@@ -7,7 +7,7 @@ coverage.out
 dist/
 
 # Frontend
-node_modules/
+node_modules
 frontend/dist/
 frontend/.tanstack/
 *.tsbuildinfo
