@@ -59,11 +59,9 @@ export class WsClient {
   connect(): void {
     if (this.ws) return;
     this.setupVisibilityHandler();
-    console.log("[WsClient] connecting to", this.url);
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
-      console.log("[WsClient] connected");
       this.reconnectDelay = 500;
       this.setConnectionState("connected");
       this.startHeartbeat();
@@ -75,7 +73,9 @@ export class WsClient {
     };
 
     this.ws.onclose = (ev) => {
-      console.log("[WsClient] closed:", ev.code, ev.reason);
+      if (ev.code !== 1000 && ev.code !== 1001) {
+        console.warn("[WsClient] closed:", ev.code, ev.reason);
+      }
       this.ws = null;
       this.stopHeartbeat();
       for (const fn of this.disconnectListeners) fn();
@@ -98,7 +98,7 @@ export class WsClient {
     };
 
     this.ws.onerror = (ev) => {
-      console.log("[WsClient] error:", ev);
+      console.error("[WsClient] error:", ev);
     };
   }
 
@@ -189,7 +189,7 @@ export class WsClient {
     if (document.visibilityState === "hidden") return;
     this.heartbeatTimer = setInterval(() => {
       this.request("ping", {}, 10_000).catch(() => {
-        console.log("[WsClient] heartbeat failed, force-reconnecting");
+        console.warn("[WsClient] heartbeat failed, force-reconnecting");
         this.forceReconnect();
       });
     }, 25_000);

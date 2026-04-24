@@ -1,6 +1,6 @@
 import { cn } from "~/lib/utils";
 import type { SessionState } from "~/stores/chat-store";
-import { BadgeIcon, getBadgeConfig, resolveSessionState } from "./SessionBadge";
+import { BadgeIcon, getBadgeConfig, resolveSessionState, resolveStatusLabel } from "./SessionBadge";
 
 interface SessionStatusPillProps {
   state: SessionState;
@@ -15,12 +15,12 @@ export function SessionStatusPill(props: SessionStatusPillProps) {
   const state = resolveSessionState(props);
   const cfg = getBadgeConfig(state);
   const dim = !props.hasPendingApproval && props.connected === false;
-
-  let label = cfg.label;
-  if (props.state === "idle" && props.connected === false) label = "Disconnected";
-  if (props.state === "merging" && props.gitOperation === "rebasing") label = "Rebasing";
-  if (props.state === "merging" && props.gitOperation === "creating_pr") label = "Creating PR";
-
+  const label = resolveStatusLabel({
+    state: props.state,
+    badgeState: state,
+    connected: props.connected,
+    gitOperation: props.gitOperation,
+  });
   const isPulse = !!cfg.pulseRing;
 
   return (

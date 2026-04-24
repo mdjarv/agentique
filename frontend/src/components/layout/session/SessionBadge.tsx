@@ -85,6 +85,19 @@ export function resolveSessionState(props: {
   return props.state as BadgeState;
 }
 
+/** Resolve status label for a session — handles disconnected and git operation overrides. */
+export function resolveStatusLabel(opts: {
+  state: string;
+  badgeState: BadgeState;
+  connected?: boolean;
+  gitOperation?: string;
+}): string {
+  if (opts.state === "idle" && opts.connected === false) return "Disconnected";
+  if (opts.state === "merging" && opts.gitOperation === "rebasing") return "Rebasing";
+  if (opts.state === "merging" && opts.gitOperation === "creating_pr") return "Creating PR";
+  return CONFIG[opts.badgeState].label;
+}
+
 // --- Icon sizing ---
 
 const ICON_SIZE: Record<BadgeSize, string> = { sm: "size-2", md: "size-2.5", lg: "size-3" };

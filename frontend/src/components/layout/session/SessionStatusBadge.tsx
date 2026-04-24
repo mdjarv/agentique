@@ -1,5 +1,11 @@
 import type { SessionState } from "~/stores/chat-store";
-import { type BadgeSize, getBadgeConfig, resolveSessionState, SessionBadge } from "./SessionBadge";
+import {
+  type BadgeSize,
+  getBadgeConfig,
+  resolveSessionState,
+  resolveStatusLabel,
+  SessionBadge,
+} from "./SessionBadge";
 
 interface SessionStatusBadgeProps {
   state: SessionState;
@@ -23,11 +29,12 @@ export function SessionStatusBadge({
   className,
 }: SessionStatusBadgeProps) {
   const badgeState = resolveSessionState({ state, hasPendingApproval, isPlanning });
-
-  let title: string | undefined;
-  if (state === "idle" && !connected) title = "Idle (disconnected)";
-  if (state === "merging" && gitOperation === "rebasing") title = "Rebasing";
-  if (state === "merging" && gitOperation === "creating_pr") title = "Creating PR";
+  const title =
+    state === "idle" && !connected
+      ? "Idle (disconnected)"
+      : state === "merging" && (gitOperation === "rebasing" || gitOperation === "creating_pr")
+        ? resolveStatusLabel({ state, badgeState, connected, gitOperation })
+        : undefined;
 
   return (
     <SessionBadge
