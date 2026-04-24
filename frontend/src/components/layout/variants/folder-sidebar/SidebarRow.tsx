@@ -7,9 +7,9 @@ import { indentClass } from "./types";
 export type BorderState = "running" | "approval" | "failed" | "none";
 
 const BORDER_CLASS: Record<BorderState, string> = {
-  running: "bg-teal/60 animate-[border-pulse_2.5s_ease-in-out_infinite]",
-  approval: "bg-orange/60 animate-[border-pulse_1.8s_ease-in-out_infinite]",
-  failed: "bg-destructive/70",
+  running: "bg-current text-teal animate-[border-pulse_2s_ease-in-out_infinite]",
+  approval: "bg-current text-orange animate-[border-pulse_1.5s_ease-in-out_infinite]",
+  failed: "bg-current text-destructive shadow-[0_0_6px_1px_currentColor]",
   none: "",
 };
 
@@ -60,7 +60,7 @@ export const SidebarRow = forwardRef<HTMLElement, SidebarRowProps>(function Side
       {borderState !== "none" && (
         <div
           className={cn(
-            "absolute left-0 top-1 bottom-1 w-[2px] rounded-full",
+            "absolute left-0 top-1 bottom-1 w-[3px] rounded-full",
             BORDER_CLASS[borderState],
           )}
         />
