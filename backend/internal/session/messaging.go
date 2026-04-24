@@ -27,11 +27,13 @@ const ChannelSendMessageTool = "mcp__" + ChannelMCPServerName + "__SendMessage"
 // AgentiqueSendMessageTool is the SendMessage tool name on the HTTP MCP transport.
 const AgentiqueSendMessageTool = "mcp__" + AgentiqueMCPServerName + "__SendMessage"
 
-// AgentiqueAcquireDevURLTool / Release / List — auto-allowed tools served via HTTP MCP.
+// AgentiqueAcquireDevURLTool / Release / List / SetSessionName — auto-allowed
+// tools served via HTTP MCP.
 const (
-	AgentiqueAcquireDevURLTool = "mcp__" + AgentiqueMCPServerName + "__AcquireDevUrl"
-	AgentiqueReleaseDevURLTool = "mcp__" + AgentiqueMCPServerName + "__ReleaseDevUrl"
-	AgentiqueListDevURLsTool   = "mcp__" + AgentiqueMCPServerName + "__ListDevUrls"
+	AgentiqueAcquireDevURLTool  = "mcp__" + AgentiqueMCPServerName + "__AcquireDevUrl"
+	AgentiqueReleaseDevURLTool  = "mcp__" + AgentiqueMCPServerName + "__ReleaseDevUrl"
+	AgentiqueListDevURLsTool    = "mcp__" + AgentiqueMCPServerName + "__ListDevUrls"
+	AgentiqueSetSessionNameTool = "mcp__" + AgentiqueMCPServerName + "__SetSessionName"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio
@@ -462,7 +464,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 			names = append(names, w.Name)
 		}
 		return &claudecli.PermissionResponse{
-			Allow:       false,
+			Allow: false,
 			DenyMessage: fmt.Sprintf(
 				"Successfully spawned %d workers: %s. They are working in separate worktrees. "+
 					"Each worker will message you shortly with their plan before starting work. "+

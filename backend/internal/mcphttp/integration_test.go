@@ -24,7 +24,7 @@ func TestFullSessionLifecycle(t *testing.T) {
 		func(int) error { return nil },
 		func(int) (*devurls.PortOwner, error) { return nil, nil },
 	)
-	h := NewHandler(tokens, store)
+	h := NewHandler(tokens, store, nil)
 
 	ts := httptest.NewServer(h)
 	defer ts.Close()
@@ -115,7 +115,7 @@ func TestCrossSessionIsolation(t *testing.T) {
 		func(int) error { return nil },
 		func(int) (*devurls.PortOwner, error) { return nil, nil },
 	)
-	h := NewHandler(tokens, store)
+	h := NewHandler(tokens, store, nil)
 
 	tokA, _ := tokens.Mint("sess-A")
 	tokB, _ := tokens.Mint("sess-B")
@@ -164,7 +164,7 @@ func TestCrossSessionIsolation(t *testing.T) {
 func TestInvalidJSONReturns400(t *testing.T) {
 	tokens := NewTokenStore()
 	store := devurls.NewStore(nil)
-	h := NewHandler(tokens, store)
+	h := NewHandler(tokens, store, nil)
 
 	tok, _ := tokens.Mint("sess-A")
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte("not json at all")))
@@ -180,7 +180,7 @@ func TestInvalidJSONReturns400(t *testing.T) {
 func TestMalformedParamsReturnsRpcError(t *testing.T) {
 	tokens := NewTokenStore()
 	store := devurls.NewStore(nil)
-	h := NewHandler(tokens, store)
+	h := NewHandler(tokens, store, nil)
 
 	tok, _ := tokens.Mint("sess-A")
 	// params is not an object — unmarshal into toolCallParams fails.

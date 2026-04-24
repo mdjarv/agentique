@@ -33,35 +33,46 @@ var ErrNoSSEStream = httperror.MethodNotAllowed("no SSE stream at this endpoint"
 // Tool name constants for SendMessage interception parity. Other tools execute
 // in-process via the handler's dispatcher.
 const (
-	ServerName      = "agentique"
-	ToolSendMessage = "SendMessage"
-	ToolAcquireDev  = "AcquireDevUrl"
-	ToolReleaseDev  = "ReleaseDevUrl"
-	ToolListDevURLs = "ListDevUrls"
-	ToolKillDevPort = "KillDevUrlPort"
+	ServerName         = "agentique"
+	ToolSendMessage    = "SendMessage"
+	ToolAcquireDev     = "AcquireDevUrl"
+	ToolReleaseDev     = "ReleaseDevUrl"
+	ToolListDevURLs    = "ListDevUrls"
+	ToolKillDevPort    = "KillDevUrlPort"
+	ToolSetSessionName = "SetSessionName"
 
 	// SendMessageToolFullName is the MCP-prefixed name Claude uses when
 	// invoking the tool. Permission interceptor keys on this string.
 	SendMessageToolFullName = "mcp__" + ServerName + "__" + ToolSendMessage
 
 	// Auto-approve interceptor names for dev URL tools.
-	AcquireDevURLToolFullName = "mcp__" + ServerName + "__" + ToolAcquireDev
-	ReleaseDevURLToolFullName = "mcp__" + ServerName + "__" + ToolReleaseDev
-	ListDevURLsToolFullName   = "mcp__" + ServerName + "__" + ToolListDevURLs
+	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
+	ReleaseDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolReleaseDev
+	ListDevURLsToolFullName    = "mcp__" + ServerName + "__" + ToolListDevURLs
+	SetSessionNameToolFullName = "mcp__" + ServerName + "__" + ToolSetSessionName
 	// KillDevPortToolFullName is NOT auto-approved: killing a process is
 	// destructive, so the user must confirm each invocation.
 	KillDevPortToolFullName = "mcp__" + ServerName + "__" + ToolKillDevPort
 )
 
-// Handler serves the /mcp endpoint.
-type Handler struct {
-	tokens *TokenStore
-	dev    *devurls.Store
+// SessionRenamer renames an existing session. Implemented by session.Service.
+// Kept as an interface so the handler tests can stay self-contained.
+type SessionRenamer interface {
+	RenameSession(ctx context.Context, sessionID, name string) error
 }
 
-// NewHandler returns a configured handler.
-func NewHandler(tokens *TokenStore, dev *devurls.Store) *Handler {
-	return &Handler{tokens: tokens, dev: dev}
+// Handler serves the /mcp endpoint.
+type Handler struct {
+	tokens  *TokenStore
+	dev     *devurls.Store
+	renamer SessionRenamer
+	maxName int
+}
+
+// NewHandler returns a configured handler. renamer may be nil in tests that
+// don't exercise SetSessionName — calls to that tool will then return an error.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) *Handler {
+	return &Handler{tokens: tokens, dev: dev, renamer: renamer, maxName: 80}
 }
 
 // ServeHTTP implements http.Handler via httperror.HandlerFunc so the method
@@ -145,7 +156,7 @@ type toolCallParams struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-func (h *Handler) dispatchTool(_ context.Context, sessionID string, raw json.RawMessage) (toolResult, *jsonrpcError) {
+func (h *Handler) dispatchTool(ctx context.Context, sessionID string, raw json.RawMessage) (toolResult, *jsonrpcError) {
 	var p toolCallParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, &jsonrpcError{Code: -32602, Message: "invalid params: " + err.Error()}
@@ -163,6 +174,8 @@ func (h *Handler) dispatchTool(_ context.Context, sessionID string, raw json.Raw
 		return h.handleListDevURLs(), nil
 	case ToolKillDevPort:
 		return h.handleKillDevPort(p.Arguments), nil
+	case ToolSetSessionName:
+		return h.handleSetSessionName(ctx, sessionID, p.Arguments), nil
 	default:
 		return nil, &jsonrpcError{Code: -32602, Message: "unknown tool: " + p.Name}
 	}
@@ -272,6 +285,33 @@ func (h *Handler) handleKillDevPort(raw json.RawMessage) toolResult {
 		owner.PID, owner.Describe(), slot.Slot, slot.Port))
 }
 
+// handleSetSessionName updates the calling session's display name. The UI
+// picks up the change via the session.renamed broadcast, so the agent can use
+// this to reflect the current topic without any user action.
+func (h *Handler) handleSetSessionName(ctx context.Context, sessionID string, raw json.RawMessage) toolResult {
+	if h.renamer == nil {
+		return toolError("SetSessionName is not available in this server.")
+	}
+	var p struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return toolError("SetSessionName requires { name: \"<new name>\" }.")
+	}
+	name := strings.TrimSpace(p.Name)
+	if name == "" {
+		return toolError("name is empty — provide a short human-readable title.")
+	}
+	// Clamp so an over-eager agent can't write a paragraph into the sidebar.
+	if len(name) > h.maxName {
+		name = strings.TrimSpace(name[:h.maxName])
+	}
+	if err := h.renamer.RenameSession(ctx, sessionID, name); err != nil {
+		return toolError("rename failed: " + err.Error())
+	}
+	return toolText(fmt.Sprintf("Session renamed to %q.", name))
+}
+
 func pidAlive(pid int) bool {
 	// On Linux, signal 0 probes existence without affecting the process.
 	proc, err := os.FindProcess(pid)
@@ -325,6 +365,20 @@ func (h *Handler) toolDefinitions() []map[string]any {
 			"name":        ToolListDevURLs,
 			"description": "List all configured dev URL slots, their current holders, and whether each port is actually bound. Includes external-owner details (pid, cmdline, cwd) when a port is bound by a process not tracked by the lease store — useful for spotting orphans that need KillDevUrlPort.",
 			"inputSchema": emptySchema,
+		},
+		{
+			"name":        ToolSetSessionName,
+			"description": "Rename the current Agentique session. Use when the session's topic becomes clear or the user asks for a rename. Keep the name short (a few words, max 80 chars) and descriptive of what the session is about — it appears in the sidebar. The UI updates immediately.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "New session title. Short, human-readable, no trailing punctuation.",
+					},
+				},
+				"required": []string{"name"},
+			},
 		},
 		{
 			"name":        ToolKillDevPort,

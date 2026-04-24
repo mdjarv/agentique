@@ -2,12 +2,14 @@ package mcphttp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mdjarv/agentique/backend/internal/config"
@@ -64,7 +66,7 @@ func newTestHandler(t *testing.T) (http.Handler, *TokenStore, *devurls.Store) {
 	t.Helper()
 	tokens := NewTokenStore()
 	store := twoSlotStore()
-	h := NewHandler(tokens, store)
+	h := NewHandler(tokens, store, nil)
 	return h, tokens, store
 }
 
@@ -148,10 +150,11 @@ func TestHandler_ToolsList_IncludesAllTools(t *testing.T) {
 	_ = json.Unmarshal(got.Result, &result)
 
 	want := map[string]bool{
-		"SendMessage":   false,
-		"AcquireDevUrl": false,
-		"ReleaseDevUrl": false,
-		"ListDevUrls":   false,
+		"SendMessage":    false,
+		"AcquireDevUrl":  false,
+		"ReleaseDevUrl":  false,
+		"ListDevUrls":    false,
+		"SetSessionName": false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := want[tool.Name]; ok {
@@ -320,3 +323,105 @@ func isToolError(t *testing.T, r jsonrpcResponse) bool {
 // Sanity: helpers compile.
 var _ = errors.New
 var _ = slotConfigJSON
+
+// --- SetSessionName ---
+
+type fakeRenamer struct {
+	mu    sync.Mutex
+	calls []struct {
+		SessionID string
+		Name      string
+	}
+	err error
+}
+
+func (f *fakeRenamer) RenameSession(_ context.Context, sessionID, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, struct {
+		SessionID string
+		Name      string
+	}{sessionID, name})
+	return f.err
+}
+
+func newTestHandlerWithRenamer(t *testing.T, r SessionRenamer) (http.Handler, *TokenStore) {
+	t.Helper()
+	tokens := NewTokenStore()
+	h := NewHandler(tokens, twoSlotStore(), r)
+	return h, tokens
+}
+
+func TestHandler_SetSessionName_Success(t *testing.T) {
+	r := &fakeRenamer{}
+	h, tokens := newTestHandlerWithRenamer(t, r)
+	tok, _ := tokens.Mint("sess-RN")
+
+	got, _ := rpcCall(t, h, tok, "tools/call", map[string]any{
+		"name":      "SetSessionName",
+		"arguments": map[string]any{"name": "PWA offline bug"},
+	})
+	if got.Error != nil {
+		t.Fatalf("rpc error: %+v", got.Error)
+	}
+	if isToolError(t, got) {
+		t.Fatalf("want success, got tool error: %s", extractText(t, got))
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("renamer calls = %d, want 1", len(r.calls))
+	}
+	if r.calls[0].SessionID != "sess-RN" || r.calls[0].Name != "PWA offline bug" {
+		t.Errorf("unexpected call: %+v", r.calls[0])
+	}
+}
+
+func TestHandler_SetSessionName_RejectsEmpty(t *testing.T) {
+	r := &fakeRenamer{}
+	h, tokens := newTestHandlerWithRenamer(t, r)
+	tok, _ := tokens.Mint("sess-RN")
+
+	got, _ := rpcCall(t, h, tok, "tools/call", map[string]any{
+		"name":      "SetSessionName",
+		"arguments": map[string]any{"name": "   "},
+	})
+	if !isToolError(t, got) {
+		t.Error("want tool error for empty name")
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("renamer should not be called on empty, got %d calls", len(r.calls))
+	}
+}
+
+func TestHandler_SetSessionName_ClampsLongName(t *testing.T) {
+	r := &fakeRenamer{}
+	h, tokens := newTestHandlerWithRenamer(t, r)
+	tok, _ := tokens.Mint("sess-RN")
+
+	long := strings.Repeat("x", 500)
+	got, _ := rpcCall(t, h, tok, "tools/call", map[string]any{
+		"name":      "SetSessionName",
+		"arguments": map[string]any{"name": long},
+	})
+	if isToolError(t, got) {
+		t.Fatalf("want success, got tool error: %s", extractText(t, got))
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("renamer calls = %d, want 1", len(r.calls))
+	}
+	if len(r.calls[0].Name) > 80 {
+		t.Errorf("name not clamped: len=%d", len(r.calls[0].Name))
+	}
+}
+
+func TestHandler_SetSessionName_NilRenamer(t *testing.T) {
+	h, tokens := newTestHandlerWithRenamer(t, nil)
+	tok, _ := tokens.Mint("sess-RN")
+
+	got, _ := rpcCall(t, h, tok, "tools/call", map[string]any{
+		"name":      "SetSessionName",
+		"arguments": map[string]any{"name": "anything"},
+	})
+	if !isToolError(t, got) {
+		t.Error("want tool error when renamer is nil")
+	}
+}

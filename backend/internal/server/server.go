@@ -16,10 +16,10 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
-	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/persona"
+	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -193,7 +193,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Hub: hub, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
 	mux.Handle("GET /ws", wsh)
 
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore)
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc)
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)

@@ -12,9 +12,9 @@ import (
 	"time"
 
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 func sqlNullString(s string) sql.NullString {
@@ -119,20 +119,20 @@ type Session struct {
 	ID        string
 	ProjectID string
 
-	ctx              context.Context
-	cancelCtx        context.CancelFunc
-	mu               sync.Mutex
-	state            State
-	cliSess          CLISession
-	queryCount       int
-	pipeline         *EventPipeline
-	queries          sessionQueries
-	broadcast        func(pushType string, payload any)
+	ctx        context.Context
+	cancelCtx  context.CancelFunc
+	mu         sync.Mutex
+	state      State
+	cliSess    CLISession
+	queryCount int
+	pipeline   *EventPipeline
+	queries    sessionQueries
+	broadcast  func(pushType string, payload any)
 	approvalState
 	toolInterceptors map[string]toolInterceptor
-	completedAt    string // ISO8601 timestamp or "" if not completed
-	eventLoopDone  chan struct{}
-	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
+	completedAt      string // ISO8601 timestamp or "" if not completed
+	eventLoopDone    chan struct{}
+	stateChangedCh   chan struct{} // buffered(1), signaled on state transitions
 
 	// activityState mirrors the CLI's authoritative activity state, driven by
 	// CLIStateChangeEvent. Watchdog behavior depends on it:
@@ -180,7 +180,6 @@ type teammateRef struct {
 	teamID    string
 }
 
-
 type sessionParams struct {
 	id                    string
 	projectID             string
@@ -199,15 +198,15 @@ type sessionParams struct {
 func newSession(p sessionParams) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
-		ID:            p.id,
-		ProjectID:     p.projectID,
-		ctx:           ctx,
-		cancelCtx:     cancel,
-		state:         StateIdle,
-		db:            p.db,
-		cliSess:       p.cliSess,
-		queries:       p.queries,
-		broadcast:     p.broadcast,
+		ID:             p.id,
+		ProjectID:      p.projectID,
+		ctx:            ctx,
+		cancelCtx:      cancel,
+		state:          StateIdle,
+		db:             p.db,
+		cliSess:        p.cliSess,
+		queries:        p.queries,
+		broadcast:      p.broadcast,
 		approvalState:  newApprovalState(),
 		eventLoopDone:  make(chan struct{}),
 		stateChangedCh: make(chan struct{}, 1),
@@ -232,6 +231,8 @@ func newSession(p sessionParams) *Session {
 		AgentiqueAcquireDevURLTool: allow,
 		AgentiqueReleaseDevURLTool: allow,
 		AgentiqueListDevURLsTool:   allow,
+		// Session rename is self-affecting and reversible — safe to auto-allow.
+		AgentiqueSetSessionNameTool: allow,
 	}
 	s.pipeline = NewEventPipeline(buildPipelineConfig(s, p))
 	if p.broadcastInitialState {
@@ -811,9 +812,9 @@ func (s *Session) observeActivity(event claudecli.Event) time.Duration {
 type toolStallResult int
 
 const (
-	toolStallNone toolStallResult = iota // no stall detected or duplicate warning suppressed
-	toolStallWarned                       // emitted a non-fatal info broadcast
-	toolStallFatal                        // Ping failed; CLI readLoop is wedged
+	toolStallNone   toolStallResult = iota // no stall detected or duplicate warning suppressed
+	toolStallWarned                        // emitted a non-fatal info broadcast
+	toolStallFatal                         // Ping failed; CLI readLoop is wedged
 )
 
 const watchdogPingTimeout = 10 * time.Second
