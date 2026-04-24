@@ -63,6 +63,7 @@ export const DraggableProject = memo(function DraggableProject({
     <div ref={setNodeRef} style={tintStyle} {...attributes} {...listeners} className="-mx-2 px-2">
       <SidebarRow as="div" indent={level} plain className="group/proj relative">
         <ProjectContent
+          projectId={entry.project.id}
           slug={entry.project.slug}
           name={entry.project.name}
           icon={entry.project.icon}
@@ -73,12 +74,11 @@ export const DraggableProject = memo(function DraggableProject({
           onExpand={onExpand}
           onTogglePin={onTogglePin}
           worstState={entry.worstState}
+          gitStatus={gitStatus}
         />
       </SidebarRow>
 
-      {expanded && !compact && (
-        <ProjectGitLine projectId={entry.project.id} gitStatus={gitStatus} />
-      )}
+      {expanded && !compact && <ProjectGitLine gitStatus={gitStatus} />}
 
       {expanded && (
         <ChannelSessions
@@ -151,6 +151,7 @@ export function DragOverlayProject({ entry }: { entry: ProjectEntry }) {
       className="shadow-lg shadow-black/20 rounded-md bg-sidebar"
     >
       <ProjectContent
+        projectId={entry.project.id}
         slug={entry.project.slug}
         name={entry.project.name}
         icon={entry.project.icon}
@@ -159,6 +160,7 @@ export function DragOverlayProject({ entry }: { entry: ProjectEntry }) {
         onToggle={() => {}}
         onExpand={() => {}}
         worstState={entry.worstState}
+        gitStatus={undefined}
       />
     </SidebarRow>
   );

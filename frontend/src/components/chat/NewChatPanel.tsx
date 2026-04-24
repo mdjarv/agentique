@@ -43,6 +43,8 @@ function parseProjectPresets(raw: string): BehaviorPresets | undefined {
 interface NewChatPanelProps {
   projectId: string;
   projectSlug: string;
+  initialPrompt?: string;
+  initialWorktree?: boolean;
 }
 
 type PanelMode = "session" | "channel";
@@ -52,7 +54,12 @@ interface PendingTemplate {
   variables: string[];
 }
 
-export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
+export function NewChatPanel({
+  projectId,
+  projectSlug,
+  initialPrompt,
+  initialWorktree,
+}: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -75,7 +82,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
       .slice(0, 2) ?? "";
   const composerRef = useRef<ComposerHandle>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("session");
-  const [worktree, setWorktree] = useState(DEFAULT_SESSION_DEFAULTS.worktree);
+  const [worktree, setWorktree] = useState(initialWorktree ?? DEFAULT_SESSION_DEFAULTS.worktree);
   const [planMode, setPlanMode] = useState(DEFAULT_SESSION_DEFAULTS.planMode);
   const [autoApproveMode, setAutoApproveMode] = useState<AutoApproveMode>(
     DEFAULT_SESSION_DEFAULTS.autoApproveMode,
@@ -246,6 +253,7 @@ export function NewChatPanel({ projectId, projectSlug }: NewChatPanelProps) {
           projectId={projectId}
           onSend={handleSend}
           disabled={sending}
+          initialText={initialPrompt}
           worktree={worktree}
           onWorktreeChange={setWorktree}
           planMode={planMode}

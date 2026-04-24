@@ -4,12 +4,14 @@ import { memo, useCallback } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import type { ProjectColor } from "~/lib/project-colors";
 import { cn } from "~/lib/utils";
-import { useAppStore } from "~/stores/app-store";
+import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { type BadgeState, SessionBadge } from "../../session/SessionBadge";
 import { IconSlot } from "./IconSlot";
+import { ProjectGitPill } from "./ProjectGitPill";
 
 /** Project row content — chevron, icon, name, badge, new-session button. */
 export const ProjectContent = memo(function ProjectContent({
+  projectId,
   slug,
   name,
   icon,
@@ -20,7 +22,9 @@ export const ProjectContent = memo(function ProjectContent({
   onExpand,
   onTogglePin,
   worstState,
+  gitStatus,
 }: {
+  projectId: string;
   slug: string;
   name: string;
   icon: string;
@@ -31,6 +35,7 @@ export const ProjectContent = memo(function ProjectContent({
   onExpand: () => void;
   onTogglePin?: () => void;
   worstState: BadgeState | null;
+  gitStatus: ProjectGitStatus | undefined;
 }) {
   const navigate = useNavigate();
   const Icon = useProjectIcon(icon);
@@ -94,6 +99,9 @@ export const ProjectContent = memo(function ProjectContent({
         </span>
         {!expanded && worstState && <SessionBadge state={worstState} size="md" pulse />}
       </button>
+
+      {/* Git push/pull pills — visible whenever ahead/behind remote, regardless of expanded */}
+      <ProjectGitPill projectId={projectId} projectSlug={slug} gitStatus={gitStatus} />
 
       {/* Actions: settings (hover) + pin (visible when pinned, hover otherwise) + new session (always) */}
       <span className="flex items-center gap-0.5 shrink-0">
