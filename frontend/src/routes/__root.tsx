@@ -7,6 +7,7 @@ import { ErrorBoundary } from "~/components/ErrorBoundary";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { useActiveProjectFetch } from "~/hooks/git/useActiveProjectFetch";
 import { useProjectGitPolling } from "~/hooks/git/useProjectGitPolling";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
@@ -51,6 +52,7 @@ function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
   useProjectGitPolling(projects);
+  useActiveProjectFetch();
   usePreventViewportScroll();
 
   const activeSessionId = useChatStore((s) => s.activeSessionId);
