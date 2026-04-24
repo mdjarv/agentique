@@ -39,7 +39,7 @@ export const UserMessage = memo(function UserMessage({
           </AvatarFallback>
         </Avatar>
         <div
-          className={`group/usermsg relative max-w-[75%] max-md:max-w-full rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
+          className={`group/usermsg relative max-w-[75%] max-md:max-w-full min-w-0 overflow-hidden rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
             isPending
               ? "from-primary/8 to-primary/4 border-dashed border-primary/15 shadow-md shadow-black/10 text-foreground/55"
               : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"

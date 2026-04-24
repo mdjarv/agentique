@@ -160,7 +160,7 @@ export const AgentMessage = memo(function AgentMessage({
             <ArrowRight className="h-2.5 w-2.5" />
             {targetName}
           </span>
-          <div className="rounded-lg px-4 py-2 bg-muted/30 border border-border/50 opacity-70">
+          <div className="rounded-lg px-4 py-2 bg-muted/30 border border-border/50 opacity-70 overflow-hidden max-w-full">
             <Markdown content={content} />
           </div>
         </div>
@@ -192,7 +192,7 @@ export const AgentMessage = memo(function AgentMessage({
           )}
         </span>
         <div
-          className={`rounded-lg px-4 py-2 bg-gradient-to-br ${color.from} ${color.to} shadow-lg shadow-black/30 border ${color.border}`}
+          className={`rounded-lg px-4 py-2 bg-gradient-to-br ${color.from} ${color.to} shadow-lg shadow-black/30 border ${color.border} overflow-hidden max-w-full`}
         >
           <Markdown content={content} />
         </div>

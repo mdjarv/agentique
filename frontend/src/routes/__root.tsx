@@ -139,6 +139,7 @@ function AuthenticatedLayout() {
           <Toaster
             theme={resolvedTheme}
             position={isMobile ? "top-center" : "bottom-right"}
+            swipeDirections={isMobile ? ["top", "left", "right"] : ["right", "bottom"]}
             toastOptions={{
               style: {
                 background: "var(--muted)",

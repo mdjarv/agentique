@@ -2,6 +2,8 @@ import {
   Check,
   Copy,
   Eraser,
+  Gauge,
+  GitBranch,
   Globe,
   Loader2,
   LogOut,
@@ -45,6 +47,7 @@ import {
   leaveChannel,
   listChannels,
 } from "~/lib/channel-actions";
+import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import {
   cleanSession,
   deleteSession,
@@ -415,6 +418,12 @@ export function SessionHeader({
 
         {/* Actions zone */}
         <div className="ml-auto flex items-center gap-1.5">
+          <ReadOnlyIndicators
+            effort={meta.effort as EffortLevel | undefined}
+            isWorktree={isWorktree}
+            worktreeBranch={meta.worktreeBranch}
+          />
+
           {isMobile && <ConnectionIndicator />}
 
           {!isMobile && browserEnabled && <BrowserToggle sessionId={meta.id} />}
@@ -575,6 +584,48 @@ export function SessionHeader({
         onChannelRoleChange={setChannelRole}
         onSubmit={handleJoinChannel}
       />
+    </>
+  );
+}
+
+function ReadOnlyIndicators({
+  effort,
+  isWorktree,
+  worktreeBranch,
+}: {
+  effort: EffortLevel | undefined;
+  isWorktree: boolean;
+  worktreeBranch?: string;
+}) {
+  const effortLabel = effort ? EFFORT_LABELS[effort] : undefined;
+  const effortColor = effort ? EFFORT_COLORS[effort] : undefined;
+  const hasEffort = !!effort && !!effortLabel;
+  if (!hasEffort && !isWorktree) return null;
+  return (
+    <>
+      {hasEffort && (
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 shrink-0",
+            effortColor,
+          )}
+          title={`Reasoning effort: ${effortLabel}`}
+        >
+          <Gauge className="h-2.5 w-2.5" />
+          <span className="max-sm:hidden">{effortLabel}</span>
+        </span>
+      )}
+      {isWorktree && (
+        <span
+          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0"
+          title={worktreeBranch ? `Worktree: ${worktreeBranch}` : "Worktree"}
+        >
+          <GitBranch className="h-2.5 w-2.5 shrink-0" />
+          <span className="max-sm:hidden truncate max-w-[12ch]">
+            {worktreeBranch ?? "worktree"}
+          </span>
+        </span>
+      )}
     </>
   );
 }

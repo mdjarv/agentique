@@ -340,7 +340,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       }
     };
 
-    const hasToggles = worktree !== undefined || onPlanModeChange || autoApproveMode !== undefined;
+    const showWorktreeToggle = worktree !== undefined && !!onWorktreeChange;
+    const showEffortDropdown = effort !== undefined && !!onEffortChange;
+    const hasToggles = showWorktreeToggle || onPlanModeChange || autoApproveMode !== undefined;
     const mode = autoApproveMode ?? "manual";
 
     return (
@@ -467,9 +469,9 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
                 {hasToggles && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
 
-                {worktree !== undefined && (
+                {showWorktreeToggle && (
                   <ToolbarToggle
-                    active={worktree}
+                    active={worktree ?? false}
                     onChange={onWorktreeChange}
                     activeIcon={<GitBranch className="h-3 w-3" />}
                     inactiveIcon={<FolderOpen className="h-3 w-3" />}
@@ -514,7 +516,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   />
                 )}
 
-                {(effort !== undefined || model) && (
+                {(showEffortDropdown || model) && (
                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 )}
 
@@ -525,7 +527,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     options={MODEL_OPTIONS}
                   />
                 )}
-                {effort !== undefined && (
+                {showEffortDropdown && effort !== undefined && (
                   <ToolbarDropdown
                     value={effort}
                     onChange={onEffortChange ? (v) => onEffortChange(v as EffortLevel) : undefined}
