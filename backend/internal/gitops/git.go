@@ -157,7 +157,9 @@ func UncommittedFiles(dir string) ([]FileStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("git status failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	raw := strings.TrimSpace(string(out))
+	// Porcelain v1 format: "XY PATH" where X/Y can be space chars (significant).
+	// Trim trailing newlines only — leading spaces in XY are part of the status.
+	raw := strings.TrimRight(string(out), "\n")
 	if raw == "" {
 		return nil, nil
 	}

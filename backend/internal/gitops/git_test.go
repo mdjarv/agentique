@@ -285,6 +285,33 @@ func TestUncommittedFiles_Modified(t *testing.T) {
 	}
 }
 
+// Regression: porcelain v1 emits " D path" (leading-space XY) for unstaged
+// deletions. A naive TrimSpace on the full output would eat the leading space
+// and shift the slice, truncating the first byte of the path.
+func TestUncommittedFiles_DeletedPathNotTruncated(t *testing.T) {
+	repoDir := initGitRepo(t)
+	writeFile(t, repoDir, "frontend", "tracked")
+	testGitRun(t, repoDir, "add", "frontend")
+	testGitRun(t, repoDir, "commit", "-m", "add frontend file")
+	if err := os.Remove(filepath.Join(repoDir, "frontend")); err != nil {
+		t.Fatalf("remove file: %v", err)
+	}
+
+	files, err := UncommittedFiles(repoDir)
+	if err != nil {
+		t.Fatalf("UncommittedFiles failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %+v", files)
+	}
+	if files[0].Path != "frontend" {
+		t.Errorf("path truncated: got %q, want %q", files[0].Path, "frontend")
+	}
+	if files[0].Status != "deleted" {
+		t.Errorf("expected deleted, got %q", files[0].Status)
+	}
+}
+
 func TestUncommittedDiff_Clean(t *testing.T) {
 	repoDir := initGitRepo(t)
 	diff, summary, err := UncommittedDiff(repoDir)
