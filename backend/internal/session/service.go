@@ -770,87 +770,128 @@ func (s *Service) GetSessionInfo(ctx context.Context, sessionID string) (Session
 
 // enrichSessions converts store.Session rows into SessionInfo with cost and git data.
 func (s *Service) enrichSessions(sessions []store.Session, costMap map[string]costSummary, projectPaths map[string]string) []SessionInfo {
-	// Pre-fetch agent profiles for all profile-bound sessions.
+	profileCache := s.prefetchProfiles(sessions)
+
+	infos := make([]SessionInfo, 0, len(sessions))
+	for _, ss := range sessions {
+		infos = append(infos, s.enrichSession(ss, costMap, profileCache, projectPaths))
+	}
+	return infos
+}
+
+// prefetchProfiles loads every distinct AgentProfile referenced by the given
+// sessions in a single pass so the per-session loop below avoids repeated DB
+// hits for the common case where many sessions share the same profile.
+func (s *Service) prefetchProfiles(sessions []store.Session) map[string]store.AgentProfile {
 	profileCache := make(map[string]store.AgentProfile)
 	for _, ss := range sessions {
 		pid := nullStr(ss.AgentProfileID)
 		if pid == "" {
 			continue
 		}
-		if _, ok := profileCache[pid]; !ok {
-			if p, err := s.queries.GetAgentProfile(context.Background(), pid); err == nil {
-				profileCache[pid] = p
-			}
+		if _, ok := profileCache[pid]; ok {
+			continue
+		}
+		if p, err := s.queries.GetAgentProfile(context.Background(), pid); err == nil {
+			profileCache[pid] = p
+		}
+	}
+	return profileCache
+}
+
+// enrichSession builds a single SessionInfo by composing the persisted row
+// with cost summary, profile metadata, live-session state, git status, and
+// channel memberships. Each layer is its own helper so the orchestration
+// stays a flat list of named steps.
+func (s *Service) enrichSession(
+	ss store.Session,
+	costMap map[string]costSummary,
+	profileCache map[string]store.AgentProfile,
+	projectPaths map[string]string,
+) SessionInfo {
+	info := baseSessionInfo(ss)
+	info.Connected = s.mgr.IsLive(ss.ID)
+
+	if pid := nullStr(ss.AgentProfileID); pid != "" {
+		info.AgentProfileID = pid
+		if p, ok := profileCache[pid]; ok {
+			info.AgentProfileName = p.Name
+			info.AgentProfileAvatar = p.Avatar
 		}
 	}
 
-	infos := make([]SessionInfo, 0, len(sessions))
-	for _, ss := range sessions {
-		info := SessionInfo{
-			ID:             ss.ID,
-			ProjectID:      ss.ProjectID,
-			Name:           ss.Name,
-			State:          ss.State,
-			Connected:      s.mgr.IsLive(ss.ID),
-			Model:          ss.Model,
-			PermissionMode: ss.PermissionMode,
-			AutoApproveMode: ss.AutoApproveMode,
-			Effort:         ss.Effort,
-			MaxBudget:      ss.MaxBudget,
-			MaxTurns:       int(ss.MaxTurns),
-			WorktreePath:   nullStr(ss.WorktreePath),
-			WorktreeBranch: nullStr(ss.WorktreeBranch),
-			WorktreeMerged: ss.WorktreeMerged != 0,
-			CompletedAt:    nullStr(ss.CompletedAt),
-			PrUrl:           ss.PrUrl,
-			BehaviorPresets: ParsePresets(ss.BehaviorPresets),
-			CreatedAt:       ss.CreatedAt,
-			UpdatedAt:      ss.UpdatedAt,
-			LastQueryAt:    nullStr(ss.LastQueryAt),
-		}
-
-		if pid := nullStr(ss.AgentProfileID); pid != "" {
-			info.AgentProfileID = pid
-			if p, ok := profileCache[pid]; ok {
-				info.AgentProfileName = p.Name
-				info.AgentProfileAvatar = p.Avatar
-			}
-		}
-
-		info.ParentSessionID = nullStr(ss.ParentSessionID)
-
-		if summary, ok := costMap[ss.ID]; ok {
-			info.TotalCost = summary.TotalCost
-			info.TurnCount = int(summary.TurnCount)
-		}
-
-		// Stamp live session fields so the frontend has current state.
-		if live := s.mgr.Get(ss.ID); live != nil {
-			info.GitVersion = live.GitVersion()
-			_, _, _, _, gitOp := live.liveState()
-			info.GitOperation = gitOp
-			info.PendingApproval, info.PendingQuestion = live.PendingState()
-		} else if s.gitSvc != nil {
-			info.GitVersion = s.gitSvc.LastVersion(ss.ID)
-		}
-
-		enrichGitStatus(s.mgr.gitStatus, &info, projectPaths[ss.ProjectID], ss.WorkDir)
-
-		// Populate channel memberships from join table.
-		if channels, err := s.queries.ListSessionChannels(context.Background(), ss.ID); err == nil && len(channels) > 0 {
-			info.ChannelIDs = make([]string, 0, len(channels))
-			info.ChannelRoles = make(map[string]string, len(channels))
-			for _, ch := range channels {
-				info.ChannelIDs = append(info.ChannelIDs, ch.ChannelID)
-				if ch.Role != "" {
-					info.ChannelRoles[ch.ChannelID] = ch.Role
-				}
-			}
-		}
-
-		infos = append(infos, info)
+	if summary, ok := costMap[ss.ID]; ok {
+		info.TotalCost = summary.TotalCost
+		info.TurnCount = int(summary.TurnCount)
 	}
-	return infos
+
+	s.applyLiveState(&info, ss.ID)
+	enrichGitStatus(s.mgr.gitStatus, &info, projectPaths[ss.ProjectID], ss.WorkDir)
+	s.applyChannelMemberships(&info, ss.ID)
+
+	return info
+}
+
+// baseSessionInfo copies persisted fields from a store.Session into a
+// SessionInfo. Pure projection — no external lookups.
+func baseSessionInfo(ss store.Session) SessionInfo {
+	return SessionInfo{
+		ID:              ss.ID,
+		ProjectID:       ss.ProjectID,
+		Name:            ss.Name,
+		State:           ss.State,
+		Model:           ss.Model,
+		PermissionMode:  ss.PermissionMode,
+		AutoApproveMode: ss.AutoApproveMode,
+		Effort:          ss.Effort,
+		MaxBudget:       ss.MaxBudget,
+		MaxTurns:        int(ss.MaxTurns),
+		WorktreePath:    nullStr(ss.WorktreePath),
+		WorktreeBranch:  nullStr(ss.WorktreeBranch),
+		WorktreeMerged:  ss.WorktreeMerged != 0,
+		CompletedAt:     nullStr(ss.CompletedAt),
+		PrUrl:           ss.PrUrl,
+		BehaviorPresets: ParsePresets(ss.BehaviorPresets),
+		ParentSessionID: nullStr(ss.ParentSessionID),
+		CreatedAt:       ss.CreatedAt,
+		UpdatedAt:       ss.UpdatedAt,
+		LastQueryAt:     nullStr(ss.LastQueryAt),
+	}
+}
+
+// applyLiveState stamps fields that only the in-memory Session knows about
+// (current git version, git operation in flight, pending approvals/questions).
+// When the session is offline, falls back to the GitService's last known
+// version so the frontend can detect drift after a server restart.
+func (s *Service) applyLiveState(info *SessionInfo, sessionID string) {
+	if live := s.mgr.Get(sessionID); live != nil {
+		info.GitVersion = live.GitVersion()
+		_, _, _, _, gitOp := live.liveState()
+		info.GitOperation = gitOp
+		info.PendingApproval, info.PendingQuestion = live.PendingState()
+		return
+	}
+	if s.gitSvc != nil {
+		info.GitVersion = s.gitSvc.LastVersion(sessionID)
+	}
+}
+
+// applyChannelMemberships populates ChannelIDs and ChannelRoles from the
+// session_channels join table. Errors are silently ignored — channel
+// metadata is non-essential for the wire payload.
+func (s *Service) applyChannelMemberships(info *SessionInfo, sessionID string) {
+	channels, err := s.queries.ListSessionChannels(context.Background(), sessionID)
+	if err != nil || len(channels) == 0 {
+		return
+	}
+	info.ChannelIDs = make([]string, 0, len(channels))
+	info.ChannelRoles = make(map[string]string, len(channels))
+	for _, ch := range channels {
+		info.ChannelIDs = append(info.ChannelIDs, ch.ChannelID)
+		if ch.Role != "" {
+			info.ChannelRoles[ch.ChannelID] = ch.Role
+		}
+	}
 }
 
 // enrichGitStatus populates git-related fields on a SessionInfo.
