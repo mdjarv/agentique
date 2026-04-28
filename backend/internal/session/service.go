@@ -255,144 +255,72 @@ func (s *Service) getLiveSession(sessionID string) (*Session, error) {
 // CreateSession validates the project, creates a worktree if requested,
 // generates a default name, calls mgr.Create, and cleans up on failure.
 // If IdempotencyKey is set and a cached result exists, the cached result is returned.
+// worktreeInfo bundles the result of provisionWorktree: the working directory
+// the session will run in, plus optional worktree metadata when p.Worktree was
+// requested.
+type worktreeInfo struct {
+	workDir string // either project.Path or the worktree path
+	path    string // worktree path; empty when worktree was not requested
+	branch  string // worktree branch; empty when worktree was not requested
+	baseSHA string // base SHA at worktree creation time
+}
+
+// sessionConfig holds the resolved per-session knobs after applying the
+// explicit > persona-config > project-default precedence cascade.
+type sessionConfig struct {
+	model           string
+	effort          string
+	autoApproveMode string
+	presets         BehaviorPresets
+}
+
 func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (CreateSessionResult, error) {
-	if p.IdempotencyKey != "" {
-		s.idempotencyMu.Lock()
-		if entry, ok := s.idempotencyCache[p.IdempotencyKey]; ok && time.Now().Before(entry.expiresAt) {
-			s.idempotencyMu.Unlock()
-			slog.Debug("idempotent session create hit", "key", p.IdempotencyKey, "session_id", entry.result.SessionID)
-			return entry.result, nil
-		}
-		s.idempotencyMu.Unlock()
+	if cached, hit := s.checkIdempotency(p.IdempotencyKey); hit {
+		return cached, nil
 	}
 
 	project, err := s.queries.GetProject(ctx, p.ProjectID)
 	if err != nil {
 		return CreateSessionResult{}, fmt.Errorf("project not found: %w", err)
 	}
-
-	if project.MaxSessions > 0 {
-		activeCount, countErr := s.queries.CountActiveSessionsByProject(ctx, p.ProjectID)
-		if countErr != nil {
-			return CreateSessionResult{}, fmt.Errorf("count active sessions: %w", countErr)
-		}
-		if activeCount >= project.MaxSessions {
-			return CreateSessionResult{}, fmt.Errorf("%w: %d/%d active sessions for project %q", ErrSessionLimitReached, activeCount, project.MaxSessions, project.Name)
-		}
+	if err := s.checkProjectQuota(ctx, project); err != nil {
+		return CreateSessionResult{}, err
 	}
 
 	sessionID := uuid.New().String()
-	workDir := project.Path
-	var worktreePath, worktreeBranch string
-
-	var worktreeBaseSHA string
-	if p.Worktree {
-		branch := p.Branch
-		if branch == "" {
-			branch = "session-" + sessionID[:8]
-		}
-		worktreeBranch = branch
-		worktreePath = s.worktree.WorktreePath(project.Name, branch)
-
-		baseSHA, shaErr := s.worktree.GetWorktreeBaseSHA(project.Path)
-		if shaErr == nil {
-			worktreeBaseSHA = baseSHA
-		}
-
-		if _, statErr := os.Stat(worktreePath); statErr == nil {
-			// Worktree directory already exists — adopt it.
-		} else if s.worktree.BranchExists(project.Path, branch) {
-			// Branch exists but worktree dir is gone — restore it.
-			if err := s.worktree.RestoreWorktree(project.Path, branch, worktreePath); err != nil {
-				return CreateSessionResult{}, fmt.Errorf("failed to restore worktree: %w", err)
-			}
-		} else {
-			// Fresh: create new branch + worktree.
-			if err := s.worktree.CreateWorktree(project.Path, branch, worktreePath); err != nil {
-				return CreateSessionResult{}, fmt.Errorf("failed to create worktree: %w", err)
-			}
-		}
-		workDir = worktreePath
+	wt, err := s.provisionWorktree(p, project, sessionID)
+	if err != nil {
+		return CreateSessionResult{}, err
 	}
-
-	name := p.Name
 
 	allProjects, _ := s.queries.ListProjects(ctx)
 	projectInfos := ProjectInfoFromStore(allProjects)
 	tc := s.resolveTeamContext(ctx, p.AgentProfileID)
 
-	// Parse persona config from agent profile. Non-zero values act as
-	// defaults — explicit CreateSessionParams always take precedence.
 	var pc PersonaConfig
 	if tc != nil {
 		pc = parsePersonaConfig(tc.profile.Config)
 	}
+	cfg := resolveSessionConfig(p, pc, project)
 
-	model := p.Model
-	if model == "" {
-		if pc.Model != "" {
-			model = pc.Model
-		} else {
-			model = "opus"
-		}
-	}
-
-	effort := p.Effort
-	if effort == "" {
-		effort = pc.Effort
-	}
-
-	autoApproveMode := p.AutoApproveMode
-	if autoApproveMode == "" {
-		autoApproveMode = pc.AutoApproveMode
-	}
-
-	// Resolve behavior presets: explicit > persona config > project defaults.
-	presets := p.BehaviorPresets
-	if presets.IsZero() && !pc.BehaviorPresets.IsZero() {
-		presets = BehaviorPresets{
-			AutoCommit:         pc.BehaviorPresets.AutoCommit,
-			SuggestParallel:    pc.BehaviorPresets.SuggestParallel,
-			PlanFirst:          pc.BehaviorPresets.PlanFirst,
-			Terse:              pc.BehaviorPresets.Terse,
-			CustomInstructions: pc.BehaviorPresets.CustomInstructions,
-		}
-	}
-	if presets.IsZero() {
-		presets = ParsePresets(project.DefaultBehaviorPresets)
-	}
-
-	// Pre-allocate a browser port so the Playwright MCP config can be baked
-	// into the CLI process. Chrome isn't started yet — it launches when the
-	// user clicks "Open Browser", then ReconnectMCPServer retries the connection.
-	var mcpConfigs []string
-	var browserPort int
-	if s.browserSvc != nil {
-		port, portErr := s.browserSvc.AllocatePort(sessionID)
-		if portErr == nil {
-			browserPort = port
-			mcpConfigs = append(mcpConfigs, PlaywrightMCPConfig(port))
-		} else {
-			slog.Warn("browser port allocation failed", "session_id", sessionID, "error", portErr)
-		}
-	}
+	browserPort, mcpConfigs := s.allocateBrowserPort(sessionID)
 
 	sess, err := s.mgr.Create(ctx, CreateParams{
 		ID:                    sessionID,
 		ProjectID:             p.ProjectID,
-		Name:                  name,
-		WorkDir:               workDir,
-		WorktreePath:          worktreePath,
-		WorktreeBranch:        worktreeBranch,
-		WorktreeBaseSHA:       worktreeBaseSHA,
-		Model:                 model,
+		Name:                  p.Name,
+		WorkDir:               wt.workDir,
+		WorktreePath:          wt.path,
+		WorktreeBranch:        wt.branch,
+		WorktreeBaseSHA:       wt.baseSHA,
+		Model:                 cfg.model,
 		PlanMode:              p.PlanMode,
-		AutoApproveMode:       autoApproveMode,
-		Effort:                effort,
+		AutoApproveMode:       cfg.autoApproveMode,
+		Effort:                cfg.effort,
 		MaxBudget:             p.MaxBudget,
 		MaxTurns:              p.MaxTurns,
 		Projects:              projectInfos,
-		BehaviorPresets:       presets,
+		BehaviorPresets:       cfg.presets,
 		TeamPreambles:         tc.toPreambles(),
 		AgentProfileID:        p.AgentProfileID,
 		ParentSessionID:       p.ParentSessionID,
@@ -401,8 +329,8 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		SystemPromptAdditions: pc.SystemPromptAdditions,
 	})
 	if err != nil {
-		if worktreePath != "" {
-			s.worktree.RemoveWorktree(project.Path, worktreePath)
+		if wt.path != "" {
+			s.worktree.RemoveWorktree(project.Path, wt.path)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -411,86 +339,220 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		sess.SetBrowserPort(browserPort)
 	}
 
-	slog.Info("session created", "session_id", sess.ID, "project", project.Name, "model", model, "worktree", p.Worktree)
+	slog.Info("session created", "session_id", sess.ID, "project", project.Name, "model", cfg.model, "worktree", p.Worktree)
 
 	// Wire persona context for AskTeammate if session is team-bound.
 	s.wirePersonaContext(sess, p.AgentProfileID, tc)
-
 	// Wire spawn-workers callback so the session can delegate to workers.
 	s.wireSpawnWorkersCallback(sess, p.ProjectID)
 
-	dbSess, dbErr := s.queries.GetSession(ctx, sess.ID)
 	createdAt := ""
-	if dbErr == nil {
+	if dbSess, dbErr := s.queries.GetSession(ctx, sess.ID); dbErr == nil {
 		createdAt = dbSess.CreatedAt
 	}
 
-	// Resolve agent profile metadata for the broadcast + result.
-	// Use tc.profile directly if available to avoid a redundant DB query.
-	var profileName, profileAvatar string
-	if tc != nil {
-		profileName = tc.profile.Name
-		profileAvatar = tc.profile.Avatar
-	} else if p.AgentProfileID != "" {
-		if ap, err := s.queries.GetAgentProfile(ctx, p.AgentProfileID); err == nil {
-			profileName = ap.Name
-			profileAvatar = ap.Avatar
-		}
-	}
+	profileName, profileAvatar := s.resolveAgentProfileMeta(ctx, p.AgentProfileID, tc)
 
 	s.hub.Broadcast(p.ProjectID, "session.created", SessionInfo{
-		ID:              sess.ID,
-		ProjectID:       p.ProjectID,
-		Name:            name,
-		State:           string(sess.State()),
-		Connected:       true,
-		Model:           model,
-		PermissionMode:  sess.PermissionMode(),
-		AutoApproveMode: sess.AutoApproveMode(),
-		Effort:          effort,
-		MaxBudget:       p.MaxBudget,
-		MaxTurns:        p.MaxTurns,
-		WorktreePath:    worktreePath,
-		WorktreeBranch:  worktreeBranch,
-		BehaviorPresets: presets,
+		ID:                 sess.ID,
+		ProjectID:          p.ProjectID,
+		Name:               p.Name,
+		State:              string(sess.State()),
+		Connected:          true,
+		Model:              cfg.model,
+		PermissionMode:     sess.PermissionMode(),
+		AutoApproveMode:    sess.AutoApproveMode(),
+		Effort:             cfg.effort,
+		MaxBudget:          p.MaxBudget,
+		MaxTurns:           p.MaxTurns,
+		WorktreePath:       wt.path,
+		WorktreeBranch:     wt.branch,
+		BehaviorPresets:    cfg.presets,
 		AgentProfileID:     p.AgentProfileID,
 		AgentProfileName:   profileName,
 		AgentProfileAvatar: profileAvatar,
 		ParentSessionID:    p.ParentSessionID,
-		CreatedAt:       createdAt,
-		UpdatedAt:       createdAt,
+		CreatedAt:          createdAt,
+		UpdatedAt:          createdAt,
 	})
 
 	result := CreateSessionResult{
 		SessionID:          sess.ID,
-		Name:               name,
+		Name:               p.Name,
 		State:              string(sess.State()),
 		Connected:          true,
-		Model:              model,
+		Model:              cfg.model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
-		Effort:             effort,
+		Effort:             cfg.effort,
 		MaxBudget:          p.MaxBudget,
 		MaxTurns:           p.MaxTurns,
-		WorktreePath:       worktreePath,
-		WorktreeBranch:     worktreeBranch,
-		BehaviorPresets:    presets,
+		WorktreePath:       wt.path,
+		WorktreeBranch:     wt.branch,
+		BehaviorPresets:    cfg.presets,
 		AgentProfileID:     p.AgentProfileID,
 		AgentProfileName:   profileName,
 		AgentProfileAvatar: profileAvatar,
 		CreatedAt:          createdAt,
 	}
 
-	if p.IdempotencyKey != "" {
-		s.idempotencyMu.Lock()
-		s.idempotencyCache[p.IdempotencyKey] = idempotencyEntry{
-			result:    result,
-			expiresAt: time.Now().Add(idempotencyTTL),
-		}
-		s.idempotencyMu.Unlock()
+	s.cacheIdempotency(p.IdempotencyKey, result)
+	return result, nil
+}
+
+// checkIdempotency returns a previously-issued result when the same key was
+// seen within the TTL. Empty key disables the cache.
+func (s *Service) checkIdempotency(key string) (CreateSessionResult, bool) {
+	if key == "" {
+		return CreateSessionResult{}, false
+	}
+	s.idempotencyMu.Lock()
+	defer s.idempotencyMu.Unlock()
+	entry, ok := s.idempotencyCache[key]
+	if !ok || !time.Now().Before(entry.expiresAt) {
+		return CreateSessionResult{}, false
+	}
+	slog.Debug("idempotent session create hit", "key", key, "session_id", entry.result.SessionID)
+	return entry.result, true
+}
+
+func (s *Service) cacheIdempotency(key string, result CreateSessionResult) {
+	if key == "" {
+		return
+	}
+	s.idempotencyMu.Lock()
+	defer s.idempotencyMu.Unlock()
+	s.idempotencyCache[key] = idempotencyEntry{
+		result:    result,
+		expiresAt: time.Now().Add(idempotencyTTL),
+	}
+}
+
+// checkProjectQuota enforces project.MaxSessions. A zero limit means unlimited.
+func (s *Service) checkProjectQuota(ctx context.Context, project store.Project) error {
+	if project.MaxSessions <= 0 {
+		return nil
+	}
+	activeCount, err := s.queries.CountActiveSessionsByProject(ctx, project.ID)
+	if err != nil {
+		return fmt.Errorf("count active sessions: %w", err)
+	}
+	if activeCount >= project.MaxSessions {
+		return fmt.Errorf("%w: %d/%d active sessions for project %q", ErrSessionLimitReached, activeCount, project.MaxSessions, project.Name)
+	}
+	return nil
+}
+
+// provisionWorktree adopts/restores/creates the session's worktree as
+// appropriate. Returns wt.path == "" when p.Worktree is false.
+func (s *Service) provisionWorktree(p CreateSessionParams, project store.Project, sessionID string) (worktreeInfo, error) {
+	wt := worktreeInfo{workDir: project.Path}
+	if !p.Worktree {
+		return wt, nil
 	}
 
-	return result, nil
+	branch := p.Branch
+	if branch == "" {
+		branch = "session-" + sessionID[:8]
+	}
+	wt.branch = branch
+	wt.path = s.worktree.WorktreePath(project.Name, branch)
+
+	if baseSHA, err := s.worktree.GetWorktreeBaseSHA(project.Path); err == nil {
+		wt.baseSHA = baseSHA
+	}
+
+	switch {
+	case worktreeDirExists(wt.path):
+		// Adopt: directory already exists, no-op.
+	case s.worktree.BranchExists(project.Path, branch):
+		if err := s.worktree.RestoreWorktree(project.Path, branch, wt.path); err != nil {
+			return worktreeInfo{}, fmt.Errorf("failed to restore worktree: %w", err)
+		}
+	default:
+		if err := s.worktree.CreateWorktree(project.Path, branch, wt.path); err != nil {
+			return worktreeInfo{}, fmt.Errorf("failed to create worktree: %w", err)
+		}
+	}
+	wt.workDir = wt.path
+	return wt, nil
+}
+
+func worktreeDirExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// resolveSessionConfig applies the explicit > persona-config > project-default
+// cascade to model/effort/autoApprove/presets. Pure function — no IO.
+func resolveSessionConfig(p CreateSessionParams, pc PersonaConfig, project store.Project) sessionConfig {
+	cfg := sessionConfig{
+		model:           p.Model,
+		effort:          p.Effort,
+		autoApproveMode: p.AutoApproveMode,
+		presets:         p.BehaviorPresets,
+	}
+
+	if cfg.model == "" {
+		if pc.Model != "" {
+			cfg.model = pc.Model
+		} else {
+			cfg.model = "opus"
+		}
+	}
+	if cfg.effort == "" {
+		cfg.effort = pc.Effort
+	}
+	if cfg.autoApproveMode == "" {
+		cfg.autoApproveMode = pc.AutoApproveMode
+	}
+	if cfg.presets.IsZero() && !pc.BehaviorPresets.IsZero() {
+		cfg.presets = BehaviorPresets{
+			AutoCommit:         pc.BehaviorPresets.AutoCommit,
+			SuggestParallel:    pc.BehaviorPresets.SuggestParallel,
+			PlanFirst:          pc.BehaviorPresets.PlanFirst,
+			Terse:              pc.BehaviorPresets.Terse,
+			CustomInstructions: pc.BehaviorPresets.CustomInstructions,
+		}
+	}
+	if cfg.presets.IsZero() {
+		cfg.presets = ParsePresets(project.DefaultBehaviorPresets)
+	}
+	return cfg
+}
+
+// allocateBrowserPort pre-allocates a Playwright MCP port so the CLI process
+// can be started with the Chrome MCP config baked in. Chrome itself is not
+// started yet — it launches when the user clicks "Open Browser" and the
+// session reconnects via ReconnectMCPServer.
+//
+// Returns 0 / nil when the browser service is unavailable or allocation fails.
+func (s *Service) allocateBrowserPort(sessionID string) (int, []string) {
+	if s.browserSvc == nil {
+		return 0, nil
+	}
+	port, err := s.browserSvc.AllocatePort(sessionID)
+	if err != nil {
+		slog.Warn("browser port allocation failed", "session_id", sessionID, "error", err)
+		return 0, nil
+	}
+	return port, []string{PlaywrightMCPConfig(port)}
+}
+
+// resolveAgentProfileMeta returns the (name, avatar) for the bound agent
+// profile. Reuses tc.profile when available to avoid a redundant DB hit.
+func (s *Service) resolveAgentProfileMeta(ctx context.Context, agentProfileID string, tc *teamContextData) (string, string) {
+	if tc != nil {
+		return tc.profile.Name, tc.profile.Avatar
+	}
+	if agentProfileID == "" {
+		return "", ""
+	}
+	ap, err := s.queries.GetAgentProfile(ctx, agentProfileID)
+	if err != nil {
+		return "", ""
+	}
+	return ap.Name, ap.Avatar
 }
 
 // QuerySession performs lazy resume if needed and delegates to session.Query.
