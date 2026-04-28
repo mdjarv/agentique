@@ -468,6 +468,7 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 	}
 
 	// Fan-out: create delivery records and attempt live delivery.
+	formatted := formatChannelMessageForCLI(p.SenderName, p.Content, p.MessageType)
 	for _, recipientID := range p.Recipients {
 		_ = s.queries.InsertMessageDelivery(ctx, store.InsertMessageDeliveryParams{
 			MessageID:          msg.ID,
@@ -475,32 +476,15 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 			Status:             "pending",
 		})
 
-		delivered := false
-		if live := s.mgr.Get(recipientID); live != nil {
-			if live.State() == StateIdle {
-				if err := live.setState(StateRunning); err != nil {
-					slog.Warn("message state transition failed", "target", recipientID, "error", err)
-				}
-			}
-
-			formatted := formatChannelMessageForCLI(p.SenderName, p.Content, p.MessageType)
-			if err := live.cliSess.SendMessage(formatted); err != nil {
-				slog.Warn("message CLI delivery failed", "target", recipientID, "error", err)
-				if live.State() == StateRunning {
-					_ = live.setState(StateIdle)
-				}
-			} else {
-				delivered = true
-			}
+		if !s.tryLiveDelivery(s.mgr.Get(recipientID), recipientID, formatted) {
+			continue
 		}
 
-		if delivered {
-			_ = s.queries.UpdateDeliveryStatus(ctx, store.UpdateDeliveryStatusParams{
-				Status:             "delivered",
-				MessageID:          msg.ID,
-				RecipientSessionID: recipientID,
-			})
-		}
+		_ = s.queries.UpdateDeliveryStatus(ctx, store.UpdateDeliveryStatusParams{
+			Status:             "delivered",
+			MessageID:          msg.ID,
+			RecipientSessionID: recipientID,
+		})
 	}
 
 	// --- Dual-write: legacy agent_message session_events ---
@@ -522,6 +506,35 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 	})
 
 	return msg, nil
+}
+
+// tryLiveDelivery attempts to push a formatted channel message into a live
+// session's running CLI process. Returns true when the CLI accepted it.
+//
+// If the recipient is idle, it is transitioned to Running so the CLI loop
+// picks the message up; on CLI send failure that transition is rolled back to
+// avoid leaving a phantom "running" session. A nil receiver (offline) returns
+// false so the caller falls back to the pending DB delivery.
+func (s *Service) tryLiveDelivery(live *Session, recipientID, formatted string) bool {
+	if live == nil {
+		return false
+	}
+
+	if live.State() == StateIdle {
+		if err := live.setState(StateRunning); err != nil {
+			slog.Warn("message state transition failed", "target", recipientID, "error", err)
+		}
+	}
+
+	if err := live.cliSess.SendMessage(formatted); err != nil {
+		slog.Warn("message CLI delivery failed", "target", recipientID, "error", err)
+		if live.State() == StateRunning {
+			_ = live.setState(StateIdle)
+		}
+		return false
+	}
+
+	return true
 }
 
 // writeLegacyAgentMessageEvents writes old-style agent_message session_events
