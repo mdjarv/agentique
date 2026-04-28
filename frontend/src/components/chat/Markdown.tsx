@@ -14,6 +14,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { MarkdownFileLink } from "~/components/chat/MarkdownFileLink";
 import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -164,10 +165,29 @@ function InlineCode({
   return <code {...props}>{children}</code>;
 }
 
+const MARKDOWN_HREF_RE = /\.(?:md|mdx)(?:[?#]|$)/i;
+
+function isInternalMarkdownHref(href: string | undefined): href is string {
+  if (!href) return false;
+  if (!MARKDOWN_HREF_RE.test(href)) return false;
+  if (href.startsWith("/")) return true;
+  if (typeof window !== "undefined" && href.startsWith(window.location.origin)) return true;
+  return false;
+}
+
 const COMPONENTS: Components = {
   pre: PreBlock,
   code: InlineCode,
-  a: ({ node: _, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+  a: ({ node: _, href, children, ...props }) => {
+    if (isInternalMarkdownHref(href)) {
+      return <MarkdownFileLink href={href}>{children}</MarkdownFileLink>;
+    }
+    return (
+      <a href={href} {...props} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
 };
 
 export const Markdown = memo(function Markdown({
