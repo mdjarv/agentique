@@ -1213,28 +1213,44 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	if resumeErr != nil {
 		return nil, resumeErr
 	}
-	// Wire agent message callbacks for all channels.
+
+	s.wirePostResumeCallbacks(sess, dbSess, channelMemberships, resumeTC)
+	applyPostResumeFlags(sess, dbSess)
+
+	if len(channelMemberships) > 0 {
+		go s.replayPendingDeliveries(context.Background(), sess)
+	}
+	return sess, nil
+}
+
+// wirePostResumeCallbacks attaches the channel/spawn/persona callbacks the
+// session needs after a successful resume. Must be called once per resume,
+// before message replay starts.
+func (s *Service) wirePostResumeCallbacks(
+	sess *Session,
+	dbSess store.Session,
+	channelMemberships []store.ListSessionChannelsRow,
+	resumeTC *teamContextData,
+) {
 	for _, cm := range channelMemberships {
 		s.wireAgentMessageCallback(sess, cm.ChannelID)
 		if cm.Role == "lead" {
 			s.wireDissolveChannelCallback(sess, cm.ChannelID)
 		}
 	}
-	// Wire spawn-workers callback for delegation.
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
-	// Wire persona context for AskTeammate if session is team-bound.
 	s.wirePersonaContext(sess, nullStr(dbSess.AgentProfileID), resumeTC)
-	// Replay any messages that were sent while the session was offline.
-	if len(channelMemberships) > 0 {
-		go s.replayPendingDeliveries(context.Background(), sess)
-	}
+}
+
+// applyPostResumeFlags re-applies persisted lifecycle flags (merged/completed)
+// onto the live Session so the in-memory state matches what the DB reflects.
+func applyPostResumeFlags(sess *Session, dbSess store.Session) {
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
 	}
 	if dbSess.CompletedAt.Valid {
 		sess.MarkCompleted()
 	}
-	return sess, nil
 }
 
 // replayPendingDeliveries delivers messages that arrived while the session was
