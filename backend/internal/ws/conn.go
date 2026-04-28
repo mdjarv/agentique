@@ -120,170 +120,116 @@ func (c *conn) writeLoop() {
 	}
 }
 
+// handlerFunc is the signature every dispatch handler conforms to.
+type handlerFunc func(*conn, ClientMessage)
+
+// handlerRegistry maps incoming message types to their handler. Adding a new
+// message type means adding one entry here and implementing the corresponding
+// method on *conn — no need to edit a switch.
+var handlerRegistry = map[string]handlerFunc{
+	// project.*
+	"project.subscribe":               (*conn).handleProjectSubscribe,
+	"project.git-status":              (*conn).handleProjectGitStatus,
+	"project.fetch":                   (*conn).handleProjectFetch,
+	"project.push":                    (*conn).handleProjectPush,
+	"project.commit":                  (*conn).handleProjectCommit,
+	"project.list-branches":           (*conn).handleProjectListBranches,
+	"project.checkout":                (*conn).handleProjectCheckout,
+	"project.pull":                    (*conn).handleProjectPull,
+	"project.tracked-files":           (*conn).handleProjectTrackedFiles,
+	"project.commands":                (*conn).handleProjectCommands,
+	"project.uncommitted-files":       (*conn).handleProjectUncommittedFiles,
+	"project.discard":                 (*conn).handleProjectDiscard,
+	"project.generate-commit-message": (*conn).handleProjectGenerateCommitMsg,
+	"project.reorder":                 (*conn).handleProjectReorder,
+	"project.set-favorite":            (*conn).handleProjectSetFavorite,
+	"project.activity":                (*conn).handleProjectActivity,
+
+	// session.*
+	"session.create":                  (*conn).handleSessionCreate,
+	"session.query":                   (*conn).handleSessionQuery,
+	"session.list":                    (*conn).handleSessionList,
+	"session.stop":                    (*conn).handleSessionStop,
+	"session.resume":                  (*conn).handleSessionResume,
+	"session.reset-conversation":      (*conn).handleSessionResetConversation,
+	"session.history":                 (*conn).handleSessionHistory,
+	"session.diff":                    (*conn).handleSessionDiff,
+	"session.interrupt":               (*conn).handleSessionInterrupt,
+	"session.merge":                   (*conn).handleSessionMerge,
+	"session.create-pr":               (*conn).handleSessionCreatePR,
+	"session.commit":                  (*conn).handleSessionCommit,
+	"session.rename":                  (*conn).handleSessionRename,
+	"session.delete":                  (*conn).handleSessionDelete,
+	"session.delete-bulk":             (*conn).handleSessionDeleteBulk,
+	"session.set-model":               (*conn).handleSessionSetModel,
+	"session.set-permission":          (*conn).handleSessionSetPermission,
+	"session.set-auto-approve":        (*conn).handleSessionSetAutoApprove,
+	"session.resolve-approval":        (*conn).handleSessionResolveApproval,
+	"session.resolve-question":        (*conn).handleSessionResolveQuestion,
+	"session.rebase":                  (*conn).handleSessionRebase,
+	"session.generate-pr-description": (*conn).handleSessionGeneratePRDesc,
+	"session.mark-done":               (*conn).handleSessionMarkDone,
+	"session.clean":                   (*conn).handleSessionClean,
+	"session.refresh-git":             (*conn).handleSessionRefreshGit,
+	"session.generate-commit-message": (*conn).handleSessionGenerateCommitMsg,
+	"session.generate-name":           (*conn).handleSessionGenerateName,
+	"session.commit-log":              (*conn).handleSessionCommitLog,
+	"session.uncommitted-files":       (*conn).handleSessionUncommittedFiles,
+	"session.uncommitted-diff":        (*conn).handleSessionUncommittedDiff,
+	"session.pr-status":               (*conn).handleSessionPRStatus,
+	"session.enqueue":                 (*conn).handleSessionEnqueue,
+
+	// browser.*
+	"browser.status":   (*conn).handleBrowserStatus,
+	"browser.launch":   (*conn).handleBrowserLaunch,
+	"browser.stop":     (*conn).handleBrowserStop,
+	"browser.input":    (*conn).handleBrowserInput,
+	"browser.navigate": (*conn).handleBrowserNavigate,
+
+	// channel.*
+	"channel.create":         (*conn).handleChannelCreate,
+	"channel.delete":         (*conn).handleChannelDelete,
+	"channel.dissolve":       (*conn).handleChannelDissolve,
+	"channel.dissolve-keep":  (*conn).handleChannelDissolveKeep,
+	"channel.join":           (*conn).handleChannelJoin,
+	"channel.leave":          (*conn).handleChannelLeave,
+	"channel.list":           (*conn).handleChannelList,
+	"channel.info":           (*conn).handleChannelInfo,
+	"channel.timeline":       (*conn).handleChannelTimeline,
+	"channel.send-message":   (*conn).handleChannelSendMessage,
+	"channel.broadcast":      (*conn).handleChannelBroadcast,
+	"channel.create-swarm":   (*conn).handleChannelCreateSwarm,
+
+	// agent-profile.* / team.* / persona.*
+	"agent-profile.list":     (*conn).handleAgentProfileList,
+	"agent-profile.create":   (*conn).handleAgentProfileCreate,
+	"agent-profile.update":   (*conn).handleAgentProfileUpdate,
+	"agent-profile.delete":   (*conn).handleAgentProfileDelete,
+	"agent-profile.generate": (*conn).handleProfileGenerate,
+	"team.list":              (*conn).handleTeamList,
+	"team.create":            (*conn).handleTeamCreate,
+	"team.update":            (*conn).handleTeamUpdate,
+	"team.delete":            (*conn).handleTeamDelete,
+	"team.add-member":        (*conn).handleTeamAddMember,
+	"team.remove-member":     (*conn).handleTeamRemoveMember,
+	"persona.query":          (*conn).handlePersonaQuery,
+	"persona.list":           (*conn).handlePersonaList,
+
+	// ping
+	"ping": (*conn).handlePing,
+}
+
 func (c *conn) dispatch(msg ClientMessage) {
-	switch msg.Type {
-	case "project.subscribe":
-		c.handleProjectSubscribe(msg)
-	case "session.create":
-		c.handleSessionCreate(msg)
-	case "session.query":
-		c.handleSessionQuery(msg)
-	case "session.list":
-		c.handleSessionList(msg)
-	case "session.stop":
-		c.handleSessionStop(msg)
-	case "session.resume":
-		c.handleSessionResume(msg)
-	case "session.reset-conversation":
-		c.handleSessionResetConversation(msg)
-	case "session.history":
-		c.handleSessionHistory(msg)
-	case "session.diff":
-		c.handleSessionDiff(msg)
-	case "session.interrupt":
-		c.handleSessionInterrupt(msg)
-	case "session.merge":
-		c.handleSessionMerge(msg)
-	case "session.create-pr":
-		c.handleSessionCreatePR(msg)
-	case "session.commit":
-		c.handleSessionCommit(msg)
-	case "session.rename":
-		c.handleSessionRename(msg)
-	case "session.delete":
-		c.handleSessionDelete(msg)
-	case "session.delete-bulk":
-		c.handleSessionDeleteBulk(msg)
-	case "session.set-model":
-		c.handleSessionSetModel(msg)
-	case "session.set-permission":
-		c.handleSessionSetPermission(msg)
-	case "session.set-auto-approve":
-		c.handleSessionSetAutoApprove(msg)
-	case "session.resolve-approval":
-		c.handleSessionResolveApproval(msg)
-	case "session.resolve-question":
-		c.handleSessionResolveQuestion(msg)
-	case "session.rebase":
-		c.handleSessionRebase(msg)
-	case "session.generate-pr-description":
-		c.handleSessionGeneratePRDesc(msg)
-	case "session.mark-done":
-		c.handleSessionMarkDone(msg)
-	case "session.clean":
-		c.handleSessionClean(msg)
-	case "session.refresh-git":
-		c.handleSessionRefreshGit(msg)
-	case "session.generate-commit-message":
-		c.handleSessionGenerateCommitMsg(msg)
-	case "session.generate-name":
-		c.handleSessionGenerateName(msg)
-	case "session.commit-log":
-		c.handleSessionCommitLog(msg)
-	case "session.uncommitted-files":
-		c.handleSessionUncommittedFiles(msg)
-	case "session.uncommitted-diff":
-		c.handleSessionUncommittedDiff(msg)
-	case "session.pr-status":
-		c.handleSessionPRStatus(msg)
-	case "session.enqueue":
-		c.handleSessionEnqueue(msg)
-	case "project.git-status":
-		c.handleProjectGitStatus(msg)
-	case "project.fetch":
-		c.handleProjectFetch(msg)
-	case "project.push":
-		c.handleProjectPush(msg)
-	case "project.commit":
-		c.handleProjectCommit(msg)
-	case "project.list-branches":
-		c.handleProjectListBranches(msg)
-	case "project.checkout":
-		c.handleProjectCheckout(msg)
-	case "project.pull":
-		c.handleProjectPull(msg)
-	case "project.tracked-files":
-		c.handleProjectTrackedFiles(msg)
-	case "project.commands":
-		c.handleProjectCommands(msg)
-	case "project.uncommitted-files":
-		c.handleProjectUncommittedFiles(msg)
-	case "project.discard":
-		c.handleProjectDiscard(msg)
-	case "project.generate-commit-message":
-		c.handleProjectGenerateCommitMsg(msg)
-	case "project.reorder":
-		c.handleProjectReorder(msg)
-	case "project.set-favorite":
-		c.handleProjectSetFavorite(msg)
-	case "project.activity":
-		c.handleProjectActivity(msg)
-	case "browser.status":
-		c.handleBrowserStatus(msg)
-	case "browser.launch":
-		c.handleBrowserLaunch(msg)
-	case "browser.stop":
-		c.handleBrowserStop(msg)
-	case "browser.input":
-		c.handleBrowserInput(msg)
-	case "browser.navigate":
-		c.handleBrowserNavigate(msg)
-	case "channel.create":
-		c.handleChannelCreate(msg)
-	case "channel.delete":
-		c.handleChannelDelete(msg)
-	case "channel.dissolve":
-		c.handleChannelDissolve(msg)
-	case "channel.dissolve-keep":
-		c.handleChannelDissolveKeep(msg)
-	case "channel.join":
-		c.handleChannelJoin(msg)
-	case "channel.leave":
-		c.handleChannelLeave(msg)
-	case "channel.list":
-		c.handleChannelList(msg)
-	case "channel.info":
-		c.handleChannelInfo(msg)
-	case "channel.timeline":
-		c.handleChannelTimeline(msg)
-	case "channel.send-message":
-		c.handleChannelSendMessage(msg)
-	case "channel.broadcast":
-		c.handleChannelBroadcast(msg)
-	case "channel.create-swarm":
-		c.handleChannelCreateSwarm(msg)
-	case "agent-profile.list":
-		c.handleAgentProfileList(msg)
-	case "agent-profile.create":
-		c.handleAgentProfileCreate(msg)
-	case "agent-profile.update":
-		c.handleAgentProfileUpdate(msg)
-	case "agent-profile.delete":
-		c.handleAgentProfileDelete(msg)
-	case "team.list":
-		c.handleTeamList(msg)
-	case "team.create":
-		c.handleTeamCreate(msg)
-	case "team.update":
-		c.handleTeamUpdate(msg)
-	case "team.delete":
-		c.handleTeamDelete(msg)
-	case "team.add-member":
-		c.handleTeamAddMember(msg)
-	case "team.remove-member":
-		c.handleTeamRemoveMember(msg)
-	case "persona.query":
-		c.handlePersonaQuery(msg)
-	case "persona.list":
-		c.handlePersonaList(msg)
-	case "agent-profile.generate":
-		c.handleProfileGenerate(msg)
-	case "ping":
-		c.respond(msg.ID, map[string]string{"status": "ok"}, "")
-	default:
-		slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
-		c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
+	if h, ok := handlerRegistry[msg.Type]; ok {
+		h(c, msg)
+		return
 	}
+	slog.Warn("ws unknown message type", "type", msg.Type, "id", msg.ID)
+	c.respond(msg.ID, nil, "unknown message type: "+msg.Type)
+}
+
+func (c *conn) handlePing(msg ClientMessage) {
+	c.respond(msg.ID, map[string]string{"status": "ok"}, "")
 }
 
 var traceTypes = map[string]bool{
