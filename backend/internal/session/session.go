@@ -650,46 +650,7 @@ func (s *Session) startEventLoop() {
 				return
 			case event, ok := <-events:
 				if !ok {
-					s.mu.Lock()
-					st := s.state
-					s.mu.Unlock()
-					// Skip if already in a terminal state so we don't mask the real reason.
-					if st == StateDone || st == StateFailed || st == StateStopped {
-						return
-					}
-					// If the CLI died while actively running, treat as unexpected failure.
-					// Prefer the CLIExitEvent's reason (landed immediately before close)
-					// for an actionable fatal message.
-					if st == StateRunning {
-						msg := formatExitEvent(lastExit)
-						slog.Error("CLI process died while running",
-							"session_id", s.ID,
-							"message", msg,
-						)
-						s.broadcast("session.event", PushSessionEvent{
-							SessionID: s.ID,
-							Event: WireErrorEvent{
-								Type:    "error",
-								Content: msg,
-								Fatal:   true,
-							},
-						})
-						if err := s.setState(StateFailed); err != nil {
-							slog.Error("state transition failed", "session_id", s.ID, "error", err)
-						}
-						return
-					}
-					// Clean close from idle/merging — transition to done.
-					// Set completedAt in memory first so broadcastState includes it.
-					s.MarkCompleted()
-					if err := s.setState(StateDone); err != nil {
-						slog.Error("state transition failed", "session_id", s.ID, "error", err)
-						return
-					}
-					// Persist completedAt to DB only after successful transition.
-					if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
-						slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
-					}
+					s.handleEventChannelClose(lastExit)
 					return
 				}
 				lastEventType = fmt.Sprintf("%T", event)
@@ -697,87 +658,137 @@ func (s *Session) startEventLoop() {
 				if ex, ok := event.(*claudecli.CLIExitEvent); ok {
 					lastExit = ex
 				}
-				nextInterval := s.observeActivity(event)
-				watchdog.Reset(nextInterval)
+				watchdog.Reset(s.observeActivity(event))
 				warned = false
 				s.safeProcessEvent(event)
 			case <-watchdog.C:
-				s.mu.Lock()
-				st := s.state
-				waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
-				act := s.activityState
-				s.mu.Unlock()
-
-				if st != StateRunning || waitingForUser {
-					watchdog.Reset(thinkingWarnAfter)
-					continue
+				next, newWarned, terminate := s.handleWatchdogTick(lastEventType, lastEventTime, warned)
+				if terminate {
+					return
 				}
-
-				if act == claudecli.ActivityAwaitingToolResult {
-					// Tool executing: event silence is expected. Fail only if the CLI
-					// process has died, or if a stdout-stall probe reveals the read
-					// loop is wedged (process alive but not responding to pings).
-					if !cliAlive(s.cliSess) {
-						slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
-						s.broadcast("session.event", PushSessionEvent{
-							SessionID: s.ID,
-							Event: WireErrorEvent{
-								Type:    "error",
-								Content: "CLI process exited while a tool was running",
-								Fatal:   true,
-							},
-						})
-						if err := s.setState(StateFailed); err != nil {
-							slog.Error("state transition failed", "session_id", s.ID, "error", err)
-						}
-						return
-					}
-					if s.maybeHandleToolStall() == toolStallFatal {
-						if err := s.setState(StateFailed); err != nil {
-							slog.Error("state transition failed", "session_id", s.ID, "error", err)
-						}
-						return
-					}
-					watchdog.Reset(toolLivenessInterval)
-					continue
-				}
-
-				// Thinking / Idle: event-silence timeout applies.
-				sinceLastEvent := time.Since(lastEventTime)
-				if sinceLastEvent < thinkingWarnAfter {
-					// Timer fired but the window hasn't actually elapsed (possible
-					// when a previous reset races with a tick). Re-arm for remainder.
-					watchdog.Reset(thinkingWarnAfter - sinceLastEvent)
-					continue
-				}
-				if !warned {
-					warned = true
-					slog.Warn("watchdog: no activity",
-						"session_id", s.ID,
-						"last_event_type", lastEventType,
-						"since_last_event", sinceLastEvent.Round(time.Second),
-					)
-					s.broadcast("session.event", PushSessionEvent{
-						SessionID: s.ID,
-						Event: WireErrorEvent{
-							Type:    "error",
-							Content: "session may be unresponsive — no activity for 2 minutes",
-							Fatal:   false,
-						},
-					})
-					watchdog.Reset(thinkingFailAfter - thinkingWarnAfter)
-					continue
-				}
-				slog.Error("watchdog timeout, marking session failed",
-					"session_id", s.ID,
-					"last_event_type", lastEventType,
-					"since_last_event", sinceLastEvent.Round(time.Second),
-				)
-				s.setState(StateFailed)
-				return
+				warned = newWarned
+				watchdog.Reset(next)
 			}
 		}
 	}()
+}
+
+// handleEventChannelClose decides the terminal state when the CLI event
+// channel closes. The session is already returning from its event loop;
+// this method only updates state and persists.
+//
+// Behavior by current state:
+//   - Done/Failed/Stopped: no-op (don't mask the real reason).
+//   - Running: treat as unexpected exit, broadcast a fatal error, mark Failed.
+//     The most recent CLIExitEvent provides the reason when available.
+//   - Anything else (idle/merging): clean close — mark Done and persist
+//     completedAt.
+func (s *Session) handleEventChannelClose(lastExit *claudecli.CLIExitEvent) {
+	s.mu.Lock()
+	st := s.state
+	s.mu.Unlock()
+
+	if st == StateDone || st == StateFailed || st == StateStopped {
+		return
+	}
+
+	if st == StateRunning {
+		msg := formatExitEvent(lastExit)
+		slog.Error("CLI process died while running", "session_id", s.ID, "message", msg)
+		s.broadcast("session.event", PushSessionEvent{
+			SessionID: s.ID,
+			Event:     WireErrorEvent{Type: "error", Content: msg, Fatal: true},
+		})
+		if err := s.setState(StateFailed); err != nil {
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
+		}
+		return
+	}
+
+	// Set completedAt in memory first so broadcastState includes it.
+	s.MarkCompleted()
+	if err := s.setState(StateDone); err != nil {
+		slog.Error("state transition failed", "session_id", s.ID, "error", err)
+		return
+	}
+	if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
+		slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
+	}
+}
+
+// handleWatchdogTick processes a watchdog timer fire. Returns the next
+// re-arm interval, the new `warned` flag, and a terminate signal that
+// instructs the event loop to exit (used for fatal failures).
+func (s *Session) handleWatchdogTick(lastEventType string, lastEventTime time.Time, warned bool) (time.Duration, bool, bool) {
+	s.mu.Lock()
+	st := s.state
+	waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
+	act := s.activityState
+	s.mu.Unlock()
+
+	if st != StateRunning || waitingForUser {
+		return thinkingWarnAfter, warned, false
+	}
+
+	if act == claudecli.ActivityAwaitingToolResult {
+		return s.handleToolWatchdog()
+	}
+	return s.handleThinkingWatchdog(lastEventType, lastEventTime, warned)
+}
+
+// handleToolWatchdog handles a watchdog tick when a tool is executing.
+// Event silence is expected here; we only fail when the CLI process has
+// died or a stdout-stall probe reveals a wedged read loop.
+func (s *Session) handleToolWatchdog() (time.Duration, bool, bool) {
+	if !cliAlive(s.cliSess) {
+		slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
+		s.broadcast("session.event", PushSessionEvent{
+			SessionID: s.ID,
+			Event:     WireErrorEvent{Type: "error", Content: "CLI process exited while a tool was running", Fatal: true},
+		})
+		if err := s.setState(StateFailed); err != nil {
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
+		}
+		return 0, false, true
+	}
+	if s.maybeHandleToolStall() == toolStallFatal {
+		if err := s.setState(StateFailed); err != nil {
+			slog.Error("state transition failed", "session_id", s.ID, "error", err)
+		}
+		return 0, false, true
+	}
+	return toolLivenessInterval, false, false
+}
+
+// handleThinkingWatchdog handles a watchdog tick when the session is
+// thinking/idle (no tool running). Event-silence timeout applies: warn at
+// thinkingWarnAfter, fail at thinkingFailAfter.
+func (s *Session) handleThinkingWatchdog(lastEventType string, lastEventTime time.Time, warned bool) (time.Duration, bool, bool) {
+	sinceLastEvent := time.Since(lastEventTime)
+	if sinceLastEvent < thinkingWarnAfter {
+		// Timer fired but the window hasn't actually elapsed (possible when a
+		// previous reset races with a tick). Re-arm for the remainder.
+		return thinkingWarnAfter - sinceLastEvent, warned, false
+	}
+	if !warned {
+		slog.Warn("watchdog: no activity",
+			"session_id", s.ID,
+			"last_event_type", lastEventType,
+			"since_last_event", sinceLastEvent.Round(time.Second),
+		)
+		s.broadcast("session.event", PushSessionEvent{
+			SessionID: s.ID,
+			Event:     WireErrorEvent{Type: "error", Content: "session may be unresponsive — no activity for 2 minutes", Fatal: false},
+		})
+		return thinkingFailAfter - thinkingWarnAfter, true, false
+	}
+	slog.Error("watchdog timeout, marking session failed",
+		"session_id", s.ID,
+		"last_event_type", lastEventType,
+		"since_last_event", sinceLastEvent.Round(time.Second),
+	)
+	s.setState(StateFailed)
+	return 0, false, true
 }
 
 // observeActivity syncs the local activity-state mirror from an incoming event
