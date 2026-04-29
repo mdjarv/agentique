@@ -739,8 +739,15 @@ func (s *Session) handleWatchdogTick(lastEventType string, lastEventTime time.Ti
 // handleToolWatchdog handles a watchdog tick when a tool is executing.
 // Event silence is expected here; we only fail when the CLI process has
 // died or a stdout-stall probe reveals a wedged read loop.
+//
+// Reads s.cliSess once under s.mu so a concurrent Session.Close() cannot
+// nil it out mid-tick.
 func (s *Session) handleToolWatchdog() (time.Duration, bool, bool) {
-	if !cliAlive(s.cliSess) {
+	s.mu.Lock()
+	cli := s.cliSess
+	s.mu.Unlock()
+
+	if cli == nil || !cliAlive(cli) {
 		slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
 		s.broadcast("session.event", PushSessionEvent{
 			SessionID: s.ID,
@@ -751,7 +758,7 @@ func (s *Session) handleToolWatchdog() (time.Duration, bool, bool) {
 		}
 		return 0, false, true
 	}
-	if s.maybeHandleToolStall() == toolStallFatal {
+	if s.maybeHandleToolStall(cli) == toolStallFatal {
 		if err := s.setState(StateFailed); err != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", err)
 		}
@@ -834,8 +841,11 @@ const watchdogPingTimeout = 10 * time.Second
 // emits an informational warning (process + readLoop alive) or escalates to a
 // fatal signal (readLoop wedged, verified via Ping). Deduplicates repeat
 // warnings for the same stall episode via toolStallWarned.
-func (s *Session) maybeHandleToolStall() toolStallResult {
-	info := s.cliSess.ProcessInfo()
+//
+// Takes the CLI session as a parameter so the caller can snapshot it once
+// under s.mu and avoid racing with Session.Close which sets s.cliSess = nil.
+func (s *Session) maybeHandleToolStall(cli CLISession) toolStallResult {
+	info := cli.ProcessInfo()
 	if info.LastStdoutAt.IsZero() {
 		return toolStallNone
 	}
@@ -856,7 +866,7 @@ func (s *Session) maybeHandleToolStall() toolStallResult {
 	// Escalation: probe the CLI's read loop. A healthy CLI answers even if
 	// the running tool is wedged; if the ping fails, the readLoop is wedged
 	// too — that's a zombie and the session cannot recover.
-	if err := s.cliSess.Ping(watchdogPingTimeout); err != nil {
+	if err := cli.Ping(watchdogPingTimeout); err != nil {
 		slog.Error("watchdog: ping failed during stdout stall",
 			"session_id", s.ID,
 			"stdout_silent", silent.Round(time.Second),

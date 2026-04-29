@@ -132,6 +132,11 @@ func (s *WatchdogSuite) SetupTest() {
 }
 
 func (s *WatchdogSuite) TearDownTest() {
+	// Stop all session goroutines before resetting the watchdog globals.
+	// Otherwise the watchdog goroutine reads thinkingWarnAfter / toolLivenessInterval
+	// concurrently with TearDown's writes, tripping the race detector.
+	s.mgr.CloseAll()
+
 	thinkingWarnAfter = s.origThinkingWarn
 	thinkingFailAfter = s.origThinkingFail
 	toolLivenessInterval = s.origToolLiveness
