@@ -61,15 +61,23 @@ func (s *Session) setState(state State) error {
 		s.mu.Unlock()
 		return err
 	}
+
+	// Persist BEFORE updating in-memory so any observer that subsequently
+	// reads State() sees a value already committed to the DB. Holding mu
+	// across the SQLite write is acceptable: the local DB is in WAL mode
+	// (readers don't block writers), per-session mu doesn't contend across
+	// sessions, and persistState retries internally on transient
+	// BUSY/LOCKED errors.
+	s.persistState(state)
 	s.state = state
 	s.mu.Unlock()
-	// Non-blocking signal to wake waitForIdle.
+
+	// Non-blocking signal to wake waitForIdle and friends.
 	select {
 	case s.stateChangedCh <- struct{}{}:
 	default:
 	}
 	s.broadcastState(state)
-	s.persistState(state)
 	return nil
 }
 
