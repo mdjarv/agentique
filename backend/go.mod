@@ -1,6 +1,6 @@
 module github.com/mdjarv/agentique/backend
 
-go 1.26.1
+go 1.26.2
 
 require (
 	charm.land/bubbles/v2 v2.1.0
@@ -8,15 +8,15 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	charm.land/log/v2 v2.0.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/allbin/agentkit v0.0.0-20260430115103-cbf5a74de084
 	github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/mdjarv/backoff v0.2.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	modernc.org/sqlite v1.48.2
+	modernc.org/sqlite v1.50.0
 )
 
 require (
@@ -38,10 +38,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
+	github.com/mdjarv/backoff v0.2.0 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

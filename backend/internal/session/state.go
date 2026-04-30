@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/allbin/agentkit/sqliteops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -82,7 +83,7 @@ func (s *Session) setState(state State) error {
 }
 
 func (s *Session) persistState(state State) {
-	if err := store.RetryWrite(func() error {
+	if err := sqliteops.RetryWrite(func() error {
 		return s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 			State: string(state),
 			ID:    s.ID,

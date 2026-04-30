@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
@@ -252,7 +253,7 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 		InitialTurnIndex: p.turnIndex,
 		Sink: EventSink{
 			Persist: func(turnIndex, seq int, wireType string, data []byte) {
-				if err := store.RetryWrite(func() error {
+				if err := sqliteops.RetryWrite(func() error {
 					return p.queries.InsertEvent(context.Background(), store.InsertEventParams{
 						SessionID: p.id,
 						TurnIndex: int64(turnIndex),
@@ -267,7 +268,7 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			Broadcast: p.broadcast,
 		},
 		OnClaudeSessionID: func(id string) {
-			if err := store.RetryWrite(func() error {
+			if err := sqliteops.RetryWrite(func() error {
 				return p.queries.UpdateClaudeSessionID(context.Background(), store.UpdateClaudeSessionIDParams{
 					ClaudeSessionID: sqlNullString(id),
 					ID:              p.id,
@@ -440,7 +441,7 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 	s.pipeline.PushPendingMessage(messageID)
 	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, MessageID: messageID, Attachments: attachments}
 	if data, err := json.Marshal(wireEvent); err == nil {
-		if err := store.RetryWrite(func() error {
+		if err := sqliteops.RetryWrite(func() error {
 			return s.queries.InsertEvent(context.Background(), store.InsertEventParams{
 				SessionID: s.ID,
 				TurnIndex: int64(turnIdx),
@@ -543,7 +544,7 @@ func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool,
 		}
 	}
 
-	txErr := store.RetryWrite(func() error {
+	txErr := sqliteops.RetryWrite(func() error {
 		return store.RunInTx(s.db, func(q *store.Queries) error {
 			ctx := context.Background()
 			if err := q.UpdateSessionState(ctx, store.UpdateSessionStateParams{

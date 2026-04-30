@@ -8,11 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // Broadcaster sends push messages to all WebSocket clients for a project.
@@ -470,7 +471,7 @@ func (m *Manager) Stop(_ context.Context, id string) error {
 
 	m.releaseSessionResources(id)
 
-	return store.RetryWrite(func() error {
+	return sqliteops.RetryWrite(func() error {
 		return m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 			State: string(StateStopped),
 			ID:    id,

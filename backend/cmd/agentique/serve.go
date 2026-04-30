@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/allbin/agentkit/sqliteops"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
-	"github.com/mdjarv/agentique/backend/internal/backup"
 	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/doctor"
 	"github.com/mdjarv/agentique/backend/internal/logging"
@@ -156,7 +156,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	if !testMode && !disableBackup {
 		backupDir := filepath.Join(filepath.Dir(dbFile), "backups")
-		backup.Snapshot(db, backupDir, 5)
+		sqliteops.Snapshot(db, backupDir, "agentique", 5)
 	}
 
 	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
@@ -174,9 +174,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			os.Exit(1)
 		}
 		backupDir := filepath.Join(filepath.Dir(dbFile), "backups")
-		stopBackup := backup.Start(backup.Config{
+		stopBackup := sqliteops.StartBackup(sqliteops.BackupConfig{
 			DB:          db,
 			Dir:         backupDir,
+			Prefix:      "agentique",
 			Interval:    interval,
 			DailyRetain: backupRetain,
 		})
