@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/logging"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
@@ -30,15 +31,20 @@ type conn struct {
 	gitSvc        *session.GitService
 	projectGitSvc *project.GitService
 	queries       *store.Queries
-	hub           *Hub
+	bus           *eventbus.Bus
 	teamSvc       *team.Service           // nil when experimental teams is disabled
 	personaSvc    *persona.Service         // nil when experimental teams is disabled
 	browserSvc    *session.BrowserService  // nil when browser support is unavailable
 	sendCh        chan any
 	mu            sync.Mutex
+
+	// subMu guards sub. The conn holds at most one project subscription at a
+	// time — re-subscribing replaces the previous handle.
+	subMu sync.Mutex
+	sub   *eventbus.Subscription
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, hub *Hub, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	return &conn{
 		ctx:           ctx,
@@ -48,7 +54,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		gitSvc:        gitSvc,
 		projectGitSvc: projectGitSvc,
 		queries:       queries,
-		hub:           hub,
+		bus:           bus,
 		teamSvc:       teamSvc,
 		personaSvc:    personaSvc,
 		browserSvc:    browserSvc,
@@ -56,9 +62,33 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 	}
 }
 
+// subscribeProject replaces any existing project subscription with one for
+// projectID. After Unsubscribe returns, one in-flight event may still be
+// delivered to the old subscriber — harmless: it lands on the same conn.
+func (c *conn) subscribeProject(projectID string) {
+	newSub := c.bus.Subscribe(projectID, &connSubscriber{c: c})
+	c.subMu.Lock()
+	old := c.sub
+	c.sub = newSub
+	c.subMu.Unlock()
+	if old != nil {
+		old.Unsubscribe()
+	}
+}
+
+func (c *conn) unsubscribe() {
+	c.subMu.Lock()
+	old := c.sub
+	c.sub = nil
+	c.subMu.Unlock()
+	if old != nil {
+		old.Unsubscribe()
+	}
+}
+
 func (c *conn) run() {
 	defer func() {
-		c.hub.Unsubscribe(c)
+		c.unsubscribe()
 		c.cancel()
 		c.ws.Close()
 	}()

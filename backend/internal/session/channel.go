@@ -59,7 +59,7 @@ func (s *Service) CreateChannel(ctx context.Context, projectID, name string) (Ch
 		Members:   []ChannelMember{},
 		CreatedAt: ch.CreatedAt,
 	}
-	s.hub.Broadcast(projectID, "channel.created", info)
+	s.hub.Publish(projectID, "channel.created", info)
 	return info, nil
 }
 
@@ -83,7 +83,7 @@ func (s *Service) DeleteChannel(ctx context.Context, channelID string) error {
 		return fmt.Errorf("delete channel: %w", err)
 	}
 
-	s.hub.Broadcast(ch.ProjectID, "channel.deleted", map[string]string{"channelId": channelID})
+	s.hub.Publish(ch.ProjectID, "channel.deleted", map[string]string{"channelId": channelID})
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (s *Service) DissolveChannel(ctx context.Context, channelID string) error {
 	if err := s.queries.DeleteChannel(ctx, channelID); err != nil {
 		return fmt.Errorf("delete channel: %w", err)
 	}
-	s.hub.Broadcast(ch.ProjectID, "channel.dissolved", map[string]string{"channelId": channelID})
+	s.hub.Publish(ch.ProjectID, "channel.dissolved", map[string]string{"channelId": channelID})
 	slog.Info("channel dissolved", "channel_id", channelID, "channel_name", ch.Name)
 	return nil
 }
@@ -137,7 +137,7 @@ func (s *Service) DissolveChannelKeepHistory(ctx context.Context, channelID stri
 	if err != nil {
 		return fmt.Errorf("build channel info: %w", err)
 	}
-	s.hub.Broadcast(ch.ProjectID, "channel.updated", info)
+	s.hub.Publish(ch.ProjectID, "channel.updated", info)
 	slog.Info("channel dissolved (keep history)", "channel_id", channelID, "channel_name", ch.Name)
 	return nil
 }
@@ -196,7 +196,7 @@ func (s *Service) dissolveWorkers(
 		if s.gitSvc != nil {
 			s.gitSvc.CleanupVersion(m.ID)
 		}
-		s.hub.Broadcast(projectID, "session.deleted", PushSessionDeleted{SessionID: m.ID})
+		s.hub.Publish(projectID, "session.deleted", PushSessionDeleted{SessionID: m.ID})
 	}
 }
 
@@ -261,7 +261,7 @@ func (s *Service) JoinChannel(ctx context.Context, sessionID, channelID, role st
 	} else {
 		slog.Warn("buildChannelInfo after join failed", "channelId", channelID, "error", buildErr)
 	}
-	s.hub.Broadcast(ch.ProjectID, "channel.member-joined", payload)
+	s.hub.Publish(ch.ProjectID, "channel.member-joined", payload)
 
 	// Wire callbacks for the joining session.
 	if live := s.mgr.Get(sessionID); live != nil {
@@ -391,7 +391,7 @@ func (s *Service) LeaveChannel(ctx context.Context, sessionID, channelID string)
 		live.RemoveAgentMessageCallback(channelID)
 	}
 
-	s.hub.Broadcast(ch.ProjectID, "channel.member-left", PushChannelMemberLeft{ChannelID: channelID, SessionID: sessionID})
+	s.hub.Publish(ch.ProjectID, "channel.member-left", PushChannelMemberLeft{ChannelID: channelID, SessionID: sessionID})
 	return nil
 }
 
@@ -492,10 +492,10 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 
 	// Broadcast the unified channel message to all project WS clients.
 	wireMsg := messageToWire(msg)
-	s.hub.Broadcast(ch.ProjectID, "channel.message", wireMsg)
+	s.hub.Publish(ch.ProjectID, "channel.message", wireMsg)
 
 	// Broadcast activity-item for the project activity feed.
-	s.hub.Broadcast(ch.ProjectID, "project.activity-item", ActivityItem{
+	s.hub.Publish(ch.ProjectID, "project.activity-item", ActivityItem{
 		Kind:       "message",
 		ItemID:     msg.ID,
 		SourceID:   msg.ChannelID,
@@ -597,7 +597,7 @@ func (s *Service) persistAgentMessageWithID(ctx context.Context, sessionID, proj
 	}); err != nil {
 		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
 	}
-	s.hub.Broadcast(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
+	s.hub.Publish(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
 }
 
 // RouteAgentMessage delivers a message from one session to another within the same channel.

@@ -6,18 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 )
 
-// SSEEvent represents a server-sent event from the hub.
-type SSEEvent struct {
-	ProjectID string
-	Type      string
-	Payload   any
-}
-
 // SubscribeFunc returns an event channel and an unsubscribe function.
-type SubscribeFunc func() (events <-chan SSEEvent, unsubscribe func())
+type SubscribeFunc func() (events <-chan eventbus.Event, unsubscribe func())
 
 // Handler handles HTTP REST requests for session operations.
 type Handler struct {
@@ -97,12 +91,12 @@ func (h *Handler) HandleEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			if projectFilter != "" && evt.ProjectID != projectFilter {
+			if projectFilter != "" && evt.Topic != projectFilter {
 				continue
 			}
 
 			data, err := json.Marshal(map[string]any{
-				"projectId": evt.ProjectID,
+				"projectId": evt.Topic,
 				"payload":   evt.Payload,
 			})
 			if err != nil {

@@ -89,7 +89,7 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 
 	if s.gitSvc != nil {
 		if snap, err := s.gitSvc.computeGitSnapshot(ctx, sessionID); err == nil {
-			s.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+			s.hub.Publish(dbSess.ProjectID, "session.state", snap)
 		}
 	}
 

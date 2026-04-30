@@ -47,12 +47,13 @@ func (s *DBSuite) SetupTest() {
 
 // BroadcastMessage is a captured broadcast call.
 type BroadcastMessage struct {
-	ProjectID string
+	ProjectID string // empty for global broadcasts
 	PushType  string
 	Payload   any
 }
 
-// RecordingBroadcaster captures all Broadcast calls for assertions.
+// RecordingBroadcaster satisfies eventbus.Broadcaster and captures all
+// Publish/Broadcast calls for test assertions.
 type RecordingBroadcaster struct {
 	mu       sync.Mutex
 	messages []BroadcastMessage
@@ -65,13 +66,17 @@ func NewRecordingBroadcaster() *RecordingBroadcaster {
 	}
 }
 
-func (b *RecordingBroadcaster) Broadcast(projectID, pushType string, payload any) {
+func (b *RecordingBroadcaster) Publish(topic, eventType string, payload any) {
+	b.record(BroadcastMessage{ProjectID: topic, PushType: eventType, Payload: payload})
+}
+
+func (b *RecordingBroadcaster) Broadcast(eventType string, payload any) {
+	b.record(BroadcastMessage{PushType: eventType, Payload: payload})
+}
+
+func (b *RecordingBroadcaster) record(m BroadcastMessage) {
 	b.mu.Lock()
-	b.messages = append(b.messages, BroadcastMessage{
-		ProjectID: projectID,
-		PushType:  pushType,
-		Payload:   payload,
-	})
+	b.messages = append(b.messages, m)
 	b.mu.Unlock()
 
 	select {

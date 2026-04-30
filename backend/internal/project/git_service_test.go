@@ -32,8 +32,12 @@ type mockBroadcaster struct {
 	messages []broadcastMsg
 }
 
-func (b *mockBroadcaster) Broadcast(projectID, pushType string, payload any) {
-	b.messages = append(b.messages, broadcastMsg{projectID, pushType, payload})
+func (b *mockBroadcaster) Publish(topic, eventType string, payload any) {
+	b.messages = append(b.messages, broadcastMsg{topic, eventType, payload})
+}
+
+func (b *mockBroadcaster) Broadcast(eventType string, payload any) {
+	b.messages = append(b.messages, broadcastMsg{"", eventType, payload})
 }
 
 type mockGitOps struct {

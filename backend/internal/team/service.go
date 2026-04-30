@@ -6,14 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
 )
-
-// Broadcaster sends push messages to all connected WebSocket clients.
-type Broadcaster interface {
-	BroadcastAll(pushType string, payload any)
-}
 
 type serviceQueries interface {
 	// Agent profiles
@@ -37,11 +33,11 @@ type serviceQueries interface {
 // Service manages persistent agent profiles and teams.
 type Service struct {
 	queries serviceQueries
-	hub     Broadcaster
+	hub     eventbus.Broadcaster
 }
 
 // NewService creates a new team service.
-func NewService(queries serviceQueries, hub Broadcaster) *Service {
+func NewService(queries serviceQueries, hub eventbus.Broadcaster) *Service {
 	return &Service{queries: queries, hub: hub}
 }
 
@@ -111,7 +107,7 @@ func (s *Service) CreateAgentProfile(ctx context.Context, name, role, descriptio
 		return AgentProfileInfo{}, fmt.Errorf("create agent profile: %w", err)
 	}
 	info := profileInfoFromStore(row)
-	s.hub.BroadcastAll("agent-profile.created", info)
+	s.hub.Broadcast("agent-profile.created", info)
 	return info, nil
 }
 
@@ -130,7 +126,7 @@ func (s *Service) UpdateAgentProfile(ctx context.Context, id, name, role, descri
 		return AgentProfileInfo{}, fmt.Errorf("update agent profile: %w", err)
 	}
 	info := profileInfoFromStore(row)
-	s.hub.BroadcastAll("agent-profile.updated", info)
+	s.hub.Broadcast("agent-profile.updated", info)
 	return info, nil
 }
 
@@ -139,7 +135,7 @@ func (s *Service) DeleteAgentProfile(ctx context.Context, id string) error {
 	if err := s.queries.DeleteAgentProfile(ctx, id); err != nil {
 		return fmt.Errorf("delete agent profile: %w", err)
 	}
-	s.hub.BroadcastAll("agent-profile.deleted", map[string]string{"id": id})
+	s.hub.Broadcast("agent-profile.deleted", map[string]string{"id": id})
 	return nil
 }
 
@@ -170,7 +166,7 @@ func (s *Service) CreateTeam(ctx context.Context, name, description string) (Tea
 		return TeamInfo{}, fmt.Errorf("create team: %w", err)
 	}
 	info := teamInfoFromStore(row, nil)
-	s.hub.BroadcastAll("team.created", info)
+	s.hub.Broadcast("team.created", info)
 	return info, nil
 }
 
@@ -186,7 +182,7 @@ func (s *Service) UpdateTeam(ctx context.Context, id, name, description string) 
 	}
 	members, _ := s.listTeamMemberInfos(ctx, id)
 	info := teamInfoFromStore(row, members)
-	s.hub.BroadcastAll("team.updated", info)
+	s.hub.Broadcast("team.updated", info)
 	return info, nil
 }
 
@@ -195,7 +191,7 @@ func (s *Service) DeleteTeam(ctx context.Context, id string) error {
 	if err := s.queries.DeleteTeam(ctx, id); err != nil {
 		return fmt.Errorf("delete team: %w", err)
 	}
-	s.hub.BroadcastAll("team.deleted", map[string]string{"id": id})
+	s.hub.Broadcast("team.deleted", map[string]string{"id": id})
 	return nil
 }
 
@@ -247,7 +243,7 @@ func (s *Service) getTeamInfo(ctx context.Context, teamID string) (TeamInfo, err
 	}
 	members, _ := s.listTeamMemberInfos(ctx, teamID)
 	info := teamInfoFromStore(row, members)
-	s.hub.BroadcastAll("team.updated", info)
+	s.hub.Broadcast("team.updated", info)
 	return info, nil
 }
 

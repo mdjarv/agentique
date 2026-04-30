@@ -13,7 +13,7 @@ import (
 
 func (c *conn) handleProjectSubscribe(msg ClientMessage) {
 	handleRequest(c, msg, func(_ context.Context, p ProjectSubscribePayload) (struct{}, error) {
-		c.hub.Subscribe(p.ProjectID, c)
+		c.subscribeProject(p.ProjectID)
 		return struct{}{}, nil
 	})
 }
@@ -146,7 +146,7 @@ func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
 		if err != nil {
 			return store.Project{}, fmt.Errorf("update favorite: %w", err)
 		}
-		c.hub.Broadcast(p.ProjectID, "project.updated", proj)
+		c.bus.Publish(p.ProjectID, "project.updated", proj)
 		return proj, nil
 	})
 }

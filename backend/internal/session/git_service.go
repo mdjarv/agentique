@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -65,14 +66,14 @@ func autoCommit(ctx context.Context, git sessionGitOps, runner msggen.Runner, se
 type GitService struct {
 	mgr         *Manager
 	queries     gitServiceQueries
-	hub         Broadcaster
+	hub eventbus.Broadcaster
 	runner      msggen.Runner
 	git         sessionGitOps
 	gitVersions sync.Map // sessionID → *atomic.Int64
 }
 
 // NewGitService creates a new GitService.
-func NewGitService(mgr *Manager, queries gitServiceQueries, hub Broadcaster, runner msggen.Runner) *GitService {
+func NewGitService(mgr *Manager, queries gitServiceQueries, hub eventbus.Broadcaster, runner msggen.Runner) *GitService {
 	return &GitService{mgr: mgr, queries: queries, hub: hub, runner: runner, git: RealSessionGitOps()}
 }
 
@@ -173,7 +174,7 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 // broadcastSnapshot computes and broadcasts a full git snapshot for a session.
 func (g *GitService) broadcastSnapshot(dbSess store.Session, project store.Project) {
 	snap := g.buildSnapshot(dbSess, project)
-	g.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+	g.hub.Publish(dbSess.ProjectID, "session.state", snap)
 }
 
 // Merge mode constants.
@@ -467,7 +468,7 @@ func (g *GitService) savePRUrl(ctx context.Context, projectID, sessionID, url st
 	}); err != nil {
 		slog.Warn("persist PR URL failed", "session_id", sessionID, "error", err)
 	}
-	g.hub.Broadcast(projectID, "session.pr-updated", PushPRUpdated{SessionID: sessionID, PrUrl: url})
+	g.hub.Publish(projectID, "session.pr-updated", PushPRUpdated{SessionID: sessionID, PrUrl: url})
 }
 
 // PRStatusResult describes the outcome of a PR status check.
@@ -818,7 +819,7 @@ func (g *GitService) RefreshGitStatus(ctx context.Context, sessionID string) (Gi
 		return GitSnapshot{}, err
 	}
 	dbSess, _ := g.queries.GetSession(ctx, sessionID)
-	g.hub.Broadcast(dbSess.ProjectID, "session.state", snap)
+	g.hub.Publish(dbSess.ProjectID, "session.state", snap)
 	return snap, nil
 }
 
@@ -829,7 +830,7 @@ func (g *GitService) broadcastProjectGitStatus(projectID, projectPath string) {
 	if s.Branch == "" {
 		return // not a git repo
 	}
-	g.hub.Broadcast(projectID, "project.git-status", PushProjectGitStatus{
+	g.hub.Publish(projectID, "project.git-status", PushProjectGitStatus{
 		ProjectID:        projectID,
 		Branch:           s.Branch,
 		UncommittedCount: s.UncommittedCount,

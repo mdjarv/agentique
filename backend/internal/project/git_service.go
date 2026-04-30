@@ -6,15 +6,11 @@ import (
 	"log/slog"
 	"os/exec"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
-
-// Broadcaster sends push messages to all WebSocket clients for a project.
-type Broadcaster interface {
-	Broadcast(projectID, pushType string, payload any)
-}
 
 type gitQueries interface {
 	GetProject(ctx context.Context, id string) (store.Project, error)
@@ -38,13 +34,13 @@ type CommitResult struct {
 // GitService handles git operations at the project level.
 type GitService struct {
 	queries gitQueries
-	hub     Broadcaster
+	hub     eventbus.Broadcaster
 	git     projectGitOps
 	runner  msggen.Runner
 }
 
 // NewGitService creates a new project-level GitService.
-func NewGitService(queries gitQueries, hub Broadcaster, git projectGitOps, runner msggen.Runner) *GitService {
+func NewGitService(queries gitQueries, hub eventbus.Broadcaster, git projectGitOps, runner msggen.Runner) *GitService {
 	return &GitService{queries: queries, hub: hub, git: git, runner: runner}
 }
 
@@ -90,7 +86,7 @@ func (g *GitService) Fetch(ctx context.Context, projectID string) (ProjectGitSta
 	}
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 	return status, nil
 }
 
@@ -111,7 +107,7 @@ func (g *GitService) Push(ctx context.Context, projectID string) (ProjectGitStat
 	}
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 	return status, nil
 }
 
@@ -142,7 +138,7 @@ func (g *GitService) Commit(ctx context.Context, projectID, message string) (Com
 	slog.Info("project commit", "project_id", projectID, "commit", hash)
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 
 	return CommitResult{CommitHash: hash}, nil
 }
@@ -243,7 +239,7 @@ func (g *GitService) Checkout(ctx context.Context, projectID, branch string) (Pr
 	slog.Info("project checkout", "project_id", projectID, "branch", branch)
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 	return status, nil
 }
 
@@ -270,7 +266,7 @@ func (g *GitService) Pull(ctx context.Context, projectID string) (ProjectGitStat
 	slog.Info("project pull", "project_id", projectID, "upstream", upstream)
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 	return status, nil
 }
 
@@ -309,7 +305,7 @@ func (g *GitService) DiscardChanges(ctx context.Context, projectID string) (Proj
 	slog.Info("project discard", "project_id", projectID)
 
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 	return status, nil
 }
 
@@ -321,7 +317,7 @@ func (g *GitService) BroadcastStatus(ctx context.Context, projectID string) {
 		return
 	}
 	status := g.computeStatus(projectID, project.Path)
-	g.hub.Broadcast(projectID, "project.git-status", status)
+	g.hub.Publish(projectID, "project.git-status", status)
 }
 
 // IsGitRepo returns true if the given path is inside a git repository.

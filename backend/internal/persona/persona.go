@@ -6,17 +6,13 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
-
-// Broadcaster sends push messages to all connected WebSocket clients.
-type Broadcaster interface {
-	BroadcastAll(pushType string, payload any)
-}
 
 type serviceQueries interface {
 	GetAgentProfile(ctx context.Context, id string) (store.AgentProfile, error)
@@ -32,11 +28,11 @@ type serviceQueries interface {
 type Service struct {
 	runner  msggen.Runner
 	queries serviceQueries
-	hub     Broadcaster
+	hub     eventbus.Broadcaster
 }
 
 // NewService creates a new persona service.
-func NewService(runner msggen.Runner, queries serviceQueries, hub Broadcaster) *Service {
+func NewService(runner msggen.Runner, queries serviceQueries, hub eventbus.Broadcaster) *Service {
 	return &Service{runner: runner, queries: queries, hub: hub}
 }
 
@@ -183,7 +179,7 @@ func (s *Service) Query(ctx context.Context, input QueryInput) (QueryResult, err
 	if err != nil {
 		slog.Warn("persist persona interaction failed", "error", err)
 	} else {
-		s.hub.BroadcastAll("persona.interaction", interactionInfoFromStore(row))
+		s.hub.Broadcast("persona.interaction", interactionInfoFromStore(row))
 	}
 
 	return parsed, nil

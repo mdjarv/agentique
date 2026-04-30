@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -18,7 +19,7 @@ type Handler struct {
 	GitService        *session.GitService
 	ProjectGitService *project.GitService
 	Queries           *store.Queries
-	Hub               *Hub
+	Bus               *eventbus.Bus
 	TeamService       *team.Service           // nil when experimental teams is disabled
 	PersonaService    *persona.Service         // nil when experimental teams is disabled
 	BrowserService    *session.BrowserService  // nil when browser support is unavailable
@@ -45,7 +46,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("ws connected", "remote", r.RemoteAddr)
-	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Hub, h.TeamService, h.PersonaService, h.BrowserService)
+	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Bus, h.TeamService, h.PersonaService, h.BrowserService)
 	c.run()
 	slog.Info("ws disconnected", "remote", r.RemoteAddr)
 }

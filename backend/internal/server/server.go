@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
@@ -81,7 +82,7 @@ type Server struct {
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
-	hub := ws.NewHub()
+	bus := eventbus.New()
 
 	var connector session.CLIConnector
 	var runner session.BlockingRunner
@@ -100,21 +101,21 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	devStore := devurls.NewStore(cfg.DevURLSlots)
 	mcpTokens := mcphttp.NewTokenStore()
 
-	mgr := session.NewManager(cfg.DB, queries, hub, connector)
+	mgr := session.NewManager(cfg.DB, queries, bus, connector)
 	mgr.SetMCPHTTP(mcpTokens, cfg.MCPInternalURL)
 	mgr.SetDevURLStore(devStore)
 	if cfg.DevMode && cfg.DBPath != "" {
 		mgr.GlobalPreamble = devModePreamble(cfg.DBPath)
 	}
 	mgr.RecoverStaleSessions(context.Background())
-	svc := session.NewService(mgr, queries, hub, runner)
-	gitSvc := session.NewGitService(mgr, queries, hub, runner)
+	svc := session.NewService(mgr, queries, bus, runner)
+	gitSvc := session.NewGitService(mgr, queries, bus, runner)
 	svc.SetGitService(gitSvc)
 
 	var browserSvc *session.BrowserService
 	if cfg.ExperimentalBrowser {
 		browserMgr := browser.NewManager()
-		browserSvc = session.NewBrowserService(mgr, browserMgr, hub)
+		browserSvc = session.NewBrowserService(mgr, browserMgr, bus)
 		svc.SetBrowserService(browserSvc)
 		slog.Info("experimental browser panel enabled")
 	}
@@ -158,14 +159,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/projects/{id}/files", fbh.HandleList)
 	mux.HandleFunc("GET /api/projects/{id}/files/content", fbh.HandleContent)
 
-	subscribe := func() (<-chan session.SSEEvent, func()) {
-		ch := make(chan session.SSEEvent, 64)
-		listener := &sseListener{ch: ch}
-		hub.AddListener(listener)
-		return ch, func() {
-			hub.RemoveListener(listener)
-			close(ch)
-		}
+	subscribe := func() (<-chan eventbus.Event, func()) {
+		ch := make(chan eventbus.Event, 64)
+		sub := bus.SubscribeAll(eventbus.NewChannelSubscriber(ch))
+		// Don't close ch — eventbus.Subscription.Unsubscribe may leave one
+		// in-flight OnEvent racing with us. We let ch be GC'd instead, and
+		// rely on the SSE handler's context.Done path to exit.
+		return ch, sub.Unsubscribe
 	}
 	sh := session.NewHandler(svc, subscribe)
 	mux.HandleFunc("GET /api/sessions", sh.HandleList)
@@ -179,18 +179,18 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	fh := &session.FilesHandler{}
 	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", fh.HandleServe)
 
-	projectGitSvc := project.NewGitService(queries, hub, project.RealGitOps(), runner)
+	projectGitSvc := project.NewGitService(queries, bus, project.RealGitOps(), runner)
 
 	var teamSvc *team.Service
 	var personaSvc *persona.Service
 	if cfg.ExperimentalTeams {
-		teamSvc = team.NewService(queries, hub)
-		personaSvc = persona.NewService(runner, queries, hub)
+		teamSvc = team.NewService(queries, bus)
+		personaSvc = persona.NewService(runner, queries, bus)
 		svc.SetPersonaQuerier(personaSvc)
 		slog.Info("experimental teams feature enabled")
 	}
 
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Hub: hub, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
 	mux.Handle("GET /ws", wsh)
 
 	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc)

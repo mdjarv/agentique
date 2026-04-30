@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -163,7 +164,7 @@ const idempotencyTTL = 5 * time.Minute
 type Service struct {
 	mgr            *Manager
 	queries        serviceQueries
-	hub            Broadcaster
+	hub eventbus.Broadcaster
 	gitSvc         *GitService
 	runner         msggen.Runner
 	worktree       worktreeOps
@@ -177,7 +178,7 @@ type Service struct {
 }
 
 // NewService creates a new session Service.
-func NewService(mgr *Manager, queries serviceQueries, hub Broadcaster, runner msggen.Runner) *Service {
+func NewService(mgr *Manager, queries serviceQueries, hub eventbus.Broadcaster, runner msggen.Runner) *Service {
 	svc := &Service{
 		mgr:              mgr,
 		queries:          queries,
@@ -353,7 +354,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 
 	profileName, profileAvatar := s.resolveAgentProfileMeta(ctx, p.AgentProfileID, tc)
 
-	s.hub.Broadcast(p.ProjectID, "session.created", SessionInfo{
+	s.hub.Publish(p.ProjectID, "session.created", SessionInfo{
 		ID:                 sess.ID,
 		ProjectID:          p.ProjectID,
 		Name:               p.Name,
@@ -1003,7 +1004,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	}
 	if channels, err := s.queries.ListSessionChannels(ctx, sessionID); err == nil {
 		for _, ch := range channels {
-			s.hub.Broadcast(dbSess.ProjectID, "channel.member-left", PushChannelMemberLeft{
+			s.hub.Publish(dbSess.ProjectID, "channel.member-left", PushChannelMemberLeft{
 				ChannelID: ch.ChannelID, SessionID: sessionID,
 			})
 		}
@@ -1037,7 +1038,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		s.gitSvc.CleanupVersion(sessionID)
 	}
 
-	s.hub.Broadcast(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
+	s.hub.Publish(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
 
 	return nil
 }
@@ -1307,7 +1308,7 @@ func (s *Service) RenameSession(ctx context.Context, sessionID, name string) err
 	}); err != nil {
 		return fmt.Errorf("rename failed: %w", err)
 	}
-	s.hub.Broadcast(dbSess.ProjectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
+	s.hub.Publish(dbSess.ProjectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
 	return nil
 }
 
@@ -1333,7 +1334,7 @@ func (s *Service) autoName(sessionID, projectID, prompt string) {
 		slog.Warn("auto-rename db update failed", "session_id", sessionID, "error", err)
 		return
 	}
-	s.hub.Broadcast(projectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
+	s.hub.Publish(projectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
 }
 
 // GenerateSessionName regenerates a title from the full session transcript.

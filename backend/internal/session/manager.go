@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
@@ -15,11 +16,6 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
-
-// Broadcaster sends push messages to all WebSocket clients for a project.
-type Broadcaster interface {
-	Broadcast(projectID, pushType string, payload any)
-}
 
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
@@ -53,7 +49,7 @@ type Manager struct {
 	sessions       map[string]*Session
 	db             *sql.DB
 	queries        managerQueries
-	broadcaster    Broadcaster
+	broadcaster    eventbus.Broadcaster
 	connector      CLIConnector
 	gitStatus      branchStatusQuerier
 	GlobalPreamble string // extra system prompt appended to every session
@@ -66,7 +62,7 @@ type Manager struct {
 }
 
 // NewManager creates a new session manager.
-func NewManager(db *sql.DB, queries managerQueries, broadcaster Broadcaster, connector CLIConnector) *Manager {
+func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadcaster, connector CLIConnector) *Manager {
 	return &Manager{
 		sessions:    make(map[string]*Session),
 		db:          db,
@@ -593,7 +589,7 @@ func combineMCPConfigs(extra []string) []string {
 
 func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	return func(pushType string, payload any) {
-		m.broadcaster.Broadcast(projectID, pushType, payload)
+		m.broadcaster.Publish(projectID, pushType, payload)
 	}
 }
 

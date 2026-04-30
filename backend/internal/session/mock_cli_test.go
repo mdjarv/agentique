@@ -156,25 +156,34 @@ func (c *mockConnector) last() *mockCLISession {
 	return c.sessions[len(c.sessions)-1]
 }
 
-// mockBroadcaster implements Broadcaster for tests.
+// mockBroadcaster satisfies eventbus.Broadcaster for tests.
 type mockBroadcaster struct {
 	mu       sync.Mutex
 	messages []broadcastMsg
 }
 
 type broadcastMsg struct {
-	ProjectID string
+	ProjectID string // empty for global broadcasts
 	PushType  string
 	Payload   any
 }
 
-func (b *mockBroadcaster) Broadcast(projectID, pushType string, payload any) {
+func (b *mockBroadcaster) Publish(topic, eventType string, payload any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.messages = append(b.messages, broadcastMsg{
-		ProjectID: projectID,
-		PushType:  pushType,
+		ProjectID: topic,
+		PushType:  eventType,
 		Payload:   payload,
+	})
+}
+
+func (b *mockBroadcaster) Broadcast(eventType string, payload any) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.messages = append(b.messages, broadcastMsg{
+		PushType: eventType,
+		Payload:  payload,
 	})
 }
 

@@ -16,10 +16,11 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
-// noopBroadcaster satisfies session.Broadcaster for tests.
+// noopBroadcaster satisfies eventbus.Broadcaster for tests.
 type noopBroadcaster struct{}
 
-func (noopBroadcaster) Broadcast(string, string, any) {}
+func (noopBroadcaster) Publish(string, string, any) {}
+func (noopBroadcaster) Broadcast(string, any)       {}
 
 // setupHandler creates a real DB, connector, manager, and handler for testing.
 func setupHandler(t *testing.T) (*http.ServeMux, *Handler, *store.Queries, *sql.DB) {

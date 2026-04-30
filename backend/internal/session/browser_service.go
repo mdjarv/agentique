@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 )
 
@@ -12,11 +13,11 @@ import (
 type BrowserService struct {
 	mgr       *Manager
 	browserMgr *browser.Manager
-	hub       Broadcaster
+	hub eventbus.Broadcaster
 }
 
 // NewBrowserService creates a BrowserService.
-func NewBrowserService(mgr *Manager, browserMgr *browser.Manager, hub Broadcaster) *BrowserService {
+func NewBrowserService(mgr *Manager, browserMgr *browser.Manager, hub eventbus.Broadcaster) *BrowserService {
 	return &BrowserService{mgr: mgr, browserMgr: browserMgr, hub: hub}
 }
 
@@ -67,7 +68,7 @@ func (bs *BrowserService) LaunchBrowser(sessionID string) error {
 	// Wire screencast frames to WS hub.
 	projectID := sess.ProjectID
 	cdpClient.SetOnFrame(func(frame browser.FrameEvent) {
-		bs.hub.Broadcast(projectID, "browser.frame", PushBrowserFrame{
+		bs.hub.Publish(projectID, "browser.frame", PushBrowserFrame{
 			SessionID: sessionID, Data: frame.Data, Metadata: frame.Metadata,
 		})
 	})
@@ -109,7 +110,7 @@ func (bs *BrowserService) StopBrowser(sessionID string) error {
 	}
 
 	if projectID != "" {
-		bs.hub.Broadcast(projectID, "browser.stopped", PushBrowserStopped{SessionID: sessionID, Reason: "user-initiated"})
+		bs.hub.Publish(projectID, "browser.stopped", PushBrowserStopped{SessionID: sessionID, Reason: "user-initiated"})
 	}
 	return nil
 }
