@@ -162,10 +162,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	subscribe := func() (<-chan eventbus.Event, func()) {
 		ch := make(chan eventbus.Event, 64)
 		sub := bus.SubscribeAll(eventbus.NewChannelSubscriber(ch))
-		// Don't close ch — eventbus.Subscription.Unsubscribe may leave one
-		// in-flight OnEvent racing with us. We let ch be GC'd instead, and
-		// rely on the SSE handler's context.Done path to exit.
-		return ch, sub.Unsubscribe
+		unsubscribe := func() {
+			sub.Unsubscribe()
+			close(ch)
+		}
+		return ch, unsubscribe
 	}
 	sh := session.NewHandler(svc, subscribe)
 	mux.HandleFunc("GET /api/sessions", sh.HandleList)
