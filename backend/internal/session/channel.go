@@ -178,10 +178,11 @@ func (s *Service) dissolveWorkers(
 			_ = s.mgr.Stop(ctx, m.ID)
 		}
 		if projOK {
+			branch := nullStr(m.WorktreeBranch)
 			if wtPath := nullStr(m.WorktreePath); wtPath != "" {
-				s.worktree.RemoveWorktree(project.Path, wtPath)
+				s.worktree.RemoveWorktree(ctx, project.Path, branch, wtPath)
 			}
-			if branch := nullStr(m.WorktreeBranch); branch != "" {
+			if branch != "" {
 				if delErr := s.worktree.ForceDeleteBranch(project.Path, branch); delErr != nil {
 					slog.Warn(logPrefix+": branch force-delete failed",
 						"session_id", m.ID, "branch", branch, "error", delErr)

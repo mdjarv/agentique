@@ -289,7 +289,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 
 	sessionID := uuid.New().String()
-	wt, err := s.provisionWorktree(p, project, sessionID)
+	wt, err := s.provisionWorktree(ctx, p, project, sessionID)
 	if err != nil {
 		return CreateSessionResult{}, err
 	}
@@ -331,7 +331,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	})
 	if err != nil {
 		if wt.path != "" {
-			s.worktree.RemoveWorktree(project.Path, wt.path)
+			s.worktree.RemoveWorktree(ctx, project.Path, wt.branch, wt.path)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -446,7 +446,12 @@ func (s *Service) checkProjectQuota(ctx context.Context, project store.Project) 
 
 // provisionWorktree adopts/restores/creates the session's worktree as
 // appropriate. Returns wt.path == "" when p.Worktree is false.
-func (s *Service) provisionWorktree(p CreateSessionParams, project store.Project, sessionID string) (worktreeInfo, error) {
+//
+// Provisioning is delegated to agentkit/worktree, which auto-detects whether
+// the requested branch already exists (attach) or needs creating from HEAD. An
+// existing on-disk worktree at the requested path that is *already* at the
+// target branch is adopted as a no-op.
+func (s *Service) provisionWorktree(ctx context.Context, p CreateSessionParams, project store.Project, sessionID string) (worktreeInfo, error) {
 	wt := worktreeInfo{workDir: project.Path}
 	if !p.Worktree {
 		return wt, nil
@@ -459,29 +464,15 @@ func (s *Service) provisionWorktree(p CreateSessionParams, project store.Project
 	wt.branch = branch
 	wt.path = s.worktree.WorktreePath(project.Name, branch)
 
-	if baseSHA, err := s.worktree.GetWorktreeBaseSHA(project.Path); err == nil {
+	if baseSHA, err := s.worktree.HeadSHA(ctx, project.Path); err == nil {
 		wt.baseSHA = baseSHA
 	}
 
-	switch {
-	case worktreeDirExists(wt.path):
-		// Adopt: directory already exists, no-op.
-	case s.worktree.BranchExists(project.Path, branch):
-		if err := s.worktree.RestoreWorktree(project.Path, branch, wt.path); err != nil {
-			return worktreeInfo{}, fmt.Errorf("failed to restore worktree: %w", err)
-		}
-	default:
-		if err := s.worktree.CreateWorktree(project.Path, branch, wt.path); err != nil {
-			return worktreeInfo{}, fmt.Errorf("failed to create worktree: %w", err)
-		}
+	if err := s.worktree.ProvisionWorktree(ctx, project.Path, branch, wt.path); err != nil {
+		return worktreeInfo{}, fmt.Errorf("failed to provision worktree: %w", err)
 	}
 	wt.workDir = wt.path
 	return wt, nil
-}
-
-func worktreeDirExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // resolveSessionConfig applies the explicit > persona-config > project-default
@@ -1014,10 +1005,11 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	// Always clean up worktree/branch — operations are idempotent if already removed.
 	project, projErr := s.queries.GetProject(ctx, dbSess.ProjectID)
 	if projErr == nil {
+		branch := nullStr(dbSess.WorktreeBranch)
 		if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-			s.worktree.RemoveWorktree(project.Path, wtPath)
+			s.worktree.RemoveWorktree(ctx, project.Path, branch, wtPath)
 		}
-		if branch := nullStr(dbSess.WorktreeBranch); branch != "" {
+		if branch != "" {
 			if delErr := s.worktree.DeleteBranch(project.Path, branch); delErr != nil {
 				slog.Warn("branch delete failed", "session_id", sessionID, "error", delErr)
 			}
@@ -1089,7 +1081,7 @@ func (s *Service) recoverWorktree(ctx context.Context, sessionID string, dbSess 
 	oldBranch := nullStr(dbSess.WorktreeBranch)
 	switch {
 	case oldBranch != "" && s.worktree.BranchExists(project.Path, oldBranch):
-		if err := s.worktree.RestoreWorktree(project.Path, oldBranch, nullStr(dbSess.WorktreePath)); err != nil {
+		if err := s.worktree.ProvisionWorktree(ctx, project.Path, oldBranch, nullStr(dbSess.WorktreePath)); err != nil {
 			return "", "", updated, fmt.Errorf("worktree restore failed for branch %s: %w", oldBranch, err)
 		}
 	case oldBranch != "":
@@ -1110,10 +1102,10 @@ func (s *Service) recoverWorktreeFresh(ctx context.Context, sessionID string, db
 	oldBranch := nullStr(dbSess.WorktreeBranch)
 	newBranch := "session-" + sessionID[:8] + "-r" + strconv.FormatInt(time.Now().Unix(), 10)
 	newWorktreePath := s.worktree.WorktreePath(project.Name, newBranch)
-	if err := s.worktree.CreateWorktree(project.Path, newBranch, newWorktreePath); err != nil {
+	if err := s.worktree.ProvisionWorktree(ctx, project.Path, newBranch, newWorktreePath); err != nil {
 		return "", dbSess, fmt.Errorf("fresh worktree creation failed: %w", err)
 	}
-	baseSHA, _ := s.worktree.GetWorktreeBaseSHA(project.Path)
+	baseSHA, _ := s.worktree.HeadSHA(ctx, project.Path)
 	if err := s.queries.UpdateSessionWorktree(ctx, store.UpdateSessionWorktreeParams{
 		WorkDir:         newWorktreePath,
 		WorktreePath:    sql.NullString{String: newWorktreePath, Valid: true},

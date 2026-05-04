@@ -3,7 +3,7 @@ package ws
 import (
 	"context"
 
-	"github.com/mdjarv/agentique/backend/internal/gitops"
+	"github.com/allbin/agentkit/worktree"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/session"
 )
@@ -60,7 +60,7 @@ func (c *conn) handleSessionResume(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionDiff(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionDiffPayload) (gitops.DiffResult, error) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionDiffPayload) (worktree.DiffResult, error) {
 		return c.gitSvc.Diff(ctx, p.SessionID)
 	})
 }
@@ -205,7 +205,7 @@ func (c *conn) handleSessionUncommittedFiles(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionUncommittedDiff(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionUncommittedDiffPayload) (gitops.DiffResult, error) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionUncommittedDiffPayload) (worktree.DiffResult, error) {
 		return c.gitSvc.UncommittedDiff(ctx, p.SessionID)
 	})
 }

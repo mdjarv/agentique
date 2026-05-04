@@ -231,14 +231,3 @@ func TestApplyPostResumeFlags_NoOpForFreshSession(t *testing.T) {
 	}
 }
 
-// worktreeDirExists is a thin wrapper over os.Stat. Smoke-test against tempdir.
-
-func TestWorktreeDirExists(t *testing.T) {
-	tmp := t.TempDir()
-	if !worktreeDirExists(tmp) {
-		t.Errorf("expected true for existing dir %s", tmp)
-	}
-	if worktreeDirExists(tmp + "/does-not-exist") {
-		t.Error("expected false for missing path")
-	}
-}

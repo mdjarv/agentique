@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/allbin/agentkit/worktree"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -296,7 +297,7 @@ func (g *GitService) finalizeMerge(ctx context.Context, mode string, live *Sessi
 
 	if mode == MergeModeDelete {
 		if wtPath != "" {
-			g.git.RemoveWorktree(project.Path, wtPath)
+			g.git.RemoveWorktree(ctx, project.Path, branch, wtPath)
 		}
 		if delErr := g.git.DeleteBranch(project.Path, branch); delErr != nil {
 			slog.Warn("branch delete after merge failed", "session_id", sessionID, "error", delErr)
@@ -509,13 +510,13 @@ func (g *GitService) PRStatus(ctx context.Context, sessionID string) (PRStatusRe
 
 // Diff returns the diff for a session.
 // Worktree sessions diff against their base SHA; non-worktree sessions diff HEAD.
-func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffResult, error) {
+func (g *GitService) Diff(ctx context.Context, sessionID string) (worktree.DiffResult, error) {
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return gitops.DiffResult{}, fmt.Errorf("session not found")
+		return worktree.DiffResult{}, fmt.Errorf("session not found")
 	}
 
-	noDiff := gitops.DiffResult{HasDiff: false, Files: []gitops.DiffStat{}}
+	noDiff := worktree.DiffResult{HasDiff: false, Files: []worktree.DiffStat{}}
 
 	// Merged sessions have no active worktree — nothing to diff.
 	if dbSess.WorktreeMerged != 0 {
@@ -527,7 +528,7 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffRes
 		if _, statErr := os.Stat(wtPath); statErr != nil {
 			return noDiff, nil
 		}
-		return g.git.WorktreeDiff(wtPath, nullStr(dbSess.WorktreeBaseSha), false)
+		return g.git.WorktreeDiff(ctx, wtPath, nullStr(dbSess.WorktreeBaseSha), false)
 	}
 
 	// Local session: diff work dir against HEAD (include untracked files).
@@ -535,17 +536,17 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (gitops.DiffRes
 	if _, statErr := os.Stat(workDir); statErr != nil {
 		return noDiff, nil
 	}
-	return g.git.WorktreeDiff(workDir, "HEAD", true)
+	return g.git.WorktreeDiff(ctx, workDir, "HEAD", true)
 }
 
 // UncommittedDiff returns the diff of uncommitted changes (working tree vs HEAD).
-func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (gitops.DiffResult, error) {
+func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (worktree.DiffResult, error) {
 	dbSess, err := g.queries.GetSession(ctx, sessionID)
 	if err != nil {
-		return gitops.DiffResult{}, fmt.Errorf("session not found")
+		return worktree.DiffResult{}, fmt.Errorf("session not found")
 	}
 
-	noDiff := gitops.DiffResult{HasDiff: false, Files: []gitops.DiffStat{}}
+	noDiff := worktree.DiffResult{HasDiff: false, Files: []worktree.DiffStat{}}
 
 	dir := dbSess.WorkDir
 	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
@@ -556,7 +557,7 @@ func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (git
 		return noDiff, nil
 	}
 
-	return g.git.WorktreeDiff(dir, "HEAD", true)
+	return g.git.WorktreeDiff(ctx, dir, "HEAD", true)
 }
 
 // Commit stages all changes and commits in the session's work directory.
@@ -769,7 +770,7 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	}
 
 	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
-		g.git.RemoveWorktree(project.Path, wtPath)
+		g.git.RemoveWorktree(ctx, project.Path, branch, wtPath)
 	}
 	if g.git.BranchExists(project.Path, branch) {
 		if delErr := g.git.DeleteBranch(project.Path, branch); delErr != nil {

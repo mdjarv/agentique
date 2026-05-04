@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/allbin/agentkit/worktree"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
@@ -26,7 +27,7 @@ type mockSessionGitOps struct {
 	abortMergeErr error
 	rebaseErr  error
 	rebaseConflictFiles []string
-	diffResult gitops.DiffResult
+	diffResult worktree.DiffResult
 	diffErr    error
 	uncommittedFiles []gitops.FileStatus
 	uncommittedErr   error
@@ -52,7 +53,7 @@ func (m *mockSessionGitOps) AutoCommitAll(string, string) error         { return
 func (m *mockSessionGitOps) MergeBranch(string, string) (string, error) { return m.mergeHash, m.mergeErr }
 func (m *mockSessionGitOps) MergeConflictFiles(string) ([]string, error) { return m.conflictFiles, nil }
 func (m *mockSessionGitOps) AbortMerge(string) error                    { return m.abortMergeErr }
-func (m *mockSessionGitOps) RemoveWorktree(_, wtPath string)            { m.removedWorktrees = append(m.removedWorktrees, wtPath) }
+func (m *mockSessionGitOps) RemoveWorktree(_ context.Context, _, _, wtPath string) { m.removedWorktrees = append(m.removedWorktrees, wtPath) }
 func (m *mockSessionGitOps) DeleteBranch(_, branch string) error        { m.deletedBranches = append(m.deletedBranches, branch); return nil }
 func (m *mockSessionGitOps) DeleteRemoteBranch(string, string)          {}
 func (m *mockSessionGitOps) GC(string)                                  { m.gcCalled = true }
@@ -65,7 +66,7 @@ func (m *mockSessionGitOps) HasRemote(string, string) (bool, error)     { return
 func (m *mockSessionGitOps) GetExistingPR(string, string) (string, error) { return m.existingPR, m.existingPRErr }
 func (m *mockSessionGitOps) PushBranch(string, string) error            { return m.pushErr }
 func (m *mockSessionGitOps) CreatePR(string, string, string, string) (string, error) { return m.createPRUrl, m.createPRErr }
-func (m *mockSessionGitOps) WorktreeDiff(string, string, bool) (gitops.DiffResult, error) { return m.diffResult, m.diffErr }
+func (m *mockSessionGitOps) WorktreeDiff(context.Context, string, string, bool) (worktree.DiffResult, error) { return m.diffResult, m.diffErr }
 func (m *mockSessionGitOps) UncommittedFiles(string) ([]gitops.FileStatus, error) { return m.uncommittedFiles, m.uncommittedErr }
 func (m *mockSessionGitOps) ProjectStatus(string) gitops.ProjectStatusResult { return m.projectStatus }
 func (m *mockSessionGitOps) BranchExists(string, string) bool          { return m.branchExists }

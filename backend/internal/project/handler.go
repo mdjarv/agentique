@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,12 +12,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/allbin/agentkit/worktree"
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // Handler handles HTTP requests for project CRUD operations.
@@ -322,7 +324,7 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("list sessions for cleanup failed", "project_id", id, "error", err)
 	} else {
 		for _, sess := range sessions {
-			h.cleanupSessionResources(project.Path, sess)
+			h.cleanupSessionResources(ctx, project.Path, sess)
 		}
 	}
 
@@ -336,21 +338,50 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 // cleanupSessionResources removes worktree, branches, and session files for a
 // single session. Best-effort: errors are logged but never block deletion.
-func (h *Handler) cleanupSessionResources(projectPath string, sess store.Session) {
-	if wtPath := sess.WorktreePath; wtPath.Valid && wtPath.String != "" {
-		gitops.RemoveWorktree(projectPath, wtPath.String)
+func (h *Handler) cleanupSessionResources(ctx context.Context, projectPath string, sess store.Session) {
+	branch := ""
+	if sess.WorktreeBranch.Valid {
+		branch = sess.WorktreeBranch.String
 	}
-	if branch := sess.WorktreeBranch; branch.Valid && branch.String != "" {
-		if err := gitops.DeleteBranch(projectPath, branch.String); err != nil {
+	if wtPath := sess.WorktreePath; wtPath.Valid && wtPath.String != "" {
+		removeWorktreeBestEffort(ctx, projectPath, branch, wtPath.String)
+	}
+	if branch != "" {
+		if err := gitops.DeleteBranch(projectPath, branch); err != nil {
 			slog.Warn("branch delete failed during project cleanup",
 				"session_id", sess.ID, "error", err)
 		}
-		gitops.DeleteRemoteBranch(projectPath, branch.String)
+		gitops.DeleteRemoteBranch(projectPath, branch)
 	}
 
 	filesDir := filepath.Join(paths.SessionFilesDir(), sess.ID)
 	if err := os.RemoveAll(filesDir); err != nil {
 		slog.Warn("session files cleanup failed during project delete",
 			"session_id", sess.ID, "error", err)
+	}
+}
+
+// removeWorktreeBestEffort tears down a worktree via agentkit, falling back to
+// a direct directory removal if adoption fails. Mirrors session.realWorktreeOps.
+func removeWorktreeBestEffort(ctx context.Context, projectPath, branch, wtPath string) {
+	if _, err := os.Stat(wtPath); err != nil {
+		return
+	}
+	repo, err := worktree.NewLocalRepo(projectPath)
+	if err != nil {
+		slog.Warn("worktree remove: NewLocalRepo failed", "project", projectPath, "error", err)
+		return
+	}
+	ws, err := repo.Worktree(ctx, worktree.WorktreeSpec{
+		Path:   wtPath,
+		Branch: worktree.SanitizeBranch(branch),
+	})
+	if err != nil {
+		slog.Warn("worktree remove: adopt failed, removing directly", "path", wtPath, "error", err)
+		_ = os.RemoveAll(wtPath)
+		return
+	}
+	if err := ws.Close(ctx); err != nil {
+		slog.Warn("worktree close failed", "path", wtPath, "error", err)
 	}
 }

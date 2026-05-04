@@ -2,8 +2,11 @@ package session
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"time"
 
+	"github.com/allbin/agentkit/worktree"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
@@ -94,32 +97,84 @@ func (realBranchStatusQuerier) MergeTreeCheck(dir, branch string) (gitops.MergeT
 }
 
 // worktreeOps abstracts worktree/branch operations used by Service and Channel.
+//
+// Worktree provisioning and removal go through agentkit/worktree. ProvisionWorktree
+// auto-detects whether to attach to an existing branch or create a new one from
+// HEAD. RemoveWorktree adopts the on-disk worktree (best-effort) and tears it down.
 type worktreeOps interface {
 	WorktreePath(projectName, branch string) string
-	CreateWorktree(projectDir, branch, wtPath string) error
-	RestoreWorktree(projectDir, branch, wtPath string) error
-	RemoveWorktree(projectDir, wtPath string)
-	GetWorktreeBaseSHA(dir string) (string, error)
+	ProvisionWorktree(ctx context.Context, projectDir, branch, wtPath string) error
+	RemoveWorktree(ctx context.Context, projectDir, branch, wtPath string)
+	HeadSHA(ctx context.Context, dir string) (string, error)
 	BranchExists(dir, branch string) bool
 	DeleteBranch(dir, branch string) error
 	ForceDeleteBranch(dir, branch string) error
 	DeleteRemoteBranch(dir, branch string)
 }
 
-// RealWorktreeOps returns a worktreeOps backed by the gitops package.
+// RealWorktreeOps returns a worktreeOps backed by agentkit/worktree (for
+// provisioning) and the gitops package (for branch ops).
 func RealWorktreeOps() worktreeOps { return realWorktreeOps{} }
 
 type realWorktreeOps struct{}
 
-func (realWorktreeOps) WorktreePath(projectName, branch string) string { return gitops.WorktreePath(projectName, branch) }
-func (realWorktreeOps) CreateWorktree(projectDir, branch, wtPath string) error { return gitops.CreateWorktree(projectDir, branch, wtPath) }
-func (realWorktreeOps) RestoreWorktree(projectDir, branch, wtPath string) error { return gitops.RestoreWorktree(projectDir, branch, wtPath) }
-func (realWorktreeOps) RemoveWorktree(projectDir, wtPath string)       { gitops.RemoveWorktree(projectDir, wtPath) }
-func (realWorktreeOps) GetWorktreeBaseSHA(dir string) (string, error)  { return gitops.GetWorktreeBaseSHA(dir) }
-func (realWorktreeOps) BranchExists(dir, branch string) bool          { return gitops.BranchExists(dir, branch) }
-func (realWorktreeOps) DeleteBranch(dir, branch string) error          { return gitops.DeleteBranch(dir, branch) }
-func (realWorktreeOps) ForceDeleteBranch(dir, branch string) error     { return gitops.ForceDeleteBranch(dir, branch) }
-func (realWorktreeOps) DeleteRemoteBranch(dir, branch string)          { gitops.DeleteRemoteBranch(dir, branch) }
+func (realWorktreeOps) WorktreePath(projectName, branch string) string {
+	return gitops.WorktreePath(projectName, branch)
+}
+
+func (realWorktreeOps) ProvisionWorktree(ctx context.Context, projectDir, branch, wtPath string) error {
+	repo, err := worktree.NewLocalRepo(projectDir)
+	if err != nil {
+		return err
+	}
+	// NOTE: we intentionally do NOT close repo here. agentkit's Repo.Close cascades
+	// through every active Workspace it produced and tears them down. Our Workspace
+	// must outlive this call (its lifetime is the session's lifetime, persisted in
+	// the DB), so we drop the Repo handle and let it get GC'd. RemoveWorktree
+	// re-adopts the on-disk worktree via a fresh Repo when teardown is needed.
+	_, err = repo.Worktree(ctx, worktree.WorktreeSpec{
+		Path:   wtPath,
+		Branch: worktree.SanitizeBranch(branch),
+	})
+	return err
+}
+
+func (realWorktreeOps) RemoveWorktree(ctx context.Context, projectDir, branch, wtPath string) {
+	if wtPath == "" {
+		return
+	}
+	if _, err := os.Stat(wtPath); err != nil {
+		// Already gone — nothing to do.
+		return
+	}
+	repo, err := worktree.NewLocalRepo(projectDir)
+	if err != nil {
+		slog.Warn("worktree remove: NewLocalRepo failed", "project", projectDir, "error", err)
+		return
+	}
+	ws, err := repo.Worktree(ctx, worktree.WorktreeSpec{
+		Path:   wtPath,
+		Branch: worktree.SanitizeBranch(branch),
+	})
+	if err != nil {
+		// Adoption failed (path exists but isn't a clean worktree). Fall back to
+		// removing the directory directly.
+		slog.Warn("worktree remove: adopt failed, removing directly", "path", wtPath, "error", err)
+		_ = os.RemoveAll(wtPath)
+		return
+	}
+	if err := ws.Close(ctx); err != nil {
+		slog.Warn("worktree close failed", "path", wtPath, "error", err)
+	}
+}
+
+func (realWorktreeOps) HeadSHA(ctx context.Context, dir string) (string, error) {
+	return worktree.HeadSHA(ctx, dir)
+}
+func (realWorktreeOps) BranchExists(dir, branch string) bool      { return gitops.BranchExists(dir, branch) }
+func (realWorktreeOps) DeleteBranch(dir, branch string) error     { return gitops.DeleteBranch(dir, branch) }
+func (realWorktreeOps) ForceDeleteBranch(dir, branch string) error { return gitops.ForceDeleteBranch(dir, branch) }
+func (realWorktreeOps) DeleteRemoteBranch(dir, branch string)     { gitops.DeleteRemoteBranch(dir, branch) }
 
 // sessionGitOps abstracts git operations used by session.GitService.
 type sessionGitOps interface {
@@ -128,7 +183,7 @@ type sessionGitOps interface {
 	MergeBranch(dir, branch string) (string, error)
 	MergeConflictFiles(dir string) ([]string, error)
 	AbortMerge(dir string) error
-	RemoveWorktree(projectDir, wtPath string)
+	RemoveWorktree(ctx context.Context, projectDir, branch, wtPath string)
 	DeleteBranch(dir, branch string) error
 	DeleteRemoteBranch(dir, branch string)
 	GC(dir string)
@@ -141,7 +196,7 @@ type sessionGitOps interface {
 	GetExistingPR(dir, branch string) (string, error)
 	PushBranch(dir, branch string) error
 	CreatePR(dir, branch, title, body string) (string, error)
-	WorktreeDiff(wtPath, baseSHA string, includeUntracked bool) (gitops.DiffResult, error)
+	WorktreeDiff(ctx context.Context, wtPath, baseSHA string, includeUntracked bool) (worktree.DiffResult, error)
 	UncommittedFiles(dir string) ([]gitops.FileStatus, error)
 	ProjectStatus(dir string) gitops.ProjectStatusResult
 	BranchExists(dir, branch string) bool
@@ -149,7 +204,8 @@ type sessionGitOps interface {
 	PRStatus(dir, branch string) (gitops.PRStatusResult, error)
 }
 
-// RealSessionGitOps returns a sessionGitOps backed by the gitops package.
+// RealSessionGitOps returns a sessionGitOps backed by the gitops and
+// agentkit/worktree packages.
 func RealSessionGitOps() sessionGitOps { return realSessionGitOps{} }
 
 type realSessionGitOps struct{}
@@ -159,7 +215,9 @@ func (realSessionGitOps) AutoCommitAll(dir, msg string) error            { retur
 func (realSessionGitOps) MergeBranch(dir, branch string) (string, error) { return gitops.MergeBranch(dir, branch) }
 func (realSessionGitOps) MergeConflictFiles(dir string) ([]string, error) { return gitops.MergeConflictFiles(dir) }
 func (realSessionGitOps) AbortMerge(dir string) error                    { return gitops.AbortMerge(dir) }
-func (realSessionGitOps) RemoveWorktree(projectDir, wtPath string)       { gitops.RemoveWorktree(projectDir, wtPath) }
+func (realSessionGitOps) RemoveWorktree(ctx context.Context, projectDir, branch, wtPath string) {
+	realWorktreeOps{}.RemoveWorktree(ctx, projectDir, branch, wtPath)
+}
 func (realSessionGitOps) DeleteBranch(dir, branch string) error          { return gitops.DeleteBranch(dir, branch) }
 func (realSessionGitOps) DeleteRemoteBranch(dir, branch string)          { gitops.DeleteRemoteBranch(dir, branch) }
 func (realSessionGitOps) GC(dir string)                                  { gitops.GC(dir) }
@@ -172,7 +230,9 @@ func (realSessionGitOps) HasRemote(dir, remote string) (bool, error)     { retur
 func (realSessionGitOps) GetExistingPR(dir, branch string) (string, error) { return gitops.GetExistingPR(dir, branch) }
 func (realSessionGitOps) PushBranch(dir, branch string) error            { return gitops.PushBranch(dir, branch) }
 func (realSessionGitOps) CreatePR(dir, branch, title, body string) (string, error) { return gitops.CreatePR(dir, branch, title, body) }
-func (realSessionGitOps) WorktreeDiff(wtPath, baseSHA string, includeUntracked bool) (gitops.DiffResult, error) { return gitops.WorktreeDiff(wtPath, baseSHA, includeUntracked) }
+func (realSessionGitOps) WorktreeDiff(ctx context.Context, wtPath, baseSHA string, includeUntracked bool) (worktree.DiffResult, error) {
+	return worktree.DiffWorking(ctx, wtPath, baseSHA, worktree.DiffOptions{IncludeUntracked: includeUntracked})
+}
 func (realSessionGitOps) UncommittedFiles(dir string) ([]gitops.FileStatus, error) { return gitops.UncommittedFiles(dir) }
 func (realSessionGitOps) ProjectStatus(dir string) gitops.ProjectStatusResult { return gitops.ProjectStatus(dir) }
 func (realSessionGitOps) BranchExists(dir, branch string) bool          { return gitops.BranchExists(dir, branch) }

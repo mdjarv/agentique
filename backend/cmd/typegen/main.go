@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/allbin/agentkit/worktree"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
@@ -305,7 +306,7 @@ func main() {
 
 	g.register(session.WireContentBlock{}, "WireContentBlock")
 	g.register(session.QueryAttachment{}, "QueryAttachment")
-	g.register(gitops.DiffStat{}, "DiffStat")
+	g.register(worktree.DiffStat{}, "DiffStat")
 	g.register(gitops.FileStatus{}, "FileStatus")
 	g.register(gitops.CommandFile{}, "CommandFile")
 
@@ -365,7 +366,7 @@ func main() {
 	g.register(session.RebaseResult{}, "RebaseResult")
 	g.register(session.UncommittedFilesResult{}, "UncommittedFilesResult")
 	g.register(session.CleanResult{}, "CleanResult")
-	g.register(gitops.DiffResult{}, "DiffResult")
+	g.register(worktree.DiffResult{}, "DiffResult")
 
 	// ── Message generation results ──
 
