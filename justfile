@@ -64,9 +64,12 @@ frontend-build:
 backend-build: frontend-build
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -rf backend/internal/server/frontend_dist
-    mkdir -p backend/internal/server/frontend_dist
-    cp -r frontend/dist/* backend/internal/server/frontend_dist/
+    DIST="backend/internal/server/frontend_dist"
+    mkdir -p "$DIST"
+    # Clear stale build output but preserve the tracked .gitkeep — otherwise
+    # `just install` leaves the repo dirty and blocks fast-forward merges.
+    find "$DIST" -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+    cp -r frontend/dist/. "$DIST/"
     # Stamp version so isRelease() is true and the binary uses paths.DBPath()
     # (XDG data dir) instead of a cwd-relative "agentique.db".
     VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo local)"
@@ -118,9 +121,10 @@ release: frontend-build
     set -euo pipefail
     rm -rf dist
     mkdir -p dist
-    rm -rf backend/internal/server/frontend_dist
-    mkdir -p backend/internal/server/frontend_dist
-    cp -r frontend/dist/* backend/internal/server/frontend_dist/
+    DIST="backend/internal/server/frontend_dist"
+    mkdir -p "$DIST"
+    find "$DIST" -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+    cp -r frontend/dist/. "$DIST/"
     VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -187,6 +191,6 @@ install: build
 # Clean build artifacts
 clean:
     rm -rf frontend/dist
-    rm -rf backend/internal/server/frontend_dist
+    find backend/internal/server/frontend_dist -mindepth 1 ! -name .gitkeep -exec rm -rf {} + 2>/dev/null || true
     rm -f agentique agentique.exe
     rm -f *.db
