@@ -38,10 +38,11 @@ type conn struct {
 	sendCh        chan any
 	mu            sync.Mutex
 
-	// subMu guards sub. The conn holds at most one project subscription at a
-	// time — re-subscribing replaces the previous handle.
+	// subMu guards subs. A conn may be subscribed to many projects at once
+	// (the frontend sidebar lists every project and expects pushes from each).
+	// Re-subscribing to the same project replaces that project's handle.
 	subMu sync.Mutex
-	sub   *eventbus.Subscription
+	subs  map[string]*eventbus.Subscription
 }
 
 func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService) *conn {
@@ -59,17 +60,22 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		personaSvc:    personaSvc,
 		browserSvc:    browserSvc,
 		sendCh:        make(chan any, sendBufSize),
+		subs:          make(map[string]*eventbus.Subscription),
 	}
 }
 
-// subscribeProject replaces any existing project subscription with one for
-// projectID. After Unsubscribe returns, one in-flight event may still be
-// delivered to the old subscriber — harmless: it lands on the same conn.
+// subscribeProject adds a subscription for projectID. If the conn was already
+// subscribed to that project, the previous handle is replaced. Subscriptions
+// for other projects are untouched — a single conn fans out events from many
+// projects (sidebar listings, multi-project session pushes, etc.).
+//
+// After Unsubscribe returns, one in-flight event may still be delivered to
+// the old subscriber — harmless: it lands on the same conn.
 func (c *conn) subscribeProject(projectID string) {
 	newSub := c.bus.Subscribe(projectID, &connSubscriber{c: c})
 	c.subMu.Lock()
-	old := c.sub
-	c.sub = newSub
+	old := c.subs[projectID]
+	c.subs[projectID] = newSub
 	c.subMu.Unlock()
 	if old != nil {
 		old.Unsubscribe()
@@ -78,11 +84,11 @@ func (c *conn) subscribeProject(projectID string) {
 
 func (c *conn) unsubscribe() {
 	c.subMu.Lock()
-	old := c.sub
-	c.sub = nil
+	old := c.subs
+	c.subs = make(map[string]*eventbus.Subscription)
 	c.subMu.Unlock()
-	if old != nil {
-		old.Unsubscribe()
+	for _, sub := range old {
+		sub.Unsubscribe()
 	}
 }
 
