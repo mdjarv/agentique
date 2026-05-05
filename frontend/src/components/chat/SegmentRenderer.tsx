@@ -190,17 +190,19 @@ export const TextSegmentView = memo(function TextSegmentView({
       sessionId={sessionId}
       isStreaming={isStreaming}
     >
-      <div className="group/msg rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
+      <div className="group/msg flex gap-2 items-start">
+        <div className="flex-1 min-w-0 rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
+          <Markdown content={markdownContent} />
+          {isStreaming && <TypingCursor />}
+        </div>
         <button
           type="button"
           onClick={() => onCopy(content)}
-          className="sticky top-2 float-right ml-2 p-1 rounded max-md:opacity-60 opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity z-10"
+          className="mt-1 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity max-md:opacity-60"
           aria-label="Copy message"
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
-        <Markdown content={markdownContent} />
-        {isStreaming && <TypingCursor />}
       </div>
     </PromptGroupProvider>
   );

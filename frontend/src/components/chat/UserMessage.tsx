@@ -32,29 +32,19 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <>
-      <div className="flex gap-3 flex-row-reverse max-md:gap-2">
+      <div className="group/usermsg flex gap-3 flex-row-reverse items-start max-md:gap-2">
         <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
           <AvatarFallback className="bg-primary/20 text-primary">
             <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
           </AvatarFallback>
         </Avatar>
         <div
-          className={`group/usermsg relative max-w-[75%] max-md:max-w-full min-w-0 overflow-hidden rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
+          className={`max-w-[75%] max-md:max-w-full min-w-0 overflow-hidden rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
             isPending
               ? "from-primary/8 to-primary/4 border-dashed border-primary/15 shadow-md shadow-black/10 text-foreground/55"
               : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"
           }`}
         >
-          {prompt && (
-            <button
-              type="button"
-              onClick={() => handleCopy(prompt)}
-              className="absolute -left-8 top-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity z-10 max-md:static max-md:float-right max-md:opacity-60 max-md:ml-2 max-md:-mr-1 max-md:-mt-0.5"
-              aria-label="Copy message"
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          )}
           {attachments && attachments.length > 0 && (
             <div className="flex gap-1.5 flex-wrap mb-2">
               {attachments.map((a) =>
@@ -94,6 +84,16 @@ export const UserMessage = memo(function UserMessage({
             </div>
           )}
         </div>
+        {prompt && (
+          <button
+            type="button"
+            onClick={() => handleCopy(prompt)}
+            className="mt-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity max-md:opacity-60"
+            aria-label="Copy message"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        )}
       </div>
 
       {lightboxSrc &&
