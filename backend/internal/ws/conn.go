@@ -38,15 +38,11 @@ type conn struct {
 	sendCh        chan any
 	mu            sync.Mutex
 
-	// One bus.SubscribeAll subscription per conn. Project membership is
-	// filtered in connSubscriber.OnEvent against projectsMu/projects so the
-	// conn receives at most one delivery per published event regardless of
-	// how many projects are joined. Subscribing topically per project would
-	// fan out duplicates on bus.Broadcast (team.*, agent-profile.*, etc.)
-	// and double-deliver on Publish to a joined topic.
-	sub         *eventbus.Subscription
-	projectsMu  sync.RWMutex
-	projects    map[string]struct{}
+	// One multi-topic subscription per conn. Membership is owned by the
+	// Subscription itself (AddTopic/RemoveTopic), so each Publish or
+	// Broadcast delivers to OnEvent at most once regardless of how many
+	// projects are joined.
+	sub *eventbus.Subscription
 }
 
 func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService) *conn {
@@ -64,29 +60,15 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		personaSvc:    personaSvc,
 		browserSvc:    browserSvc,
 		sendCh:        make(chan any, sendBufSize),
-		projects:      make(map[string]struct{}),
 	}
-	c.sub = bus.SubscribeAll(&connSubscriber{c: c})
+	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
 	return c
 }
 
-// subscribeProject marks projectID as joined so events Published to that
-// topic are forwarded by connSubscriber. Calling it more than once for the
-// same projectID is a no-op. Joining is idempotent and cheap — the actual
-// bus subscription is set up once in newConn.
+// subscribeProject joins projectID's topic so events Published to it are
+// forwarded by connSubscriber. AddTopic is idempotent.
 func (c *conn) subscribeProject(projectID string) {
-	c.projectsMu.Lock()
-	c.projects[projectID] = struct{}{}
-	c.projectsMu.Unlock()
-}
-
-// hasProject reports whether the conn has joined projectID. Used by
-// connSubscriber to filter topical events.
-func (c *conn) hasProject(projectID string) bool {
-	c.projectsMu.RLock()
-	_, ok := c.projects[projectID]
-	c.projectsMu.RUnlock()
-	return ok
+	c.sub.AddTopic(projectID)
 }
 
 func (c *conn) unsubscribe() {
@@ -94,9 +76,6 @@ func (c *conn) unsubscribe() {
 		c.sub.Unsubscribe()
 		c.sub = nil
 	}
-	c.projectsMu.Lock()
-	c.projects = make(map[string]struct{})
-	c.projectsMu.Unlock()
 }
 
 func (c *conn) run() {

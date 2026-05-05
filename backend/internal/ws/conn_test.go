@@ -30,13 +30,12 @@ func drainPushes(c *conn, want int, timeout time.Duration) []ServerPush {
 func newTestConn(bus *eventbus.Bus) *conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &conn{
-		ctx:      ctx,
-		cancel:   cancel,
-		bus:      bus,
-		sendCh:   make(chan any, 32),
-		projects: make(map[string]struct{}),
+		ctx:    ctx,
+		cancel: cancel,
+		bus:    bus,
+		sendCh: make(chan any, 32),
 	}
-	c.sub = bus.SubscribeAll(&connSubscriber{c: c})
+	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
 	return c
 }
 
@@ -115,9 +114,9 @@ func TestSubscribeProjectIdempotent(t *testing.T) {
 
 // TestBroadcastReachesConnExactlyOnce guards against duplicate delivery of
 // global events (eventbus.Broadcast — used for team.*, agent-profile.*,
-// persona.interaction) when the conn has joined multiple projects. Topical
-// subscriptions per project would have caused N deliveries; the SubscribeAll
-// + filter design delivers exactly once.
+// persona.interaction) when the conn has joined multiple projects. The
+// multi-topic subscription delivers Broadcast exactly once regardless of
+// topic-set size.
 func TestBroadcastReachesConnExactlyOnce(t *testing.T) {
 	bus := eventbus.New()
 	c := newTestConn(bus)
