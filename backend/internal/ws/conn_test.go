@@ -8,8 +8,8 @@ import (
 	"github.com/allbin/agentkit/eventbus"
 )
 
-// drainAll reads everything available on c.sendCh up to a short deadline and
-// returns the collected messages as ServerPush values (other types are ignored).
+// drainPushes reads everything available on c.sendCh up to a short deadline
+// and returns the collected ServerPush messages (other types are ignored).
 func drainPushes(c *conn, want int, timeout time.Duration) []ServerPush {
 	out := make([]ServerPush, 0, want)
 	deadline := time.NewTimer(timeout)
@@ -27,22 +27,27 @@ func drainPushes(c *conn, want int, timeout time.Duration) []ServerPush {
 	return out
 }
 
-// TestSubscribeProjectFansOutToMultipleProjects guards against a regression
+func newTestConn(bus *eventbus.Bus) *conn {
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &conn{
+		ctx:      ctx,
+		cancel:   cancel,
+		bus:      bus,
+		sendCh:   make(chan any, 32),
+		projects: make(map[string]struct{}),
+	}
+	c.sub = bus.SubscribeAll(&connSubscriber{c: c})
+	return c
+}
+
+// TestSubscribeProjectFansOutToMultipleProjects guards against the regression
 // where a single ws.conn could only hold one project subscription at a time.
-// The frontend subscribes to every project on every (re)connect, so dropping
-// older subscriptions caused pushes to silently disappear for all but the
-// most recently subscribed project.
+// The frontend joins every project on every (re)connect, so dropping older
+// subscriptions caused pushes to silently disappear for all but the most
+// recently subscribed project.
 func TestSubscribeProjectFansOutToMultipleProjects(t *testing.T) {
 	bus := eventbus.New()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c := &conn{
-		ctx:    ctx,
-		cancel: cancel,
-		bus:    bus,
-		sendCh: make(chan any, 16),
-		subs:   make(map[string]*eventbus.Subscription),
-	}
+	c := newTestConn(bus)
 	defer c.unsubscribe()
 
 	c.subscribeProject("project-A")
@@ -69,54 +74,83 @@ func TestSubscribeProjectFansOutToMultipleProjects(t *testing.T) {
 	}
 }
 
-// TestSubscribeProjectIdempotent verifies that re-subscribing to the same
-// project replaces the prior handle (no duplicate deliveries) without
-// affecting subscriptions to other projects.
+// TestSubscribeProjectFiltersOutUnjoinedProjects confirms that events for
+// projects the conn has not joined are not forwarded.
+func TestSubscribeProjectFiltersOutUnjoinedProjects(t *testing.T) {
+	bus := eventbus.New()
+	c := newTestConn(bus)
+	defer c.unsubscribe()
+
+	c.subscribeProject("project-A")
+
+	bus.Publish("project-A", "session.event", "from-A")
+	bus.Publish("project-B", "session.event", "from-B") // not joined
+
+	got := drainPushes(c, 2, 150*time.Millisecond)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 push (B is not joined), got %d: %+v", len(got), got)
+	}
+	if got[0].Payload != "from-A" {
+		t.Fatalf("expected from-A, got %v", got[0].Payload)
+	}
+}
+
+// TestSubscribeProjectIdempotent verifies that re-joining the same project
+// does not cause duplicate deliveries.
 func TestSubscribeProjectIdempotent(t *testing.T) {
 	bus := eventbus.New()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c := &conn{
-		ctx:    ctx,
-		cancel: cancel,
-		bus:    bus,
-		sendCh: make(chan any, 16),
-		subs:   make(map[string]*eventbus.Subscription),
+	c := newTestConn(bus)
+	defer c.unsubscribe()
+
+	c.subscribeProject("project-A")
+	c.subscribeProject("project-A") // re-join is a no-op
+
+	bus.Publish("project-A", "session.event", "from-A")
+
+	got := drainPushes(c, 2, 150*time.Millisecond)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 push (no duplicates from re-join), got %d: %+v", len(got), got)
 	}
+}
+
+// TestBroadcastReachesConnExactlyOnce guards against duplicate delivery of
+// global events (eventbus.Broadcast — used for team.*, agent-profile.*,
+// persona.interaction) when the conn has joined multiple projects. Topical
+// subscriptions per project would have caused N deliveries; the SubscribeAll
+// + filter design delivers exactly once.
+func TestBroadcastReachesConnExactlyOnce(t *testing.T) {
+	bus := eventbus.New()
+	c := newTestConn(bus)
 	defer c.unsubscribe()
 
 	c.subscribeProject("project-A")
 	c.subscribeProject("project-B")
-	c.subscribeProject("project-A") // re-subscribe replaces, doesn't duplicate
+	c.subscribeProject("project-C")
 
-	bus.Publish("project-A", "session.event", "from-A")
-	bus.Publish("project-B", "session.event", "from-B")
+	bus.Broadcast("team.created", "team-payload")
 
-	got := drainPushes(c, 3, 200*time.Millisecond)
-	if len(got) != 2 {
-		t.Fatalf("expected exactly 2 pushes (no duplicates), got %d: %+v", len(got), got)
+	got := drainPushes(c, 2, 150*time.Millisecond)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 push from Broadcast, got %d: %+v", len(got), got)
+	}
+	if got[0].Type != "team.created" {
+		t.Fatalf("unexpected push type %q", got[0].Type)
 	}
 }
 
 // TestUnsubscribeReleasesAllProjects confirms conn teardown stops deliveries
-// from every project the conn had subscribed to.
+// from every project the conn had joined and from global broadcasts.
 func TestUnsubscribeReleasesAllProjects(t *testing.T) {
 	bus := eventbus.New()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c := &conn{
-		ctx:    ctx,
-		cancel: cancel,
-		bus:    bus,
-		sendCh: make(chan any, 16),
-		subs:   make(map[string]*eventbus.Subscription),
-	}
+	c := newTestConn(bus)
+
 	c.subscribeProject("project-A")
 	c.subscribeProject("project-B")
 	c.unsubscribe()
 
 	bus.Publish("project-A", "session.event", "from-A")
 	bus.Publish("project-B", "session.event", "from-B")
+	bus.Broadcast("team.created", "team-payload")
 
 	got := drainPushes(c, 1, 100*time.Millisecond)
 	if len(got) != 0 {

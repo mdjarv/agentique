@@ -38,16 +38,20 @@ type conn struct {
 	sendCh        chan any
 	mu            sync.Mutex
 
-	// subMu guards subs. A conn may be subscribed to many projects at once
-	// (the frontend sidebar lists every project and expects pushes from each).
-	// Re-subscribing to the same project replaces that project's handle.
-	subMu sync.Mutex
-	subs  map[string]*eventbus.Subscription
+	// One bus.SubscribeAll subscription per conn. Project membership is
+	// filtered in connSubscriber.OnEvent against projectsMu/projects so the
+	// conn receives at most one delivery per published event regardless of
+	// how many projects are joined. Subscribing topically per project would
+	// fan out duplicates on bus.Broadcast (team.*, agent-profile.*, etc.)
+	// and double-deliver on Publish to a joined topic.
+	sub         *eventbus.Subscription
+	projectsMu  sync.RWMutex
+	projects    map[string]struct{}
 }
 
 func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
-	return &conn{
+	c := &conn{
 		ctx:           ctx,
 		cancel:        cancel,
 		ws:            ws,
@@ -60,36 +64,39 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		personaSvc:    personaSvc,
 		browserSvc:    browserSvc,
 		sendCh:        make(chan any, sendBufSize),
-		subs:          make(map[string]*eventbus.Subscription),
+		projects:      make(map[string]struct{}),
 	}
+	c.sub = bus.SubscribeAll(&connSubscriber{c: c})
+	return c
 }
 
-// subscribeProject adds a subscription for projectID. If the conn was already
-// subscribed to that project, the previous handle is replaced. Subscriptions
-// for other projects are untouched — a single conn fans out events from many
-// projects (sidebar listings, multi-project session pushes, etc.).
-//
-// After Unsubscribe returns, one in-flight event may still be delivered to
-// the old subscriber — harmless: it lands on the same conn.
+// subscribeProject marks projectID as joined so events Published to that
+// topic are forwarded by connSubscriber. Calling it more than once for the
+// same projectID is a no-op. Joining is idempotent and cheap — the actual
+// bus subscription is set up once in newConn.
 func (c *conn) subscribeProject(projectID string) {
-	newSub := c.bus.Subscribe(projectID, &connSubscriber{c: c})
-	c.subMu.Lock()
-	old := c.subs[projectID]
-	c.subs[projectID] = newSub
-	c.subMu.Unlock()
-	if old != nil {
-		old.Unsubscribe()
-	}
+	c.projectsMu.Lock()
+	c.projects[projectID] = struct{}{}
+	c.projectsMu.Unlock()
+}
+
+// hasProject reports whether the conn has joined projectID. Used by
+// connSubscriber to filter topical events.
+func (c *conn) hasProject(projectID string) bool {
+	c.projectsMu.RLock()
+	_, ok := c.projects[projectID]
+	c.projectsMu.RUnlock()
+	return ok
 }
 
 func (c *conn) unsubscribe() {
-	c.subMu.Lock()
-	old := c.subs
-	c.subs = make(map[string]*eventbus.Subscription)
-	c.subMu.Unlock()
-	for _, sub := range old {
-		sub.Unsubscribe()
+	if c.sub != nil {
+		c.sub.Unsubscribe()
+		c.sub = nil
 	}
+	c.projectsMu.Lock()
+	c.projects = make(map[string]struct{})
+	c.projectsMu.Unlock()
 }
 
 func (c *conn) run() {
