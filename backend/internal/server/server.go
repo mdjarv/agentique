@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
 	"github.com/mdjarv/agentique/backend/internal/config"
-	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
@@ -98,7 +98,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = session.RealBlockingRunner()
 	}
 
-	devStore := devurls.NewStore(cfg.DevURLSlots)
+	devStore := devurls.NewStore(toAgentkitSlots(cfg.DevURLSlots))
 	mcpTokens := mcphttp.NewTokenStore()
 
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
@@ -317,6 +317,20 @@ type statusWriter struct {
 func (sw *statusWriter) WriteHeader(code int) {
 	sw.status = code
 	sw.ResponseWriter.WriteHeader(code)
+}
+
+// toAgentkitSlots converts agentique config slots to agentkit/devurls slots,
+// decoupling agentkit from the agentique config package. Field shape is
+// identical; this is a structural copy.
+func toAgentkitSlots(in []config.DevURLSlot) []devurls.Slot {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]devurls.Slot, len(in))
+	for i, s := range in {
+		out[i] = devurls.Slot{Slot: s.Slot, Port: s.Port, PublicHost: s.PublicHost}
+	}
+	return out
 }
 
 // requestLogger emits one access-log line per HTTP request at debug level.

@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
-	"github.com/mdjarv/agentique/backend/internal/devurls"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -90,11 +90,11 @@ func (m *Manager) SetDevURLStore(store *devurls.Store) { m.devURLs = store }
 
 // devURLsPreamble returns a system-prompt section documenting the dev URL
 // capability when at least one slot is configured. Empty string otherwise.
-func (m *Manager) devURLsPreamble() string {
+func (m *Manager) devURLsPreamble(ctx context.Context) string {
 	if m.devURLs == nil {
 		return ""
 	}
-	if len(m.devURLs.Slots()) == 0 {
+	if len(m.devURLs.Slots(ctx)) == 0 {
 		return ""
 	}
 	return preambleDevURLs
@@ -151,7 +151,7 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble()),
+		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())),
 	}
 	if params.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(params.Name))
@@ -295,7 +295,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
 		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble() + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
@@ -378,7 +378,7 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 		claudecli.WithUserInput(sess.handleUserInput),
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble() + p.ExtraPreamble),
+		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble),
 	}
 	if p.Name != "" {
 		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))

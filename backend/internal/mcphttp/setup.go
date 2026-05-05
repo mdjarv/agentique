@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/allbin/agentkit/devurls"
 	akmcp "github.com/allbin/agentkit/mcphttp"
-	"github.com/mdjarv/agentique/backend/internal/devurls"
 )
 
 // Tool name constants. The full names (mcp__<server>__<tool>) drive the
@@ -100,8 +100,8 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) 
 	register(h, akmcp.Tool{
 		Name:        ToolAcquireDev,
 		Description: "Lease a publicly-routable HTTPS URL that points at a local TCP port on this machine. Bind any HTTP service to the returned port and it becomes reachable at the returned URL (TLS terminated by the reverse proxy — valid certificate, so HTTPS-only features like passkeys/WebAuthn, secure cookies, and service workers work). Returns {slot, url, publicHost, port}. Idempotent — re-calling returns the existing lease for this session.",
-		Handler: func(_ context.Context, sid string, _ json.RawMessage) akmcp.Result {
-			return acquireDevImpl(dev, sid)
+		Handler: func(ctx context.Context, sid string, _ json.RawMessage) akmcp.Result {
+			return acquireDevImpl(ctx, dev, sid)
 		},
 	})
 
@@ -116,8 +116,8 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) 
 	register(h, akmcp.Tool{
 		Name:        ToolListDevURLs,
 		Description: "List all configured dev URL slots, their current holders, and whether each port is actually bound. Includes external-owner details (pid, cmdline, cwd) when a port is bound by a process not tracked by the lease store — useful for spotting orphans that need KillDevUrlPort.",
-		Handler: func(_ context.Context, _ string, _ json.RawMessage) akmcp.Result {
-			return listDevURLsImpl(dev)
+		Handler: func(ctx context.Context, _ string, _ json.RawMessage) akmcp.Result {
+			return listDevURLsImpl(ctx, dev)
 		},
 	})
 
@@ -154,8 +154,8 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) 
 			},
 			Required: []string{"slot"},
 		},
-		Handler: akmcp.TypedHandler(func(_ context.Context, _ string, args killSlotArgs) akmcp.Result {
-			return killDevPortImpl(dev, args.Slot)
+		Handler: akmcp.TypedHandler(func(ctx context.Context, _ string, args killSlotArgs) akmcp.Result {
+			return killDevPortImpl(ctx, dev, args.Slot)
 		}),
 	})
 
@@ -173,14 +173,14 @@ func register(h *akmcp.Handler, t akmcp.Tool) {
 
 // --- tool implementations ---
 
-func acquireDevImpl(dev *devurls.Store, sessionID string) akmcp.Result {
-	if len(dev.Slots()) == 0 {
+func acquireDevImpl(ctx context.Context, dev *devurls.Store, sessionID string) akmcp.Result {
+	if len(dev.Slots(ctx)) == 0 {
 		return akmcp.ErrorResult("No dev URL slots are configured on this server. Ask the operator to add [[dev-urls]] entries to agentique config.")
 	}
-	res, err := dev.Acquire(sessionID)
+	res, err := dev.Acquire(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, devurls.ErrAllBusy) {
-			return akmcp.ErrorResult("All dev URL slots are currently in use.\n" + summarizeSlotState(dev.Slots()) + "\n\n" +
+			return akmcp.ErrorResult("All dev URL slots are currently in use.\n" + summarizeSlotState(dev.Slots(ctx)) + "\n\n" +
 				"Use KillDevUrlPort with a specific slot name to reclaim a port held by an external/orphan process (requires user confirmation).")
 		}
 		return akmcp.ErrorResultf("acquire failed: %v", err)
@@ -217,15 +217,15 @@ func releaseDevImpl(dev *devurls.Store, sessionID string) akmcp.Result {
 	return akmcp.TextResult("Released slot(s): " + strings.Join(freed, ", "))
 }
 
-func listDevURLsImpl(dev *devurls.Store) akmcp.Result {
-	infos := dev.Slots()
+func listDevURLsImpl(ctx context.Context, dev *devurls.Store) akmcp.Result {
+	infos := dev.Slots(ctx)
 	if len(infos) == 0 {
 		return akmcp.TextResult("No dev URL slots are configured.")
 	}
 	return akmcp.TextResult("Dev URL slots:\n" + summarizeSlotState(infos))
 }
 
-func killDevPortImpl(dev *devurls.Store, slotName string) akmcp.Result {
+func killDevPortImpl(ctx context.Context, dev *devurls.Store, slotName string) akmcp.Result {
 	if strings.TrimSpace(slotName) == "" {
 		return akmcp.ErrorResult("KillDevUrlPort requires { slot: \"<slot name>\" }. Use ListDevUrls to see configured slots.")
 	}
@@ -233,7 +233,7 @@ func killDevPortImpl(dev *devurls.Store, slotName string) akmcp.Result {
 	if !ok {
 		return akmcp.ErrorResultf("unknown slot %q", slotName)
 	}
-	owner, err := devurls.FindPortOwner(slot.Port)
+	owner, err := devurls.FindPortOwner(ctx, slot.Port)
 	if err != nil {
 		return akmcp.ErrorResultf("lookup owner for port %d: %v", slot.Port, err)
 	}
