@@ -297,10 +297,53 @@ export function MessageList({
       const el = scrollRef.current;
       if (!el) return;
       const atBottom = isNearBottom(el);
-      setFollowing(atBottom);
+      // Re-engage follow when scrollTop reaches the bottom (any cause). Don't
+      // flip OFF here — owned by user-gesture handlers below — so transient
+      // scrollTop changes (DOM reshuffles, browser clamping during force
+      // reloads) can't accidentally unstick us.
+      if (atBottom && !followingRef.current) setFollowing(true);
       scrollMemory.set(sessionId, { scrollTop: el.scrollTop, atBottom });
     });
   }, [sessionId]);
+
+  // User-gesture handlers: only an explicit upward gesture takes us out of
+  // follow mode. Programmatic scrolls (history reload, content reshuffle) do
+  // not.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let touchStartY: number | null = null;
+
+    const unfollow = () => {
+      if (followingRef.current) setFollowing(false);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) unfollow();
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? null;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchStartY == null) return;
+      const currY = e.touches[0]?.clientY;
+      if (currY == null) return;
+      if (currY > touchStartY + 10) unfollow();
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+    };
+  }, []);
 
   useEffect(
     () => () => {

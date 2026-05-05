@@ -56,6 +56,46 @@ function historyToTurns(history: HistoryTurn[]): Turn[] {
 
 const shortId = (id: string) => id.slice(0, 8);
 
+async function fetchAndApplyFullHistory(
+  ws: WsClient,
+  sessionId: string,
+  tag: string,
+): Promise<void> {
+  performance.mark(`${tag}:backfill:request`);
+  const full = await ws.request<HistoryResult>("session.history", { sessionId }, 30_000);
+  performance.mark(`${tag}:backfill:response`);
+  performance.measure(
+    `${tag} ws-roundtrip (full)`,
+    `${tag}:backfill:request`,
+    `${tag}:backfill:response`,
+  );
+
+  if (!useChatStore.getState().sessions[sessionId]) return;
+
+  if (full.turns.length === 0) {
+    useChatStore.getState().setHistoryLoading(sessionId, false);
+    return;
+  }
+
+  performance.mark(`${tag}:convert:start`);
+  const turns = await historyToTurnsChunked(full.turns);
+  performance.mark(`${tag}:convert:end`);
+  performance.measure(
+    `${tag} convert (${full.turns.length} turns)`,
+    `${tag}:convert:start`,
+    `${tag}:convert:end`,
+  );
+
+  if (!useChatStore.getState().sessions[sessionId]) return;
+
+  performance.mark(`${tag}:store:start`);
+  startTransition(() => {
+    useChatStore.getState().setSessionHistory(sessionId, turns, true);
+  });
+  performance.mark(`${tag}:store:end`);
+  performance.measure(`${tag} store-update`, `${tag}:store:start`, `${tag}:store:end`);
+}
+
 export function loadSessionHistory(ws: WsClient, sessionId: string, force = false): void {
   const store = useChatStore.getState();
   const session = store.sessions[sessionId];
@@ -69,9 +109,20 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
 
   store.setHistoryLoading(sessionId, true);
 
+  // Force-reload of an already-complete history: skip the partial phase.
+  // Truncating from N→20 just to refetch all N is destructive — causes DOM
+  // churn and scroll-position jumps in long sessions. Go straight to full.
+  if (force && session.historyComplete) {
+    fetchAndApplyFullHistory(ws, sessionId, tag).catch((err) => {
+      useChatStore.getState().setHistoryLoading(sessionId, false);
+      console.error("Failed to load session history:", err);
+    });
+    return;
+  }
+
   // Phase 1: fetch recent turns for instant display
   ws.request<HistoryResult>("session.history", { sessionId, limit: INITIAL_TURN_LIMIT }, 10_000)
-    .then((hist) => {
+    .then(async (hist) => {
       performance.mark(`${tag}:response`);
       performance.measure(`${tag} ws-roundtrip (partial)`, `${tag}:request`, `${tag}:response`);
 
@@ -90,42 +141,7 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
       }
 
       // Phase 2: fetch full history for backfill (chunked conversion + low-priority render)
-      performance.mark(`${tag}:backfill:request`);
-      return ws
-        .request<HistoryResult>("session.history", { sessionId }, 30_000)
-        .then(async (full) => {
-          performance.mark(`${tag}:backfill:response`);
-          performance.measure(
-            `${tag} ws-roundtrip (full)`,
-            `${tag}:backfill:request`,
-            `${tag}:backfill:response`,
-          );
-
-          if (!useChatStore.getState().sessions[sessionId]) return;
-
-          if (full.turns.length > 0) {
-            performance.mark(`${tag}:convert:start`);
-            const turns = await historyToTurnsChunked(full.turns);
-            performance.mark(`${tag}:convert:end`);
-            performance.measure(
-              `${tag} convert (${full.turns.length} turns)`,
-              `${tag}:convert:start`,
-              `${tag}:convert:end`,
-            );
-
-            // Re-check session still exists after async conversion
-            if (!useChatStore.getState().sessions[sessionId]) return;
-
-            performance.mark(`${tag}:store:start`);
-            startTransition(() => {
-              useChatStore.getState().setSessionHistory(sessionId, turns, true);
-            });
-            performance.mark(`${tag}:store:end`);
-            performance.measure(`${tag} store-update`, `${tag}:store:start`, `${tag}:store:end`);
-          } else {
-            useChatStore.getState().setHistoryLoading(sessionId, false);
-          }
-        });
+      await fetchAndApplyFullHistory(ws, sessionId, tag);
     })
     .catch((err) => {
       useChatStore.getState().setHistoryLoading(sessionId, false);

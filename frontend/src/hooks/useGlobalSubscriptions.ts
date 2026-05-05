@@ -94,7 +94,9 @@ export function useGlobalSubscriptions(projects: Project[]) {
     }
   }, [ws, projects]);
 
-  // Project-level events, reconnect, and visibility handlers
+  // Project-level events and reconnect handlers. Visibility-driven history
+  // refresh is owned by the WS client (force-reconnect after >=5s hidden ⇒
+  // onConnect ⇒ subscribeAndLoad with forceHistory=true) below.
   useEffect(() => {
     const unsubProjectGit = ws.subscribe("project.git-status", (payload) => {
       useAppStore.getState().setProjectGitStatus(payload);
@@ -123,25 +125,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
         .catch((err) => console.error("listAgentProfiles (reconnect) failed", err));
     });
 
-    let hiddenAt = 0;
-    const handleVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt = Date.now();
-        return;
-      }
-      if (Date.now() - hiddenAt < 5000) return;
-      const activeId = useChatStore.getState().activeSessionId;
-      if (activeId && ws.connectionState === "connected") {
-        loadSessionHistory(ws, activeId, true);
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-
     return () => {
       unsubProjectGit();
       unsubProjectUpdated();
       unsubReconnect();
-      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [ws]);
 }
