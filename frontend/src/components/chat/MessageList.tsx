@@ -30,6 +30,15 @@ function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
 }
 
+/** Strict "actually at bottom" check used to re-engage follow after the user
+ * has explicitly scrolled away. A small wheel-up gesture lands within the
+ * loose isNearBottom zone but should NOT cancel the unfollow — otherwise the
+ * scroll-to-bottom button flickers on/off and ScrollAnchor's effect snaps the
+ * viewport back, producing a visible jump. */
+function isAtBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+}
+
 /** Style that lets the browser skip layout/paint for off-screen turns entirely. */
 const CONTENT_VISIBILITY_STYLE: React.CSSProperties = {
   contentVisibility: "auto",
@@ -300,8 +309,10 @@ export function MessageList({
       // Re-engage follow when scrollTop reaches the bottom (any cause). Don't
       // flip OFF here — owned by user-gesture handlers below — so transient
       // scrollTop changes (DOM reshuffles, browser clamping during force
-      // reloads) can't accidentally unstick us.
-      if (atBottom && !followingRef.current) setFollowing(true);
+      // reloads) can't accidentally unstick us. Use the strict isAtBottom for
+      // re-engagement so a tiny wheel-up within the loose near-bottom zone
+      // doesn't immediately cancel the user's unfollow gesture.
+      if (isAtBottom(el) && !followingRef.current) setFollowing(true);
       scrollMemory.set(sessionId, { scrollTop: el.scrollTop, atBottom });
     });
   }, [sessionId]);
