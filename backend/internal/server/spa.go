@@ -77,15 +77,26 @@ func isAssetRequest(p string) bool {
 	return ext != "" && ext != ".html"
 }
 
+// stubIndexHTML is served when the embedded frontend bundle is empty (e.g. a
+// backend-only build, or test runs that haven't built the frontend). Returning
+// a 200 with a useful message beats a 500 — the API still works, callers just
+// don't have a UI yet.
+const stubIndexHTML = `<!doctype html>
+<html><head><title>Agentique</title></head>
+<body><h1>Agentique backend</h1>
+<p>Frontend bundle not embedded. Run <code>just backend-build</code> to produce a release binary, or use the dev frontend.</p>
+</body></html>`
+
 func (h *spaHandler) serveIndex(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	f, err := h.fs.Open("index.html")
 	if err != nil {
-		httperror.RespondError(w, httperror.Internal("index.html not found", err))
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, stubIndexHTML)
 		return
 	}
 	defer f.Close()
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, f)
 }
