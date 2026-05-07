@@ -604,12 +604,6 @@ func (m *Manager) buildMCPConfigs(sessionID string, extra []string) []string {
 	return append([]string{first}, extra...)
 }
 
-// combineMCPConfigs is the legacy entry point for tests/callers that lack a
-// Manager reference. Prefer Manager.buildMCPConfigs in production.
-func combineMCPConfigs(extra []string) []string {
-	return append([]string{ChannelMCPConfig()}, extra...)
-}
-
 func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	return func(pushType string, payload any) {
 		m.broadcaster.Publish(projectID, pushType, payload)
