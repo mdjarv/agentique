@@ -7,9 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // PermissionMode returns the current permission mode string.
@@ -28,35 +29,28 @@ func (s *Session) AutoApproveMode() string {
 
 // SetPermissionMode changes the CLI permission mode (plan, acceptEdits, default).
 func (s *Session) SetPermissionMode(mode string) error {
-	var m claudecli.PermissionMode
 	switch mode {
-	case "plan":
-		m = claudecli.PermissionPlan
-	case "acceptEdits":
-		m = claudecli.PermissionAcceptEdits
+	case "plan", "acceptEdits", "default":
 	default:
 		mode = "default"
-		m = claudecli.PermissionDefault
 	}
 
 	s.mu.Lock()
-	if s.cliSess == nil {
-		s.mu.Unlock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
 		return ErrNotLive
 	}
-	cli := s.cliSess
-	s.mu.Unlock()
 
-	if err := cli.SetPermissionMode(m); err != nil {
+	if err := rt.SetPlanMode(runtime.PlanMode(mode)); err != nil {
 		return fmt.Errorf("set permission mode: %w", err)
 	}
 
 	s.mu.Lock()
 	s.permissionMode = mode
-	resolved := s.approvalState.resolveBypassable()
 	s.mu.Unlock()
 
-	for _, id := range resolved {
+	for _, id := range s.resolveBypassable() {
 		s.broadcast("session.approval-auto-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: id})
 	}
 	return nil
@@ -65,19 +59,45 @@ func (s *Session) SetPermissionMode(mode string) error {
 // SetAutoApproveMode sets the auto-approve mode. Valid values: "manual", "auto", "fullAuto".
 // If the new mode permits pending tool approvals, they are auto-resolved.
 func (s *Session) SetAutoApproveMode(mode string) {
-	switch mode {
-	case "auto", "fullAuto":
-	default:
-		mode = "manual"
-	}
+	mode = normalizeAutoApprove(mode)
 	s.mu.Lock()
 	s.autoApproveMode = mode
-	resolved := s.approvalState.resolveBypassable()
+	rt := s.rt
 	s.mu.Unlock()
 
-	for _, id := range resolved {
+	if rt != nil {
+		rt.SetAutoApproveMode(runtimeAutoApproveMode(mode))
+	}
+
+	for _, id := range s.resolveBypassable() {
 		s.broadcast("session.approval-auto-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: id})
 	}
+}
+
+// resolveBypassable auto-resolves any runtime-pending approval the current mode
+// would bypass. Acquires s.mu internally; safe to call without the lock.
+func (s *Session) resolveBypassable() []string {
+	s.mu.Lock()
+	rt := s.rt
+	autoMode := s.autoApproveMode
+	permMode := s.permissionMode
+	s.mu.Unlock()
+
+	if rt == nil {
+		return nil
+	}
+	rtA, _ := rt.PendingState()
+	if rtA == nil {
+		return nil
+	}
+	if !shouldBypassPermission(autoMode, permMode, rtA.ToolName) {
+		return nil
+	}
+	if err := rt.SubmitApproval(rtA.ID, runtime.Decision{Allow: true}); err != nil && err != runtime.ErrPendingNotFound {
+		slog.Warn("resolve bypassable failed", "session_id", s.ID, "approval_id", rtA.ID, "error", err)
+		return nil
+	}
+	return []string{rtA.ID}
 }
 
 // transitionPlanMode updates permission mode if changed, persists to DB, and
@@ -104,11 +124,15 @@ func (s *Session) transitionPlanMode(mode string) {
 // requestPlanReview creates a synthetic pending approval for ExitPlanMode so
 // the user can review the plan before execution begins. Interrupts the session
 // to prevent tool calls between ExitPlanMode and user confirmation.
+//
+// The synthetic approval is agentique-side only — it doesn't pass through the
+// runtime approval pump, because the trigger is a CLI event observation
+// (ExitPlanMode tool_use) rather than a permission callback.
 func (s *Session) requestPlanReview(input json.RawMessage) {
 	approvalID := uuid.New().String()
 	ch := make(chan *claudecli.PermissionResponse, 1)
 
-	pa := &pendingApproval{
+	sa := &syntheticApproval{
 		id:       approvalID,
 		toolName: "ExitPlanMode",
 		input:    input,
@@ -116,12 +140,12 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 	}
 
 	s.mu.Lock()
-	s.pendingApprovals[approvalID] = pa
+	s.syntheticApprovals[approvalID] = sa
 	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
-		delete(s.pendingApprovals, approvalID)
+		delete(s.syntheticApprovals, approvalID)
 		s.mu.Unlock()
 	}()
 
@@ -141,13 +165,11 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 				slog.Warn("auto-resume after plan approval failed", "session_id", s.ID, "error", err)
 			}
 		} else {
-			// User chose to keep chatting or start fresh. The CLI already
-			// exited plan mode internally — set it back.
 			s.mu.Lock()
-			cli := s.cliSess
+			rt := s.rt
 			s.mu.Unlock()
-			if cli != nil {
-				if err := cli.SetPermissionMode(claudecli.PermissionPlan); err != nil {
+			if rt != nil {
+				if err := rt.SetPlanMode(runtime.PlanMode("plan")); err != nil {
 					slog.Warn("failed to restore plan mode after deny", "session_id", s.ID, "error", err)
 				}
 			}
@@ -158,10 +180,7 @@ func (s *Session) requestPlanReview(input json.RawMessage) {
 }
 
 func (s *Session) waitForIdle(timeout time.Duration) error {
-	// Check immediately before waiting.
-	s.mu.Lock()
-	st := s.state
-	s.mu.Unlock()
+	st := s.State()
 	if st == StateIdle || st == StateDone || st == StateStopped {
 		return nil
 	}
@@ -171,9 +190,7 @@ func (s *Session) waitForIdle(timeout time.Duration) error {
 	for {
 		select {
 		case <-s.stateChangedCh:
-			s.mu.Lock()
-			st = s.state
-			s.mu.Unlock()
+			st = s.State()
 			if st == StateIdle || st == StateDone || st == StateStopped {
 				return nil
 			}
@@ -221,7 +238,7 @@ func isAutoSafeTool(toolName string) bool {
 // shouldBypassPermission determines whether a tool should be auto-approved.
 //
 //	EnterPlanMode            → always bypass
-//	fullAuto                 → always bypass
+//	fullAuto                 → always bypass (also handled by runtime.AutoApproveAll)
 //	auto + plan permMode     → bypass only plan-safe tools
 //	auto + non-plan permMode → bypass only auto-safe tools
 //	manual                   → never bypass
@@ -237,159 +254,60 @@ func shouldBypassPermission(autoMode, permMode, toolName string) bool {
 			return isPlanSafeTool(toolName)
 		}
 		return isAutoSafeTool(toolName)
-	default: // "manual"
+	default:
 		return false
 	}
 }
 
-// handleToolPermission is the callback for claudecli WithCanUseTool.
-// Blocks until the user resolves the approval or Close() cancels all pending approvals.
-// claudecli-go runs this in a goroutine and also selects on ctx.Done(), so even if
-// this blocks, the SDK will unblock on context cancellation.
-func (s *Session) handleToolPermission(toolName string, input json.RawMessage) (*claudecli.PermissionResponse, error) {
-	if interceptor, ok := s.toolInterceptors[toolName]; ok {
-		return interceptor(input)
-	}
-
-	approvalID := uuid.New().String()
-	ch := make(chan *claudecli.PermissionResponse, 1)
-
-	pa := &pendingApproval{
-		id:       approvalID,
-		toolName: toolName,
-		input:    input,
-		ch:       ch,
-	}
-
-	// Single lock: check bypass and register pending approval atomically.
-	// Prevents TOCTOU race where SetAutoApproveMode iterates pending approvals
-	// between the bypass check and registration, missing this approval.
-	s.mu.Lock()
-	bypass := shouldBypassPermission(s.autoApproveMode, s.permissionMode, toolName)
-	if !bypass {
-		s.pendingApprovals[approvalID] = pa
-	}
-	s.mu.Unlock()
-
-	if bypass {
-		slog.Info("auto-approved tool", "session_id", s.ID, "tool", toolName,
-			"auto_approve_mode", s.autoApproveMode, "permission_mode", s.permissionMode)
-		// Defensive fallback — processEvent also detects EnterPlanMode from the
-		// event stream, but if the CLI ever starts sending can_use_tool for it,
-		// handle it here too. transitionPlanMode is idempotent.
-		if toolName == "EnterPlanMode" {
-			s.transitionPlanMode("plan")
-		}
-		return &claudecli.PermissionResponse{Allow: true}, nil
-	}
-
-	defer func() {
-		s.mu.Lock()
-		delete(s.pendingApprovals, approvalID)
-		s.mu.Unlock()
-	}()
-
-	slog.Debug("tool permission requested", "session_id", s.ID, "tool", toolName, "approval_id", approvalID)
-
-	s.broadcast("session.tool-permission", PushToolPermission{
-		SessionID: s.ID, ApprovalID: approvalID, ToolName: toolName, Input: input,
-	})
-
-	select {
-	case resp := <-ch:
-		slog.Debug("tool permission resolved", "session_id", s.ID, "tool", toolName, "approval_id", approvalID, "allow", resp.Allow)
-		return resp, nil
-	case <-s.ctx.Done():
-		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
-	}
-}
-
 // ResolveApproval sends a permission response for a pending tool approval.
+// Tries synthetic approvals first (plan-review, spawn UI), then forwards to
+// the runtime approval pump.
 func (s *Session) ResolveApproval(approvalID string, allow bool, denyMessage string) error {
 	s.mu.Lock()
-	pa, ok := s.pendingApprovals[approvalID]
+	sa, ok := s.syntheticApprovals[approvalID]
+	rt := s.rt
 	s.mu.Unlock()
 
-	if !ok {
+	if ok {
+		select {
+		case sa.ch <- &claudecli.PermissionResponse{Allow: allow, DenyMessage: denyMessage}:
+			s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: approvalID})
+			return nil
+		default:
+			return fmt.Errorf("approval %s already resolved", approvalID)
+		}
+	}
+
+	if rt == nil {
 		return fmt.Errorf("approval %s not found or already resolved", approvalID)
 	}
-
-	resp := &claudecli.PermissionResponse{
-		Allow:       allow,
-		DenyMessage: denyMessage,
-	}
-
-	select {
-	case pa.ch <- resp:
-		s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: approvalID})
-		return nil
-	default:
-		return fmt.Errorf("approval %s already resolved", approvalID)
-	}
-}
-
-// handleUserInput is the callback for claudecli WithUserInput.
-// Blocks until the user answers or Close() cancels all pending questions.
-func (s *Session) handleUserInput(questions []claudecli.Question) (map[string]string, error) {
-	questionID := uuid.New().String()
-	ch := make(chan map[string]string, 1)
-
-	pq := &pendingQuestion{
-		id:        questionID,
-		questions: questions,
-		ch:        ch,
-	}
-
-	s.mu.Lock()
-	s.pendingQuestions[questionID] = pq
-	s.mu.Unlock()
-
-	defer func() {
-		s.mu.Lock()
-		delete(s.pendingQuestions, questionID)
-		s.mu.Unlock()
-	}()
-
-	wireQs := make([]WireQuestion, len(questions))
-	for i, q := range questions {
-		opts := make([]WireQuestionOption, len(q.Options))
-		for j, o := range q.Options {
-			opts[j] = WireQuestionOption{Label: o.Label, Description: o.Description}
+	if err := rt.SubmitApproval(approvalID, runtime.Decision{Allow: allow, DenyMessage: denyMessage}); err != nil {
+		if err == runtime.ErrPendingNotFound {
+			return fmt.Errorf("approval %s not found or already resolved", approvalID)
 		}
-		wireQs[i] = WireQuestion{
-			Question: q.Question, Header: q.Header, Options: opts, MultiSelect: q.MultiSelect,
-		}
+		return err
 	}
-	s.broadcast("session.user-question", PushUserQuestion{
-		SessionID: s.ID, QuestionID: questionID, Questions: wireQs,
-	})
-
-	select {
-	case answers := <-ch:
-		if answers == nil {
-			return nil, fmt.Errorf("question cancelled")
-		}
-		return answers, nil
-	case <-s.ctx.Done():
-		return nil, fmt.Errorf("session closed")
-	}
+	s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: approvalID})
+	return nil
 }
 
 // ResolveQuestion sends answers for a pending user question.
 func (s *Session) ResolveQuestion(questionID string, answers map[string]string) error {
 	s.mu.Lock()
-	pq, ok := s.pendingQuestions[questionID]
+	rt := s.rt
 	s.mu.Unlock()
-
-	if !ok {
+	if rt == nil {
 		return fmt.Errorf("question %s not found or already resolved", questionID)
 	}
-
-	select {
-	case pq.ch <- answers:
-		s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: questionID})
-		return nil
-	default:
-		return fmt.Errorf("question %s already resolved", questionID)
+	if err := rt.SubmitAnswer(questionID, answers); err != nil {
+		if err == runtime.ErrPendingNotFound {
+			return fmt.Errorf("question %s not found or already resolved", questionID)
+		}
+		return err
 	}
+	s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: questionID})
+	return nil
 }
+
+// nowUTC returns an RFC3339 UTC timestamp (broken out for test seams).
+func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }

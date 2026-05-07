@@ -5,16 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 
-// connectorAdapter wraps testutil.RecordingConnector to satisfy CLIConnector.
+// connectorAdapter wraps testutil.RecordingConnector to satisfy runtime.CLIConnector.
 type connectorAdapter struct{ rc *testutil.RecordingConnector }
 
-func (a connectorAdapter) Connect(_ context.Context, _ ...claudecli.Option) (CLISession, error) {
+func (a connectorAdapter) Connect(_ context.Context, _ ...claudecli.Option) (runtime.CLISession, error) {
 	return a.rc.NextSession()
 }
 
@@ -203,30 +204,9 @@ func (s *LifecycleSuite) TestCloseAllMultipleSessions() {
 	}
 }
 
-func (s *LifecycleSuite) TestApprovalFlow() {
-	sess := s.createSession()
-
-	done := make(chan *claudecli.PermissionResponse, 1)
-	go func() {
-		resp, _ := sess.handleToolPermission("Write", []byte(`{"path":"test.go"}`))
-		done <- resp
-	}()
-
-	// Wait for the approval broadcast.
-	msg, ok := s.Broadcaster.WaitForType("session.tool-permission", 2*time.Second)
-	s.Require().True(ok, "expected tool-permission broadcast")
-
-	payload := msg.Payload.(PushToolPermission)
-	approvalID := payload.ApprovalID
-	s.Require().NoError(sess.ResolveApproval(approvalID, true, ""))
-
-	select {
-	case resp := <-done:
-		s.True(resp.Allow)
-	case <-time.After(2 * time.Second):
-		s.Fail("timeout waiting for approval response")
-	}
-}
+// TestApprovalFlow removed: the tool-permission callback now lives in
+// agentkit/runtime. The agentique-side approval pump is exercised via
+// runtime.PendingChangeEvent in the runtime's own test suite.
 
 func (s *LifecycleSuite) TestToolUseEventsPersisted() {
 	sess := s.createSession()

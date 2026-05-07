@@ -1260,11 +1260,8 @@ func (s *Service) replayPendingDeliveries(ctx context.Context, sess *Session) {
 		return
 	}
 
-	sess.mu.Lock()
-	cli := sess.cliSess
-	sess.mu.Unlock()
-	if cli == nil {
-		slog.Warn("replay skipped: no CLI session", "session_id", sess.ID)
+	if !s.mgr.IsLive(sess.ID) {
+		slog.Warn("replay skipped: no live runtime session", "session_id", sess.ID)
 		return
 	}
 
@@ -1272,7 +1269,7 @@ func (s *Service) replayPendingDeliveries(ctx context.Context, sess *Session) {
 
 	for _, d := range pending {
 		formatted := formatChannelMessageForCLI(d.SenderName, d.Content, d.MessageType)
-		if err := cli.SendMessage(formatted); err != nil {
+		if err := injectMessageOrQuery(sess, formatted); err != nil {
 			slog.Warn("pending delivery replay failed",
 				"session_id", sess.ID, "message_id", d.MessageID, "error", err)
 			continue

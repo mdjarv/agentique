@@ -421,7 +421,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	approvalID := uuid.New().String()
 	ch := make(chan *claudecli.PermissionResponse, 1)
 
-	pa := &pendingApproval{
+	sa := &syntheticApproval{
 		id:       approvalID,
 		toolName: "SpawnWorkers",
 		input:    inputJSON,
@@ -429,12 +429,12 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	}
 
 	s.mu.Lock()
-	s.pendingApprovals[approvalID] = pa
+	s.syntheticApprovals[approvalID] = sa
 	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
-		delete(s.pendingApprovals, approvalID)
+		delete(s.syntheticApprovals, approvalID)
 		s.mu.Unlock()
 	}()
 

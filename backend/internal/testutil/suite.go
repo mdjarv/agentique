@@ -132,7 +132,7 @@ func (b *RecordingBroadcaster) Reset() {
 // --- RecordingConnector ---
 
 // RecordingConnector tracks MockCLISessions created during tests.
-// It does NOT directly satisfy session.CLIConnector (different packages
+// It does NOT directly satisfy runtime.CLIConnector (different packages
 // means different interface types). Test suites wrap it with a one-line
 // adapter — see connectorAdapter in the lifecycle suite.
 type RecordingConnector struct {

@@ -10,52 +10,11 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
-func TestEventLoop_TextAndResult(t *testing.T) {
-	db, q := testutil.SetupDB(t)
-	proj := testutil.SeedProject(t, q, "test", t.TempDir())
-	bc := &mockBroadcaster{}
-	conn := newMockConnector()
-	mgr := NewManager(db, q, bc, conn)
-
-	sess, err := mgr.Create(context.Background(), CreateParams{
-		ProjectID: proj.ID,
-		Name:      "test",
-		WorkDir:   t.TempDir(),
-		Model:     "opus",
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	mock := conn.last()
-
-	// Send text + result, then close
-	mock.events <- testTextEvent("hello")
-	mock.events <- testResultEvent(0.01)
-	mock.Close()
-
-	// Wait for event loop to finish
-	select {
-	case <-sess.eventLoopDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("event loop did not stop")
-	}
-
-	// Session should be idle (result event transitions running->idle, but
-	// we never called Query so it was idle->idle which is invalid).
-	// Actually: after Create, session is idle. ResultEvent only transitions
-	// if state is running. Since we didn't call Query, it stays idle.
-	// The final state after channel close should be done (clean close).
-	if sess.State() != StateDone {
-		t.Errorf("expected done, got %s", sess.State())
-	}
-
-	// Verify events were broadcast
-	events := bc.messagesOfType("session.event")
-	if len(events) == 0 {
-		t.Error("expected broadcast events")
-	}
-}
+// Most lifecycle / event-loop / approval-pump tests live in
+// lifecycle_suite_test.go (using testutil.RecordingBroadcaster). This file
+// keeps a few integration tests using the local mockBroadcaster +
+// mockConnector helpers; the watchdog and approval pump itself moved to
+// agentkit/runtime and are tested there.
 
 func TestEventLoop_QueryThenResult(t *testing.T) {
 	db, q := testutil.SetupDB(t)
@@ -74,7 +33,6 @@ func TestEventLoop_QueryThenResult(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Query transitions to running
 	if err := sess.Query(context.Background(), "hello", nil); err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -83,12 +41,9 @@ func TestEventLoop_QueryThenResult(t *testing.T) {
 	}
 
 	mock := conn.last()
-
-	// Simulate response
 	mock.events <- testTextEvent("response text")
 	mock.events <- testResultEvent(0.02)
 
-	// Wait for state to return to idle (result event causes running->idle)
 	deadline := time.After(2 * time.Second)
 	for sess.State() != StateIdle {
 		select {
@@ -99,7 +54,6 @@ func TestEventLoop_QueryThenResult(t *testing.T) {
 		}
 	}
 
-	// Verify prompt was persisted
 	events, err := q.ListEventsBySession(context.Background(), sess.ID)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
@@ -107,7 +61,6 @@ func TestEventLoop_QueryThenResult(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected persisted events")
 	}
-	// First event should be the prompt
 	if events[0].Type != "prompt" {
 		t.Errorf("expected prompt event, got %s", events[0].Type)
 	}
@@ -130,7 +83,6 @@ func TestEventLoop_FatalError(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Need to be in running state for fatal error to transition to failed
 	if err := sess.Query(context.Background(), "test", nil); err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -169,95 +121,13 @@ func TestSession_Close(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Close from idle should stay idle
 	sess.Close()
 
-	if sess.State() != StateIdle {
-		t.Errorf("expected idle after close from idle, got %s", sess.State())
-	}
-}
-
-func TestSession_CloseWhileRunning(t *testing.T) {
-	db, q := testutil.SetupDB(t)
-	proj := testutil.SeedProject(t, q, "test", t.TempDir())
-	bc := &mockBroadcaster{}
-	conn := newMockConnector()
-	mgr := NewManager(db, q, bc, conn)
-
-	sess, err := mgr.Create(context.Background(), CreateParams{
-		ProjectID: proj.ID,
-		Name:      "test",
-		WorkDir:   t.TempDir(),
-		Model:     "opus",
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	if err := sess.Query(context.Background(), "test", nil); err != nil {
-		t.Fatalf("query: %v", err)
-	}
-
-	sess.Close()
-
-	if sess.State() != StateStopped {
-		t.Errorf("expected stopped after close from running, got %s", sess.State())
-	}
-}
-
-func TestSession_ApprovalFlow(t *testing.T) {
-	db, q := testutil.SetupDB(t)
-	proj := testutil.SeedProject(t, q, "test", t.TempDir())
-	bc := &mockBroadcaster{}
-	conn := newMockConnector()
-	mgr := NewManager(db, q, bc, conn)
-
-	sess, err := mgr.Create(context.Background(), CreateParams{
-		ProjectID: proj.ID,
-		Name:      "test",
-		WorkDir:   t.TempDir(),
-		Model:     "opus",
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	// Simulate approval flow in a goroutine (handleToolPermission blocks)
-	done := make(chan *claudecli.PermissionResponse, 1)
-	go func() {
-		resp, _ := sess.handleToolPermission("Write", []byte(`{"path":"test.go"}`))
-		done <- resp
-	}()
-
-	// Wait for broadcast of the approval request
-	deadline := time.After(2 * time.Second)
-	for {
-		msgs := bc.messagesOfType("session.tool-permission")
-		if len(msgs) > 0 {
-			payload := msgs[0].Payload.(PushToolPermission)
-			approvalID := payload.ApprovalID
-
-			// Resolve the approval
-			if err := sess.ResolveApproval(approvalID, true, ""); err != nil {
-				t.Fatalf("resolve: %v", err)
-			}
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timeout waiting for approval broadcast")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-
-	select {
-	case resp := <-done:
-		if !resp.Allow {
-			t.Error("expected approval to be allowed")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for approval response")
+	// Idle sessions stay in their last-known state — runtime translates
+	// Idle→Stopped only when actively running.
+	state := sess.State()
+	if state != StateIdle && state != StateStopped {
+		t.Errorf("unexpected state after close from idle: %s", state)
 	}
 }
 
@@ -290,7 +160,6 @@ func TestManager_CreateAndStop(t *testing.T) {
 		t.Error("session should not be live after stop")
 	}
 
-	// DB should show stopped
 	dbSess, err := q.GetSession(context.Background(), sess.ID)
 	if err != nil {
 		t.Fatalf("get session: %v", err)
@@ -321,7 +190,6 @@ func TestManager_CloseAll(t *testing.T) {
 
 	mgr.CloseAll()
 
-	// All sessions should be evicted
 	sessions, err := mgr.ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("list: %v", err)

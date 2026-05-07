@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/mdjarv/agentique/backend/internal/session"
 )
 
-// Connector implements session.CLIConnector with mock sessions.
+// Connector implements runtime.CLIConnector with mock sessions.
 // Test endpoints use it to inject events into live sessions.
 type Connector struct {
 	mu       sync.Mutex
@@ -31,10 +31,10 @@ func NewConnector() *Connector {
 	}
 }
 
-// Connect implements session.CLIConnector.
+// Connect implements runtime.CLIConnector.
 // Extracts CanUseTool callback from options so the mock session can invoke
 // tool permission checks during scenario replay.
-func (c *Connector) Connect(_ context.Context, opts ...claudecli.Option) (session.CLISession, error) {
+func (c *Connector) Connect(_ context.Context, opts ...claudecli.Option) (runtime.CLISession, error) {
 	s := NewSession()
 	if fn := claudecli.ResolveCanUseTool(opts...); fn != nil {
 		s.mu.Lock()
@@ -113,7 +113,7 @@ type ScriptedEvent struct {
 	Event json.RawMessage `json:"event"` // wire event JSON
 }
 
-// Session implements session.CLISession for testing.
+// Session implements runtime.CLISession for testing.
 type Session struct {
 	events chan claudecli.Event
 

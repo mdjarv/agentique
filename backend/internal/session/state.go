@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/allbin/agentkit/runtime"
 	"github.com/allbin/agentkit/sqliteops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
-// State represents a session lifecycle state.
+// State represents a session lifecycle state. Mirrors the runtime states with
+// the agentique-only StateMerging overlay used during git operations.
 type State string
 
 const (
@@ -21,8 +23,10 @@ const (
 	StateMerging State = "merging"
 )
 
-// validTransitions defines allowed state transitions.
-// Any transition not listed here is rejected.
+// validTransitions defines allowed state transitions for agentique-side
+// (manual) transitions: setState, MarkDone, the merging dance. Runtime-driven
+// transitions (Idle/Running/Failed/Done/Stopped) come through the broadcast
+// hook and bypass validation since the runtime owns its own ordering.
 var validTransitions = map[State]map[State]bool{
 	StateIdle:    {StateRunning: true, StateFailed: true, StateMerging: true, StateStopped: true, StateDone: true},
 	StateRunning: {StateIdle: true, StateFailed: true, StateDone: true},
@@ -49,6 +53,23 @@ func validateTransition(from, to State, sessionID string) error {
 	return fmt.Errorf("session %s: invalid state transition %s -> %s", sessionID, from, to)
 }
 
+// mapRuntimeState maps a runtime.State to the agentique-side State enum.
+func mapRuntimeState(rt runtime.State) State {
+	switch rt {
+	case runtime.StateIdle:
+		return StateIdle
+	case runtime.StateRunning:
+		return StateRunning
+	case runtime.StateFailed:
+		return StateFailed
+	case runtime.StateDone:
+		return StateDone
+	case runtime.StateStopped:
+		return StateStopped
+	}
+	return StateIdle
+}
+
 // State returns the current session state.
 func (s *Session) State() State {
 	s.mu.Lock()
@@ -56,24 +77,19 @@ func (s *Session) State() State {
 	return s.state
 }
 
+// setState validates the transition, persists the new state to the DB, updates
+// the in-memory state, and broadcasts a session.state snapshot. Used by
+// agentique-driven transitions (MarkDone, runtime broadcast hook, merging).
 func (s *Session) setState(state State) error {
 	s.mu.Lock()
 	if err := validateTransition(s.state, state, s.ID); err != nil {
 		s.mu.Unlock()
 		return err
 	}
-
-	// Persist BEFORE updating in-memory so any observer that subsequently
-	// reads State() sees a value already committed to the DB. Holding mu
-	// across the SQLite write is acceptable: the local DB is in WAL mode
-	// (readers don't block writers), per-session mu doesn't contend across
-	// sessions, and persistState retries internally on transient
-	// BUSY/LOCKED errors.
 	s.persistState(state)
 	s.state = state
 	s.mu.Unlock()
 
-	// Non-blocking signal to wake waitForIdle and friends.
 	select {
 	case s.stateChangedCh <- struct{}{}:
 	default:

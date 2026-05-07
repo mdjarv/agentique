@@ -11,6 +11,7 @@ import (
 
 	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/allbin/agentkit/runtime"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
@@ -84,7 +85,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	bus := eventbus.New()
 
-	var connector session.CLIConnector
+	var connector runtime.CLIConnector
 	var runner session.BlockingRunner
 	var testConnector *testmode.Connector
 
@@ -94,7 +95,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
-		connector = session.RealConnector()
+		connector = runtime.RealConnector()
 		runner = session.RealBlockingRunner()
 	}
 

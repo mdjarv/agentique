@@ -512,29 +512,19 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 // tryLiveDelivery attempts to push a formatted channel message into a live
 // session's running CLI process. Returns true when the CLI accepted it.
 //
-// If the recipient is idle, it is transitioned to Running so the CLI loop
-// picks the message up; on CLI send failure that transition is rolled back to
-// avoid leaving a phantom "running" session. A nil receiver (offline) returns
-// false so the caller falls back to the pending DB delivery.
+// Goes straight to the underlying CLISession to bypass both runtime's state
+// check (idle target would reject SendMessage) and agentique's pipeline
+// (the routed message must not surface as a user_message event in the
+// recipient's transcript). A nil receiver (offline) returns false so the
+// caller falls back to the pending DB delivery.
 func (s *Service) tryLiveDelivery(live *Session, recipientID, formatted string) bool {
 	if live == nil {
 		return false
 	}
-
-	if live.State() == StateIdle {
-		if err := live.setState(StateRunning); err != nil {
-			slog.Warn("message state transition failed", "target", recipientID, "error", err)
-		}
-	}
-
-	if err := live.cliSess.SendMessage(formatted); err != nil {
+	if err := live.directSendMessage(formatted); err != nil {
 		slog.Warn("message CLI delivery failed", "target", recipientID, "error", err)
-		if live.State() == StateRunning {
-			_ = live.setState(StateIdle)
-		}
 		return false
 	}
-
 	return true
 }
 
@@ -1273,13 +1263,7 @@ func (s *Service) injectChannelContext(ctx context.Context, sess *Session, chann
 	msg += "\nTo message a teammate, use the SendMessage tool with their name.\n"
 	msg += "You can read files from teammates' worktrees at the paths above."
 
-	sess.mu.Lock()
-	cli := sess.cliSess
-	sess.mu.Unlock()
-	if cli == nil {
-		return
-	}
-	if err := cli.SendMessage(msg); err != nil {
+	if err := injectMessageOrQuery(sess, msg); err != nil {
 		slog.Warn("channel context injection failed", "session_id", sess.ID, "error", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
@@ -45,24 +46,19 @@ func nullStr(ns sql.NullString) string {
 	return ""
 }
 
-// pendingApproval tracks a single tool permission request waiting for user input.
-type pendingApproval struct {
+// syntheticApproval is an agentique-side pending approval that doesn't pass
+// through the runtime approval pump. Used for the plan-review dance (where
+// agentique synthesizes an approval after the pipeline observes ExitPlanMode
+// in the event stream) and for SpawnWorkers (where the interceptor returns
+// after a user prompt resolves).
+type syntheticApproval struct {
 	id       string
 	toolName string
 	input    json.RawMessage
 	ch       chan *claudecli.PermissionResponse
 }
 
-// pendingQuestion tracks a single AskUserQuestion request waiting for user input.
-type pendingQuestion struct {
-	id        string
-	questions []claudecli.Question
-	ch        chan map[string]string
-}
-
 const (
-	eventLoopShutdownTimeout = 3 * time.Second
-
 	// Tool result truncation thresholds for DB storage.
 	maxToolResultDBSize = 10_000
 	toolResultKeepHead  = 4_000
@@ -70,22 +66,6 @@ const (
 
 	// Debounce window for mid-turn git status refresh after write-tool results.
 	gitRefreshDebounce = 500 * time.Millisecond
-)
-
-// Watchdog thresholds. Declared as vars so tests can shorten them without
-// waiting minutes of real time.
-//
-//   - thinkingWarnAfter / thinkingFailAfter apply to ActivityThinking/Idle
-//     (no tool in flight). Event silence signals a genuine model stall.
-//   - toolLivenessInterval is the poll cadence during ActivityAwaitingToolResult.
-//     No event-silence timeout applies; the failure signal is the CLI process dying.
-//   - toolStallWarnAfter emits an informational broadcast if stdout stops moving
-//     for this long during tool execution (process alive but nothing happening).
-var (
-	thinkingWarnAfter    = 2 * time.Minute
-	thinkingFailAfter    = 5 * time.Minute
-	toolLivenessInterval = 60 * time.Second
-	toolStallWarnAfter   = 10 * time.Minute
 )
 
 // sessionGitState groups git/worktree-related fields of a Session.
@@ -115,42 +95,40 @@ type sessionPersonaState struct {
 	teamContext    *sessionTeamContext
 }
 
-// Session wraps a single claudecli-go interactive session.
+// Session is an agentique-side session. It wraps a runtime.Session and adds
+// persistence, git/worktree state, channel and persona context, and a small
+// pool of synthetic approvals (plan-review and spawn UI prompts) that don't
+// pass through the runtime approval pump.
 type Session struct {
 	ID        string
 	ProjectID string
 
-	ctx        context.Context
-	cancelCtx  context.CancelFunc
-	mu         sync.Mutex
-	state      State
-	cliSess    CLISession
-	queryCount int
-	pipeline   *EventPipeline
-	queries    sessionQueries
-	broadcast  func(pushType string, payload any)
-	approvalState
-	toolInterceptors map[string]toolInterceptor
-	completedAt      string // ISO8601 timestamp or "" if not completed
-	eventLoopDone    chan struct{}
-	stateChangedCh   chan struct{} // buffered(1), signaled on state transitions
+	rt *runtime.Session // runtime owns lifecycle/watchdog/approval pump
 
-	// activityState mirrors the CLI's authoritative activity state, driven by
-	// CLIStateChangeEvent. Watchdog behavior depends on it:
-	//   ActivityThinking / ActivityIdle → event-silence timeout (model stall).
-	//   ActivityAwaitingToolResult     → process liveness + stdout-stall check.
-	// Protected by mu.
-	activityState claudecli.ActivityState
+	// cli is the raw CLISession runtime is driving. We keep a reference so
+	// agentique can inject silent channel-context / pending-delivery messages
+	// straight to the CLI, bypassing both runtime's state-check and the
+	// pipeline. Captured by Manager via the capturing connector.
+	cli runtime.CLISession
 
-	// toolStallWarned avoids repeatedly broadcasting the same stdout-stall
-	// warning while a single tool remains stuck. Reset on activity state change.
-	// Protected by mu.
-	toolStallWarned bool
+	ctx       context.Context
+	cancelCtx context.CancelFunc
 
-	// lastToolProgress is the most recent ToolProgressEvent from claudecli-go.
-	// Used to enrich stall warnings with the running tool's name and elapsed time.
-	// Protected by mu.
-	lastToolProgress *claudecli.ToolProgressEvent
+	mu             sync.Mutex
+	state          State
+	queryCount     int
+	pipeline       *EventPipeline
+	queries        sessionQueries
+	broadcast      func(pushType string, payload any)
+	completedAt    string // ISO8601 timestamp or "" if not completed
+	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
+
+	// approval/permission state. Auto-approve mode and permission mode are
+	// kept locally in addition to runtime so we can drive agentique's
+	// "auto" safe-tool bypass logic and persist permission mode changes.
+	autoApproveMode    string // "manual", "auto", "fullAuto"
+	permissionMode     string // "default", "plan", "acceptEdits"
+	syntheticApprovals map[string]*syntheticApproval
 
 	git     sessionGitState
 	channel sessionChannelState
@@ -181,68 +159,106 @@ type teammateRef struct {
 	teamID    string
 }
 
+// sessionParams collects the inputs to newSession. Internal to the session
+// package — Manager wires real values from CreateParams / ResumeParams.
 type sessionParams struct {
-	id                    string
-	projectID             string
-	model                 string
-	db                    *sql.DB // for transactions
-	cliSess               CLISession
-	queries               sessionQueries
-	broadcast             func(pushType string, payload any)
-	turnIndex             int
-	workDir               string
-	initialGitVersion     int64
-	broadcastInitialState bool // true for Resume (frontend has session), false for Create (session.created carries state)
-	gitStatus             branchStatusQuerier
+	id                string
+	projectID         string
+	model             string
+	db                *sql.DB
+	queries           sessionQueries
+	broadcast         func(pushType string, payload any)
+	turnIndex         int
+	workDir           string
+	initialGitVersion int64
+	gitStatus         branchStatusQuerier
 }
 
+// newSession constructs an agentique Session shell. The runtime.Session is
+// attached afterward via setRuntime once Manager has connected the CLI; this
+// preserves the constraint that interceptors / broadcast hooks reference the
+// final Session pointer.
 func newSession(p sessionParams) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
-		ID:             p.id,
-		ProjectID:      p.projectID,
-		ctx:            ctx,
-		cancelCtx:      cancel,
-		state:          StateIdle,
-		db:             p.db,
-		cliSess:        p.cliSess,
-		queries:        p.queries,
-		broadcast:      p.broadcast,
-		approvalState:  newApprovalState(),
-		eventLoopDone:  make(chan struct{}),
-		stateChangedCh: make(chan struct{}, 1),
-		activityState:  claudecli.ActivityIdle,
+		ID:                 p.id,
+		ProjectID:          p.projectID,
+		ctx:                ctx,
+		cancelCtx:          cancel,
+		state:              StateIdle,
+		db:                 p.db,
+		queries:            p.queries,
+		broadcast:          p.broadcast,
+		stateChangedCh:     make(chan struct{}, 1),
+		autoApproveMode:    "manual",
+		permissionMode:     "default",
+		syntheticApprovals: make(map[string]*syntheticApproval),
 		git: sessionGitState{
 			workDir:    p.workDir,
 			gitVersion: p.initialGitVersion,
 			gitStatus:  p.gitStatus,
 		},
 	}
-	allow := func(json.RawMessage) (*claudecli.PermissionResponse, error) {
-		return &claudecli.PermissionResponse{Allow: true}, nil
+	s.pipeline = NewEventPipeline(buildPipelineConfig(s, p))
+	return s
+}
+
+// setRuntime attaches a runtime.Session and the underlying CLISession to this
+// agentique session. Manager calls this after a successful runtime Create /
+// Resume / Reconnect.
+func (s *Session) setRuntime(rt *runtime.Session, cli runtime.CLISession) {
+	s.mu.Lock()
+	s.rt = rt
+	s.cli = cli
+	s.mu.Unlock()
+}
+
+// directSendMessage injects prompt directly into the underlying CLISession,
+// bypassing both the runtime state-check and the agentique pipeline. Used for
+// silent channel-context injection and pending-delivery replay.
+func (s *Session) directSendMessage(prompt string) error {
+	s.mu.Lock()
+	cli := s.cli
+	s.mu.Unlock()
+	if cli == nil {
+		return ErrNotLive
 	}
-	s.toolInterceptors = map[string]toolInterceptor{
-		// Both legacy stdio and new HTTP MCP tool names map to the same handler.
-		// Only one MCP server is active per session, so only one name will fire.
-		ChannelSendMessageTool:   s.interceptSendMessage,
-		AgentiqueSendMessageTool: s.interceptSendMessage,
-		"AskTeammate":            s.interceptAskTeammate,
-		"ExitPlanMode":           allow,
-		// Dev URL tools on HTTP MCP: auto-allow so they execute via /mcp.
-		AgentiqueAcquireDevURLTool: allow,
-		AgentiqueReleaseDevURLTool: allow,
-		AgentiqueListDevURLsTool:   allow,
-		// Session rename is self-affecting and reversible — safe to auto-allow.
+	return cli.SendMessage(prompt)
+}
+
+// agentiqueInterceptors returns the tool interceptor map used at runtime
+// session construction. Each maps an agentique-side handler returning a
+// claudecli.PermissionResponse onto runtime's Decision shape.
+func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
+	allow := func(_ context.Context, _ json.RawMessage) (*runtime.Decision, error) {
+		return &runtime.Decision{Allow: true}, nil
+	}
+	wrap := func(fn func(json.RawMessage) (*claudecli.PermissionResponse, error)) runtime.ToolInterceptor {
+		return func(_ context.Context, input json.RawMessage) (*runtime.Decision, error) {
+			resp, err := fn(input)
+			if err != nil {
+				return nil, err
+			}
+			if resp == nil {
+				return nil, nil
+			}
+			return &runtime.Decision{
+				Allow:        resp.Allow,
+				DenyMessage:  resp.DenyMessage,
+				UpdatedInput: resp.UpdatedInput,
+			}, nil
+		}
+	}
+	return map[string]runtime.ToolInterceptor{
+		ChannelSendMessageTool:      wrap(s.interceptSendMessage),
+		AgentiqueSendMessageTool:    wrap(s.interceptSendMessage),
+		"AskTeammate":               wrap(s.interceptAskTeammate),
+		"ExitPlanMode":              allow,
+		AgentiqueAcquireDevURLTool:  allow,
+		AgentiqueReleaseDevURLTool:  allow,
+		AgentiqueListDevURLsTool:    allow,
 		AgentiqueSetSessionNameTool: allow,
 	}
-	s.pipeline = NewEventPipeline(buildPipelineConfig(s, p))
-	if p.broadcastInitialState {
-		s.broadcastState(StateIdle)
-	}
-	if s.cliSess != nil {
-		s.startEventLoop()
-	}
-	return s
 }
 
 // buildPipelineConfig constructs the PipelineConfig for a session's event pipeline.
@@ -314,13 +330,12 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnTurnComplete: func() {
-			if s.State() != StateIdle {
-				if err := s.setState(StateIdle); err != nil {
-					slog.Error("state transition failed", "session_id", s.ID, "error", err)
-				}
-			}
+			// Runtime drives Running→Idle from ResultEvent; agentique just
+			// observes via the broadcast hook. Nothing to do here.
 		},
 		OnFatalError: func(err error) {
+			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
+			// is the only place that classifies them. Mirror to StateFailed.
 			if stErr := s.setState(StateFailed); stErr != nil {
 				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 			}
@@ -331,7 +346,6 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				SourceID:  s.ID,
 				CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000"),
 			}
-			// Fetch session name from DB (low-frequency: only result/error events).
 			if dbSess, err := s.queries.GetSession(context.Background(), s.ID); err == nil {
 				item.SourceName = dbSess.Name
 			}
@@ -351,16 +365,6 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 	}
 }
 
-// setCLISession attaches a connected CLI session and starts the event loop.
-// Used when the Session must be created before Connect() so the permission callback
-// can capture the Session reference.
-func (s *Session) setCLISession(cliSess CLISession) {
-	s.mu.Lock()
-	s.cliSess = cliSess
-	s.mu.Unlock()
-	s.startEventLoop()
-}
-
 // ClaudeSessionID returns the Claude CLI session ID, if available.
 func (s *Session) ClaudeSessionID() string {
 	return s.pipeline.ClaudeSessionID()
@@ -372,24 +376,32 @@ func (s *Session) BrowserPort() int { return s.browserPort }
 // SetBrowserPort stores the allocated Chrome debugging port.
 func (s *Session) SetBrowserPort(port int) { s.browserPort = port }
 
+// underlying returns the *claudecli.Session powering the runtime, when one is
+// attached. Returns nil if the session is closed or backed by a stub. Used by
+// methods that need claudecli features the runtime doesn't proxy.
+func (s *Session) underlying() *claudecli.Session {
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
+		return nil
+	}
+	return rt.Underlying()
+}
+
 // ReconnectMCP asks Claude Code to reconnect a named MCP server (fire-and-forget).
 func (s *Session) ReconnectMCP(serverName string) error {
-	s.mu.Lock()
-	cli := s.cliSess
-	s.mu.Unlock()
+	cli := s.underlying()
 	if cli == nil {
 		return fmt.Errorf("session not connected")
 	}
 	return cli.ReconnectMCPServer(serverName)
 }
 
-// ReconnectMCPWait reconnects a named MCP server and blocks until it reports ready
-// (or the timeout expires). Use this when the caller needs to know the server is
-// available before proceeding (e.g. injecting a prompt that references its tools).
+// ReconnectMCPWait reconnects a named MCP server and blocks until it reports
+// ready (or the timeout expires).
 func (s *Session) ReconnectMCPWait(serverName string, timeout time.Duration) error {
-	s.mu.Lock()
-	cli := s.cliSess
-	s.mu.Unlock()
+	cli := s.underlying()
 	if cli == nil {
 		return fmt.Errorf("session not connected")
 	}
@@ -403,40 +415,32 @@ func (s *Session) QueryCount() int {
 	return s.queryCount
 }
 
-// SendMessage injects a user message mid-turn via the CLI's SendMessage API.
-// The CLI processes it at the next safe boundary (between tool calls) and folds
-// the response into the current turn's ResultEvent.
+// SendMessage injects a user message mid-turn via the runtime SendMessage API.
+// Only valid while the session is Running.
 func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) error {
 	s.mu.Lock()
-	if s.state != StateRunning {
-		s.mu.Unlock()
-		return fmt.Errorf("session %s: cannot send message in state %s", s.ID, string(s.state))
-	}
-	cli := s.cliSess
-	if cli == nil {
-		s.mu.Unlock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
 		return ErrNotLive
 	}
-	s.mu.Unlock()
 
 	turnIdx, seq := s.pipeline.AllocSeq()
 
-	// Send to CLI.
 	if len(attachments) > 0 {
 		blocks, err := toContentBlocks(attachments)
 		if err != nil {
 			return fmt.Errorf("parse attachments: %w", err)
 		}
-		if err := cli.SendMessageWithContent(prompt, blocks...); err != nil {
+		if err := rt.SendMessage(context.Background(), prompt, blocks...); err != nil {
 			return err
 		}
 	} else {
-		if err := cli.SendMessage(prompt); err != nil {
+		if err := rt.SendMessage(context.Background(), prompt); err != nil {
 			return err
 		}
 	}
 
-	// Persist + broadcast as a user_message event within the current turn.
 	messageID := uuid.New().String()
 	s.pipeline.PushPendingMessage(messageID)
 	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, MessageID: messageID, Attachments: attachments}
@@ -458,17 +462,14 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
-// The caller's ctx is NOT used — all DB writes and CLI operations use background
-// contexts so they complete even if the triggering WS connection disconnects.
 func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAttachment) error {
-	cli, wasCompleted, wasMerged, err := s.validateAndTransition()
+	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery()
 	if err != nil {
 		return err
 	}
 
 	turnIndex := s.pipeline.AdvanceTurn()
 	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments)
-	s.broadcastState(StateRunning)
 
 	turnPayload := PushTurnStarted{SessionID: s.ID, Prompt: prompt}
 	if len(attachments) > 0 {
@@ -476,50 +477,43 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	}
 	s.broadcast("session.turn-started", turnPayload)
 
+	var queryErr error
 	if len(attachments) == 0 {
-		if err := cli.Query(prompt); err != nil {
-			if stErr := s.setState(StateFailed); stErr != nil {
-				slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
-			}
-			return err
+		queryErr = rt.Query(context.Background(), prompt)
+	} else {
+		blocks, berr := toContentBlocks(attachments)
+		if berr != nil {
+			return fmt.Errorf("parse attachments: %w", berr)
 		}
-		return nil
+		queryErr = rt.Query(context.Background(), prompt, blocks...)
 	}
-
-	blocks, err := toContentBlocks(attachments)
-	if err != nil {
+	if queryErr != nil {
 		if stErr := s.setState(StateFailed); stErr != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
-		return fmt.Errorf("parse attachments: %w", err)
-	}
-	if err := cli.QueryWithContent(prompt, blocks...); err != nil {
-		if stErr := s.setState(StateFailed); stErr != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
-		}
-		return err
+		return queryErr
 	}
 	return nil
 }
 
-// validateAndTransition atomically checks the state transition, updates in-memory
-// state, and returns the CLI session plus prior flags needed for DB cleanup.
-func (s *Session) validateAndTransition() (cli CLISession, wasCompleted, wasMerged bool, err error) {
+// validateAndPrepareQuery checks the runtime is connected and preserves prior
+// flags (completed, merged) for cleanup. Runtime drives the Idle→Running
+// transition; agentique just resets transient flags and bumps queryCount.
+func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, wasMerged bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err = validateTransition(s.state, StateRunning, s.ID); err != nil {
-		return nil, false, false, err
+	if s.rt == nil {
+		return nil, false, false, ErrNotLive
 	}
-	if s.cliSess == nil {
-		return nil, false, false, fmt.Errorf("session %s: CLI session not connected", s.ID)
+	if s.state == StateRunning {
+		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, s.state)
 	}
-	s.state = StateRunning
 	s.queryCount++
 	wasCompleted = s.completedAt != ""
 	s.completedAt = ""
 	wasMerged = s.git.worktreeMerged
 	s.git.worktreeMerged = false
-	return s.cliSess, wasCompleted, wasMerged, nil
+	return s.rt, wasCompleted, wasMerged, nil
 }
 
 // persistQueryStart writes the running state, resets completed/merged flags in the
@@ -536,7 +530,6 @@ func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool,
 		return
 	}
 
-	// Resolve head SHA outside the transaction (it's a git operation, not a DB op).
 	var headSHA string
 	if wasMerged {
 		if project, pErr := s.queries.GetProject(context.Background(), s.ProjectID); pErr == nil {
@@ -605,7 +598,6 @@ func toContentBlocks(attachments []QueryAttachment) ([]claudecli.ContentBlock, e
 
 // parseDataUrl extracts the media type and decoded bytes from a data URL.
 func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
-	// Format: data:<mediaType>;base64,<data>
 	if !strings.HasPrefix(dataUrl, "data:") {
 		return "", nil, fmt.Errorf("not a data URL")
 	}
@@ -627,431 +619,55 @@ func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
 	return mediaType, data, nil
 }
 
-// startEventLoop reads events from the claudecli-go session, persists them
-// to the database, and broadcasts them to all project WebSocket clients.
-// Signals eventLoopDone on exit. Exits on context cancellation or channel close.
-func (s *Session) startEventLoop() {
-	s.mu.Lock()
-	cli := s.cliSess
-	s.mu.Unlock()
-	events := cli.Events()
-
-	go func() {
-		defer close(s.eventLoopDone)
-		watchdog := time.NewTimer(thinkingWarnAfter)
-		defer watchdog.Stop()
-		var warned bool
-		var lastEventType string
-		var lastExit *claudecli.CLIExitEvent
-		lastEventTime := time.Now()
-
-		for {
-			select {
-			case <-s.ctx.Done():
-				return
-			case event, ok := <-events:
-				if !ok {
-					s.handleEventChannelClose(lastExit)
-					return
-				}
-				lastEventType = fmt.Sprintf("%T", event)
-				lastEventTime = time.Now()
-				if ex, ok := event.(*claudecli.CLIExitEvent); ok {
-					lastExit = ex
-				}
-				watchdog.Reset(s.observeActivity(event))
-				warned = false
-				s.safeProcessEvent(event)
-			case <-watchdog.C:
-				next, newWarned, terminate := s.handleWatchdogTick(lastEventType, lastEventTime, warned)
-				if terminate {
-					return
-				}
-				warned = newWarned
-				watchdog.Reset(next)
-			}
-		}
-	}()
-}
-
-// handleEventChannelClose decides the terminal state when the CLI event
-// channel closes. The session is already returning from its event loop;
-// this method only updates state and persists.
-//
-// Behavior by current state:
-//   - Done/Failed/Stopped: no-op (don't mask the real reason).
-//   - Running: treat as unexpected exit, broadcast a fatal error, mark Failed.
-//     The most recent CLIExitEvent provides the reason when available.
-//   - Anything else (idle/merging): clean close — mark Done and persist
-//     completedAt.
-func (s *Session) handleEventChannelClose(lastExit *claudecli.CLIExitEvent) {
-	s.mu.Lock()
-	st := s.state
-	s.mu.Unlock()
-
-	if st == StateDone || st == StateFailed || st == StateStopped {
-		return
-	}
-
-	if st == StateRunning {
-		msg := formatExitEvent(lastExit)
-		slog.Error("CLI process died while running", "session_id", s.ID, "message", msg)
-		s.broadcast("session.event", PushSessionEvent{
-			SessionID: s.ID,
-			Event:     WireErrorEvent{Type: "error", Content: msg, Fatal: true},
-		})
-		if err := s.setState(StateFailed); err != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", err)
-		}
-		return
-	}
-
-	// Set completedAt in memory first so broadcastState includes it.
-	s.MarkCompleted()
-	if err := s.setState(StateDone); err != nil {
-		slog.Error("state transition failed", "session_id", s.ID, "error", err)
-		return
-	}
-	if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
-		slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
-	}
-}
-
-// handleWatchdogTick processes a watchdog timer fire. Returns the next
-// re-arm interval, the new `warned` flag, and a terminate signal that
-// instructs the event loop to exit (used for fatal failures).
-func (s *Session) handleWatchdogTick(lastEventType string, lastEventTime time.Time, warned bool) (time.Duration, bool, bool) {
-	s.mu.Lock()
-	st := s.state
-	waitingForUser := len(s.pendingApprovals) > 0 || len(s.pendingQuestions) > 0
-	act := s.activityState
-	s.mu.Unlock()
-
-	if st != StateRunning || waitingForUser {
-		return thinkingWarnAfter, warned, false
-	}
-
-	if act == claudecli.ActivityAwaitingToolResult {
-		return s.handleToolWatchdog()
-	}
-	return s.handleThinkingWatchdog(lastEventType, lastEventTime, warned)
-}
-
-// handleToolWatchdog handles a watchdog tick when a tool is executing.
-// Event silence is expected here; we only fail when the CLI process has
-// died or a stdout-stall probe reveals a wedged read loop.
-//
-// Reads s.cliSess once under s.mu so a concurrent Session.Close() cannot
-// nil it out mid-tick.
-func (s *Session) handleToolWatchdog() (time.Duration, bool, bool) {
-	s.mu.Lock()
-	cli := s.cliSess
-	s.mu.Unlock()
-
-	if cli == nil || !cliAlive(cli) {
-		slog.Error("watchdog: CLI process not alive while awaiting tool result", "session_id", s.ID)
-		s.broadcast("session.event", PushSessionEvent{
-			SessionID: s.ID,
-			Event:     WireErrorEvent{Type: "error", Content: "CLI process exited while a tool was running", Fatal: true},
-		})
-		if err := s.setState(StateFailed); err != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", err)
-		}
-		return 0, false, true
-	}
-	if s.maybeHandleToolStall(cli) == toolStallFatal {
-		if err := s.setState(StateFailed); err != nil {
-			slog.Error("state transition failed", "session_id", s.ID, "error", err)
-		}
-		return 0, false, true
-	}
-	return toolLivenessInterval, false, false
-}
-
-// handleThinkingWatchdog handles a watchdog tick when the session is
-// thinking/idle (no tool running). Event-silence timeout applies: warn at
-// thinkingWarnAfter, fail at thinkingFailAfter.
-func (s *Session) handleThinkingWatchdog(lastEventType string, lastEventTime time.Time, warned bool) (time.Duration, bool, bool) {
-	sinceLastEvent := time.Since(lastEventTime)
-	if sinceLastEvent < thinkingWarnAfter {
-		// Timer fired but the window hasn't actually elapsed (possible when a
-		// previous reset races with a tick). Re-arm for the remainder.
-		return thinkingWarnAfter - sinceLastEvent, warned, false
-	}
-	if !warned {
-		slog.Warn("watchdog: no activity",
-			"session_id", s.ID,
-			"last_event_type", lastEventType,
-			"since_last_event", sinceLastEvent.Round(time.Second),
-		)
-		s.broadcast("session.event", PushSessionEvent{
-			SessionID: s.ID,
-			Event:     WireErrorEvent{Type: "error", Content: "session may be unresponsive — no activity for 2 minutes", Fatal: false},
-		})
-		return thinkingFailAfter - thinkingWarnAfter, true, false
-	}
-	slog.Error("watchdog timeout, marking session failed",
-		"session_id", s.ID,
-		"last_event_type", lastEventType,
-		"since_last_event", sinceLastEvent.Round(time.Second),
-	)
-	s.setState(StateFailed)
-	return 0, false, true
-}
-
-// observeActivity syncs the local activity-state mirror from an incoming event
-// and returns the watchdog interval appropriate for the resulting state.
-//
-// The authoritative signal is claudecli-go's CLIStateChangeEvent, emitted
-// immediately before the triggering event. This replaces earlier tool_use /
-// tool_result inference, which was correct but duplicated work the CLI wrapper
-// now does for us.
-func (s *Session) observeActivity(event claudecli.Event) time.Duration {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	switch e := event.(type) {
-	case *claudecli.CLIStateChangeEvent:
-		if e.State != s.activityState {
-			s.toolStallWarned = false
-			s.lastToolProgress = nil
-		}
-		s.activityState = e.State
-	case *claudecli.ToolProgressEvent:
-		s.lastToolProgress = e
-	}
-	if s.activityState == claudecli.ActivityAwaitingToolResult {
-		return toolLivenessInterval
-	}
-	return thinkingWarnAfter
-}
-
-// toolStallResult is returned by maybeHandleToolStall. "fatal" means the
-// watchdog escalated via Ping and confirmed the CLI's read loop is wedged —
-// the caller should fail the session.
-type toolStallResult int
-
-const (
-	toolStallNone   toolStallResult = iota // no stall detected or duplicate warning suppressed
-	toolStallWarned                        // emitted a non-fatal info broadcast
-	toolStallFatal                         // Ping failed; CLI readLoop is wedged
-)
-
-const watchdogPingTimeout = 10 * time.Second
-
-// maybeHandleToolStall detects stdout stalls during tool execution and either
-// emits an informational warning (process + readLoop alive) or escalates to a
-// fatal signal (readLoop wedged, verified via Ping). Deduplicates repeat
-// warnings for the same stall episode via toolStallWarned.
-//
-// Takes the CLI session as a parameter so the caller can snapshot it once
-// under s.mu and avoid racing with Session.Close which sets s.cliSess = nil.
-func (s *Session) maybeHandleToolStall(cli CLISession) toolStallResult {
-	info := cli.ProcessInfo()
-	if info.LastStdoutAt.IsZero() {
-		return toolStallNone
-	}
-	silent := time.Since(info.LastStdoutAt)
-	if silent < toolStallWarnAfter {
-		return toolStallNone
-	}
-
-	s.mu.Lock()
-	if s.toolStallWarned {
-		s.mu.Unlock()
-		return toolStallNone
-	}
-	s.toolStallWarned = true
-	progress := s.lastToolProgress
-	s.mu.Unlock()
-
-	// Escalation: probe the CLI's read loop. A healthy CLI answers even if
-	// the running tool is wedged; if the ping fails, the readLoop is wedged
-	// too — that's a zombie and the session cannot recover.
-	if err := cli.Ping(watchdogPingTimeout); err != nil {
-		slog.Error("watchdog: ping failed during stdout stall",
-			"session_id", s.ID,
-			"stdout_silent", silent.Round(time.Second),
-			"error", err,
-		)
-		s.broadcast("session.event", PushSessionEvent{
-			SessionID: s.ID,
-			Event: WireErrorEvent{
-				Type:    "error",
-				Content: fmt.Sprintf("CLI read loop unresponsive (ping: %v) — session cannot recover", err),
-				Fatal:   true,
-			},
-		})
-		return toolStallFatal
-	}
-
-	content := fmt.Sprintf("tool still running — CLI stdout silent for %s", silent.Round(time.Second))
-	if progress != nil && progress.ToolName != "" {
-		content = fmt.Sprintf("tool %s still running (%s) — CLI stdout silent for %s",
-			progress.ToolName, progress.Elapsed.Round(time.Second), silent.Round(time.Second))
-	}
-	slog.Warn("watchdog: stdout stalled while tool running",
-		"session_id", s.ID,
-		"stdout_silent", silent.Round(time.Second),
-	)
-	s.broadcast("session.event", PushSessionEvent{
-		SessionID: s.ID,
-		Event: WireErrorEvent{
-			Type:    "error",
-			Content: content,
-			Fatal:   false,
-		},
-	})
-	return toolStallWarned
-}
-
-// formatExitEvent renders a user-facing description of why the CLI exited.
-// Used to give the fatal broadcast an actionable message instead of the
-// generic "CLI process exited unexpectedly".
-func formatExitEvent(e *claudecli.CLIExitEvent) string {
-	if e == nil {
-		return "CLI process exited unexpectedly while running"
-	}
-	switch e.Reason {
-	case claudecli.ExitReasonNormal:
-		return "CLI process exited (clean)"
-	case claudecli.ExitReasonKilled:
-		if e.Signal != "" {
-			return fmt.Sprintf("CLI process killed by %s", e.Signal)
-		}
-		return "CLI process killed"
-	case claudecli.ExitReasonCrashed:
-		msg := fmt.Sprintf("CLI process crashed (exit code %d)", e.ExitCode)
-		if e.Err != nil {
-			msg += fmt.Sprintf(": %v", e.Err)
-		}
-		return msg
-	case claudecli.ExitReasonContextCanceled:
-		return "CLI process terminated (context canceled)"
-	}
-	return fmt.Sprintf("CLI process exited (reason: %s, code: %d)", e.Reason, e.ExitCode)
-}
-
-// safeProcessEvent wraps pipeline.ProcessEvent with panic recovery so a single
-// malformed event can't kill the event loop goroutine.
-func (s *Session) safeProcessEvent(event claudecli.Event) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("panic in processEvent", "session_id", s.ID, "panic", r)
-			s.broadcast("session.event", PushSessionEvent{
-				SessionID: s.ID,
-				Event: WireErrorEvent{
-					Type:    "error",
-					Content: fmt.Sprintf("internal error processing event: %v", r),
-					Fatal:   false,
-				},
-			})
-		}
-	}()
-	s.pipeline.ProcessEvent(event)
-}
-
 // Interrupt stops the current generation without killing the session.
-// The event loop will receive a ResultEvent and transition back to idle.
-// Any queued messages are cleared — the ResultEvent drain will find an empty queue.
 func (s *Session) Interrupt() error {
 	s.mu.Lock()
-	if s.state != StateRunning {
-		s.mu.Unlock()
-		return fmt.Errorf("session is %s, not %s", string(s.state), string(StateRunning))
-	}
-	if s.cliSess == nil {
-		s.mu.Unlock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
 		return ErrNotLive
 	}
-	s.cliSess.Interrupt()
-	s.mu.Unlock()
-	return nil
+	return rt.Interrupt()
 }
 
 // SetModel changes the model for this session. Only allowed when idle.
 func (s *Session) SetModel(model string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.state == StateRunning {
-		return fmt.Errorf("cannot change model while running")
-	}
-	if s.cliSess == nil {
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
 		return ErrNotLive
 	}
-	s.cliSess.SetModel(resolveModel(model))
-	return nil
+	return rt.SetModel(resolveModel(model))
 }
 
-// Close gracefully shuts down the claudecli-go session.
-// Cancels the context to unblock callbacks, closes the CLI session to stop the
-// process and close the Events channel, then waits for the event loop to exit.
+// Close gracefully tears down the session (CLI process, event loop, pending
+// approvals). Manager.Stop / Evict are the normal entry points; Close is
+// exposed for direct callers (tests, CloseAll cleanup).
 func (s *Session) Close() {
-	// Capture state before close — the dying CLI process may race and
-	// persist StateFailed via processEvent before we regain control.
-	s.mu.Lock()
-	stateBeforeClose := s.state
-	s.mu.Unlock()
-
 	s.cancelCtx()
 	s.stopGitRefreshTimer()
 	s.pipeline.StopPulseTimer()
 
-	// Close CLI session to stop the process and close Events channel.
 	s.mu.Lock()
-	cli := s.cliSess
-	s.cliSess = nil
+	rt := s.rt
+	s.rt = nil
+	s.cli = nil
 	s.mu.Unlock()
-	if cli != nil {
-		cli.Close()
+	if rt != nil {
+		_ = rt.Close()
 	}
 
-	// Wait for event loop goroutine to finish.
-	select {
-	case <-s.eventLoopDone:
-	case <-time.After(eventLoopShutdownTimeout):
-		slog.Warn("event loop did not stop in time", "session_id", s.ID)
-	}
-
-	// Safety net: drain any pending approvals/questions that weren't
-	// cleared by ctx cancellation.
+	// Drain synthetic approvals — runtime drains its own.
 	s.mu.Lock()
-	for id, pa := range s.pendingApprovals {
+	for id, sa := range s.syntheticApprovals {
 		select {
-		case pa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}:
+		case sa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}:
 		default:
 		}
-		delete(s.pendingApprovals, id)
+		delete(s.syntheticApprovals, id)
 	}
-	for id, pq := range s.pendingQuestions {
-		select {
-		case pq.ch <- nil:
-		default:
-		}
-		delete(s.pendingQuestions, id)
-	}
-
-	// Interrupted work → stopped. Idle sessions stay idle (nothing was
-	// interrupted, the user just hasn't sent a followup yet). Terminal
-	// states are preserved as-is.
-	finalState := stateBeforeClose
-	switch stateBeforeClose {
-	case StateRunning, StateMerging:
-		finalState = StateStopped
-	}
-	s.state = finalState
 	s.mu.Unlock()
-
-	// Persist to DB — overwrites any spurious "failed" set by the dying
-	// CLI process during shutdown.
-	if err := s.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
-		State: string(finalState),
-		ID:    s.ID,
-	}); err != nil {
-		slog.Error("persist final state on close failed", "session_id", s.ID, "state", finalState, "error", err)
-	}
-
-	// Notify clients so they don't show stale state until next refresh.
-	s.broadcastState(finalState)
 }
 
 // MarkDone transitions the session to StateDone and marks it completed.
@@ -1074,7 +690,6 @@ func (s *Session) MarkDone() error {
 
 	if alreadyDone {
 		if !alreadyCompleted {
-			// completedAt was missing — broadcast so the frontend picks it up.
 			s.broadcastState(StateDone)
 		}
 		return nil
@@ -1093,45 +708,64 @@ func (s *Session) MarkCompleted() {
 func (s *Session) liveState() (state State, connected bool, worktreeMerged bool, completedAt string, gitOperation string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state, s.cliSess != nil, s.git.worktreeMerged, s.completedAt, s.git.gitOperation
+	return s.state, s.rt != nil, s.git.worktreeMerged, s.completedAt, s.git.gitOperation
 }
 
-// PendingState returns a snapshot of any pending approval/question, or nil if none.
+// PendingState returns a snapshot of any pending approval/question, preferring
+// agentique's synthetic approvals (plan-review, spawn UI prompt) and falling
+// back to the runtime approval pump.
 func (s *Session) PendingState() (*WirePendingApproval, *WirePendingQuestion) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	var approval *WirePendingApproval
-	for _, pa := range s.pendingApprovals {
+	for _, sa := range s.syntheticApprovals {
 		approval = &WirePendingApproval{
-			ApprovalID: pa.id,
-			ToolName:   pa.toolName,
-			Input:      pa.input,
+			ApprovalID: sa.id,
+			ToolName:   sa.toolName,
+			Input:      append(json.RawMessage(nil), sa.input...),
 		}
 		break
 	}
+	rt := s.rt
+	s.mu.Unlock()
 
 	var question *WirePendingQuestion
-	for _, pq := range s.pendingQuestions {
-		qs := make([]WireQuestion, len(pq.questions))
-		for i, q := range pq.questions {
-			opts := make([]WireQuestionOption, len(q.Options))
-			for j, o := range q.Options {
-				opts[j] = WireQuestionOption{Label: o.Label, Description: o.Description}
-			}
-			qs[i] = WireQuestion{
-				Question:    q.Question,
-				Header:      q.Header,
-				Options:     opts,
-				MultiSelect: q.MultiSelect,
+	if rt != nil {
+		rtA, rtQ := rt.PendingState()
+		if approval == nil && rtA != nil {
+			approval = &WirePendingApproval{
+				ApprovalID: rtA.ID,
+				ToolName:   rtA.ToolName,
+				Input:      rtA.Input,
 			}
 		}
-		question = &WirePendingQuestion{
-			QuestionID: pq.id,
-			Questions:  qs,
+		if rtQ != nil {
+			qs := make([]WireQuestion, len(rtQ.Questions))
+			for i, q := range rtQ.Questions {
+				opts := make([]WireQuestionOption, len(q.Options))
+				for j, o := range q.Options {
+					opts[j] = WireQuestionOption{Label: o.Label, Description: o.Description}
+				}
+				qs[i] = WireQuestion{
+					Question:    q.Question,
+					Header:      q.Header,
+					Options:     opts,
+					MultiSelect: q.MultiSelect,
+				}
+			}
+			question = &WirePendingQuestion{QuestionID: rtQ.ID, Questions: qs}
 		}
-		break
 	}
-
 	return approval, question
+}
+
+// injectMessageOrQuery delivers prompt to a live session by writing directly
+// to the underlying CLISession. Bypasses both runtime's state-check and
+// agentique's pipeline so the injected text doesn't surface as a user_message
+// event in the receiving session's transcript. Used by channel context
+// injection and pending delivery replay.
+func injectMessageOrQuery(sess *Session, prompt string) error {
+	if sess == nil {
+		return ErrNotLive
+	}
+	return sess.directSendMessage(prompt)
 }

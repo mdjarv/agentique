@@ -210,35 +210,13 @@ func TestParseSendMessageInput_SpawnPayloadRoundtrip(t *testing.T) {
 	}
 }
 
-// TestInterceptSendMessage_DeniesWithSuccess verifies that interceptSendMessage
-// denies the tool with a "delivered" message (actual routing happens in the
-// EventPipeline's OnSendMessage callback, not here).
-func TestInterceptSendMessage_DeniesWithSuccess(t *testing.T) {
-	sess := &Session{
-		ID:            "lead-1",
-		approvalState: newApprovalState(),
-	}
-
-	input := json.RawMessage(`{"to":"Backend Worker","message":"looks good, proceed"}`)
-	resp, err := sess.interceptSendMessage(input)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Allow {
-		t.Error("should deny (routing happens in pipeline)")
-	}
-	if !strings.Contains(resp.DenyMessage, "delivered") {
-		t.Errorf("deny message should indicate success, got: %s", resp.DenyMessage)
-	}
-}
-
 // TestInterceptSendMessage_NoChannel verifies the deny message when no channel
 // callback is set. Even without a channel, interceptSendMessage still denies
 // with a success message — the pipeline handles the "no channel" case.
 func TestInterceptSendMessage_NoChannel(t *testing.T) {
 	sess := &Session{
-		ID:            "solo-1",
-		approvalState: newApprovalState(),
+		ID:                 "solo-1",
+		syntheticApprovals: make(map[string]*syntheticApproval),
 	}
 
 	input := json.RawMessage(`{"to":"peer","message":"hello"}`)

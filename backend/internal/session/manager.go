@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/allbin/agentkit/runtime"
 	"github.com/allbin/agentkit/sqliteops"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
@@ -37,40 +37,89 @@ type CreateParams struct {
 	ChannelPreambles      []*ChannelPreambleInfo
 	TeamPreambles         []*TeamPreambleInfo
 	AgentProfileID        string
-	ParentSessionID       string // optional: lead session that spawned this worker
+	ParentSessionID       string   // optional: lead session that spawned this worker
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
 	BrowserEnabled        bool
 	SystemPromptAdditions string // from persona config; appended to the session preamble
 }
 
-// Manager manages the lifecycle of claudecli-go sessions.
+// Manager manages the lifecycle of agentique sessions, wrapping a runtime.Manager
+// for the underlying Claude CLI lifecycle and adding persistence, channel
+// routing, dev URL / MCP token cleanup.
 type Manager struct {
-	mu             sync.Mutex
-	sessions       map[string]*Session
+	mu       sync.Mutex
+	sessions map[string]*Session
+
+	rt             *runtime.Manager
+	connWrap       *capturingConnector
 	db             *sql.DB
 	queries        managerQueries
 	broadcaster    eventbus.Broadcaster
-	connector      CLIConnector
 	gitStatus      branchStatusQuerier
-	GlobalPreamble string // extra system prompt appended to every session
+	GlobalPreamble string
 
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
-	mcpTokens   *mcphttp.TokenStore
+	mcpTokens      *mcphttp.TokenStore
 	mcpInternalURL string
-	devURLs     *devurls.Store
+	devURLs        *devurls.Store
 }
 
-// NewManager creates a new session manager.
-func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadcaster, connector CLIConnector) *Manager {
-	return &Manager{
+// NewManager creates a new session manager backed by the given runtime CLI connector.
+func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadcaster, connector runtime.CLIConnector) *Manager {
+	m := &Manager{
 		sessions:    make(map[string]*Session),
 		db:          db,
 		queries:     queries,
 		broadcaster: broadcaster,
-		connector:   connector,
 		gitStatus:   RealBranchStatusQuerier(),
 	}
+	m.connWrap = &capturingConnector{inner: connector}
+	m.rt = runtime.NewManager(m.connWrap, runtime.WithOnTerminated(func(_ context.Context, sessionID string) {
+		m.releaseSessionResources(sessionID)
+	}))
+	return m
+}
+
+// capturingConnector wraps the configured runtime.CLIConnector and stashes
+// each connected CLISession on a buffer. agentique.Manager then snaps the
+// most recent CLISession into the agentique Session right after rt.Create or
+// rt.Resume returns. This is needed because runtime keeps the CLISession
+// private and Underlying() returns nil for test mocks; agentique needs
+// direct CLI access for "silent" mid-conversation injections (channel
+// context, pending delivery replay) that must bypass the pipeline.
+type capturingConnector struct {
+	inner runtime.CLIConnector
+
+	mu       sync.Mutex
+	captured []runtime.CLISession
+}
+
+func (c *capturingConnector) Connect(ctx context.Context, opts ...claudecli.Option) (runtime.CLISession, error) {
+	cli, err := c.inner.Connect(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.captured = append(c.captured, cli)
+	c.mu.Unlock()
+	return cli, nil
+}
+
+// pop returns the most recently connected CLISession (LIFO). agentique
+// Manager calls this immediately after a successful runtime Connect so the
+// pairing is unambiguous despite the CLIConnector API not carrying a
+// session ID.
+func (c *capturingConnector) pop() runtime.CLISession {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.captured) == 0 {
+		return nil
+	}
+	idx := len(c.captured) - 1
+	cli := c.captured[idx]
+	c.captured = c.captured[:idx]
+	return cli
 }
 
 // SetBranchStatusQuerier overrides the default git status querier (for testing).
@@ -112,15 +161,13 @@ You can expose any local HTTP service to a public HTTPS URL via the ` + "`Acquir
 - Slots are shared across sessions. Call ` + "`ListDevUrls`" + ` first if you suspect contention; call ` + "`ReleaseDevUrl`" + ` when done. Slots auto-release when the session ends.
 `
 
-
-// Create starts a new claudecli-go session, persists metadata to DB, and returns the session.
-func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, error) {
+// Create starts a new claudecli-go session via runtime, persists metadata to DB, and returns the session.
+func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
 	id := params.ID
 	if id == "" {
 		id = uuid.New().String()
 	}
 
-	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
 		id:        id,
 		projectID: params.ProjectID,
@@ -137,46 +184,45 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 	if params.PlanMode {
 		permMode = "plan"
 	}
-	// Set auto-approve and permission mode before connecting so the callback has it immediately.
-	sess.SetAutoApproveMode(params.AutoApproveMode)
+	autoMode := normalizeAutoApprove(params.AutoApproveMode)
 	sess.mu.Lock()
 	sess.permissionMode = permMode
+	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	model := resolveModel(params.Model)
-	connectOpts := []claudecli.Option{
-		claudecli.WithWorkDir(params.WorkDir),
-		claudecli.WithModel(model),
-		claudecli.WithCanUseTool(sess.handleToolPermission),
-		claudecli.WithUserInput(sess.handleUserInput),
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())
+
+	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
+
+	connectExtra := []claudecli.Option{
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())),
 	}
 	if params.Name != "" {
-		connectOpts = append(connectOpts, claudecli.WithSessionName(params.Name))
+		connectExtra = append(connectExtra, claudecli.WithSessionName(params.Name))
 	}
-	if effort := resolveEffort(params.Effort); effort != "" {
-		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
-	}
-	if params.MaxBudget > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxBudget(params.MaxBudget))
-	}
-	if params.MaxTurns > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxTurns(params.MaxTurns))
-	}
-	// Always pass permission mode explicitly to override user's Claude Code settings.
-	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
-	// Merge all MCP configs into a single call (WithMCPConfig overwrites, not appends).
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(id, params.MCPConfigs)...))
 
-	// Use background context: the CLI process must outlive the WS connection
-	// that triggered session creation. The WS conn context cancels on
-	// disconnect (e.g. page refresh), which would SIGTERM the CLI process.
-	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
+	rtSess, err := m.rt.Create(ctx, runtime.CreateParams{
+		SessionID:      id,
+		WorkDir:        params.WorkDir,
+		Preamble:       preamble,
+		Model:          resolveModel(params.Model),
+		PlanMode:       runtime.PlanMode(permMode),
+		AutoApprove:    runtimeAutoApproveMode(autoMode),
+		Effort:         resolveEffort(params.Effort),
+		MaxBudget:      params.MaxBudget,
+		MaxTurns:       params.MaxTurns,
+		MCPConfigs:     mcpConfigs,
+		ConnectOptions: connectExtra,
+		SessionOptions: []runtime.SessionOption{
+			runtime.WithBroadcast(makeBroadcastHook(sess)),
+			runtime.WithInterceptors(sess.agentiqueInterceptors()),
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
+	sess.setRuntime(rtSess, m.connWrap.pop())
 
 	_, dbErr := m.queries.CreateSession(context.Background(), store.CreateSessionParams{
 		ID:        id,
@@ -195,10 +241,10 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 			String: params.WorktreeBaseSHA,
 			Valid:  params.WorktreeBaseSHA != "",
 		},
-		State:          string(StateIdle),
-		Model:          params.Model,
-		PermissionMode: permMode,
-		AutoApproveMode: params.AutoApproveMode,
+		State:           string(StateIdle),
+		Model:           params.Model,
+		PermissionMode:  permMode,
+		AutoApproveMode: autoMode,
 		Effort:          params.Effort,
 		MaxBudget:       params.MaxBudget,
 		MaxTurns:        int64(params.MaxTurns),
@@ -213,11 +259,9 @@ func (m *Manager) Create(_ context.Context, params CreateParams) (*Session, erro
 		},
 	})
 	if dbErr != nil {
-		cliSess.Close()
+		_ = m.rt.Stop(context.Background(), id)
 		return nil, dbErr
 	}
-
-	sess.setCLISession(cliSess)
 
 	m.mu.Lock()
 	m.sessions[id] = sess
@@ -241,18 +285,18 @@ type ResumeParams struct {
 	MaxBudget         float64
 	MaxTurns          int
 	InitialGitVersion int64
-	Projects          []ProjectInfo
-	BehaviorPresets   BehaviorPresets
-	ChannelPreambles  []*ChannelPreambleInfo
-	TeamPreambles     []*TeamPreambleInfo
+	Projects              []ProjectInfo
+	BehaviorPresets       BehaviorPresets
+	ChannelPreambles      []*ChannelPreambleInfo
+	TeamPreambles         []*TeamPreambleInfo
 	ExtraPreamble         string   // appended to system prompt (e.g. fresh-worktree notice)
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
 	BrowserEnabled        bool
 	SystemPromptAdditions string // from persona config; appended to session preamble
 }
 
-// Resume reconnects to an existing Claude session using WithResume().
-func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
+// Resume reconnects to an existing Claude session using runtime.Manager.Resume.
+func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) {
 	m.mu.Lock()
 	if _, ok := m.sessions[p.SessionID]; ok {
 		m.mu.Unlock()
@@ -260,69 +304,69 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 	}
 	m.mu.Unlock()
 
-	// Continue turn numbering from where we left off.
 	maxTurn, _ := m.queries.MaxTurnIndex(context.Background(), p.SessionID)
 	turnIndex := int(maxTurn)
 
-	// Build Session first (without cliSess) so the permission callback can capture it.
 	sess := newSession(sessionParams{
-		id:                    p.SessionID,
-		projectID:             p.ProjectID,
-		model:                 p.Model,
-		db:                    m.db,
-		queries:               m.queries,
-		broadcast:             m.broadcastFunc(p.ProjectID),
-		turnIndex:             turnIndex,
-		workDir:               p.WorkDir,
-		initialGitVersion:     p.InitialGitVersion,
-		broadcastInitialState: true, // frontend already has this session, needs state push
-		gitStatus:             m.gitStatus,
+		id:                p.SessionID,
+		projectID:         p.ProjectID,
+		model:             p.Model,
+		db:                m.db,
+		queries:           m.queries,
+		broadcast:         m.broadcastFunc(p.ProjectID),
+		turnIndex:         turnIndex,
+		workDir:           p.WorkDir,
+		initialGitVersion: p.InitialGitVersion,
+		gitStatus:         m.gitStatus,
 	})
+
+	permMode := p.PermissionMode
+	if permMode == "" {
+		permMode = "default"
+	}
+	autoMode := normalizeAutoApprove(p.AutoApproveMode)
+
 	sess.mu.Lock()
 	sess.queryCount = turnIndex + 1
-	sess.autoApproveMode = p.AutoApproveMode
-	if p.PermissionMode != "" {
-		sess.permissionMode = p.PermissionMode
-	}
+	sess.permissionMode = permMode
+	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	connectOpts := []claudecli.Option{
-		claudecli.WithWorkDir(p.WorkDir),
-		claudecli.WithModel(resolveModel(p.Model)),
-		claudecli.WithCanUseTool(sess.handleToolPermission),
-		claudecli.WithUserInput(sess.handleUserInput),
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+
+	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
+
+	connectExtra := []claudecli.Option{
 		claudecli.WithIncludePartialMessages(),
 		claudecli.WithReplayUserMessages(),
-		claudecli.WithResume(p.ClaudeSessionID),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble),
 	}
 	if p.Name != "" {
-		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
+		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
 	}
-	if effort := resolveEffort(p.Effort); effort != "" {
-		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
-	}
-	if p.MaxBudget > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxBudget(p.MaxBudget))
-	}
-	if p.MaxTurns > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxTurns(p.MaxTurns))
-	}
-	// Always pass permission mode explicitly to override user's Claude Code settings.
-	resumePermMode := p.PermissionMode
-	if resumePermMode == "" {
-		resumePermMode = "default"
-	}
-	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(resumePermMode)))
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(p.SessionID, p.MCPConfigs)...))
 
-	// Use background context: the CLI process must outlive the WS connection
-	// that triggered the resume. See Create() for rationale.
-	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
+	rtSess, err := m.rt.Resume(ctx, runtime.ResumeParams{
+		SessionID:       p.SessionID,
+		ClaudeSessionID: p.ClaudeSessionID,
+		WorkDir:         p.WorkDir,
+		Preamble:        preamble,
+		Model:           resolveModel(p.Model),
+		PlanMode:        runtime.PlanMode(permMode),
+		AutoApprove:     runtimeAutoApproveMode(autoMode),
+		Effort:          resolveEffort(p.Effort),
+		MaxBudget:       p.MaxBudget,
+		MaxTurns:        p.MaxTurns,
+		MCPConfigs:      mcpConfigs,
+		ConnectOptions:  connectExtra,
+		SessionOptions: []runtime.SessionOption{
+			runtime.WithBroadcast(makeBroadcastHook(sess)),
+			runtime.WithInterceptors(sess.agentiqueInterceptors()),
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
+	sess.setRuntime(rtSess, m.connWrap.pop())
 
 	if err := m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
@@ -330,8 +374,6 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 	}); err != nil {
 		slog.Error("persist session state on resume failed", "session_id", p.SessionID, "error", err)
 	}
-
-	sess.setCLISession(cliSess)
 
 	m.mu.Lock()
 	m.sessions[p.SessionID] = sess
@@ -343,7 +385,7 @@ func (m *Manager) Resume(_ context.Context, p ResumeParams) (*Session, error) {
 
 // Reconnect starts a fresh CLI process for an existing session (no --resume).
 // Used after ResetConversation clears the claude_session_id.
-func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error) {
+func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, error) {
 	m.mu.Lock()
 	if _, ok := m.sessions[p.SessionID]; ok {
 		m.mu.Unlock()
@@ -352,57 +394,62 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 	m.mu.Unlock()
 
 	sess := newSession(sessionParams{
-		id:                    p.SessionID,
-		projectID:             p.ProjectID,
-		model:                 p.Model,
-		db:                    m.db,
-		queries:               m.queries,
-		broadcast:             m.broadcastFunc(p.ProjectID),
-		turnIndex:             -1, // fresh conversation starts from turn 0
-		workDir:               p.WorkDir,
-		initialGitVersion:     p.InitialGitVersion,
-		broadcastInitialState: true,
-		gitStatus:             m.gitStatus,
+		id:                p.SessionID,
+		projectID:         p.ProjectID,
+		model:             p.Model,
+		db:                m.db,
+		queries:           m.queries,
+		broadcast:         m.broadcastFunc(p.ProjectID),
+		turnIndex:         -1, // fresh conversation
+		workDir:           p.WorkDir,
+		initialGitVersion: p.InitialGitVersion,
+		gitStatus:         m.gitStatus,
 	})
-	sess.mu.Lock()
-	sess.autoApproveMode = p.AutoApproveMode
-	if p.PermissionMode != "" {
-		sess.permissionMode = p.PermissionMode
-	}
-	sess.mu.Unlock()
 
-	connectOpts := []claudecli.Option{
-		claudecli.WithWorkDir(p.WorkDir),
-		claudecli.WithModel(resolveModel(p.Model)),
-		claudecli.WithCanUseTool(sess.handleToolPermission),
-		claudecli.WithUserInput(sess.handleUserInput),
-		claudecli.WithIncludePartialMessages(),
-		claudecli.WithReplayUserMessages(),
-		claudecli.WithAppendSystemPrompt(buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble),
-	}
-	if p.Name != "" {
-		connectOpts = append(connectOpts, claudecli.WithSessionName(p.Name))
-	}
-	if effort := resolveEffort(p.Effort); effort != "" {
-		connectOpts = append(connectOpts, claudecli.WithEffort(effort))
-	}
-	if p.MaxBudget > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxBudget(p.MaxBudget))
-	}
-	if p.MaxTurns > 0 {
-		connectOpts = append(connectOpts, claudecli.WithMaxTurns(p.MaxTurns))
-	}
 	permMode := p.PermissionMode
 	if permMode == "" {
 		permMode = "default"
 	}
-	connectOpts = append(connectOpts, claudecli.WithPermissionMode(claudecli.PermissionMode(permMode)))
-	connectOpts = append(connectOpts, claudecli.WithMCPConfig(m.buildMCPConfigs(p.SessionID, p.MCPConfigs)...))
+	autoMode := normalizeAutoApprove(p.AutoApproveMode)
 
-	cliSess, err := m.connector.Connect(context.Background(), connectOpts...)
+	sess.mu.Lock()
+	sess.permissionMode = permMode
+	sess.autoApproveMode = autoMode
+	sess.mu.Unlock()
+
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+
+	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
+
+	connectExtra := []claudecli.Option{
+		claudecli.WithIncludePartialMessages(),
+		claudecli.WithReplayUserMessages(),
+	}
+	if p.Name != "" {
+		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
+	}
+
+	rtSess, err := m.rt.Create(ctx, runtime.CreateParams{
+		SessionID:      p.SessionID,
+		WorkDir:        p.WorkDir,
+		Preamble:       preamble,
+		Model:          resolveModel(p.Model),
+		PlanMode:       runtime.PlanMode(permMode),
+		AutoApprove:    runtimeAutoApproveMode(autoMode),
+		Effort:         resolveEffort(p.Effort),
+		MaxBudget:      p.MaxBudget,
+		MaxTurns:       p.MaxTurns,
+		MCPConfigs:     mcpConfigs,
+		ConnectOptions: connectExtra,
+		SessionOptions: []runtime.SessionOption{
+			runtime.WithBroadcast(makeBroadcastHook(sess)),
+			runtime.WithInterceptors(sess.agentiqueInterceptors()),
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
+	sess.setRuntime(rtSess, m.connWrap.pop())
 
 	if err := m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
@@ -410,8 +457,6 @@ func (m *Manager) Reconnect(_ context.Context, p ResumeParams) (*Session, error)
 	}); err != nil {
 		slog.Error("persist session state on reconnect failed", "session_id", p.SessionID, "error", err)
 	}
-
-	sess.setCLISession(cliSess)
 
 	m.mu.Lock()
 	m.sessions[p.SessionID] = sess
@@ -445,10 +490,10 @@ func (m *Manager) Evict(id string) {
 		delete(m.sessions, id)
 	}
 	m.mu.Unlock()
+	_ = m.rt.Evict(context.Background(), id)
 	if sess != nil {
 		sess.Close()
 	}
-	m.releaseSessionResources(id)
 }
 
 // Stop closes a live session and marks it as stopped in DB.
@@ -461,11 +506,10 @@ func (m *Manager) Stop(_ context.Context, id string) error {
 	}
 	m.mu.Unlock()
 
+	_ = m.rt.Stop(context.Background(), id)
 	if sess != nil {
 		sess.Close()
 	}
-
-	m.releaseSessionResources(id)
 
 	return sqliteops.RetryWrite(func() error {
 		return m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
@@ -476,7 +520,8 @@ func (m *Manager) Stop(_ context.Context, id string) error {
 }
 
 // releaseSessionResources frees any dev URL lease and revokes the MCP bearer
-// token for the given session. Safe to call multiple times (idempotent).
+// token for the given session. Safe to call multiple times (idempotent). Wired
+// to runtime.Manager via WithOnTerminated.
 func (m *Manager) releaseSessionResources(sessionID string) {
 	if m.devURLs != nil {
 		if freed := m.devURLs.Release(sessionID); len(freed) > 0 {
@@ -509,8 +554,6 @@ func (m *Manager) ListAll(ctx context.Context) ([]store.Session, error) {
 }
 
 // RecoverStaleSessions marks any sessions stuck in running/merging as stopped.
-// Call once at startup before accepting connections — these are leftovers from
-// a previous server run that didn't shut down cleanly.
 func (m *Manager) RecoverStaleSessions(ctx context.Context) {
 	if err := m.queries.RecoverStaleSessions(ctx); err != nil {
 		slog.Error("failed to recover stale sessions", "error", err)
@@ -529,45 +572,25 @@ func (m *Manager) overlayLiveStates(sessions []store.Session) {
 	}
 }
 
-// CloseAll gracefully closes all live sessions with a per-session timeout.
+// CloseAll gracefully closes all live sessions.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
-	sessions := make([]*Session, 0, len(m.sessions))
-	for _, s := range m.sessions {
-		sessions = append(sessions, s)
+	sessions := make(map[string]*Session, len(m.sessions))
+	for id, s := range m.sessions {
+		sessions[id] = s
 	}
 	m.sessions = make(map[string]*Session)
 	m.mu.Unlock()
 
 	slog.Info("closing all sessions", "count", len(sessions))
-
-	var wg sync.WaitGroup
+	m.rt.CloseAll(context.Background())
 	for _, s := range sessions {
-		wg.Add(1)
-		go func(s *Session) {
-			defer wg.Done()
-			done := make(chan struct{})
-			go func() {
-				s.Close()
-				close(done)
-			}()
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-done:
-			case <-timer.C:
-				slog.Warn("session close timed out", "session_id", s.ID)
-			}
-		}(s)
+		s.Close()
 	}
-	wg.Wait()
 }
 
 // buildMCPConfigs prepends the agentique MCP server config (HTTP if a token
 // store is wired, stdio mcp-channel otherwise) to any additional MCP configs.
-// Returns a single slice suitable for a single WithMCPConfig call.
-//
-// Per-session token is minted on each call when HTTP transport is active.
 func (m *Manager) buildMCPConfigs(sessionID string, extra []string) []string {
 	first := ChannelMCPConfig()
 	if m.mcpTokens != nil && m.mcpInternalURL != "" {
@@ -613,10 +636,31 @@ func resolveEffort(level string) claudecli.EffortLevel {
 }
 
 // resolveModel maps a string model name to a claudecli.Model.
-// Passes the name through directly (e.g. "opus[1m]") since claudecli.Model is a string type.
 func resolveModel(name string) claudecli.Model {
 	if name == "" {
 		return claudecli.ModelOpus
 	}
 	return claudecli.Model(name)
+}
+
+// normalizeAutoApprove validates and canonicalizes an auto-approve string.
+func normalizeAutoApprove(mode string) string {
+	switch mode {
+	case "auto", "fullAuto":
+		return mode
+	default:
+		return "manual"
+	}
+}
+
+// runtimeAutoApproveMode maps agentique's auto-approve string to runtime's
+// AutoApproveMode. fullAuto bypasses the entire pump in runtime; auto is
+// driven by agentique's safe-tool logic via the broadcast hook.
+func runtimeAutoApproveMode(mode string) runtime.AutoApproveMode {
+	switch mode {
+	case "fullAuto":
+		return runtime.AutoApproveAll
+	default:
+		return runtime.AutoApproveOff
+	}
 }

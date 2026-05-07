@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
 )
 
-// mockCLISession implements CLISession for tests.
+// mockCLISession implements runtime.CLISession for tests.
 type mockCLISession struct {
 	events chan claudecli.Event
 
@@ -117,7 +118,7 @@ func (m *mockCLISession) sendEvents(events ...claudecli.Event) {
 	m.Close()
 }
 
-// mockConnector implements CLIConnector for tests.
+// mockConnector implements runtime.CLIConnector for tests.
 type mockConnector struct {
 	mu       sync.Mutex
 	sessions []*mockCLISession
@@ -129,7 +130,7 @@ func newMockConnector(sessions ...*mockCLISession) *mockConnector {
 	return &mockConnector{sessions: sessions}
 }
 
-func (c *mockConnector) Connect(_ context.Context, _ ...claudecli.Option) (CLISession, error) {
+func (c *mockConnector) Connect(_ context.Context, _ ...claudecli.Option) (runtime.CLISession, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
