@@ -202,7 +202,11 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		connectExtra = append(connectExtra, claudecli.WithSessionName(params.Name))
 	}
 
-	rtSess, err := m.rt.Create(ctx, runtime.CreateParams{
+	// Use a detached context so the CLI process lifetime is independent of
+	// the request ctx — when the WS that initiated the create disconnects,
+	// the request ctx cancels and would otherwise SIGTERM the just-spawned
+	// CLI (the ctx threads through to executor.Start).
+	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
 		SessionID:      id,
 		WorkDir:        params.WorkDir,
 		Preamble:       preamble,
@@ -345,7 +349,9 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
 	}
 
-	rtSess, err := m.rt.Resume(ctx, runtime.ResumeParams{
+	// Detached context: see comment in Create — the CLI process must outlive
+	// the request that started it.
+	rtSess, err := m.rt.Resume(context.Background(), runtime.ResumeParams{
 		SessionID:       p.SessionID,
 		ClaudeSessionID: p.ClaudeSessionID,
 		WorkDir:         p.WorkDir,
@@ -429,7 +435,9 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
 	}
 
-	rtSess, err := m.rt.Create(ctx, runtime.CreateParams{
+	// Detached context: see comment in Create — the CLI process must outlive
+	// the request that started it.
+	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
 		SessionID:      p.SessionID,
 		WorkDir:        p.WorkDir,
 		Preamble:       preamble,

@@ -66,6 +66,15 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 		s.mu.Unlock()
 		return
 	}
+	// Preserve a fatal classification that pipeline.OnFatalError already
+	// recorded. The runtime emits its own Done transition right after a
+	// fatal CLI exit (handleEventChannelClose → setState(StateDone) when
+	// the runtime side was idle), and that would otherwise clobber Failed
+	// — losing the fatal signal in DB and UI.
+	if s.state == StateFailed && ev.To == runtime.StateDone {
+		s.mu.Unlock()
+		return
+	}
 	if ev.To == runtime.StateDone && s.completedAt == "" {
 		s.completedAt = nowUTC()
 	}
