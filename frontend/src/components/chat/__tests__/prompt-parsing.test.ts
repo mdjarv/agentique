@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findRawPromptBlocks,
   parsePromptBlocks,
+  preprocessAgentiqueTags,
   repairNestedFences,
   splitByPromptBlocks,
 } from "~/components/chat/PromptCard";
@@ -485,6 +486,139 @@ describe("splitByPromptBlocks + repair", () => {
       expect(segments[0].content.split("\n")[0]).toBe("````");
     }
     expect(segments[1]?.type).toBe("prompt");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// preprocessAgentiqueTags + splitByPromptBlocks integration
+// ---------------------------------------------------------------------------
+
+describe("preprocessAgentiqueTags", () => {
+  it('converts a closed <agentique type="prompt"> tag to a fenced block', () => {
+    const md = '<agentique type="prompt" title="Foo">\nDo the thing.\n</agentique>';
+    const out = preprocessAgentiqueTags(md);
+    expect(out).toContain("```prompt");
+    expect(out).toContain("# Foo");
+    expect(out).toContain("Do the thing.");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toEqual({
+      type: "prompt",
+      block: { title: "Foo", prompt: "Do the thing." },
+    });
+  });
+
+  it("carries the project attribute through", () => {
+    const md = '<agentique type="prompt" title="Fix" project="agentkit">Do it.</agentique>';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.projectSlug).toBe("agentkit");
+      expect(segments[0].block.title).toBe("Fix");
+      expect(segments[0].block.prompt).toBe("Do it.");
+    } else {
+      expect.fail("expected prompt segment");
+    }
+  });
+
+  it("preserves code blocks inside the prompt body (upgrades outer fence)", () => {
+    const md = [
+      '<agentique type="prompt" title="Fix">',
+      "Edit this:",
+      "```python",
+      "print('hi')",
+      "```",
+      "Run tests.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Fix");
+      expect(segments[0].block.prompt).toContain("```python");
+      expect(segments[0].block.prompt).toContain("Run tests.");
+    } else {
+      expect.fail("expected prompt segment");
+    }
+  });
+
+  it("treats an unclosed tag as a pending_prompt (streaming)", () => {
+    const md = '<agentique type="prompt" title="Streaming">\npartial body';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("pending_prompt");
+    if (segments[0]?.type === "pending_prompt") {
+      expect(segments[0].title).toBe("Streaming");
+      expect(segments[0].content).toContain("partial body");
+    }
+  });
+
+  it("depth-tracks nested <agentique> tags so the body's `</agentique>` mention doesn't close the outer", () => {
+    const md = [
+      '<agentique type="prompt" title="Outer">',
+      "Body mentions a nested example:",
+      '<agentique type="example">inner stuff</agentique>',
+      "more outer body.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Outer");
+      expect(segments[0].block.prompt).toContain("more outer body.");
+      expect(segments[0].block.prompt).toContain("inner stuff");
+    } else {
+      expect.fail("expected prompt segment");
+    }
+  });
+
+  it('passes through <agentique type="other"> tags unchanged (future feature types)', () => {
+    const md = '<agentique type="diff">some diff content</agentique>';
+    const out = preprocessAgentiqueTags(md);
+    expect(out).toBe(md);
+  });
+
+  it("co-exists with legacy ```prompt fenced blocks in the same message", () => {
+    const md = [
+      "Two tasks:",
+      "",
+      '<agentique type="prompt" title="A">Task A.</agentique>',
+      "",
+      "```prompt",
+      "# B",
+      "Task B.",
+      "```",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(2);
+  });
+
+  it("preserves surrounding prose around the tag", () => {
+    const md = [
+      "Some intro text.",
+      "",
+      '<agentique type="prompt" title="T">do it</agentique>',
+      "",
+      "Some outro text.",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(3);
+    expect(segments[0]?.type).toBe("markdown");
+    expect(segments[1]?.type).toBe("prompt");
+    expect(segments[2]?.type).toBe("markdown");
+    if (segments[0]?.type === "markdown") {
+      expect(segments[0].content).toContain("Some intro text.");
+    }
+    if (segments[2]?.type === "markdown") {
+      expect(segments[2].content).toContain("Some outro text.");
+    }
+  });
+
+  it("ignores agentique tags missing the type attribute", () => {
+    const md = '<agentique title="X">body</agentique>';
+    const out = preprocessAgentiqueTags(md);
+    expect(out).toBe(md);
   });
 });
 

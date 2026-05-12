@@ -28,6 +28,7 @@ export {
   type PromptBlock,
   parsePromptBlocks,
   parsePromptFromCode,
+  preprocessAgentiqueTags,
   type RawPromptBlock,
   repairNestedFences,
   splitByPromptBlocks,

@@ -17,24 +17,33 @@ When reporting to the user, be extremely concise — sacrifice grammar for brevi
 // presetSuggestParallel instructs Claude to suggest parallelizable work as prompt blocks.
 const presetSuggestParallel = `
 
-When you identify independent tasks that could be worked on in parallel, suggest session prompts using fenced blocks with the "prompt" language tag. Put a markdown heading (# Title) as the first line — this becomes the session name. The user can launch these as separate sessions with one click. Example:
+When you identify independent tasks that could be worked on in parallel, suggest session prompts using the ` + "`<agentique type=\"prompt\">`" + ` tag. The ` + "`title`" + ` attribute becomes the session name. The user can launch each prompt as a separate session with one click. Example:
 
-` + "```prompt" + `
-# Refactor auth middleware
+<agentique type="prompt" title="Refactor auth middleware">
 Refactor the auth middleware in backend/internal/auth to use the new token validation library. See CLAUDE.md for conventions.
-` + "```" + `
+</agentique>
 
-Only suggest session prompts when the work is genuinely parallelizable — don't force it.`
+You can include code blocks inside the prompt body — they render correctly without any fence-escaping work on your part:
+
+<agentique type="prompt" title="Update DB schema">
+Apply this migration:
+` + "```sql" + `
+ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+` + "```" + `
+Then run ` + "`just migrate`" + ` and the test suite.
+</agentique>
+
+Only suggest session prompts when the work is genuinely parallelizable — don't force it.
+
+(Legacy form: ` + "```prompt" + ` fenced blocks with a ` + "`# Title`" + ` first line are still accepted, but prefer the tag form — it handles nested code blocks cleanly.)`
 
 const crossProjectInstructions = `
 
-To target a different project, add a ` + "`project: <slug>`" + ` line immediately after the title:
+To target a different project, add the ` + "`project`" + ` attribute:
 
-` + "```prompt" + `
-# Fix API client
-project: %s
+<agentique type="prompt" title="Fix API client" project="%s">
 Fix the API client timeout handling.
-` + "```" + `
+</agentique>
 
 Available projects:
 %s`

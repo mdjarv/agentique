@@ -246,6 +246,141 @@ export function repairNestedFences(markdown: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// <agentique type="prompt"> tag pre-processor
+//
+// Newer authoring format that avoids fence-nesting issues entirely. Closed
+// tags are rewritten to ```prompt fenced blocks (with an upgraded fence length
+// when the body contains code) so the rest of the pipeline can stay
+// fence-based. An unclosed trailing tag becomes an unclosed ```prompt opener
+// so the existing pending_prompt detection picks it up during streaming.
+// ---------------------------------------------------------------------------
+
+const RE_AGENTIQUE_OPEN = /<agentique\b([^>]*)>/i;
+const RE_AGENTIQUE_CLOSE = /<\/agentique>/i;
+const AGENTIQUE_CLOSE = "</agentique>";
+const RE_ATTR = /([\w-]+)\s*=\s*"([^"]*)"/g;
+
+/** Find the closing `</agentique>` that matches the opener at openEnd,
+ *  tracking nesting depth. Returns the position of the matching `</agentique>`,
+ *  or null if unclosed (streaming). Mirrors a balanced-bracket scan so a
+ *  prompt body that itself mentions `<agentique ...>` tags doesn't close
+ *  the outer prematurely. */
+function findMatchingAgentiqueClose(markdown: string, openEnd: number): number | null {
+  let depth = 1;
+  let cursor = openEnd;
+
+  while (cursor < markdown.length) {
+    const remaining = markdown.slice(cursor);
+    const openMatch = RE_AGENTIQUE_OPEN.exec(remaining);
+    const closeMatch = RE_AGENTIQUE_CLOSE.exec(remaining);
+    if (!closeMatch) return null;
+
+    const openIdx = openMatch ? openMatch.index : Number.POSITIVE_INFINITY;
+    const closeIdx = closeMatch.index;
+
+    if (openIdx < closeIdx && openMatch) {
+      depth++;
+      cursor += openIdx + openMatch[0].length;
+    } else {
+      depth--;
+      if (depth === 0) return cursor + closeIdx;
+      cursor += closeIdx + closeMatch[0].length;
+    }
+  }
+
+  return null;
+}
+
+interface AgentiqueAttrs {
+  type?: string;
+  title?: string;
+  project?: string;
+}
+
+function parseAttrs(raw: string): AgentiqueAttrs {
+  const attrs: AgentiqueAttrs = {};
+  for (const m of raw.matchAll(RE_ATTR)) {
+    const key = m[1]?.toLowerCase();
+    const value = m[2];
+    if (!key || value === undefined) continue;
+    if (key === "type") attrs.type = value;
+    else if (key === "title") attrs.title = value;
+    else if (key === "project") attrs.project = value;
+  }
+  return attrs;
+}
+
+function maxFenceInBody(body: string): number {
+  let max = 0;
+  for (const m of body.matchAll(/^ {0,3}(`{3,})/gm)) {
+    max = Math.max(max, m[1]?.length ?? 0);
+  }
+  return max;
+}
+
+function buildFencedPrompt(attrs: AgentiqueAttrs, body: string, closed: boolean): string {
+  const fenceLen = Math.max(3, maxFenceInBody(body) + 1);
+  const fence = "`".repeat(fenceLen);
+  const lines: string[] = [`${fence}prompt`];
+  if (attrs.title) lines.push(`# ${attrs.title}`);
+  if (attrs.project) lines.push(`project: ${attrs.project}`);
+  const trimmed = body.replace(/^\n+|\n+$/g, "");
+  if (trimmed) lines.push(trimmed);
+  const opener = lines.join("\n");
+  return closed ? `${opener}\n${fence}` : opener;
+}
+
+/** Pre-process `<agentique type="prompt" ...>` tags into ```prompt fenced
+ *  blocks so the existing prompt-block pipeline can handle them. Other
+ *  `<agentique type="...">` values are left untouched for future features. */
+export function preprocessAgentiqueTags(markdown: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < markdown.length) {
+    const remaining = markdown.slice(cursor);
+    const openMatch = RE_AGENTIQUE_OPEN.exec(remaining);
+    if (!openMatch) {
+      result += remaining;
+      break;
+    }
+
+    const openStart = cursor + openMatch.index;
+    const openEnd = openStart + openMatch[0].length;
+    const attrs = parseAttrs(openMatch[1] ?? "");
+
+    // Only handle type="prompt" for now; pass others through unchanged.
+    if (attrs.type !== "prompt") {
+      result += markdown.slice(cursor, openEnd);
+      cursor = openEnd;
+      continue;
+    }
+
+    result += markdown.slice(cursor, openStart);
+
+    const closeStart = findMatchingAgentiqueClose(markdown, openEnd);
+    const leadingPrefix =
+      result.endsWith("\n\n") || result.length === 0 ? "" : result.endsWith("\n") ? "\n" : "\n\n";
+
+    if (closeStart === null) {
+      // Unclosed (streaming) — emit an unclosed ```prompt opener so
+      // findPendingPromptBlock detects it during pending render.
+      const body = markdown.slice(openEnd);
+      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, false)}`;
+      cursor = markdown.length;
+      break;
+    }
+
+    const body = markdown.slice(openEnd, closeStart);
+    const closeEnd = closeStart + AGENTIQUE_CLOSE.length;
+    result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true)}\n`;
+    cursor = closeEnd;
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Content segmentation — splits markdown into text + prompt segments so
 // prompt blocks never pass through the markdown parser.
 // ---------------------------------------------------------------------------
@@ -274,8 +409,13 @@ function findPendingPromptBlock(
  *  Prompt blocks are extracted by our state machine parser and never
  *  reach the markdown renderer, eliminating all fence-nesting issues.
  *  Markdown segments are passed through repairNestedFences so agent-authored
- *  prose-quoted code blocks render correctly even when nested. */
-export function splitByPromptBlocks(markdown: string): ContentSegment[] {
+ *  prose-quoted code blocks render correctly even when nested.
+ *
+ *  `<agentique type="prompt" ...>` tags are normalized to ```prompt fenced
+ *  blocks before parsing — the XML form is the preferred authoring syntax
+ *  and the fenced form is kept as a legacy/fallback. */
+export function splitByPromptBlocks(rawMarkdown: string): ContentSegment[] {
+  const markdown = preprocessAgentiqueTags(rawMarkdown);
   const rawBlocks = findRawPromptBlocks(markdown);
   const lines = markdown.split("\n");
   const segments: ContentSegment[] = [];
