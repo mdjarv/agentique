@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findRawPromptBlocks,
   parsePromptBlocks,
+  repairNestedFences,
   splitByPromptBlocks,
 } from "~/components/chat/PromptCard";
 
@@ -339,6 +340,151 @@ describe("splitByPromptBlocks", () => {
     const segments = splitByPromptBlocks(md);
     expect(segments).toHaveLength(1);
     expect(segments[0]?.type).toBe("markdown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// repairNestedFences
+// ---------------------------------------------------------------------------
+
+describe("repairNestedFences", () => {
+  it("leaves a simple code block alone", () => {
+    const md = "```python\nprint('hi')\n```";
+    expect(repairNestedFences(md)).toBe(md);
+  });
+
+  it("leaves consecutive code blocks alone", () => {
+    const md = ["```python", "code1", "```", "```js", "code2", "```"].join("\n");
+    expect(repairNestedFences(md)).toBe(md);
+  });
+
+  it("leaves regular prose alone", () => {
+    const md = "Just some prose with `inline code` and no fences.";
+    expect(repairNestedFences(md)).toBe(md);
+  });
+
+  it("upgrades a bare ``` wrapper containing a ```yaml block", () => {
+    const md = ["```", "Some content", "```yaml", "key: value", "```", "More content", "```"].join(
+      "\n",
+    );
+    const repaired = repairNestedFences(md);
+    // Outer fence should be upgraded to 4 backticks
+    expect(repaired).toBe(
+      ["````", "Some content", "```yaml", "key: value", "```", "More content", "````"].join("\n"),
+    );
+  });
+
+  it("reproduces the failing chat message: prose-quoted prompt wrapping ```yaml", () => {
+    const md = [
+      "Here's a self-contained prompt you can paste.",
+      "",
+      "```",
+      "# meta-spec design review",
+      "",
+      "Some context paragraph.",
+      "",
+      "```yaml",
+      "repositories:",
+      "  - name: psp-api",
+      "```",
+      "",
+      "Everything else stays prose.",
+      "```",
+      "",
+      "Two notes for the back-and-forth.",
+    ].join("\n");
+    const repaired = repairNestedFences(md);
+    // Outer wrapper fences should be upgraded to 4 backticks
+    const lines = repaired.split("\n");
+    expect(lines[2]).toBe("````");
+    expect(lines[13]).toBe("````");
+    // Inner ```yaml fences stay at 3 backticks
+    expect(lines[7]).toBe("```yaml");
+    expect(lines[10]).toBe("```");
+    // Trailing prose still intact
+    expect(lines[15]).toBe("Two notes for the back-and-forth.");
+  });
+
+  it("upgrades to one more than the maximum inner fence length", () => {
+    const md = ["```", "outer", "````go", "code", "````", "back", "```"].join("\n");
+    const repaired = repairNestedFences(md);
+    const lines = repaired.split("\n");
+    expect(lines[0]).toBe("`````"); // 5 backticks (maxInner=4 + 1)
+    expect(lines[6]).toBe("`````");
+  });
+
+  it("preserves indent on opener and closer", () => {
+    const md = ["   ```", "content", "   ```yaml", "yaml", "   ```", "x", "   ```"].join("\n");
+    const repaired = repairNestedFences(md);
+    const lines = repaired.split("\n");
+    expect(lines[0]).toBe("   ````");
+    expect(lines[6]).toBe("   ````");
+  });
+
+  it("preserves info string when upgrading an info-string opener", () => {
+    const md = ["```js", "intro", "```", "code", "```", "outro", "```"].join("\n");
+    const repaired = repairNestedFences(md);
+    const lines = repaired.split("\n");
+    expect(lines[0]).toBe("````js");
+    expect(lines[6]).toBe("````");
+  });
+
+  it("leaves a wrapper alone when outer is already longer than inner", () => {
+    const md = ["````", "content", "```yaml", "yaml", "```", "more", "````"].join("\n");
+    expect(repairNestedFences(md)).toBe(md);
+  });
+
+  it("leaves a wrapper alone if it has no nested fences", () => {
+    const md = "```\nplain text\n```";
+    expect(repairNestedFences(md)).toBe(md);
+  });
+
+  it("handles a wrapper with multiple nested ```yaml blocks", () => {
+    const md = ["```", "a", "```yaml", "1", "```", "b", "```python", "2", "```", "c", "```"].join(
+      "\n",
+    );
+    const repaired = repairNestedFences(md);
+    const lines = repaired.split("\n");
+    expect(lines[0]).toBe("````");
+    expect(lines[10]).toBe("````");
+    expect(lines[2]).toBe("```yaml");
+    expect(lines[6]).toBe("```python");
+  });
+
+  it("does not break ``` blocks that have no close", () => {
+    const md = "```\ncontent without close";
+    expect(repairNestedFences(md)).toBe(md);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// splitByPromptBlocks integration with fence repair
+// ---------------------------------------------------------------------------
+
+describe("splitByPromptBlocks + repair", () => {
+  it("repairs nested fences in markdown segments around prompt blocks", () => {
+    const md = [
+      "```",
+      "quoted",
+      "```yaml",
+      "x: 1",
+      "```",
+      "end quote",
+      "```",
+      "",
+      "```prompt",
+      "# Title",
+      "Do it.",
+      "```",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.type).toBe("markdown");
+    if (segments[0]?.type === "markdown") {
+      // The bare ``` wrapper should have been upgraded to ````
+      expect(segments[0].content.split("\n")[0]).toBe("````");
+    }
+    expect(segments[1]?.type).toBe("prompt");
   });
 });
 

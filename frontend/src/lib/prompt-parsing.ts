@@ -50,6 +50,7 @@ export interface RawPromptBlock {
 const RE_PROMPT_OPEN = /^ {0,3}(`{3,})prompt\s*$/;
 const RE_BARE_FENCE = /^ {0,3}(`{3,})\s*$/;
 const RE_INFO_FENCE = /^ {0,3}(`{3,})\S/;
+const RE_FENCE_INDENT = /^( {0,3})(`{3,})(.*)$/;
 
 /** Lookahead: determine whether a bare fence should open an inner code block
  *  rather than close the prompt block.
@@ -151,6 +152,100 @@ export function parsePromptBlocks(markdown: string): PromptBlock[] {
 }
 
 // ---------------------------------------------------------------------------
+// Nested-fence repair — agents commonly wrap quoted prompts in a bare ```
+// fence that itself contains ```yaml/```go/etc. CommonMark closes the outer
+// fence at the first inner bare ```, breaking the rest of the message (the
+// agent's intended outer-closer becomes an unclosed fence at EOF). We repair
+// these by upgrading the outer fence length (e.g. ``` → ````) so it survives
+// the nested fences.
+// ---------------------------------------------------------------------------
+
+/** Lookahead used inside a wrapper to decide whether a bare ``` should open
+ *  a sub-block (rather than close the wrapper). Mirrors shouldOpenInnerBlock
+ *  but doesn't stop at prompt openers — generic wrappers have no such marker. */
+function shouldOpenInnerBlockGeneric(lines: string[], currentIndex: number): boolean {
+  let bare = 0;
+  let info = 0;
+  for (let j = currentIndex + 1; j < lines.length; j++) {
+    const line = lines[j] ?? "";
+    if (RE_BARE_FENCE.test(line)) bare++;
+    else if (RE_INFO_FENCE.test(line)) info++;
+  }
+  return bare - info >= 2;
+}
+
+/** Repair markdown where outer fences would be prematurely closed by nested
+ *  fences. Walks each fenced block, finds its intended close via the same
+ *  insideInner + lookahead state machine used for prompt blocks, and upgrades
+ *  the outer fence length to maxInnerFence + 1 when needed. */
+export function repairNestedFences(markdown: string): string {
+  const lines = markdown.split("\n");
+  const result = lines.slice();
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    const bareOpen = RE_BARE_FENCE.exec(line);
+    const infoOpen = RE_INFO_FENCE.exec(line);
+    const openerLen = (infoOpen ?? bareOpen)?.[1]?.length ?? 0;
+    if (!openerLen) {
+      i++;
+      continue;
+    }
+
+    let insideInner = false;
+    let innerFenceLen = 0;
+    let maxInnerFence = 0;
+    let closeLine = -1;
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const l = lines[j] ?? "";
+      const bareMatch = RE_BARE_FENCE.exec(l);
+      const infoMatch = RE_INFO_FENCE.exec(l);
+
+      if (insideInner) {
+        if (bareMatch?.[1] && bareMatch[1].length >= innerFenceLen) {
+          insideInner = false;
+          maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
+        }
+        continue;
+      }
+
+      if (bareMatch?.[1]) {
+        if (shouldOpenInnerBlockGeneric(lines, j)) {
+          insideInner = true;
+          innerFenceLen = bareMatch[1].length;
+          maxInnerFence = Math.max(maxInnerFence, bareMatch[1].length);
+        } else if (bareMatch[1].length >= openerLen) {
+          closeLine = j;
+          break;
+        }
+      } else if (infoMatch?.[1]) {
+        insideInner = true;
+        innerFenceLen = infoMatch[1].length;
+        maxInnerFence = Math.max(maxInnerFence, infoMatch[1].length);
+      }
+    }
+
+    if (closeLine !== -1 && maxInnerFence >= openerLen) {
+      const newLen = maxInnerFence + 1;
+      const newFence = "`".repeat(newLen);
+      const openMatch = RE_FENCE_INDENT.exec(line);
+      if (openMatch) {
+        result[i] = (openMatch[1] ?? "") + newFence + (openMatch[3] ?? "");
+      }
+      const closeLineText = lines[closeLine] ?? "";
+      const closeIndent = RE_BARE_FENCE.exec(closeLineText)?.[0]?.match(/^( {0,3})/)?.[1] ?? "";
+      result[closeLine] = closeIndent + newFence;
+    }
+
+    i = closeLine !== -1 ? closeLine + 1 : i + 1;
+  }
+
+  return result.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Content segmentation — splits markdown into text + prompt segments so
 // prompt blocks never pass through the markdown parser.
 // ---------------------------------------------------------------------------
@@ -177,17 +272,23 @@ function findPendingPromptBlock(
 
 /** Split markdown into interleaved text/prompt segments.
  *  Prompt blocks are extracted by our state machine parser and never
- *  reach the markdown renderer, eliminating all fence-nesting issues. */
+ *  reach the markdown renderer, eliminating all fence-nesting issues.
+ *  Markdown segments are passed through repairNestedFences so agent-authored
+ *  prose-quoted code blocks render correctly even when nested. */
 export function splitByPromptBlocks(markdown: string): ContentSegment[] {
   const rawBlocks = findRawPromptBlocks(markdown);
   const lines = markdown.split("\n");
   const segments: ContentSegment[] = [];
   let cursor = 0;
 
+  const pushMarkdown = (text: string) => {
+    if (!text.trim()) return;
+    segments.push({ type: "markdown", content: repairNestedFences(text) });
+  };
+
   for (const raw of rawBlocks) {
     if (raw.startLine > cursor) {
-      const text = lines.slice(cursor, raw.startLine).join("\n");
-      if (text.trim()) segments.push({ type: "markdown", content: text });
+      pushMarkdown(lines.slice(cursor, raw.startLine).join("\n"));
     }
 
     const parsed = parsePromptFromCode(raw.content);
@@ -200,8 +301,7 @@ export function splitByPromptBlocks(markdown: string): ContentSegment[] {
   const pending = findPendingPromptBlock(lines, rawBlocks);
   if (pending && pending.startLine >= cursor) {
     if (pending.startLine > cursor) {
-      const text = lines.slice(cursor, pending.startLine).join("\n");
-      if (text.trim()) segments.push({ type: "markdown", content: text });
+      pushMarkdown(lines.slice(cursor, pending.startLine).join("\n"));
     }
     const firstLine = pending.content.split("\n")[0]?.trim() ?? "";
     const title = firstLine.startsWith("# ") ? firstLine.slice(2).trim() : undefined;
@@ -210,12 +310,13 @@ export function splitByPromptBlocks(markdown: string): ContentSegment[] {
   }
 
   if (cursor < lines.length) {
-    const text = lines.slice(cursor).join("\n");
-    if (text.trim()) segments.push({ type: "markdown", content: text });
+    pushMarkdown(lines.slice(cursor).join("\n"));
   }
 
-  // No prompt blocks at all — return single markdown segment
-  if (segments.length === 0) return [{ type: "markdown", content: markdown }];
+  // No prompt blocks at all — return single (repaired) markdown segment
+  if (segments.length === 0) {
+    return [{ type: "markdown", content: repairNestedFences(markdown) }];
+  }
 
   return segments;
 }

@@ -29,6 +29,7 @@ export {
   parsePromptBlocks,
   parsePromptFromCode,
   type RawPromptBlock,
+  repairNestedFences,
   splitByPromptBlocks,
 } from "~/lib/prompt-parsing";
 
