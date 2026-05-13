@@ -191,6 +191,9 @@ export const TurnBlock = memo(function TurnBlock({
 
           const isLastSection = si === renderSections.length - 1;
           const sectionKey = `agent-${section.items[0]?.idx ?? "tail"}`;
+          const lastSectionItem = section.items[section.items.length - 1];
+          const lastItemIsTimestampedText =
+            lastSectionItem?.seg.kind === "text" && lastSectionItem.seg.timestamp != null;
           return (
             <div key={sectionKey} className="space-y-1">
               <div className="flex gap-3 max-md:gap-2">
@@ -241,15 +244,16 @@ export const TurnBlock = memo(function TurnBlock({
               </div>
               {isLastSection &&
                 resultEvent != null &&
-                (resultEvent.timestamp != null ||
+                ((!lastItemIsTimestampedText && resultEvent.timestamp != null) ||
                   (resultEvent.duration != null && resultEvent.duration > 0)) && (
                   <div className="text-xs text-muted-foreground/70 flex items-center gap-1.5 ml-11 max-md:ml-8">
-                    {resultEvent.timestamp != null && (
+                    {!lastItemIsTimestampedText && resultEvent.timestamp != null && (
                       <span title={new Date(resultEvent.timestamp).toLocaleString()}>
                         {formatTurnTime(resultEvent.timestamp)}
                       </span>
                     )}
-                    {resultEvent.timestamp != null &&
+                    {!lastItemIsTimestampedText &&
+                      resultEvent.timestamp != null &&
                       resultEvent.duration != null &&
                       resultEvent.duration > 0 && (
                         <span className="text-muted-foreground/40">·</span>

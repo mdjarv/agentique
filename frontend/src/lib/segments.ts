@@ -26,6 +26,7 @@ export interface ActivitySegment {
 export interface TextSegment {
   kind: "text";
   content: string;
+  timestamp?: number;
 }
 export interface ErrorSegment {
   kind: "error";
@@ -180,6 +181,7 @@ export function buildSegments(
         case "text":
           if (event.type === "text") {
             last.content += `\n\n${event.content}`;
+            if (event.timestamp != null) last.timestamp = event.timestamp;
           }
           break;
         case "error":
@@ -208,7 +210,11 @@ export function buildSegments(
           break;
         case "text":
           if (event.type === "text") {
-            segments.push({ kind: "text", content: event.content });
+            segments.push({
+              kind: "text",
+              content: event.content,
+              timestamp: event.timestamp,
+            });
           }
           break;
         case "error":

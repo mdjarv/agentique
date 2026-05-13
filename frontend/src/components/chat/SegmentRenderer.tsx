@@ -10,6 +10,7 @@ import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
+import { formatTurnTime } from "~/lib/format";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import type {
   ActivityItem,
@@ -172,6 +173,7 @@ export const TextSegmentView = memo(function TextSegmentView({
   projectId,
   sessionId,
   isStreaming,
+  timestamp,
 }: {
   content: string;
   onCopy: (text: string) => void;
@@ -179,6 +181,7 @@ export const TextSegmentView = memo(function TextSegmentView({
   projectId: string;
   sessionId: string;
   isStreaming: boolean;
+  timestamp?: number;
 }) {
   const debouncedContent = useDebouncedValue(content, STREAMING_DEBOUNCE_MS);
   const markdownContent = isStreaming ? debouncedContent : content;
@@ -190,19 +193,29 @@ export const TextSegmentView = memo(function TextSegmentView({
       sessionId={sessionId}
       isStreaming={isStreaming}
     >
-      <div className="group/msg flex gap-2 items-start">
-        <div className="flex-1 min-w-0 rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
-          <Markdown content={markdownContent} />
-          {isStreaming && <TypingCursor />}
+      <div className="group/msg flex flex-col">
+        <div className="flex gap-2 items-start">
+          <div className="flex-1 min-w-0 rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
+            <Markdown content={markdownContent} />
+            {isStreaming && <TypingCursor />}
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy(content)}
+            className="mt-1 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity max-md:opacity-60"
+            aria-label="Copy message"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => onCopy(content)}
-          className="mt-1 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity max-md:opacity-60"
-          aria-label="Copy message"
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
+        {timestamp != null && !isStreaming && (
+          <div
+            className="text-xs text-muted-foreground/70 mt-1 mr-7"
+            title={new Date(timestamp).toLocaleString()}
+          >
+            {formatTurnTime(timestamp)}
+          </div>
+        )}
       </div>
     </PromptGroupProvider>
   );
@@ -357,6 +370,7 @@ export function SegmentRenderer({
         projectId={projectId}
         sessionId={sessionId}
         isStreaming={false}
+        timestamp={seg.timestamp}
       />
     );
   }
