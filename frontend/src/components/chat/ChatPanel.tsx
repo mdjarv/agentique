@@ -308,28 +308,43 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId]);
 
-  const handleTemplateSelect = useCallback(
+  // Settings application mutates session state on the backend (set-model,
+  // set-permission, set-auto-approve), so it must wait until the user has
+  // committed to the template — i.e. either no variables to fill, or the
+  // variable dialog was submitted. A canceled variable dialog leaves the
+  // session untouched.
+  const applyTemplateSettings = useCallback(
     (tmpl: PromptTemplate) => {
       const settings = parseSettings(tmpl.settings);
-      // Apply mutable settings only — worktree and effort can't change on a running session.
+      // Mutable settings only — worktree and effort can't change on a running session.
       if (settings.model) handleModelChange(settings.model);
       if (settings.autoApproveMode) handleAutoApproveModeChange(settings.autoApproveMode);
       if (settings.planMode !== undefined) handlePlanModeChange(settings.planMode);
-
-      const vars = extractVariables(tmpl.content);
-      if (vars.length > 0) {
-        setPendingTemplate({ template: tmpl, variables: vars });
-      } else {
-        composerRef.current?.setText(tmpl.content);
-      }
     },
     [handleModelChange, handleAutoApproveModeChange, handlePlanModeChange],
   );
 
-  const handleVariableSubmit = useCallback((substituted: string) => {
-    setPendingTemplate(null);
-    composerRef.current?.setText(substituted);
-  }, []);
+  const handleTemplateSelect = useCallback(
+    (tmpl: PromptTemplate) => {
+      const vars = extractVariables(tmpl.content);
+      if (vars.length > 0) {
+        setPendingTemplate({ template: tmpl, variables: vars });
+      } else {
+        applyTemplateSettings(tmpl);
+        composerRef.current?.setText(tmpl.content);
+      }
+    },
+    [applyTemplateSettings],
+  );
+
+  const handleVariableSubmit = useCallback(
+    (substituted: string) => {
+      if (pendingTemplate) applyTemplateSettings(pendingTemplate.template);
+      setPendingTemplate(null);
+      composerRef.current?.setText(substituted);
+    },
+    [pendingTemplate, applyTemplateSettings],
+  );
 
   const handleVariableCancel = useCallback(() => {
     setPendingTemplate(null);
