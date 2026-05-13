@@ -40,6 +40,7 @@ export interface UserMessageSegment {
   content: string;
   attachments?: Attachment[];
   deliveryStatus?: "sending" | "delivered";
+  timestamp?: number;
 }
 export interface AgentMessageSegment {
   kind: "agent_message";
@@ -230,6 +231,7 @@ export function buildSegments(
               content: event.content ?? "",
               attachments: event.attachments,
               deliveryStatus: event.deliveryStatus,
+              timestamp: event.timestamp,
             });
           }
           break;

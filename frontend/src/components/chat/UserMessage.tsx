@@ -4,18 +4,21 @@ import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { formatTurnTime } from "~/lib/format";
 import type { Attachment } from "~/stores/chat-store";
 
 interface UserMessageProps {
   prompt: string;
   attachments?: Attachment[];
   deliveryStatus?: "sending" | "delivered";
+  timestamp?: number;
 }
 
 export const UserMessage = memo(function UserMessage({
   prompt,
   attachments,
   deliveryStatus,
+  timestamp,
 }: UserMessageProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -32,67 +35,77 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <>
-      <div className="group/usermsg flex gap-3 flex-row-reverse items-start max-md:gap-2">
-        <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
-          <AvatarFallback className="bg-primary/20 text-primary">
-            <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
-          </AvatarFallback>
-        </Avatar>
-        <div
-          className={`max-w-[75%] max-md:max-w-full min-w-0 overflow-hidden rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
-            isPending
-              ? "from-primary/8 to-primary/4 border-dashed border-primary/15 shadow-md shadow-black/10 text-foreground/55"
-              : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"
-          }`}
-        >
-          {attachments && attachments.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap mb-2">
-              {attachments.map((a) =>
-                a.mimeType.startsWith("image/") ? (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className="p-0 border-none bg-transparent cursor-pointer"
-                    onClick={() => setLightboxSrc(a.dataUrl)}
-                  >
-                    <img
-                      src={a.previewUrl ?? a.dataUrl}
-                      alt={a.name}
-                      className="h-20 max-w-[200px] object-cover rounded"
-                    />
-                  </button>
+      <div className="group/usermsg">
+        <div className="flex gap-3 flex-row-reverse items-start max-md:gap-2">
+          <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
+            <AvatarFallback className="bg-primary/20 text-primary">
+              <User className="h-4 w-4 max-md:h-3 max-md:w-3" />
+            </AvatarFallback>
+          </Avatar>
+          <div
+            className={`max-w-[75%] max-md:max-w-full min-w-0 overflow-hidden rounded-lg px-4 py-2 bg-gradient-to-br border backdrop-blur-sm ${
+              isPending
+                ? "from-primary/8 to-primary/4 border-dashed border-primary/15 shadow-md shadow-black/10 text-foreground/55"
+                : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"
+            }`}
+          >
+            {attachments && attachments.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap mb-2">
+                {attachments.map((a) =>
+                  a.mimeType.startsWith("image/") ? (
+                    <button
+                      key={a.id}
+                      type="button"
+                      className="p-0 border-none bg-transparent cursor-pointer"
+                      onClick={() => setLightboxSrc(a.dataUrl)}
+                    >
+                      <img
+                        src={a.previewUrl ?? a.dataUrl}
+                        alt={a.name}
+                        className="h-20 max-w-[200px] object-cover rounded"
+                      />
+                    </button>
+                  ) : (
+                    <div
+                      key={a.id}
+                      className="h-20 w-20 rounded bg-primary-foreground/10 flex flex-col items-center justify-center gap-1 px-1"
+                    >
+                      <FileText className="h-5 w-5" />
+                      <span className="text-[9px] truncate w-full text-center">{a.name}</span>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+            {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
+            {deliveryStatus && (
+              <div className="flex justify-end mt-1 -mb-0.5">
+                {deliveryStatus === "sending" ? (
+                  <Loader2 className="h-3 w-3 text-primary/40 animate-spin" />
                 ) : (
-                  <div
-                    key={a.id}
-                    className="h-20 w-20 rounded bg-primary-foreground/10 flex flex-col items-center justify-center gap-1 px-1"
-                  >
-                    <FileText className="h-5 w-5" />
-                    <span className="text-[9px] truncate w-full text-center">{a.name}</span>
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-          {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
-          {deliveryStatus && (
-            <div className="flex justify-end mt-1 -mb-0.5">
-              {deliveryStatus === "sending" ? (
-                <Loader2 className="h-3 w-3 text-primary/40 animate-spin" />
-              ) : (
-                <Check className="h-3 w-3 text-primary/60" />
-              )}
-            </div>
+                  <Check className="h-3 w-3 text-primary/60" />
+                )}
+              </div>
+            )}
+          </div>
+          {prompt && (
+            <button
+              type="button"
+              onClick={() => handleCopy(prompt)}
+              className="mt-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity max-md:opacity-60"
+              aria-label="Copy message"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
           )}
         </div>
-        {prompt && (
-          <button
-            type="button"
-            onClick={() => handleCopy(prompt)}
-            className="mt-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity max-md:opacity-60"
-            aria-label="Copy message"
+        {timestamp != null && (
+          <div
+            className="text-xs text-muted-foreground/70 mt-1 text-right mr-11 max-md:mr-9"
+            title={new Date(timestamp).toLocaleString()}
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
+            {formatTurnTime(timestamp)}
+          </div>
         )}
       </div>
 

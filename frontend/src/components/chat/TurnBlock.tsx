@@ -7,6 +7,7 @@ import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { useTheme } from "~/hooks/useTheme";
+import { formatTurnTime } from "~/lib/format";
 import { getProjectColor } from "~/lib/project-colors";
 import type { Segment } from "~/lib/segments";
 import { buildSegments, buildTurnSections, segmentKey } from "~/lib/segments";
@@ -112,6 +113,21 @@ export const TurnBlock = memo(function TurnBlock({
     [allEvents, turn.complete],
   );
 
+  // Approximate the time the user sent this turn's initial prompt: prefer the
+  // result event's start (timestamp - duration) when available, otherwise fall
+  // back to the first event we have for the turn.
+  const initialPromptTimestamp = useMemo(() => {
+    if (
+      resultEvent?.timestamp != null &&
+      resultEvent.duration != null &&
+      resultEvent.duration > 0
+    ) {
+      return resultEvent.timestamp - resultEvent.duration;
+    }
+    const first = turn.events.find((e) => e.timestamp != null);
+    return first?.timestamp;
+  }, [resultEvent, turn.events]);
+
   const committedText = useMemo(
     () =>
       allEvents
@@ -153,7 +169,11 @@ export const TurnBlock = memo(function TurnBlock({
 
   return (
     <div ref={outerAnimateRef} className="space-y-4">
-      <UserMessage prompt={turn.prompt} attachments={turn.attachments} />
+      <UserMessage
+        prompt={turn.prompt}
+        attachments={turn.attachments}
+        timestamp={initialPromptTimestamp}
+      />
 
       {hasAssistantContent &&
         renderSections.map((section, si) => {
@@ -164,6 +184,7 @@ export const TurnBlock = memo(function TurnBlock({
                 prompt={section.seg.content}
                 attachments={section.seg.attachments}
                 deliveryStatus={section.seg.deliveryStatus}
+                timestamp={section.seg.timestamp}
               />
             );
           }
@@ -218,20 +239,26 @@ export const TurnBlock = memo(function TurnBlock({
                   )}
                 </AgentSectionContent>
               </div>
-              {isLastSection && resultEvent?.duration != null && resultEvent.duration > 0 && (
-                <div className="text-xs text-muted-foreground flex items-center gap-1.5 ml-11 max-md:ml-0">
-                  {resultEvent.timestamp && (
-                    <span>
-                      {new Date(resultEvent.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  )}
-                  {resultEvent.timestamp && <span className="text-muted-foreground/40">·</span>}
-                  <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
-                </div>
-              )}
+              {isLastSection &&
+                resultEvent != null &&
+                (resultEvent.timestamp != null ||
+                  (resultEvent.duration != null && resultEvent.duration > 0)) && (
+                  <div className="text-xs text-muted-foreground/70 flex items-center gap-1.5 ml-11 max-md:ml-8">
+                    {resultEvent.timestamp != null && (
+                      <span title={new Date(resultEvent.timestamp).toLocaleString()}>
+                        {formatTurnTime(resultEvent.timestamp)}
+                      </span>
+                    )}
+                    {resultEvent.timestamp != null &&
+                      resultEvent.duration != null &&
+                      resultEvent.duration > 0 && (
+                        <span className="text-muted-foreground/40">·</span>
+                      )}
+                    {resultEvent.duration != null && resultEvent.duration > 0 && (
+                      <span>{(resultEvent.duration / 1000).toFixed(1)}s</span>
+                    )}
+                  </div>
+                )}
             </div>
           );
         })}
