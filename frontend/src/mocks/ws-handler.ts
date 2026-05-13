@@ -739,8 +739,24 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
       const allTurns = MOCK_TURNS[p.sessionId as string] ?? [];
       const limit = (p.limit as number) || 0;
       const turns = limit > 0 ? allTurns.slice(-limit) : allTurns;
+      // Inject synthesised timestamps so per-block timestamps render in the
+      // mock. Spread turns over the last few hours, events sequentially within.
+      const nowMs = Date.now();
+      const TURN_GAP_MS = 5 * 60_000;
+      const stampedTurns = turns.map((turn, i) => {
+        const turnBase = nowMs - (turns.length - 1 - i) * TURN_GAP_MS;
+        const events = turn.events.map((e, j) => {
+          const duration = (e as { duration?: unknown }).duration;
+          const isResultWithDuration = e.type === "result" && typeof duration === "number";
+          return {
+            ...e,
+            timestamp: isResultWithDuration ? turnBase + (duration as number) : turnBase + j * 1500,
+          };
+        });
+        return { ...turn, events };
+      });
       const payload = {
-        turns,
+        turns: stampedTurns,
         hasMore: limit > 0 && allTurns.length > turns.length,
         totalTurns: allTurns.length,
       };
