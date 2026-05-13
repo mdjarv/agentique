@@ -621,7 +621,7 @@ function ReadOnlyIndicators({
           title={worktreeBranch ? `Worktree: ${worktreeBranch}` : "Worktree"}
         >
           <GitBranch className="h-2.5 w-2.5 shrink-0" />
-          <span className="max-sm:hidden truncate max-w-[12ch]">
+          <span className="truncate max-w-[8ch] sm:max-w-[12ch]">
             {worktreeBranch ?? "worktree"}
           </span>
         </span>

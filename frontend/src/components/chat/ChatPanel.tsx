@@ -18,6 +18,8 @@ import { SessionTabBar } from "~/components/chat/SessionTabBar";
 import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
 import { TodosView } from "~/components/chat/TodosView";
 import { StatusPage } from "~/components/layout/PageHeader";
+import { TemplatePicker } from "~/components/templates/TemplatePicker";
+import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
 import { useSessionState } from "~/hooks/session/useSessionState";
@@ -26,6 +28,7 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
+import type { PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
 import {
   createSession,
@@ -41,6 +44,7 @@ import {
   stopSession,
 } from "~/lib/session/actions";
 import { loadSessionHistory } from "~/lib/session/history";
+import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode, PendingApproval } from "~/stores/chat-store";
@@ -142,6 +146,10 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     (projectGitStatus?.aheadRemote ?? 0) > 0 || (projectGitStatus?.behindRemote ?? 0) > 0;
 
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
+  const [pendingTemplate, setPendingTemplate] = useState<{
+    template: PromptTemplate;
+    variables: string[];
+  } | null>(null);
   const activeTab: SessionTab = tab === "git" ? "changes" : (tab ?? "chat");
   const setActiveTab = useCallback((t: SessionTab) => onTabChange?.(t), [onTabChange]);
   const [resuming, setResuming] = useState(false);
@@ -300,6 +308,33 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId]);
 
+  const handleTemplateSelect = useCallback(
+    (tmpl: PromptTemplate) => {
+      const settings = parseSettings(tmpl.settings);
+      // Apply mutable settings only — worktree and effort can't change on a running session.
+      if (settings.model) handleModelChange(settings.model);
+      if (settings.autoApproveMode) handleAutoApproveModeChange(settings.autoApproveMode);
+      if (settings.planMode !== undefined) handlePlanModeChange(settings.planMode);
+
+      const vars = extractVariables(tmpl.content);
+      if (vars.length > 0) {
+        setPendingTemplate({ template: tmpl, variables: vars });
+      } else {
+        composerRef.current?.setText(tmpl.content);
+      }
+    },
+    [handleModelChange, handleAutoApproveModeChange, handlePlanModeChange],
+  );
+
+  const handleVariableSubmit = useCallback((substituted: string) => {
+    setPendingTemplate(null);
+    composerRef.current?.setText(substituted);
+  }, []);
+
+  const handleVariableCancel = useCallback(() => {
+    setPendingTemplate(null);
+  }, []);
+
   const handleResume = useCallback(async () => {
     if (resuming) return;
     setResuming(true);
@@ -457,6 +492,12 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 stashDepth={stashDepth}
                 onStash={handleStash}
                 onUnstash={handleUnstash}
+                templatePicker={
+                  <TemplatePicker
+                    onSelect={handleTemplateSelect}
+                    disabled={sessionState === "merging" || compacting}
+                  />
+                }
               />
             </>
           )}
@@ -493,6 +534,16 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
         }}
         loading={git.committing}
       />
+      {pendingTemplate && (
+        <VariableDialog
+          open
+          templateName={pendingTemplate.template.name}
+          variables={pendingTemplate.variables}
+          content={pendingTemplate.template.content}
+          onSubmit={handleVariableSubmit}
+          onCancel={handleVariableCancel}
+        />
+      )}
     </div>
   );
 }
