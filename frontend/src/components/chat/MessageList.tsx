@@ -91,11 +91,13 @@ const ScrollAnchor = memo(function ScrollAnchor({
   turns,
   scrollContainer,
   following,
+  followingRef,
 }: {
   sessionId: string;
   turns: Turn[];
   scrollContainer: React.RefObject<HTMLDivElement | null>;
   following: boolean;
+  followingRef: React.RefObject<boolean>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isStreaming = useStreamingStore((s) => sessionId in s.texts);
@@ -104,13 +106,17 @@ const ScrollAnchor = memo(function ScrollAnchor({
   const prevSessionIdRef = useRef(sessionId);
 
   // During streaming: poll at 10fps for smooth auto-scroll without per-delta re-renders.
+  // Re-check followingRef each tick: an unfollow gesture flips the ref synchronously
+  // (before the parent re-renders and cleanup runs), so the tick that lands in that
+  // gap would otherwise snap the user back to the bottom.
   useEffect(() => {
     if (!following || !isStreaming) return;
     const id = setInterval(() => {
+      if (!followingRef.current) return;
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }, SCROLL_POLL_MS);
     return () => clearInterval(id);
-  }, [following, isStreaming]);
+  }, [following, isStreaming, followingRef]);
 
   // Non-streaming: scroll on turn count changes (new turn, completion metadata).
   useEffect(() => {
@@ -326,8 +332,15 @@ export function MessageList({
 
     let touchStartY: number | null = null;
 
+    // Flip the ref synchronously so the ResizeObserver and ScrollAnchor's
+    // interval — both of which fire from streaming content growth before
+    // React commits the next render — immediately stop pinning to bottom.
+    // Without the eager ref write, streaming text growth between the wheel
+    // event and the commit yanks the viewport back down.
     const unfollow = () => {
-      if (followingRef.current) setFollowing(false);
+      if (!followingRef.current) return;
+      followingRef.current = false;
+      setFollowing(false);
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -444,6 +457,7 @@ export function MessageList({
             turns={turns}
             scrollContainer={scrollRef}
             following={following}
+            followingRef={followingRef}
           />
           <div ref={bottomRef} />
         </div>
