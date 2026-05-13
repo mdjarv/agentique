@@ -93,6 +93,12 @@ export function useFolderGroups(): {
         );
       });
 
+      completed.sort(
+        (a, b) =>
+          new Date(b.data.meta.updatedAt ?? b.data.meta.createdAt).getTime() -
+          new Date(a.data.meta.updatedAt ?? a.data.meta.createdAt).getTime(),
+      );
+
       const worstState = getWorstSessionState(active);
       entries.push({ project, color, active, completed, worstState });
     }

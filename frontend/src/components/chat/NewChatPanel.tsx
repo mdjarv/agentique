@@ -22,7 +22,11 @@ import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { cn, copyToClipboard, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
-import { DEFAULT_SESSION_DEFAULTS } from "~/stores/ui-store";
+import { DEFAULT_SESSION_DEFAULTS, useUIStore } from "~/stores/ui-store";
+
+function newSessionDraftKey(projectId: string): string {
+  return `new:${projectId}`;
+}
 
 const DEFAULT_PRESETS: BehaviorPresets = {
   autoCommit: true,
@@ -80,6 +84,9 @@ export function NewChatPanel({
       .join("")
       .toUpperCase()
       .slice(0, 2) ?? "";
+  const draftKey = newSessionDraftKey(projectId);
+  const persistedDraft = useUIStore((s) => s.drafts[draftKey] ?? "");
+  const composerInitialText = persistedDraft || initialPrompt;
   const composerRef = useRef<ComposerHandle>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("session");
   const [worktree, setWorktree] = useState(initialWorktree ?? DEFAULT_SESSION_DEFAULTS.worktree);
@@ -106,6 +113,13 @@ export function NewChatPanel({
     [navigate, projectSlug],
   );
 
+  const handleTextPersist = useCallback(
+    (text: string) => {
+      useUIStore.getState().setDraft(draftKey, text);
+    },
+    [draftKey],
+  );
+
   const handleSend = async (prompt: string, attachments?: Attachment[]) => {
     if (sending) return;
     setSending(true);
@@ -122,6 +136,7 @@ export function NewChatPanel({
         behaviorPresets,
       });
       await submitQuery(ws, sessionId, prompt, attachments);
+      useUIStore.getState().clearDraft(draftKey);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
         params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
@@ -249,11 +264,13 @@ export function NewChatPanel({
       </div>
       {panelMode === "session" ? (
         <MessageComposer
+          key={draftKey}
           ref={composerRef}
           projectId={projectId}
           onSend={handleSend}
           disabled={sending}
-          initialText={initialPrompt}
+          initialText={composerInitialText}
+          onTextPersist={handleTextPersist}
           worktree={worktree}
           onWorktreeChange={setWorktree}
           planMode={planMode}
