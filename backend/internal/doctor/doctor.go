@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
@@ -61,6 +62,7 @@ func AllChecks() []CheckFunc {
 		{"disk-space", checkDiskSpace},
 		{"claude-auth", checkClaudeAuth},
 		{"gh-auth", checkGHAuth},
+		{"server-addr", checkServerAddr},
 	}
 }
 
@@ -75,6 +77,7 @@ func RunAll() []Check {
 		checkDiskSpace(),
 		checkClaudeAuth(),
 		checkGHAuth(),
+		checkServerAddr(),
 	}
 }
 
@@ -359,6 +362,32 @@ func checkGHAuth() Check {
 
 	c.Status = OK
 	c.Message = "authenticated"
+	return c
+}
+
+func checkServerAddr() Check {
+	c := Check{Name: "server-addr", Required: false}
+
+	cfg, err := config.Load(config.Path())
+	if err != nil {
+		c.Status = Warn
+		c.Message = fmt.Sprintf("could not load config: %v", err)
+		c.Fix = "Check " + config.Path()
+		return c
+	}
+
+	scheme := "http"
+	if cfg.Server.TLSCert != "" && cfg.Server.TLSKey != "" {
+		scheme = "https"
+	}
+
+	source := "default"
+	if _, err := os.Stat(config.Path()); err == nil {
+		source = config.Path()
+	}
+
+	c.Status = OK
+	c.Message = fmt.Sprintf("%s://%s (%s)", scheme, cfg.Server.Addr, source)
 	return c
 }
 
