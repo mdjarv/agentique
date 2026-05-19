@@ -188,6 +188,20 @@ install: build
     echo ""
     "${INSTALL_DIR}/agentique" doctor || true
 
+# Install, restart the service, and report doctor status
+upgrade: install
+    #!/usr/bin/env bash
+    set -euo pipefail
+    INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+    if systemctl --user is-enabled agentique &>/dev/null; then
+      echo "Restarting agentique service..."
+      "${INSTALL_DIR}/agentique" service restart
+    else
+      echo "Service not installed — skipping restart."
+    fi
+    echo ""
+    "${INSTALL_DIR}/agentique" doctor || true
+
 # Clean build artifacts
 clean:
     rm -rf frontend/dist
