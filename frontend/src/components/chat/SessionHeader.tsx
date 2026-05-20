@@ -2,6 +2,7 @@ import {
   Check,
   Copy,
   Eraser,
+  FolderGit2,
   Gauge,
   GitBranch,
   Globe,
@@ -600,7 +601,6 @@ function ReadOnlyIndicators({
   const effortLabel = effort ? EFFORT_LABELS[effort] : undefined;
   const effortColor = effort ? EFFORT_COLORS[effort] : undefined;
   const hasEffort = !!effort && !!effortLabel;
-  if (!hasEffort && !isWorktree) return null;
   return (
     <>
       {hasEffort && (
@@ -615,7 +615,7 @@ function ReadOnlyIndicators({
           <span className="max-sm:hidden">{effortLabel}</span>
         </span>
       )}
-      {isWorktree && (
+      {isWorktree ? (
         <span
           className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0"
           title={worktreeBranch ? `Worktree: ${worktreeBranch}` : "Worktree"}
@@ -624,6 +624,14 @@ function ReadOnlyIndicators({
           <span className="truncate max-w-[8ch] sm:max-w-[12ch]">
             {worktreeBranch ?? "worktree"}
           </span>
+        </span>
+      ) : (
+        <span
+          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-warning/40 bg-warning/10 text-warning shrink-0"
+          title="Running directly in the project's working directory (no worktree isolation)"
+        >
+          <FolderGit2 className="h-2.5 w-2.5 shrink-0" />
+          <span className="max-sm:hidden">local</span>
         </span>
       )}
     </>
