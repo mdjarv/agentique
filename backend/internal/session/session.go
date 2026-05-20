@@ -620,6 +620,8 @@ func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
 }
 
 // Interrupt stops the current generation without killing the session.
+// Pending approvals and questions are torn down so the UI doesn't keep
+// banners visible after the runtime has forgotten about them.
 func (s *Session) Interrupt() error {
 	s.mu.Lock()
 	rt := s.rt
@@ -627,7 +629,59 @@ func (s *Session) Interrupt() error {
 	if rt == nil {
 		return ErrNotLive
 	}
-	return rt.Interrupt()
+
+	// Snapshot runtime pending IDs before rt.Interrupt() drops them.
+	var rtApprovalID, rtQuestionID string
+	if rtA, rtQ := rt.PendingState(); rtA != nil || rtQ != nil {
+		if rtA != nil {
+			rtApprovalID = rtA.ID
+		}
+		if rtQ != nil {
+			rtQuestionID = rtQ.ID
+		}
+	}
+
+	if err := rt.Interrupt(); err != nil {
+		return err
+	}
+
+	// Drain agentique-side synthetic approvals (plan-review, spawn UI
+	// prompts). These live on the Session, not in the runtime, so an
+	// interrupt does not clear them automatically.
+	syntheticIDs := s.drainSyntheticApprovals("session interrupted")
+
+	for _, id := range syntheticIDs {
+		s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: id})
+	}
+	if rtApprovalID != "" {
+		s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: rtApprovalID})
+	}
+	if rtQuestionID != "" {
+		s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: rtQuestionID})
+	}
+	return nil
+}
+
+// drainSyntheticApprovals denies and removes every pending agentique-side
+// synthetic approval (non-blocking channel send mirrors Close). Returns the
+// drained IDs so callers can broadcast resolution events; Close skips the
+// broadcast because the session itself is going away.
+func (s *Session) drainSyntheticApprovals(reason string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.syntheticApprovals) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.syntheticApprovals))
+	for id, sa := range s.syntheticApprovals {
+		select {
+		case sa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: reason}:
+		default:
+		}
+		delete(s.syntheticApprovals, id)
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // SetModel changes the model for this session. Only allowed when idle.
@@ -658,16 +712,9 @@ func (s *Session) Close() {
 		_ = rt.Close()
 	}
 
-	// Drain synthetic approvals — runtime drains its own.
-	s.mu.Lock()
-	for id, sa := range s.syntheticApprovals {
-		select {
-		case sa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}:
-		default:
-		}
-		delete(s.syntheticApprovals, id)
-	}
-	s.mu.Unlock()
+	// Drain synthetic approvals — runtime drains its own. No broadcast: the
+	// session is going away so subscribers will not act on it.
+	_ = s.drainSyntheticApprovals("session closed")
 }
 
 // MarkDone transitions the session to StateDone and marks it completed.
