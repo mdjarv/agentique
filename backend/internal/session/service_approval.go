@@ -26,6 +26,16 @@ func (s *Service) ResolveQuestion(sessionID, questionID string, answers map[stri
 	return sess.ResolveQuestion(questionID, answers)
 }
 
+// DismissQuestion resolves a pending question with a dismissal sentinel so
+// the user can redirect without answering. See Session.DismissQuestion.
+func (s *Service) DismissQuestion(sessionID, questionID string) error {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return err
+	}
+	return sess.DismissQuestion(questionID)
+}
+
 // SetPermissionMode changes the permission mode for a live session and persists it.
 func (s *Service) SetPermissionMode(sessionID, mode string) error {
 	sess, err := s.getLiveSession(sessionID)

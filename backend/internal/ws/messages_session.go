@@ -117,6 +117,11 @@ type SessionResolveQuestionPayload struct {
 	Answers    map[string]string `json:"answers"`
 }
 
+type SessionDismissQuestionPayload struct {
+	SessionID  string `json:"sessionId"`
+	QuestionID string `json:"questionId"`
+}
+
 type SessionRenamePayload struct {
 	SessionID string `json:"sessionId"`
 	Name      string `json:"name"`
@@ -341,6 +346,13 @@ func (p *SessionResolveApprovalPayload) Validate() error {
 }
 
 func (p *SessionResolveQuestionPayload) Validate() error {
+	if p.QuestionID == "" {
+		return errQuestionIDRequired
+	}
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionDismissQuestionPayload) Validate() error {
 	if p.QuestionID == "" {
 		return errQuestionIDRequired
 	}

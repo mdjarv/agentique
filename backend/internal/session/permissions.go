@@ -309,5 +309,35 @@ func (s *Session) ResolveQuestion(questionID string, answers map[string]string) 
 	return nil
 }
 
+// dismissedAnswerKey is the sentinel key in the AskUserQuestion answer
+// payload that signals user dismissal. The value is a plain-English
+// directive — the runtime returns the full map back to Claude as the tool
+// result, so writing the instruction into the value is enough to steer the
+// model without preamble changes.
+const dismissedAnswerKey = "__dismissed__"
+
+const dismissedAnswerValue = "User dismissed this question without answering and wants to redirect the conversation. Do not re-ask the same question or treat this as an answer to choose from. Acknowledge briefly and continue based on their next message."
+
+// DismissQuestion resolves a pending question with a sentinel answer that
+// tells Claude the user opted out. Unlike Interrupt, the turn keeps running,
+// so Claude can respond conversationally to whatever the user says next.
+func (s *Session) DismissQuestion(questionID string) error {
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
+		return fmt.Errorf("question %s not found or already resolved", questionID)
+	}
+	answers := map[string]string{dismissedAnswerKey: dismissedAnswerValue}
+	if err := rt.SubmitAnswer(questionID, answers); err != nil {
+		if err == runtime.ErrPendingNotFound {
+			return fmt.Errorf("question %s not found or already resolved", questionID)
+		}
+		return err
+	}
+	s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: questionID})
+	return nil
+}
+
 // nowUTC returns an RFC3339 UTC timestamp (broken out for test seams).
 func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }

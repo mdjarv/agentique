@@ -225,6 +225,20 @@ export async function resolveQuestion(
   useChatStore.getState().clearPendingQuestion(sessionId);
 }
 
+/**
+ * Resolves the pending AskUserQuestion with a sentinel that tells Claude the
+ * user dismissed it. The turn keeps running so Claude can respond to whatever
+ * the user types next.
+ */
+export async function dismissQuestion(
+  ws: WsClient,
+  sessionId: string,
+  questionId: string,
+): Promise<void> {
+  await ws.request("session.dismiss-question", { sessionId, questionId });
+  useChatStore.getState().clearPendingQuestion(sessionId);
+}
+
 export async function interruptSession(ws: WsClient, sessionId: string): Promise<void> {
   await ws.request("session.interrupt", { sessionId });
 }

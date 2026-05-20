@@ -466,6 +466,11 @@ export const SessionResolveQuestionPayloadSchema = z.object({
   answers: z.record(z.string(), z.string()),
 });
 
+export const SessionDismissQuestionPayloadSchema = z.object({
+  sessionId: z.string(),
+  questionId: z.string(),
+});
+
 export const SessionRenamePayloadSchema = z.object({
   sessionId: z.string(),
   name: z.string(),

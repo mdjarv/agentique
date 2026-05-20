@@ -188,6 +188,7 @@ var handlerRegistry = map[string]handlerFunc{
 	"session.set-auto-approve":        (*conn).handleSessionSetAutoApprove,
 	"session.resolve-approval":        (*conn).handleSessionResolveApproval,
 	"session.resolve-question":        (*conn).handleSessionResolveQuestion,
+	"session.dismiss-question":        (*conn).handleSessionDismissQuestion,
 	"session.rebase":                  (*conn).handleSessionRebase,
 	"session.generate-pr-description": (*conn).handleSessionGeneratePRDesc,
 	"session.mark-done":               (*conn).handleSessionMarkDone,

@@ -1,9 +1,10 @@
-import { ChevronLeft, ChevronRight, MessageSquare, Send } from "lucide-react";
-import { useCallback, useState } from "react";
+import { ChevronLeft, ChevronRight, MessageSquare, Send, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { resolveQuestion } from "~/lib/session/actions";
+import { dismissQuestion, resolveQuestion } from "~/lib/session/actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { PendingQuestion, Question } from "~/stores/chat-store";
 
@@ -188,6 +189,29 @@ function StepDots({
   );
 }
 
+function DismissButton({ onDismiss, disabled }: { onDismiss: () => void; disabled?: boolean }) {
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Dismiss question"
+            disabled={disabled}
+            onClick={onDismiss}
+            className="absolute top-1.5 right-1.5 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-background/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <p className="text-xs">Dismiss — chat freely (Esc)</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function SingleQuestionBanner({
   question,
   value,
@@ -195,6 +219,8 @@ function SingleQuestionBanner({
   onSubmit,
   submitting,
   answered,
+  onDismiss,
+  dismissing,
 }: {
   question: Question;
   value: string;
@@ -202,11 +228,14 @@ function SingleQuestionBanner({
   onSubmit: () => void;
   submitting: boolean;
   answered: boolean;
+  onDismiss: () => void;
+  dismissing: boolean;
 }) {
   return (
-    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+    <div className="relative mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+      <DismissButton onDismiss={onDismiss} disabled={dismissing || submitting} />
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 pr-7">
           {question.header && (
             <span className="text-xs font-semibold uppercase tracking-wide text-agent">
               {question.header}
@@ -219,7 +248,7 @@ function SingleQuestionBanner({
           <Button
             size="sm"
             className="h-7 px-3 bg-agent hover:bg-agent/90 text-background"
-            disabled={!answered || submitting}
+            disabled={!answered || submitting || dismissing}
             onClick={onSubmit}
           >
             <Send className="h-3.5 w-3.5 mr-1" />
@@ -238,6 +267,8 @@ function WizardQuestionBanner({
   onSubmit,
   submitting,
   allAnswered,
+  onDismiss,
+  dismissing,
 }: {
   questions: Question[];
   answers: Record<string, string>;
@@ -245,6 +276,8 @@ function WizardQuestionBanner({
   onSubmit: () => void;
   submitting: boolean;
   allAnswered: boolean;
+  onDismiss: () => void;
+  dismissing: boolean;
 }) {
   const [step, setStep] = useState(0);
   const total = questions.length;
@@ -262,10 +295,11 @@ function WizardQuestionBanner({
   );
 
   return (
-    <div className="mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+    <div className="relative mx-4 mb-2 rounded-md border border-agent/40 bg-agent/10 px-3 py-2 shrink-0">
+      <DismissButton onDismiss={onDismiss} disabled={dismissing || submitting} />
       <div className="flex flex-col gap-2">
-        {/* Header: step label + dots */}
-        <div className="flex items-center justify-between">
+        {/* Header: step label + dots (reserve right space for dismiss button) */}
+        <div className="flex items-center justify-between pr-7">
           <span className="text-xs text-muted-foreground">
             {step + 1} / {total}
           </span>
@@ -310,7 +344,7 @@ function WizardQuestionBanner({
             <Button
               size="sm"
               className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
-              disabled={!allAnswered || submitting}
+              disabled={!allAnswered || submitting || dismissing}
               onClick={onSubmit}
             >
               <Send className="h-3.5 w-3.5 mr-1" />
@@ -320,7 +354,7 @@ function WizardQuestionBanner({
             <Button
               size="sm"
               className="h-8 px-3 bg-agent hover:bg-agent/90 text-background"
-              disabled={!currentAnswered}
+              disabled={!currentAnswered || dismissing}
               onClick={() => setStep(step + 1)}
             >
               Next
@@ -337,6 +371,7 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
   const ws = useWebSocket();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
 
   const setAnswer = useCallback((questionText: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionText]: value }));
@@ -349,6 +384,26 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
       toast.error(getErrorMessage(err, "Failed to submit answer"));
     });
   }, [ws, sessionId, pending.questionId, answers]);
+
+  const handleDismiss = useCallback(() => {
+    setDismissing(true);
+    dismissQuestion(ws, sessionId, pending.questionId).catch((err) => {
+      setDismissing(false);
+      toast.error(getErrorMessage(err, "Failed to dismiss question"));
+    });
+  }, [ws, sessionId, pending.questionId]);
+
+  // Esc dismisses the question. Ignore if a key handler upstream already
+  // consumed it (e.g., a modal closing) or if the user is mid-IME composition.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+      if (submitting || dismissing) return;
+      handleDismiss();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [handleDismiss, submitting, dismissing]);
 
   const allAnswered = pending.questions.every((q) => (answers[q.question] ?? "").trim() !== "");
 
@@ -363,6 +418,8 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
         onSubmit={handleSubmit}
         submitting={submitting}
         answered={(answers[q.question] ?? "").trim() !== ""}
+        onDismiss={handleDismiss}
+        dismissing={dismissing}
       />
     );
   }
@@ -375,6 +432,8 @@ export function QuestionBanner({ sessionId, pending }: QuestionBannerProps) {
       onSubmit={handleSubmit}
       submitting={submitting}
       allAnswered={allAnswered}
+      onDismiss={handleDismiss}
+      dismissing={dismissing}
     />
   );
 }

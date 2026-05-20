@@ -408,6 +408,7 @@ func main() {
 	g.register(ws.SessionResolveApprovalPayload{}, "SessionResolveApprovalPayload")
 	g.register(ws.SessionSetAutoApprovePayload{}, "SessionSetAutoApprovePayload")
 	g.register(ws.SessionResolveQuestionPayload{}, "SessionResolveQuestionPayload")
+	g.register(ws.SessionDismissQuestionPayload{}, "SessionDismissQuestionPayload")
 	g.register(ws.SessionRenamePayload{}, "SessionRenamePayload")
 	g.register(ws.SessionCommitPayload{}, "SessionCommitPayload")
 	g.register(ws.SessionRebasePayload{}, "SessionRebasePayload")

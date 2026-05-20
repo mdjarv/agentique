@@ -464,6 +464,11 @@ export interface SessionResolveQuestionPayload {
   answers: Record<string, string>;
 }
 
+export interface SessionDismissQuestionPayload {
+  sessionId: string;
+  questionId: string;
+}
+
 export interface SessionRenamePayload {
   sessionId: string;
   name: string;

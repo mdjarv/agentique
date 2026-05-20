@@ -144,6 +144,12 @@ func (c *conn) handleSessionResolveQuestion(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionDismissQuestion(msg ClientMessage) {
+	handleRequest(c, msg, func(_ context.Context, p SessionDismissQuestionPayload) (struct{}, error) {
+		return struct{}{}, c.svc.DismissQuestion(p.SessionID, p.QuestionID)
+	})
+}
+
 func (c *conn) handleSessionCommit(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionCommitPayload) (session.CommitResult, error) {
 		return c.gitSvc.Commit(ctx, p.SessionID, p.Message)
