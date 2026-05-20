@@ -52,9 +52,10 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if err == nil && session != nil {
 		resp["authenticated"] = true
 		resp["user"] = map[string]any{
-			"id":          session.UserID,
-			"displayName": session.DisplayName,
-			"isAdmin":     session.IsAdmin != 0,
+			"id":               session.UserID,
+			"displayName":      session.DisplayName,
+			"isAdmin":          session.IsAdmin != 0,
+			"sidebarFocusMode": session.SidebarFocusMode != 0,
 		}
 	} else {
 		resp["authenticated"] = false
@@ -231,9 +232,10 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	s.setSessionCookie(w, r, token)
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
-			"id":          user.ID,
-			"displayName": user.DisplayName,
-			"isAdmin":     user.IsAdmin != 0,
+			"id":               user.ID,
+			"displayName":      user.DisplayName,
+			"isAdmin":          user.IsAdmin != 0,
+			"sidebarFocusMode": user.SidebarFocusMode != 0,
 		},
 	})
 }
@@ -303,9 +305,10 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 	s.setSessionCookie(w, r, token)
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
-			"id":          user.ID,
-			"displayName": user.DisplayName,
-			"isAdmin":     user.IsAdmin != 0,
+			"id":               user.ID,
+			"displayName":      user.DisplayName,
+			"isAdmin":          user.IsAdmin != 0,
+			"sidebarFocusMode": user.SidebarFocusMode != 0,
 		},
 	})
 }

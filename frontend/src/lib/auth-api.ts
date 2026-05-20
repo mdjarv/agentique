@@ -6,6 +6,19 @@ export interface AuthUser {
   id: string;
   displayName: string;
   isAdmin: boolean;
+  sidebarFocusMode?: boolean;
+}
+
+export async function updateUserPreferences(prefs: {
+  sidebarFocusMode?: boolean;
+}): Promise<{ sidebarFocusMode?: boolean }> {
+  const res = await fetch("/api/user/preferences", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
+  if (!res.ok) throw new Error("Failed to update preferences");
+  return res.json();
 }
 
 export interface AuthStatus {

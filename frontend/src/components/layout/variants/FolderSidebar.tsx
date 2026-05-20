@@ -19,9 +19,13 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useWebSocket } from "~/hooks/useWebSocket";
 import { updateProject } from "~/lib/api";
-import { cn } from "~/lib/utils";
+import { setProjectPinned } from "~/lib/project-actions";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
+import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 import { DraggableProject, DragOverlayProject } from "./folder-sidebar/DraggableProject";
@@ -67,19 +71,39 @@ export function FolderSidebar() {
   const navigate = useNavigate();
   const { folders, ungrouped } = useFolderGroups();
 
+  const ws = useWebSocket();
   const expandedFolders = useUIStore((s) => s.expandedFolders);
   const expandedProjects = useUIStore((s) => s.expandedProjects);
-  const pinnedProjectIds = useUIStore((s) => s.pinnedProjectIds);
-  const focusMode = useUIStore((s) => s.sidebarFocusMode);
   const setFolderExpanded = useUIStore((s) => s.setFolderExpanded);
   const setManyFoldersExpanded = useUIStore((s) => s.setManyFoldersExpanded);
   const setProjectExpanded = useUIStore((s) => s.setProjectExpanded);
   const setManyProjectsExpanded = useUIStore((s) => s.setManyProjectsExpanded);
   const renameFolderExpanded = useUIStore((s) => s.renameFolderExpanded);
-  const toggleProjectPinned = useUIStore((s) => s.toggleProjectPinned);
-  const setSidebarFocusMode = useUIStore((s) => s.setSidebarFocusMode);
+  const localFocusMode = useUIStore((s) => s.sidebarFocusMode);
+  const setLocalFocusMode = useUIStore((s) => s.setSidebarFocusMode);
+  const authUser = useAuthStore((s) => s.user);
+  const setAuthFocusMode = useAuthStore((s) => s.setSidebarFocusMode);
 
-  const pinnedSet = useMemo(() => new Set(pinnedProjectIds), [pinnedProjectIds]);
+  const focusMode = authUser?.sidebarFocusMode ?? localFocusMode;
+  const toggleFocusMode = useCallback(() => {
+    const next = !focusMode;
+    if (authUser) {
+      setAuthFocusMode(next).catch((err) =>
+        toast.error(getErrorMessage(err, "Failed to update focus mode")),
+      );
+    } else {
+      setLocalFocusMode(next);
+    }
+  }, [focusMode, authUser, setAuthFocusMode, setLocalFocusMode]);
+
+  const togglePinned = useCallback(
+    (projectId: string, current: boolean) => {
+      setProjectPinned(ws, projectId, !current).catch((err) =>
+        toast.error(getErrorMessage(err, "Failed to update pin")),
+      );
+    },
+    [ws],
+  );
 
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -300,7 +324,7 @@ export function FolderSidebar() {
 
   // Sticky expand: once a project has an active session, record expand=true so
   // the user's inline session view doesn't silently collapse when activity ends.
-  // Pin (for focus mode) is a separate, user-curated axis — see toggleProjectPinned.
+  // Pin (for focus mode) is a separate, user-curated axis — see togglePinned.
   useEffect(() => {
     const toExpand: string[] = [];
     const visit = (id: string, hasActive: boolean) => {
@@ -352,7 +376,7 @@ export function FolderSidebar() {
             {focusMode ? (
               (() => {
                 const visible = [...orderedFolders.flatMap((f) => f.projects), ...ungrouped].filter(
-                  (e) => pinnedSet.has(e.project.id),
+                  (e) => e.project.pinned === 1,
                 );
                 if (visible.length === 0) {
                   return (
@@ -372,7 +396,7 @@ export function FolderSidebar() {
                     isPinned
                     onToggle={() => toggleProject(entry.project.id)}
                     onExpand={() => expandProject(entry.project.id)}
-                    onTogglePin={() => toggleProjectPinned(entry.project.id)}
+                    onTogglePin={() => togglePinned(entry.project.id, true)}
                     onSessionClick={handleSessionClick}
                     level={LEVEL.project}
                   />
@@ -430,10 +454,12 @@ export function FolderSidebar() {
                                 entry.project.id,
                                 entry.active.length > 0,
                               )}
-                              isPinned={pinnedSet.has(entry.project.id)}
+                              isPinned={entry.project.pinned === 1}
                               onToggle={() => toggleProject(entry.project.id)}
                               onExpand={() => expandProject(entry.project.id)}
-                              onTogglePin={() => toggleProjectPinned(entry.project.id)}
+                              onTogglePin={() =>
+                                togglePinned(entry.project.id, entry.project.pinned === 1)
+                              }
                               onSessionClick={handleSessionClick}
                               onMoveToUngrouped={() => setProjectFolder(entry.project.id, "")}
                               level={LEVEL.project}
@@ -465,10 +491,12 @@ export function FolderSidebar() {
                         key={entry.project.id}
                         entry={entry}
                         expanded={isProjectExpanded(entry.project.id, entry.active.length > 0)}
-                        isPinned={pinnedSet.has(entry.project.id)}
+                        isPinned={entry.project.pinned === 1}
                         onToggle={() => toggleProject(entry.project.id)}
                         onExpand={() => expandProject(entry.project.id)}
-                        onTogglePin={() => toggleProjectPinned(entry.project.id)}
+                        onTogglePin={() =>
+                          togglePinned(entry.project.id, entry.project.pinned === 1)
+                        }
                         onSessionClick={handleSessionClick}
                         level={LEVEL.folder}
                       />
@@ -536,7 +564,7 @@ export function FolderSidebar() {
               </button>
               <button
                 type="button"
-                onClick={() => setSidebarFocusMode(!focusMode)}
+                onClick={toggleFocusMode}
                 title={focusMode ? "Show all projects" : "Show only expanded"}
                 className={cn(
                   "flex items-center gap-1 px-1.5 py-1 text-[10px] transition-colors cursor-pointer rounded",

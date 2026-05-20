@@ -346,6 +346,7 @@ export interface Project {
   icon: string;
   folder: string;
   max_sessions: number;
+  pinned: number;
 }
 
 export interface PromptTemplate {
@@ -556,6 +557,11 @@ export interface ProjectReorderPayload {
 export interface ProjectSetFavoritePayload {
   projectId: string;
   favorite: boolean;
+}
+
+export interface ProjectSetPinnedPayload {
+  projectId: string;
+  pinned: boolean;
 }
 
 export interface ProjectUncommittedFilesPayload {

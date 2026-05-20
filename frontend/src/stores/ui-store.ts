@@ -37,7 +37,11 @@ interface UIState {
   stashes: Record<string, string[]>;
   expandedProjects: Record<string, boolean>;
   expandedFolders: Record<string, boolean>;
-  pinnedProjectIds: string[];
+  /** Pre-migration cache of locally-pinned project IDs.
+   *  Drained once on startup and pushed to the server (see usePinnedMigration). */
+  legacyPinnedProjectIds: string[];
+  /** Fallback used only when auth is disabled — when a user is signed in,
+   *  the source of truth is `authStore.user.sidebarFocusMode`. */
   sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
   todoSidebarCollapsed: boolean;
@@ -54,7 +58,7 @@ interface UIState {
   setFolderExpanded: (folderName: string, expanded: boolean) => void;
   setManyFoldersExpanded: (folderNames: string[], expanded: boolean) => void;
   renameFolderExpanded: (oldName: string, newName: string) => void;
-  toggleProjectPinned: (projectId: string) => void;
+  clearLegacyPinnedProjectIds: () => void;
   setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setTodoSidebarCollapsed: (collapsed: boolean) => void;
@@ -69,7 +73,7 @@ export const useUIStore = create<UIState>()(
       stashes: {},
       expandedProjects: Object.fromEntries(readLegacyCollapsedProjects().map((id) => [id, false])),
       expandedFolders: {},
-      pinnedProjectIds: [],
+      legacyPinnedProjectIds: [],
       sidebarFocusMode: false,
       rightPanelCollapsed: true,
       todoSidebarCollapsed: false,
@@ -162,15 +166,7 @@ export const useUIStore = create<UIState>()(
           return { expandedFolders: { ...rest, [newName]: value ?? true } };
         }),
 
-      toggleProjectPinned: (projectId) =>
-        set((s) => {
-          const has = s.pinnedProjectIds.includes(projectId);
-          return {
-            pinnedProjectIds: has
-              ? s.pinnedProjectIds.filter((id) => id !== projectId)
-              : [...s.pinnedProjectIds, projectId],
-          };
-        }),
+      clearLegacyPinnedProjectIds: () => set({ legacyPinnedProjectIds: [] }),
 
       setSidebarFocusMode: (enabled) => set({ sidebarFocusMode: enabled }),
 
@@ -185,7 +181,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: "agentique:ui",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
@@ -211,6 +207,12 @@ export const useUIStore = create<UIState>()(
             .filter(([, v]) => v === true)
             .map(([id]) => id);
         }
+        if (version < 4) {
+          // Pinning moved server-side; hold the local IDs aside for one-time
+          // migration in usePinnedMigration, then clear the field.
+          state.legacyPinnedProjectIds = (state.pinnedProjectIds as string[] | undefined) ?? [];
+          delete state.pinnedProjectIds;
+        }
         return state;
       },
       partialize: (state) => ({
@@ -218,7 +220,7 @@ export const useUIStore = create<UIState>()(
         stashes: state.stashes,
         expandedProjects: state.expandedProjects,
         expandedFolders: state.expandedFolders,
-        pinnedProjectIds: state.pinnedProjectIds,
+        legacyPinnedProjectIds: state.legacyPinnedProjectIds,
         sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
         todoSidebarCollapsed: state.todoSidebarCollapsed,

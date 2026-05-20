@@ -165,6 +165,7 @@ var handlerRegistry = map[string]handlerFunc{
 	"project.generate-commit-message": (*conn).handleProjectGenerateCommitMsg,
 	"project.reorder":                 (*conn).handleProjectReorder,
 	"project.set-favorite":            (*conn).handleProjectSetFavorite,
+	"project.set-pinned":              (*conn).handleProjectSetPinned,
 	"project.activity":                (*conn).handleProjectActivity,
 
 	// session.*

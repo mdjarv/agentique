@@ -105,6 +105,7 @@ type Querier interface {
 	UpdateProjectIcon(ctx context.Context, arg UpdateProjectIconParams) (Project, error)
 	UpdateProjectMaxSessions(ctx context.Context, arg UpdateProjectMaxSessionsParams) (Project, error)
 	UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) (Project, error)
+	UpdateProjectPinned(ctx context.Context, arg UpdateProjectPinnedParams) (Project, error)
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdatePromptTemplate(ctx context.Context, arg UpdatePromptTemplateParams) (PromptTemplate, error)
@@ -117,6 +118,7 @@ type Querier interface {
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
 	UpdateSessionWorktree(ctx context.Context, arg UpdateSessionWorktreeParams) error
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
+	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }

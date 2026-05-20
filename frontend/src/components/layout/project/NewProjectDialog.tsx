@@ -16,8 +16,12 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { useWebSocket } from "~/hooks/useWebSocket";
 import { createProject, type PathValidation, validatePath } from "~/lib/api";
+import { setProjectPinned } from "~/lib/project-actions";
 import { useAppStore } from "~/stores/app-store";
+import { useAuthStore } from "~/stores/auth-store";
+import { useUIStore } from "~/stores/ui-store";
 
 /** Extract the last directory component from a path (cross-platform). */
 function dirName(p: string): string {
@@ -63,8 +67,10 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
   const [validation, setValidation] = useState<PathValidation | null>(null);
   const validationController = useRef<AbortController | null>(null);
   const addProject = useAppStore((s) => s.addProject);
+  const updateProjectStore = useAppStore((s) => s.updateProject);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const ws = useWebSocket();
   const [showBrowser, setShowBrowser] = useState(!isMobile);
 
   const handlePathChange = useCallback(
@@ -121,6 +127,13 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
       const project = await createProject(name, path);
       saveLastParentDir(path);
       addProject(project);
+      const focusMode =
+        useAuthStore.getState().user?.sidebarFocusMode ?? useUIStore.getState().sidebarFocusMode;
+      if (focusMode) {
+        setProjectPinned(ws, project.id, true)
+          .then((updated) => updateProjectStore(updated))
+          .catch((err) => console.error("auto-pin new project failed", err));
+      }
       setName("");
       setPath("");
       setNameManuallySet(false);

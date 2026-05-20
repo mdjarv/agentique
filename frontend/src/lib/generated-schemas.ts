@@ -348,6 +348,7 @@ export const ProjectSchema = z.object({
   icon: z.string(),
   folder: z.string(),
   max_sessions: z.number(),
+  pinned: z.number(),
 });
 
 export const PromptTemplateSchema = z.object({
@@ -558,6 +559,11 @@ export const ProjectReorderPayloadSchema = z.object({
 export const ProjectSetFavoritePayloadSchema = z.object({
   projectId: z.string(),
   favorite: z.boolean(),
+});
+
+export const ProjectSetPinnedPayloadSchema = z.object({
+  projectId: z.string(),
+  pinned: z.boolean(),
 });
 
 export const ProjectUncommittedFilesPayloadSchema = z.object({

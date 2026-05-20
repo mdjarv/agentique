@@ -223,6 +223,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("auth service: %w", err)
 		}
 		authSvc.RegisterRoutes(mux)
+		authSvc.RegisterUserRoutes(mux)
 		s.authSvc = authSvc
 		s.allowedOrigins = make(map[string]bool, len(cfg.RPOrigins))
 		for _, o := range cfg.RPOrigins {

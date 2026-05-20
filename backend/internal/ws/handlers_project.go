@@ -150,3 +150,21 @@ func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
 		return proj, nil
 	})
 }
+
+func (c *conn) handleProjectSetPinned(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p ProjectSetPinnedPayload) (store.Project, error) {
+		var pinned int64
+		if p.Pinned {
+			pinned = 1
+		}
+		proj, err := c.queries.UpdateProjectPinned(ctx, store.UpdateProjectPinnedParams{
+			Pinned: pinned,
+			ID:     p.ProjectID,
+		})
+		if err != nil {
+			return store.Project{}, fmt.Errorf("update pinned: %w", err)
+		}
+		c.bus.Publish(p.ProjectID, "project.updated", proj)
+		return proj, nil
+	})
+}

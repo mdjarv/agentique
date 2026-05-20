@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { reconnectWebSocket } from "~/hooks/useWebSocket";
 import type { AuthUser } from "~/lib/auth-api";
-import { getAuthStatus } from "~/lib/auth-api";
+import { getAuthStatus, updateUserPreferences } from "~/lib/auth-api";
 
 interface AuthState {
   authEnabled: boolean;
@@ -13,9 +13,10 @@ interface AuthState {
   checkAuth: () => Promise<void>;
   setAuthenticated: (user: AuthUser) => void;
   clearAuth: () => void;
+  setSidebarFocusMode: (enabled: boolean) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   authEnabled: false,
   authenticated: false,
   user: null,
@@ -44,4 +45,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     reconnectWebSocket();
   },
   clearAuth: () => set({ authenticated: false, user: null }),
+
+  setSidebarFocusMode: async (enabled) => {
+    const user = get().user;
+    if (!user) return;
+    set({ user: { ...user, sidebarFocusMode: enabled } });
+    try {
+      await updateUserPreferences({ sidebarFocusMode: enabled });
+    } catch (err) {
+      console.error("Failed to persist sidebar focus mode", err);
+      set({ user: { ...user } });
+    }
+  },
 }));

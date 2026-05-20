@@ -430,6 +430,7 @@ func main() {
 	g.register(ws.ProjectCommandsPayload{}, "ProjectCommandsPayload")
 	g.register(ws.ProjectReorderPayload{}, "ProjectReorderPayload")
 	g.register(ws.ProjectSetFavoritePayload{}, "ProjectSetFavoritePayload")
+	g.register(ws.ProjectSetPinnedPayload{}, "ProjectSetPinnedPayload")
 	g.register(ws.ProjectUncommittedFilesPayload{}, "ProjectUncommittedFilesPayload")
 	g.register(ws.ProjectDiscardPayload{}, "ProjectDiscardPayload")
 	g.register(ws.ProjectActivityPayload{}, "ProjectActivityPayload")

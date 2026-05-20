@@ -13,6 +13,9 @@ SELECT * FROM users WHERE display_name = ? COLLATE NOCASE;
 -- name: ListUsers :many
 SELECT * FROM users ORDER BY created_at;
 
+-- name: UpdateUserSidebarFocusMode :exec
+UPDATE users SET sidebar_focus_mode = ? WHERE id = ?;
+
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = ?;
 
@@ -34,7 +37,7 @@ INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?);
 
 -- name: GetAuthSession :one
 SELECT s.token, s.user_id, s.expires_at, s.created_at,
-       u.display_name, u.is_admin
+       u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now');

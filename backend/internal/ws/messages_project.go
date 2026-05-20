@@ -70,6 +70,11 @@ type ProjectSetFavoritePayload struct {
 	Favorite  bool   `json:"favorite"`
 }
 
+type ProjectSetPinnedPayload struct {
+	ProjectID string `json:"projectId"`
+	Pinned    bool   `json:"pinned"`
+}
+
 type ProjectActivityPayload struct {
 	ProjectID string `json:"projectId"`
 }
@@ -152,6 +157,10 @@ func (p *ProjectReorderPayload) Validate() error {
 }
 
 func (p *ProjectSetFavoritePayload) Validate() error {
+	return validateProjectID(p.ProjectID)
+}
+
+func (p *ProjectSetPinnedPayload) Validate() error {
 	return validateProjectID(p.ProjectID)
 }
 

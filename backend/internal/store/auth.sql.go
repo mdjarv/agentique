@@ -63,7 +63,7 @@ func (q *Queries) CreateInviteToken(ctx context.Context, arg CreateInviteTokenPa
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, display_name, is_admin) VALUES (?, ?, ?) RETURNING id, display_name, is_admin, created_at
+INSERT INTO users (id, display_name, is_admin) VALUES (?, ?, ?) RETURNING id, display_name, is_admin, created_at, sidebar_focus_mode
 `
 
 type CreateUserParams struct {
@@ -80,6 +80,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DisplayName,
 		&i.IsAdmin,
 		&i.CreatedAt,
+		&i.SidebarFocusMode,
 	)
 	return i, err
 }
@@ -163,19 +164,20 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) error {
 
 const getAuthSession = `-- name: GetAuthSession :one
 SELECT s.token, s.user_id, s.expires_at, s.created_at,
-       u.display_name, u.is_admin
+       u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `
 
 type GetAuthSessionRow struct {
-	Token       string `json:"token"`
-	UserID      string `json:"user_id"`
-	ExpiresAt   string `json:"expires_at"`
-	CreatedAt   string `json:"created_at"`
-	DisplayName string `json:"display_name"`
-	IsAdmin     int64  `json:"is_admin"`
+	Token            string `json:"token"`
+	UserID           string `json:"user_id"`
+	ExpiresAt        string `json:"expires_at"`
+	CreatedAt        string `json:"created_at"`
+	DisplayName      string `json:"display_name"`
+	IsAdmin          int64  `json:"is_admin"`
+	SidebarFocusMode int64  `json:"sidebar_focus_mode"`
 }
 
 func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error) {
@@ -188,6 +190,7 @@ func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSess
 		&i.CreatedAt,
 		&i.DisplayName,
 		&i.IsAdmin,
+		&i.SidebarFocusMode,
 	)
 	return i, err
 }
@@ -233,7 +236,7 @@ func (q *Queries) GetInviteToken(ctx context.Context, token string) (InviteToken
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, display_name, is_admin, created_at FROM users WHERE id = ?
+SELECT id, display_name, is_admin, created_at, sidebar_focus_mode FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -244,12 +247,13 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.DisplayName,
 		&i.IsAdmin,
 		&i.CreatedAt,
+		&i.SidebarFocusMode,
 	)
 	return i, err
 }
 
 const getUserByDisplayName = `-- name: GetUserByDisplayName :one
-SELECT id, display_name, is_admin, created_at FROM users WHERE display_name = ? COLLATE NOCASE
+SELECT id, display_name, is_admin, created_at, sidebar_focus_mode FROM users WHERE display_name = ? COLLATE NOCASE
 `
 
 func (q *Queries) GetUserByDisplayName(ctx context.Context, displayName string) (User, error) {
@@ -260,6 +264,7 @@ func (q *Queries) GetUserByDisplayName(ctx context.Context, displayName string) 
 		&i.DisplayName,
 		&i.IsAdmin,
 		&i.CreatedAt,
+		&i.SidebarFocusMode,
 	)
 	return i, err
 }
@@ -337,7 +342,7 @@ func (q *Queries) ListInviteTokens(ctx context.Context, createdBy string) ([]Inv
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, display_name, is_admin, created_at FROM users ORDER BY created_at
+SELECT id, display_name, is_admin, created_at, sidebar_focus_mode FROM users ORDER BY created_at
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -354,6 +359,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.DisplayName,
 			&i.IsAdmin,
 			&i.CreatedAt,
+			&i.SidebarFocusMode,
 		); err != nil {
 			return nil, err
 		}
@@ -386,6 +392,20 @@ func (q *Queries) UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCred
 		arg.BackupState,
 		arg.ID,
 	)
+	return err
+}
+
+const updateUserSidebarFocusMode = `-- name: UpdateUserSidebarFocusMode :exec
+UPDATE users SET sidebar_focus_mode = ? WHERE id = ?
+`
+
+type UpdateUserSidebarFocusModeParams struct {
+	SidebarFocusMode int64  `json:"sidebar_focus_mode"`
+	ID               string `json:"id"`
+}
+
+func (q *Queries) UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserSidebarFocusMode, arg.SidebarFocusMode, arg.ID)
 	return err
 }
 

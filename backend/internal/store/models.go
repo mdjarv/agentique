@@ -101,6 +101,7 @@ type Project struct {
 	Icon                   string `json:"icon"`
 	Folder                 string `json:"folder"`
 	MaxSessions            int64  `json:"max_sessions"`
+	Pinned                 int64  `json:"pinned"`
 }
 
 type PromptTemplate struct {
@@ -172,10 +173,11 @@ type TeamMember struct {
 }
 
 type User struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	IsAdmin     int64  `json:"is_admin"`
-	CreatedAt   string `json:"created_at"`
+	ID               string `json:"id"`
+	DisplayName      string `json:"display_name"`
+	IsAdmin          int64  `json:"is_admin"`
+	CreatedAt        string `json:"created_at"`
+	SidebarFocusMode int64  `json:"sidebar_focus_mode"`
 }
 
 type WebauthnCredential struct {

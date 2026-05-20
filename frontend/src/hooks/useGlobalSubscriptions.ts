@@ -7,7 +7,7 @@ import { useTeamSubscriptions } from "~/hooks/useTeamSubscriptions";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listChannels } from "~/lib/channel-actions";
 import type { ListSessionsResult } from "~/lib/generated-types";
-import { getProjectGitStatus } from "~/lib/project-actions";
+import { getProjectGitStatus, setProjectPinned } from "~/lib/project-actions";
 import { loadSessionHistory } from "~/lib/session/history";
 import type { TeamInfo } from "~/lib/team-actions";
 import { listAgentProfiles, listPersonaInteractions, listTeams } from "~/lib/team-actions";
@@ -18,6 +18,7 @@ import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 import { useTeamStore } from "~/stores/team-store";
+import { useUIStore } from "~/stores/ui-store";
 
 function loadPersonaInteractions(ws: ReturnType<typeof useWebSocket>, teams: TeamInfo[]) {
   for (const team of teams) {
@@ -92,6 +93,31 @@ export function useGlobalSubscriptions(projects: Project[]) {
       subscribedRef.current.add(project.id);
       subscribeAndLoad(ws, project.id);
     }
+  }, [ws, projects]);
+
+  // One-time migration of pre-server-side pinned project IDs from localStorage.
+  // Once projects are loaded, push each known ID to the backend, then clear the
+  // local cache. Unknown IDs (deleted projects, other workspaces) are dropped.
+  const pinMigrationDoneRef = useRef(false);
+  useEffect(() => {
+    if (pinMigrationDoneRef.current) return;
+    if (projects.length === 0) return;
+    const legacy = useUIStore.getState().legacyPinnedProjectIds;
+    if (legacy.length === 0) {
+      pinMigrationDoneRef.current = true;
+      return;
+    }
+    pinMigrationDoneRef.current = true;
+    const known = new Set(projects.map((p) => p.id));
+    Promise.all(
+      legacy
+        .filter((id) => known.has(id))
+        .map((id) =>
+          setProjectPinned(ws, id, true).catch((err) =>
+            console.error("legacy pin migration failed", id, err),
+          ),
+        ),
+    ).finally(() => useUIStore.getState().clearLegacyPinnedProjectIds());
   }, [ws, projects]);
 
   // Project-level events and reconnect handlers. Visibility-driven history

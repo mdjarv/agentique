@@ -105,6 +105,14 @@ export async function setProjectFavorite(
   return ws.request<Project>("project.set-favorite", { projectId, favorite });
 }
 
+export async function setProjectPinned(
+  ws: WsClient,
+  projectId: string,
+  pinned: boolean,
+): Promise<Project> {
+  return ws.request<Project>("project.set-pinned", { projectId, pinned });
+}
+
 export async function reorderProjects(ws: WsClient, projectIds: string[]): Promise<void> {
   await ws.request("project.reorder", { projectIds });
 }

@@ -25,6 +25,9 @@ UPDATE projects SET default_behavior_presets = ?, updated_at = datetime('now') W
 -- name: UpdateProjectFavorite :one
 UPDATE projects SET favorite = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateProjectPinned :one
+UPDATE projects SET pinned = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
 -- name: UpdateProjectColor :one
 UPDATE projects SET color = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
