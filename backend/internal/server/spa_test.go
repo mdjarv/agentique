@@ -17,14 +17,15 @@ func TestSPAHandler_CacheHeaders(t *testing.T) {
 	h := &spaHandler{fs: fs}
 
 	tests := []struct {
-		path         string
-		wantCache    string
-		wantNoCache  bool
+		path        string
+		wantCache   string
+		wantNoCache bool
+		wantCT      string
 	}{
-		{"/sw.js", "no-cache", true},
-		{"/manifest.webmanifest", "no-cache", true},
-		{"/assets/app.js", "", false},
-		{"/index.html", "", false},
+		{"/sw.js", "no-cache", true, ""},
+		{"/manifest.webmanifest", "no-cache", true, "application/manifest+json"},
+		{"/assets/app.js", "", false, ""},
+		{"/index.html", "", false, ""},
 	}
 
 	for _, tt := range tests {
@@ -43,6 +44,11 @@ func TestSPAHandler_CacheHeaders(t *testing.T) {
 			}
 			if !tt.wantNoCache && cc != "" {
 				t.Errorf("expected no Cache-Control header, got %q", cc)
+			}
+			if tt.wantCT != "" {
+				if ct := w.Header().Get("Content-Type"); ct != tt.wantCT {
+					t.Errorf("expected Content-Type %q, got %q", tt.wantCT, ct)
+				}
 			}
 		})
 	}

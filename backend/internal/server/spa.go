@@ -52,6 +52,12 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Set Content-Type based on file extension.
 	ext := filepath.Ext(p)
 	ct := mime.TypeByExtension(ext)
+	// Go's default mime table doesn't know .webmanifest, leaving Content-Type
+	// unset — the net/http sniffer then guesses text/plain from the JSON body,
+	// and Chrome refuses to treat a text/plain manifest as installable.
+	if ext == ".webmanifest" {
+		ct = "application/manifest+json"
+	}
 	if ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
