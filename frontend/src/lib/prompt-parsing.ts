@@ -256,36 +256,97 @@ export function repairNestedFences(markdown: string): string {
 // ---------------------------------------------------------------------------
 
 const RE_AGENTIQUE_OPEN = /<agentique\b([^>]*)>/i;
-const RE_AGENTIQUE_CLOSE = /<\/agentique>/i;
+const RE_AGENTIQUE_OPEN_ANCHORED = /^<agentique\b([^>]*)>/i;
+const RE_AGENTIQUE_CLOSE_ANCHORED = /^<\/agentique>/i;
 const AGENTIQUE_CLOSE = "</agentique>";
 const RE_ATTR = /([\w-]+)\s*=\s*"([^"]*)"/g;
+const RE_FENCE_CLOSE_LINE = /^ {0,3}(`{3,})\s*$/;
 
 /** Find the closing `</agentique>` that matches the opener at openEnd,
- *  tracking nesting depth. Returns the position of the matching `</agentique>`,
- *  or null if unclosed (streaming). Mirrors a balanced-bracket scan so a
- *  prompt body that itself mentions `<agentique ...>` tags doesn't close
- *  the outer prematurely. */
+ *  tracking nesting depth while skipping matches inside markdown code regions
+ *  (fenced blocks and inline code spans). Returns the position of the matching
+ *  `</agentique>`, or null if unclosed (streaming). A prompt body that mentions
+ *  `<agentique ...>` literally — typically inside backticks in docs/prose —
+ *  must not be treated as a nested opener, otherwise depth never returns to 0
+ *  and the parser misclassifies the block as still streaming. */
 function findMatchingAgentiqueClose(markdown: string, openEnd: number): number | null {
   let depth = 1;
-  let cursor = openEnd;
+  let i = openEnd;
+  const N = markdown.length;
 
-  while (cursor < markdown.length) {
-    const remaining = markdown.slice(cursor);
-    const openMatch = RE_AGENTIQUE_OPEN.exec(remaining);
-    const closeMatch = RE_AGENTIQUE_CLOSE.exec(remaining);
-    if (!closeMatch) return null;
+  while (i < N) {
+    const ch = markdown[i];
 
-    const openIdx = openMatch ? openMatch.index : Number.POSITIVE_INFINITY;
-    const closeIdx = closeMatch.index;
+    if (ch === "`") {
+      const lineStart = markdown.lastIndexOf("\n", i - 1) + 1;
+      const prefix = markdown.slice(lineStart, i);
+      let n = 0;
+      while (i + n < N && markdown[i + n] === "`") n++;
 
-    if (openIdx < closeIdx && openMatch) {
-      depth++;
-      cursor += openIdx + openMatch[0].length;
-    } else {
-      depth--;
-      if (depth === 0) return cursor + closeIdx;
-      cursor += closeIdx + closeMatch[0].length;
+      const isFenceStart = n >= 3 && /^ {0,3}$/.test(prefix);
+      if (isFenceStart) {
+        let j = markdown.indexOf("\n", i + n);
+        if (j === -1) return null;
+        j += 1;
+        let closed = false;
+        while (j < N) {
+          const eol = markdown.indexOf("\n", j);
+          const lineEnd = eol === -1 ? N : eol;
+          const line = markdown.slice(j, lineEnd);
+          const close = RE_FENCE_CLOSE_LINE.exec(line);
+          if (close && (close[1]?.length ?? 0) >= n) {
+            i = eol === -1 ? N : eol + 1;
+            closed = true;
+            break;
+          }
+          if (eol === -1) {
+            i = N;
+            break;
+          }
+          j = eol + 1;
+        }
+        if (!closed) i = N;
+        continue;
+      }
+
+      let j = i + n;
+      let closed = false;
+      while (j < N) {
+        if (markdown[j] === "`") {
+          let m = 0;
+          while (j + m < N && markdown[j + m] === "`") m++;
+          if (m === n) {
+            i = j + m;
+            closed = true;
+            break;
+          }
+          j += m;
+        } else {
+          j++;
+        }
+      }
+      if (!closed) i += n;
+      continue;
     }
+
+    if (ch === "<") {
+      const remaining = markdown.slice(i);
+      const openM = RE_AGENTIQUE_OPEN_ANCHORED.exec(remaining);
+      if (openM) {
+        depth++;
+        i += openM[0].length;
+        continue;
+      }
+      const closeM = RE_AGENTIQUE_CLOSE_ANCHORED.exec(remaining);
+      if (closeM) {
+        depth--;
+        if (depth === 0) return i;
+        i += closeM[0].length;
+        continue;
+      }
+    }
+
+    i++;
   }
 
   return null;

@@ -572,6 +572,50 @@ describe("preprocessAgentiqueTags", () => {
     }
   });
 
+  it("ignores <agentique> mentions inside inline code spans (doesn't count as nested opener)", () => {
+    const md = [
+      '<agentique type="prompt" title="Q14" project="formica">',
+      "## North star",
+      "",
+      '- **Cross-repo work goes through an `<agentique type="prompt">` block, not direct edits.**',
+      "",
+      "Final note.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Q14");
+      expect(segments[0].block.projectSlug).toBe("formica");
+      expect(segments[0].block.prompt).toContain("Final note.");
+      expect(segments[0].block.prompt).toContain("Cross-repo work");
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("ignores <agentique> mentions inside fenced code blocks", () => {
+    const md = [
+      '<agentique type="prompt" title="X">',
+      "Example tag usage:",
+      "```",
+      '<agentique type="prompt" title="inner">',
+      "body",
+      "</agentique>",
+      "```",
+      "End.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("X");
+      expect(segments[0].block.prompt).toContain("End.");
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
   it('passes through <agentique type="other"> tags unchanged (future feature types)', () => {
     const md = '<agentique type="diff">some diff content</agentique>';
     const out = preprocessAgentiqueTags(md);
