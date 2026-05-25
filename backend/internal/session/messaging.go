@@ -307,8 +307,8 @@ func normalizeMessageType(raw string) string {
 
 // interceptSendMessage handles the SendMessage tool by routing it through the
 // channel messaging system. Returns a deny response with a success-like message
-// so Claude thinks the message was delivered (v1 hack — proper tool result
-// interception requires claudecli-go changes).
+// so the provider thinks the message was delivered (v1 hack — proper tool
+// result interception requires provider-side support).
 // Also intercepts "@spawn" target for worker delegation.
 func (s *Session) interceptSendMessage(input json.RawMessage) (*runtime.Decision, error) {
 	to, body, _, err := parseSendMessageInput(input)

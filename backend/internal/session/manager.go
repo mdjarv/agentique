@@ -199,7 +199,7 @@ You can expose any local HTTP service to a public HTTPS URL via the ` + "`Acquir
 - Slots are shared across sessions. Call ` + "`ListDevUrls`" + ` first if you suspect contention; call ` + "`ReleaseDevUrl`" + ` when done. Slots auto-release when the session ends.
 `
 
-// Create starts a new claudecli-go session via runtime, persists metadata to DB, and returns the session.
+// Create starts a new provider CLI session via runtime, persists metadata to DB, and returns the session.
 func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, error) {
 	id := params.ID
 	if id == "" {

@@ -3,7 +3,8 @@
 ## Task Completion
 
 - `just check` (biome + tsc) must pass before considering tasks completed.
-- `cd backend && go test ./... -count=1 -short` for Go changes — run directly, not via justfile. `-short` skips the integration test that needs a live Claude CLI.
+- `cd backend && go test ./... -count=1 -short` for Go changes — run directly, not via justfile. `-short` skips the integration test that needs a live provider CLI.
+- After editing SQL in `backend/db/queries/` or migrations in `backend/db/migrations/`, run `just sqlc` to regenerate `backend/internal/store/*.sql.go`. After changing wire types in Go, run `just typegen` to refresh `frontend/src/lib/generated-{types,schemas}.ts`.
 - ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the correct directory. Running `npx biome` from the project root fails silently.
 
 ## Core Priorities
@@ -68,3 +69,16 @@ The `messages` table is the source of truth for channel timelines. `session_even
 Both are exposed on each lead node in the `/teams` hierarchy tree.
 
 **Additive principle.** All team coordination features are channel-only and must not modify existing session rendering, event pipeline mutations, or turn management for sessions outside a channel.
+
+## Provider Abstraction
+
+Sessions are driven via `agentkit/runtime`'s neutral `CLISession` / `CLIConnector` contract — agentique never imports a provider-native event type inside the session pipeline. The current providers:
+
+- **claude** (default) — `runtime/cli/claude` adapter over `claudecli-go`. Full feature set: resume, fork, mid-turn `SendMessage`, plan mode, thinking, subagent events, rate-limit / compaction events, live MCP reconnect.
+- **codex** — `runtime/cli/codex` adapter over `codexcli-go`. Capabilities flags off: no resume, no fork, no mid-turn send, no thinking/subagent/rate-limit/compaction events, no MCP reconnect, no tool-progress ticks. Approvals, AskUserQuestion, and Ping work.
+
+Provider routing lives in `session.Manager` via `capturingConnector.hintNext`: each `Create` / `Resume` / `Reconnect` reads `CreateParams.Provider` (or `ResumeParams.Provider`), points the connector at the matching adapter, and persists the choice in `sessions.provider` (migration 036). Resume of a codex session always falls through to `Reconnect` because codex has no `--resume`.
+
+**Don't reach for `claudecli` types in `internal/session/`.** The single legitimate import is the `claudecli.Session` type-assertion in `session.go` (`claudeSession()`) and the error-sentinel switch in `wire.go`'s `errorDetail` / `wireErrorEvent` — both gated on provider == claude. New consumer code switches on `runtime.CLIEvent` variants and uses `runtime.Capabilities()` to gate provider-specific features.
+
+**Known gaps vs. pre-migration claude behavior** (see `docs/tech-debt.md`): partial-message streaming, `SendMessage` replay confirmation, and `AgentResult` metadata don't surface today because the agentkit claude adapter doesn't yet forward `WithIncludePartialMessages` / `WithReplayUserMessages` and the neutral event set omits `AgentResult`. Track follow-ups upstream.

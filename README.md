@@ -1,10 +1,11 @@
 # Agentique
 
-A GUI for managing concurrent Claude Code agents across multiple projects. Go backend wraps [claudecli-go](https://github.com/mdjarv/claudecli-go), React frontend connects via WebSocket, deploys as a single embedded binary.
+A GUI for managing concurrent coding agents across multiple projects. Go backend drives provider CLIs through [agentkit/runtime](https://github.com/allbin/agentkit) (Claude via [claudecli-go](https://github.com/mdjarv/claudecli-go), OpenAI Codex via [codexcli-go](https://github.com/allbin/codexcli-go)); React frontend connects via WebSocket; deploys as a single embedded binary.
 
 ## Prerequisites
 
-- **Claude Code CLI** >= 2.0.0 (`npm install -g @anthropic-ai/claude-code`)
+- **Claude Code CLI** >= 2.0.0 (`npm install -g @anthropic-ai/claude-code`) — required for the default `claude` provider
+- **Codex CLI** >= 0.130 — required only when creating sessions with `provider: "codex"`
 - **git** on PATH
 - **gh** (optional -- needed for PR creation from the UI)
 
@@ -53,13 +54,19 @@ Frontend connects WebSocket directly to `:9201` (bypasses Vite proxy for reliabi
 |   shadcn/ui      |                                   |  (singleton)     |
 +------------------+                                   +------------------+
                                                               |
-                                                     claudecli-go Sessions
-                                                         (one per tab)
+                                                     agentkit/runtime
+                                                     (neutral CLIEvent /
+                                                      CLISession contract)
                                                               |
-                                                       +------------------+
-                                                       |  Claude CLI      |
-                                                       |  processes       |
-                                                       +------------------+
+                                          +-------------------+-------------------+
+                                          |                                       |
+                                  claude adapter                          codex adapter
+                                  (claudecli-go)                          (codexcli-go)
+                                          |                                       |
+                                  +---------------+                       +---------------+
+                                  |  Claude CLI   |                       |   Codex CLI   |
+                                  |  processes    |                       |   processes   |
+                                  +---------------+                       +---------------+
 ```
 
 ### Backend (Go)
@@ -89,7 +96,9 @@ Frontend connects WebSocket directly to `:9201` (bypasses Vite proxy for reliabi
 ### Backend
 
 - **HTTP/WS server:** net/http + gorilla/websocket
+- **Provider runtime:** github.com/allbin/agentkit/runtime (neutral CLI surface; per-provider adapters)
 - **Claude integration:** github.com/mdjarv/claudecli-go
+- **Codex integration:** github.com/allbin/codexcli-go
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
 - **Query generation:** sqlc
 - **Migrations:** goose
@@ -152,5 +161,6 @@ Override with `XDG_DATA_HOME` or `AGENTIQUE_HOME` (takes full precedence).
 
 - Projects point to local filesystem paths -- not portable between machines.
 - WebAuthn auth requires HTTPS for non-localhost origins. Use `--disable-auth` for local/trusted networks.
-- First session creation takes ~30-40s (Claude CLI subprocess init).
+- First session creation takes ~30-40s (provider CLI subprocess init).
+- Codex sessions have reduced capabilities vs. claude: no resume, no fork, no mid-turn `SendMessage`, no thinking/subagent/rate-limit/compaction events, no MCP reconnect. The runtime advertises these via `Capabilities()`; the UI should gate features accordingly.
 - See [ROADMAP.md](ROADMAP.md) for vision, milestones, and future plans.

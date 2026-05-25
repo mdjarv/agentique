@@ -2,16 +2,19 @@
 
 ## Vision
 
-A lightweight GUI for managing concurrent Claude Code agents across multiple projects.
-Inspired by [pingdotgg/t3code](https://github.com/pingdotgg/t3code) but purpose-built for Claude Code,
-with a Go backend leveraging [mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go).
+A lightweight GUI for managing concurrent coding agents across multiple projects.
+Inspired by [pingdotgg/t3code](https://github.com/pingdotgg/t3code) but built on
+[allbin/agentkit/runtime](https://github.com/allbin/agentkit)'s neutral provider
+contract, with first-class Claude and Codex support and the door open for more.
 
 ## Why not just use t3code?
 
-- Codex-first design; Claude support is secondary and incomplete
 - Buggy backend with stalling/crashing process management issues
 - Heavy Node.js backend with Effect-TS adds unnecessary complexity
-- We already have a battle-tested Go wrapper for Claude CLI
+- We have a battle-tested Go runtime (`agentkit/runtime`) with adapters for
+  both Claude (`claudecli-go`) and Codex (`codexcli-go`) behind one neutral
+  surface, so feature parity moves at the SDK pace and provider choice is
+  per-session.
 
 See [README.md](README.md) for architecture, tech stack, and development setup.
 
@@ -285,8 +288,25 @@ When merging a worktree branch, the project root must be clean (no uncommitted c
 
 ---
 
-## claudecli-go Notes
+## Provider Runtime Notes
 
-- `Events()` is session-lifetime, not per-turn. Detect turn boundaries via `ResultEvent`.
-- Claude CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
-- Source: [github.com/mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go)
+- Sessions are driven through `agentkit/runtime`'s neutral `CLISession` /
+  `CLIConnector` contract. Adapters live under `agentkit/runtime/cli/{claude,codex}`.
+- Provider CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
+- Detect turn boundaries via `runtime.TurnCompletedEvent` (mapped from
+  `claudecli.ResultEvent` / codex `turn/completed`).
+- Codex capabilities flags off resume, fork, mid-turn send, thinking,
+  subagent events, rate-limit / compaction events, MCP reconnect, tool
+  progress ticks. The UI must check `Capabilities()` rather than assume.
+- Known gaps (tracked in `docs/tech-debt.md`):
+  - Claude partial-message streaming (`AssistantTextDeltaEvent` / `StreamEvent`
+    / `ContextSnapshot`) and `SendMessage` replay confirmation depend on
+    `WithIncludePartialMessages` / `WithReplayUserMessages` that the agentkit
+    claude adapter does not yet forward.
+  - `AgentResult` metadata (agent_id, total durations) does not flow through
+    the neutral event set; the wire shape `WireAgentResultEvent` is preserved
+    for a future upgrade.
+- Sources:
+  - [github.com/allbin/agentkit](https://github.com/allbin/agentkit) — runtime + adapters
+  - [github.com/mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go) — claude provider
+  - [github.com/allbin/codexcli-go](https://github.com/allbin/codexcli-go) — codex provider
