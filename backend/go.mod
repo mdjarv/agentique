@@ -9,7 +9,7 @@ require (
 	charm.land/log/v2 v2.0.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/allbin/agentkit v0.0.0-20260508133727-d907114cac39
-	github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e
+	github.com/allbin/claudecli-go v0.0.0-20260525103406-8e84ddd02dcc
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3

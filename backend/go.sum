@@ -10,8 +10,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/allbin/agentkit v0.0.0-20260508133727-d907114cac39 h1:U7/V8ky2desIpgkQciyCaI4LYD1klUVatIEIYyjym48=
 github.com/allbin/agentkit v0.0.0-20260508133727-d907114cac39/go.mod h1:sk6fRXrNRu+HaZVsMTcfS9ycJxxljGrLw94Pf/al1Dk=
-github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e h1:j3LOKN7+Wn7LT2R57ku1JCZs2Q/hOKfz3CoXECUHQ/c=
-github.com/allbin/claudecli-go v0.0.0-20260422075338-df6ce28bcd4e/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260525103406-8e84ddd02dcc h1:2lbqRbicZwsQZFNiEUjCKKfcssCtxDSfa1q4Dnz1yJw=
+github.com/allbin/claudecli-go v0.0.0-20260525103406-8e84ddd02dcc/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
