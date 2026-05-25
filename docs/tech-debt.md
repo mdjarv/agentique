@@ -58,39 +58,46 @@ will break or surprise someone first, not effort to fix.
   and always takes the `Reconnect` path.
 - **Cause:** `codexcli-go` doesn't expose `--resume`, and the codex adapter
   returns `runtime.ErrResumeUnsupported`.
-- **Fix path:** upstream codex SDK + adapter; until then, document this in
-  the UI when the user picks the codex provider so it isn't a surprise.
+- **UI surfaced (2026-05-25):** `ResumeBanner` now relabels to
+  "Reconnect (fresh)" with warning copy when `caps.resume === false`,
+  so the user knows the conversation will be lost.
+- **Real fix:** upstream codex SDK + adapter for true resume support.
 
 ### Codex feature flags are off but not surfaced in UI
 
-- The runtime advertises capabilities (`PlanMode`, `Resume`, `Fork`,
-  `MidTurnSendMessage`, `Thinking`, `Subagents`, `RateLimitEvents`,
-  `CompactionEvents`, `InteractivePermissions`, `AskUserQuestion`, etc.)
-  per session via `Capabilities()`. The frontend renders the same controls
-  regardless of provider — buttons that don't work, plan-mode toggles that
-  no-op, mid-turn-send composer that fails silently.
-- **Fix path:** thread `Provider` (already added to `SessionInfo`) and a
-  `Capabilities` snapshot through to the frontend store, then gate the UI
-  affordances.
+- **Status (2026-05-25):** mostly resolved.
+  `SessionInfo`/`CreateSessionResult` now carry a `Capabilities` snapshot
+  (`backend/internal/session/capabilities.go`, ADR in
+  `docs/2026-05-25-capabilities-wire-shape.md`). The chat UI gates:
+  plan-mode toggle, mid-turn send composer, attachment paperclip, and
+  resume-banner copy on those flags. Provider picker added to the New
+  Session form and a "codex" pill renders on session rows + header.
+- **Remaining:** subagent/rate-limit/compaction widgets are not
+  explicitly gated, but they self-hide because the codex adapter never
+  emits the matching events. If a future provider emits *some* of those,
+  the widgets would render incorrectly — at that point add a gate.
 
 ### Codex attachments path is half-baked
 
+- **Frontend gate added (2026-05-25):** the paperclip button is hidden
+  on codex sessions via `WireCapabilities.Attachments`. Paste / drag-drop
+  paths still produce attachments; the backend `toRuntimeAttachments`
+  call will still fail loudly on submit. Cheap follow-up: have
+  `useAttachments` ignore drops when `attachmentsSupported === false`.
 - `runtime/cli/codex/connector.go`'s `userInput` rejects
   image/document attachments with `ErrNotSupported`. agentique's
-  `toRuntimeAttachments` happily produces them. Frontend lets the user
-  attach files for any provider.
-- **Fix path:** either teach the codex adapter to write attachments to
-  temp files and pass paths (the codex SDK accepts paths), or have
-  agentique inspect `Capabilities()` and disable the attach button for
-  codex sessions.
+  `toRuntimeAttachments` happily produces them.
+- **Real fix:** teach the codex adapter to write attachments to
+  temp files and pass paths (the codex SDK accepts paths) so the gate
+  becomes unnecessary.
 
 ### Frontend has no provider picker
 
-- `SessionCreatePayload.Provider` is wired all the way through the backend
-  and persisted, but no UI element sets it. New sessions always go to
-  claude. Codex is reachable only via direct RPC.
-- **Fix path:** add a provider dropdown to the New Session form;
-  default to claude.
+- **Resolved (2026-05-25):** `MessageComposer` now renders an optional
+  provider dropdown (claude / codex) next to the model picker.
+  `NewChatPanel` wires it with React-local state defaulting to "claude"
+  (intentionally not persisted in `ui-store` — provider is a per-session
+  decision, not a sticky preference).
 
 ## P2 — Smells / drift
 

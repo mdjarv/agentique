@@ -58,6 +58,51 @@ func (s *ServiceSuite) TestCreateSession_GeneratesID() {
 	s.True(result.Connected)
 }
 
+func (s *ServiceSuite) TestCreateSession_CapabilitiesClaudeDefault() {
+	result, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID: s.Project.ID,
+		Name:      "claude-default",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result.Capabilities)
+	s.Equal("claude", result.Capabilities.Provider)
+	s.True(result.Capabilities.PlanMode)
+	s.True(result.Capabilities.Resume)
+	s.True(result.Capabilities.MidTurnSendMessage)
+	s.True(result.Capabilities.Attachments)
+}
+
+func (s *ServiceSuite) TestCreateSession_CapabilitiesCodex() {
+	result, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID: s.Project.ID,
+		Name:      "codex-test",
+		Provider:  "codex",
+	})
+	s.Require().NoError(err)
+	s.Equal("codex", result.Provider)
+	s.Require().NotNil(result.Capabilities)
+	s.Equal("codex", result.Capabilities.Provider)
+	s.False(result.Capabilities.PlanMode)
+	s.False(result.Capabilities.Resume)
+	s.False(result.Capabilities.MidTurnSendMessage)
+	s.False(result.Capabilities.Attachments)
+	s.True(result.Capabilities.AskUserQuestion)
+
+	// And the same caps surface on the list / persisted snapshot path.
+	list, err := s.svc.ListSessions(context.Background(), s.Project.ID)
+	s.Require().NoError(err)
+	var found bool
+	for _, info := range list.Sessions {
+		if info.ID == result.SessionID {
+			found = true
+			s.Require().NotNil(info.Capabilities)
+			s.Equal("codex", info.Capabilities.Provider)
+			s.False(info.Capabilities.PlanMode)
+		}
+	}
+	s.True(found, "newly created codex session must be in ListSessions")
+}
+
 func (s *ServiceSuite) TestGetHistory_ReconstructsTurns() {
 	sessionID, mock := s.createLiveSession()
 	sess := s.mgr.Get(sessionID)
