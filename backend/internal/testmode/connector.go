@@ -1,6 +1,6 @@
 // Package testmode provides mock implementations for hybrid E2E testing.
 // Used when the server starts with --test-mode: real HTTP, real WebSocket,
-// real SQLite, real state machine — only the Claude CLI is mocked.
+// real SQLite, real state machine — only the provider CLI is mocked.
 package testmode
 
 import (
@@ -31,14 +31,14 @@ func NewConnector() *Connector {
 	}
 }
 
-// Connect implements runtime.CLIConnector.
-// Extracts CanUseTool callback from options so the mock session can invoke
-// tool permission checks during scenario replay.
-func (c *Connector) Connect(_ context.Context, opts ...claudecli.Option) (runtime.CLISession, error) {
+// Connect implements runtime.CLIConnector. The runtime's permission callback
+// is wired straight through so scenario replay can drive approvals exactly
+// like the real CLI would.
+func (c *Connector) Connect(_ context.Context, p runtime.ConnectParams) (runtime.CLISession, error) {
 	s := NewSession()
-	if fn := claudecli.ResolveCanUseTool(opts...); fn != nil {
+	if p.Permission != nil {
 		s.mu.Lock()
-		s.canUseTool = fn
+		s.permission = p.Permission
 		s.mu.Unlock()
 	}
 	c.mu.Lock()
@@ -115,53 +115,54 @@ type ScriptedEvent struct {
 
 // Session implements runtime.CLISession for testing.
 type Session struct {
-	events chan claudecli.Event
+	events chan runtime.CLIEvent
 
 	mu          sync.Mutex
 	queries     []string
 	closed      bool
-	model       claudecli.Model
-	permMode    claudecli.PermissionMode
+	model       string
 	interrupted bool
 	scenarios   []Scenario
 	scenarioIdx int
-	canUseTool  claudecli.ToolPermissionFunc
+	permission  runtime.ToolPermissionFunc
 }
 
 // NewSession creates a mock CLI session with a buffered event channel.
 func NewSession() *Session {
 	return &Session{
-		events: make(chan claudecli.Event, 64),
+		events: make(chan runtime.CLIEvent, 64),
 	}
 }
 
-func (s *Session) Events() <-chan claudecli.Event { return s.events }
+func (s *Session) Events() <-chan runtime.CLIEvent { return s.events }
 
-// State returns a lifecycle state for the mock CLI. Reports StateDone after
-// Close so the watchdog's liveness check treats a closed mock as dead.
-func (s *Session) State() claudecli.State {
+func (s *Session) State() runtime.SessionState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return claudecli.StateDone
+		return runtime.SessionStateDone
 	}
-	return claudecli.StateRunning
+	return runtime.SessionStateRunning
 }
 
 // ProcessInfo returns a minimal snapshot. Tests that care about stall
 // detection should inject events directly instead of relying on timestamps.
-func (s *Session) ProcessInfo() claudecli.ProcessInfo {
-	return claudecli.ProcessInfo{
+func (s *Session) ProcessInfo() runtime.ProcessInfo {
+	return runtime.ProcessInfo{
 		LastStdoutAt:  time.Now(),
-		ActivityState: claudecli.ActivityThinking,
+		ActivityState: runtime.ActivityThinking,
 		Lifecycle:     s.State(),
 	}
 }
 
 // Ping always succeeds for the testmode mock.
-func (s *Session) Ping(_ time.Duration) error { return nil }
+func (s *Session) Ping(_ context.Context, _ time.Duration) error { return nil }
 
-func (s *Session) Query(prompt string) error {
+func (s *Session) Capabilities() runtime.Capabilities {
+	return runtime.Capabilities{Provider: "testmode"}
+}
+
+func (s *Session) Query(_ context.Context, prompt string, _ ...runtime.Attachment) error {
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)
 	s.interrupted = false
@@ -176,52 +177,39 @@ func (s *Session) Query(prompt string) error {
 	if scenario != nil {
 		go s.replayScenario(scenario)
 	} else {
-		// No scenario to replay — emit an immediate ResultEvent so the
-		// session transitions back to idle instead of hanging in Running.
+		// No scenario to replay — emit an immediate TurnCompletedEvent so
+		// the session transitions back to idle instead of hanging in
+		// Running.
 		go func() {
 			s.mu.Lock()
 			closed := s.closed
 			s.mu.Unlock()
 			if !closed {
-				s.events <- &claudecli.ResultEvent{StopReason: "end_turn"}
+				s.events <- runtime.TurnCompletedEvent{Status: runtime.TurnStatusCompleted, StopReason: "end_turn"}
 			}
 		}()
 	}
 	return nil
 }
 
-func (s *Session) QueryWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return s.Query(prompt)
-}
-
-func (s *Session) SendMessage(prompt string) error {
+func (s *Session) SendMessage(_ context.Context, _ string, _ ...runtime.Attachment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return nil
 }
 
-func (s *Session) SendMessageWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return s.SendMessage(prompt)
-}
-
-func (s *Session) SetPermissionMode(mode claudecli.PermissionMode) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.permMode = mode
-	return nil
-}
-
-func (s *Session) SetModel(model claudecli.Model) error {
+// SetModel implements the optional ModelSwitchable runtime capability.
+func (s *Session) SetModel(_ context.Context, model string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.model = model
 	return nil
 }
 
-func (s *Session) ReconnectMCPServer(_ string) error                    { return nil }
-func (s *Session) ReconnectMCPServerWait(_ string, _ time.Duration) error { return nil }
+// SetPlanMode implements the optional PlanModeCapable runtime capability.
+func (s *Session) SetPlanMode(_ context.Context, _ runtime.PlanMode) error { return nil }
 
-func (s *Session) Interrupt() error {
+func (s *Session) Interrupt(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interrupted = true
@@ -238,8 +226,8 @@ func (s *Session) Close() error {
 	return nil
 }
 
-// InjectEvent pushes a claudecli.Event into the session's channel.
-func (s *Session) InjectEvent(event claudecli.Event) error {
+// InjectEvent pushes a runtime.CLIEvent into the session's channel.
+func (s *Session) InjectEvent(event runtime.CLIEvent) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -256,42 +244,48 @@ func (s *Session) InjectEvent(event claudecli.Event) error {
 }
 
 // replayScenario pushes scripted events with delays.
-// For tool_use events, the event is pushed first (so processEvent sees it),
-// then the canUseTool callback is invoked if set. This mirrors the real CLI
-// behavior where the event stream shows tool_use before permission is resolved.
+// For tool_use events, the event is pushed first (so the pipeline sees it),
+// then the permission callback is invoked if set. This mirrors the real CLI
+// behavior where the event stream shows tool_use before permission is
+// resolved.
 func (s *Session) replayScenario(sc *Scenario) {
 	for _, se := range sc.Events {
 		if se.Delay > 0 {
 			time.Sleep(time.Duration(se.Delay) * time.Millisecond)
 		}
-		event, err := parseWireToClaudeEvent(se.Event)
+		event, err := parseWireToRuntimeEvent(se.Event)
 		if err != nil {
 			continue
 		}
 		s.mu.Lock()
 		closed := s.closed
 		interrupted := s.interrupted
-		canUseTool := s.canUseTool
+		permission := s.permission
 		s.mu.Unlock()
 		if closed || interrupted {
 			if interrupted && !closed {
-				s.events <- &claudecli.ResultEvent{StopReason: "interrupted"}
+				s.events <- runtime.TurnCompletedEvent{Status: runtime.TurnStatusInterrupted, StopReason: "interrupted"}
 			}
 			return
 		}
 		s.events <- event
 
 		// After pushing a tool_use event, invoke the permission callback.
-		// This blocks until the user resolves the approval (or auto-approves),
-		// pausing the replay just like the real CLI pauses before executing.
-		if toolUse, ok := event.(*claudecli.ToolUseEvent); ok && canUseTool != nil {
-			canUseTool(toolUse.Name, toolUse.Input)
+		// This blocks until the user resolves the approval (or
+		// auto-approves), pausing the replay just like the real CLI pauses
+		// before executing.
+		if toolUse, ok := event.(runtime.ToolUseEvent); ok && permission != nil {
+			_, _ = permission(context.Background(), runtime.ToolPermissionRequest{
+				ToolName: toolUse.Name,
+				Input:    toolUse.Input,
+				Provider: "testmode",
+			})
 		}
 	}
 }
 
-// parseWireToClaudeEvent converts wire event JSON to a claudecli.Event.
-func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
+// parseWireToRuntimeEvent converts wire event JSON to a runtime.CLIEvent.
+func parseWireToRuntimeEvent(raw json.RawMessage) (runtime.CLIEvent, error) {
 	var base struct {
 		Type string `json:"type"`
 	}
@@ -307,7 +301,7 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.TextEvent{Content: e.Content}, nil
+		return runtime.AssistantTextEvent{Content: e.Content}, nil
 
 	case "thinking":
 		var e struct {
@@ -316,7 +310,7 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.ThinkingEvent{Content: e.Content}, nil
+		return runtime.ThinkingEvent{Content: e.Content}, nil
 
 	case "tool_use":
 		var e struct {
@@ -327,7 +321,7 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.ToolUseEvent{ID: e.ToolID, Name: e.ToolName, Input: e.ToolInput}, nil
+		return runtime.ToolUseEvent{ID: e.ToolID, Name: e.ToolName, Input: e.ToolInput}, nil
 
 	case "tool_result":
 		var e struct {
@@ -340,11 +334,11 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		var blocks []claudecli.ToolContent
+		blocks := make([]runtime.ToolContent, 0, len(e.Content))
 		for _, b := range e.Content {
-			blocks = append(blocks, claudecli.ToolContent{Type: b.Type, Text: b.Text})
+			blocks = append(blocks, runtime.ToolContent{Type: b.Type, Text: b.Text})
 		}
-		return &claudecli.ToolResultEvent{ToolUseID: e.ToolID, Content: blocks}, nil
+		return runtime.ToolResultEvent{ToolUseID: e.ToolID, Content: blocks}, nil
 
 	case "result":
 		var e struct {
@@ -355,7 +349,8 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.ResultEvent{
+		return runtime.TurnCompletedEvent{
+			Status:     runtime.TurnStatusCompleted,
 			StopReason: e.StopReason,
 			CostUSD:    e.Cost,
 			Duration:   time.Duration(e.Duration) * time.Millisecond,
@@ -369,7 +364,7 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.ErrorEvent{
+		return runtime.ErrorEvent{
 			Err:   fmt.Errorf("%s", e.Message),
 			Fatal: e.Fatal,
 		}, nil
@@ -382,7 +377,7 @@ func parseWireToClaudeEvent(raw json.RawMessage) (claudecli.Event, error) {
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil, err
 		}
-		return &claudecli.CompactBoundaryEvent{
+		return runtime.CompactBoundaryEvent{
 			Trigger:   e.Trigger,
 			PreTokens: e.PreTokens,
 		}, nil

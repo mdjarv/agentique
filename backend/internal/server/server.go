@@ -12,6 +12,8 @@ import (
 	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/allbin/agentkit/runtime"
+	claudeadapter "github.com/allbin/agentkit/runtime/cli/claude"
+	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
@@ -95,7 +97,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
-		connector = runtime.RealConnector()
+		connector = claudeadapter.NewConnector()
 		runner = session.RealBlockingRunner()
 	}
 
@@ -103,6 +105,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mcpTokens := mcphttp.NewTokenStore()
 
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
+	if !cfg.TestMode {
+		mgr.SetProviderConnector("codex", codexadapter.NewConnector())
+	}
 	mgr.SetMCPHTTP(mcpTokens, cfg.MCPInternalURL)
 	mgr.SetDevURLStore(devStore)
 	if cfg.DevMode && cfg.DBPath != "" {

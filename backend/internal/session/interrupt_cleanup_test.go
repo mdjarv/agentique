@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 )
 
 // TestDrainSyntheticApprovals_DeniesAndClears verifies the helper used by
@@ -15,8 +15,8 @@ func TestDrainSyntheticApprovals_DeniesAndClears(t *testing.T) {
 	sess := newPermTestSession("manual", "default")
 	defer sess.cancelCtx()
 
-	ch1 := make(chan *claudecli.PermissionResponse, 1)
-	ch2 := make(chan *claudecli.PermissionResponse, 1)
+	ch1 := make(chan *runtime.Decision, 1)
+	ch2 := make(chan *runtime.Decision, 1)
 	sess.syntheticApprovals["a1"] = &syntheticApproval{id: "a1", ch: ch1}
 	sess.syntheticApprovals["a2"] = &syntheticApproval{id: "a2", ch: ch2}
 
@@ -29,7 +29,7 @@ func TestDrainSyntheticApprovals_DeniesAndClears(t *testing.T) {
 	if len(sess.syntheticApprovals) != 0 {
 		t.Errorf("syntheticApprovals not cleared, %d entries remain", len(sess.syntheticApprovals))
 	}
-	for name, ch := range map[string]chan *claudecli.PermissionResponse{"ch1": ch1, "ch2": ch2} {
+	for name, ch := range map[string]chan *runtime.Decision{"ch1": ch1, "ch2": ch2} {
 		select {
 		case resp := <-ch:
 			if resp == nil {
@@ -66,8 +66,8 @@ func TestDrainSyntheticApprovals_NonBlocking_NoReceiver(t *testing.T) {
 	sess := newPermTestSession("manual", "default")
 	defer sess.cancelCtx()
 
-	full := make(chan *claudecli.PermissionResponse, 1)
-	full <- &claudecli.PermissionResponse{Allow: true} // pre-fill so drain's send is dropped
+	full := make(chan *runtime.Decision, 1)
+	full <- &runtime.Decision{Allow: true} // pre-fill so drain's send is dropped
 	sess.syntheticApprovals["stuck"] = &syntheticApproval{id: "stuck", ch: full}
 
 	done := make(chan struct{})

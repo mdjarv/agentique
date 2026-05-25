@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/allbin/agentkit/runtime"
-	claudecli "github.com/allbin/claudecli-go"
 )
 
 // makeBroadcastHook returns a runtime BroadcastFunc bound to the given
@@ -23,21 +22,23 @@ import (
 func makeBroadcastHook(s *Session) runtime.BroadcastFunc {
 	return func(_ context.Context, e runtime.Event) {
 		switch ev := e.(type) {
-		case runtime.CLIEvent:
-			safeProcessEvent(s, ev.Event)
 		case runtime.StateChangeEvent:
 			handleRuntimeStateChange(s, ev)
 		case runtime.WatchdogEvent:
 			handleWatchdogEvent(s, ev)
 		case runtime.PendingChangeEvent:
 			go handlePendingChange(s, ev)
+		default:
+			if cli, ok := e.(runtime.CLIEvent); ok {
+				safeProcessEvent(s, cli)
+			}
 		}
 	}
 }
 
 // safeProcessEvent runs the pipeline with panic recovery so a malformed event
 // can't kill the runtime event-loop goroutine.
-func safeProcessEvent(s *Session, event claudecli.Event) {
+func safeProcessEvent(s *Session, event runtime.CLIEvent) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic in pipeline.ProcessEvent", "session_id", s.ID, "panic", r)

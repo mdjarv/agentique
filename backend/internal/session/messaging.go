@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 	"github.com/google/uuid"
 )
 
@@ -143,13 +143,13 @@ func (s *Session) SetPersonaContext(querier PersonaQuerier, profileID, profileNa
 	s.mu.Unlock()
 }
 
-func (s *Session) interceptAskTeammate(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+func (s *Session) interceptAskTeammate(input json.RawMessage) (*runtime.Decision, error) {
 	var parsed struct {
 		Name     string `json:"name"`
 		Question string `json:"question"`
 	}
 	if err := json.Unmarshal(input, &parsed); err != nil {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse AskTeammate input: %v", err),
 		}, nil
@@ -161,7 +161,7 @@ func (s *Session) interceptAskTeammate(input json.RawMessage) (*claudecli.Permis
 	s.mu.Unlock()
 
 	if querier == nil || tc == nil {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: "AskTeammate is not available: session is not bound to a team.",
 		}, nil
@@ -171,7 +171,7 @@ func (s *Session) interceptAskTeammate(input json.RawMessage) (*claudecli.Permis
 	if !ok {
 		slog.Info("AskTeammate target not found",
 			"session_id", s.ID, "asker", tc.agentProfileName, "target", parsed.Name)
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("No teammate named %q found in your team.", parsed.Name),
 		}, nil
@@ -184,13 +184,13 @@ func (s *Session) interceptAskTeammate(input json.RawMessage) (*claudecli.Permis
 	response, err := querier.QueryForSession(s.ctx, parsed.Name, ref.teamID, tc.agentProfileID, tc.agentProfileName, parsed.Question)
 	if err != nil {
 		slog.Warn("AskTeammate persona query failed", "session_id", s.ID, "target", parsed.Name, "error", err)
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Persona query failed for %q: %v", parsed.Name, err),
 		}, nil
 	}
 
-	return &claudecli.PermissionResponse{
+	return &runtime.Decision{
 		Allow:       false,
 		DenyMessage: response,
 	}, nil
@@ -310,11 +310,11 @@ func normalizeMessageType(raw string) string {
 // so Claude thinks the message was delivered (v1 hack — proper tool result
 // interception requires claudecli-go changes).
 // Also intercepts "@spawn" target for worker delegation.
-func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.PermissionResponse, error) {
+func (s *Session) interceptSendMessage(input json.RawMessage) (*runtime.Decision, error) {
 	to, body, _, err := parseSendMessageInput(input)
 	if err != nil {
 		slog.Warn("SendMessage parse failed", "session_id", s.ID, "error", err, "raw_input", string(input))
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse SendMessage input: %v", err),
 		}, nil
@@ -336,7 +336,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 	// but don't route — the EventPipeline's OnSendMessage callback handles
 	// actual routing. This avoids double-delivery when both can_use_tool and
 	// the pipeline fire for the same SendMessage.
-	return &claudecli.PermissionResponse{
+	return &runtime.Decision{
 		Allow:       false,
 		DenyMessage: fmt.Sprintf("Message delivered to %q successfully.", to),
 	}, nil
@@ -344,7 +344,7 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*claudecli.Permis
 
 // interceptSpawnWorkers handles SendMessage to "@spawn" — routes through the
 // standard approval flow so the user can approve/deny worker creation.
-func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionResponse, error) {
+func (s *Session) interceptSpawnWorkers(content string) (*runtime.Decision, error) {
 	var req SpawnWorkersRequest
 	if err := json.Unmarshal([]byte(content), &req); err != nil {
 		slog.Warn("spawn request parse failed",
@@ -353,13 +353,13 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 			"content_len", len(content),
 			"content_preview", truncate(content, 200),
 		)
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Failed to parse spawn request: %v. Expected JSON with channelName and workers array.", err),
 		}, nil
 	}
 	if len(req.Workers) == 0 {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: "Spawn request must include at least one worker.",
 		}, nil
@@ -371,7 +371,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	s.mu.Unlock()
 
 	if cb == nil {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: "Worker spawning is not available for this session.",
 		}, nil
@@ -391,11 +391,11 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 		if msg == "" {
 			msg = "Worker spawning is not available for this session."
 		}
-		return &claudecli.PermissionResponse{Allow: false, DenyMessage: msg}, nil
+		return &runtime.Decision{Allow: false, DenyMessage: msg}, nil
 	case SpawnDecisionAuto:
 		slog.Info("spawn auto-approved (channel lead)", "session_id", s.ID, "workers", len(req.Workers))
 		if err := cb(s.ID, req); err != nil {
-			return &claudecli.PermissionResponse{
+			return &runtime.Decision{
 				Allow:       false,
 				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
 			}, nil
@@ -404,7 +404,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 		for _, w := range req.Workers {
 			names = append(names, w.Name)
 		}
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow: false,
 			DenyMessage: fmt.Sprintf(
 				"Auto-approved: spawned %d workers: %s. They are working in separate worktrees. "+
@@ -419,7 +419,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	inputJSON, _ := json.Marshal(req)
 
 	approvalID := uuid.New().String()
-	ch := make(chan *claudecli.PermissionResponse, 1)
+	ch := make(chan *runtime.Decision, 1)
 
 	sa := &syntheticApproval{
 		id:       approvalID,
@@ -447,14 +447,14 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 	select {
 	case resp := <-ch:
 		if !resp.Allow {
-			return &claudecli.PermissionResponse{
+			return &runtime.Decision{
 				Allow:       false,
 				DenyMessage: "User denied worker creation.",
 			}, nil
 		}
 		// User approved — create the workers.
 		if err := cb(s.ID, req); err != nil {
-			return &claudecli.PermissionResponse{
+			return &runtime.Decision{
 				Allow:       false,
 				DenyMessage: fmt.Sprintf("Worker creation failed: %v", err),
 			}, nil
@@ -463,7 +463,7 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 		for _, w := range req.Workers {
 			names = append(names, w.Name)
 		}
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow: false,
 			DenyMessage: fmt.Sprintf(
 				"Successfully spawned %d workers: %s. They are working in separate worktrees. "+
@@ -472,32 +472,32 @@ func (s *Session) interceptSpawnWorkers(content string) (*claudecli.PermissionRe
 				len(req.Workers), strings.Join(names, ", ")),
 		}, nil
 	case <-s.ctx.Done():
-		return &claudecli.PermissionResponse{Allow: false, DenyMessage: "session closed"}, nil
+		return &runtime.Decision{Allow: false, DenyMessage: "session closed"}, nil
 	}
 }
 
 // interceptDissolveChannel handles SendMessage to "@dissolve" — dissolves the
 // channel this leader session belongs to, cleaning up all workers.
-func (s *Session) interceptDissolveChannel() (*claudecli.PermissionResponse, error) {
+func (s *Session) interceptDissolveChannel() (*runtime.Decision, error) {
 	s.mu.Lock()
 	cb := s.channel.onDissolveChannel
 	s.mu.Unlock()
 
 	if cb == nil {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: "Channel dissolution is not available for this session.",
 		}, nil
 	}
 
 	if err := cb(s.ID); err != nil {
-		return &claudecli.PermissionResponse{
+		return &runtime.Decision{
 			Allow:       false,
 			DenyMessage: fmt.Sprintf("Channel dissolution failed: %v", err),
 		}, nil
 	}
 
-	return &claudecli.PermissionResponse{
+	return &runtime.Decision{
 		Allow:       false,
 		DenyMessage: "Channel dissolved successfully. All worker sessions have been stopped and cleaned up. You are no longer part of a channel.",
 	}, nil

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 )
 
 // testSink collects persist and broadcast calls for assertions.
@@ -72,8 +72,8 @@ func TestPipeline_TransientEventsSkipDB(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
-	p.ProcessEvent(&claudecli.RateLimitEvent{Status: "normal", Utilization: 0.5})
-	p.ProcessEvent(&claudecli.StreamEvent{Event: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.RateLimitEvent{Status: "normal", Utilization: 0.5})
+	p.ProcessEvent(runtime.StreamEvent{Raw: json.RawMessage(`{}`)})
 
 	if len(sink.persisted) != 0 {
 		t.Errorf("expected 0 persisted events, got %d", len(sink.persisted))
@@ -89,7 +89,7 @@ func TestPipeline_PersistentEventsGetBoth(t *testing.T) {
 	// Advance turn so seq numbering works as expected.
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.TextEvent{Content: "hello"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "hello"})
 
 	if len(sink.persisted) != 1 {
 		t.Fatalf("expected 1 persisted event, got %d", len(sink.persisted))
@@ -114,9 +114,9 @@ func TestPipeline_SequenceNumbering(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.TextEvent{Content: "a"})
-	p.ProcessEvent(&claudecli.ThinkingEvent{Content: "b"})
-	p.ProcessEvent(&claudecli.TextEvent{Content: "c"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "a"})
+	p.ProcessEvent(runtime.ThinkingEvent{Content: "b"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "c"})
 
 	if len(sink.persisted) != 3 {
 		t.Fatalf("expected 3 persisted events, got %d", len(sink.persisted))
@@ -136,11 +136,11 @@ func TestPipeline_AdvanceTurnResetsSeq(t *testing.T) {
 	p := newTestPipeline(sink)
 
 	p.AdvanceTurn() // turn 1
-	p.ProcessEvent(&claudecli.TextEvent{Content: "a"})
-	p.ProcessEvent(&claudecli.TextEvent{Content: "b"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "a"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "b"})
 
 	p.AdvanceTurn() // turn 2
-	p.ProcessEvent(&claudecli.TextEvent{Content: "c"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "c"})
 
 	if len(sink.persisted) != 3 {
 		t.Fatalf("expected 3, got %d", len(sink.persisted))
@@ -179,7 +179,7 @@ func TestPipeline_InitCapture(t *testing.T) {
 		cfg.OnClaudeSessionID = func(id string) { capturedID = id }
 	})
 
-	p.ProcessEvent(&claudecli.InitEvent{SessionID: "claude-123"})
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "claude-123"})
 
 	if p.ClaudeSessionID() != "claude-123" {
 		t.Errorf("expected claude-123, got %q", p.ClaudeSessionID())
@@ -200,8 +200,8 @@ func TestPipeline_InitCapture_OnlyFirst(t *testing.T) {
 		cfg.OnClaudeSessionID = func(_ string) { callCount++ }
 	})
 
-	p.ProcessEvent(&claudecli.InitEvent{SessionID: "first"})
-	p.ProcessEvent(&claudecli.InitEvent{SessionID: "second"})
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "first"})
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "second"})
 
 	if p.ClaudeSessionID() != "first" {
 		t.Errorf("expected first, got %q", p.ClaudeSessionID())
@@ -234,7 +234,7 @@ func TestPipeline_FatalErrorTriggersCallback(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ErrorEvent{
+	p.ProcessEvent(runtime.ErrorEvent{
 		Err:   errors.New("boom"),
 		Fatal: true,
 	})
@@ -252,7 +252,7 @@ func TestPipeline_NonFatalErrorNoCallback(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ErrorEvent{
+	p.ProcessEvent(runtime.ErrorEvent{
 		Err:   errors.New("warn"),
 		Fatal: false,
 	})
@@ -275,10 +275,10 @@ func TestPipeline_ToolCategoryTracking_GitRefresh(t *testing.T) {
 	p.AdvanceTurn()
 
 	// Write tool use + result.
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "Write", Input: json.RawMessage(`{}`)})
-	p.ProcessEvent(&claudecli.ToolResultEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "Write", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolResultEvent{
 		ToolUseID: "t1",
-		Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: "ok"}},
 	})
 
 	if !gitRefreshCalled {
@@ -295,10 +295,10 @@ func TestPipeline_ToolCategoryTracking_ReadNoRefresh(t *testing.T) {
 	p.AdvanceTurn()
 
 	// Read tool use + result — should NOT trigger git refresh.
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "Read", Input: json.RawMessage(`{}`)})
-	p.ProcessEvent(&claudecli.ToolResultEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "Read", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolResultEvent{
 		ToolUseID: "t1",
-		Content:   []claudecli.ToolContent{{Type: "text", Text: "content"}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: "content"}},
 	})
 
 	if gitRefreshCalled {
@@ -314,10 +314,10 @@ func TestPipeline_ToolCategoryTracking_BashRefresh(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "Bash", Input: json.RawMessage(`{}`)})
-	p.ProcessEvent(&claudecli.ToolResultEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "Bash", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolResultEvent{
 		ToolUseID: "t1",
-		Content:   []claudecli.ToolContent{{Type: "text", Text: "output"}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: "output"}},
 	})
 
 	if !gitRefreshCalled {
@@ -335,8 +335,8 @@ func TestPipeline_PlanModeTransitions(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`)})
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t2", Name: "ExitPlanMode", Input: json.RawMessage(`{"plan":"test"}`)})
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t2", Name: "ExitPlanMode", Input: json.RawMessage(`{"plan":"test"}`)})
 
 	if len(transitions) != 1 {
 		t.Fatalf("expected 1 transition (EnterPlanMode only), got %d: %v", len(transitions), transitions)
@@ -361,7 +361,7 @@ func TestPipeline_ExitPlanModeFallback(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "ExitPlanMode", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "ExitPlanMode", Input: json.RawMessage(`{}`)})
 
 	if len(transitions) != 1 || transitions[0] != "default" {
 		t.Errorf("expected fallback to OnPlanTransition('default'), got %v", transitions)
@@ -379,7 +379,7 @@ func TestPipeline_ResultClearsToolCategories(t *testing.T) {
 	p.AdvanceTurn()
 
 	// Register a write tool, then receive ResultEvent before the tool result.
-	p.ProcessEvent(&claudecli.ToolUseEvent{ID: "t1", Name: "Write", Input: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.ToolUseEvent{ID: "t1", Name: "Write", Input: json.RawMessage(`{}`)})
 	p.ProcessEvent(testResultEvent(0.01))
 
 	if !turnCompleted {
@@ -389,9 +389,9 @@ func TestPipeline_ResultClearsToolCategories(t *testing.T) {
 	// Now process a ToolResultEvent — the category should have been cleared.
 	gitRefreshCalled = false
 	p.AdvanceTurn()
-	p.ProcessEvent(&claudecli.ToolResultEvent{
+	p.ProcessEvent(runtime.ToolResultEvent{
 		ToolUseID: "t1",
-		Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: "ok"}},
 	})
 
 	if gitRefreshCalled {
@@ -478,7 +478,7 @@ func TestPipeline_TaskProgressIsTransient(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.TaskEvent{
+	p.ProcessEvent(runtime.SubagentEvent{
 		Subtype: "task_progress", TaskID: "task-1", ToolUseID: "tu_agent",
 		LastToolName: "Read", TotalTokens: 5000,
 	})
@@ -496,11 +496,11 @@ func TestPipeline_TaskStartedAndNotificationPersist(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.TaskEvent{
+	p.ProcessEvent(runtime.SubagentEvent{
 		Subtype: "task_started", TaskID: "task-1", ToolUseID: "tu_agent",
 		Description: "Explore", TaskType: "local_agent",
 	})
-	p.ProcessEvent(&claudecli.TaskEvent{
+	p.ProcessEvent(runtime.SubagentEvent{
 		Subtype: "task_notification", TaskID: "task-1", ToolUseID: "tu_agent",
 		Status: "completed", Summary: "Done",
 	})
@@ -521,7 +521,7 @@ func TestPipeline_UnknownEventDropped(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.UnknownEvent{Type: "future_type", Raw: json.RawMessage(`{}`)})
+	p.ProcessEvent(runtime.UnknownProviderEvent{Provider: "claude", Type: "future_type", Raw: json.RawMessage(`{}`)})
 
 	if len(sink.persisted) != 0 {
 		t.Errorf("UnknownEvent should not be persisted, got %d", len(sink.persisted))
@@ -540,7 +540,7 @@ func TestPipeline_SubagentPlanModeIsolation(t *testing.T) {
 	p.AdvanceTurn()
 
 	// Subagent EnterPlanMode should NOT trigger parent plan transition.
-	p.ProcessEvent(&claudecli.ToolUseEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{
 		ID: "t1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`),
 		ParentToolUseID: "tu_agent",
 	})
@@ -558,13 +558,13 @@ func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
 	})
 	p.AdvanceTurn()
 
-	p.ProcessEvent(&claudecli.ToolUseEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{
 		ID: "t1", Name: "Write", Input: json.RawMessage(`{}`),
 		ParentToolUseID: "tu_agent",
 	})
-	p.ProcessEvent(&claudecli.ToolResultEvent{
+	p.ProcessEvent(runtime.ToolResultEvent{
 		ToolUseID: "t1",
-		Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: "ok"}},
 		ParentToolUseID: "tu_agent",
 	})
 
@@ -574,42 +574,27 @@ func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
 }
 
 func TestPipeline_AgentResultPersisted(t *testing.T) {
-	sink := newTestSink()
-	p := newTestPipeline(sink)
-	p.AdvanceTurn()
-
-	p.ProcessEvent(&claudecli.UserEvent{
-		ParentToolUseID: "tu_agent",
-		AgentResult: &claudecli.AgentResult{
-			Status:    "completed",
-			AgentID:   "explorer",
-			AgentType: "Explore",
-			Content:   []claudecli.ToolContent{{Type: "text", Text: "result"}},
-		},
-	})
-
-	if len(sink.persisted) != 1 {
-		t.Fatalf("expected 1 persisted event, got %d", len(sink.persisted))
-	}
-	if sink.persisted[0].WireType != "agent_result" {
-		t.Errorf("expected wire type 'agent_result', got %q", sink.persisted[0].WireType)
-	}
+	// AgentResult is not surfaced through the neutral runtime event set today;
+	// the claude adapter drops it when mapping UserEvent. The wire shape
+	// stays available for a future agentkit upgrade. See the matching note
+	// in processUserEcho.
+	t.Skip("AgentResult is not exposed via runtime.CLIEvent yet")
 }
 
-func TestPipeline_UserEventToolResultPersisted(t *testing.T) {
+func TestPipeline_UserEchoToolResultPersisted(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
 	// Register a tool_use so trackToolResult can look up the category.
-	p.ProcessEvent(&claudecli.ToolUseEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{
 		ID: "tu_bash", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`),
 	})
 
-	// UserEvent with a tool_result content block.
-	p.ProcessEvent(&claudecli.UserEvent{
-		Content: []claudecli.UserContent{
-			{Type: "tool_result", ToolUseID: "tu_bash", Content: []claudecli.ToolContent{{Type: "text", Text: "file1\nfile2"}}},
+	// UserEcho with a tool_result content block.
+	p.ProcessEvent(runtime.UserEcho{
+		ToolResults: []runtime.ToolResult{
+			{ToolUseID: "tu_bash", Content: []runtime.ToolContent{{Type: "text", Text: "file1\nfile2"}}},
 		},
 	})
 
@@ -622,7 +607,7 @@ func TestPipeline_UserEventToolResultPersisted(t *testing.T) {
 	}
 }
 
-func TestPipeline_UserEventToolResultTriggersGitRefresh(t *testing.T) {
+func TestPipeline_UserEchoToolResultTriggersGitRefresh(t *testing.T) {
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -631,54 +616,47 @@ func TestPipeline_UserEventToolResultTriggersGitRefresh(t *testing.T) {
 	p.AdvanceTurn()
 
 	// Register Write tool_use.
-	p.ProcessEvent(&claudecli.ToolUseEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{
 		ID: "tu_write", Name: "Write", Input: json.RawMessage(`{}`),
 	})
 
-	// Tool result via UserEvent.
-	p.ProcessEvent(&claudecli.UserEvent{
-		Content: []claudecli.UserContent{
-			{Type: "tool_result", ToolUseID: "tu_write", Content: []claudecli.ToolContent{{Type: "text", Text: "ok"}}},
+	// Tool result via UserEcho.
+	p.ProcessEvent(runtime.UserEcho{
+		ToolResults: []runtime.ToolResult{
+			{ToolUseID: "tu_write", Content: []runtime.ToolContent{{Type: "text", Text: "ok"}}},
 		},
 	})
 
 	if !gitRefreshCalled {
-		t.Error("Write tool result via UserEvent should trigger git refresh")
+		t.Error("Write tool result via UserEcho should trigger git refresh")
 	}
 }
 
-func TestPipeline_UserEventWithBothToolResultAndAgentResult(t *testing.T) {
+func TestPipeline_UserEchoWithToolResultOnly(t *testing.T) {
+	// AgentResult metadata is not exposed via the neutral runtime event set
+	// today (see TestPipeline_AgentResultPersisted). Only the tool_result
+	// part of a combined UserEcho survives the migration.
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
 	// Register Agent tool_use.
-	p.ProcessEvent(&claudecli.ToolUseEvent{
+	p.ProcessEvent(runtime.ToolUseEvent{
 		ID: "tu_agent", Name: "Agent", Input: json.RawMessage(`{}`),
 	})
 
-	// UserEvent with tool_result AND agent_result (normal for Agent completion).
-	p.ProcessEvent(&claudecli.UserEvent{
-		ParentToolUseID: "",
-		Content: []claudecli.UserContent{
-			{Type: "tool_result", ToolUseID: "tu_agent", Content: []claudecli.ToolContent{{Type: "text", Text: "agent output"}}},
-		},
-		AgentResult: &claudecli.AgentResult{
-			Status:  "completed",
-			AgentID: "explorer",
-			Content: []claudecli.ToolContent{{Type: "text", Text: "agent output"}},
+	p.ProcessEvent(runtime.UserEcho{
+		ToolResults: []runtime.ToolResult{
+			{ToolUseID: "tu_agent", Content: []runtime.ToolContent{{Type: "text", Text: "agent output"}}},
 		},
 	})
 
-	// Expect tool_use + tool_result + agent_result = 3 persisted events.
-	if len(sink.persisted) != 3 {
-		t.Fatalf("expected 3 persisted events, got %d", len(sink.persisted))
+	// Expect tool_use + tool_result = 2 persisted events.
+	if len(sink.persisted) != 2 {
+		t.Fatalf("expected 2 persisted events, got %d", len(sink.persisted))
 	}
 	if sink.persisted[1].WireType != "tool_result" {
 		t.Errorf("persisted[1] type = %q, want tool_result", sink.persisted[1].WireType)
-	}
-	if sink.persisted[2].WireType != "agent_result" {
-		t.Errorf("persisted[2] type = %q, want agent_result", sink.persisted[2].WireType)
 	}
 }
 
@@ -692,7 +670,7 @@ func TestPipeline_SetClaudeSessionID(t *testing.T) {
 	}
 
 	// Init event should NOT overwrite since ID is already set.
-	p.ProcessEvent(&claudecli.InitEvent{SessionID: "new-id"})
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "new-id"})
 	if p.ClaudeSessionID() != "restored-id" {
 		t.Errorf("expected restored-id to be preserved, got %q", p.ClaudeSessionID())
 	}

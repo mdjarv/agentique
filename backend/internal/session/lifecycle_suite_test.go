@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
-	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
@@ -15,7 +14,7 @@ import (
 // connectorAdapter wraps testutil.RecordingConnector to satisfy runtime.CLIConnector.
 type connectorAdapter struct{ rc *testutil.RecordingConnector }
 
-func (a connectorAdapter) Connect(_ context.Context, _ ...claudecli.Option) (runtime.CLISession, error) {
+func (a connectorAdapter) Connect(_ context.Context, _ runtime.ConnectParams) (runtime.CLISession, error) {
 	return a.rc.NextSession()
 }
 

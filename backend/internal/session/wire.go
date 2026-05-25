@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
 )
 
@@ -219,16 +220,22 @@ func defaultContextWindow(model string) int {
 	return 200_000
 }
 
-// ToWireEvent converts a claudecli-go event to a JSON-friendly wire format.
+// ToWireEvent converts a runtime CLIEvent to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
-// The model parameter is used to pick a sensible default context window before the CLI reports one.
-func ToWireEvent(event claudecli.Event, model string) any {
+// The model parameter is used to pick a sensible default context window before
+// the CLI reports one.
+func ToWireEvent(event runtime.CLIEvent, model string) any {
 	switch e := event.(type) {
-	case *claudecli.TextEvent:
+	case runtime.AssistantTextEvent:
 		return WireTextEvent{Type: "text", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
-	case *claudecli.ThinkingEvent:
+	case runtime.AssistantTextDeltaEvent:
+		// Codex / partial-message streaming. Surface as a transient stream
+		// event so the UI can show deltas without persisting them.
+		raw, _ := json.Marshal(map[string]string{"itemId": e.ItemID, "delta": e.Delta})
+		return WireStreamEvent{Type: "stream", Event: raw}
+	case runtime.ThinkingEvent:
 		return WireThinkingEvent{Type: "thinking", Content: e.Content, Signature: e.Signature, ParentToolUseID: e.ParentToolUseID}
-	case *claudecli.ToolUseEvent:
+	case runtime.ToolUseEvent:
 		return WireToolUseEvent{
 			Type:            "tool_use",
 			ToolID:          e.ID,
@@ -237,42 +244,99 @@ func ToWireEvent(event claudecli.Event, model string) any {
 			Category:        classifyTool(e.Name),
 			ParentToolUseID: e.ParentToolUseID,
 		}
-	case *claudecli.ToolResultEvent:
+	case runtime.ToolResultEvent:
 		return WireToolResultEvent{
 			Type:            "tool_result",
 			ToolID:          e.ToolUseID,
 			Content:         convertToolContent(e.Content),
 			ParentToolUseID: e.ParentToolUseID,
 		}
-	case *claudecli.ResultEvent:
+	case runtime.TurnCompletedEvent:
 		wire := WireResultEvent{
-			Type:       "result",
-			Cost:       e.CostUSD,
-			Duration:   e.Duration.Milliseconds(),
-			Usage:      e.Usage,
-			StopReason: e.StopReason,
-		}
-		// Use ContextSnapshot (per-API-call usage from the last stream event pair)
-		// instead of ModelUsage (cumulative across all API calls in the run).
-		if cs := e.ContextSnapshot; cs != nil {
-			wire.InputTokens = cs.InputTokens + cs.CacheReadInputTokens + cs.CacheCreationInputTokens
-			wire.OutputTokens = cs.OutputTokens
-			wire.ContextWindow = cs.ContextWindow
-		}
-		// ContextWindow from ModelUsage as fallback (snapshot may lack it on model mismatch).
-		if wire.ContextWindow == 0 {
-			for _, mu := range e.ModelUsage {
-				if mu.ContextWindow > wire.ContextWindow {
-					wire.ContextWindow = mu.ContextWindow
-				}
-			}
+			Type:          "result",
+			Cost:          e.CostUSD,
+			Duration:      e.Duration.Milliseconds(),
+			Usage:         e.Usage,
+			StopReason:    e.StopReason,
+			ContextWindow: e.ContextWindow,
+			InputTokens:   e.Usage.InputTokens + e.Usage.CacheReadTokens + e.Usage.CacheCreateTokens,
+			OutputTokens:  e.Usage.OutputTokens,
 		}
 		if wire.ContextWindow == 0 {
 			wire.ContextWindow = defaultContextWindow(model)
 		}
 		return wire
-	case *claudecli.ErrorEvent:
-		we := WireErrorEvent{Type: "error", Content: errorDetail(e.Err), Fatal: e.Fatal}
+	case runtime.ErrorEvent:
+		return wireErrorEvent(e)
+	case runtime.RateLimitEvent:
+		rlType := e.RateLimitType
+		if rlType == "seven_day_opus" {
+			rlType = "seven_day"
+		}
+		return WireRateLimitEvent{
+			Type:          "rate_limit",
+			Status:        e.Status,
+			Utilization:   e.Utilization,
+			ResetsAt:      e.ResetsAt,
+			RateLimitType: rlType,
+		}
+	case runtime.StreamEvent:
+		return WireStreamEvent{Type: "stream", Event: e.Raw}
+	case runtime.CompactStatusEvent:
+		return WireCompactStatusEvent{Type: "compact_status", Status: e.Status}
+	case runtime.CompactBoundaryEvent:
+		return WireCompactBoundaryEvent{Type: "compact_boundary", Trigger: e.Trigger, PreTokens: e.PreTokens}
+	case runtime.ContextManagementEvent:
+		return WireContextManagementEvent{Type: "context_management", Raw: e.Raw}
+	case runtime.SubagentEvent:
+		return WireTaskEvent{
+			Type:         "task",
+			Subtype:      e.Subtype,
+			TaskID:       e.TaskID,
+			ToolUseID:    e.ToolUseID,
+			Description:  e.Description,
+			TaskType:     e.TaskType,
+			Prompt:       e.Prompt,
+			LastToolName: e.LastToolName,
+			Status:       e.Status,
+			Summary:      e.Summary,
+			TotalTokens:  e.TotalTokens,
+			ToolUses:     e.ToolUses,
+			DurationMs:   e.DurationMs,
+		}
+	// SessionInitEvent is consumed by EventPipeline.handleInit before reaching
+	// ToWireEvent. UserEcho is handled by processUserEvent (can produce
+	// multiple wire events per CLI event).
+	default:
+		return nil
+	}
+}
+
+// wireErrorEvent maps a runtime.ErrorEvent to a WireErrorEvent, classifying the
+// error via claudecli sentinels when the underlying error originates from the
+// claude adapter. Codex-emitted errors fall through to generic api_error
+// classification — codex's wire shape lacks comparable sentinels today.
+func wireErrorEvent(e runtime.ErrorEvent) WireErrorEvent {
+	we := WireErrorEvent{Type: "error", Content: errorDetail(e.Err), Fatal: e.Fatal}
+	switch e.Kind {
+	case runtime.ErrorKindRateLimit:
+		we.ErrorType = "rate_limit"
+	case runtime.ErrorKindAuth:
+		we.ErrorType = "auth"
+	case runtime.ErrorKindBilling:
+		we.ErrorType = "billing"
+	case runtime.ErrorKindOverloaded:
+		we.ErrorType = "overloaded"
+	case runtime.ErrorKindPermission:
+		we.ErrorType = "permission"
+	case runtime.ErrorKindInvalidRequest:
+		we.ErrorType = "invalid_request"
+	case runtime.ErrorKindMaxTurns:
+		we.ErrorType = "max_turns"
+	}
+	if we.ErrorType == "" {
+		// Fall back to claudecli error sentinels for claude-originated errors
+		// that the runtime didn't classify upstream.
 		switch {
 		case errors.Is(e.Err, claudecli.ErrRateLimit):
 			we.ErrorType = "rate_limit"
@@ -299,66 +363,19 @@ func ToWireEvent(event claudecli.Event, model string) any {
 		default:
 			we.ErrorType = "api_error"
 		}
-		return we
-	case *claudecli.RateLimitEvent:
-		rlType := e.RateLimitType
-		if rlType == "seven_day_opus" {
-			rlType = "seven_day"
-		}
-		return WireRateLimitEvent{
-			Type:          "rate_limit",
-			Status:        e.Status,
-			Utilization:   e.Utilization,
-			ResetsAt:      e.ResetsAt,
-			RateLimitType: rlType,
-		}
-	case *claudecli.StreamEvent:
-		return WireStreamEvent{
-			Type:  "stream",
-			Event: e.Event,
-		}
-	case *claudecli.CompactStatusEvent:
-		return WireCompactStatusEvent{
-			Type:   "compact_status",
-			Status: e.Status,
-		}
-	case *claudecli.CompactBoundaryEvent:
-		return WireCompactBoundaryEvent{
-			Type:      "compact_boundary",
-			Trigger:   e.Trigger,
-			PreTokens: e.PreTokens,
-		}
-	case *claudecli.ContextManagementEvent:
-		return WireContextManagementEvent{
-			Type: "context_management",
-			Raw:  e.Raw,
-		}
-	case *claudecli.TaskEvent:
-		return WireTaskEvent{
-			Type:         "task",
-			Subtype:      e.Subtype,
-			TaskID:       e.TaskID,
-			ToolUseID:    e.ToolUseID,
-			Description:  e.Description,
-			TaskType:     e.TaskType,
-			Prompt:       e.Prompt,
-			LastToolName: e.LastToolName,
-			Status:       e.Status,
-			Summary:      e.Summary,
-			TotalTokens:  e.TotalTokens,
-			ToolUses:     e.ToolUses,
-			DurationMs:   e.DurationMs,
-		}
-	// *claudecli.UserEvent is handled by EventPipeline.processUserEvent
-	// (can produce multiple wire events per CLI event).
-	default:
-		return nil
 	}
+	if we.RetryAfterSecs == 0 {
+		var rlErr *claudecli.RateLimitError
+		if errors.As(e.Err, &rlErr) && rlErr.RetryAfter > 0 {
+			we.RetryAfterSecs = int(rlErr.RetryAfter.Seconds())
+		}
+	}
+	return we
 }
 
-// convertToolContent converts claudecli-go content blocks to wire format.
+// convertToolContent converts runtime ToolContent blocks to wire format.
 // Image blocks are encoded as data: URLs so the frontend can render them directly.
-func convertToolContent(blocks []claudecli.ToolContent) []WireContentBlock {
+func convertToolContent(blocks []runtime.ToolContent) []WireContentBlock {
 	out := make([]WireContentBlock, 0, len(blocks))
 	for _, b := range blocks {
 		switch b.Type {

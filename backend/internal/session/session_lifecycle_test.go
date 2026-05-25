@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
@@ -88,7 +88,7 @@ func TestEventLoop_FatalError(t *testing.T) {
 	}
 
 	mock := conn.last()
-	mock.events <- &claudecli.ErrorEvent{
+	mock.events <- runtime.ErrorEvent{
 		Err:   fmt.Errorf("test error"),
 		Fatal: true,
 	}

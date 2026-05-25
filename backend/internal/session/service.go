@@ -63,6 +63,7 @@ type SessionInfo struct {
 	Name            string  `json:"name"`
 	State           string  `json:"state"`
 	Connected       bool    `json:"connected"`
+	Provider        string  `json:"provider,omitempty"`
 	Model           string  `json:"model"`
 	PermissionMode  string  `json:"permissionMode"`
 	AutoApproveMode string  `json:"autoApproveMode"`
@@ -106,6 +107,7 @@ type CreateSessionParams struct {
 	Name            string
 	Worktree        bool
 	Branch          string
+	Provider        string // "claude" (default) or "codex"
 	Model           string
 	PlanMode        bool
 	AutoApproveMode string
@@ -125,6 +127,7 @@ type CreateSessionResult struct {
 	Name            string          `json:"name"`
 	State           string          `json:"state"`
 	Connected       bool            `json:"connected"`
+	Provider        string          `json:"provider,omitempty"`
 	Model           string          `json:"model"`
 	PermissionMode  string          `json:"permissionMode"`
 	AutoApproveMode string          `json:"autoApproveMode"`
@@ -314,6 +317,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		WorktreePath:          wt.path,
 		WorktreeBranch:        wt.branch,
 		WorktreeBaseSHA:       wt.baseSHA,
+		Provider:              p.Provider,
 		Model:                 cfg.model,
 		PlanMode:              p.PlanMode,
 		AutoApproveMode:       cfg.autoApproveMode,
@@ -360,6 +364,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Name:               p.Name,
 		State:              string(sess.State()),
 		Connected:          true,
+		Provider:           normalizeProvider(p.Provider),
 		Model:              cfg.model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
@@ -382,6 +387,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Name:               p.Name,
 		State:              string(sess.State()),
 		Connected:          true,
+		Provider:           normalizeProvider(p.Provider),
 		Model:              cfg.model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
@@ -832,6 +838,7 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		ProjectID:       ss.ProjectID,
 		Name:            ss.Name,
 		State:           ss.State,
+		Provider:        ss.Provider,
 		Model:           ss.Model,
 		PermissionMode:  ss.PermissionMode,
 		AutoApproveMode: ss.AutoApproveMode,
@@ -1130,11 +1137,16 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		return nil, ErrNotFound
 	}
 	claudeSessID := nullStr(dbSess.ClaudeSessionID)
-	freshStart := claudeSessID == ""
+	// Codex (and any future provider lacking a Resume API) always takes the
+	// fresh-start path — there is no provider session ID to feed --resume.
+	freshStart := claudeSessID == "" || dbSess.Provider == "codex"
 
-	if !freshStart {
+	switch {
+	case dbSess.Provider == "codex":
+		slog.Info("starting codex session (resume not supported by provider)", "session_id", sessionID)
+	case !freshStart:
 		slog.Debug("resuming session", "session_id", sessionID, "claude_session_id", claudeSessID)
-	} else {
+	default:
 		slog.Info("reconnecting session (conversation was reset)", "session_id", sessionID)
 	}
 
@@ -1172,6 +1184,7 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		Name:              dbSess.Name,
 		WorkDir:           workDir,
 		WorktreeBranch:    nullStr(dbSess.WorktreeBranch),
+		Provider:          dbSess.Provider,
 		Model:             dbSess.Model,
 		PermissionMode:    dbSess.PermissionMode,
 		AutoApproveMode:   dbSess.AutoApproveMode,

@@ -14,6 +14,7 @@ type SessionCreatePayload struct {
 	Name            string                 `json:"name"`
 	Worktree        bool                   `json:"worktree"`
 	Branch          string                 `json:"branch"`
+	Provider        string                 `json:"provider,omitempty"`
 	Model           string                 `json:"model"`
 	PlanMode        bool                   `json:"planMode"`
 	AutoApproveMode string                 `json:"autoApproveMode"`

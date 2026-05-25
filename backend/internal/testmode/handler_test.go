@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -197,7 +197,7 @@ func TestHandleInjectEvent_Success(t *testing.T) {
 	}
 	select {
 	case e := <-mock.Events():
-		_, ok := e.(*claudecli.TextEvent)
+		_, ok := e.(runtime.AssistantTextEvent)
 		// Event may have been consumed by the session event loop before we read it.
 		_ = ok
 	default:

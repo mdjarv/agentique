@@ -15,6 +15,7 @@ func (c *conn) handleSessionCreate(msg ClientMessage) {
 			Name:            p.Name,
 			Worktree:        p.Worktree,
 			Branch:          p.Branch,
+			Provider:        p.Provider,
 			Model:           p.Model,
 			PlanMode:        p.PlanMode,
 			AutoApproveMode: p.AutoApproveMode,

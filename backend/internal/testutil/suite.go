@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
+	claudecli "github.com/allbin/claudecli-go"
 	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	claudecli "github.com/allbin/claudecli-go"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -184,41 +185,41 @@ func (c *RecordingConnector) SessionCount() int {
 
 // --- MockCLISession ---
 
-// MockCLISession implements the CLISession interface for tests.
+// MockCLISession implements the runtime.CLISession interface for tests.
 type MockCLISession struct {
-	Events_ chan claudecli.Event
+	Events_ chan runtime.CLIEvent
 
 	mu           sync.Mutex
 	queries      []string
 	sentMessages []string
 	closed       bool
-	model        claudecli.Model
-	permMode     claudecli.PermissionMode
+	model        string
+	planMode     runtime.PlanMode
 	interrupted  bool
-	cliState     claudecli.State
+	cliState     runtime.SessionState
 	lastStdoutAt time.Time
 	pingErr      error
 }
 
 func NewMockCLISession() *MockCLISession {
 	return &MockCLISession{
-		Events_:  make(chan claudecli.Event, 64),
-		cliState: claudecli.StateRunning,
+		Events_:  make(chan runtime.CLIEvent, 64),
+		cliState: runtime.SessionStateRunning,
 	}
 }
 
-func (m *MockCLISession) Events() <-chan claudecli.Event { return m.Events_ }
+func (m *MockCLISession) Events() <-chan runtime.CLIEvent { return m.Events_ }
 
 // State returns the simulated CLI lifecycle state. Defaults to StateRunning;
 // tests can call SetCLIState to simulate process death.
-func (m *MockCLISession) State() claudecli.State {
+func (m *MockCLISession) State() runtime.SessionState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cliState
 }
 
 // SetCLIState overrides the simulated CLI state (e.g. to StateFailed or StateDone).
-func (m *MockCLISession) SetCLIState(st claudecli.State) {
+func (m *MockCLISession) SetCLIState(st runtime.SessionState) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cliState = st
@@ -226,14 +227,14 @@ func (m *MockCLISession) SetCLIState(st claudecli.State) {
 
 // ProcessInfo returns a synthetic ProcessInfo. Tests exercising stall detection
 // can override LastStdoutAt via SetLastStdoutAt.
-func (m *MockCLISession) ProcessInfo() claudecli.ProcessInfo {
+func (m *MockCLISession) ProcessInfo() runtime.ProcessInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	last := m.lastStdoutAt
 	if last.IsZero() {
 		last = time.Now()
 	}
-	return claudecli.ProcessInfo{
+	return runtime.ProcessInfo{
 		LastStdoutAt: last,
 		Lifecycle:    m.cliState,
 	}
@@ -249,7 +250,7 @@ func (m *MockCLISession) SetLastStdoutAt(t time.Time) {
 
 // Ping returns pingErr (if set) or nil. Tests can simulate a hung readLoop
 // by calling SetPingError.
-func (m *MockCLISession) Ping(_ time.Duration) error {
+func (m *MockCLISession) Ping(_ context.Context, _ time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.pingErr
@@ -262,46 +263,39 @@ func (m *MockCLISession) SetPingError(err error) {
 	m.pingErr = err
 }
 
-func (m *MockCLISession) Query(prompt string) error {
+func (m *MockCLISession) Capabilities() runtime.Capabilities {
+	return runtime.Capabilities{Provider: "mock"}
+}
+
+func (m *MockCLISession) Query(_ context.Context, prompt string, _ ...runtime.Attachment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.queries = append(m.queries, prompt)
 	return nil
 }
 
-func (m *MockCLISession) QueryWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return m.Query(prompt)
-}
-
-func (m *MockCLISession) SendMessage(prompt string) error {
+func (m *MockCLISession) SendMessage(_ context.Context, prompt string, _ ...runtime.Attachment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sentMessages = append(m.sentMessages, prompt)
 	return nil
 }
 
-func (m *MockCLISession) SendMessageWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return m.SendMessage(prompt)
-}
-
-func (m *MockCLISession) SetPermissionMode(mode claudecli.PermissionMode) error {
+func (m *MockCLISession) SetPlanMode(_ context.Context, mode runtime.PlanMode) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.permMode = mode
+	m.planMode = mode
 	return nil
 }
 
-func (m *MockCLISession) SetModel(model claudecli.Model) error {
+func (m *MockCLISession) SetModel(_ context.Context, model string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.model = model
 	return nil
 }
 
-func (m *MockCLISession) ReconnectMCPServer(_ string) error                    { return nil }
-func (m *MockCLISession) ReconnectMCPServerWait(_ string, _ time.Duration) error { return nil }
-
-func (m *MockCLISession) Interrupt() error {
+func (m *MockCLISession) Interrupt(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.interrupted = true
@@ -337,7 +331,7 @@ func (m *MockCLISession) SentMessages() []string {
 }
 
 // SendEvents pushes events then closes the channel.
-func (m *MockCLISession) SendEvents(events ...claudecli.Event) {
+func (m *MockCLISession) SendEvents(events ...runtime.CLIEvent) {
 	for _, e := range events {
 		m.Events_ <- e
 	}
@@ -345,7 +339,7 @@ func (m *MockCLISession) SendEvents(events ...claudecli.Event) {
 }
 
 // Inject pushes a single event without closing.
-func (m *MockCLISession) Inject(event claudecli.Event) error {
+func (m *MockCLISession) Inject(event runtime.CLIEvent) error {
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -396,40 +390,41 @@ func (r *MockBlockingRunner) SetResult(result *claudecli.BlockingResult, err err
 
 // --- Event helpers ---
 
-func TextEvent(content string) *claudecli.TextEvent {
-	return &claudecli.TextEvent{Content: content}
+func TextEvent(content string) runtime.AssistantTextEvent {
+	return runtime.AssistantTextEvent{Content: content}
 }
 
-func ThinkingEvent(content string) *claudecli.ThinkingEvent {
-	return &claudecli.ThinkingEvent{Content: content}
+func ThinkingEvent(content string) runtime.ThinkingEvent {
+	return runtime.ThinkingEvent{Content: content}
 }
 
-func ResultEvent(cost float64) *claudecli.ResultEvent {
-	return &claudecli.ResultEvent{
+func ResultEvent(cost float64) runtime.TurnCompletedEvent {
+	return runtime.TurnCompletedEvent{
+		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    cost,
 		Duration:   100 * time.Millisecond,
 		StopReason: "end_turn",
 	}
 }
 
-func ToolUseEvent(id, name string, input any) *claudecli.ToolUseEvent {
+func ToolUseEvent(id, name string, input any) runtime.ToolUseEvent {
 	raw, _ := json.Marshal(input)
-	return &claudecli.ToolUseEvent{
+	return runtime.ToolUseEvent{
 		ID:    id,
 		Name:  name,
 		Input: raw,
 	}
 }
 
-func ToolResultEvent(toolUseID, text string) *claudecli.ToolResultEvent {
-	return &claudecli.ToolResultEvent{
+func ToolResultEvent(toolUseID, text string) runtime.ToolResultEvent {
+	return runtime.ToolResultEvent{
 		ToolUseID: toolUseID,
-		Content:   []claudecli.ToolContent{{Type: "text", Text: text}},
+		Content:   []runtime.ToolContent{{Type: "text", Text: text}},
 	}
 }
 
-func ErrorEvent(msg string, fatal bool) *claudecli.ErrorEvent {
-	return &claudecli.ErrorEvent{
+func ErrorEvent(msg string, fatal bool) runtime.ErrorEvent {
+	return runtime.ErrorEvent{
 		Err:   fmt.Errorf("%s", msg),
 		Fatal: fatal,
 	}

@@ -159,6 +159,7 @@ export interface SessionInfo {
   name: string;
   state: string;
   connected: boolean;
+  provider?: string;
   model: string;
   permissionMode: string;
   autoApproveMode: string;
@@ -201,6 +202,7 @@ export interface CreateSessionResult {
   name: string;
   state: string;
   connected: boolean;
+  provider?: string;
   model: string;
   permissionMode: string;
   autoApproveMode: string;
@@ -370,6 +372,7 @@ export interface SessionCreatePayload {
   name: string;
   worktree: boolean;
   branch: string;
+  provider?: string;
   model: string;
   planMode: boolean;
   autoApproveMode: string;

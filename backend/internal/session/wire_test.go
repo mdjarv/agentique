@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
 )
 
 func TestToWireEvent_ToolResultTextOnly(t *testing.T) {
-	event := &claudecli.ToolResultEvent{
+	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_123",
-		Content: []claudecli.ToolContent{
+		Content: []runtime.ToolContent{
 			{Type: "text", Text: "file contents here"},
 		},
 	}
@@ -37,9 +38,9 @@ func TestToWireEvent_ToolResultTextOnly(t *testing.T) {
 }
 
 func TestToWireEvent_ToolResultWithImage(t *testing.T) {
-	event := &claudecli.ToolResultEvent{
+	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_456",
-		Content: []claudecli.ToolContent{
+		Content: []runtime.ToolContent{
 			{Type: "text", Text: "Screenshot saved"},
 			{Type: "image", MediaType: "image/png", Data: "iVBORw0KGgo="},
 		},
@@ -75,9 +76,9 @@ func TestToWireEvent_ToolResultWithImage(t *testing.T) {
 }
 
 func TestToWireEvent_ToolResultJSON(t *testing.T) {
-	event := &claudecli.ToolResultEvent{
+	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_789",
-		Content: []claudecli.ToolContent{
+		Content: []runtime.ToolContent{
 			{Type: "text", Text: "ok"},
 			{Type: "image", MediaType: "image/png", Data: "AAAA"},
 		},
@@ -129,9 +130,9 @@ func TestToWireEvent_ErrorClassification(t *testing.T) {
 		wantRetryAfter int
 	}{
 		{
-			name:          "rate limit with retry",
-			err:           &claudecli.RateLimitError{RetryAfter: 30 * time.Second, Message: "slow down"},
-			wantErrorType: "rate_limit",
+			name:           "rate limit with retry",
+			err:            &claudecli.RateLimitError{RetryAfter: 30 * time.Second, Message: "slow down"},
+			wantErrorType:  "rate_limit",
 			wantRetryAfter: 30,
 		},
 		{
@@ -163,7 +164,7 @@ func TestToWireEvent_ErrorClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := &claudecli.ErrorEvent{Err: tt.err, Fatal: false}
+			event := runtime.ErrorEvent{Err: tt.err, Fatal: false}
 			wire := ToWireEvent(event, "")
 			we, ok := wire.(WireErrorEvent)
 			if !ok {
@@ -179,28 +180,19 @@ func TestToWireEvent_ErrorClassification(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_ResultUsesContextSnapshot(t *testing.T) {
-	event := &claudecli.ResultEvent{
+func TestToWireEvent_ResultTokens(t *testing.T) {
+	event := runtime.TurnCompletedEvent{
+		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    0.01,
 		Duration:   time.Second,
 		StopReason: "end_turn",
-		ContextSnapshot: &claudecli.ContextSnapshot{
-			InputTokens:              100,
-			CacheReadInputTokens:     50_000,
-			CacheCreationInputTokens: 5_000,
-			OutputTokens:             2_000,
-			ContextWindow:            200_000,
+		Usage: runtime.TokenUsage{
+			InputTokens:       100,
+			CacheReadTokens:   50_000,
+			CacheCreateTokens: 5_000,
+			OutputTokens:      2_000,
 		},
-		// ModelUsage has large cumulative values — should be ignored for tokens.
-		ModelUsage: map[string]claudecli.ModelUsage{
-			"claude-opus-4-6": {
-				InputTokens:       500_000,
-				OutputTokens:      100_000,
-				CacheReadTokens:   9_000_000,
-				CacheCreateTokens: 500_000,
-				ContextWindow:     200_000,
-			},
-		},
+		ContextWindow: 200_000,
 	}
 
 	wire := ToWireEvent(event, "")
@@ -211,7 +203,7 @@ func TestToWireEvent_ResultUsesContextSnapshot(t *testing.T) {
 
 	wantInput := 100 + 50_000 + 5_000
 	if r.InputTokens != wantInput {
-		t.Errorf("InputTokens = %d, want %d (from ContextSnapshot, not cumulative ModelUsage)", r.InputTokens, wantInput)
+		t.Errorf("InputTokens = %d, want %d", r.InputTokens, wantInput)
 	}
 	if r.OutputTokens != 2_000 {
 		t.Errorf("OutputTokens = %d, want 2000", r.OutputTokens)
@@ -221,35 +213,9 @@ func TestToWireEvent_ResultUsesContextSnapshot(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_ResultFallbackWithoutSnapshot(t *testing.T) {
-	event := &claudecli.ResultEvent{
-		CostUSD:    0.01,
-		Duration:   time.Second,
-		StopReason: "end_turn",
-		// No ContextSnapshot — fallback to ModelUsage for ContextWindow only.
-		ModelUsage: map[string]claudecli.ModelUsage{
-			"claude-opus-4-6": {
-				ContextWindow: 200_000,
-			},
-		},
-	}
-
-	wire := ToWireEvent(event, "")
-	r, ok := wire.(WireResultEvent)
-	if !ok {
-		t.Fatalf("expected WireResultEvent, got %T", wire)
-	}
-
-	if r.InputTokens != 0 {
-		t.Errorf("InputTokens = %d, want 0 (no snapshot)", r.InputTokens)
-	}
-	if r.ContextWindow != 200_000 {
-		t.Errorf("ContextWindow = %d, want 200000", r.ContextWindow)
-	}
-}
-
 func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
-	event := &claudecli.ResultEvent{
+	event := runtime.TurnCompletedEvent{
+		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    0.01,
 		Duration:   time.Second,
 		StopReason: "end_turn",
@@ -277,12 +243,12 @@ func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
 func TestToWireEvent_ParentToolUseID(t *testing.T) {
 	tests := []struct {
 		name  string
-		event claudecli.Event
+		event runtime.CLIEvent
 		check func(t *testing.T, wire any)
 	}{
 		{
-			name:  "TextEvent with ParentToolUseID",
-			event: &claudecli.TextEvent{Content: "hello", ParentToolUseID: "tu_parent"},
+			name:  "AssistantTextEvent with ParentToolUseID",
+			event: runtime.AssistantTextEvent{Content: "hello", ParentToolUseID: "tu_parent"},
 			check: func(t *testing.T, wire any) {
 				e := wire.(WireTextEvent)
 				if e.ParentToolUseID != "tu_parent" {
@@ -291,8 +257,8 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 			},
 		},
 		{
-			name:  "TextEvent without ParentToolUseID omits field",
-			event: &claudecli.TextEvent{Content: "hello"},
+			name:  "AssistantTextEvent without ParentToolUseID omits field",
+			event: runtime.AssistantTextEvent{Content: "hello"},
 			check: func(t *testing.T, wire any) {
 				data, _ := json.Marshal(wire)
 				if strings.Contains(string(data), "parentToolUseId") {
@@ -302,7 +268,7 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 		},
 		{
 			name:  "ThinkingEvent with ParentToolUseID",
-			event: &claudecli.ThinkingEvent{Content: "think", ParentToolUseID: "tu_parent"},
+			event: runtime.ThinkingEvent{Content: "think", ParentToolUseID: "tu_parent"},
 			check: func(t *testing.T, wire any) {
 				e := wire.(WireThinkingEvent)
 				if e.ParentToolUseID != "tu_parent" {
@@ -312,7 +278,7 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 		},
 		{
 			name: "ToolUseEvent with ParentToolUseID",
-			event: &claudecli.ToolUseEvent{
+			event: runtime.ToolUseEvent{
 				ID: "t1", Name: "Read", Input: json.RawMessage(`{}`),
 				ParentToolUseID: "tu_parent",
 			},
@@ -325,9 +291,9 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 		},
 		{
 			name: "ToolResultEvent with ParentToolUseID",
-			event: &claudecli.ToolResultEvent{
-				ToolUseID: "t1",
-				Content:   []claudecli.ToolContent{{Type: "text", Text: "ok"}},
+			event: runtime.ToolResultEvent{
+				ToolUseID:       "t1",
+				Content:         []runtime.ToolContent{{Type: "text", Text: "ok"}},
 				ParentToolUseID: "tu_parent",
 			},
 			check: func(t *testing.T, wire any) {
@@ -349,15 +315,15 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_TaskEvent(t *testing.T) {
+func TestToWireEvent_SubagentEvent(t *testing.T) {
 	tests := []struct {
 		name    string
-		event   *claudecli.TaskEvent
+		event   runtime.SubagentEvent
 		wantSub string
 	}{
 		{
 			name: "task_started",
-			event: &claudecli.TaskEvent{
+			event: runtime.SubagentEvent{
 				Subtype: "task_started", TaskID: "task-1", ToolUseID: "tu_agent",
 				Description: "Explore codebase", TaskType: "local_agent",
 			},
@@ -365,7 +331,7 @@ func TestToWireEvent_TaskEvent(t *testing.T) {
 		},
 		{
 			name: "task_progress",
-			event: &claudecli.TaskEvent{
+			event: runtime.SubagentEvent{
 				Subtype: "task_progress", TaskID: "task-1", ToolUseID: "tu_agent",
 				LastToolName: "Read", TotalTokens: 5000, ToolUses: 3,
 			},
@@ -373,7 +339,7 @@ func TestToWireEvent_TaskEvent(t *testing.T) {
 		},
 		{
 			name: "task_notification",
-			event: &claudecli.TaskEvent{
+			event: runtime.SubagentEvent{
 				Subtype: "task_notification", TaskID: "task-1", ToolUseID: "tu_agent",
 				Status: "completed", Summary: "Done exploring",
 				TotalTokens: 10000, ToolUses: 8, DurationMs: 5000,
@@ -404,20 +370,20 @@ func TestToWireEvent_TaskEvent(t *testing.T) {
 	}
 }
 
-func TestToWireEvent_UserEventReturnsNil(t *testing.T) {
-	// UserEvent is handled by EventPipeline.processUserEvent, not ToWireEvent.
-	event := &claudecli.UserEvent{ParentToolUseID: "tu_agent"}
+func TestToWireEvent_UserEchoReturnsNil(t *testing.T) {
+	// UserEcho is handled by EventPipeline.processUserEcho, not ToWireEvent.
+	event := runtime.UserEcho{MessageID: "msg_1"}
 	wire := ToWireEvent(event, "")
 	if wire != nil {
-		t.Errorf("expected nil for UserEvent, got %T", wire)
+		t.Errorf("expected nil for UserEcho, got %T", wire)
 	}
 }
 
-func TestToWireEvent_UnknownEvent(t *testing.T) {
-	event := &claudecli.UnknownEvent{Type: "future_type", Raw: json.RawMessage(`{}`)}
+func TestToWireEvent_UnknownProviderEvent(t *testing.T) {
+	event := runtime.UnknownProviderEvent{Provider: "claude", Type: "future_type", Raw: json.RawMessage(`{}`)}
 	wire := ToWireEvent(event, "")
 	if wire != nil {
-		t.Errorf("expected nil for UnknownEvent, got %T", wire)
+		t.Errorf("expected nil for UnknownProviderEvent, got %T", wire)
 	}
 }
 

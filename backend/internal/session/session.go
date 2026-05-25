@@ -55,7 +55,7 @@ type syntheticApproval struct {
 	id       string
 	toolName string
 	input    json.RawMessage
-	ch       chan *claudecli.PermissionResponse
+	ch       chan *runtime.Decision
 }
 
 const (
@@ -223,36 +223,25 @@ func (s *Session) directSendMessage(prompt string) error {
 	if cli == nil {
 		return ErrNotLive
 	}
-	return cli.SendMessage(prompt)
+	return cli.SendMessage(context.Background(), prompt)
 }
 
 // agentiqueInterceptors returns the tool interceptor map used at runtime
-// session construction. Each maps an agentique-side handler returning a
-// claudecli.PermissionResponse onto runtime's Decision shape.
+// session construction. Handlers return *runtime.Decision directly — no
+// conversion shim from claudecli's permission response shape is needed.
 func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 	allow := func(_ context.Context, _ json.RawMessage) (*runtime.Decision, error) {
 		return &runtime.Decision{Allow: true}, nil
 	}
-	wrap := func(fn func(json.RawMessage) (*claudecli.PermissionResponse, error)) runtime.ToolInterceptor {
+	intercept := func(fn func(json.RawMessage) (*runtime.Decision, error)) runtime.ToolInterceptor {
 		return func(_ context.Context, input json.RawMessage) (*runtime.Decision, error) {
-			resp, err := fn(input)
-			if err != nil {
-				return nil, err
-			}
-			if resp == nil {
-				return nil, nil
-			}
-			return &runtime.Decision{
-				Allow:        resp.Allow,
-				DenyMessage:  resp.DenyMessage,
-				UpdatedInput: resp.UpdatedInput,
-			}, nil
+			return fn(input)
 		}
 	}
 	return map[string]runtime.ToolInterceptor{
-		ChannelSendMessageTool:      wrap(s.interceptSendMessage),
-		AgentiqueSendMessageTool:    wrap(s.interceptSendMessage),
-		"AskTeammate":               wrap(s.interceptAskTeammate),
+		ChannelSendMessageTool:      intercept(s.interceptSendMessage),
+		AgentiqueSendMessageTool:    intercept(s.interceptSendMessage),
+		"AskTeammate":               intercept(s.interceptAskTeammate),
 		"ExitPlanMode":              allow,
 		AgentiqueAcquireDevURLTool:  allow,
 		AgentiqueReleaseDevURLTool:  allow,
@@ -376,24 +365,31 @@ func (s *Session) BrowserPort() int { return s.browserPort }
 // SetBrowserPort stores the allocated Chrome debugging port.
 func (s *Session) SetBrowserPort(port int) { s.browserPort = port }
 
-// underlying returns the *claudecli.Session powering the runtime, when one is
-// attached. Returns nil if the session is closed or backed by a stub. Used by
-// methods that need claudecli features the runtime doesn't proxy.
-func (s *Session) underlying() *claudecli.Session {
+// claudeUnderlying is satisfied by the agentkit claude adapter's CLISession.
+// It surfaces the *claudecli.Session so agentique can reach claude-specific
+// features the runtime contract does not proxy (live MCP reconnect).
+type claudeUnderlying interface {
+	Underlying() *claudecli.Session
+}
+
+// claudeSession returns the underlying *claudecli.Session when the active
+// provider is the claude adapter; nil otherwise.
+func (s *Session) claudeSession() *claudecli.Session {
 	s.mu.Lock()
-	rt := s.rt
+	cli := s.cli
 	s.mu.Unlock()
-	if rt == nil {
-		return nil
+	if u, ok := cli.(claudeUnderlying); ok {
+		return u.Underlying()
 	}
-	return rt.Underlying()
+	return nil
 }
 
 // ReconnectMCP asks Claude Code to reconnect a named MCP server (fire-and-forget).
+// Only supported when the session's provider is "claude".
 func (s *Session) ReconnectMCP(serverName string) error {
-	cli := s.underlying()
+	cli := s.claudeSession()
 	if cli == nil {
-		return fmt.Errorf("session not connected")
+		return fmt.Errorf("session not connected or provider does not support MCP reconnect")
 	}
 	return cli.ReconnectMCPServer(serverName)
 }
@@ -401,9 +397,9 @@ func (s *Session) ReconnectMCP(serverName string) error {
 // ReconnectMCPWait reconnects a named MCP server and blocks until it reports
 // ready (or the timeout expires).
 func (s *Session) ReconnectMCPWait(serverName string, timeout time.Duration) error {
-	cli := s.underlying()
+	cli := s.claudeSession()
 	if cli == nil {
-		return fmt.Errorf("session not connected")
+		return fmt.Errorf("session not connected or provider does not support MCP reconnect")
 	}
 	return cli.ReconnectMCPServerWait(serverName, timeout)
 }
@@ -427,18 +423,12 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 
 	turnIdx, seq := s.pipeline.AllocSeq()
 
-	if len(attachments) > 0 {
-		blocks, err := toContentBlocks(attachments)
-		if err != nil {
-			return fmt.Errorf("parse attachments: %w", err)
-		}
-		if err := rt.SendMessage(context.Background(), prompt, blocks...); err != nil {
-			return err
-		}
-	} else {
-		if err := rt.SendMessage(context.Background(), prompt); err != nil {
-			return err
-		}
+	atts, err := toRuntimeAttachments(attachments)
+	if err != nil {
+		return fmt.Errorf("parse attachments: %w", err)
+	}
+	if err := rt.SendMessage(context.Background(), prompt, atts...); err != nil {
+		return err
 	}
 
 	messageID := uuid.New().String()
@@ -477,16 +467,11 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	}
 	s.broadcast("session.turn-started", turnPayload)
 
-	var queryErr error
-	if len(attachments) == 0 {
-		queryErr = rt.Query(context.Background(), prompt)
-	} else {
-		blocks, berr := toContentBlocks(attachments)
-		if berr != nil {
-			return fmt.Errorf("parse attachments: %w", berr)
-		}
-		queryErr = rt.Query(context.Background(), prompt, blocks...)
+	atts, berr := toRuntimeAttachments(attachments)
+	if berr != nil {
+		return fmt.Errorf("parse attachments: %w", berr)
 	}
+	queryErr := rt.Query(context.Background(), prompt, atts...)
 	if queryErr != nil {
 		if stErr := s.setState(StateFailed); stErr != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
@@ -579,21 +564,26 @@ func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool,
 	s.pipeline.SetSeq(1)
 }
 
-// toContentBlocks converts frontend attachments (data URLs) to claudecli ContentBlocks.
-func toContentBlocks(attachments []QueryAttachment) ([]claudecli.ContentBlock, error) {
-	blocks := make([]claudecli.ContentBlock, 0, len(attachments))
+// toRuntimeAttachments converts frontend QueryAttachments (data URLs) into the
+// provider-neutral runtime.Attachment shape consumed by Session.Query /
+// Session.SendMessage.
+func toRuntimeAttachments(attachments []QueryAttachment) ([]runtime.Attachment, error) {
+	if len(attachments) == 0 {
+		return nil, nil
+	}
+	atts := make([]runtime.Attachment, 0, len(attachments))
 	for _, a := range attachments {
 		mediaType, data, err := parseDataUrl(a.DataUrl)
 		if err != nil {
 			return nil, fmt.Errorf("attachment %q: %w", a.Name, err)
 		}
+		kind := runtime.AttachmentDocument
 		if strings.HasPrefix(mediaType, "image/") {
-			blocks = append(blocks, claudecli.ImageBlock(mediaType, data))
-		} else {
-			blocks = append(blocks, claudecli.DocumentBlock(mediaType, data))
+			kind = runtime.AttachmentImage
 		}
+		atts = append(atts, runtime.Attachment{Kind: kind, MediaType: mediaType, Data: data})
 	}
-	return blocks, nil
+	return atts, nil
 }
 
 // parseDataUrl extracts the media type and decoded bytes from a data URL.
@@ -641,7 +631,7 @@ func (s *Session) Interrupt() error {
 		}
 	}
 
-	if err := rt.Interrupt(); err != nil {
+	if err := rt.Interrupt(context.Background()); err != nil {
 		return err
 	}
 
@@ -675,7 +665,7 @@ func (s *Session) drainSyntheticApprovals(reason string) []string {
 	ids := make([]string, 0, len(s.syntheticApprovals))
 	for id, sa := range s.syntheticApprovals {
 		select {
-		case sa.ch <- &claudecli.PermissionResponse{Allow: false, DenyMessage: reason}:
+		case sa.ch <- &runtime.Decision{Allow: false, DenyMessage: reason}:
 		default:
 		}
 		delete(s.syntheticApprovals, id)
@@ -692,7 +682,7 @@ func (s *Session) SetModel(model string) error {
 	if rt == nil {
 		return ErrNotLive
 	}
-	return rt.SetModel(resolveModel(model))
+	return rt.SetModel(model)
 }
 
 // Close gracefully tears down the session (CLI process, event loop, pending

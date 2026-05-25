@@ -11,7 +11,6 @@ import (
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/allbin/agentkit/runtime"
 	"github.com/allbin/agentkit/sqliteops"
-	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -26,6 +25,7 @@ type CreateParams struct {
 	WorktreePath    string
 	WorktreeBranch  string
 	WorktreeBaseSHA string
+	Provider        string // "claude" (default) or "codex"
 	Model           string
 	PlanMode        bool
 	AutoApproveMode string
@@ -81,6 +81,13 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 	return m
 }
 
+// SetProviderConnector overrides the runtime connector for a specific provider
+// (e.g. "codex"). When CreateParams.Provider matches, the alternate connector
+// is used instead of the default one passed to NewManager.
+func (m *Manager) SetProviderConnector(provider string, connector runtime.CLIConnector) {
+	m.connWrap.setProvider(provider, connector)
+}
+
 // capturingConnector wraps the configured runtime.CLIConnector and stashes
 // each connected CLISession on a buffer. agentique.Manager then snaps the
 // most recent CLISession into the agentique Session right after rt.Create or
@@ -88,15 +95,46 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 // private and Underlying() returns nil for test mocks; agentique needs
 // direct CLI access for "silent" mid-conversation injections (channel
 // context, pending delivery replay) that must bypass the pipeline.
+//
+// The next-provider hint is read once per Connect and reset, so a single
+// runtime.Manager instance can route between claude / codex connectors based
+// on the caller's CreateParams.Provider field.
 type capturingConnector struct {
 	inner runtime.CLIConnector
 
-	mu       sync.Mutex
-	captured []runtime.CLISession
+	mu        sync.Mutex
+	captured  []runtime.CLISession
+	providers map[string]runtime.CLIConnector
+	next      string // provider key to route the next Connect call
 }
 
-func (c *capturingConnector) Connect(ctx context.Context, opts ...claudecli.Option) (runtime.CLISession, error) {
-	cli, err := c.inner.Connect(ctx, opts...)
+func (c *capturingConnector) setProvider(name string, conn runtime.CLIConnector) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.providers == nil {
+		c.providers = make(map[string]runtime.CLIConnector)
+	}
+	c.providers[name] = conn
+}
+
+func (c *capturingConnector) hintNext(provider string) {
+	c.mu.Lock()
+	c.next = provider
+	c.mu.Unlock()
+}
+
+func (c *capturingConnector) Connect(ctx context.Context, p runtime.ConnectParams) (runtime.CLISession, error) {
+	c.mu.Lock()
+	pick := c.inner
+	if c.next != "" {
+		if alt, ok := c.providers[c.next]; ok {
+			pick = alt
+		}
+		c.next = ""
+	}
+	c.mu.Unlock()
+
+	cli, err := pick.Connect(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -194,30 +232,26 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
-	connectExtra := []claudecli.Option{
-		claudecli.WithIncludePartialMessages(),
-		claudecli.WithReplayUserMessages(),
-	}
-	if params.Name != "" {
-		connectExtra = append(connectExtra, claudecli.WithSessionName(params.Name))
-	}
+	provider := normalizeProvider(params.Provider)
+	m.connWrap.hintNext(provider)
+	extra := providerExtra(provider, params.Name)
 
 	// Use a detached context so the CLI process lifetime is independent of
 	// the request ctx — when the WS that initiated the create disconnects,
 	// the request ctx cancels and would otherwise SIGTERM the just-spawned
 	// CLI (the ctx threads through to executor.Start).
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
-		SessionID:      id,
-		WorkDir:        params.WorkDir,
-		Preamble:       preamble,
-		Model:          resolveModel(params.Model),
-		PlanMode:       runtime.PlanMode(permMode),
-		AutoApprove:    runtimeAutoApproveMode(autoMode),
-		Effort:         resolveEffort(params.Effort),
-		MaxBudget:      params.MaxBudget,
-		MaxTurns:       params.MaxTurns,
-		MCPConfigs:     mcpConfigs,
-		ConnectOptions: connectExtra,
+		SessionID:   id,
+		WorkDir:     params.WorkDir,
+		Preamble:    preamble,
+		Model:       params.Model,
+		PlanMode:    runtime.PlanMode(permMode),
+		AutoApprove: runtimeAutoApproveMode(autoMode),
+		Effort:      resolveEffort(params.Effort),
+		MaxBudget:   params.MaxBudget,
+		MaxTurns:    params.MaxTurns,
+		MCPConfigs:  mcpConfigs,
+		Extra:       extra,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -261,6 +295,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 			String: params.ParentSessionID,
 			Valid:  params.ParentSessionID != "",
 		},
+		Provider: provider,
 	})
 	if dbErr != nil {
 		_ = m.rt.Stop(context.Background(), id)
@@ -282,6 +317,7 @@ type ResumeParams struct {
 	Name              string
 	WorkDir           string
 	WorktreeBranch    string
+	Provider          string
 	Model             string
 	PermissionMode    string
 	AutoApproveMode   string
@@ -341,13 +377,9 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
-	connectExtra := []claudecli.Option{
-		claudecli.WithIncludePartialMessages(),
-		claudecli.WithReplayUserMessages(),
-	}
-	if p.Name != "" {
-		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
-	}
+	provider := normalizeProvider(p.Provider)
+	m.connWrap.hintNext(provider)
+	extra := providerExtra(provider, p.Name)
 
 	// Detached context: see comment in Create — the CLI process must outlive
 	// the request that started it.
@@ -356,14 +388,14 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		ClaudeSessionID: p.ClaudeSessionID,
 		WorkDir:         p.WorkDir,
 		Preamble:        preamble,
-		Model:           resolveModel(p.Model),
+		Model:           p.Model,
 		PlanMode:        runtime.PlanMode(permMode),
 		AutoApprove:     runtimeAutoApproveMode(autoMode),
 		Effort:          resolveEffort(p.Effort),
 		MaxBudget:       p.MaxBudget,
 		MaxTurns:        p.MaxTurns,
 		MCPConfigs:      mcpConfigs,
-		ConnectOptions:  connectExtra,
+		Extra:           extra,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -427,28 +459,24 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
-	connectExtra := []claudecli.Option{
-		claudecli.WithIncludePartialMessages(),
-		claudecli.WithReplayUserMessages(),
-	}
-	if p.Name != "" {
-		connectExtra = append(connectExtra, claudecli.WithSessionName(p.Name))
-	}
+	provider := normalizeProvider(p.Provider)
+	m.connWrap.hintNext(provider)
+	extra := providerExtra(provider, p.Name)
 
 	// Detached context: see comment in Create — the CLI process must outlive
 	// the request that started it.
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
-		SessionID:      p.SessionID,
-		WorkDir:        p.WorkDir,
-		Preamble:       preamble,
-		Model:          resolveModel(p.Model),
-		PlanMode:       runtime.PlanMode(permMode),
-		AutoApprove:    runtimeAutoApproveMode(autoMode),
-		Effort:         resolveEffort(p.Effort),
-		MaxBudget:      p.MaxBudget,
-		MaxTurns:       p.MaxTurns,
-		MCPConfigs:     mcpConfigs,
-		ConnectOptions: connectExtra,
+		SessionID:   p.SessionID,
+		WorkDir:     p.WorkDir,
+		Preamble:    preamble,
+		Model:       p.Model,
+		PlanMode:    runtime.PlanMode(permMode),
+		AutoApprove: runtimeAutoApproveMode(autoMode),
+		Effort:      resolveEffort(p.Effort),
+		MaxBudget:   p.MaxBudget,
+		MaxTurns:    p.MaxTurns,
+		MCPConfigs:  mcpConfigs,
+		Extra:       extra,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -618,31 +646,58 @@ func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	}
 }
 
-// resolveEffort maps a string effort level to a claudecli.EffortLevel constant.
+// resolveEffort maps a string effort level to a runtime.Effort constant.
 // Returns empty string for unknown/empty values (CLI default).
-func resolveEffort(level string) claudecli.EffortLevel {
+func resolveEffort(level string) runtime.Effort {
 	switch level {
+	case "minimal":
+		return runtime.EffortMinimal
 	case "low":
-		return claudecli.EffortLow
+		return runtime.EffortLow
 	case "medium":
-		return claudecli.EffortMedium
+		return runtime.EffortMedium
 	case "high":
-		return claudecli.EffortHigh
+		return runtime.EffortHigh
 	case "xhigh":
-		return claudecli.EffortXHigh
+		return runtime.EffortXHigh
 	case "max":
-		return claudecli.EffortMax
+		return runtime.EffortMax
 	default:
 		return ""
 	}
 }
 
-// resolveModel maps a string model name to a claudecli.Model.
-func resolveModel(name string) claudecli.Model {
-	if name == "" {
-		return claudecli.ModelOpus
+// normalizeProvider canonicalizes the provider name; empty / unknown defaults
+// to "claude" so a missing field stays backwards-compatible.
+func normalizeProvider(name string) string {
+	switch name {
+	case "codex":
+		return "codex"
+	default:
+		return "claude"
 	}
-	return claudecli.Model(name)
+}
+
+// providerExtra returns provider-specific Extra options surfaced via the
+// runtime.ConnectParams.Extra map. Each adapter inspects its own keys.
+func providerExtra(provider, sessionName string) map[string]any {
+	extra := map[string]any{}
+	switch provider {
+	case "claude":
+		// Claude adapter doesn't read agentique-specific keys yet —
+		// agentkit's claudecli wiring already enables partial messages and
+		// replay echo by default. Surfacing the session name needs an
+		// adapter-side hook (currently missing); ignore for now.
+		_ = sessionName
+	case "codex":
+		if sessionName != "" {
+			extra["sessionName"] = sessionName
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return extra
 }
 
 // normalizeAutoApprove validates and canonicalizes an auto-approve string.

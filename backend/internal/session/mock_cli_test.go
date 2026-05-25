@@ -12,88 +12,81 @@ import (
 
 // mockCLISession implements runtime.CLISession for tests.
 type mockCLISession struct {
-	events chan claudecli.Event
+	events chan runtime.CLIEvent
 
 	mu           sync.Mutex
 	queries      []string
 	sentMessages []string
 	closed       bool
-	model        claudecli.Model
-	permMode     claudecli.PermissionMode
+	model        string
+	planMode     runtime.PlanMode
 	interrupted  bool
-	cliState     claudecli.State // tests can flip this to simulate process death
+	cliState     runtime.SessionState // tests can flip this to simulate process death
 }
 
 func newMockCLISession() *mockCLISession {
 	return &mockCLISession{
-		events:   make(chan claudecli.Event, 64),
-		cliState: claudecli.StateRunning,
+		events:   make(chan runtime.CLIEvent, 64),
+		cliState: runtime.SessionStateRunning,
 	}
 }
 
-func (m *mockCLISession) State() claudecli.State {
+func (m *mockCLISession) State() runtime.SessionState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cliState
 }
 
-func (m *mockCLISession) setCLIState(st claudecli.State) {
+func (m *mockCLISession) setCLIState(st runtime.SessionState) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cliState = st
 }
 
-func (m *mockCLISession) ProcessInfo() claudecli.ProcessInfo {
-	return claudecli.ProcessInfo{
+func (m *mockCLISession) ProcessInfo() runtime.ProcessInfo {
+	return runtime.ProcessInfo{
 		LastStdoutAt: time.Now(),
 		Lifecycle:    m.State(),
 	}
 }
 
-func (m *mockCLISession) Ping(_ time.Duration) error { return nil }
+func (m *mockCLISession) Ping(_ context.Context, _ time.Duration) error { return nil }
 
-func (m *mockCLISession) Events() <-chan claudecli.Event { return m.events }
+func (m *mockCLISession) Capabilities() runtime.Capabilities {
+	return runtime.Capabilities{Provider: "mock"}
+}
 
-func (m *mockCLISession) Query(prompt string) error {
+func (m *mockCLISession) Events() <-chan runtime.CLIEvent { return m.events }
+
+func (m *mockCLISession) Query(_ context.Context, prompt string, _ ...runtime.Attachment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.queries = append(m.queries, prompt)
 	return nil
 }
 
-func (m *mockCLISession) QueryWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return m.Query(prompt)
-}
-
-func (m *mockCLISession) SendMessage(prompt string) error {
+func (m *mockCLISession) SendMessage(_ context.Context, prompt string, _ ...runtime.Attachment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sentMessages = append(m.sentMessages, prompt)
 	return nil
 }
 
-func (m *mockCLISession) SendMessageWithContent(prompt string, _ ...claudecli.ContentBlock) error {
-	return m.SendMessage(prompt)
-}
-
-func (m *mockCLISession) SetPermissionMode(mode claudecli.PermissionMode) error {
+func (m *mockCLISession) SetPlanMode(_ context.Context, mode runtime.PlanMode) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.permMode = mode
+	m.planMode = mode
 	return nil
 }
 
-func (m *mockCLISession) SetModel(model claudecli.Model) error {
+func (m *mockCLISession) SetModel(_ context.Context, model string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.model = model
 	return nil
 }
 
-func (m *mockCLISession) ReconnectMCPServer(_ string) error                    { return nil }
-func (m *mockCLISession) ReconnectMCPServerWait(_ string, _ time.Duration) error { return nil }
-
-func (m *mockCLISession) Interrupt() error {
+func (m *mockCLISession) Interrupt(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.interrupted = true
@@ -111,7 +104,7 @@ func (m *mockCLISession) Close() error {
 }
 
 // sendEvents pushes events into the channel then closes it.
-func (m *mockCLISession) sendEvents(events ...claudecli.Event) {
+func (m *mockCLISession) sendEvents(events ...runtime.CLIEvent) {
 	for _, e := range events {
 		m.events <- e
 	}
@@ -130,7 +123,7 @@ func newMockConnector(sessions ...*mockCLISession) *mockConnector {
 	return &mockConnector{sessions: sessions}
 }
 
-func (c *mockConnector) Connect(_ context.Context, _ ...claudecli.Option) (runtime.CLISession, error) {
+func (c *mockConnector) Connect(_ context.Context, _ runtime.ConnectParams) (runtime.CLISession, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
@@ -216,24 +209,25 @@ func (r *mockBlockingRunner) RunBlocking(_ context.Context, _ string, _ ...claud
 	return &claudecli.BlockingResult{Text: "mock result"}, nil
 }
 
-// Helper to create a ResultEvent for tests.
-func testResultEvent(cost float64) *claudecli.ResultEvent {
-	return &claudecli.ResultEvent{
+// Helper to create a TurnCompletedEvent for tests.
+func testResultEvent(cost float64) runtime.TurnCompletedEvent {
+	return runtime.TurnCompletedEvent{
+		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    cost,
 		Duration:   100 * time.Millisecond,
 		StopReason: "end_turn",
 	}
 }
 
-// Helper to create a TextEvent for tests.
-func testTextEvent(text string) *claudecli.TextEvent {
-	return &claudecli.TextEvent{Content: text}
+// Helper to create an AssistantTextEvent for tests.
+func testTextEvent(text string) runtime.AssistantTextEvent {
+	return runtime.AssistantTextEvent{Content: text}
 }
 
 // Helper to create a ToolUseEvent for tests.
-func testToolUseEvent(id, name string, input any) *claudecli.ToolUseEvent {
+func testToolUseEvent(id, name string, input any) runtime.ToolUseEvent {
 	raw, _ := json.Marshal(input)
-	return &claudecli.ToolUseEvent{
+	return runtime.ToolUseEvent{
 		ID:    id,
 		Name:  name,
 		Input: raw,

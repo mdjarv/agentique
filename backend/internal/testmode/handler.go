@@ -162,7 +162,7 @@ func (h *Handler) HandleInjectEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := parseWireToClaudeEvent(req.Event)
+	event, err := parseWireToRuntimeEvent(req.Event)
 	if err != nil {
 		httperror.RespondError(w, httperror.BadRequest(fmt.Sprintf("parse event: %v", err)))
 		return

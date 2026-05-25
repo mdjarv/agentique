@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
-	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -130,7 +129,7 @@ func (s *Session) transitionPlanMode(mode string) {
 // (ExitPlanMode tool_use) rather than a permission callback.
 func (s *Session) requestPlanReview(input json.RawMessage) {
 	approvalID := uuid.New().String()
-	ch := make(chan *claudecli.PermissionResponse, 1)
+	ch := make(chan *runtime.Decision, 1)
 
 	sa := &syntheticApproval{
 		id:       approvalID,
@@ -270,7 +269,7 @@ func (s *Session) ResolveApproval(approvalID string, allow bool, denyMessage str
 
 	if ok {
 		select {
-		case sa.ch <- &claudecli.PermissionResponse{Allow: allow, DenyMessage: denyMessage}:
+		case sa.ch <- &runtime.Decision{Allow: allow, DenyMessage: denyMessage}:
 			s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: approvalID})
 			return nil
 		default:

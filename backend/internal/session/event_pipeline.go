@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	claudecli "github.com/allbin/claudecli-go"
+	"github.com/allbin/agentkit/runtime"
 )
 
 // EventSink bundles the two universal outputs of event processing.
@@ -102,20 +102,20 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 }
 
 // ProcessEvent handles a single CLI event through the pipeline stages.
-func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
+func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 	// Stage 1: Init capture (early return).
 	if p.handleInit(event) {
 		return
 	}
 
-	// Stage 1.5: UnknownEvent — log and drop.
-	if unk, ok := event.(*claudecli.UnknownEvent); ok {
-		slog.Debug("unknown CLI event type", "session_id", p.sessionID, "type", unk.Type)
+	// Stage 1.5: UnknownProviderEvent — log and drop.
+	if unk, ok := event.(runtime.UnknownProviderEvent); ok {
+		slog.Debug("unknown provider event", "session_id", p.sessionID, "provider", unk.Provider, "type", unk.Type)
 		return
 	}
 
 	// Log raw rate_limit events for investigation (utilization field presence).
-	if rle, ok := event.(*claudecli.RateLimitEvent); ok {
+	if rle, ok := event.(runtime.RateLimitEvent); ok {
 		slog.Info("rate_limit_event raw",
 			"session_id", p.sessionID,
 			"status", rle.Status,
@@ -126,10 +126,11 @@ func (p *EventPipeline) ProcessEvent(event claudecli.Event) {
 		)
 	}
 
-	// UserEvent: may produce multiple wire events (tool results + agent result).
-	// Handled separately because a single UserEvent can yield N wire events.
-	if ue, ok := event.(*claudecli.UserEvent); ok {
-		p.processUserEvent(ue)
+	// UserEcho: may produce multiple wire events (tool results), and also
+	// signals replay confirmation. Handled separately because a single
+	// UserEcho can yield N wire events.
+	if ue, ok := event.(runtime.UserEcho); ok {
+		p.processUserEcho(ue)
 		return
 	}
 
@@ -216,34 +217,26 @@ func (p *EventPipeline) handleReplayConfirmation() {
 	})
 }
 
-// processUserEvent extracts wire events from a UserEvent: tool_result content
-// blocks become WireToolResultEvent, and agent results become WireAgentResultEvent.
-func (p *EventPipeline) processUserEvent(ue *claudecli.UserEvent) {
-	if ue.IsReplay {
+// processUserEcho extracts wire events from a UserEcho event. The
+// MessageID-only "replay confirmation" form (empty Content) signals that the
+// CLI has accepted a previously-injected SendMessage; tool_result entries
+// produce WireToolResultEvent. Note: claude's AgentResult metadata
+// (agent_result / agentId / totalDurationMs / etc.) is not yet surfaced in
+// the neutral runtime event set — the wire shape stays available for a
+// future agentkit upgrade.
+func (p *EventPipeline) processUserEcho(ue runtime.UserEcho) {
+	if len(ue.ToolResults) == 0 && ue.Content == "" && ue.MessageID != "" {
 		p.handleReplayConfirmation()
 		return
 	}
-	for _, c := range ue.Content {
-		if c.Type == "tool_result" && c.ToolUseID != "" {
-			p.emitWireEvent(WireToolResultEvent{
-				Type:            "tool_result",
-				ToolID:          c.ToolUseID,
-				Content:         convertToolContent(c.Content),
-				ParentToolUseID: ue.ParentToolUseID,
-			})
+	for _, tr := range ue.ToolResults {
+		if tr.ToolUseID == "" {
+			continue
 		}
-	}
-	if ue.AgentResult != nil {
-		p.emitWireEvent(WireAgentResultEvent{
-			Type:              "agent_result",
-			ParentToolUseID:   ue.ParentToolUseID,
-			Status:            ue.AgentResult.Status,
-			AgentID:           ue.AgentResult.AgentID,
-			AgentType:         ue.AgentResult.AgentType,
-			Content:           convertToolContent(ue.AgentResult.Content),
-			TotalDurationMs:   ue.AgentResult.TotalDurationMs,
-			TotalTokens:       ue.AgentResult.TotalTokens,
-			TotalToolUseCount: ue.AgentResult.TotalToolUseCount,
+		p.emitWireEvent(WireToolResultEvent{
+			Type:    "tool_result",
+			ToolID:  tr.ToolUseID,
+			Content: convertToolContent(tr.Content),
 		})
 	}
 }
@@ -308,17 +301,10 @@ func (p *EventPipeline) SetClaudeSessionID(id string) {
 
 // --- Internal stage methods ---
 
-func (p *EventPipeline) handleInit(event claudecli.Event) bool {
-	initEv, ok := event.(*claudecli.InitEvent)
+func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
+	initEv, ok := event.(runtime.SessionInitEvent)
 	if !ok {
 		return false
-	}
-	if len(initEv.MCPServers) > 0 {
-		names := make([]string, len(initEv.MCPServers))
-		for i, s := range initEv.MCPServers {
-			names[i] = s.Name + "=" + s.Status
-		}
-		slog.Debug("mcp servers", "session_id", p.sessionID, "servers", names)
 	}
 
 	p.mu.Lock()
@@ -328,7 +314,7 @@ func (p *EventPipeline) handleInit(event claudecli.Event) bool {
 		if p.onClaudeSessionID != nil {
 			p.onClaudeSessionID(initEv.SessionID)
 		}
-		slog.Debug("captured claude session ID", "session_id", p.sessionID, "claude_session_id", initEv.SessionID)
+		slog.Debug("captured provider session ID", "session_id", p.sessionID, "provider_session_id", initEv.SessionID)
 		return true
 	}
 	p.mu.Unlock()
@@ -483,8 +469,8 @@ func (p *EventPipeline) trackTaskEvent(wireEvent any) {
 	p.schedulePulseBroadcast()
 }
 
-func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
-	if _, ok := event.(*claudecli.ResultEvent); ok {
+func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
+	if _, ok := event.(runtime.TurnCompletedEvent); ok {
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
 		p.mu.Unlock()
@@ -496,15 +482,20 @@ func (p *EventPipeline) handleTerminalEvents(event claudecli.Event) {
 		}
 	}
 
-	if errEv, ok := event.(*claudecli.ErrorEvent); ok {
+	if errEv, ok := event.(runtime.ErrorEvent); ok {
 		lvl := slog.LevelWarn
 		if errEv.Fatal {
 			lvl = slog.LevelError
 		}
-		slog.Log(context.Background(), lvl, "claude API error",
+		errMsg := ""
+		if errEv.Err != nil {
+			errMsg = errEv.Err.Error()
+		}
+		slog.Log(context.Background(), lvl, "provider API error",
 			"session_id", p.sessionID,
 			"fatal", errEv.Fatal,
-			"error", errEv.Error(),
+			"kind", errEv.Kind,
+			"error", errMsg,
 		)
 		// Pulse: count errors.
 		p.mu.Lock()
