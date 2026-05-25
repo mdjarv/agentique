@@ -346,6 +346,7 @@ func main() {
 	g.register(session.WireQuestion{}, "WireQuestion")
 	g.register(session.WirePendingApproval{}, "WirePendingApproval")
 	g.register(session.WirePendingQuestion{}, "WirePendingQuestion")
+	g.register(session.WireCapabilities{}, "WireCapabilities")
 
 	// ── Session response types ──
 

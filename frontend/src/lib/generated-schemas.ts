@@ -141,6 +141,31 @@ export const WirePendingQuestionSchema = z.object({
   questions: z.array(WireQuestionSchema),
 });
 
+export const WireCapabilitiesSchema = z.object({
+  provider: z.string(),
+  providerVersion: z.string().optional(),
+  planMode: z.boolean(),
+  acceptEditsMode: z.boolean(),
+  effort: z.boolean(),
+  maxBudget: z.boolean(),
+  maxTurns: z.boolean(),
+  thinking: z.boolean(),
+  partialMessageStream: z.boolean(),
+  subagents: z.boolean(),
+  rateLimitEvents: z.boolean(),
+  compactionEvents: z.boolean(),
+  interactivePermissions: z.boolean(),
+  askUserQuestion: z.boolean(),
+  granularPermissions: z.boolean(),
+  sandboxModes: z.boolean(),
+  resume: z.boolean(),
+  fork: z.boolean(),
+  midTurnSendMessage: z.boolean(),
+  ping: z.boolean(),
+  toolProgressTicks: z.boolean(),
+  attachments: z.boolean(),
+});
+
 export const BehaviorPresetsSchema = z.object({
   autoCommit: z.boolean(),
   suggestParallel: z.boolean(),
@@ -162,6 +187,7 @@ export const SessionInfoSchema = z.object({
   state: z.string(),
   connected: z.boolean(),
   provider: z.string().optional(),
+  capabilities: WireCapabilitiesSchema.optional(),
   model: z.string(),
   permissionMode: z.string(),
   autoApproveMode: z.string(),
@@ -205,6 +231,7 @@ export const CreateSessionResultSchema = z.object({
   state: z.string(),
   connected: z.boolean(),
   provider: z.string().optional(),
+  capabilities: WireCapabilitiesSchema.optional(),
   model: z.string(),
   permissionMode: z.string(),
   autoApproveMode: z.string(),

@@ -139,6 +139,31 @@ export interface WirePendingQuestion {
   questions: WireQuestion[];
 }
 
+export interface WireCapabilities {
+  provider: string;
+  providerVersion?: string;
+  planMode: boolean;
+  acceptEditsMode: boolean;
+  effort: boolean;
+  maxBudget: boolean;
+  maxTurns: boolean;
+  thinking: boolean;
+  partialMessageStream: boolean;
+  subagents: boolean;
+  rateLimitEvents: boolean;
+  compactionEvents: boolean;
+  interactivePermissions: boolean;
+  askUserQuestion: boolean;
+  granularPermissions: boolean;
+  sandboxModes: boolean;
+  resume: boolean;
+  fork: boolean;
+  midTurnSendMessage: boolean;
+  ping: boolean;
+  toolProgressTicks: boolean;
+  attachments: boolean;
+}
+
 export interface BehaviorPresets {
   autoCommit: boolean;
   suggestParallel: boolean;
@@ -160,6 +185,7 @@ export interface SessionInfo {
   state: string;
   connected: boolean;
   provider?: string;
+  capabilities?: WireCapabilities;
   model: string;
   permissionMode: string;
   autoApproveMode: string;
@@ -203,6 +229,7 @@ export interface CreateSessionResult {
   state: string;
   connected: boolean;
   provider?: string;
+  capabilities?: WireCapabilities;
   model: string;
   permissionMode: string;
   autoApproveMode: string;

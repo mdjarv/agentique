@@ -64,6 +64,7 @@ type SessionInfo struct {
 	State           string  `json:"state"`
 	Connected       bool    `json:"connected"`
 	Provider        string  `json:"provider,omitempty"`
+	Capabilities    *WireCapabilities `json:"capabilities,omitempty"`
 	Model           string  `json:"model"`
 	PermissionMode  string  `json:"permissionMode"`
 	AutoApproveMode string  `json:"autoApproveMode"`
@@ -128,6 +129,7 @@ type CreateSessionResult struct {
 	State           string          `json:"state"`
 	Connected       bool            `json:"connected"`
 	Provider        string          `json:"provider,omitempty"`
+	Capabilities    *WireCapabilities `json:"capabilities,omitempty"`
 	Model           string          `json:"model"`
 	PermissionMode  string          `json:"permissionMode"`
 	AutoApproveMode string          `json:"autoApproveMode"`
@@ -358,13 +360,17 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 
 	profileName, profileAvatar := s.resolveAgentProfileMeta(ctx, p.AgentProfileID, tc)
 
+	provider := normalizeProvider(p.Provider)
+	caps := capabilitiesForProvider(provider)
+
 	s.hub.Publish(p.ProjectID, "session.created", SessionInfo{
 		ID:                 sess.ID,
 		ProjectID:          p.ProjectID,
 		Name:               p.Name,
 		State:              string(sess.State()),
 		Connected:          true,
-		Provider:           normalizeProvider(p.Provider),
+		Provider:           provider,
+		Capabilities:       &caps,
 		Model:              cfg.model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
@@ -387,7 +393,8 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Name:               p.Name,
 		State:              string(sess.State()),
 		Connected:          true,
-		Provider:           normalizeProvider(p.Provider),
+		Provider:           provider,
+		Capabilities:       &caps,
 		Model:              cfg.model,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
@@ -833,12 +840,15 @@ func (s *Service) enrichSession(
 // baseSessionInfo copies persisted fields from a store.Session into a
 // SessionInfo. Pure projection — no external lookups.
 func baseSessionInfo(ss store.Session) SessionInfo {
+	provider := normalizeProvider(ss.Provider)
+	caps := capabilitiesForProvider(provider)
 	return SessionInfo{
 		ID:              ss.ID,
 		ProjectID:       ss.ProjectID,
 		Name:            ss.Name,
 		State:           ss.State,
-		Provider:        ss.Provider,
+		Provider:        provider,
+		Capabilities:    &caps,
 		Model:           ss.Model,
 		PermissionMode:  ss.PermissionMode,
 		AutoApproveMode: ss.AutoApproveMode,
