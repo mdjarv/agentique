@@ -363,6 +363,12 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   }, [ws, sessionId, resuming]);
 
   const isResumable = resumableStates.has(sessionState);
+  const caps = meta?.capabilities;
+  const planModeSupported = caps?.planMode !== false;
+  const attachmentsSupported = caps?.attachments !== false;
+  const midTurnSendSupported = caps?.midTurnSendMessage !== false;
+  const resumeSupported = caps?.resume !== false;
+  const blockedMidTurn = sessionState === "running" && !midTurnSendSupported;
   const isMobile = useIsMobile();
   const isLarge = useIsLarge();
   const todoSidebarCollapsed = useUIStore((s) => s.todoSidebarCollapsed);
@@ -475,6 +481,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                   onResume={handleResume}
                   resuming={resuming}
                   branchMissing={meta?.branchMissing}
+                  resumeUnsupported={!resumeSupported}
                 />
               )}
               <MessageComposer
@@ -484,19 +491,22 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 onSend={handleSend}
                 initialText={draft}
                 onTextPersist={handleTextPersist}
-                disabled={sessionState === "merging" || compacting}
+                disabled={sessionState === "merging" || compacting || blockedMidTurn}
                 isRunning={sessionState === "running"}
                 onInterrupt={handleInterrupt}
+                attachmentsSupported={attachmentsSupported}
                 placeholder={
                   compacting
                     ? "Compacting context..."
                     : sessionState === "merging"
                       ? "Git operation in progress..."
-                      : resumePlaceholders[sessionState]
+                      : blockedMidTurn
+                        ? "Provider can't accept mid-turn messages — wait for the turn to finish"
+                        : resumePlaceholders[sessionState]
                 }
                 worktree={isWorktree}
-                planMode={planMode}
-                onPlanModeChange={handlePlanModeChange}
+                planMode={planModeSupported ? planMode : undefined}
+                onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
                 autoApproveMode={autoApproveMode}
                 onAutoApproveModeChange={handleAutoApproveModeChange}
                 model={(meta.model as ModelId) ?? undefined}

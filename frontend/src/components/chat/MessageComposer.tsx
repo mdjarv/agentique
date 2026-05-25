@@ -72,6 +72,7 @@ interface MessageComposerProps {
   onAutoApproveModeChange?: (value: AutoApproveMode) => void;
   provider?: ProviderId;
   onProviderChange?: (value: ProviderId) => void;
+  attachmentsSupported?: boolean;
   model?: ModelId;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
@@ -128,6 +129,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onAutoApproveModeChange,
       provider,
       onProviderChange,
+      attachmentsSupported = true,
       model,
       onModelChange,
       effort,
@@ -472,15 +474,17 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             {/* Bottom bar */}
             <div className="flex items-center justify-between px-2 pb-2">
               <div className="flex items-center gap-0.5 max-md:gap-1 max-md:overflow-x-auto max-md:flex-nowrap min-w-0">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={disabled}
-                  className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
-                  aria-label="Attach files"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                </button>
+                {attachmentsSupported && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={disabled}
+                    className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                    aria-label="Attach files"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {templatePicker}
 
                 {hasToggles && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
