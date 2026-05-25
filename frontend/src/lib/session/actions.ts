@@ -37,8 +37,17 @@ export const MODEL_LABELS: Record<ModelId, string> = {
   "opus[1m]": "Opus 4.7 (1M)",
 };
 
+export const PROVIDERS = ["claude", "codex"] as const;
+export type ProviderId = (typeof PROVIDERS)[number];
+
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+};
+
 export interface CreateSessionOpts {
   branch?: string;
+  provider?: ProviderId;
   model?: string;
   planMode?: boolean;
   autoApproveMode?: string;
@@ -63,6 +72,7 @@ export async function createSession(
       name,
       worktree,
       branch: opts?.branch,
+      provider: opts?.provider,
       model: opts?.model,
       planMode: opts?.planMode,
       autoApproveMode: opts?.autoApproveMode,
@@ -80,6 +90,8 @@ export async function createSession(
     name: result.name,
     state: result.state as SessionMetadata["state"],
     connected: result.connected,
+    provider: result.provider,
+    capabilities: result.capabilities,
     model: result.model as ModelId,
     permissionMode: result.permissionMode,
     autoApproveMode: result.autoApproveMode,

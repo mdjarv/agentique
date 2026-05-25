@@ -1,5 +1,6 @@
 import { Hash } from "lucide-react";
 import { memo } from "react";
+import { ProviderBadge } from "~/components/chat/ProviderBadge";
 import { cn, relativeTime } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
 import { PulseStatus } from "../../session/PulseStatus";
@@ -72,6 +73,7 @@ function SessionRowLayout({
         {data.meta.state === "running" && <PulseStatus sessionId={data.meta.id} />}
       </div>
       <span className="flex items-center gap-1.5 shrink-0 ml-auto">
+        <ProviderBadge provider={data.meta.provider} />
         {extraMeta}
         {showTimestamp ? <TimeStamp meta={data.meta} /> : <RightIndicator data={data} />}
       </span>

@@ -17,7 +17,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
-import { createSession, type ModelId, submitQuery } from "~/lib/session/actions";
+import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { cn, copyToClipboard, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -94,6 +94,7 @@ export function NewChatPanel({
   const [autoApproveMode, setAutoApproveMode] = useState<AutoApproveMode>(
     DEFAULT_SESSION_DEFAULTS.autoApproveMode,
   );
+  const [provider, setProvider] = useState<ProviderId>("claude");
   const [model, setModel] = useState<ModelId>(DEFAULT_SESSION_DEFAULTS.model);
   const [effort, setEffort] = useState<EffortLevel>(DEFAULT_SESSION_DEFAULTS.effort);
   const [sending, setSending] = useState(false);
@@ -129,6 +130,7 @@ export function NewChatPanel({
       const behaviorPresets = projectPresets ?? DEFAULT_PRESETS;
 
       const sessionId = await createSession(ws, projectId, "", worktree, {
+        provider,
         model,
         planMode,
         autoApproveMode,
@@ -277,6 +279,8 @@ export function NewChatPanel({
           onPlanModeChange={setPlanMode}
           autoApproveMode={autoApproveMode}
           onAutoApproveModeChange={setAutoApproveMode}
+          provider={provider}
+          onProviderChange={setProvider}
           model={model}
           onModelChange={setModel}
           effort={effort}

@@ -34,7 +34,14 @@ import {
   PERMISSION_LABELS,
   PERMISSION_MODES,
 } from "~/lib/composer-constants";
-import { MODEL_LABELS, MODELS, type ModelId } from "~/lib/session/actions";
+import {
+  MODEL_LABELS,
+  MODELS,
+  type ModelId,
+  PROVIDER_LABELS,
+  PROVIDERS,
+  type ProviderId,
+} from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AutocompletePopup } from "./AutocompletePopup";
@@ -63,6 +70,8 @@ interface MessageComposerProps {
   onPlanModeChange?: (value: boolean) => void;
   autoApproveMode?: AutoApproveMode;
   onAutoApproveModeChange?: (value: AutoApproveMode) => void;
+  provider?: ProviderId;
+  onProviderChange?: (value: ProviderId) => void;
   model?: ModelId;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
@@ -89,6 +98,11 @@ const MODEL_OPTIONS: ToolbarDropdownOption[] = MODELS.map((m) => ({
   label: MODEL_LABELS[m],
 }));
 
+const PROVIDER_OPTIONS: ToolbarDropdownOption[] = PROVIDERS.map((p) => ({
+  value: p,
+  label: PROVIDER_LABELS[p],
+}));
+
 const EFFORT_OPTIONS: ToolbarDropdownOption[] = EFFORT_LEVELS.map((lvl) => ({
   value: lvl,
   label: EFFORT_LABELS[lvl],
@@ -112,6 +126,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onPlanModeChange,
       autoApproveMode,
       onAutoApproveModeChange,
+      provider,
+      onProviderChange,
       model,
       onModelChange,
       effort,
@@ -516,10 +532,19 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   />
                 )}
 
-                {(showEffortDropdown || model) && (
+                {(showEffortDropdown || model || provider) && (
                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 )}
 
+                {provider && (
+                  <ToolbarDropdown
+                    value={provider}
+                    onChange={
+                      onProviderChange ? (v) => onProviderChange(v as ProviderId) : undefined
+                    }
+                    options={PROVIDER_OPTIONS}
+                  />
+                )}
                 {model && (
                   <ToolbarDropdown
                     value={model}

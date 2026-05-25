@@ -25,6 +25,7 @@ import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
 import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
 import { IconPicker } from "~/components/chat/IconPicker";
 import { MergeDropdown } from "~/components/chat/MergeDropdown";
+import { ProviderBadge } from "~/components/chat/ProviderBadge";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
@@ -316,6 +317,7 @@ export function SessionHeader({
                 >
                   {meta.name || "Untitled"}
                 </span>
+                <ProviderBadge provider={meta.provider} size="sm" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-64 p-3 space-y-3">
@@ -409,6 +411,7 @@ export function SessionHeader({
             >
               {meta.name || "Untitled"}
             </span>
+            <ProviderBadge provider={meta.provider} size="sm" />
           </button>
         )}
 
