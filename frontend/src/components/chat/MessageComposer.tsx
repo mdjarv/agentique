@@ -36,6 +36,7 @@ import {
 } from "~/lib/composer-constants";
 import {
   MODEL_LABELS,
+  MODEL_PROVIDER,
   MODELS,
   type ModelId,
   PROVIDER_LABELS,
@@ -44,6 +45,7 @@ import {
 } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
+import { useProviderStore } from "~/stores/provider-store";
 import { AutocompletePopup } from "./AutocompletePopup";
 import { ImageLightbox } from "./ImageLightbox";
 import { ToolbarDropdown, type ToolbarDropdownOption } from "./ToolbarDropdown";
@@ -70,7 +72,14 @@ interface MessageComposerProps {
   onPlanModeChange?: (value: boolean) => void;
   autoApproveMode?: AutoApproveMode;
   onAutoApproveModeChange?: (value: AutoApproveMode) => void;
+  /**
+   * Locks the model picker to a single provider's models. Required for running
+   * sessions (mid-session provider switching is not supported). Leave undefined
+   * on the new-session form to allow picking across all providers; the parent
+   * derives the provider from the selected model via `onProviderChange`.
+   */
   provider?: ProviderId;
+  /** Called when the picked model implies a different provider than the current one. */
   onProviderChange?: (value: ProviderId) => void;
   attachmentsSupported?: boolean;
   model?: ModelId;
@@ -94,15 +103,54 @@ const PERMISSION_OPTIONS: ToolbarDropdownOption[] = PERMISSION_MODES.map((m) => 
   description: PERMISSION_DESCRIPTIONS[m],
 }));
 
-const MODEL_OPTIONS: ToolbarDropdownOption[] = MODELS.map((m) => ({
+/** Static fallback options used until the backend catalog hydrates. */
+const STATIC_MODEL_OPTIONS: ToolbarDropdownOption[] = MODELS.map((m) => ({
   value: m,
   label: MODEL_LABELS[m],
+  group: PROVIDER_LABELS[MODEL_PROVIDER[m]],
 }));
 
-const PROVIDER_OPTIONS: ToolbarDropdownOption[] = PROVIDERS.map((p) => ({
-  value: p,
-  label: PROVIDER_LABELS[p],
-}));
+interface BuiltOptions {
+  options: ToolbarDropdownOption[];
+  /** model slug → provider, built from whatever catalog is available. */
+  providerOf: (slug: string) => ProviderId | undefined;
+}
+
+function buildModelOptions(
+  catalog: Record<string, { slug: string; displayName: string; description?: string }[]>,
+  filterProvider: ProviderId | undefined,
+): BuiltOptions {
+  const providers = filterProvider ? [filterProvider] : PROVIDERS;
+  const providerOf = new Map<string, ProviderId>();
+  const options: ToolbarDropdownOption[] = [];
+
+  for (const p of providers) {
+    const groupLabel = PROVIDER_LABELS[p];
+    const dynamic = catalog[p];
+    const entries =
+      dynamic && dynamic.length > 0
+        ? dynamic.map((m) => ({
+            value: m.slug,
+            label: m.displayName || m.slug,
+            description: m.description,
+          }))
+        : STATIC_MODEL_OPTIONS.filter((o) => MODEL_PROVIDER[o.value as ModelId] === p).map(
+            ({ value, label }) => ({ value, label, description: undefined as string | undefined }),
+          );
+
+    for (const entry of entries) {
+      providerOf.set(entry.value, p);
+      options.push({
+        value: entry.value,
+        label: entry.label,
+        group: groupLabel,
+        ...(entry.description ? { description: entry.description } : {}),
+      });
+    }
+  }
+
+  return { options, providerOf: (slug) => providerOf.get(slug) };
+}
 
 const EFFORT_OPTIONS: ToolbarDropdownOption[] = EFFORT_LEVELS.map((lvl) => ({
   value: lvl,
@@ -144,6 +192,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     ref,
   ) {
     const isMobile = useIsMobile();
+    const catalog = useProviderStore((s) => s.models);
+    const { options: modelOptions, providerOf } = buildModelOptions(catalog, provider);
     const [text, setText] = useState(initialText ?? "");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const submittingRef = useRef(false);
@@ -536,24 +586,26 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   />
                 )}
 
-                {(showEffortDropdown || model || provider) && (
+                {(showEffortDropdown || model) && (
                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 )}
 
-                {provider && (
-                  <ToolbarDropdown
-                    value={provider}
-                    onChange={
-                      onProviderChange ? (v) => onProviderChange(v as ProviderId) : undefined
-                    }
-                    options={PROVIDER_OPTIONS}
-                  />
-                )}
                 {model && (
                   <ToolbarDropdown
                     value={model}
-                    onChange={onModelChange ? (v) => onModelChange(v as ModelId) : undefined}
-                    options={MODEL_OPTIONS}
+                    onChange={
+                      onModelChange
+                        ? (v) => {
+                            const next = v as ModelId;
+                            const nextProvider = providerOf(v) ?? MODEL_PROVIDER[next];
+                            if (nextProvider && nextProvider !== provider) {
+                              onProviderChange?.(nextProvider);
+                            }
+                            onModelChange(next);
+                          }
+                        : undefined
+                    }
+                    options={modelOptions}
                   />
                 )}
                 {showEffortDropdown && effort !== undefined && (

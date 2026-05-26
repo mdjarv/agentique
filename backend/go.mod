@@ -20,7 +20,7 @@ require (
 )
 
 require (
-	github.com/allbin/codexcli-go v0.0.0-20260525123631-5a0be1d76936 // indirect
+	github.com/allbin/codexcli-go v0.0.0-20260526090030-50df14b02a14 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260416155717-489999b90468 // indirect

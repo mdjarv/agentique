@@ -164,6 +164,7 @@ export const WireCapabilitiesSchema = z.object({
   ping: z.boolean(),
   toolProgressTicks: z.boolean(),
   attachments: z.boolean(),
+  modelSwitch: z.boolean(),
 });
 
 export const BehaviorPresetsSchema = z.object({
@@ -328,6 +329,22 @@ export const CommitMessageResultSchema = z.object({
 export const PRDescriptionResultSchema = z.object({
   title: z.string(),
   body: z.string(),
+});
+
+export const ProviderModelInfoSchema = z.object({
+  slug: z.string(),
+  displayName: z.string(),
+  description: z.string().optional(),
+});
+
+export const ProviderModelsSchema = z.object({
+  provider: z.string(),
+  models: z.array(ProviderModelInfoSchema),
+  source: z.string(),
+});
+
+export const ListModelsResultSchema = z.object({
+  providers: z.array(ProviderModelsSchema),
 });
 
 export const ProjectGitStatusSchema = z.object({

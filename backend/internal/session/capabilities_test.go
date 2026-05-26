@@ -14,6 +14,7 @@ func TestCapabilitiesForProvider_Claude(t *testing.T) {
 		"Thinking":           caps.Thinking,
 		"Subagents":          caps.Subagents,
 		"Attachments":        caps.Attachments,
+		"ModelSwitch":        caps.ModelSwitch,
 	} {
 		if !got {
 			t.Errorf("claude.%s expected true, got false", name)
@@ -37,6 +38,7 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 		"RateLimitEvents":    caps.RateLimitEvents,
 		"CompactionEvents":   caps.CompactionEvents,
 		"Attachments":        caps.Attachments,
+		"ModelSwitch":        caps.ModelSwitch,
 	} {
 		if got {
 			t.Errorf("codex.%s expected false, got true", name)

@@ -6,6 +6,7 @@ import type {
   DiffResult,
   DiffStat,
   GitSnapshot,
+  ListModelsResult,
   PRDescriptionResult,
   SessionCommitResult,
   SessionDeleteBulkResult,
@@ -26,7 +27,24 @@ export type CommitResult = SessionCommitResult;
 export type BulkDeleteResultItem = SessionDeleteBulkResultItem;
 export type BulkDeleteResult = SessionDeleteBulkResult;
 
-export const MODELS = ["haiku", "sonnet", "opus", "sonnet[1m]", "opus[1m]"] as const;
+export const PROVIDERS = ["claude", "codex"] as const;
+export type ProviderId = (typeof PROVIDERS)[number];
+
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+};
+
+export const MODELS = [
+  "haiku",
+  "sonnet",
+  "opus",
+  "sonnet[1m]",
+  "opus[1m]",
+  "gpt-5",
+  "gpt-5-codex",
+  "gpt-5-mini",
+] as const;
 export type ModelId = (typeof MODELS)[number];
 
 export const MODEL_LABELS: Record<ModelId, string> = {
@@ -35,15 +53,31 @@ export const MODEL_LABELS: Record<ModelId, string> = {
   opus: "Opus 4.7",
   "sonnet[1m]": "Sonnet 4.6 (1M)",
   "opus[1m]": "Opus 4.7 (1M)",
+  "gpt-5": "GPT-5",
+  "gpt-5-codex": "GPT-5 Codex",
+  "gpt-5-mini": "GPT-5 Mini",
 };
 
-export const PROVIDERS = ["claude", "codex"] as const;
-export type ProviderId = (typeof PROVIDERS)[number];
-
-export const PROVIDER_LABELS: Record<ProviderId, string> = {
-  claude: "Claude",
-  codex: "Codex",
+export const MODEL_PROVIDER: Record<ModelId, ProviderId> = {
+  haiku: "claude",
+  sonnet: "claude",
+  opus: "claude",
+  "sonnet[1m]": "claude",
+  "opus[1m]": "claude",
+  "gpt-5": "codex",
+  "gpt-5-codex": "codex",
+  "gpt-5-mini": "codex",
 };
+
+export const DEFAULT_MODEL_FOR_PROVIDER: Record<ProviderId, ModelId> = {
+  claude: "sonnet",
+  codex: "gpt-5",
+};
+
+export function providerForModel(model: ModelId | string | undefined): ProviderId {
+  if (!model) return "claude";
+  return MODEL_PROVIDER[model as ModelId] ?? "claude";
+}
 
 export interface CreateSessionOpts {
   branch?: string;
@@ -56,6 +90,10 @@ export interface CreateSessionOpts {
   maxTurns?: number;
   behaviorPresets?: BehaviorPresets;
   agentProfileId?: string;
+}
+
+export async function listProviderModels(ws: WsClient): Promise<ListModelsResult> {
+  return ws.request<ListModelsResult>("providers.models", {}, 10_000);
 }
 
 export async function createSession(

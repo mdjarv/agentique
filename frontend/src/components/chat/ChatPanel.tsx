@@ -36,6 +36,7 @@ import {
   interruptSession,
   isGitFresh,
   type ModelId,
+  type ProviderId,
   refreshGitStatus,
   resumeSession,
   setAutoApproveMode,
@@ -368,6 +369,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const attachmentsSupported = caps?.attachments !== false;
   const midTurnSendSupported = caps?.midTurnSendMessage !== false;
   const resumeSupported = caps?.resume !== false;
+  const modelSwitchSupported = caps?.modelSwitch !== false;
   const blockedMidTurn = sessionState === "running" && !midTurnSendSupported;
   const isMobile = useIsMobile();
   const isLarge = useIsLarge();
@@ -509,8 +511,9 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
                 autoApproveMode={autoApproveMode}
                 onAutoApproveModeChange={handleAutoApproveModeChange}
+                provider={(meta.provider as ProviderId) || undefined}
                 model={(meta.model as ModelId) ?? undefined}
-                onModelChange={handleModelChange}
+                onModelChange={modelSwitchSupported ? handleModelChange : undefined}
                 effort={(meta.effort as EffortLevel) ?? ""}
                 onEmptySubmit={isResumable ? handleResume : undefined}
                 stashedText={stashedText || undefined}

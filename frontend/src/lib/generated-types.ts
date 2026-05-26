@@ -162,6 +162,7 @@ export interface WireCapabilities {
   ping: boolean;
   toolProgressTicks: boolean;
   attachments: boolean;
+  modelSwitch: boolean;
 }
 
 export interface BehaviorPresets {
@@ -326,6 +327,22 @@ export interface CommitMessageResult {
 export interface PRDescriptionResult {
   title: string;
   body: string;
+}
+
+export interface ProviderModelInfo {
+  slug: string;
+  displayName: string;
+  description?: string;
+}
+
+export interface ProviderModels {
+  provider: string;
+  models: ProviderModelInfo[];
+  source: string;
+}
+
+export interface ListModelsResult {
+  providers: ProviderModels[];
 }
 
 export interface ProjectGitStatus {

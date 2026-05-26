@@ -239,6 +239,9 @@ var handlerRegistry = map[string]handlerFunc{
 	"persona.query":          (*conn).handlePersonaQuery,
 	"persona.list":           (*conn).handlePersonaList,
 
+	// providers.*
+	"providers.models": (*conn).handleProvidersModels,
+
 	// ping
 	"ping": (*conn).handlePing,
 }

@@ -35,6 +35,10 @@ type WireCapabilities struct {
 	Ping                   bool   `json:"ping"`
 	ToolProgressTicks      bool   `json:"toolProgressTicks"`
 	Attachments            bool   `json:"attachments"`
+	// ModelSwitch indicates the adapter implements runtime.ModelSwitchable.
+	// Codex's adapter currently returns ErrNotSupported, so the UI keeps the
+	// model picker read-only for codex sessions.
+	ModelSwitch bool `json:"modelSwitch"`
 }
 
 // runtimeCapsToWire flattens a runtime.Capabilities into the wire shape. The
@@ -95,6 +99,7 @@ func capabilitiesForProvider(provider string) WireCapabilities {
 			Ping:                   true,
 			ToolProgressTicks:      true,
 			Attachments:            true,
+			ModelSwitch:            true,
 		}
 	case "codex":
 		return WireCapabilities{

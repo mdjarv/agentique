@@ -8,6 +8,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { listChannels } from "~/lib/channel-actions";
 import type { ListSessionsResult } from "~/lib/generated-types";
 import { getProjectGitStatus, setProjectPinned } from "~/lib/project-actions";
+import { listProviderModels } from "~/lib/session/actions";
 import { loadSessionHistory } from "~/lib/session/history";
 import type { TeamInfo } from "~/lib/team-actions";
 import { listAgentProfiles, listPersonaInteractions, listTeams } from "~/lib/team-actions";
@@ -16,6 +17,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useProviderStore } from "~/stores/provider-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 import { useTeamStore } from "~/stores/team-store";
 import { useUIStore } from "~/stores/ui-store";
@@ -84,6 +86,9 @@ export function useGlobalSubscriptions(projects: Project[]) {
     listAgentProfiles(ws)
       .then((profiles) => useTeamStore.getState().setProfiles(profiles))
       .catch((err) => console.error("listAgentProfiles failed", err));
+    listProviderModels(ws)
+      .then((result) => useProviderStore.getState().setProviders(result.providers))
+      .catch((err) => console.error("listProviderModels failed", err));
   }, [ws]);
 
   // Subscribe to new projects as they appear

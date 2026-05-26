@@ -279,7 +279,6 @@ export function NewChatPanel({
           onPlanModeChange={setPlanMode}
           autoApproveMode={autoApproveMode}
           onAutoApproveModeChange={setAutoApproveMode}
-          provider={provider}
           onProviderChange={setProvider}
           model={model}
           onModelChange={setModel}

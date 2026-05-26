@@ -22,6 +22,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	projpkg "github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -373,6 +374,12 @@ func main() {
 
 	g.register(msggen.CommitMessageResult{}, "CommitMessageResult")
 	g.register(msggen.PRDescriptionResult{}, "PRDescriptionResult")
+
+	// ── Provider catalog ──
+
+	g.register(providers.ModelInfo{}, "ProviderModelInfo")
+	g.register(providers.ProviderModels{}, "ProviderModels")
+	g.register(providers.ListModelsResult{}, "ListModelsResult")
 
 	// ── Project types ──
 
