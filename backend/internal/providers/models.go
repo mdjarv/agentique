@@ -6,7 +6,6 @@ package providers
 import (
 	"context"
 	"errors"
-	"sort"
 
 	codexcli "github.com/allbin/codexcli-go"
 )
@@ -83,19 +82,13 @@ func codexModels(ctx context.Context) ProviderModels {
 		}
 	}
 
-	visible := make([]codexcli.ModelInfo, 0, len(entries))
+	// Preserve codex's on-disk order — the cache is already priority-sorted
+	// (most prominent first). Re-sorting here would invert that.
+	out := make([]ModelInfo, 0, len(entries))
 	for _, m := range entries {
 		if m.Visibility != "" && m.Visibility != codexcli.VisibilityList {
 			continue
 		}
-		visible = append(visible, m)
-	}
-	sort.SliceStable(visible, func(i, j int) bool {
-		return visible[i].Priority > visible[j].Priority
-	})
-
-	out := make([]ModelInfo, 0, len(visible))
-	for _, m := range visible {
 		name := m.DisplayName
 		if name == "" {
 			name = m.Slug
