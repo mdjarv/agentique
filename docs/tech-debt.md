@@ -3,7 +3,7 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-05-27 (provider library upgrade session).
+Last full audit: 2026-05-27.
 
 ## P0 — Will bite a user
 
@@ -21,10 +21,27 @@ Last full audit: 2026-05-27 (provider library upgrade session).
   `agent_result` events sees them stop arriving for new sessions.
 - **Fix path:** either add a new neutral `runtime.AgentResultEvent`
   (preferred) or a structured field on `UserEcho`. Then re-emit from
-  agentique's `processUserEcho`. Skipped tests (`TestPipeline_AgentResultPersisted`)
-  mark the gap.
+  agentique's `processUserEcho`. Skipped test
+  `TestPipeline_AgentResultPersisted` marks the gap.
 
 ## P1 — Surprising or limiting
+
+### No CI pipeline beyond release
+
+- **Symptom:** PRs and pushes to main have zero automated quality
+  checks. The only workflow is `release.yml`, which triggers on version
+  tags and only builds a binary — no lint, no tests, no typegen
+  freshness check.
+- **Impact:** regressions land silently. Type errors, biome violations,
+  and broken Go tests only surface when a developer remembers to run
+  `just check` locally. Typegen drift (Go wire shapes change but
+  `generated-types.ts` isn't regenerated) is invisible until a frontend
+  build fails.
+- **Fix path:** add a `ci.yml` that runs on PRs and pushes to main:
+  - `go vet ./...` + `go test ./... -count=1 -short`
+  - `npx biome check src/` + `npx tsc --noEmit`
+  - `npx vitest run`
+  - typegen freshness: `just typegen && git diff --exit-code frontend/src/lib/generated-{types,schemas}.ts`
 
 ### Remaining delta events have no frontend renderers
 
@@ -100,6 +117,38 @@ because the Go type still exists. Any frontend code that listens for
 `runtime.TokenUsage` but the frontend reads through a permissive shape.
 Should be a concrete struct.
 
+### `context.Background()` in async session operations
+
+49 call-sites across `backend/internal/session/` use
+`context.Background()` instead of deriving from a parent context. Most
+are fire-and-forget DB writes where cancellation semantics don't matter.
+But several are in `channel.go` goroutines (e.g. `injectChannelContext`,
+`executeSpawn`, `DissolveChannel`) that run user-visible work — if the
+parent session is force-closed, these goroutines will keep running until
+they finish or hit a network timeout. Low blast radius today (they're
+all short-lived), but will need attention if channel operations grow
+long-running (e.g. multi-worktree operations).
+
+### Non-deferred mutex pattern in `state.go`
+
+`setState` and `UnlockGitOp` in `session/state.go` manually call
+`s.mu.Unlock()` at multiple return points instead of using `defer`.
+This is intentional — the code releases the lock before broadcasting
+to avoid holding it during channel sends. But the pattern is fragile:
+any future code added between `Lock()` and `Unlock()` that panics will
+deadlock the session. A safer approach would be to split each method
+into a locked inner function (returning the new state) and an unlocked
+outer function (doing the broadcast).
+
+### Raw SQL in backup module
+
+`backend/internal/backup/backup_metadata.go` contains a raw SQL query
+(`SELECT COUNT(*) FROM projects, sessions, session_events`) outside of
+the sqlc-managed `db/queries/` directory. It's read-only metadata for
+the backup header, so correctness risk is low. If the schema changes
+(table renames), this query will break silently at runtime instead of at
+`just sqlc` generation time.
+
 ## P3 — Dependency hygiene
 
 ### All provider dependencies are pseudo-versioned
@@ -122,15 +171,50 @@ upstream schema at all (the Claude CLI wire format is undocumented).
 
 ### Skipped tests as silent debt
 
-`TestPipeline_AgentResultPersisted` is `t.Skip`-ed with a comment
-pointing at the AgentResult gap. Skipped tests rot quickly; this should
-be revisited the moment agentkit grows the event.
+Four tests are `t.Skip`-ed:
+
+- `TestPipeline_AgentResultPersisted` — waiting on agentkit
+  `AgentResultEvent` (linked to P0 above).
+- `handler_test.go:253` — skips Claude CLI integration test in `-short`
+  mode (expected).
+- `setup_test.go:539,576` — "no checks registered" — setup
+  self-tests that skip because no health checks are wired yet.
+
+The AgentResult skip is the only one that masks a real gap. The others
+are structural placeholders.
 
 ### No CI guard for typegen freshness
 
 `frontend/src/lib/generated-{types,schemas}.ts` need a `just typegen`
 any time Go-side wire shapes change. There is no CI check that the
-generated output matches the Go source.
+generated output matches the Go source. Tracked above under "No CI
+pipeline beyond release."
+
+### Release workflow builds but does not test
+
+`release.yml` compiles the binary but runs zero tests before publishing
+it. A tagged release with a broken test suite will still produce a
+GitHub release with downloadable artifacts. This is downstream of the
+missing CI pipeline — once a `ci.yml` exists, the release workflow
+should either depend on it or replicate its checks.
+
+### No `.env.example` or environment variable inventory
+
+Environment variables are documented across the README, `justfile`,
+`vite.config.ts`, and `main.go` CLI flags — there's no single canonical
+list. Backend: `AGENTIQUE_DB`, `AGENTIQUE_TLS_HOST`, `AGENTIQUE_HOME`,
+`XDG_DATA_HOME`. Frontend dev: `VITE_TLS`, `VITE_MSW`,
+`VITE_BACKEND_PORT`, `VITE_PORT`, `VITE_PUBLIC_HOST`,
+`VITE_MSW_STRICT`. A `.env.example` would reduce onboarding friction.
+
+### `mcphttp.register` panics on programmer error
+
+`backend/internal/mcphttp/setup.go:170` panics if an MCP tool
+registration fails (duplicate name, bad schema). This is intentional —
+it catches programmer errors at startup before any sessions are created.
+But it's an unrecovered panic in production code. If tool registration
+ever becomes dynamic (user-supplied MCP configs), this needs to become
+an error return.
 
 ## Resolved (kept for audit trail)
 
