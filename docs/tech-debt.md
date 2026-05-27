@@ -51,17 +51,11 @@ will break or surprise someone first, not effort to fix.
 
 ## P1 — Surprising or limiting
 
-### Codex resume is a fresh-start, not a real resume
+### ~~Codex resume is a fresh-start, not a real resume~~ (RESOLVED)
 
-- **Symptom:** Stopping and resuming a codex session loses the
-  conversation. `Service.resumeSession` detects `dbSess.Provider == "codex"`
-  and always takes the `Reconnect` path.
-- **Cause:** `codexcli-go` doesn't expose `--resume`, and the codex adapter
-  returns `runtime.ErrResumeUnsupported`.
-- **UI surfaced (2026-05-25):** `ResumeBanner` now relabels to
-  "Reconnect (fresh)" with warning copy when `caps.resume === false`,
-  so the user knows the conversation will be lost.
-- **Real fix:** upstream codex SDK + adapter for true resume support.
+- **Resolved (2026-05-26):** codexcli-go now exposes `Conn.ResumeThread`,
+  the agentkit codex adapter wires it through `ConnectParams.ProviderSessionID`,
+  and `caps.Resume` is `true`. Codex sessions resume with conversation history.
 
 ### Codex feature flags are off but not surfaced in UI
 

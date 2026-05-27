@@ -110,6 +110,8 @@ func capabilitiesForProvider(provider string) WireCapabilities {
 			AskUserQuestion:        true,
 			GranularPermissions:    true,
 			SandboxModes:           true,
+			Resume:                 true,
+			RateLimitEvents:        true,
 			Ping:                   true,
 		}
 	default:

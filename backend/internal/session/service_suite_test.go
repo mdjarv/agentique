@@ -83,7 +83,7 @@ func (s *ServiceSuite) TestCreateSession_CapabilitiesCodex() {
 	s.Require().NotNil(result.Capabilities)
 	s.Equal("codex", result.Capabilities.Provider)
 	s.False(result.Capabilities.PlanMode)
-	s.False(result.Capabilities.Resume)
+	s.True(result.Capabilities.Resume)
 	s.False(result.Capabilities.MidTurnSendMessage)
 	s.False(result.Capabilities.Attachments)
 	s.True(result.Capabilities.AskUserQuestion)

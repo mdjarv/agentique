@@ -97,6 +97,32 @@ type WireContextManagementEvent struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
+type WireToolOutputDeltaEvent struct {
+	Type     string `json:"type"`
+	ItemID   string `json:"itemId"`
+	ToolName string `json:"toolName,omitempty"`
+	Delta    string `json:"delta"`
+}
+
+type WireReasoningDeltaEvent struct {
+	Type   string `json:"type"`
+	ItemID string `json:"itemId"`
+	Delta  string `json:"delta"`
+}
+
+type WireTurnDiffEvent struct {
+	Type   string          `json:"type"`
+	TurnID string          `json:"turnId,omitempty"`
+	Raw    json.RawMessage `json:"raw"`
+}
+
+type WireToolProgressEvent struct {
+	Type      string `json:"type"`
+	ToolUseID string `json:"toolUseId"`
+	ToolName  string `json:"toolName,omitempty"`
+	ElapsedMs int64  `json:"elapsedMs"`
+}
+
 // Agent message direction constants.
 const (
 	DirectionSent     = "sent"
@@ -195,6 +221,10 @@ func (e WireUserMessageEvent) WireType() string        { return e.Type }
 func (e WireMessageDeliveryEvent) WireType() string    { return e.Type }
 func (e WireTaskEvent) WireType() string               { return e.Type }
 func (e WireAgentResultEvent) WireType() string        { return e.Type }
+func (e WireToolOutputDeltaEvent) WireType() string    { return e.Type }
+func (e WireReasoningDeltaEvent) WireType() string     { return e.Type }
+func (e WireTurnDiffEvent) WireType() string           { return e.Type }
+func (e WireToolProgressEvent) WireType() string       { return e.Type }
 
 // errorDetail extracts a clean human-readable message from a claudecli error,
 // stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."
@@ -229,10 +259,16 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 	case runtime.AssistantTextEvent:
 		return WireTextEvent{Type: "text", Content: e.Content, ParentToolUseID: e.ParentToolUseID}
 	case runtime.AssistantTextDeltaEvent:
-		// Codex / partial-message streaming. Surface as a transient stream
-		// event so the UI can show deltas without persisting them.
 		raw, _ := json.Marshal(map[string]string{"itemId": e.ItemID, "delta": e.Delta})
 		return WireStreamEvent{Type: "stream", Event: raw}
+	case runtime.ToolOutputDeltaEvent:
+		return WireToolOutputDeltaEvent{Type: "tool_output_delta", ItemID: e.ItemID, ToolName: e.ToolName, Delta: e.Delta}
+	case runtime.ReasoningDeltaEvent:
+		return WireReasoningDeltaEvent{Type: "reasoning_delta", ItemID: e.ItemID, Delta: e.Delta}
+	case runtime.TurnDiffEvent:
+		return WireTurnDiffEvent{Type: "turn_diff", TurnID: e.TurnID, Raw: e.Raw}
+	case runtime.ToolProgressEvent:
+		return WireToolProgressEvent{Type: "tool_progress", ToolUseID: e.ToolUseID, ToolName: e.ToolName, ElapsedMs: e.Elapsed.Milliseconds()}
 	case runtime.ThinkingEvent:
 		return WireThinkingEvent{Type: "thinking", Content: e.Content, Signature: e.Signature, ParentToolUseID: e.ParentToolUseID}
 	case runtime.ToolUseEvent:
@@ -358,6 +394,8 @@ func wireErrorEvent(e runtime.ErrorEvent) WireErrorEvent {
 			we.ErrorType = "not_found"
 		case errors.Is(e.Err, claudecli.ErrRequestTooLarge):
 			we.ErrorType = "request_too_large"
+		case errors.Is(e.Err, claudecli.ErrContextWindowExceeded):
+			we.ErrorType = "context_window_exceeded"
 		case errors.Is(e.Err, claudecli.ErrAPI):
 			we.ErrorType = "api_error"
 		default:

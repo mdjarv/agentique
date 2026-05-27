@@ -11,14 +11,18 @@ import type {
   ErrorEvent,
   MessageDeliveryEvent,
   RateLimitEvent,
+  ReasoningDeltaEvent,
   ResultEvent,
   StreamEvent,
   TaskEvent,
   TextEvent,
   ThinkingEvent,
   ToolContentBlock,
+  ToolOutputDeltaEvent,
+  ToolProgressEvent,
   ToolResultEvent,
   ToolUseEvent,
+  TurnDiffEvent,
   UserMessageEvent,
 } from "~/stores/chat-types";
 
@@ -40,6 +44,10 @@ const KNOWN_EVENT_TYPES = new Set<ChatEventType>([
   "agent_message",
   "agent_result",
   "task",
+  "tool_output_delta",
+  "reasoning_delta",
+  "turn_diff",
+  "tool_progress",
 ]);
 
 function isKnownEventType(value: unknown): value is ChatEventType {
@@ -247,5 +255,47 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         timestamp,
         parentToolUseId,
       } satisfies AgentResultEvent;
+
+    case "tool_output_delta":
+      return {
+        id,
+        type: "tool_output_delta",
+        itemId: (raw.itemId as string) ?? "",
+        toolName: raw.toolName as string | undefined,
+        delta: (raw.delta as string) ?? "",
+        timestamp,
+        parentToolUseId,
+      } satisfies ToolOutputDeltaEvent;
+
+    case "reasoning_delta":
+      return {
+        id,
+        type: "reasoning_delta",
+        itemId: (raw.itemId as string) ?? "",
+        delta: (raw.delta as string) ?? "",
+        timestamp,
+        parentToolUseId,
+      } satisfies ReasoningDeltaEvent;
+
+    case "turn_diff":
+      return {
+        id,
+        type: "turn_diff",
+        turnId: raw.turnId as string | undefined,
+        raw: raw.raw,
+        timestamp,
+        parentToolUseId,
+      } satisfies TurnDiffEvent;
+
+    case "tool_progress":
+      return {
+        id,
+        type: "tool_progress",
+        toolUseId: (raw.toolUseId as string) ?? "",
+        toolName: raw.toolName as string | undefined,
+        elapsedMs: (raw.elapsedMs as number) ?? 0,
+        timestamp,
+        parentToolUseId,
+      } satisfies ToolProgressEvent;
   }
 }

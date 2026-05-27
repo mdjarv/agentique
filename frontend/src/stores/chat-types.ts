@@ -144,6 +144,32 @@ export interface AgentResultEvent extends BaseChatEvent {
   totalToolUseCount?: number;
 }
 
+export interface ToolOutputDeltaEvent extends BaseChatEvent {
+  type: "tool_output_delta";
+  itemId: string;
+  toolName?: string;
+  delta: string;
+}
+
+export interface ReasoningDeltaEvent extends BaseChatEvent {
+  type: "reasoning_delta";
+  itemId: string;
+  delta: string;
+}
+
+export interface TurnDiffEvent extends BaseChatEvent {
+  type: "turn_diff";
+  turnId?: string;
+  raw?: unknown;
+}
+
+export interface ToolProgressEvent extends BaseChatEvent {
+  type: "tool_progress";
+  toolUseId: string;
+  toolName?: string;
+  elapsedMs: number;
+}
+
 export type ChatEvent =
   | TextEvent
   | ThinkingEvent
@@ -160,7 +186,11 @@ export type ChatEvent =
   | MessageDeliveryEvent
   | AgentMessageEvent
   | TaskEvent
-  | AgentResultEvent;
+  | AgentResultEvent
+  | ToolOutputDeltaEvent
+  | ReasoningDeltaEvent
+  | TurnDiffEvent
+  | ToolProgressEvent;
 
 export type ChatEventType = ChatEvent["type"];
 

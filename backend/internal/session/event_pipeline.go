@@ -605,7 +605,9 @@ func isTransient(wireEvent any) bool {
 	switch e := wireEvent.(type) {
 	case WireRateLimitEvent, WireCompactStatusEvent,
 		WireContextManagementEvent, WireStreamEvent,
-		WireMessageDeliveryEvent:
+		WireMessageDeliveryEvent,
+		WireToolOutputDeltaEvent, WireReasoningDeltaEvent,
+		WireToolProgressEvent:
 		return true
 	case WireTaskEvent:
 		return e.Subtype == "task_progress"

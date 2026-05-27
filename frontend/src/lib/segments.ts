@@ -94,6 +94,10 @@ export function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
     case "agent_message":
       return "agent_message";
     case "task":
+    case "turn_diff":
+    case "tool_output_delta":
+    case "reasoning_delta":
+    case "tool_progress":
       return "skip";
     default:
       return "skip";

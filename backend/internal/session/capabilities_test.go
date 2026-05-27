@@ -32,10 +32,8 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 	for name, got := range map[string]bool{
 		"PlanMode":           caps.PlanMode,
 		"MidTurnSendMessage": caps.MidTurnSendMessage,
-		"Resume":             caps.Resume,
 		"Thinking":           caps.Thinking,
 		"Subagents":          caps.Subagents,
-		"RateLimitEvents":    caps.RateLimitEvents,
 		"CompactionEvents":   caps.CompactionEvents,
 		"Attachments":        caps.Attachments,
 		"ModelSwitch":        caps.ModelSwitch,
@@ -50,6 +48,8 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 		"InteractivePermissions": caps.InteractivePermissions,
 		"AskUserQuestion":        caps.AskUserQuestion,
 		"Ping":                   caps.Ping,
+		"Resume":                 caps.Resume,
+		"RateLimitEvents":        caps.RateLimitEvents,
 	} {
 		if !got {
 			t.Errorf("codex.%s expected true, got false", name)

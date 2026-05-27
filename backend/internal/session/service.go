@@ -1147,13 +1147,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		return nil, ErrNotFound
 	}
 	claudeSessID := nullStr(dbSess.ClaudeSessionID)
-	// Codex (and any future provider lacking a Resume API) always takes the
-	// fresh-start path — there is no provider session ID to feed --resume.
-	freshStart := claudeSessID == "" || dbSess.Provider == "codex"
+	freshStart := claudeSessID == ""
 
 	switch {
-	case dbSess.Provider == "codex":
-		slog.Info("starting codex session (resume not supported by provider)", "session_id", sessionID)
 	case !freshStart:
 		slog.Debug("resuming session", "session_id", sessionID, "claude_session_id", claudeSessID)
 	default:

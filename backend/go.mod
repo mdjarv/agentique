@@ -8,8 +8,8 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	charm.land/log/v2 v2.0.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/allbin/agentkit v0.0.0-20260525124511-5bd5f42cfa49
-	github.com/allbin/claudecli-go v0.0.0-20260525103406-8e84ddd02dcc
+	github.com/allbin/agentkit v0.0.0-20260526140108-dc9312850d1f
+	github.com/allbin/claudecli-go v0.0.0-20260526133153-078bd7705f3b
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
@@ -20,7 +20,7 @@ require (
 )
 
 require (
-	github.com/allbin/codexcli-go v0.0.0-20260526090030-50df14b02a14 // indirect
+	github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260416155717-489999b90468 // indirect

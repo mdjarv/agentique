@@ -41,7 +41,14 @@ export function applyServerEvent(
     };
   }
 
-  if (event.type === "stream" || event.type === "context_management") return null;
+  if (
+    event.type === "stream" ||
+    event.type === "context_management" ||
+    event.type === "tool_output_delta" ||
+    event.type === "reasoning_delta" ||
+    event.type === "tool_progress"
+  )
+    return null;
 
   if (event.type === "message_delivery" && event.messageId) {
     return { patch: applyMessageDelivery(session, event.messageId) };
