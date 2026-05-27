@@ -7,32 +7,6 @@ Last full audit: 2026-05-27 (provider library upgrade session).
 
 ## P0 — Will bite a user
 
-### Claude partial-message streaming is OFF
-
-- **Symptom:** assistant text appears all at once at the end of a turn instead
-  of streaming. `AssistantTextDeltaEvent` / `StreamEvent` /
-  `ContextSnapshot` are never emitted for claude sessions.
-- **Cause:** the agentkit `runtime/cli/claude` adapter doesn't forward
-  `claudecli.WithIncludePartialMessages()`. There is no `Extra` map hook on
-  the claude side to plumb it through either.
-- **Fix path:** upstream — extend `claude.NewConnector` to accept variadic
-  `claudecli.Option` defaults (codex already does:
-  `codex.NewConnector(defaults ...codexcli.Option)`), then in
-  `backend/internal/server/server.go` pass
-  `claudeadapter.NewConnector(claudecli.WithIncludePartialMessages(), claudecli.WithReplayUserMessages())`.
-  Until then this is the most visible regression.
-
-### `SendMessage` delivery confirmation is OFF
-
-- **Symptom:** the "message delivered" transient wire event
-  (`WireMessageDeliveryEvent`) never fires for messages injected via
-  `SendMessage`. The UI doesn't show the receipt tick.
-- **Cause:** same as above — `WithReplayUserMessages()` isn't plumbed
-  through the claude adapter. The pipeline's `processUserEcho` correctly
-  treats a `MessageID`-only UserEcho as a replay confirmation; agentkit
-  just never produces one.
-- **Fix:** same upstream change.
-
 ### `AgentResult` metadata is dropped
 
 - **Symptom:** Agent (subagent) completions no longer carry
@@ -52,20 +26,16 @@ Last full audit: 2026-05-27 (provider library upgrade session).
 
 ## P1 — Surprising or limiting
 
-### Delta events have no frontend renderers
+### Remaining delta events have no frontend renderers
 
-- **Status (2026-05-27):** `ToolOutputDeltaEvent`, `ReasoningDeltaEvent`,
-  `TurnDiffEvent`, and `ToolProgressEvent` are fully wired through the
-  backend pipeline (wire types, transient classification, broadcast) and
-  the frontend parser (`events.ts`, `chat-types.ts`, `apply-event.ts`).
-  However, `segments.ts` classifies them all as `"skip"` and no React
-  components render them.
-- **Impact:** streaming command output, reasoning, and file diffs from
-  codex sessions are received but invisible. Users only see completed
-  tool results.
-- **Fix path:** build segment types and renderers for tool output
-  streaming and reasoning deltas. `TurnDiffEvent` could power a turn-level
-  diff view. `ToolProgressEvent` could show elapsed time on in-flight tools.
+- **Status (2026-05-27):** `tool_output_delta` and `tool_progress` are
+  now wired through the streaming store and rendered on in-flight tool
+  blocks (header shows last output line + elapsed time; expanded detail
+  shows full streaming output).
+- **Remaining:** `ReasoningDeltaEvent` and `TurnDiffEvent` are still
+  classified as `"skip"` in `segments.ts` — no React components render
+  them. Reasoning deltas could accumulate and display alongside thinking
+  blocks. Turn diffs could power a turn-level diff view.
 
 ### Codex error classification is generic
 
@@ -134,7 +104,7 @@ Should be a concrete struct.
 
 ### All provider dependencies are pseudo-versioned
 
-- `github.com/allbin/agentkit v0.0.0-20260526140108-dc9312850d1f`
+- `github.com/allbin/agentkit v0.0.0-20260527065524-6104454df451`
 - `github.com/allbin/claudecli-go v0.0.0-20260526133153-078bd7705f3b`
 - `github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5`
 
@@ -186,3 +156,23 @@ generated output matches the Go source.
   check that force-set `freshStart = true`. The `freshStart` flag now
   only depends on whether a provider session ID exists, which is
   provider-agnostic.
+
+### ~~Claude partial-message streaming is OFF~~
+
+- **Resolved (2026-05-27):** upstream `claude.NewConnector` now accepts
+  variadic `claudecli.Option` defaults. `server.go` passes
+  `WithIncludePartialMessages()` and `WithReplayUserMessages()`.
+  Assistant text streams in real time; `SendMessage` delivery
+  confirmation works.
+
+### ~~`SendMessage` delivery confirmation is OFF~~
+
+- **Resolved (2026-05-27):** same upstream change as partial-message
+  streaming — `WithReplayUserMessages()` is now plumbed through.
+
+### ~~Delta events have no frontend renderers~~
+
+- **Resolved (2026-05-27):** `tool_output_delta` and `tool_progress`
+  are wired through `streaming-store` and rendered on `InFlightToolContent`
+  (header) and `ToolUseBlock` (expanded detail). `reasoning_delta` and
+  `turn_diff` remain unrendered (tracked as P1).
