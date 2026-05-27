@@ -105,10 +105,26 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         return;
       }
 
+      if (event.type === "tool_output_delta") {
+        streaming.appendToolOutput(sid, event.itemId, event.delta);
+        return;
+      }
+      if (event.type === "tool_progress") {
+        streaming.setToolProgress(sid, event.toolUseId, {
+          elapsedMs: event.elapsedMs,
+          toolName: event.toolName,
+        });
+        return;
+      }
+
       useChatStore.getState().handleServerEvent(sid, event);
 
       if (event.type === "tool_use") {
         streaming.clearToolInput(sid, event.toolId);
+      }
+      if (event.type === "tool_result") {
+        streaming.clearToolOutput(sid, event.toolId);
+        streaming.clearToolProgress(sid, event.toolId);
       }
       if (event.type === "result") {
         streaming.clearText(sid);

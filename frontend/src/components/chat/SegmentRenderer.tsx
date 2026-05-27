@@ -10,7 +10,7 @@ import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
-import { formatTurnTime } from "~/lib/format";
+import { formatDuration, formatTurnTime } from "~/lib/format";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import type {
   ActivityItem,
@@ -55,6 +55,8 @@ function InFlightToolContent({
   worktreePath?: string;
 }) {
   const streamingInput = useStreamingStore((s) => s.toolInputs[sessionId]?.[event.toolId]);
+  const streamingOutput = useStreamingStore((s) => s.toolOutputs[sessionId]?.[event.toolId]);
+  const progress = useStreamingStore((s) => s.toolProgress[sessionId]?.[event.toolId]);
   const hasInput = !!event.toolInput;
   const summary = hasInput
     ? formatSummary(event.toolName, event.toolInput, projectPath, worktreePath)
@@ -71,8 +73,24 @@ function InFlightToolContent({
           {streamingInput}
         </span>
       ) : null}
+      {progress && (
+        <span className="text-muted-foreground/60 text-xs tabular-nums shrink-0">
+          {formatDuration(progress.elapsedMs)}
+        </span>
+      )}
+      {streamingOutput && (
+        <span className="text-muted-foreground-faint font-mono text-[11px] truncate min-w-0">
+          {lastLine(streamingOutput)}
+        </span>
+      )}
     </>
   );
+}
+
+function lastLine(text: string): string {
+  const trimmed = text.trimEnd();
+  const idx = trimmed.lastIndexOf("\n");
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
 // --- Segment sub-renderers ---

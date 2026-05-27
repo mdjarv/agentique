@@ -275,6 +275,16 @@ function ResultContentView({
   );
 }
 
+// --- Streaming output ---
+
+function StreamingOutputView({ content }: { content: string }) {
+  return (
+    <pre className="p-2 overflow-x-auto text-foreground-dim whitespace-pre-wrap max-h-48 overflow-y-auto text-[0.7rem] leading-relaxed border-t border-border/50">
+      {content}
+    </pre>
+  );
+}
+
 // --- Main component ---
 
 export const ToolUseBlock = memo(function ToolUseBlock({
@@ -292,13 +302,17 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const streamingInput = useStreamingStore((s) =>
     sessionId && toolId ? s.toolInputs[sessionId]?.[toolId] : undefined,
   );
+  const streamingOutput = useStreamingStore((s) =>
+    sessionId && toolId ? s.toolOutputs[sessionId]?.[toolId] : undefined,
+  );
   const isStreaming = !!streamingInput && !input;
   const summary = isStreaming ? "" : formatSummary(name, input, projectPath, worktreePath);
   const detail = isStreaming
     ? null
     : buildDetail(name, input, projectPath, worktreePath, resultContent);
   const hasResultContent = (resultContent ?? []).length > 0;
-  const hasDetail = detail !== null || hasResultContent;
+  const hasStreamingOutput = !!streamingOutput;
+  const hasDetail = detail !== null || hasResultContent || hasStreamingOutput;
   const showResultContent = hasResultContent && detail?.kind !== "bash";
 
   return (
@@ -324,6 +338,9 @@ export const ToolUseBlock = memo(function ToolUseBlock({
       {expanded && detail && <DetailView detail={detail} />}
       {expanded && showResultContent && resultContent && (
         <ResultContentView content={resultContent} onImageClick={onImageClick} />
+      )}
+      {expanded && hasStreamingOutput && !hasResultContent && (
+        <StreamingOutputView content={streamingOutput} />
       )}
     </div>
   );
