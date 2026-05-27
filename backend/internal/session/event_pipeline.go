@@ -220,10 +220,9 @@ func (p *EventPipeline) handleReplayConfirmation() {
 // processUserEcho extracts wire events from a UserEcho event. The
 // MessageID-only "replay confirmation" form (empty Content) signals that the
 // CLI has accepted a previously-injected SendMessage; tool_result entries
-// produce WireToolResultEvent. Note: claude's AgentResult metadata
-// (agent_result / agentId / totalDurationMs / etc.) is not yet surfaced in
-// the neutral runtime event set — the wire shape stays available for a
-// future agentkit upgrade.
+// produce WireToolResultEvent. AgentResult metadata flows separately via
+// runtime.AgentResultEvent → WireAgentResultEvent through the normal
+// ToWireEvent path.
 func (p *EventPipeline) processUserEcho(ue runtime.UserEcho) {
 	if len(ue.ToolResults) == 0 && ue.Content == "" && ue.MessageID != "" {
 		p.handleReplayConfirmation()

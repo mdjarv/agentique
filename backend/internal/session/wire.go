@@ -340,6 +340,18 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 			ToolUses:     e.ToolUses,
 			DurationMs:   e.DurationMs,
 		}
+	case runtime.AgentResultEvent:
+		return WireAgentResultEvent{
+			Type:              "agent_result",
+			ParentToolUseID:   e.ParentToolUseID,
+			Status:            e.Status,
+			AgentID:           e.AgentID,
+			AgentType:         e.AgentType,
+			Content:           convertToolContent(e.Content),
+			TotalDurationMs:   e.TotalDurationMs,
+			TotalTokens:       e.TotalTokens,
+			TotalToolUseCount: e.TotalToolUseCount,
+		}
 	// SessionInitEvent is consumed by EventPipeline.handleInit before reaching
 	// ToWireEvent. UserEcho is handled by processUserEvent (can produce
 	// multiple wire events per CLI event).

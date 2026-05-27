@@ -574,11 +574,45 @@ func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
 }
 
 func TestPipeline_AgentResultPersisted(t *testing.T) {
-	// AgentResult is not surfaced through the neutral runtime event set today;
-	// the claude adapter drops it when mapping UserEvent. The wire shape
-	// stays available for a future agentkit upgrade. See the matching note
-	// in processUserEcho.
-	t.Skip("AgentResult is not exposed via runtime.CLIEvent yet")
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(runtime.AgentResultEvent{
+		ParentToolUseID:   "tu_agent_123",
+		Status:            "completed",
+		AgentID:           "agent-abc",
+		AgentType:         "code",
+		Content:           []runtime.ToolContent{{Type: "text", Text: "done"}},
+		TotalDurationMs:   5000,
+		TotalTokens:       1200,
+		TotalToolUseCount: 3,
+	})
+
+	if len(sink.persisted) != 1 {
+		t.Fatalf("expected 1 persisted event, got %d", len(sink.persisted))
+	}
+	pe := sink.persisted[0]
+	if pe.WireType != "agent_result" {
+		t.Errorf("expected wire type 'agent_result', got %q", pe.WireType)
+	}
+
+	var wire WireAgentResultEvent
+	if err := json.Unmarshal(pe.Data, &wire); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if wire.AgentID != "agent-abc" {
+		t.Errorf("agentId = %q, want %q", wire.AgentID, "agent-abc")
+	}
+	if wire.TotalDurationMs != 5000 {
+		t.Errorf("totalDurationMs = %d, want 5000", wire.TotalDurationMs)
+	}
+	if wire.TotalTokens != 1200 {
+		t.Errorf("totalTokens = %d, want 1200", wire.TotalTokens)
+	}
+	if wire.ParentToolUseID != "tu_agent_123" {
+		t.Errorf("parentToolUseId = %q, want %q", wire.ParentToolUseID, "tu_agent_123")
+	}
 }
 
 func TestPipeline_UserEchoToolResultPersisted(t *testing.T) {
@@ -633,9 +667,8 @@ func TestPipeline_UserEchoToolResultTriggersGitRefresh(t *testing.T) {
 }
 
 func TestPipeline_UserEchoWithToolResultOnly(t *testing.T) {
-	// AgentResult metadata is not exposed via the neutral runtime event set
-	// today (see TestPipeline_AgentResultPersisted). Only the tool_result
-	// part of a combined UserEcho survives the migration.
+	// AgentResult metadata flows as a separate runtime.AgentResultEvent.
+	// UserEcho carries only the tool_result content blocks.
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
