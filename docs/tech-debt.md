@@ -16,11 +16,12 @@ Last full audit: 2026-05-27.
 - **Status (2026-05-27):** `tool_output_delta` and `tool_progress` are
   now wired through the streaming store and rendered on in-flight tool
   blocks (header shows last output line + elapsed time; expanded detail
-  shows full streaming output).
-- **Remaining:** `ReasoningDeltaEvent` and `TurnDiffEvent` are still
-  classified as `"skip"` in `segments.ts` — no React components render
-  them. Reasoning deltas could accumulate and display alongside thinking
-  blocks. Turn diffs could power a turn-level diff view.
+  shows full streaming output). `reasoning_delta` events now accumulate
+  in the streaming store and render as a live `ThinkingBlock`
+  (auto-expanded with spinner) in the last agent section during
+  streaming.
+- **Remaining:** `TurnDiffEvent` is still classified as `"skip"` in
+  `segments.ts` — it could power a turn-level diff view.
 
 ### Codex error classification is generic
 
