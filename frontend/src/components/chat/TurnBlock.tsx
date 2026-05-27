@@ -16,6 +16,7 @@ import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 import { SegmentRenderer, TextSegmentView } from "./SegmentRenderer";
+import { ThinkingBlock } from "./ThinkingBlock";
 
 const EMPTY_STREAMING: ChatEvent[] = [];
 
@@ -98,6 +99,13 @@ export const TurnBlock = memo(function TurnBlock({
   const currentAssistantText = useStreamingStore((s) =>
     isStreaming ? (s.texts[sessionId] ?? "") : "",
   );
+
+  const streamingReasoning = useStreamingStore((s) => {
+    if (!isStreaming) return "";
+    const sessionReasoning = s.reasoningDeltas[sessionId];
+    if (!sessionReasoning) return "";
+    return Object.values(sessionReasoning).join("");
+  });
 
   const streamingEvents = useChatStore((s) =>
     isStreaming ? (s.sessions[sessionId]?.streamingEvents ?? EMPTY_STREAMING) : EMPTY_STREAMING,
@@ -223,6 +231,10 @@ export const TurnBlock = memo(function TurnBlock({
                       copied={copied}
                     />
                   ))}
+
+                  {isLastSection && streamingReasoning && (
+                    <ThinkingBlock content={streamingReasoning} isStreaming />
+                  )}
 
                   {isLastSection && streamingTail && (
                     <TextSegmentView

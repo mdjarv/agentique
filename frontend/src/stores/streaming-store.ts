@@ -10,6 +10,7 @@ interface StreamingState {
   toolInputs: Record<string, Record<string, string>>;
   toolOutputs: Record<string, Record<string, string>>;
   toolProgress: Record<string, Record<string, ToolProgress>>;
+  reasoningDeltas: Record<string, Record<string, string>>;
 
   appendText: (sessionId: string, text: string) => void;
   clearText: (sessionId: string) => void;
@@ -20,6 +21,9 @@ interface StreamingState {
   clearToolOutput: (sessionId: string, toolId: string) => void;
   setToolProgress: (sessionId: string, toolId: string, progress: ToolProgress) => void;
   clearToolProgress: (sessionId: string, toolId: string) => void;
+  appendReasoning: (sessionId: string, itemId: string, delta: string) => void;
+  clearReasoning: (sessionId: string, itemId: string) => void;
+  clearAllReasoning: (sessionId: string) => void;
   /** Clear all streaming state for a session (text + tool inputs). Use on reconnect. */
   clearSession: (sessionId: string) => void;
   /** Reset all streaming state. Use on WS reconnect to drop orphaned data. */
@@ -31,6 +35,7 @@ export const useStreamingStore = create<StreamingState>((set) => ({
   toolInputs: {},
   toolOutputs: {},
   toolProgress: {},
+  reasoningDeltas: {},
 
   appendText: (sessionId, text) =>
     set((s) => ({
@@ -130,24 +135,62 @@ export const useStreamingStore = create<StreamingState>((set) => ({
       };
     }),
 
+  appendReasoning: (sessionId, itemId, delta) =>
+    set((s) => {
+      const sessionReasoning = s.reasoningDeltas[sessionId] ?? {};
+      return {
+        reasoningDeltas: {
+          ...s.reasoningDeltas,
+          [sessionId]: {
+            ...sessionReasoning,
+            [itemId]: (sessionReasoning[itemId] ?? "") + delta,
+          },
+        },
+      };
+    }),
+
+  clearReasoning: (sessionId, itemId) =>
+    set((s) => {
+      const sessionReasoning = s.reasoningDeltas[sessionId];
+      if (!sessionReasoning || !(itemId in sessionReasoning)) return s;
+      const { [itemId]: _, ...rest } = sessionReasoning;
+      return {
+        reasoningDeltas: {
+          ...s.reasoningDeltas,
+          [sessionId]: Object.keys(rest).length > 0 ? rest : {},
+        },
+      };
+    }),
+
+  clearAllReasoning: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.reasoningDeltas)) return s;
+      const { [sessionId]: _, ...rest } = s.reasoningDeltas;
+      return { reasoningDeltas: rest };
+    }),
+
   clearSession: (sessionId) =>
     set((s) => {
       const hasText = sessionId in s.texts;
       const hasInputs = sessionId in s.toolInputs;
       const hasOutputs = sessionId in s.toolOutputs;
       const hasProgress = sessionId in s.toolProgress;
-      if (!hasText && !hasInputs && !hasOutputs && !hasProgress) return s;
+      const hasReasoning = sessionId in s.reasoningDeltas;
+      if (!hasText && !hasInputs && !hasOutputs && !hasProgress && !hasReasoning) return s;
       const { [sessionId]: _t, ...restTexts } = s.texts;
       const { [sessionId]: _i, ...restInputs } = s.toolInputs;
       const { [sessionId]: _o, ...restOutputs } = s.toolOutputs;
       const { [sessionId]: _p, ...restProgress } = s.toolProgress;
+      const { [sessionId]: _r, ...restReasoning } = s.reasoningDeltas;
       return {
         texts: hasText ? restTexts : s.texts,
         toolInputs: hasInputs ? restInputs : s.toolInputs,
         toolOutputs: hasOutputs ? restOutputs : s.toolOutputs,
         toolProgress: hasProgress ? restProgress : s.toolProgress,
+        reasoningDeltas: hasReasoning ? restReasoning : s.reasoningDeltas,
       };
     }),
 
-  reset: () => set({ texts: {}, toolInputs: {}, toolOutputs: {}, toolProgress: {} }),
+  reset: () =>
+    set({ texts: {}, toolInputs: {}, toolOutputs: {}, toolProgress: {}, reasoningDeltas: {} }),
 }));

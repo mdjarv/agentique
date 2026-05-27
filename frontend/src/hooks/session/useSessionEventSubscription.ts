@@ -109,6 +109,10 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         streaming.appendToolOutput(sid, event.itemId, event.delta);
         return;
       }
+      if (event.type === "reasoning_delta") {
+        streaming.appendReasoning(sid, event.itemId, event.delta);
+        return;
+      }
       if (event.type === "tool_progress") {
         streaming.setToolProgress(sid, event.toolUseId, {
           elapsedMs: event.elapsedMs,
@@ -129,6 +133,7 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
       if (event.type === "result") {
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
+        streaming.clearAllReasoning(sid);
         clearToolBlockIndex(sid);
       }
     });
