@@ -14,6 +14,7 @@ import (
 	"github.com/allbin/agentkit/runtime"
 	claudeadapter "github.com/allbin/agentkit/runtime/cli/claude"
 	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
+	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
@@ -97,7 +98,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
-		connector = claudeadapter.NewConnector()
+		connector = claudeadapter.NewConnector(
+			claudecli.WithIncludePartialMessages(),
+			claudecli.WithReplayUserMessages(),
+		)
 		runner = session.RealBlockingRunner()
 	}
 
