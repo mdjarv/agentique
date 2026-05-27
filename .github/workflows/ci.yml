@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Configure private Go modules
+        run: git config --global url."https://${{ secrets.GO_PRIVATE_TOKEN }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+
+      - name: Go vet
+        run: cd backend && go vet ./...
+        env:
+          GOPRIVATE: github.com/allbin/*
+
+      - name: Go test
+        run: cd backend && go test ./... -count=1 -short
+        env:
+          GOPRIVATE: github.com/allbin/*
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Biome check
+        run: cd frontend && npx biome check src/
+
+      - name: TypeScript check
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Vitest
+        run: cd frontend && npx vitest run
+
+  typegen-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configure private Go modules
+        run: git config --global url."https://${{ secrets.GO_PRIVATE_TOKEN }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Regenerate types
+        run: cd backend && go run ./cmd/typegen --out ../frontend/src/lib
+        env:
+          GOPRIVATE: github.com/allbin/*
+
+      - name: Check for drift
+        run: git diff --exit-code frontend/src/lib/generated-types.ts frontend/src/lib/generated-schemas.ts

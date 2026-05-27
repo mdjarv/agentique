@@ -7,41 +7,9 @@ Last full audit: 2026-05-27.
 
 ## P0 — Will bite a user
 
-### `AgentResult` metadata is dropped
-
-- **Symptom:** Agent (subagent) completions no longer carry
-  `agent_id` / `agent_type` / `total_duration_ms` / `total_tokens` /
-  `total_tool_use_count`. Tool results inside the same UserEcho still
-  flow.
-- **Cause:** the neutral `runtime.UserEcho` shape only has
-  `ToolResults []ToolResult`; there's no field for AgentResult. The
-  agentkit claude adapter drops the field when mapping `UserEvent`.
-- **Wire impact:** `WireAgentResultEvent` definition is preserved but
-  unreachable from the new pipeline. Frontend code that listens for
-  `agent_result` events sees them stop arriving for new sessions.
-- **Fix path:** either add a new neutral `runtime.AgentResultEvent`
-  (preferred) or a structured field on `UserEcho`. Then re-emit from
-  agentique's `processUserEcho`. Skipped test
-  `TestPipeline_AgentResultPersisted` marks the gap.
+(No open P0 items.)
 
 ## P1 — Surprising or limiting
-
-### No CI pipeline beyond release
-
-- **Symptom:** PRs and pushes to main have zero automated quality
-  checks. The only workflow is `release.yml`, which triggers on version
-  tags and only builds a binary — no lint, no tests, no typegen
-  freshness check.
-- **Impact:** regressions land silently. Type errors, biome violations,
-  and broken Go tests only surface when a developer remembers to run
-  `just check` locally. Typegen drift (Go wire shapes change but
-  `generated-types.ts` isn't regenerated) is invisible until a frontend
-  build fails.
-- **Fix path:** add a `ci.yml` that runs on PRs and pushes to main:
-  - `go vet ./...` + `go test ./... -count=1 -short`
-  - `npx biome check src/` + `npx tsc --noEmit`
-  - `npx vitest run`
-  - typegen freshness: `just typegen && git diff --exit-code frontend/src/lib/generated-{types,schemas}.ts`
 
 ### Remaining delta events have no frontend renderers
 
@@ -105,11 +73,12 @@ side. If two `Manager.Create` calls land at the same instant, the wrong
 adapter could be picked. In practice agentique's `Manager` mutex
 sequences these, but the contract is fragile.
 
-### Frontend types: `agent_result` events are dead code
+### ~~Frontend types: `agent_result` events are dead code~~
 
-`WireAgentResultEvent` still appears in `frontend/src/lib/generated-types.ts`
-because the Go type still exists. Any frontend code that listens for
-`agent_result` will silently never fire for new sessions.
+- **Resolved (2026-05-27):** `runtime.AgentResultEvent` added to
+  agentkit; claude adapter emits it from `mapUserEvent`. Agentique's
+  `ToWireEvent` maps it to `WireAgentResultEvent`. The pipeline now
+  persists and broadcasts `agent_result` events.
 
 ### `WireResultEvent.Usage` typed as `any`
 
@@ -171,24 +140,20 @@ upstream schema at all (the Claude CLI wire format is undocumented).
 
 ### Skipped tests as silent debt
 
-Four tests are `t.Skip`-ed:
+Three tests are `t.Skip`-ed:
 
-- `TestPipeline_AgentResultPersisted` — waiting on agentkit
-  `AgentResultEvent` (linked to P0 above).
 - `handler_test.go:253` — skips Claude CLI integration test in `-short`
   mode (expected).
 - `setup_test.go:539,576` — "no checks registered" — setup
   self-tests that skip because no health checks are wired yet.
 
-The AgentResult skip is the only one that masks a real gap. The others
-are structural placeholders.
+All remaining skips are structural placeholders, not masked gaps.
 
-### No CI guard for typegen freshness
+### ~~No CI guard for typegen freshness~~
 
-`frontend/src/lib/generated-{types,schemas}.ts` need a `just typegen`
-any time Go-side wire shapes change. There is no CI check that the
-generated output matches the Go source. Tracked above under "No CI
-pipeline beyond release."
+- **Resolved (2026-05-27):** `ci.yml` includes a `typegen-freshness`
+  job that regenerates types and checks for drift via `git diff
+  --exit-code`.
 
 ### Release workflow builds but does not test
 
@@ -260,3 +225,18 @@ an error return.
   are wired through `streaming-store` and rendered on `InFlightToolContent`
   (header) and `ToolUseBlock` (expanded detail). `reasoning_delta` and
   `turn_diff` remain unrendered (tracked as P1).
+
+### ~~`AgentResult` metadata is dropped~~
+
+- **Resolved (2026-05-27):** added `runtime.AgentResultEvent` to
+  agentkit. The claude adapter's `mapUserEvent` emits it alongside
+  `UserEcho` when `UserEvent.AgentResult` is non-nil. Agentique's
+  `ToWireEvent` maps it to `WireAgentResultEvent`, which is persisted
+  and broadcast. `TestPipeline_AgentResultPersisted` un-skipped.
+
+### ~~No CI pipeline beyond release~~
+
+- **Resolved (2026-05-27):** `.github/workflows/ci.yml` runs on PRs
+  and pushes to master. Three parallel jobs: backend (`go vet` + `go
+  test`), frontend (`biome check` + `tsc` + `vitest`), and
+  typegen-freshness (`git diff --exit-code` after regeneration).
