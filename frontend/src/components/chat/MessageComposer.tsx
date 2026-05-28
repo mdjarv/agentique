@@ -57,9 +57,11 @@ export interface ComposerHandle {
   setText: (text: string) => void;
 }
 
+type SendResult = boolean | undefined;
+
 interface MessageComposerProps {
   projectId: string;
-  onSend: (prompt: string, attachments?: Attachment[]) => void;
+  onSend: (prompt: string, attachments?: Attachment[]) => SendResult | Promise<SendResult>;
   disabled?: boolean;
   isRunning?: boolean;
   onInterrupt?: () => void;
@@ -194,13 +196,19 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     const isMobile = useIsMobile();
     const catalog = useProviderStore((s) => s.models);
     const { options: modelOptions, providerOf } = buildModelOptions(catalog, provider);
-    const [text, setText] = useState(initialText ?? "");
+    const [text, setTextState] = useState(initialText ?? "");
+    const [submitting, setSubmitting] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const submittingRef = useRef(false);
     const textRef = useRef(text);
     textRef.current = text;
+    const setText = useCallback((value: string) => {
+      textRef.current = value;
+      setTextState(value);
+    }, []);
     const onTextPersistRef = useRef(onTextPersist);
     onTextPersistRef.current = onTextPersist;
+    const mountedRef = useRef(true);
 
     const {
       attachments,
@@ -219,6 +227,12 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
 
     const autocomplete = useAutocomplete({ projectId, textareaRef, text, onTextChange: setText });
 
+    useEffect(() => {
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
+
     // --- Speech recognition (dictation mode) ---
     // speechBaseRef: text that existed when the current recognition session started.
     // Everything after this base is replaced by the latest transcript on each update.
@@ -228,18 +242,21 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onBeforeStart: useCallback(() => {
         speechBaseRef.current = textRef.current;
       }, []),
-      onTranscript: useCallback((transcript: string) => {
-        const base = speechBaseRef.current;
-        const spacer = base && !base.endsWith(" ") && !base.endsWith("\n") ? " " : "";
-        setText(base + spacer + transcript);
-        requestAnimationFrame(() => {
-          const el = textareaRef.current;
-          if (el) {
-            el.style.height = "auto";
-            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-          }
-        });
-      }, []),
+      onTranscript: useCallback(
+        (transcript: string) => {
+          const base = speechBaseRef.current;
+          const spacer = base && !base.endsWith(" ") && !base.endsWith("\n") ? " " : "";
+          setText(base + spacer + transcript);
+          requestAnimationFrame(() => {
+            const el = textareaRef.current;
+            if (el) {
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+            }
+          });
+        },
+        [setText],
+      ),
     });
 
     // Press-and-hold: hold >500ms starts "hold mode" — release stops.
@@ -339,21 +356,46 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       return () => clearTimeout(timer);
     }, [text]);
 
-    const handleSend = () => {
-      const trimmed = text.trim();
+    const handleSend = async () => {
+      const submittedText = textRef.current;
+      const trimmed = submittedText.trim();
       if ((!trimmed && attachments.length === 0) || disabled || submittingRef.current) return;
       submittingRef.current = true;
+      setSubmitting(true);
       speech.forceStop();
       autocomplete.close();
-      onSend(trimmed, attachments.length > 0 ? attachments : undefined);
       setText("");
-      clearAll();
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-      queueMicrotask(() => {
+
+      let shouldClear = false;
+      try {
+        const result = await onSend(trimmed, attachments.length > 0 ? attachments : undefined);
+        shouldClear = result !== false;
+      } catch (err) {
+        console.error("send failed", err);
+      } finally {
         submittingRef.current = false;
-      });
+        if (mountedRef.current) setSubmitting(false);
+      }
+
+      if (!mountedRef.current) return;
+      if (!shouldClear) {
+        if (textRef.current === "") {
+          setText(submittedText);
+          requestAnimationFrame(() => {
+            const el = textareaRef.current;
+            if (el) {
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+            }
+          });
+        }
+        return;
+      }
+
+      clearAll();
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -396,7 +438,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
           onEmptySubmit();
           return;
         }
-        handleSend();
+        void handleSend();
       }
     };
 
@@ -518,7 +560,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
               className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
               rows={1}
               style={{ maxHeight: "200px" }}
-              disabled={disabled}
+              disabled={disabled || submitting}
+              aria-busy={submitting}
             />
 
             {/* Bottom bar */}
@@ -528,7 +571,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={disabled}
+                    disabled={disabled || submitting}
                     className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
                     aria-label="Attach files"
                   >
@@ -627,7 +670,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                     onPointerDown={handleMicPointerDown}
                     onPointerUp={handleMicPointerUp}
                     onContextMenu={(e) => e.preventDefault()}
-                    disabled={disabled}
+                    disabled={disabled || submitting}
                     className={cn(
                       "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
                       speech.isListening
@@ -656,8 +699,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
                 )}
                 <button
                   type="button"
-                  onClick={handleSend}
-                  disabled={disabled || (!text.trim() && attachments.length === 0)}
+                  onClick={() => void handleSend()}
+                  disabled={disabled || submitting || (!text.trim() && attachments.length === 0)}
                   className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-agent text-background flex items-center justify-center transition-colors hover:bg-agent/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   aria-label={isRunning ? "Queue message" : "Send message"}
                 >

@@ -123,12 +123,13 @@ const ScrollAnchor = memo(function ScrollAnchor({
     const sessionChanged = prevSessionIdRef.current !== sessionId;
     if (sessionChanged) {
       prevSessionIdRef.current = sessionId;
-      prevStreamingRef.current = false;
+      prevStreamingRef.current = isStreaming;
       prevTurnCountRef.current = turns.length;
-      // Always snap to bottom on session switch.
-      requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "instant" });
-      });
+      if (following) {
+        requestAnimationFrame(() => {
+          bottomRef.current?.scrollIntoView({ behavior: "instant" });
+        });
+      }
       return;
     }
     const prevCount = prevTurnCountRef.current;
@@ -203,6 +204,9 @@ interface MessageListProps {
   isLoadingHistory?: boolean;
   /** True when we have a tail cache and are loading the full history in the background. */
   isBackfilling?: boolean;
+  /** Incremented by the parent when a local send should re-engage bottom follow mode. */
+  followRequest?: number;
+  onFollowRequestConsumed?: () => void;
 }
 
 export function MessageList({
@@ -214,11 +218,13 @@ export function MessageList({
   worktreePath,
   isLoadingHistory,
   isBackfilling,
+  followRequest,
+  onFollowRequestConsumed,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pendingRestoreRef = useRef<number | null>(null);
+  const [contentNode, setContentNode] = useState<HTMLDivElement | null>(null);
   const [animateRef, setAnimateEnabled] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
   // animateRef is stable but calls setState internally; an inline ref callback
   // would change identity each render, causing React to re-invoke it and loop
@@ -226,7 +232,7 @@ export function MessageList({
   const setContentRef = useCallback(
     (node: HTMLDivElement | null) => {
       animateRef(node);
-      contentRef.current = node;
+      setContentNode(node);
     },
     [animateRef],
   );
@@ -269,6 +275,21 @@ export function MessageList({
   const isAnyStreaming = useStreamingStore((s) => sessionId in s.texts);
   const hasIncompleteTurn = turns.length > 0 && !turns[turns.length - 1]?.complete;
 
+  const followBottom = useCallback((behavior: ScrollBehavior = "instant") => {
+    followingRef.current = true;
+    setFollowing(true);
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!followRequest) return;
+    if (turns.length === 0) return;
+    followBottom("instant");
+    onFollowRequestConsumed?.();
+  }, [followRequest, turns.length, followBottom, onFollowRequestConsumed]);
+
   // Disable auto-animate during active turns — MutationObserver + FLIP calculations
   // are pure overhead when DOM mutations are rapid, and removal animations (position:
   // absolute) cause pending messages to float over content during delivery transitions.
@@ -283,7 +304,7 @@ export function MessageList({
   // layout completes and the viewport ends up slightly above the last message.
   useEffect(() => {
     const scrollEl = scrollRef.current;
-    const contentEl = contentRef.current;
+    const contentEl = contentNode;
     if (!scrollEl || !contentEl) return;
     const observer = new ResizeObserver(() => {
       if (!followingRef.current) return;
@@ -291,7 +312,7 @@ export function MessageList({
     });
     observer.observe(contentEl);
     return () => observer.disconnect();
-  }, []);
+  }, [contentNode]);
 
   // Pending user messages live in streamingEvents during streaming.
   const streamingEvents = useChatStore(
@@ -318,7 +339,10 @@ export function MessageList({
       // reloads) can't accidentally unstick us. Use the strict isAtBottom for
       // re-engagement so a tiny wheel-up within the loose near-bottom zone
       // doesn't immediately cancel the user's unfollow gesture.
-      if (isAtBottom(el) && !followingRef.current) setFollowing(true);
+      if (isAtBottom(el) && !followingRef.current) {
+        followingRef.current = true;
+        setFollowing(true);
+      }
       scrollMemory.set(sessionId, { scrollTop: el.scrollTop, atBottom });
     });
   }, [sessionId]);
@@ -344,7 +368,7 @@ export function MessageList({
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) unfollow();
+      if (e.deltaY < 0 && el.scrollTop > 0) unfollow();
     };
 
     const onTouchStart = (e: TouchEvent) => {
@@ -355,7 +379,7 @@ export function MessageList({
       if (touchStartY == null) return;
       const currY = e.touches[0]?.clientY;
       if (currY == null) return;
-      if (currY > touchStartY + 10) unfollow();
+      if (currY > touchStartY + 10 && el.scrollTop > 0) unfollow();
     };
 
     el.addEventListener("wheel", onWheel, { passive: true });
@@ -381,9 +405,8 @@ export function MessageList({
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
     const behavior: ScrollBehavior = dist > SMOOTH_SCROLL_MAX_PX ? "instant" : "smooth";
-    bottomRef.current?.scrollIntoView({ behavior });
-    setFollowing(true);
-  }, []);
+    followBottom(behavior);
+  }, [followBottom]);
 
   if (turns.length === 0) {
     if (isLoadingHistory) {
@@ -404,6 +427,7 @@ export function MessageList({
     <div className="relative flex-1 min-h-0">
       <div
         ref={scrollRef}
+        data-testid="message-list-scroll"
         onScroll={handleScroll}
         className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >

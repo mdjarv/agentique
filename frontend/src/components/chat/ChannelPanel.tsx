@@ -72,6 +72,8 @@ export const ChannelPanel = memo(function ChannelPanel({
   const channel = useChannelStore((s) => s.channels[channelId]);
   const timeline = useChannelStore((s) => s.timelines[channelId] ?? EMPTY_TIMELINE);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const wasAtBottomRef = useRef(true);
   const [membersRef] = useAutoAnimate<HTMLDivElement>(ANIMATE_DEFAULT);
   useMergedAutoAnimate(scrollRef, ANIMATE_DEFAULT);
   const [keepLoading, setKeepLoading] = useState(false);
@@ -106,13 +108,13 @@ export const ChannelPanel = memo(function ChannelPanel({
 
   // Load timeline on mount
   useEffect(() => {
+    wasAtBottomRef.current = true;
     getChannelTimeline(ws, channelId)
       .then((events) => useChannelStore.getState().setTimeline(channelId, events))
       .catch((err) => toast.error(getErrorMessage(err, "Failed to load timeline")));
   }, [ws, channelId]);
 
   // Auto-scroll only when already at bottom
-  const wasAtBottomRef = useRef(true);
   const timelineLen = timeline.length;
 
   const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
@@ -170,19 +172,26 @@ export const ChannelPanel = memo(function ChannelPanel({
 
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const resizeComposer = useCallback((el = textareaRef.current) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, []);
 
   const handleBroadcast = useCallback(async () => {
-    if (!message.trim()) return;
+    if (!message.trim() || sending) return;
     setSending(true);
+    wasAtBottomRef.current = true;
     try {
       await broadcastToChannel(ws, channelId, message.trim());
       setMessage("");
+      requestAnimationFrame(() => resizeComposer());
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to send message"));
     } finally {
       setSending(false);
     }
-  }, [ws, channelId, message]);
+  }, [ws, channelId, message, sending, resizeComposer]);
 
   const handleMemberClick = useCallback(
     (sessionId: string) => {
@@ -363,23 +372,28 @@ export const ChannelPanel = memo(function ChannelPanel({
         <div className="shrink-0 border-t p-3">
           <div className="rounded-xl border bg-secondary/50 transition-all focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30">
             <textarea
+              ref={textareaRef}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                resizeComposer(e.currentTarget);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
-                  handleBroadcast();
+                  void handleBroadcast();
                 }
               }}
               placeholder="Broadcast to all members..."
               rows={1}
-              className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none"
+              className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
               style={{ maxHeight: "200px" }}
+              disabled={sending}
             />
             <div className="flex items-center justify-end px-2 pb-2">
               <button
                 type="button"
-                onClick={handleBroadcast}
+                onClick={() => void handleBroadcast()}
                 disabled={!message.trim() || sending}
                 className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center transition-colors hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 aria-label="Send message"

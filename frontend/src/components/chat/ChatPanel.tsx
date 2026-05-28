@@ -123,6 +123,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   } = useSessionState(sessionId);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
+  const historyComplete = useChatStore((s) => s.sessions[sessionId]?.historyComplete ?? false);
 
   const projectIds = useAppStore(useShallow((s) => s.projects.map((p) => p.id)));
   const { resolvedTheme } = useTheme();
@@ -155,9 +156,13 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const setActiveTab = useCallback((t: SessionTab) => onTabChange?.(t), [onTabChange]);
   const [resuming, setResuming] = useState(false);
   const [expandFile, setExpandFile] = useState<string | null>(null);
+  const [followRequest, setFollowRequest] = useState(0);
 
   const handleExpandFileConsumed = useCallback(() => {
     setExpandFile(null);
+  }, []);
+  const handleFollowRequestConsumed = useCallback(() => {
+    setFollowRequest(0);
   }, []);
 
   const git = useGitActions(sessionId);
@@ -174,6 +179,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
       prevSessionIdRef.current = sessionId;
       setActiveDialog("none");
       setResuming(false);
+      setFollowRequest(0);
     }
   }, [sessionId]);
 
@@ -198,11 +204,12 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   // Load history on mount or session switch
   const sessionExists = !!meta;
   const hasTurns = turns.length > 0;
+  const needsCompletedBackfill = !!meta?.completedAt && hasTurns && !historyComplete;
   useEffect(() => {
-    if (sessionExists && !hasTurns) {
+    if (sessionExists && (!hasTurns || needsCompletedBackfill)) {
       loadSessionHistory(ws, sessionId);
     }
-  }, [ws, sessionId, sessionExists, hasTurns]);
+  }, [ws, sessionId, sessionExists, hasTurns, needsCompletedBackfill]);
 
   // Redirect if session was deleted or doesn't exist
   useEffect(() => {
@@ -266,20 +273,23 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   }, [sessionId]);
 
   const handleSend = useCallback(
-    async (prompt: string, attachments?: Attachment[]) => {
-      useUIStore.getState().clearDraft(sessionId);
+    async (prompt: string, attachments?: Attachment[]): Promise<boolean> => {
+      setFollowRequest((n) => n + 1);
       try {
         await enqueueMessage(ws, sessionId, prompt, attachments);
+        useUIStore.getState().clearDraft(sessionId);
         setActiveTab("chat");
         const popped = useUIStore.getState().popStash(sessionId);
         if (popped) {
           composerRef.current?.setText(popped);
         }
+        return true;
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to send message");
         toast.error(msg, {
           action: { label: "Copy", onClick: () => copyToClipboard(msg) },
         });
+        return false;
       }
     },
     [ws, sessionId, setActiveTab],
@@ -460,6 +470,9 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 projectPath={project?.path}
                 worktreePath={meta.worktreePath}
                 isLoadingHistory={isLoadingHistory}
+                isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
+                followRequest={followRequest}
+                onFollowRequestConsumed={handleFollowRequestConsumed}
               />
               {pendingApproval && (
                 <ApprovalBannerSwitch

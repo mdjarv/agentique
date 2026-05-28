@@ -121,8 +121,8 @@ export function NewChatPanel({
     [draftKey],
   );
 
-  const handleSend = async (prompt: string, attachments?: Attachment[]) => {
-    if (sending) return;
+  const handleSend = async (prompt: string, attachments?: Attachment[]): Promise<boolean> => {
+    if (sending) return false;
     setSending(true);
     setPendingPrompt(prompt);
     setPendingAttachments((attachments ?? []).map(({ previewUrl: _, ...rest }) => rest));
@@ -144,6 +144,7 @@ export function NewChatPanel({
         params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
         replace: true,
       });
+      return true;
     } catch (err) {
       const msg = getErrorMessage(err, "Failed to create session");
       toast.error(msg, {
@@ -152,6 +153,7 @@ export function NewChatPanel({
       setPendingPrompt(null);
       setPendingAttachments([]);
       setSending(false);
+      return false;
     }
   };
 
