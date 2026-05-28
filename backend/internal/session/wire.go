@@ -36,9 +36,9 @@ type WireToolUseEvent struct {
 // WireContentBlock represents a single block of tool result content.
 type WireContentBlock struct {
 	Type      string `json:"type"`                // "text" or "image"
-	Text      string `json:"text,omitempty"`       // populated for text blocks
-	MediaType string `json:"mediaType,omitempty"`  // e.g. "image/png"; image blocks only
-	URL       string `json:"url,omitempty"`        // data: URL; image blocks only
+	Text      string `json:"text,omitempty"`      // populated for text blocks
+	MediaType string `json:"mediaType,omitempty"` // e.g. "image/png"; image blocks only
+	URL       string `json:"url,omitempty"`       // data: URL; image blocks only
 }
 
 type WireToolResultEvent struct {
@@ -131,8 +131,8 @@ const (
 
 // WireAgentMessageEvent represents a message between peer sessions in a channel.
 type WireAgentMessageEvent struct {
-	Type            string `json:"type"`                    // "agent_message"
-	Direction       string `json:"direction"`               // DirectionSent or DirectionReceived
+	Type            string `json:"type"`      // "agent_message"
+	Direction       string `json:"direction"` // DirectionSent or DirectionReceived
 	ChannelID       string `json:"channelId,omitempty"`
 	SenderSessionID string `json:"senderSessionId"`
 	SenderName      string `json:"senderName"`
@@ -148,7 +148,7 @@ type WireAgentMessageEvent struct {
 type WireChannelMessage struct {
 	ID          string          `json:"id"`
 	ChannelID   string          `json:"channelId"`
-	SenderType  string          `json:"senderType"`  // "session" or "user"
+	SenderType  string          `json:"senderType"` // "session" or "user"
 	SenderID    string          `json:"senderId"`
 	SenderName  string          `json:"senderName"`
 	Content     string          `json:"content"`
@@ -170,17 +170,17 @@ type WireUserMessageEvent struct {
 // WireMessageDeliveryEvent confirms that the CLI has read a user message
 // sent via SendMessage. Transient — broadcast only, not persisted.
 type WireMessageDeliveryEvent struct {
-	Type      string `json:"type"`      // "message_delivery"
-	Status    string `json:"status"`    // "delivered"
+	Type      string `json:"type"`   // "message_delivery"
+	Status    string `json:"status"` // "delivered"
 	MessageID string `json:"messageId"`
 }
 
 // WireTaskEvent represents a subagent lifecycle event.
 type WireTaskEvent struct {
-	Type         string `json:"type"`                    // "task"
-	Subtype      string `json:"subtype"`                 // "task_started", "task_progress", "task_notification"
+	Type         string `json:"type"`    // "task"
+	Subtype      string `json:"subtype"` // "task_started", "task_progress", "task_notification"
 	TaskID       string `json:"taskId"`
-	ToolUseID    string `json:"toolUseId"`               // parent Agent ToolUseEvent.ID
+	ToolUseID    string `json:"toolUseId"` // parent Agent ToolUseEvent.ID
 	Description  string `json:"description,omitempty"`
 	TaskType     string `json:"taskType,omitempty"`
 	Prompt       string `json:"prompt,omitempty"`
@@ -194,7 +194,7 @@ type WireTaskEvent struct {
 
 // WireAgentResultEvent represents a completed subagent execution.
 type WireAgentResultEvent struct {
-	Type              string             `json:"type"`              // "agent_result"
+	Type              string             `json:"type"` // "agent_result"
 	ParentToolUseID   string             `json:"parentToolUseId"`
 	Status            string             `json:"status"`
 	AgentID           string             `json:"agentId,omitempty"`
@@ -205,26 +205,26 @@ type WireAgentResultEvent struct {
 	TotalToolUseCount int                `json:"totalToolUseCount,omitempty"`
 }
 
-func (e WireTextEvent) WireType() string       { return e.Type }
-func (e WireThinkingEvent) WireType() string   { return e.Type }
-func (e WireToolUseEvent) WireType() string    { return e.Type }
-func (e WireToolResultEvent) WireType() string { return e.Type }
-func (e WireResultEvent) WireType() string     { return e.Type }
-func (e WireErrorEvent) WireType() string      { return e.Type }
-func (e WireRateLimitEvent) WireType() string  { return e.Type }
-func (e WireStreamEvent) WireType() string          { return e.Type }
-func (e WireCompactStatusEvent) WireType() string   { return e.Type }
-func (e WireCompactBoundaryEvent) WireType() string    { return e.Type }
-func (e WireContextManagementEvent) WireType() string  { return e.Type }
-func (e WireAgentMessageEvent) WireType() string       { return e.Type }
-func (e WireUserMessageEvent) WireType() string        { return e.Type }
-func (e WireMessageDeliveryEvent) WireType() string    { return e.Type }
-func (e WireTaskEvent) WireType() string               { return e.Type }
-func (e WireAgentResultEvent) WireType() string        { return e.Type }
-func (e WireToolOutputDeltaEvent) WireType() string    { return e.Type }
-func (e WireReasoningDeltaEvent) WireType() string     { return e.Type }
-func (e WireTurnDiffEvent) WireType() string           { return e.Type }
-func (e WireToolProgressEvent) WireType() string       { return e.Type }
+func (e WireTextEvent) WireType() string              { return e.Type }
+func (e WireThinkingEvent) WireType() string          { return e.Type }
+func (e WireToolUseEvent) WireType() string           { return e.Type }
+func (e WireToolResultEvent) WireType() string        { return e.Type }
+func (e WireResultEvent) WireType() string            { return e.Type }
+func (e WireErrorEvent) WireType() string             { return e.Type }
+func (e WireRateLimitEvent) WireType() string         { return e.Type }
+func (e WireStreamEvent) WireType() string            { return e.Type }
+func (e WireCompactStatusEvent) WireType() string     { return e.Type }
+func (e WireCompactBoundaryEvent) WireType() string   { return e.Type }
+func (e WireContextManagementEvent) WireType() string { return e.Type }
+func (e WireAgentMessageEvent) WireType() string      { return e.Type }
+func (e WireUserMessageEvent) WireType() string       { return e.Type }
+func (e WireMessageDeliveryEvent) WireType() string   { return e.Type }
+func (e WireTaskEvent) WireType() string              { return e.Type }
+func (e WireAgentResultEvent) WireType() string       { return e.Type }
+func (e WireToolOutputDeltaEvent) WireType() string   { return e.Type }
+func (e WireReasoningDeltaEvent) WireType() string    { return e.Type }
+func (e WireTurnDiffEvent) WireType() string          { return e.Type }
+func (e WireToolProgressEvent) WireType() string      { return e.Type }
 
 // errorDetail extracts a clean human-readable message from a claudecli error,
 // stripping redundant sentinel prefixes (e.g. "permission denied: Your API key..."
@@ -250,6 +250,20 @@ func defaultContextWindow(model string) int {
 	return 200_000
 }
 
+func rawJSONOrString(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`null`)
+	}
+	if json.Valid(raw) {
+		return append(json.RawMessage(nil), raw...)
+	}
+	encoded, err := json.Marshal(string(raw))
+	if err != nil {
+		return json.RawMessage(`null`)
+	}
+	return encoded
+}
+
 // ToWireEvent converts a runtime CLIEvent to a JSON-friendly wire format.
 // Returns nil for event types we don't forward to the frontend.
 // The model parameter is used to pick a sensible default context window before
@@ -266,7 +280,7 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 	case runtime.ReasoningDeltaEvent:
 		return WireReasoningDeltaEvent{Type: "reasoning_delta", ItemID: e.ItemID, Delta: e.Delta}
 	case runtime.TurnDiffEvent:
-		return WireTurnDiffEvent{Type: "turn_diff", TurnID: e.TurnID, Raw: e.Raw}
+		return WireTurnDiffEvent{Type: "turn_diff", TurnID: e.TurnID, Raw: rawJSONOrString(e.Raw)}
 	case runtime.ToolProgressEvent:
 		return WireToolProgressEvent{Type: "tool_progress", ToolUseID: e.ToolUseID, ToolName: e.ToolName, ElapsedMs: e.Elapsed.Milliseconds()}
 	case runtime.ThinkingEvent:
@@ -276,7 +290,7 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 			Type:            "tool_use",
 			ToolID:          e.ID,
 			ToolName:        e.Name,
-			ToolInput:       e.Input,
+			ToolInput:       rawJSONOrString(e.Input),
 			Category:        classifyTool(e.Name),
 			ParentToolUseID: e.ParentToolUseID,
 		}
@@ -317,13 +331,13 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 			RateLimitType: rlType,
 		}
 	case runtime.StreamEvent:
-		return WireStreamEvent{Type: "stream", Event: e.Raw}
+		return WireStreamEvent{Type: "stream", Event: rawJSONOrString(e.Raw)}
 	case runtime.CompactStatusEvent:
 		return WireCompactStatusEvent{Type: "compact_status", Status: e.Status}
 	case runtime.CompactBoundaryEvent:
 		return WireCompactBoundaryEvent{Type: "compact_boundary", Trigger: e.Trigger, PreTokens: e.PreTokens}
 	case runtime.ContextManagementEvent:
-		return WireContextManagementEvent{Type: "context_management", Raw: e.Raw}
+		return WireContextManagementEvent{Type: "context_management", Raw: rawJSONOrString(e.Raw)}
 	case runtime.SubagentEvent:
 		return WireTaskEvent{
 			Type:         "task",

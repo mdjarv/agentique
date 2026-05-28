@@ -18,20 +18,20 @@ import (
 
 // CreateParams holds the parameters for creating a new session.
 type CreateParams struct {
-	ID              string // optional; generated if empty
-	ProjectID       string
-	Name            string
-	WorkDir         string
-	WorktreePath    string
-	WorktreeBranch  string
-	WorktreeBaseSHA string
-	Provider        string // "claude" (default) or "codex"
-	Model           string
-	PlanMode        bool
-	AutoApproveMode string
-	Effort          string
-	MaxBudget       float64
-	MaxTurns        int
+	ID                    string // optional; generated if empty
+	ProjectID             string
+	Name                  string
+	WorkDir               string
+	WorktreePath          string
+	WorktreeBranch        string
+	WorktreeBaseSHA       string
+	Provider              string // "claude" (default) or "codex"
+	Model                 string
+	PlanMode              bool
+	AutoApproveMode       string
+	Effort                string
+	MaxBudget             float64
+	MaxTurns              int
 	Projects              []ProjectInfo
 	BehaviorPresets       BehaviorPresets
 	ChannelPreambles      []*ChannelPreambleInfo
@@ -252,6 +252,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		MaxTurns:    params.MaxTurns,
 		MCPConfigs:  mcpConfigs,
 		Extra:       extra,
+		SessionName: params.Name,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -311,20 +312,20 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 
 // ResumeParams holds the parameters for resuming an existing session.
 type ResumeParams struct {
-	SessionID         string
-	ClaudeSessionID   string
-	ProjectID         string
-	Name              string
-	WorkDir           string
-	WorktreeBranch    string
-	Provider          string
-	Model             string
-	PermissionMode    string
-	AutoApproveMode   string
-	Effort            string
-	MaxBudget         float64
-	MaxTurns          int
-	InitialGitVersion int64
+	SessionID             string
+	ClaudeSessionID       string
+	ProjectID             string
+	Name                  string
+	WorkDir               string
+	WorktreeBranch        string
+	Provider              string
+	Model                 string
+	PermissionMode        string
+	AutoApproveMode       string
+	Effort                string
+	MaxBudget             float64
+	MaxTurns              int
+	InitialGitVersion     int64
 	Projects              []ProjectInfo
 	BehaviorPresets       BehaviorPresets
 	ChannelPreambles      []*ChannelPreambleInfo
@@ -396,6 +397,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		MaxTurns:        p.MaxTurns,
 		MCPConfigs:      mcpConfigs,
 		Extra:           extra,
+		SessionName:     p.Name,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -477,6 +479,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		MaxTurns:    p.MaxTurns,
 		MCPConfigs:  mcpConfigs,
 		Extra:       extra,
+		SessionName: p.Name,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),

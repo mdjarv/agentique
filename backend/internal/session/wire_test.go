@@ -379,6 +379,55 @@ func TestToWireEvent_UserEchoReturnsNil(t *testing.T) {
 	}
 }
 
+func TestToWireEvent_NonJSONRawPayloadsMarshal(t *testing.T) {
+	tests := []struct {
+		name  string
+		event runtime.CLIEvent
+	}{
+		{
+			name:  "turn diff",
+			event: runtime.TurnDiffEvent{TurnID: "turn_1", Raw: json.RawMessage(`diff --git a/file b/file`)},
+		},
+		{
+			name:  "tool input",
+			event: runtime.ToolUseEvent{ID: "tool_1", Name: "fileChange", Input: json.RawMessage(`done`)},
+		},
+		{
+			name:  "stream",
+			event: runtime.StreamEvent{Raw: json.RawMessage(`partial text`)},
+		},
+		{
+			name:  "context management",
+			event: runtime.ContextManagementEvent{Raw: json.RawMessage(`summary`)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire := ToWireEvent(tt.event, "")
+			data, err := json.Marshal(wire)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if !json.Valid(data) {
+				t.Fatalf("invalid JSON: %s", data)
+			}
+		})
+	}
+}
+
+func TestRawJSONOrStringPreservesValidJSON(t *testing.T) {
+	got := rawJSONOrString(json.RawMessage(`{"ok":true}`))
+	if string(got) != `{"ok":true}` {
+		t.Fatalf("rawJSONOrString valid JSON = %s", got)
+	}
+
+	got = rawJSONOrString(json.RawMessage(`diff --git a/file b/file`))
+	if string(got) != `"diff --git a/file b/file"` {
+		t.Fatalf("rawJSONOrString invalid JSON = %s", got)
+	}
+}
+
 func TestToWireEvent_UnknownProviderEvent(t *testing.T) {
 	event := runtime.UnknownProviderEvent{Provider: "claude", Type: "future_type", Raw: json.RawMessage(`{}`)}
 	wire := ToWireEvent(event, "")
