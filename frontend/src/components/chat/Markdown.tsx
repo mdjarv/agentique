@@ -27,6 +27,10 @@ interface MarkdownProps {
   className?: string;
   /** Convert single newlines to <br> (useful for user-typed messages). */
   preserveNewlines?: boolean;
+  /** True while this message is still streaming. Gates prompt-block recovery:
+   *  when false (the default), a malformed/missing closer is recovered into a
+   *  card; when true, an unclosed block stays a pending placeholder. */
+  isStreaming?: boolean;
 }
 
 function nodeToPlainText(node: ReactNode): string {
@@ -194,9 +198,13 @@ export const Markdown = memo(function Markdown({
   content,
   className,
   preserveNewlines,
+  isStreaming,
 }: MarkdownProps) {
   const plugins = preserveNewlines ? BREAKS_PLUGINS : STANDARD_PLUGINS;
-  const segments = useMemo(() => splitByPromptBlocks(content), [content]);
+  const segments = useMemo(
+    () => splitByPromptBlocks(content, { isFinal: !isStreaming }),
+    [content, isStreaming],
+  );
 
   return (
     <div className={cn("prose prose-sm max-w-none", className)}>
@@ -208,6 +216,7 @@ export const Markdown = memo(function Markdown({
               title={seg.block.title}
               prompt={seg.block.prompt}
               projectSlug={seg.block.projectSlug}
+              warning={seg.block.warning}
             />
           );
         }

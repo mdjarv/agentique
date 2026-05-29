@@ -11,10 +11,26 @@ export interface PromptBlock {
   title: string;
   prompt: string;
   projectSlug?: string;
+  /** Set when the block was recovered from malformed markup (e.g. a wrong or
+   *  missing closing tag). Surfaced as a non-blocking warning on the card so the
+   *  recovery is never silent. Never set for well-formed blocks. */
+  warning?: string;
+}
+
+export interface SplitOptions {
+  /** True when the source message is complete (not mid-stream). Enables recovery
+   *  of a block whose closer is entirely missing instead of treating it as a
+   *  still-streaming pending card. A present-but-wrong closer (e.g. `</parameter>`)
+   *  is recovered regardless. Defaults to false to preserve streaming behavior. */
+  isFinal?: boolean;
 }
 
 /** Parse title + prompt from a code block's inner text. First line must be `# Title`.
- *  Optional second line `project: <slug>` targets a different project. */
+ *  Optional meta lines immediately after the title (any order, blank lines allowed)
+ *  configure the block:
+ *    - `project: <slug>` targets a different project
+ *    - `warning: <message>` flags an auto-recovered block (set by the parser, not users)
+ */
 export function parsePromptFromCode(code: string): PromptBlock | null {
   const nl = code.indexOf("\n");
   if (nl === -1) return null;
@@ -24,15 +40,26 @@ export function parsePromptFromCode(code: string): PromptBlock | null {
   let rest = code.slice(nl + 1);
 
   let projectSlug: string | undefined;
-  const metaMatch = rest.match(/^\n*project:\s*(\S+)\s*\n/);
-  if (metaMatch) {
-    projectSlug = metaMatch[1];
-    rest = rest.slice(metaMatch[0].length);
+  let warning: string | undefined;
+  for (;;) {
+    const projectMatch = rest.match(/^\n*project:\s*(\S+)\s*\n/);
+    if (projectMatch?.[1]) {
+      projectSlug = projectMatch[1];
+      rest = rest.slice(projectMatch[0].length);
+      continue;
+    }
+    const warningMatch = rest.match(/^\n*warning:[ \t]*(.+?)[ \t]*\n/);
+    if (warningMatch?.[1]) {
+      warning = warningMatch[1];
+      rest = rest.slice(warningMatch[0].length);
+      continue;
+    }
+    break;
   }
 
   const prompt = rest.trim();
   if (!title || !prompt) return null;
-  return { title, prompt, projectSlug };
+  return { title, prompt, projectSlug, warning };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,9 +171,12 @@ export function findRawPromptBlocks(markdown: string): RawPromptBlock[] {
   return blocks;
 }
 
-/** Extract all prompt blocks from raw markdown content. */
-export function parsePromptBlocks(markdown: string): PromptBlock[] {
-  return findRawPromptBlocks(markdown)
+/** Extract all prompt blocks from raw markdown content. Normalizes
+ *  `<agentique type="prompt">` tags first (with recovery) so both authoring
+ *  forms are enumerated identically to splitByPromptBlocks. */
+export function parsePromptBlocks(markdown: string, opts: SplitOptions = {}): PromptBlock[] {
+  const preprocessed = preprocessAgentiqueTags(markdown, opts.isFinal ?? false);
+  return findRawPromptBlocks(preprocessed)
     .map((raw) => parsePromptFromCode(raw.content))
     .filter((b): b is PromptBlock => b !== null);
 }
@@ -261,14 +291,76 @@ const RE_AGENTIQUE_CLOSE_ANCHORED = /^<\/agentique>/i;
 const AGENTIQUE_CLOSE = "</agentique>";
 const RE_ATTR = /([\w-]+)\s*=\s*"([^"]*)"/g;
 const RE_FENCE_CLOSE_LINE = /^ {0,3}(`{3,})\s*$/;
+// Any closing tag, e.g. </parameter>, </prompt>, </agentique>. Used only by the
+// recovery scanner to find a plausible boundary for a malformed block.
+const RE_CLOSE_LIKE_ANCHORED = /^<\/[a-zA-Z][\w-]*\s*>/;
 
-/** Find the closing `</agentique>` that matches the opener at openEnd,
- *  tracking nesting depth while skipping matches inside markdown code regions
- *  (fenced blocks and inline code spans). Returns the position of the matching
- *  `</agentique>`, or null if unclosed (streaming). A prompt body that mentions
- *  `<agentique ...>` literally — typically inside backticks in docs/prose —
- *  must not be treated as a nested opener, otherwise depth never returns to 0
- *  and the parser misclassifies the block as still streaming. */
+/** Advance past a markdown code region beginning at a backtick run at index `i`
+ *  (caller guarantees markdown[i] === "`"). Handles both fenced blocks (a ``` run
+ *  alone on its line) and inline code spans, so tag-like tokens inside code never
+ *  affect block delimitation. Returns the index just past the region; an
+ *  unterminated fenced block consumes to EOF, and an unterminated inline span
+ *  consumes only its opening run (mirroring CommonMark leniency). */
+function skipBackticks(markdown: string, i: number, N: number): number {
+  const lineStart = markdown.lastIndexOf("\n", i - 1) + 1;
+  const prefix = markdown.slice(lineStart, i);
+  let n = 0;
+  while (i + n < N && markdown[i + n] === "`") n++;
+
+  const isFenceStart = n >= 3 && /^ {0,3}$/.test(prefix);
+  if (isFenceStart) {
+    let j = markdown.indexOf("\n", i + n);
+    if (j === -1) return N;
+    j += 1;
+    while (j < N) {
+      const eol = markdown.indexOf("\n", j);
+      const lineEnd = eol === -1 ? N : eol;
+      const line = markdown.slice(j, lineEnd);
+      const close = RE_FENCE_CLOSE_LINE.exec(line);
+      if (close && (close[1]?.length ?? 0) >= n) {
+        return eol === -1 ? N : eol + 1;
+      }
+      if (eol === -1) return N;
+      j = eol + 1;
+    }
+    return N;
+  }
+
+  // Inline code span — find a matching run of exactly n backticks.
+  let j = i + n;
+  while (j < N) {
+    if (markdown[j] === "`") {
+      let m = 0;
+      while (j + m < N && markdown[j + m] === "`") m++;
+      if (m === n) return j + m;
+      j += m;
+    } else {
+      j++;
+    }
+  }
+  return i + n;
+}
+
+/** Find the closing `</agentique>` that matches the opener at openEnd.
+ *
+ *  Delimitation strategy — balanced depth counting over `<agentique ...>` /
+ *  `</agentique>` tokens, skipping markdown code regions (fenced blocks and
+ *  inline spans). Depth counting lets a body legitimately nest a complete
+ *  `<agentique ...>...</agentique>` example without the inner close ending the
+ *  outer block, while a body that merely *mentions* the tag inside backticks is
+ *  ignored because code regions are skipped. For two adjacent top-level blocks,
+ *  the first block's own close brings depth to 0 before the next opener is seen,
+ *  so they never bleed together.
+ *
+ *  Returns the matching position, or null when no balanced close exists
+ *  (genuinely unclosed, or a malformed/mismatched closer). The caller decides
+ *  whether to recover via findRecoveryBoundary.
+ *
+ *  Known limitation: an *unbalanced, unescaped* literal `</agentique>` in prose
+ *  (more closers than openers, outside any code span) closes the block early.
+ *  The authoring guidance instructs models to escape such meta-mentions or place
+ *  them in code; combined with code-region skipping this covers the realistic
+ *  meta-prompt case. */
 function findMatchingAgentiqueClose(markdown: string, openEnd: number): number | null {
   let depth = 1;
   let i = openEnd;
@@ -276,68 +368,19 @@ function findMatchingAgentiqueClose(markdown: string, openEnd: number): number |
 
   while (i < N) {
     const ch = markdown[i];
-
     if (ch === "`") {
-      const lineStart = markdown.lastIndexOf("\n", i - 1) + 1;
-      const prefix = markdown.slice(lineStart, i);
-      let n = 0;
-      while (i + n < N && markdown[i + n] === "`") n++;
-
-      const isFenceStart = n >= 3 && /^ {0,3}$/.test(prefix);
-      if (isFenceStart) {
-        let j = markdown.indexOf("\n", i + n);
-        if (j === -1) return null;
-        j += 1;
-        let closed = false;
-        while (j < N) {
-          const eol = markdown.indexOf("\n", j);
-          const lineEnd = eol === -1 ? N : eol;
-          const line = markdown.slice(j, lineEnd);
-          const close = RE_FENCE_CLOSE_LINE.exec(line);
-          if (close && (close[1]?.length ?? 0) >= n) {
-            i = eol === -1 ? N : eol + 1;
-            closed = true;
-            break;
-          }
-          if (eol === -1) {
-            i = N;
-            break;
-          }
-          j = eol + 1;
-        }
-        if (!closed) i = N;
-        continue;
-      }
-
-      let j = i + n;
-      let closed = false;
-      while (j < N) {
-        if (markdown[j] === "`") {
-          let m = 0;
-          while (j + m < N && markdown[j + m] === "`") m++;
-          if (m === n) {
-            i = j + m;
-            closed = true;
-            break;
-          }
-          j += m;
-        } else {
-          j++;
-        }
-      }
-      if (!closed) i += n;
+      i = skipBackticks(markdown, i, N);
       continue;
     }
-
     if (ch === "<") {
-      const remaining = markdown.slice(i);
-      const openM = RE_AGENTIQUE_OPEN_ANCHORED.exec(remaining);
+      const rest = markdown.slice(i);
+      const openM = RE_AGENTIQUE_OPEN_ANCHORED.exec(rest);
       if (openM) {
         depth++;
         i += openM[0].length;
         continue;
       }
-      const closeM = RE_AGENTIQUE_CLOSE_ANCHORED.exec(remaining);
+      const closeM = RE_AGENTIQUE_CLOSE_ANCHORED.exec(rest);
       if (closeM) {
         depth--;
         if (depth === 0) return i;
@@ -345,12 +388,57 @@ function findMatchingAgentiqueClose(markdown: string, openEnd: number): number |
         continue;
       }
     }
-
     i++;
   }
 
   return null;
 }
+
+interface RecoveryBoundary {
+  /** End of the recovered body (exclusive). */
+  bodyEnd: number;
+  /** Position where preprocessing should resume after this block. */
+  consumeEnd: number;
+  reason: "wrong-closer" | "next-opener" | "eof";
+}
+
+/** Locate the most plausible end of a block whose proper `</agentique>` closer
+ *  is missing or mistyped. Scans from openEnd (skipping code regions) for the
+ *  earliest of: a close-like tag (`</…>`, e.g. the mistyped `</parameter>`); the
+ *  next `<agentique …>` opener (so an adjacent block is never swallowed); or end
+ *  of message. The recovered block is still rendered as a clickable card with a
+ *  warning, so a malformed close never silently degrades to plain text. */
+function findRecoveryBoundary(markdown: string, openEnd: number): RecoveryBoundary {
+  let i = openEnd;
+  const N = markdown.length;
+
+  while (i < N) {
+    const ch = markdown[i];
+    if (ch === "`") {
+      i = skipBackticks(markdown, i, N);
+      continue;
+    }
+    if (ch === "<") {
+      const rest = markdown.slice(i);
+      if (RE_AGENTIQUE_OPEN_ANCHORED.test(rest)) {
+        return { bodyEnd: i, consumeEnd: i, reason: "next-opener" };
+      }
+      const closeM = RE_CLOSE_LIKE_ANCHORED.exec(rest);
+      if (closeM) {
+        return { bodyEnd: i, consumeEnd: i + closeM[0].length, reason: "wrong-closer" };
+      }
+    }
+    i++;
+  }
+
+  return { bodyEnd: N, consumeEnd: N, reason: "eof" };
+}
+
+const RECOVERY_WARNINGS: Record<RecoveryBoundary["reason"], string> = {
+  "wrong-closer": "Malformed close tag — auto-recovered; expected the agentique closing tag.",
+  "next-opener": "Missing close tag — auto-recovered at the start of the next prompt block.",
+  eof: "Missing close tag — auto-recovered at end of message.",
+};
 
 interface AgentiqueAttrs {
   type?: string;
@@ -379,11 +467,17 @@ function maxFenceInBody(body: string): number {
   return max;
 }
 
-function buildFencedPrompt(attrs: AgentiqueAttrs, body: string, closed: boolean): string {
+function buildFencedPrompt(
+  attrs: AgentiqueAttrs,
+  body: string,
+  closed: boolean,
+  warning?: string,
+): string {
   const fenceLen = Math.max(3, maxFenceInBody(body) + 1);
   const fence = "`".repeat(fenceLen);
   const lines: string[] = [`${fence}prompt`];
   if (attrs.title) lines.push(`# ${attrs.title}`);
+  if (warning) lines.push(`warning: ${warning}`);
   if (attrs.project) lines.push(`project: ${attrs.project}`);
   const trimmed = body.replace(/^\n+|\n+$/g, "");
   if (trimmed) lines.push(trimmed);
@@ -393,8 +487,15 @@ function buildFencedPrompt(attrs: AgentiqueAttrs, body: string, closed: boolean)
 
 /** Pre-process `<agentique type="prompt" ...>` tags into ```prompt fenced
  *  blocks so the existing prompt-block pipeline can handle them. Other
- *  `<agentique type="...">` values are left untouched for future features. */
-export function preprocessAgentiqueTags(markdown: string): string {
+ *  `<agentique type="...">` values are left untouched for future features.
+ *
+ *  A well-formed (balanced) block is rewritten to a closed ```prompt block. A
+ *  block with a malformed/missing closer is recovered (see findRecoveryBoundary)
+ *  and rewritten to a closed block carrying a `warning:` meta line — so it still
+ *  renders as a clickable card instead of leaking as plain text. Only a block
+ *  that is genuinely unclosed at EOF *and* not final (still streaming) is left as
+ *  an open opener for the pending-card path. */
+export function preprocessAgentiqueTags(markdown: string, isFinal = false): string {
   let result = "";
   let cursor = 0;
 
@@ -418,24 +519,36 @@ export function preprocessAgentiqueTags(markdown: string): string {
     }
 
     result += markdown.slice(cursor, openStart);
-
-    const closeStart = findMatchingAgentiqueClose(markdown, openEnd);
     const leadingPrefix =
       result.endsWith("\n\n") || result.length === 0 ? "" : result.endsWith("\n") ? "\n" : "\n\n";
 
-    if (closeStart === null) {
-      // Unclosed (streaming) — emit an unclosed ```prompt opener so
-      // findPendingPromptBlock detects it during pending render.
-      const body = markdown.slice(openEnd);
-      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, false)}`;
-      cursor = markdown.length;
-      break;
+    const closeStart = findMatchingAgentiqueClose(markdown, openEnd);
+    if (closeStart !== null) {
+      // Well-formed, balanced close.
+      const body = markdown.slice(openEnd, closeStart);
+      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true)}\n`;
+      cursor = closeStart + AGENTIQUE_CLOSE.length;
+      continue;
     }
 
-    const body = markdown.slice(openEnd, closeStart);
-    const closeEnd = closeStart + AGENTIQUE_CLOSE.length;
-    result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true)}\n`;
-    cursor = closeEnd;
+    // No balanced `</agentique>`. Either a malformed/missing closer to recover,
+    // or a still-streaming block. A pure end-of-message boundary is recovered
+    // only when the message is final; a wrong closer or a following opener gives
+    // a concrete boundary and is recovered regardless of stream state.
+    const recovery = findRecoveryBoundary(markdown, openEnd);
+    if (recovery.reason !== "eof" || isFinal) {
+      const body = markdown.slice(openEnd, recovery.bodyEnd);
+      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true, RECOVERY_WARNINGS[recovery.reason])}\n`;
+      cursor = recovery.consumeEnd;
+      continue;
+    }
+
+    // Streaming — emit an unclosed ```prompt opener so findPendingPromptBlock
+    // detects it during pending render.
+    const body = markdown.slice(openEnd);
+    result += `${leadingPrefix}${buildFencedPrompt(attrs, body, false)}`;
+    cursor = markdown.length;
+    break;
   }
 
   return result;
@@ -474,9 +587,16 @@ function findPendingPromptBlock(
  *
  *  `<agentique type="prompt" ...>` tags are normalized to ```prompt fenced
  *  blocks before parsing — the XML form is the preferred authoring syntax
- *  and the fenced form is kept as a legacy/fallback. */
-export function splitByPromptBlocks(rawMarkdown: string): ContentSegment[] {
-  const markdown = preprocessAgentiqueTags(rawMarkdown);
+ *  and the fenced form is kept as a legacy/fallback.
+ *
+ *  Pass `{ isFinal: true }` for completed (non-streaming) messages so a block
+ *  whose closer is missing entirely is recovered into a card instead of a
+ *  perpetual pending placeholder. */
+export function splitByPromptBlocks(
+  rawMarkdown: string,
+  opts: SplitOptions = {},
+): ContentSegment[] {
+  const markdown = preprocessAgentiqueTags(rawMarkdown, opts.isFinal ?? false);
   const rawBlocks = findRawPromptBlocks(markdown);
   const lines = markdown.split("\n");
   const segments: ContentSegment[] = [];

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findRawPromptBlocks,
   parsePromptBlocks,
+  parsePromptFromCode,
   preprocessAgentiqueTags,
   repairNestedFences,
   splitByPromptBlocks,
@@ -663,6 +664,236 @@ describe("preprocessAgentiqueTags", () => {
     const md = '<agentique title="X">body</agentique>';
     const out = preprocessAgentiqueTags(md);
     expect(out).toBe(md);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Malformed-closer recovery + nested tag tokens (real incidents)
+//
+// Two production incidents motivate these:
+//   #1 a model closed an <agentique type="prompt"> block with </parameter>
+//      instead of </agentique> → the card silently degraded to plain text.
+//   #2 a meta-prompt's body contained literal <agentique ...> / </agentique>
+//      tokens → a naive "first close" parser truncated the card.
+// Both must now render as exactly one clickable card (with a warning where the
+// markup was malformed), never as silent/plain/truncated text.
+// ---------------------------------------------------------------------------
+
+describe("agentique tag — malformed-closer recovery & nested tokens", () => {
+  it("renders a well-formed block as one card with no warning", () => {
+    const md = '<agentique type="prompt" title="OK">\nDo the thing.\n</agentique>';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("OK");
+      expect(segments[0].block.prompt).toBe("Do the thing.");
+      expect(segments[0].block.warning).toBeUndefined();
+    }
+  });
+
+  it("incident #1: wrong closer </parameter> recovers into a warned card (not plain text)", () => {
+    const md = [
+      '<agentique type="prompt" title="Wrong closer">',
+      "Refactor the auth middleware.",
+      "</parameter>",
+    ].join("\n");
+    // No isFinal — a present-but-wrong closer is a concrete boundary, so it
+    // recovers regardless of stream state.
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Wrong closer");
+      expect(segments[0].block.prompt).toBe("Refactor the auth middleware.");
+      expect(segments[0].block.warning).toMatch(/malformed close tag/i);
+    }
+  });
+
+  it("incident #1 variant: </prompt> closer also recovers with a warning", () => {
+    const md = '<agentique type="prompt" title="Prompt closer">\nBody.\n</prompt>';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.prompt).toBe("Body.");
+      expect(segments[0].block.warning).toBeTruthy();
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("missing close at end of a FINAL message recovers into a warned card", () => {
+    const md = '<agentique type="prompt" title="No closer">\nFinish the migration.';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("No closer");
+      expect(segments[0].block.prompt).toBe("Finish the migration.");
+      expect(segments[0].block.warning).toMatch(/missing close tag/i);
+    }
+  });
+
+  it("missing close while STILL STREAMING stays a pending card (no premature warning)", () => {
+    const md = '<agentique type="prompt" title="No closer">\nFinish the migration.';
+    const segments = splitByPromptBlocks(md); // isFinal defaults false
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("pending_prompt");
+  });
+
+  it("incident #2: body with literal <agentique>/</agentique> tokens → one intact card", () => {
+    const md = [
+      '<agentique type="prompt" title="Meta — how to write prompts">',
+      "When you delegate, wrap the task like this:",
+      '<agentique type="prompt" title="Example child task">',
+      "Implement the feature.",
+      "</agentique>",
+      "Always close with the real tag, never with the parameter tag.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Meta — how to write prompts");
+      // Body intact: inner example + the trailing rule sentence both survive.
+      expect(segments[0].block.prompt).toContain(
+        '<agentique type="prompt" title="Example child task">',
+      );
+      expect(segments[0].block.prompt).toContain("Implement the feature.");
+      expect(segments[0].block.prompt).toContain("Always close with the real tag");
+      // Well-formed (balanced) → no recovery warning.
+      expect(segments[0].block.warning).toBeUndefined();
+    }
+  });
+
+  it("incident #5: two adjacent blocks, first mis-closed → both recover", () => {
+    const md = [
+      '<agentique type="prompt" title="A">',
+      "Body A.",
+      "</parameter>",
+      '<agentique type="prompt" title="B">',
+      "Body B.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(2);
+    if (prompts[0]?.type === "prompt" && prompts[1]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("A");
+      expect(prompts[0].block.prompt).toBe("Body A.");
+      expect(prompts[0].block.warning).toBeTruthy(); // A was mis-closed
+      expect(prompts[1].block.title).toBe("B");
+      expect(prompts[1].block.prompt).toBe("Body B.");
+      expect(prompts[1].block.warning).toBeUndefined(); // B was well-formed
+    } else {
+      expect.fail("expected two prompt segments");
+    }
+  });
+
+  it("a block whose body precedes the next opener (no closer) recovers without swallowing it", () => {
+    const md = [
+      '<agentique type="prompt" title="A">',
+      "Body A — forgot to close.",
+      '<agentique type="prompt" title="B">',
+      "Body B.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(2);
+    if (prompts[0]?.type === "prompt" && prompts[1]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("A");
+      expect(prompts[0].block.prompt).toBe("Body A — forgot to close.");
+      expect(prompts[0].block.warning).toBeTruthy();
+      expect(prompts[1].block.title).toBe("B");
+      expect(prompts[1].block.warning).toBeUndefined();
+    } else {
+      expect.fail("expected two prompt segments");
+    }
+  });
+
+  it("incident #6: fenced code containing tag/closing-like tokens does not terminate early", () => {
+    const md = [
+      '<agentique type="prompt" title="Has code with tokens">',
+      "Run this snippet:",
+      "```text",
+      "echo '</agentique>'",
+      "echo '<agentique type=\"prompt\">'",
+      "echo '</parameter>'",
+      "```",
+      "Then commit.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Has code with tokens");
+      expect(segments[0].block.prompt).toContain("echo '</agentique>'");
+      expect(segments[0].block.prompt).toContain("Then commit.");
+      expect(segments[0].block.warning).toBeUndefined(); // closed cleanly after the fence
+    }
+  });
+
+  it("inline-code closing-like tokens do not trigger recovery", () => {
+    const md = [
+      '<agentique type="prompt" title="Inline tokens">',
+      "Never close with `</parameter>` — use the real tag.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.warning).toBeUndefined();
+      expect(segments[0].block.prompt).toContain("</parameter>");
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("recovery carries the project attribute through", () => {
+    const md = '<agentique type="prompt" title="X" project="formica">\nDo it.\n</parameter>';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.projectSlug).toBe("formica");
+      expect(segments[0].block.warning).toBeTruthy();
+      expect(segments[0].block.prompt).toBe("Do it.");
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("legacy ```prompt fenced form still parses unchanged alongside recovery support", () => {
+    const md = "```prompt\n# Legacy\nStill works.\n```";
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toEqual({
+      type: "prompt",
+      block: { title: "Legacy", prompt: "Still works." },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePromptFromCode warning meta line
+// ---------------------------------------------------------------------------
+
+describe("parsePromptFromCode — warning meta", () => {
+  it("parses a warning: meta line and strips it from the body", () => {
+    const code = "# Title\nwarning: auto-recovered\nDo the thing.";
+    const block = parsePromptFromCode(code);
+    expect(block?.warning).toBe("auto-recovered");
+    expect(block?.prompt).toBe("Do the thing.");
+  });
+
+  it("parses warning and project together in either order", () => {
+    const code = "# Title\nwarning: recovered\nproject: my-proj\nBody.";
+    const block = parsePromptFromCode(code);
+    expect(block?.warning).toBe("recovered");
+    expect(block?.projectSlug).toBe("my-proj");
+    expect(block?.prompt).toBe("Body.");
   });
 });
 

@@ -214,7 +214,7 @@ export const TextSegmentView = memo(function TextSegmentView({
       <div className="group/msg flex flex-col">
         <div className="flex gap-2 items-start">
           <div className="flex-1 min-w-0 rounded-lg px-4 py-2 bg-gradient-to-br from-agent/14 to-agent/8 shadow-lg shadow-black/30 border border-agent/15 backdrop-blur-sm">
-            <Markdown content={markdownContent} />
+            <Markdown content={markdownContent} isStreaming={isStreaming} />
             {isStreaming && <TypingCursor />}
           </div>
           <button

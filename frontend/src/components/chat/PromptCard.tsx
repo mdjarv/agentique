@@ -1,5 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown, Copy, ExternalLink, Loader2, Play, Users2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  Loader2,
+  Play,
+  Users2,
+} from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -79,7 +88,10 @@ export function PromptGroupProvider({
 }) {
   const ws = useWebSocket();
   const [cardStates, setCardStates] = useState<Record<string, CardEntry>>({});
-  const prompts = useMemo(() => parsePromptBlocks(content), [content]);
+  const prompts = useMemo(
+    () => parsePromptBlocks(content, { isFinal: !isStreaming }),
+    [content, isStreaming],
+  );
 
   const startPrompt = useCallback(
     (title: string, prompt: string, targetProjectId?: string) => {
@@ -247,7 +259,7 @@ export function PromptGroupProvider({
 // Card
 // ---------------------------------------------------------------------------
 
-export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptBlock) {
+export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }: PromptBlock) {
   const ctx = usePromptGroup();
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
@@ -338,6 +350,12 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride }: PromptB
             </span>
           )}
         </div>
+        {warning && (
+          <div className="flex items-start gap-1.5 text-[11px] text-warning">
+            <AlertTriangle className="h-3 w-3 mt-px shrink-0" />
+            <span>{warning}</span>
+          </div>
+        )}
         <div className="text-xs text-foreground-dim leading-relaxed whitespace-pre-wrap">
           {shown}
         </div>

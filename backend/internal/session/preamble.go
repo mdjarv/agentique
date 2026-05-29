@@ -35,6 +35,16 @@ Then run ` + "`just migrate`" + ` and the test suite.
 
 Only suggest session prompts when the work is genuinely parallelizable — don't force it.
 
+**Close the block with the real tag.** End every block with ` + "`</agentique>`" + ` — the exact tag you opened with. Closing instead with the parameter tag (` + "`</parameter>`" + `), a prompt tag (` + "`</prompt>`" + `), or by repeating the title leaves the card non-clickable and silently drops the work. This is WRONG:
+
+<agentique type="prompt" title="Broken — do not do this">
+Refactor the auth middleware.
+</parameter>
+
+**Meta-prompts.** If the body itself must mention the tag syntax (e.g. a prompt about how to write prompts), escape it or use a placeholder so the body does not prematurely close the outer block: write the tags with square brackets (` + "`[agentique ...]`" + ` / ` + "`[/agentique]`" + `) or put the example inside a fenced code block.
+
+**Self-verify before sending.** Confirm every opener has a matching ` + "`</agentique>`" + ` closer and that the body contains no stray closing tokens.
+
 (Legacy form: ` + "```prompt" + ` fenced blocks with a ` + "`# Title`" + ` first line are still accepted, but prefer the tag form — it handles nested code blocks cleanly.)`
 
 const crossProjectInstructions = `

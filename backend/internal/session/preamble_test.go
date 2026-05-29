@@ -32,6 +32,34 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 	}
 }
 
+func TestBuildPreamble_SuggestParallelCloserGuidance(t *testing.T) {
+	// The prompt-block authoring guidance must spell out the closer rule, the
+	// meta-prompt escaping rule, and the self-verify reminder — these prevent the
+	// silent-card-loss incidents (wrong closer / nested tag tokens in body).
+	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, DefaultPresets(), nil, nil, "", false, "")
+
+	for _, want := range []string{
+		"</agentique>",    // names the real closing tag
+		"</parameter>",    // the wrong-closer anti-example
+		"Meta-prompts",    // meta-prompt escaping rule
+		"[agentique ...]", // square-bracket placeholder guidance
+		"Self-verify",     // self-verification reminder
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("authoring guidance missing %q", want)
+		}
+	}
+}
+
+func TestBuildPreamble_CloserGuidanceGatedBySuggestParallel(t *testing.T) {
+	// Closer guidance lives inside the suggest-parallel snippet; it must be absent
+	// when that preset is off.
+	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, BehaviorPresets{}, nil, nil, "", false, "")
+	if strings.Contains(got, "Close the block with the real tag") {
+		t.Error("closer guidance should be excluded when SuggestParallel is off")
+	}
+}
+
 func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
 	projects := []ProjectInfo{
 		{Name: "Frontend", Slug: "frontend"},
