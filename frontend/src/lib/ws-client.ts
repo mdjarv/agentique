@@ -89,6 +89,7 @@ export class WsClient {
         this.setConnectionState("reconnecting");
         this.reconnectTimer = setTimeout(() => {
           this.reconnectTimer = null;
+          if (!this.shouldReconnect) return;
           this.connect();
         }, this.reconnectDelay);
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
@@ -106,6 +107,10 @@ export class WsClient {
     this.shouldReconnect = false;
     this.setConnectionState("disconnected");
     this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.close();
     if (this.visibilityBound) {
       document.removeEventListener("visibilitychange", this.handleVisibilityChange);

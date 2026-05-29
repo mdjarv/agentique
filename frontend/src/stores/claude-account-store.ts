@@ -156,18 +156,26 @@ async function pollUntilLoggedIn(set: SetFn, signal: AbortSignal): Promise<void>
         resolve();
         return;
       }
-      const account = await getClaudeAccount();
-      if (account.loggedIn) {
-        set({
-          loggedIn: true,
-          email: account.email ?? null,
-          orgName: account.orgName ?? null,
-          subscriptionType: account.subscriptionType ?? null,
-          switching: false,
-          loginUrl: null,
-          loginDialogOpen: false,
-          error: null,
-        });
+      try {
+        const account = await getClaudeAccount();
+        if (account.loggedIn) {
+          set({
+            loggedIn: true,
+            email: account.email ?? null,
+            orgName: account.orgName ?? null,
+            subscriptionType: account.subscriptionType ?? null,
+            switching: false,
+            loginUrl: null,
+            loginDialogOpen: false,
+            error: null,
+          });
+          resolve();
+          return;
+        }
+      } catch (err) {
+        console.error("getClaudeAccount failed during login polling", err);
+      }
+      if (signal.aborted) {
         resolve();
         return;
       }

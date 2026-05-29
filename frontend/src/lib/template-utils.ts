@@ -65,5 +65,6 @@ export function formatVariableName(name: string): string {
 }
 
 export function templateHasVariables(tmpl: PromptTemplate): boolean {
+  VARIABLE_RE.lastIndex = 0;
   return VARIABLE_RE.test(tmpl.content);
 }

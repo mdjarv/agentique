@@ -223,6 +223,21 @@ describe("WsClient", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 
+  it("disconnect clears a pending reconnect timer", () => {
+    const client = createClient();
+    client.connect();
+    MockWebSocket.last().simulateOpen();
+
+    MockWebSocket.last().simulateClose();
+    expect(client.connectionState).toBe("reconnecting");
+
+    client.disconnect();
+    vi.advanceTimersByTime(500);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(client.connectionState).toBe("disconnected");
+  });
+
   it("reconnects with exponential backoff after close", () => {
     const client = createClient();
     client.connect();

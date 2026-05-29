@@ -29,9 +29,13 @@ func (h *FilesHandler) HandleServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sanitize: reject path traversal attempts.
+	// Sanitize: reject path traversal attempts while allowing ordinary
+	// filenames such as "notes..md".
 	cleaned := filepath.Clean(filePath)
-	if strings.Contains(cleaned, "..") || filepath.IsAbs(cleaned) {
+	if filepath.IsAbs(cleaned) ||
+		cleaned == "." ||
+		cleaned == ".." ||
+		strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
 		httperror.RespondError(w, httperror.BadRequest("invalid file path"))
 		return
 	}
