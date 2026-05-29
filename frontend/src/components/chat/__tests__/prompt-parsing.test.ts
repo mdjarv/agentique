@@ -974,6 +974,52 @@ describe("agentique tag — bug sweep", () => {
     }
   });
 
+  it("missing title on a closed block falls back to a placeholder card (not silently dropped)", () => {
+    const md = '<agentique type="prompt">\nDo the thing.\n</agentique>';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("prompt");
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Untitled prompt");
+      expect(segments[0].block.prompt).toBe("Do the thing.");
+      expect(segments[0].block.warning).toMatch(/missing title/i);
+    }
+  });
+
+  it("missing title combined with a wrong closer keeps both warnings and renders a card", () => {
+    const md = '<agentique type="prompt">\nDo the thing.\n</parameter>';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("Untitled prompt");
+      expect(segments[0].block.warning).toMatch(/malformed close tag/i);
+      expect(segments[0].block.warning).toMatch(/missing title/i);
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("tolerates a closer with inner whitespace </agentique > with no warning", () => {
+    const md = '<agentique type="prompt" title="WS">\nDo it.\n</agentique >';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.title).toBe("WS");
+      expect(segments[0].block.prompt).toBe("Do it.");
+      expect(segments[0].block.warning).toBeUndefined();
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("resumes correctly after a whitespace closer — no stray '>' leaks", () => {
+    const md = '<agentique type="prompt" title="WS">\nDo it.\n</agentique >\n\nAfter text.';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const text = segments.map((s) => (s.type === "markdown" ? s.content : "")).join("");
+    expect(text).toContain("After text.");
+    expect(text).not.toContain(">");
+  });
+
   it("two well-formed nested examples inside one malformed outer → single card", () => {
     const md = [
       '<agentique type="prompt" title="Meta">',

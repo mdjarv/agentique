@@ -292,8 +292,11 @@ export function repairNestedFences(markdown: string): string {
 // ---------------------------------------------------------------------------
 
 const RE_AGENTIQUE_OPEN_ANCHORED = /^<agentique\b([^>]*)>/i;
-const RE_AGENTIQUE_CLOSE_ANCHORED = /^<\/agentique>/i;
+// Tolerate inner whitespace (e.g. `</agentique >`) so a minor stylistic variant
+// matches cleanly instead of being treated as a malformed closer.
+const RE_AGENTIQUE_CLOSE_ANCHORED = /^<\/agentique\s*>/i;
 const AGENTIQUE_CLOSE = "</agentique>";
+const UNTITLED_PROMPT = "Untitled prompt";
 const RE_ATTR = /([\w-]+)\s*=\s*"([^"]*)"/g;
 const RE_FENCE_CLOSE_LINE = /^ {0,3}(`{3,})\s*$/;
 // Any closing tag, e.g. </parameter>, </prompt>, </agentique>. Used only by the
@@ -542,8 +545,24 @@ function buildFencedPrompt(
   const fenceLen = Math.max(3, maxFenceInBody(body) + 1);
   const fence = "`".repeat(fenceLen);
   const lines: string[] = [`${fence}prompt`];
-  if (attrs.title) lines.push(`# ${attrs.title}`);
-  if (warning) lines.push(`warning: ${warning}`);
+
+  const title = attrs.title?.trim();
+  const warnings: string[] = [];
+  if (warning) warnings.push(warning);
+
+  if (title) {
+    lines.push(`# ${title}`);
+  } else if (closed) {
+    // A closed block with no title would fail to parse (the body needs a `# `
+    // heading) and be silently dropped. Emit a placeholder so it still renders
+    // as a clickable card, and flag the missing title so it isn't silent.
+    lines.push(`# ${UNTITLED_PROMPT}`);
+    warnings.push("Missing title — using a placeholder.");
+  }
+  // When unclosed (streaming) with no title, omit the heading: the pending card
+  // shows a skeleton title that resolves once the block completes.
+
+  if (warnings.length) lines.push(`warning: ${warnings.join(" ")}`);
   if (attrs.project) lines.push(`project: ${attrs.project}`);
   const trimmed = body.replace(/^\n+|\n+$/g, "");
   if (trimmed) lines.push(trimmed);
@@ -590,10 +609,14 @@ export function preprocessAgentiqueTags(markdown: string, isFinal = false): stri
 
     const closeStart = findMatchingAgentiqueClose(markdown, openEnd);
     if (closeStart !== null) {
-      // Well-formed, balanced close.
+      // Well-formed, balanced close. Use the matched length (the closer may carry
+      // inner whitespace, e.g. `</agentique >`) so the cursor lands past it.
       const body = markdown.slice(openEnd, closeStart);
+      const closeLen =
+        RE_AGENTIQUE_CLOSE_ANCHORED.exec(markdown.slice(closeStart))?.[0].length ??
+        AGENTIQUE_CLOSE.length;
       result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true)}\n`;
-      cursor = closeStart + AGENTIQUE_CLOSE.length;
+      cursor = closeStart + closeLen;
       continue;
     }
 
