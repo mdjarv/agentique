@@ -283,9 +283,14 @@ export function repairNestedFences(markdown: string): string {
 // when the body contains code) so the rest of the pipeline can stay
 // fence-based. An unclosed trailing tag becomes an unclosed ```prompt opener
 // so the existing pending_prompt detection picks it up during streaming.
+//
+// Both the top-level opener scan and the close matcher skip markdown code
+// regions, so tag syntax shown as documentation (inside a fenced or inline code
+// span) is preserved verbatim and never converted into a card. A nested
+// `<agentique …>…</agentique>` example in a body is consumed as part of the
+// outer block, not parsed as its own card.
 // ---------------------------------------------------------------------------
 
-const RE_AGENTIQUE_OPEN = /<agentique\b([^>]*)>/i;
 const RE_AGENTIQUE_OPEN_ANCHORED = /^<agentique\b([^>]*)>/i;
 const RE_AGENTIQUE_CLOSE_ANCHORED = /^<\/agentique>/i;
 const AGENTIQUE_CLOSE = "</agentique>";
@@ -394,6 +399,32 @@ function findMatchingAgentiqueClose(markdown: string, openEnd: number): number |
   return null;
 }
 
+/** Find the next top-level `<agentique …>` opener at or after `from`, skipping
+ *  matches inside markdown code regions. Tag syntax shown as documentation — a
+ *  fenced or inline code example — must never be turned into a card, so the
+ *  top-level scan honors code regions exactly like the matcher does. Returns the
+ *  opener's absolute index and the anchored match, or null when none remains. */
+function findNextAgentiqueOpen(
+  markdown: string,
+  from: number,
+): { index: number; match: RegExpExecArray } | null {
+  let i = from;
+  const N = markdown.length;
+  while (i < N) {
+    const ch = markdown[i];
+    if (ch === "`") {
+      i = skipBackticks(markdown, i, N);
+      continue;
+    }
+    if (ch === "<") {
+      const m = RE_AGENTIQUE_OPEN_ANCHORED.exec(markdown.slice(i));
+      if (m) return { index: i, match: m };
+    }
+    i++;
+  }
+  return null;
+}
+
 interface RecoveryBoundary {
   /** End of the recovered body (exclusive). */
   bodyEnd: number;
@@ -402,15 +433,27 @@ interface RecoveryBoundary {
   reason: "wrong-closer" | "next-opener" | "eof";
 }
 
-/** Locate the most plausible end of a block whose proper `</agentique>` closer
- *  is missing or mistyped. Scans from openEnd (skipping code regions) for the
- *  earliest of: a close-like tag (`</…>`, e.g. the mistyped `</parameter>`); the
- *  next `<agentique …>` opener (so an adjacent block is never swallowed); or end
- *  of message. The recovered block is still rendered as a clickable card with a
- *  warning, so a malformed close never silently degrades to plain text. */
+/** Locate the most plausible end of a block whose proper `</agentique>` closer is
+ *  missing or mistyped. Scans from openEnd with the SAME code-skipping +
+ *  agentique-depth tracking as the matcher, so a *balanced* nested block stays
+ *  part of the body rather than being mistaken for a sibling.
+ *
+ *  The "an opener appears inside the body" case is inherently ambiguous (it could
+ *  be a nested example, or a sibling block whose predecessor forgot its closer).
+ *  It is resolved by what follows:
+ *    - a close-like tag (`</…>`, e.g. the mistyped `</parameter>`) at the OUTER
+ *      depth wins as the boundary — any openers before it were nested, so the
+ *      outer block simply had a wrong closer (incident #1, possibly with nesting);
+ *    - otherwise the FIRST outer-depth `<agentique …>` opener is treated as a
+ *      sibling boundary, so two adjacent blocks where the first forgot its closer
+ *      split into two cards instead of merging;
+ *    - otherwise the boundary is end of message.
+ *  Either way the recovered block renders as a clickable card with a warning. */
 function findRecoveryBoundary(markdown: string, openEnd: number): RecoveryBoundary {
   let i = openEnd;
   const N = markdown.length;
+  let depth = 0; // depth of nested agentique blocks below the (unclosed) outer one
+  let firstOpener = -1; // first opener seen at the outer depth (sibling candidate)
 
   while (i < N) {
     const ch = markdown[i];
@@ -420,17 +463,40 @@ function findRecoveryBoundary(markdown: string, openEnd: number): RecoveryBounda
     }
     if (ch === "<") {
       const rest = markdown.slice(i);
-      if (RE_AGENTIQUE_OPEN_ANCHORED.test(rest)) {
-        return { bodyEnd: i, consumeEnd: i, reason: "next-opener" };
+      const openM = RE_AGENTIQUE_OPEN_ANCHORED.exec(rest);
+      if (openM) {
+        if (depth === 0 && firstOpener === -1) firstOpener = i;
+        depth++;
+        i += openM[0].length;
+        continue;
       }
-      const closeM = RE_CLOSE_LIKE_ANCHORED.exec(rest);
-      if (closeM) {
-        return { bodyEnd: i, consumeEnd: i + closeM[0].length, reason: "wrong-closer" };
+      const aCloseM = RE_AGENTIQUE_CLOSE_ANCHORED.exec(rest);
+      if (aCloseM) {
+        if (depth > 0) {
+          depth--;
+          i += aCloseM[0].length;
+          continue;
+        }
+        // Defensive: a balanced outer </agentique> would have been found by the
+        // matcher, so this depth-0 case is unreachable in normal flow; treat a
+        // stray one as the boundary rather than scanning past it.
+        return { bodyEnd: i, consumeEnd: i + aCloseM[0].length, reason: "wrong-closer" };
+      }
+      // A non-agentique close-like tag only ends the OUTER block at outer depth;
+      // inside a nested block it is just body text.
+      if (depth === 0) {
+        const closeM = RE_CLOSE_LIKE_ANCHORED.exec(rest);
+        if (closeM) {
+          return { bodyEnd: i, consumeEnd: i + closeM[0].length, reason: "wrong-closer" };
+        }
       }
     }
     i++;
   }
 
+  if (firstOpener !== -1) {
+    return { bodyEnd: firstOpener, consumeEnd: firstOpener, reason: "next-opener" };
+  }
   return { bodyEnd: N, consumeEnd: N, reason: "eof" };
 }
 
@@ -500,14 +566,14 @@ export function preprocessAgentiqueTags(markdown: string, isFinal = false): stri
   let cursor = 0;
 
   while (cursor < markdown.length) {
-    const remaining = markdown.slice(cursor);
-    const openMatch = RE_AGENTIQUE_OPEN.exec(remaining);
-    if (!openMatch) {
-      result += remaining;
+    const found = findNextAgentiqueOpen(markdown, cursor);
+    if (!found) {
+      result += markdown.slice(cursor);
       break;
     }
 
-    const openStart = cursor + openMatch.index;
+    const openStart = found.index;
+    const openMatch = found.match;
     const openEnd = openStart + openMatch[0].length;
     const attrs = parseAttrs(openMatch[1] ?? "");
 

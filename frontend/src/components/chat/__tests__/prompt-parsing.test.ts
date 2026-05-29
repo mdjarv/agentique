@@ -877,6 +877,126 @@ describe("agentique tag — malformed-closer recovery & nested tokens", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bug sweep — tag syntax shown as documentation, and nesting + malformed outer
+// ---------------------------------------------------------------------------
+
+describe("agentique tag — bug sweep", () => {
+  it("does NOT convert <agentique> shown inside a top-level fenced code block", () => {
+    const md = [
+      "Here's how the tag works:",
+      "```",
+      '<agentique type="prompt" title="Example">',
+      "Do X.",
+      "</agentique>",
+      "```",
+      "Paste that to create a card.",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    // Documentation inside a code block must never become a card.
+    expect(segments.every((s) => s.type === "markdown")).toBe(true);
+    const joined = segments.map((s) => (s.type === "markdown" ? s.content : "")).join("\n");
+    expect(joined).toContain('<agentique type="prompt" title="Example">');
+    expect(joined).toContain("Paste that to create a card.");
+  });
+
+  it("does NOT convert <agentique> shown in a top-level inline code span", () => {
+    const md = 'Use the `<agentique type="prompt" title="X">` tag to suggest parallel work.';
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.type).toBe("markdown");
+    if (segments[0]?.type === "markdown") {
+      expect(segments[0].content).toContain("suggest parallel work");
+    }
+  });
+
+  it("real card still works when preceded by a code block that shows the syntax", () => {
+    const md = [
+      "Example:",
+      "```",
+      '<agentique type="prompt" title="docs only">',
+      "</agentique>",
+      "```",
+      "Now the real one:",
+      "",
+      '<agentique type="prompt" title="Real">',
+      "Do the actual work.",
+      "</agentique>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(1);
+    if (prompts[0]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("Real");
+      expect(prompts[0].block.prompt).toBe("Do the actual work.");
+    }
+  });
+
+  it("nested inner prompt + malformed OUTER closer → one outer card containing the inner", () => {
+    const md = [
+      '<agentique type="prompt" title="Outer">',
+      "Intro.",
+      '<agentique type="prompt" title="Inner">',
+      "Inner body.",
+      "</agentique>",
+      "More outer.",
+      "</parameter>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    // The inner must NOT be parsed as its own card — it is part of the outer body.
+    expect(prompts).toHaveLength(1);
+    if (prompts[0]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("Outer");
+      expect(prompts[0].block.prompt).toContain('<agentique type="prompt" title="Inner">');
+      expect(prompts[0].block.prompt).toContain("Inner body.");
+      expect(prompts[0].block.prompt).toContain("More outer.");
+      expect(prompts[0].block.warning).toBeTruthy();
+    }
+  });
+
+  it("nested inner prompt + outer missing closer at EOF still keeps the inner in the body when a close-like token follows", () => {
+    const md = [
+      '<agentique type="prompt" title="Outer">',
+      "Intro.",
+      '<agentique type="prompt" title="Inner">',
+      "Inner body.",
+      "</agentique>",
+      "Trailing outer text.",
+      "</prompt>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(1);
+    if (prompts[0]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("Outer");
+      expect(prompts[0].block.prompt).toContain("Inner body.");
+      expect(prompts[0].block.prompt).toContain("Trailing outer text.");
+    }
+  });
+
+  it("two well-formed nested examples inside one malformed outer → single card", () => {
+    const md = [
+      '<agentique type="prompt" title="Meta">',
+      "First example:",
+      '<agentique type="prompt" title="One">a</agentique>',
+      "Second example:",
+      '<agentique type="prompt" title="Two">b</agentique>',
+      "Done.",
+      "</parameter>",
+    ].join("\n");
+    const segments = splitByPromptBlocks(md, { isFinal: true });
+    const prompts = segments.filter((s) => s.type === "prompt");
+    expect(prompts).toHaveLength(1);
+    if (prompts[0]?.type === "prompt") {
+      expect(prompts[0].block.title).toBe("Meta");
+      expect(prompts[0].block.prompt).toContain('title="One"');
+      expect(prompts[0].block.prompt).toContain('title="Two"');
+      expect(prompts[0].block.prompt).toContain("Done.");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parsePromptFromCode warning meta line
 // ---------------------------------------------------------------------------
 
