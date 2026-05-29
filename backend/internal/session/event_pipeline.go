@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
+	claudecli "github.com/allbin/claudecli-go"
 )
 
 // EventSink bundles the two universal outputs of event processing.
@@ -63,6 +64,7 @@ type EventPipeline struct {
 
 	mu                sync.Mutex
 	claudeSessionID   string
+	resolvedModel     string // upstream-reported model ID from the first InitEvent (e.g. "claude-opus-4-8")
 	turnIndex         int
 	seqInTurn         int
 	toolCategories    map[string]string
@@ -298,6 +300,16 @@ func (p *EventPipeline) SetClaudeSessionID(id string) {
 	p.mu.Unlock()
 }
 
+// ResolvedModel returns the upstream-reported model ID captured from the first
+// InitEvent (e.g. "claude-opus-4-8"). Differs from the configured slug
+// (e.g. "opus") when the provider resolves the alias to a specific version.
+// Empty until the first InitEvent arrives.
+func (p *EventPipeline) ResolvedModel() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.resolvedModel
+}
+
 // --- Internal stage methods ---
 
 func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
@@ -307,16 +319,35 @@ func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
 	}
 
 	p.mu.Lock()
-	if p.claudeSessionID == "" && initEv.SessionID != "" {
+	captureSession := p.claudeSessionID == "" && initEv.SessionID != ""
+	captureModel := p.resolvedModel == "" && initEv.Model != ""
+	if captureSession {
 		p.claudeSessionID = initEv.SessionID
-		p.mu.Unlock()
+	}
+	if captureModel {
+		p.resolvedModel = initEv.Model
+	}
+	p.mu.Unlock()
+
+	if captureSession {
 		if p.onClaudeSessionID != nil {
 			p.onClaudeSessionID(initEv.SessionID)
 		}
-		slog.Debug("captured provider session ID", "session_id", p.sessionID, "provider_session_id", initEv.SessionID)
-		return true
+		slog.Debug("captured provider session ID",
+			"session_id", p.sessionID,
+			"provider_session_id", initEv.SessionID,
+		)
 	}
-	p.mu.Unlock()
+	if captureModel {
+		// ModelDisplayName fails safe — returns the input unchanged for
+		// unrecognized IDs (e.g. codex's "gpt-5"), so calling it from this
+		// provider-neutral layer is harmless.
+		slog.Info("session model resolved",
+			"session_id", p.sessionID,
+			"model_id", initEv.Model,
+			"model_display_name", claudecli.ModelDisplayName(initEv.Model),
+		)
+	}
 	return true
 }
 

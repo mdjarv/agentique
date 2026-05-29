@@ -193,6 +193,23 @@ func TestPipeline_InitCapture(t *testing.T) {
 	}
 }
 
+func TestPipeline_InitCapture_ResolvedModel(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "claude-123", Model: "claude-opus-4-8"})
+
+	if got := p.ResolvedModel(); got != "claude-opus-4-8" {
+		t.Errorf("ResolvedModel: got %q, want %q", got, "claude-opus-4-8")
+	}
+
+	// Second InitEvent must not overwrite the first capture.
+	p.ProcessEvent(runtime.SessionInitEvent{SessionID: "claude-123", Model: "claude-sonnet-4-6"})
+	if got := p.ResolvedModel(); got != "claude-opus-4-8" {
+		t.Errorf("ResolvedModel after second event: got %q, want %q", got, "claude-opus-4-8")
+	}
+}
+
 func TestPipeline_InitCapture_OnlyFirst(t *testing.T) {
 	sink := newTestSink()
 	callCount := 0
