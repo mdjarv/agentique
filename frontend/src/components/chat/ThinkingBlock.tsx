@@ -29,7 +29,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
     return (
       <div className="border rounded-md bg-muted/50 px-3 py-1.5 flex items-center gap-2 text-xs text-muted-foreground italic">
         <ThinkingIcon className="shrink-0" />
-        <span className="truncate">Thinking (hidden by Opus 4.7)</span>
+        <span className="truncate">Thinking (hidden by Opus 4.8)</span>
       </div>
     );
   }

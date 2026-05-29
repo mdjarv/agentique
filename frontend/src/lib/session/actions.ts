@@ -50,9 +50,9 @@ export type ModelId = (typeof MODELS)[number];
 export const MODEL_LABELS: Record<ModelId, string> = {
   haiku: "Haiku 4.5",
   sonnet: "Sonnet 4.6",
-  opus: "Opus 4.7",
+  opus: "Opus 4.8",
   "sonnet[1m]": "Sonnet 4.6 (1M)",
-  "opus[1m]": "Opus 4.7 (1M)",
+  "opus[1m]": "Opus 4.8 (1M)",
   "gpt-5": "GPT-5",
   "gpt-5-codex": "GPT-5 Codex",
   "gpt-5-mini": "GPT-5 Mini",
