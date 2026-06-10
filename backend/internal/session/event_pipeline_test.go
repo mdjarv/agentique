@@ -710,16 +710,18 @@ func TestPipeline_UserEchoWithToolResultOnly(t *testing.T) {
 	}
 }
 
-// deliveryBroadcasts returns the message_delivery events captured by the sink.
-func deliveryBroadcasts(sink *testSink) []WireMessageDeliveryEvent {
+// deliveryConfirmations extracts message_delivery wire events from broadcasts.
+func deliveryConfirmations(ts *testSink) []WireMessageDeliveryEvent {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	var out []WireMessageDeliveryEvent
-	for _, b := range sink.broadcasts {
+	for _, b := range ts.broadcasts {
 		pse, ok := b.Payload.(PushSessionEvent)
 		if !ok {
 			continue
 		}
-		if d, ok := pse.Event.(WireMessageDeliveryEvent); ok {
-			out = append(out, d)
+		if mde, ok := pse.Event.(WireMessageDeliveryEvent); ok {
+			out = append(out, mde)
 		}
 	}
 	return out
@@ -730,27 +732,22 @@ func TestPipeline_ReplayEchoConfirmsPendingMessage(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	// Mid-turn SendMessage enqueues a pending messageId.
 	p.PushPendingMessage("msg-1")
+	p.ProcessEvent(runtime.UserEcho{MessageID: "msg-1", Content: "hello", IsReplay: true})
 
-	// CLI replays the injected user message: text content, no tool results.
-	// (agentkit fills Content with the echoed text and drops claudecli's
-	// IsReplay flag, so replay is inferred from this shape.)
-	p.ProcessEvent(runtime.UserEcho{MessageID: "cli-uuid", Content: "also do Y"})
-
-	deliveries := deliveryBroadcasts(sink)
-	if len(deliveries) != 1 {
-		t.Fatalf("expected 1 message_delivery broadcast, got %d", len(deliveries))
+	confirms := deliveryConfirmations(sink)
+	if len(confirms) != 1 {
+		t.Fatalf("expected 1 delivery confirmation, got %d", len(confirms))
 	}
-	if deliveries[0].MessageID != "msg-1" {
-		t.Errorf("delivery messageId = %q, want %q", deliveries[0].MessageID, "msg-1")
+	if confirms[0].Status != "delivered" {
+		t.Errorf("status = %q, want delivered", confirms[0].Status)
 	}
-	if deliveries[0].Status != "delivered" {
-		t.Errorf("delivery status = %q, want delivered", deliveries[0].Status)
+	if confirms[0].MessageID != "msg-1" {
+		t.Errorf("messageId = %q, want msg-1", confirms[0].MessageID)
 	}
-	// A text echo is a replay confirmation, not a persisted event.
+	// Replay echoes are transient — not persisted.
 	if len(sink.persisted) != 0 {
-		t.Errorf("replay echo should not persist, got %d persisted", len(sink.persisted))
+		t.Errorf("expected 0 persisted, got %d", len(sink.persisted))
 	}
 }
 
@@ -762,34 +759,15 @@ func TestPipeline_ReplayEchoFIFOOrder(t *testing.T) {
 	p.PushPendingMessage("msg-1")
 	p.PushPendingMessage("msg-2")
 
-	p.ProcessEvent(runtime.UserEcho{MessageID: "cli-a", Content: "first"})
-	p.ProcessEvent(runtime.UserEcho{MessageID: "cli-b", Content: "second"})
+	p.ProcessEvent(runtime.UserEcho{MessageID: "msg-1", Content: "first", IsReplay: true})
+	p.ProcessEvent(runtime.UserEcho{MessageID: "msg-2", Content: "second", IsReplay: true})
 
-	deliveries := deliveryBroadcasts(sink)
-	if len(deliveries) != 2 {
-		t.Fatalf("expected 2 deliveries, got %d", len(deliveries))
+	confirms := deliveryConfirmations(sink)
+	if len(confirms) != 2 {
+		t.Fatalf("expected 2 confirmations, got %d", len(confirms))
 	}
-	if deliveries[0].MessageID != "msg-1" || deliveries[1].MessageID != "msg-2" {
-		t.Errorf("FIFO order broken: got %q then %q", deliveries[0].MessageID, deliveries[1].MessageID)
-	}
-}
-
-func TestPipeline_ToolResultEchoIsNotReplay(t *testing.T) {
-	sink := newTestSink()
-	p := newTestPipeline(sink)
-	p.AdvanceTurn()
-	p.PushPendingMessage("msg-1")
-
-	p.ProcessEvent(runtime.ToolUseEvent{ID: "tu", Name: "Bash", Input: json.RawMessage(`{}`)})
-	// Tool-result echo must not consume the pending message.
-	p.ProcessEvent(runtime.UserEcho{
-		ToolResults: []runtime.ToolResult{
-			{ToolUseID: "tu", Content: []runtime.ToolContent{{Type: "text", Text: "out"}}},
-		},
-	})
-
-	if got := len(deliveryBroadcasts(sink)); got != 0 {
-		t.Errorf("tool-result echo should not confirm delivery, got %d deliveries", got)
+	if confirms[0].MessageID != "msg-1" || confirms[1].MessageID != "msg-2" {
+		t.Errorf("FIFO order broken: got %q then %q", confirms[0].MessageID, confirms[1].MessageID)
 	}
 }
 
@@ -798,11 +776,46 @@ func TestPipeline_ReplayEchoWithoutPendingIsNoop(t *testing.T) {
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
 
-	// Initial-prompt echo arrives with nothing enqueued — safe no-op.
-	p.ProcessEvent(runtime.UserEcho{MessageID: "cli-x", Content: "do X"})
+	// No pending messages queued.
+	p.ProcessEvent(runtime.UserEcho{MessageID: "msg-1", Content: "hello", IsReplay: true})
 
-	if got := len(deliveryBroadcasts(sink)); got != 0 {
-		t.Errorf("echo with empty queue should not broadcast delivery, got %d", got)
+	if got := len(deliveryConfirmations(sink)); got != 0 {
+		t.Errorf("expected no delivery confirmations, got %d", got)
+	}
+	if len(sink.persisted) != 0 {
+		t.Errorf("expected 0 persisted, got %d", len(sink.persisted))
+	}
+}
+
+func TestPipeline_ToolResultEchoIsNotReplay(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.PushPendingMessage("msg-1")
+
+	// Register a tool_use so the echo's tool_result can be tracked.
+	p.ProcessEvent(runtime.ToolUseEvent{
+		ID: "tu_bash", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`),
+	})
+
+	// A tool-result echo (IsReplay defaults to false) must NOT confirm the
+	// pending message — it carries tool results, not a replay confirmation.
+	p.ProcessEvent(runtime.UserEcho{
+		ToolResults: []runtime.ToolResult{
+			{ToolUseID: "tu_bash", Content: []runtime.ToolContent{{Type: "text", Text: "file1"}}},
+		},
+	})
+
+	if got := len(deliveryConfirmations(sink)); got != 0 {
+		t.Errorf("tool-result echo should not confirm delivery, got %d", got)
+	}
+	// tool_use + tool_result persisted.
+	if len(sink.persisted) != 2 {
+		t.Fatalf("expected 2 persisted, got %d", len(sink.persisted))
+	}
+	if sink.persisted[1].WireType != "tool_result" {
+		t.Errorf("persisted[1] = %q, want tool_result", sink.persisted[1].WireType)
 	}
 }
 

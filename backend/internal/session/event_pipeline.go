@@ -219,21 +219,14 @@ func (p *EventPipeline) handleReplayConfirmation() {
 	})
 }
 
-// processUserEcho extracts wire events from a UserEcho event. A text-bearing
-// echo with no tool results is the CLI replaying a user message it read from
-// stdin (--replay-user-messages); this confirms that a previously-injected
-// SendMessage has been accepted, so it drives replay confirmation. Echoes
-// carrying tool_result entries produce WireToolResultEvent instead. AgentResult
-// metadata flows separately via runtime.AgentResultEvent → WireAgentResultEvent
-// through the normal ToWireEvent path.
-//
-// NOTE: agentkit's neutral runtime.UserEcho drops claudecli's explicit IsReplay
-// flag, so replay is inferred from shape (text, no tool results). All user-text
-// echoes are replays under --replay-user-messages; handleReplayConfirmation
-// no-ops when nothing is pending, so the initial prompt's echo (never enqueued)
-// is safely ignored.
+// processUserEcho extracts wire events from a UserEcho event. The replay
+// confirmation form (keyed on the explicit IsReplay flag) signals that the
+// CLI has accepted a previously-injected SendMessage; tool_result entries
+// produce WireToolResultEvent. AgentResult metadata flows separately via
+// runtime.AgentResultEvent → WireAgentResultEvent through the normal
+// ToWireEvent path.
 func (p *EventPipeline) processUserEcho(ue runtime.UserEcho) {
-	if len(ue.ToolResults) == 0 && ue.Content != "" {
+	if ue.IsReplay {
 		p.handleReplayConfirmation()
 		return
 	}
