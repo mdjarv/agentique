@@ -114,6 +114,8 @@ export function SessionHeader({
   const [editName, setEditName] = useState(meta.name);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const { copied: refCopied, copy: copyRef } = useCopyToClipboard();
+  const { copied: branchCopied, copy: copyBranch } = useCopyToClipboard();
+  const { copied: pathCopied, copy: copyPath } = useCopyToClipboard();
 
   const handleIconChange = useCallback(
     (icon: string | undefined) => {
@@ -127,6 +129,8 @@ export function SessionHeader({
   const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
   const shortId = sessionShortId(meta.id);
   const sessionRef = projectSlug ? `${projectSlug}/${shortId}` : shortId;
+  const worktreeBranch = meta.worktreeBranch;
+  const worktreePath = meta.worktreePath;
 
   useEffect(() => {
     if (editing) {
@@ -366,6 +370,60 @@ export function SessionHeader({
                   </Button>
                 </div>
               </div>
+
+              {/* Branch */}
+              {worktreeBranch && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Branch
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="text-xs font-mono text-muted-foreground truncate flex-1"
+                      title={worktreeBranch}
+                    >
+                      {worktreeBranch}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => copyBranch(worktreeBranch)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      {branchCopied ? (
+                        <Check className="size-2.5" />
+                      ) : (
+                        <Copy className="size-2.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Local path */}
+              {worktreePath && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Local path
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="text-xs font-mono text-muted-foreground truncate flex-1"
+                      title={worktreePath}
+                    >
+                      {worktreePath}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => copyPath(worktreePath)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      {pathCopied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Agent profile */}
               {meta.agentProfileName && (
