@@ -16,22 +16,21 @@ import (
 // Cheap (a single statfs syscall) — safe to poll frequently.
 func Stats() (DiskStats, error) {
 	dir := paths.DataDir()
-	total, free, err := diskStats(dir)
+	total, avail, used, err := diskStats(dir)
 	if err != nil {
 		return DiskStats{}, err
 	}
-	used := uint64(0)
-	if total > free {
-		used = total - free
-	}
+	// df-style usage: percent of the user-accessible space (used + available),
+	// which excludes root-reserved blocks — matches what `df` reports, rather
+	// than used/total which inflates the figure by the reserved amount.
 	var pct float64
-	if total > 0 {
-		pct = float64(used) / float64(total) * 100
+	if denom := used + avail; denom > 0 {
+		pct = float64(used) / float64(denom) * 100
 	}
 	return DiskStats{
 		Path:         dir,
 		TotalBytes:   total,
-		FreeBytes:    free,
+		FreeBytes:    avail,
 		UsedBytes:    used,
 		UsagePercent: pct,
 	}, nil

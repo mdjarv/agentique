@@ -47,6 +47,7 @@ export function StoragePage() {
   const ws = useWebSocket();
   const usage = useStorageStore((s) => s.usage);
   const usageLoading = useStorageStore((s) => s.usageLoading);
+  const usageError = useStorageStore((s) => s.usageError);
   const fetchUsage = useStorageStore((s) => s.fetchUsage);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -74,15 +75,16 @@ export function StoragePage() {
         toast.success(`Removed ${deleteTarget.label}`);
       } else if (deleteTarget.kind === "orphan-all") {
         const orphans = usage?.orphans ?? [];
-        let removed = 0;
-        for (const o of orphans) {
-          try {
-            await deleteOrphanedWorktree(o.worktreePath);
-            removed++;
-          } catch (err) {
-            console.error("Failed to remove orphan", o.worktreePath, err);
+        const results = await Promise.allSettled(
+          orphans.map((o) => deleteOrphanedWorktree(o.worktreePath)),
+        );
+        orphans.forEach((o, i) => {
+          const r = results[i];
+          if (r?.status === "rejected") {
+            console.error("Failed to remove orphan", o.worktreePath, r.reason);
           }
-        }
+        });
+        const removed = results.filter((r) => r.status === "fulfilled").length;
         toast.success(`Removed ${removed} of ${orphans.length} orphaned worktrees`);
       } else {
         await deleteSession(ws, deleteTarget.id);
@@ -131,6 +133,16 @@ export function StoragePage() {
         {!usage && usageLoading && (
           <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm">
             <Loader2 className="size-4 animate-spin" /> Calculating disk usage…
+          </div>
+        )}
+
+        {!usage && !usageLoading && usageError && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <AlertTriangle className="size-5 text-destructive" />
+            <div className="text-sm text-muted-foreground">{usageError}</div>
+            <Button variant="outline" size="sm" onClick={() => fetchUsage(false)}>
+              Try again
+            </Button>
           </div>
         )}
 
