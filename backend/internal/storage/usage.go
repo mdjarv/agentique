@@ -101,7 +101,7 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 	// Walk the worktrees tree two levels deep: <bucket>/<session-dir>. Summing
 	// per-session dir sizes yields the worktrees category total in a single pass.
 	projAgg := make(map[string]*ProjectStorage)
-	var orphans []SessionStorage
+	orphans := make([]SessionStorage, 0)
 	var worktreesBytes int64
 
 	buckets, _ := os.ReadDir(worktreeDir)
