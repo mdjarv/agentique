@@ -25,7 +25,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Configure private Go modules
-        run: git config --global url."https://${{ secrets.GO_PRIVATE_TOKEN }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+        run: git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
 
       - name: Go vet
         run: cd backend && go vet ./...
@@ -77,7 +77,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Configure private Go modules
-        run: git config --global url."https://${{ secrets.GO_PRIVATE_TOKEN }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+        run: git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
 
       - name: Install frontend dependencies
         run: cd frontend && npm ci
