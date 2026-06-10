@@ -407,6 +407,49 @@ export interface PromptTemplate {
   updated_at: string;
 }
 
+export interface DiskStats {
+  path: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  usagePercent: number;
+}
+
+export interface CategoryUsage {
+  key: string;
+  label: string;
+  bytes: number;
+}
+
+export interface SessionStorage {
+  sessionId: string;
+  name: string;
+  state: string;
+  worktreePath: string;
+  bytes: number;
+  updatedAt: string;
+  orphaned: boolean;
+}
+
+export interface ProjectStorage {
+  projectId: string;
+  name: string;
+  slug: string;
+  color: string;
+  icon: string;
+  totalBytes: number;
+  sessions: SessionStorage[];
+}
+
+export interface StorageUsage {
+  computedAt: string;
+  disk: DiskStats;
+  dataDirBytes: number;
+  categories: CategoryUsage[];
+  projects: ProjectStorage[];
+  orphans: SessionStorage[];
+}
+
 export interface ProjectSubscribePayload {
   projectId: string;
 }

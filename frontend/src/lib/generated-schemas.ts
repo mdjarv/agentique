@@ -409,6 +409,49 @@ export const PromptTemplateSchema = z.object({
   updated_at: z.string(),
 });
 
+export const DiskStatsSchema = z.object({
+  path: z.string(),
+  totalBytes: z.number(),
+  freeBytes: z.number(),
+  usedBytes: z.number(),
+  usagePercent: z.number(),
+});
+
+export const CategoryUsageSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  bytes: z.number(),
+});
+
+export const SessionStorageSchema = z.object({
+  sessionId: z.string(),
+  name: z.string(),
+  state: z.string(),
+  worktreePath: z.string(),
+  bytes: z.number(),
+  updatedAt: z.string(),
+  orphaned: z.boolean(),
+});
+
+export const ProjectStorageSchema = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  color: z.string(),
+  icon: z.string(),
+  totalBytes: z.number(),
+  sessions: z.array(SessionStorageSchema),
+});
+
+export const StorageUsageSchema = z.object({
+  computedAt: z.string(),
+  disk: DiskStatsSchema,
+  dataDirBytes: z.number(),
+  categories: z.array(CategoryUsageSchema),
+  projects: z.array(ProjectStorageSchema),
+  orphans: z.array(SessionStorageSchema),
+});
+
 export const ProjectSubscribePayloadSchema = z.object({
   projectId: z.string(),
 });

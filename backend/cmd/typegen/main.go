@@ -26,6 +26,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	projpkg "github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/ws"
@@ -394,6 +395,14 @@ func main() {
 
 	projectRef := g.register(store.Project{}, "Project")
 	g.register(store.PromptTemplate{}, "PromptTemplate")
+
+	// ── Storage / disk usage ──
+
+	g.register(storage.DiskStats{}, "DiskStats")
+	g.register(storage.CategoryUsage{}, "CategoryUsage")
+	g.register(storage.SessionStorage{}, "SessionStorage")
+	g.register(storage.ProjectStorage{}, "ProjectStorage")
+	g.register(storage.StorageUsage{}, "StorageUsage")
 
 	// ── WS request payloads ──
 

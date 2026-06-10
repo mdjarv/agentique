@@ -27,6 +27,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
 	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/testmode"
@@ -189,6 +190,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	fh := &session.FilesHandler{}
 	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", fh.HandleServe)
+
+	sth := &storage.Handler{Queries: queries}
+	mux.HandleFunc("GET /api/storage/disk", sth.HandleDisk)
+	mux.HandleFunc("GET /api/storage/usage", sth.HandleUsage)
+	mux.HandleFunc("DELETE /api/storage/worktrees", sth.HandleDeleteWorktree)
 
 	projectGitSvc := project.NewGitService(queries, bus, project.RealGitOps(), runner)
 
