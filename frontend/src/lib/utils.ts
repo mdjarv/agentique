@@ -44,6 +44,16 @@ export function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/** Formats a byte count as a human-readable string (e.g. "1.4 GB"). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exp;
+  const decimals = exp === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(decimals)} ${units[exp]}`;
+}
+
 /** Returns the short 8-char ID used in URLs, derived from the first UUID segment. */
 export function sessionShortId(sessionId: string): string {
   return sessionId.split("-")[0] ?? sessionId;

@@ -1,4 +1,9 @@
-import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
+import type {
+  BehaviorPresets,
+  DiskStats,
+  PresetDefinition,
+  StorageUsage,
+} from "~/lib/generated-types";
 import type { Project } from "~/lib/types";
 
 const BASE = "/api";
@@ -79,6 +84,28 @@ export async function healthCheck(): Promise<{ status: string }> {
   const res = await fetchWithRetry(`${BASE}/health`);
   if (!res.ok) throw new Error("Health check failed");
   return res.json();
+}
+
+export async function getDiskStats(): Promise<DiskStats> {
+  const res = await fetchWithRetry(`${BASE}/storage/disk`);
+  if (!res.ok) throw new Error("Failed to fetch disk stats");
+  return res.json();
+}
+
+export async function getStorageUsage(refresh = false): Promise<StorageUsage> {
+  const res = await fetchWithRetry(`${BASE}/storage/usage${refresh ? "?refresh=1" : ""}`);
+  if (!res.ok) throw new Error("Failed to fetch storage usage");
+  return res.json();
+}
+
+export async function deleteOrphanedWorktree(path: string): Promise<void> {
+  const res = await fetch(`${BASE}/storage/worktrees?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? "Failed to delete worktree");
+  }
 }
 
 export interface DirectoryEntry {

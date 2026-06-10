@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as TeamsRouteImport } from "./routes/teams";
+import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
@@ -34,6 +35,11 @@ const TemplatesRoute = TemplatesRouteImport.update({
 const TeamsRoute = TeamsRouteImport.update({
   id: "/teams",
   path: "/teams",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const StorageRoute = StorageRouteImport.update({
+  id: "/storage",
+  path: "/storage",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -114,6 +120,7 @@ const ProjectProjectSlugChannelChannelIdRoute =
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/projects": typeof ProjectsRoute;
+  "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
@@ -132,6 +139,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/projects": typeof ProjectsRoute;
+  "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/projects": typeof ProjectsRoute;
+  "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
@@ -170,6 +179,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/projects"
+    | "/storage"
     | "/teams"
     | "/templates"
     | "/dev/bubbles"
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/projects"
+    | "/storage"
     | "/teams"
     | "/templates"
     | "/dev/bubbles"
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/projects"
+    | "/storage"
     | "/teams"
     | "/templates"
     | "/dev/bubbles"
@@ -224,6 +236,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   ProjectsRoute: typeof ProjectsRoute;
+  StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
   DevBubblesRoute: typeof DevBubblesRoute;
@@ -249,6 +262,13 @@ declare module "@tanstack/react-router" {
       path: "/teams";
       fullPath: "/teams";
       preLoaderRoute: typeof TeamsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/storage": {
+      id: "/storage";
+      path: "/storage";
+      fullPath: "/storage";
+      preLoaderRoute: typeof StorageRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/projects": {
@@ -376,6 +396,7 @@ const ProjectProjectSlugRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ProjectsRoute: ProjectsRoute,
+  StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
   DevBubblesRoute: DevBubblesRoute,

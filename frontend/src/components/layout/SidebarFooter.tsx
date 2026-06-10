@@ -19,6 +19,7 @@ import { useChatStore } from "~/stores/chat-store";
 import { useClaudeAccountStore } from "~/stores/claude-account-store";
 import { ClaudeLoginDialog } from "./ClaudeLoginDialog";
 import { ConnectionIndicator } from "./ConnectionIndicator";
+import { DiskUsageBar } from "./DiskUsageBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { UsageBars } from "./UsageBars";
 
@@ -28,6 +29,7 @@ export function SidebarFooter() {
   return (
     <div className="px-3 py-2 border-t border-sidebar-border">
       <UsageBars />
+      <DiskUsageBar />
       <div className="flex items-center gap-2">
         <ConnectionIndicator />
         <ThemeToggle />
