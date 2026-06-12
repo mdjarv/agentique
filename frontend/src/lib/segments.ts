@@ -112,6 +112,12 @@ export function buildSegments(
 ): { segments: Segment[]; resultEvent?: ResultEvent } {
   const segments: Segment[] = [];
   let resultEvent: ResultEvent | undefined;
+  // Tracks the single tool item per toolId so duplicate tool_use events (e.g. a
+  // codex pending-approval tool_use followed by the started item, both keyed on
+  // the same item ID) merge instead of producing orphan rows, and so results
+  // correlate in O(1). Distinct codex fileChange files use "{itemID}#N" IDs and
+  // therefore stay as separate items.
+  const toolItemsById = new Map<string, Extract<ActivityItem, { kind: "tool" }>>();
 
   // First pass: collect task events indexed by parent toolUseId,
   // and identify channel-send tool IDs so we can suppress their results.
@@ -154,17 +160,37 @@ export function buildSegments(
 
     const last = segments[segments.length - 1];
 
-    // tool_result: suppress results for channel sends; otherwise attach to matching tool_use.
+    // tool_result: suppress results for channel sends; otherwise attach to its
+    // tool_use by ID. Codex fileChange items fan out to one tool_use + tool_result
+    // per changed file ("{itemID}#N"), each correlating by its own suffixed ID.
     if (event.type === "tool_result") {
       if (channelSendToolIds.has(event.toolId)) continue;
-      for (let s = segments.length - 1; s >= 0; s--) {
-        const seg = segments[s];
-        if (seg?.kind !== "activity") continue;
-        const item = seg.items.find((it) => it.kind === "tool" && it.use.toolId === event.toolId);
-        if (item?.kind === "tool") {
-          item.result = event;
-          break;
-        }
+      const item = toolItemsById.get(event.toolId);
+      if (item) item.result = event;
+      continue;
+    }
+
+    // tool_use: dedupe by ID. A pending-approval tool_use and the subsequent
+    // started/completed tool_use share the same item ID (codex), so they merge
+    // into one element rather than appearing as a separate orphan row; the later
+    // event's input/name wins.
+    if (event.type === "tool_use") {
+      const existing = toolItemsById.get(event.toolId);
+      if (existing) {
+        existing.use = event;
+        existing.taskEvents ??= taskEventsByToolUseId.get(event.toolId);
+        continue;
+      }
+      const item: Extract<ActivityItem, { kind: "tool" }> = {
+        kind: "tool",
+        use: event,
+        taskEvents: taskEventsByToolUseId.get(event.toolId),
+      };
+      toolItemsById.set(event.toolId, item);
+      if (last?.kind === "activity") {
+        last.items.push(item);
+      } else {
+        segments.push({ kind: "activity", items: [item] });
       }
       continue;
     }
@@ -172,14 +198,10 @@ export function buildSegments(
     if (last?.kind === kind) {
       switch (last.kind) {
         case "activity":
+          // tool_use is handled (with dedupe) before this switch; only thinking
+          // items reach here.
           if (event.type === "thinking") {
             last.items.push({ kind: "thinking", event });
-          } else if (event.type === "tool_use") {
-            last.items.push({
-              kind: "tool",
-              use: event,
-              taskEvents: taskEventsByToolUseId.get(event.toolId),
-            });
           }
           break;
         case "text":
@@ -197,19 +219,10 @@ export function buildSegments(
     } else {
       switch (kind) {
         case "activity":
+          // tool_use is handled (with dedupe) before this switch; only thinking
+          // items reach here.
           if (event.type === "thinking") {
             segments.push({ kind: "activity", items: [{ kind: "thinking", event }] });
-          } else if (event.type === "tool_use") {
-            segments.push({
-              kind: "activity",
-              items: [
-                {
-                  kind: "tool",
-                  use: event,
-                  taskEvents: taskEventsByToolUseId.get(event.toolId),
-                },
-              ],
-            });
           }
           break;
         case "text":

@@ -390,7 +390,7 @@ func TestToWireEvent_NonJSONRawPayloadsMarshal(t *testing.T) {
 		},
 		{
 			name:  "tool input",
-			event: runtime.ToolUseEvent{ID: "tool_1", Name: "fileChange", Input: json.RawMessage(`done`)},
+			event: runtime.ToolUseEvent{ID: "tool_1", Name: "Bash", Input: json.RawMessage(`done`)},
 		},
 		{
 			name:  "stream",

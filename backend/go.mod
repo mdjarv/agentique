@@ -8,9 +8,9 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	charm.land/log/v2 v2.0.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/allbin/agentkit v0.0.0-20260610160238-891386cdeb14
+	github.com/allbin/agentkit v0.0.0-20260612065904-af22a4032aa1
 	github.com/allbin/claudecli-go v0.0.0-20260612055547-44b6ff4fddcf
-	github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5
+	github.com/allbin/codexcli-go v0.0.0-20260612064348-3cec6d88eb4d
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
