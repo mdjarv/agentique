@@ -183,6 +183,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         content: raw.content as string | undefined,
         fromUser: raw.fromUser as boolean | undefined,
         messageId: raw.messageId as string | undefined,
+        queued: raw.queued as boolean | undefined,
         attachments: Array.isArray(raw.attachments)
           ? raw.attachments.map((a) => {
               const obj = a != null && typeof a === "object" ? (a as Record<string, unknown>) : {};

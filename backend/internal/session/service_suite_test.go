@@ -84,7 +84,8 @@ func (s *ServiceSuite) TestCreateSession_CapabilitiesCodex() {
 	s.Equal("codex", result.Capabilities.Provider)
 	s.False(result.Capabilities.PlanMode)
 	s.True(result.Capabilities.Resume)
-	s.False(result.Capabilities.MidTurnSendMessage)
+	// Emulated by agentique (buffer + replay on idle), not native to codex.
+	s.True(result.Capabilities.MidTurnSendMessage)
 	s.False(result.Capabilities.Attachments)
 	s.True(result.Capabilities.AskUserQuestion)
 

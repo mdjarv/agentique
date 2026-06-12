@@ -95,6 +95,15 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	}
 
 	s.broadcastState(target)
+
+	// Replay any messages buffered during the turn (providers without native
+	// mid-turn injection). No-op when the queue is empty, which is every
+	// transition for native-mid-turn providers. Offloaded to a goroutine —
+	// flushPendingMessages calls Query, and hook handlers must not block the
+	// runtime broadcast loop.
+	if target == StateIdle {
+		go s.flushPendingMessages()
+	}
 }
 
 // handleWatchdogEvent translates runtime watchdog events to agentique error

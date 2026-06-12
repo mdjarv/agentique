@@ -114,6 +114,7 @@ export interface WireUserMessageEvent {
   content: string;
   messageId?: string;
   attachments?: QueryAttachment[];
+  queued?: boolean;
 }
 
 export interface WireQuestionOption {

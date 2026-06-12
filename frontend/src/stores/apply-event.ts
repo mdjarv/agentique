@@ -89,16 +89,28 @@ export function applyServerEvent(
   if (lastTurn) {
     const appended =
       stamped.type === "user_message" && stamped.messageId
-        ? { ...stamped, deliveryStatus: "sending" as const }
+        ? {
+            ...stamped,
+            deliveryStatus: (stamped.queued ? "queued" : "sending") as "queued" | "sending",
+          }
         : stamped;
 
     if (isResult) {
-      // Turn complete — merge streaming buffer + result into the turn.
-      const mergedEvents = [...lastTurn.events, ...session.streamingEvents, appended];
+      // Turn complete — merge streaming buffer + result into the turn. Queued
+      // messages target the NEXT turn (providers without native mid-turn
+      // injection), so keep them in the streaming buffer: they survive this
+      // boundary and are cleared when their replayed turn starts (submitQuery).
+      const carryOver = session.streamingEvents.filter(
+        (e) => e.type === "user_message" && e.deliveryStatus === "queued",
+      );
+      const merge = session.streamingEvents.filter(
+        (e) => !(e.type === "user_message" && e.deliveryStatus === "queued"),
+      );
+      const mergedEvents = [...lastTurn.events, ...merge, appended];
       const turns = [...session.turns];
       turns[turns.length - 1] = { ...lastTurn, events: mergedEvents, complete: true };
       patch.turns = turns;
-      patch.streamingEvents = [];
+      patch.streamingEvents = carryOver;
     } else if (lastTurn.complete) {
       // Late-arriving event for an already-complete turn (rare).
       const turns = [...session.turns];

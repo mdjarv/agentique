@@ -116,6 +116,7 @@ export const WireUserMessageEventSchema = z.object({
   content: z.string(),
   messageId: z.string().optional(),
   attachments: z.array(QueryAttachmentSchema).optional(),
+  queued: z.boolean().optional(),
 });
 
 export const WireQuestionOptionSchema = z.object({

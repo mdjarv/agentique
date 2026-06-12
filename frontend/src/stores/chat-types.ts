@@ -97,7 +97,10 @@ export interface UserMessageEvent extends BaseChatEvent {
   content?: string;
   fromUser?: boolean;
   messageId?: string;
-  deliveryStatus?: "sending" | "delivered";
+  deliveryStatus?: "sending" | "delivered" | "queued";
+  // queued marks a message buffered for delivery as the next turn (providers
+  // without native mid-turn injection). Drives the "queued" delivery status.
+  queued?: boolean;
   attachments?: Attachment[];
 }
 

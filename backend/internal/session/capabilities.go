@@ -113,6 +113,14 @@ func capabilitiesForProvider(provider string) WireCapabilities {
 			Resume:                 true,
 			RateLimitEvents:        true,
 			Ping:                   true,
+			// The codex adapter has no native mid-turn channel (its runtime
+			// Capabilities.MidTurnSendMessage is false), but agentique emulates
+			// the feature: a message sent during a running turn is buffered and
+			// replayed as a fresh turn at the next idle boundary. We advertise
+			// it here so the UI keeps the composer live mid-turn; the backend
+			// gates native-vs-emulated on the runtime capability, not this flag.
+			// See Session.QueuePendingMessage / flushPendingMessages.
+			MidTurnSendMessage: true,
 		}
 	default:
 		return WireCapabilities{Provider: provider}

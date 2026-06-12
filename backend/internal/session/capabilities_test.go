@@ -30,19 +30,22 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 	// The frontend gates UI on these — if any flip to true without
 	// docs/tech-debt.md being updated, the gating goes silently wrong.
 	for name, got := range map[string]bool{
-		"PlanMode":           caps.PlanMode,
-		"MidTurnSendMessage": caps.MidTurnSendMessage,
-		"Thinking":           caps.Thinking,
-		"Subagents":          caps.Subagents,
-		"CompactionEvents":   caps.CompactionEvents,
-		"Attachments":        caps.Attachments,
-		"ModelSwitch":        caps.ModelSwitch,
+		"PlanMode":         caps.PlanMode,
+		"Thinking":         caps.Thinking,
+		"Subagents":        caps.Subagents,
+		"CompactionEvents": caps.CompactionEvents,
+		"Attachments":      caps.Attachments,
+		"ModelSwitch":      caps.ModelSwitch,
 	} {
 		if got {
 			t.Errorf("codex.%s expected false, got true", name)
 		}
 	}
-	// What codex does support.
+	// What codex does support. MidTurnSendMessage is true even though the codex
+	// adapter has no native mid-turn channel: agentique emulates it by buffering
+	// the message and replaying it as a fresh turn at the next idle boundary
+	// (Session.QueuePendingMessage / flushPendingMessages), and the wire flag
+	// drives the UI affordance.
 	for name, got := range map[string]bool{
 		"Effort":                 caps.Effort,
 		"InteractivePermissions": caps.InteractivePermissions,
@@ -50,6 +53,7 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 		"Ping":                   caps.Ping,
 		"Resume":                 caps.Resume,
 		"RateLimitEvents":        caps.RateLimitEvents,
+		"MidTurnSendMessage":     caps.MidTurnSendMessage,
 	} {
 		if !got {
 			t.Errorf("codex.%s expected true, got false", name)

@@ -123,6 +123,13 @@ type Session struct {
 	completedAt    string // ISO8601 timestamp or "" if not completed
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
 
+	// pendingMessages buffers user messages sent while a turn is running on a
+	// provider without native mid-turn injection (codex). Flushed as a fresh
+	// turn at the next idle boundary. Guarded by mu. See QueuePendingMessage /
+	// flushPendingMessages. Always empty for providers with native mid-turn
+	// send (claude), which inject straight into the current turn.
+	pendingMessages []pendingMessage
+
 	// approval/permission state. Auto-approve mode and permission mode are
 	// kept locally in addition to runtime so we can drive agentique's
 	// "auto" safe-tool bypass logic and persist permission mode changes.
@@ -449,6 +456,99 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 	}
 	s.broadcast("session.event", PushSessionEvent{SessionID: s.ID, Event: wireEvent})
 	return nil
+}
+
+// pendingMessage is a user message buffered during a running turn for providers
+// that lack native mid-turn injection. Replayed as a fresh turn at the next
+// idle boundary by flushPendingMessages.
+type pendingMessage struct {
+	id          string
+	prompt      string
+	attachments []QueryAttachment
+}
+
+// supportsNativeMidTurn reports whether the live provider can inject a message
+// into the running turn itself (claude). When false (codex), agentique emulates
+// the feature by buffering the message and replaying it as a fresh turn at the
+// next idle boundary — see QueuePendingMessage / flushPendingMessages.
+func (s *Session) supportsNativeMidTurn() bool {
+	s.mu.Lock()
+	cli := s.cli
+	s.mu.Unlock()
+	if cli == nil {
+		return false
+	}
+	return cli.Capabilities().MidTurnSendMessage
+}
+
+// QueuePendingMessage buffers a user message sent while the session is running
+// on a provider without native mid-turn injection. The message is echoed to the
+// UI immediately as a transient "queued" bubble and replayed as a fresh turn
+// when the session next goes idle. Returns false if the session is no longer
+// running, in which case the caller should send it as a new turn instead. The
+// state check and append are atomic against flushPendingMessages so a turn that
+// completes concurrently can't strand the message.
+//
+// The echo is intentionally not persisted: the durable record is the prompt
+// written when flushPendingMessages replays it via Query. As with claude's
+// native mid-turn buffer, a server restart before the flush drops the queued
+// message — it was never accepted by the provider.
+func (s *Session) QueuePendingMessage(prompt string, attachments []QueryAttachment) bool {
+	messageID := uuid.New().String()
+	s.mu.Lock()
+	if s.state != StateRunning {
+		s.mu.Unlock()
+		return false
+	}
+	s.pendingMessages = append(s.pendingMessages, pendingMessage{id: messageID, prompt: prompt, attachments: attachments})
+	s.mu.Unlock()
+
+	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, MessageID: messageID, Attachments: attachments, Queued: true}
+	s.broadcast("session.event", PushSessionEvent{SessionID: s.ID, Event: wireEvent})
+	return true
+}
+
+// flushPendingMessages replays buffered mid-turn messages as a single fresh turn
+// once the session is idle. Called from the runtime state-change bridge on every
+// transition into StateIdle; a no-op when the queue is empty (the common case,
+// and the only case for providers with native mid-turn injection). Buffered
+// messages are coalesced into one prompt so delivery is a single turn — this
+// sidesteps races between per-message turns and matches the UI, which clears the
+// whole queued-preview set when the replayed turn starts.
+func (s *Session) flushPendingMessages() {
+	s.mu.Lock()
+	if len(s.pendingMessages) == 0 || s.state != StateIdle {
+		s.mu.Unlock()
+		return
+	}
+	queued := s.pendingMessages
+	s.pendingMessages = nil
+	s.mu.Unlock()
+
+	prompt, attachments := coalescePending(queued)
+	if err := s.Query(context.Background(), prompt, attachments); err != nil {
+		slog.Error("flush pending messages failed", "session_id", s.ID, "error", err)
+		// Don't lose the user's input — requeue at the front for the next idle
+		// transition (e.g. after a resume).
+		s.mu.Lock()
+		s.pendingMessages = append(queued, s.pendingMessages...)
+		s.mu.Unlock()
+	}
+}
+
+// coalescePending joins buffered messages into a single prompt and attachment
+// set, preserving FIFO order.
+func coalescePending(msgs []pendingMessage) (string, []QueryAttachment) {
+	if len(msgs) == 1 {
+		return msgs[0].prompt, msgs[0].attachments
+	}
+	prompts := make([]string, len(msgs))
+	var atts []QueryAttachment
+	for i, m := range msgs {
+		prompts[i] = m.prompt
+		atts = append(atts, m.attachments...)
+	}
+	return strings.Join(prompts, "\n\n"), atts
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.

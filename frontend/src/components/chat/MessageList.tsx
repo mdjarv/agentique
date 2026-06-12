@@ -321,7 +321,9 @@ export function MessageList({
   const pendingMessages = useMemo(() => {
     if (streamingEvents.length === 0) return EMPTY_USER_MESSAGES;
     return streamingEvents.filter(
-      (e): e is UserMessageEvent => e.type === "user_message" && e.deliveryStatus === "sending",
+      (e): e is UserMessageEvent =>
+        e.type === "user_message" &&
+        (e.deliveryStatus === "sending" || e.deliveryStatus === "queued"),
     );
   }, [streamingEvents]);
 
@@ -473,7 +475,7 @@ export function MessageList({
               key={msg.messageId ?? `pending-${i}`}
               prompt={msg.content ?? ""}
               attachments={msg.attachments}
-              deliveryStatus="sending"
+              deliveryStatus={msg.deliveryStatus === "queued" ? "queued" : "sending"}
             />
           ))}
           <ScrollAnchor

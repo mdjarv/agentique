@@ -40,7 +40,7 @@ export interface UserMessageSegment {
   kind: "user_message";
   content: string;
   attachments?: Attachment[];
-  deliveryStatus?: "sending" | "delivered";
+  deliveryStatus?: "sending" | "delivered" | "queued";
   timestamp?: number;
 }
 export interface AgentMessageSegment {
@@ -247,8 +247,14 @@ export function buildSegments(
         case "user_message":
           // Pending messages render pinned at the bottom of MessageList.
           // Once the turn completes, treat any remaining "sending" as delivered.
+          // Queued messages (next-turn delivery) live only in the streaming
+          // buffer, never in committed turn events — guard anyway.
           if (event.type === "user_message") {
-            if (event.deliveryStatus === "sending" && !turnComplete) break;
+            if (
+              (event.deliveryStatus === "sending" || event.deliveryStatus === "queued") &&
+              !turnComplete
+            )
+              break;
             segments.push({
               kind: "user_message",
               content: event.content ?? "",

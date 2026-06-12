@@ -1,4 +1,4 @@
-import { Check, Copy, FileText, Loader2, User } from "lucide-react";
+import { Check, Clock, Copy, FileText, Loader2, User } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "~/components/chat/Markdown";
@@ -10,7 +10,7 @@ import type { Attachment } from "~/stores/chat-store";
 interface UserMessageProps {
   prompt: string;
   attachments?: Attachment[];
-  deliveryStatus?: "sending" | "delivered";
+  deliveryStatus?: "sending" | "delivered" | "queued";
   timestamp?: number;
 }
 
@@ -22,7 +22,7 @@ export const UserMessage = memo(function UserMessage({
 }: UserMessageProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const isPending = deliveryStatus === "sending";
+  const isPending = deliveryStatus === "sending" || deliveryStatus === "queued";
 
   useEffect(() => {
     if (!lightboxSrc) return;
@@ -79,9 +79,14 @@ export const UserMessage = memo(function UserMessage({
             )}
             {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
             {deliveryStatus && (
-              <div className="flex justify-end mt-1 -mb-0.5">
+              <div className="flex items-center gap-1 justify-end mt-1 -mb-0.5">
                 {deliveryStatus === "sending" ? (
                   <Loader2 className="h-3 w-3 text-primary/40 animate-spin" />
+                ) : deliveryStatus === "queued" ? (
+                  <>
+                    <Clock className="h-3 w-3 text-primary/40" />
+                    <span className="text-[10px] text-primary/40">Queued</span>
+                  </>
                 ) : (
                   <Check className="h-3 w-3 text-primary/60" />
                 )}

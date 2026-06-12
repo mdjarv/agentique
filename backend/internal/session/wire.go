@@ -165,6 +165,12 @@ type WireUserMessageEvent struct {
 	Content     string            `json:"content"`
 	MessageID   string            `json:"messageId,omitempty"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
+	// Queued marks a message buffered for delivery as a fresh turn (providers
+	// without native mid-turn injection, e.g. codex). The UI renders it as a
+	// pending "queued" bubble that is cleared when the replayed turn starts.
+	// Omitted (false) for native mid-turn messages, which the model picks up
+	// within the current turn.
+	Queued bool `json:"queued,omitempty"`
 }
 
 // WireMessageDeliveryEvent confirms that the CLI has read a user message

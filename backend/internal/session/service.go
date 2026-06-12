@@ -577,22 +577,32 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
-// EnqueueMessage sends a prompt as a new turn if idle, or injects mid-turn if running.
-// Uses SendMessage for mid-turn injection so the CLI picks it up at the next safe
-// boundary (between tool calls) without waiting for the current turn to complete.
-// Performs lazy resume for dead/stopped sessions (same as QuerySession).
+// EnqueueMessage sends a prompt as a new turn if idle, or delivers it mid-turn
+// if running. Providers with native mid-turn injection (claude) use SendMessage
+// so the CLI picks it up at the next safe boundary within the current turn;
+// providers without it (codex) buffer the message and replay it as a fresh turn
+// at the next idle boundary. Performs lazy resume for dead/stopped sessions
+// (same as QuerySession).
 func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) error {
 	sess, err := s.ensureLive(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 
-	// If running, inject mid-turn via SendMessage.
+	// Running: deliver mid-turn.
 	if sess.State() == StateRunning {
-		if err := sess.SendMessage(prompt, attachments); err != nil {
-			return fmt.Errorf("send message failed: %w", err)
+		if sess.supportsNativeMidTurn() {
+			if err := sess.SendMessage(prompt, attachments); err != nil {
+				return fmt.Errorf("send message failed: %w", err)
+			}
+			return nil
 		}
-		return nil
+		// No native mid-turn channel — buffer and replay on the next idle. A
+		// false return means the turn completed between the state check and the
+		// enqueue; fall through to send it as a fresh turn.
+		if sess.QueuePendingMessage(prompt, attachments) {
+			return nil
+		}
 	}
 
 	// Not running — send as a new turn (same path as QuerySession).
