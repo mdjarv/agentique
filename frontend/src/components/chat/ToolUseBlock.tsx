@@ -93,6 +93,10 @@ interface EditDetail {
   oldString: string;
   newString: string;
 }
+interface DiffDetail {
+  kind: "diff";
+  patch: string;
+}
 interface BashDetail {
   kind: "bash";
   command: string;
@@ -107,7 +111,7 @@ interface MarkdownDetail {
   content: string;
 }
 
-type Detail = EditDetail | BashDetail | TextDetail | MarkdownDetail;
+type Detail = EditDetail | DiffDetail | BashDetail | TextDetail | MarkdownDetail;
 
 function buildDetail(
   name: string,
@@ -122,12 +126,16 @@ function buildDetail(
   switch (name) {
     // These tools have all useful info in the summary line already
     case "Read":
-    case "Write":
     case "Glob":
     case "TodoWrite":
     case "TodoRead":
     case "EnterPlanMode":
       return null;
+
+    // Write usually has nothing to expand, but a provider may attach a
+    // unified diff (e.g. codex file additions) — render it when present.
+    case "Write":
+      return typeof obj.diff === "string" && obj.diff ? { kind: "diff", patch: obj.diff } : null;
 
     case "Bash": {
       if (!obj.command) return null;
@@ -139,12 +147,17 @@ function buildDetail(
     }
 
     case "Edit":
+      // Claude-style edits carry old/new strings; codex-style edits carry a
+      // unified diff string instead. Prefer the explicit pair, fall back to diff.
       if (obj.old_string != null && obj.new_string != null) {
         return {
           kind: "edit",
           oldString: String(obj.old_string),
           newString: String(obj.new_string),
         };
+      }
+      if (typeof obj.diff === "string" && obj.diff) {
+        return { kind: "diff", patch: obj.diff };
       }
       return null;
 
@@ -184,6 +197,33 @@ function EditDiffView({ oldString, newString }: { oldString: string; newString: 
   );
 }
 
+// Renders a unified diff string (e.g. codex fileChange patches) by coloring
+// each line on its leading marker, mirroring EditDiffView's red/green palette.
+function diffLineClass(line: string): string {
+  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
+    return "text-muted-foreground-faint";
+  }
+  if (line.startsWith("+")) return "bg-success/15 text-success/70";
+  if (line.startsWith("-")) return "bg-destructive/15 text-destructive/70";
+  return "text-foreground/70";
+}
+
+function UnifiedDiffView({ patch }: { patch: string }) {
+  return (
+    <div className="border-t max-h-64 overflow-y-auto font-mono text-xs leading-relaxed">
+      {patch.split("\n").map((line, i) => (
+        <pre
+          // biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no stable id
+          key={i}
+          className={`px-2 whitespace-pre-wrap m-0 ${diffLineClass(line)}`}
+        >
+          {line || " "}
+        </pre>
+      ))}
+    </div>
+  );
+}
+
 // --- Detail renderer ---
 
 function DetailView({ detail }: { detail: Detail }) {
@@ -214,6 +254,8 @@ function DetailView({ detail }: { detail: Detail }) {
       );
     case "edit":
       return <EditDiffView oldString={detail.oldString} newString={detail.newString} />;
+    case "diff":
+      return <UnifiedDiffView patch={detail.patch} />;
     case "text":
       return (
         <pre className="p-2 overflow-x-auto text-foreground/80 whitespace-pre-wrap border-t max-h-64 overflow-y-auto break-all">
