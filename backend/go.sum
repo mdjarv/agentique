@@ -12,6 +12,8 @@ github.com/allbin/agentkit v0.0.0-20260610160238-891386cdeb14 h1:jMjy+2mU0glS1Vj
 github.com/allbin/agentkit v0.0.0-20260610160238-891386cdeb14/go.mod h1:HUEf1VE6233Z40mlTgAROq+QSm2zANeHrbrrmbWelZM=
 github.com/allbin/claudecli-go v0.0.0-20260529072958-85fd419b001c h1:bPrYqJS41O2VdcUTFqJJy6QSctL2DtU/jZu++tlvapA=
 github.com/allbin/claudecli-go v0.0.0-20260529072958-85fd419b001c/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.0.0-20260612055547-44b6ff4fddcf h1:O2OkIECGMZqz0wUHTcsG6iNzZ6YvfEODuGATCKF78h8=
+github.com/allbin/claudecli-go v0.0.0-20260612055547-44b6ff4fddcf/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5 h1:O5Q7uPV3+oWLDHfJhW83OVaczm/tIiihAm024TUjFA0=
 github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5/go.mod h1:sR17lcEIU+OLIU7JsISdpzLLSl1h11rcIFMQLjz+Dzs=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=

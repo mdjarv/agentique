@@ -55,6 +55,7 @@ func claudeModels() ProviderModels {
 			{Slug: "haiku", DisplayName: "Haiku 4.5"},
 			{Slug: "sonnet", DisplayName: "Sonnet 4.6"},
 			{Slug: "opus", DisplayName: "Opus 4.8"},
+			{Slug: "fable", DisplayName: "Fable 5"},
 			{Slug: "sonnet[1m]", DisplayName: "Sonnet 4.6 (1M)"},
 			{Slug: "opus[1m]", DisplayName: "Opus 4.8 (1M)"},
 		},
