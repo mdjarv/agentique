@@ -3,130 +3,42 @@ import type { useWebSocket } from "~/hooks/useWebSocket";
 import { fromWireAttachment } from "~/lib/attachment-utils";
 import type { ChannelMessage } from "~/lib/channel-actions";
 import { parseServerEvent } from "~/lib/events";
+import { loadSessionHistory } from "~/lib/session/history";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
+import { applyEvent } from "~/stores/event-orchestrator";
+import { decideSeq, useEventSeqStore } from "~/stores/event-seq";
 import { useStreamingStore } from "~/stores/streaming-store";
-
-function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>) {
-  try {
-    const inner = rawEvent.event;
-    if (inner == null || typeof inner !== "object") return;
-    const evt = inner as Record<string, unknown>;
-
-    const type = evt.type;
-    if (typeof type !== "string") return;
-
-    if (type === "message_start") {
-      const message = evt.message;
-      if (message == null || typeof message !== "object") return;
-      const usage = (message as Record<string, unknown>).usage;
-      if (usage == null || typeof usage !== "object") return;
-      const u = usage as Record<string, unknown>;
-      if (typeof u.input_tokens !== "number") return;
-      const contextTokens =
-        u.input_tokens +
-        (typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : 0) +
-        (typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : 0);
-      useChatStore.getState().updateStreamingContextUsage(sessionId, {
-        inputTokens: contextTokens,
-      });
-      return;
-    }
-
-    if (type === "message_delta") {
-      const usage = evt.usage;
-      if (usage == null || typeof usage !== "object") return;
-      const u = usage as Record<string, unknown>;
-      if (typeof u.output_tokens !== "number") return;
-      useChatStore.getState().updateStreamingContextUsage(sessionId, {
-        outputTokens: u.output_tokens,
-      });
-      return;
-    }
-
-    if (type === "content_block_start") {
-      const contentBlock = evt.content_block;
-      if (contentBlock == null || typeof contentBlock !== "object") return;
-      const cb = contentBlock as Record<string, unknown>;
-      if (cb.type === "tool_use") {
-        if (typeof evt.index === "number" && typeof cb.id === "string") {
-          useStreamingStore.getState().setToolBlockId(sessionId, evt.index, cb.id);
-        }
-      } else if (cb.type === "text") {
-        const existing = useStreamingStore.getState().texts[sessionId];
-        if (existing) {
-          useStreamingStore.getState().appendText(sessionId, "\n\n");
-        }
-      }
-      return;
-    }
-
-    if (type === "content_block_delta") {
-      const delta = evt.delta;
-      if (delta == null || typeof delta !== "object") return;
-      const d = delta as Record<string, unknown>;
-      if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
-        const toolId =
-          typeof evt.index === "number"
-            ? useStreamingStore.getState().toolBlockIndex[sessionId]?.[evt.index]
-            : undefined;
-        if (toolId) {
-          useStreamingStore.getState().appendToolInput(sessionId, toolId, d.partial_json);
-        }
-      } else if (d.type === "text_delta" && typeof d.text === "string") {
-        useStreamingStore.getState().appendText(sessionId, d.text);
-      }
-    }
-  } catch {
-    // Ignore malformed stream events
-  }
-}
 
 /** Subscribes to session.event and session.turn-started WS events. */
 export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>) {
   useEffect(() => {
     const unsubEvent = ws.subscribe("session.event", (payload) => {
-      const event = parseServerEvent(payload.event as Record<string, unknown>);
+      const raw = payload.event as Record<string, unknown>;
+      const event = parseServerEvent(raw);
       if (!event) return;
-      const sid: string = payload.sessionId;
-      const streaming = useStreamingStore.getState();
+      const sid = payload.sessionId;
 
-      if (event.type === "stream") {
-        handleStreamDelta(sid, payload.event as Record<string, unknown>);
-        return;
-      }
-
-      if (event.type === "tool_output_delta") {
-        streaming.appendToolOutput(sid, event.itemId, event.delta);
-        return;
-      }
-      if (event.type === "reasoning_delta") {
-        streaming.appendReasoning(sid, event.itemId, event.delta);
-        return;
-      }
-      if (event.type === "tool_progress") {
-        streaming.setToolProgress(sid, event.toolUseId, {
-          elapsedMs: event.elapsedMs,
-          toolName: event.toolName,
-        });
-        return;
+      // --- Wire-sequence gate (runs FIRST, before any store mutation) ---
+      // seq 0 = unsequenced (e.g. a channel message to an offline session) —
+      // skip ordering/dedup checks and apply directly. Otherwise drop
+      // duplicates/out-of-order, and resync on a gap or pipeline rebuild.
+      if (payload.seq > 0) {
+        const prev = useEventSeqStore.getState().states[sid];
+        const { action, next } = decideSeq(prev, payload.epoch, payload.seq);
+        if (action === "drop") return;
+        useEventSeqStore.getState().record(sid, next);
+        if (action === "resync") {
+          // Backfill missed events. Coalesced by loadSessionHistory's
+          // historyLoading in-flight guard; the force-load reseeds the seq
+          // state authoritatively from the response's high-water mark.
+          loadSessionHistory(ws, sid, true);
+        }
       }
 
-      useChatStore.getState().handleServerEvent(sid, event);
-
-      if (event.type === "tool_use") {
-        streaming.clearToolInput(sid, event.toolId);
-      }
-      if (event.type === "tool_result") {
-        streaming.clearToolOutput(sid, event.toolId);
-        streaming.clearToolProgress(sid, event.toolId);
-      }
-      if (event.type === "result") {
-        streaming.clearText(sid);
-        streaming.clearAllToolInputs(sid);
-        streaming.clearAllReasoning(sid);
-        streaming.clearToolBlockIndex(sid);
-      }
+      // The orchestrator owns all cross-store sequencing (chat-store +
+      // streaming-store + toolBlockIndex). The hook just parses and delegates.
+      applyEvent(sid, event, raw);
     });
 
     const unsubChannelMessage = ws.subscribe("channel.message", (payload) => {

@@ -17,6 +17,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useEventSeqStore } from "~/stores/event-seq";
 import { useProviderStore } from "~/stores/provider-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 import { useTeamStore } from "~/stores/team-store";
@@ -152,6 +153,9 @@ export function useGlobalSubscriptions(projects: Project[]) {
     const unsubReconnect = ws.onConnect(() => {
       // Clear orphaned streaming data from the previous connection.
       useStreamingStore.getState().reset();
+      // Drop stale wire-seq tracking — the forced history reloads below reseed
+      // it authoritatively from each session's high-water mark.
+      useEventSeqStore.getState().reset();
       subscribedRef.current.clear();
       for (const project of projectsRef.current) {
         subscribedRef.current.add(project.id);

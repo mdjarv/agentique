@@ -261,6 +261,8 @@ export interface HistoryResult {
   turns: HistoryTurn[];
   hasMore: boolean;
   totalTurns: number;
+  epoch: number;
+  highWaterSeq: number;
 }
 
 export interface GitSnapshot {
@@ -680,6 +682,8 @@ export interface ScreencastMetadata {
 export interface PushSessionEvent {
   sessionId: string;
   event: unknown;
+  seq: number;
+  epoch: number;
 }
 
 export interface PushSessionRenamed {

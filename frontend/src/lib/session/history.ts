@@ -5,6 +5,7 @@ import { uuid } from "~/lib/utils";
 import type { WsClient } from "~/lib/ws-client";
 import type { Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useEventSeqStore } from "~/stores/event-seq";
 
 const INITIAL_TURN_LIMIT = 20;
 
@@ -92,6 +93,10 @@ async function fetchAndApplyFullHistory(
   startTransition(() => {
     useChatStore.getState().setSessionHistory(sessionId, turns, true);
   });
+  // Authoritatively reseed the wire-seq tracker from this snapshot, so a live
+  // event already contained in it (seq <= highWaterSeq) is dropped. Overwrites
+  // any state a concurrent live event set mid-load — the snapshot wins.
+  useEventSeqStore.getState().seedFromHistory(sessionId, full.epoch, full.highWaterSeq);
   performance.mark(`${tag}:store:end`);
   performance.measure(`${tag} store-update`, `${tag}:store:start`, `${tag}:store:end`);
 }
@@ -136,6 +141,9 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
       }
 
       if (!hist.hasMore) {
+        // No backfill phase — this partial IS the complete snapshot, so reseed
+        // the wire-seq tracker from it (fetchAndApplyFullHistory won't run).
+        useEventSeqStore.getState().seedFromHistory(sessionId, hist.epoch, hist.highWaterSeq);
         useChatStore.getState().setHistoryLoading(sessionId, false);
         return;
       }
