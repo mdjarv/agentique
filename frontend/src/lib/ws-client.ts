@@ -142,13 +142,27 @@ export class WsClient {
     const msg = JSON.stringify({ id, type, payload });
 
     return new Promise<T>((resolve, reject) => {
+      // The socket can close during the awaited waitForConnection tick. Guard
+      // against a dead/closing socket so the request rejects immediately instead
+      // of hanging until the timeout with a dangling pending entry + timer.
+      if (this.ws?.readyState !== WebSocket.OPEN) {
+        reject(new Error(`Request ${type} failed: socket not open`));
+        return;
+      }
+
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Request ${type} timed out`));
       }, timeoutMs);
 
       this.pending.set(id, { resolve: resolve as (p: unknown) => void, reject, timer });
-      this.ws?.send(msg);
+      try {
+        this.ws.send(msg);
+      } catch (err) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(err instanceof Error ? err : new Error(`Request ${type} failed to send`));
+      }
     });
   }
 

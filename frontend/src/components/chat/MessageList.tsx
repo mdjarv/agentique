@@ -470,9 +470,12 @@ export function MessageList({
               </LazyTurn>
             );
           })}
-          {pendingMessages.map((msg, i) => (
+          {pendingMessages.map((msg) => (
             <UserMessage
-              key={msg.messageId ?? `pending-${i}`}
+              // messageId is always present here (apply-event only assigns a
+              // deliveryStatus when the user_message carries one), so this key is
+              // stable across the splice when the message transitions to a turn.
+              key={msg.messageId ?? `pending-${msg.deliveryStatus}-${msg.content ?? ""}`}
               prompt={msg.content ?? ""}
               attachments={msg.attachments}
               deliveryStatus={msg.deliveryStatus === "queued" ? "queued" : "sending"}

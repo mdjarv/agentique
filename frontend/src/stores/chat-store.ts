@@ -329,10 +329,13 @@ export const useChatStore = create<ChatState>((set) => ({
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
         gitRefreshedAt: incoming > current ? Date.now() : m.gitRefreshedAt,
-        completedAt: extras?.completedAt,
+        // Transient states carry no completedAt/worktreeMerged — preserve cached
+        // values instead of wiping them (a clear here re-triggers becameCompleted
+        // below, causing badge flicker + spurious tail eviction / auto-navigate).
+        completedAt: transient ? m.completedAt : extras?.completedAt,
         hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
         hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
-        worktreeMerged: extras?.worktreeMerged ?? false,
+        worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
         commitsAhead: transient ? m.commitsAhead : (extras?.commitsAhead ?? 0),
         commitsBehind: transient ? m.commitsBehind : (extras?.commitsBehind ?? 0),
         branchMissing: transient ? m.branchMissing : (extras?.branchMissing ?? false),

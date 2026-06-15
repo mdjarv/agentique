@@ -69,6 +69,8 @@ function AuthenticatedLayout() {
   const loadFeatures = useFeatureStore((s) => s.load);
 
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // Holds the teardown for an in-flight drag so we can run it on unmount.
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
@@ -83,11 +85,13 @@ function AuthenticatedLayout() {
       };
       const onUp = () => {
         dragRef.current = null;
+        dragCleanupRef.current = null;
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
       };
+      dragCleanupRef.current = onUp;
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
       document.body.style.cursor = "col-resize";
@@ -95,6 +99,10 @@ function AuthenticatedLayout() {
     },
     [setBrowserPanelWidth],
   );
+
+  // If the panel unmounts mid-drag (e.g. activeSessionId clears), tear down the
+  // document listeners + body style overrides so the cursor/selection don't stick.
+  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   useEffect(() => {
     loadFeatures();

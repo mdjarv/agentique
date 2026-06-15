@@ -114,12 +114,16 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
     })),
 
   appendTimelineEvent: (channelId, event) =>
-    set((s) => ({
-      timelines: {
-        ...s.timelines,
-        [channelId]: [...(s.timelines[channelId] ?? []), event],
-      },
-    })),
+    set((s) => {
+      const existing = s.timelines[channelId] ?? [];
+      // Dedup by id: the same channel.message can be redelivered after a
+      // reconnect (or overlap a setTimeline backfill) and would otherwise
+      // render a duplicate bubble. Mirrors addMember's id guard.
+      if (existing.some((e) => e.id === event.id)) return s;
+      return {
+        timelines: { ...s.timelines, [channelId]: [...existing, event] },
+      };
+    }),
 
   getChannelForSession: (sessionId) => {
     const channels = get().channels;

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Activity } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { ActivityItem } from "~/lib/generated-types";
 import { cn } from "~/lib/utils";
@@ -93,19 +93,28 @@ export function ActivityFeed({ projectId }: { projectId: string }) {
   const projects = useAppStore((s) => s.projects);
   const [items, setItems] = useState<ActivityItem[]>(EMPTY_ITEMS);
   const [loading, setLoading] = useState(true);
-  const loadedRef = useRef(false);
 
   const projectSlug =
     projects.find((p) => p.id === projectId)?.slug ?? projectId.split("-")[0] ?? "";
 
-  // Fetch initial activity.
+  // Fetch activity, refetching whenever the project changes. The `cancelled`
+  // guard prevents a slow response for a previous project from overwriting the
+  // current one (the component is reused across project switches, not keyed).
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
+    let cancelled = false;
+    setLoading(true);
+    setItems(EMPTY_ITEMS);
     ws.request<ActivityItem[]>("project.activity", { projectId })
-      .then((data) => setItems(data))
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
       .catch((err) => console.error("project.activity failed", err))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [ws, projectId]);
 
   // Subscribe to real-time activity items.

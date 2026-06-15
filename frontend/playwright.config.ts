@@ -23,5 +23,12 @@ export default defineConfig({
     cwd: path.resolve(import.meta.dirname, ".."),
     reuseExistingServer: false,
     timeout: 15000,
+    // Isolate the e2e DB (mirrors playwright-hybrid.config.ts). The backend
+    // refuses test-mode against the production DB, but pin an explicit path so
+    // runs never depend on cwd/build-type and don't litter the repo root.
+    env: {
+      ...process.env,
+      AGENTIQUE_DB: path.resolve(import.meta.dirname, "..", "tmp", "test-e2e.db"),
+    },
   },
 });

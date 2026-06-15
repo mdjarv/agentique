@@ -8,8 +8,22 @@ export function useKeyboardShortcuts(projectSlug: string, projectId: string) {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
+      // Ignore while typing in an editable element so Cmd+N etc. don't hijack
+      // text entry; lowercase the key so Shift/CapsLock ("N") still matches.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+
       // Ctrl/Cmd+N: new chat
-      if (mod && e.key === "n") {
+      if (mod && key === "n") {
         e.preventDefault();
         navigate({
           to: "/project/$projectSlug/session/new",
@@ -19,7 +33,7 @@ export function useKeyboardShortcuts(projectSlug: string, projectId: string) {
       }
 
       // Ctrl/Cmd+E: open file browser
-      if (mod && e.key === "e") {
+      if (mod && key === "e") {
         e.preventDefault();
         navigate({
           to: "/project/$projectSlug/files",
