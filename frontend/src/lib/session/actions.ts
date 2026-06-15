@@ -13,6 +13,7 @@ import type {
   SessionDeleteBulkResultItem,
 } from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
+import { define, LONG, QUICK } from "~/lib/ws-rpc";
 import type {
   Attachment,
   AutoApproveMode,
@@ -95,9 +96,12 @@ export interface CreateSessionOpts {
   agentProfileId?: string;
 }
 
-export async function listProviderModels(ws: WsClient): Promise<ListModelsResult> {
-  return ws.request<ListModelsResult>("providers.models", {}, 10_000);
-}
+export const listProviderModels = define<ListModelsResult>("providers.models", QUICK);
+
+const createSessionRpc = define<CreateSessionResult, Record<string, unknown>>(
+  "session.create",
+  LONG,
+);
 
 export async function createSession(
   ws: WsClient,
@@ -106,25 +110,21 @@ export async function createSession(
   worktree: boolean,
   opts?: CreateSessionOpts,
 ): Promise<string> {
-  const result = await ws.request<CreateSessionResult>(
-    "session.create",
-    {
-      projectId,
-      name,
-      worktree,
-      branch: opts?.branch,
-      provider: opts?.provider,
-      model: opts?.model,
-      planMode: opts?.planMode,
-      autoApproveMode: opts?.autoApproveMode,
-      effort: opts?.effort,
-      maxBudget: opts?.maxBudget,
-      maxTurns: opts?.maxTurns,
-      behaviorPresets: opts?.behaviorPresets,
-      agentProfileId: opts?.agentProfileId,
-    },
-    120000,
-  );
+  const result = await createSessionRpc(ws, {
+    projectId,
+    name,
+    worktree,
+    branch: opts?.branch,
+    provider: opts?.provider,
+    model: opts?.model,
+    planMode: opts?.planMode,
+    autoApproveMode: opts?.autoApproveMode,
+    effort: opts?.effort,
+    maxBudget: opts?.maxBudget,
+    maxTurns: opts?.maxTurns,
+    behaviorPresets: opts?.behaviorPresets,
+    agentProfileId: opts?.agentProfileId,
+  });
   const meta: SessionMetadata = {
     id: result.sessionId,
     projectId,
@@ -227,16 +227,16 @@ export async function setSessionIcon(
   useChatStore.getState().setSessionIcon(sessionId, icon);
 }
 
-export async function getSessionDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
-  return ws.request<DiffResult>("session.diff", { sessionId });
+const sessionDiffRpc = define<DiffResult, { sessionId: string }>("session.diff");
+export function getSessionDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
+  return sessionDiffRpc(ws, { sessionId });
 }
 
-export async function setPermissionMode(
-  ws: WsClient,
-  sessionId: string,
-  mode: string,
-): Promise<void> {
-  await ws.request("session.set-permission", { sessionId, mode });
+const setPermissionRpc = define<void, { sessionId: string; mode: string }>(
+  "session.set-permission",
+);
+export function setPermissionMode(ws: WsClient, sessionId: string, mode: string): Promise<void> {
+  return setPermissionRpc(ws, { sessionId, mode });
 }
 
 export async function resolveApproval(
@@ -292,8 +292,9 @@ export async function dismissQuestion(
   useChatStore.getState().clearPendingQuestion(sessionId);
 }
 
-export async function interruptSession(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.interrupt", { sessionId });
+const interruptRpc = define<void, { sessionId: string }>("session.interrupt");
+export function interruptSession(ws: WsClient, sessionId: string): Promise<void> {
+  return interruptRpc(ws, { sessionId });
 }
 
 export type MergeResult =
@@ -310,29 +311,38 @@ export type CreatePRResult =
 
 export type MergeMode = "merge" | "complete" | "delete";
 
-export async function mergeSession(
+const mergeRpc = define<MergeResult, { sessionId: string; mode: MergeMode }>("session.merge", LONG);
+export function mergeSession(
   ws: WsClient,
   sessionId: string,
   mode: MergeMode,
 ): Promise<MergeResult> {
-  return ws.request<MergeResult>("session.merge", { sessionId, mode }, 120_000);
+  return mergeRpc(ws, { sessionId, mode });
 }
 
-export async function createPR(
+const createPRRpc = define<CreatePRResult, { sessionId: string; title?: string; body?: string }>(
+  "session.create-pr",
+  LONG,
+);
+export function createPR(
   ws: WsClient,
   sessionId: string,
   title?: string,
   body?: string,
 ): Promise<CreatePRResult> {
-  return ws.request<CreatePRResult>("session.create-pr", { sessionId, title, body }, 120_000);
+  return createPRRpc(ws, { sessionId, title, body });
 }
 
-export async function commitSession(
+const commitRpc = define<SessionCommitResult, { sessionId: string; message: string }>(
+  "session.commit",
+  LONG,
+);
+export function commitSession(
   ws: WsClient,
   sessionId: string,
   message: string,
 ): Promise<SessionCommitResult> {
-  return ws.request<SessionCommitResult>("session.commit", { sessionId, message }, 120_000);
+  return commitRpc(ws, { sessionId, message });
 }
 
 export type RebaseResult =
@@ -340,39 +350,51 @@ export type RebaseResult =
   | { status: "conflict"; conflictFiles: string[] }
   | { status: "error"; error: string };
 
-export async function rebaseSession(ws: WsClient, sessionId: string): Promise<RebaseResult> {
-  return ws.request<RebaseResult>("session.rebase", { sessionId }, 120_000);
+const rebaseRpc = define<RebaseResult, { sessionId: string }>("session.rebase", LONG);
+export function rebaseSession(ws: WsClient, sessionId: string): Promise<RebaseResult> {
+  return rebaseRpc(ws, { sessionId });
 }
 
-export async function generateCommitMessage(
+const generateCommitMessageRpc = define<CommitMessageResult, { sessionId: string }>(
+  "session.generate-commit-message",
+  LONG,
+);
+export function generateCommitMessage(
   ws: WsClient,
   sessionId: string,
 ): Promise<CommitMessageResult> {
-  return ws.request<CommitMessageResult>("session.generate-commit-message", { sessionId }, 120_000);
+  return generateCommitMessageRpc(ws, { sessionId });
 }
 
-export async function generatePRDescription(
+const generatePRDescriptionRpc = define<PRDescriptionResult, { sessionId: string }>(
+  "session.generate-pr-description",
+  LONG,
+);
+export function generatePRDescription(
   ws: WsClient,
   sessionId: string,
 ): Promise<PRDescriptionResult> {
-  return ws.request<PRDescriptionResult>("session.generate-pr-description", { sessionId }, 120_000);
+  return generatePRDescriptionRpc(ws, { sessionId });
 }
 
-export async function generateSessionName(
-  ws: WsClient,
-  sessionId: string,
-): Promise<{ name: string }> {
-  return ws.request<{ name: string }>("session.generate-name", { sessionId }, 120_000);
+const generateNameRpc = define<{ name: string }, { sessionId: string }>(
+  "session.generate-name",
+  LONG,
+);
+export function generateSessionName(ws: WsClient, sessionId: string): Promise<{ name: string }> {
+  return generateNameRpc(ws, { sessionId });
 }
 
-export async function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.mark-done", { sessionId });
+const markDoneRpc = define<void, { sessionId: string }>("session.mark-done");
+export function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
+  return markDoneRpc(ws, { sessionId });
 }
 
 export type CleanResult = { status: "cleaned" } | { status: "error"; error: string };
 
-export async function cleanSession(ws: WsClient, sessionId: string): Promise<CleanResult> {
-  return ws.request<CleanResult>("session.clean", { sessionId }, 120_000);
+const cleanRpc = define<CleanResult, { sessionId: string }>("session.clean", LONG);
+export function cleanSession(ws: WsClient, sessionId: string): Promise<CleanResult> {
+  return cleanRpc(ws, { sessionId });
 }
 
 export interface FileStatus {
@@ -384,11 +406,14 @@ export interface UncommittedFilesResult {
   files: FileStatus[];
 }
 
-export async function getUncommittedFiles(
+const uncommittedFilesRpc = define<UncommittedFilesResult, { sessionId: string }>(
+  "session.uncommitted-files",
+);
+export function getUncommittedFiles(
   ws: WsClient,
   sessionId: string,
 ): Promise<UncommittedFilesResult> {
-  return ws.request<UncommittedFilesResult>("session.uncommitted-files", { sessionId });
+  return uncommittedFilesRpc(ws, { sessionId });
 }
 
 export interface CommitLogEntry {
@@ -402,12 +427,14 @@ export interface CommitLogResult {
   commits: CommitLogEntry[];
 }
 
-export async function getCommitLog(ws: WsClient, sessionId: string): Promise<CommitLogResult> {
-  return ws.request<CommitLogResult>("session.commit-log", { sessionId });
+const commitLogRpc = define<CommitLogResult, { sessionId: string }>("session.commit-log");
+export function getCommitLog(ws: WsClient, sessionId: string): Promise<CommitLogResult> {
+  return commitLogRpc(ws, { sessionId });
 }
 
-export async function getUncommittedDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
-  return ws.request<DiffResult>("session.uncommitted-diff", { sessionId });
+const uncommittedDiffRpc = define<DiffResult, { sessionId: string }>("session.uncommitted-diff");
+export function getUncommittedDiff(ws: WsClient, sessionId: string): Promise<DiffResult> {
+  return uncommittedDiffRpc(ws, { sessionId });
 }
 
 export interface PRStatusResult {
@@ -417,8 +444,9 @@ export interface PRStatusResult {
   checksStatus: string; // pass, fail, pending, none
 }
 
-export async function getPRStatus(ws: WsClient, sessionId: string): Promise<PRStatusResult> {
-  return ws.request<PRStatusResult>("session.pr-status", { sessionId });
+const prStatusRpc = define<PRStatusResult, { sessionId: string }>("session.pr-status");
+export function getPRStatus(ws: WsClient, sessionId: string): Promise<PRStatusResult> {
+  return prStatusRpc(ws, { sessionId });
 }
 
 /** Returns true if the session's git snapshot was refreshed within maxAgeMs. */
@@ -446,8 +474,8 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
   });
 }
 
-export async function resumeSession(ws: WsClient, sessionId: string): Promise<void> {
-  const info = await ws.request<{
+const resumeRpc = define<
+  {
     state: string;
     connected: boolean;
     hasDirtyWorktree: boolean;
@@ -463,7 +491,12 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     gitVersion: number;
     worktreeBranch?: string;
     worktreePath?: string;
-  }>("session.resume", { sessionId }, 120_000);
+  },
+  { sessionId: string }
+>("session.resume", LONG);
+
+export async function resumeSession(ws: WsClient, sessionId: string): Promise<void> {
+  const info = await resumeRpc(ws, { sessionId });
   useChatStore.getState().setSessionState(sessionId, info.state as SessionState, {
     connected: info.connected,
     hasDirtyWorktree: info.hasDirtyWorktree,
@@ -482,19 +515,24 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
   });
 }
 
-export async function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.delete", { sessionId });
+const deleteRpc = define<void, { sessionId: string }>("session.delete");
+export function deleteSession(ws: WsClient, sessionId: string): Promise<void> {
+  return deleteRpc(ws, { sessionId });
 }
 
-export async function deleteSessionsBulk(
+const deleteBulkRpc = define<SessionDeleteBulkResult, { sessionIds: string[] }>(
+  "session.delete-bulk",
+);
+export function deleteSessionsBulk(
   ws: WsClient,
   sessionIds: string[],
 ): Promise<SessionDeleteBulkResult> {
-  return ws.request<SessionDeleteBulkResult>("session.delete-bulk", { sessionIds });
+  return deleteBulkRpc(ws, { sessionIds });
 }
 
-export async function stopSession(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.stop", { sessionId });
+const stopRpc = define<void, { sessionId: string }>("session.stop");
+export function stopSession(ws: WsClient, sessionId: string): Promise<void> {
+  return stopRpc(ws, { sessionId });
 }
 
 export async function restartSession(ws: WsClient, sessionId: string): Promise<void> {
@@ -502,6 +540,7 @@ export async function restartSession(ws: WsClient, sessionId: string): Promise<v
   await resumeSession(ws, sessionId);
 }
 
-export async function resetConversation(ws: WsClient, sessionId: string): Promise<void> {
-  await ws.request("session.reset-conversation", { sessionId });
+const resetConversationRpc = define<void, { sessionId: string }>("session.reset-conversation");
+export function resetConversation(ws: WsClient, sessionId: string): Promise<void> {
+  return resetConversationRpc(ws, { sessionId });
 }

@@ -4,6 +4,7 @@ import type {
   PresetDefinition,
   StorageUsage,
 } from "~/lib/generated-types";
+import { throwIfNotOk } from "~/lib/http";
 import type { Project } from "~/lib/types";
 
 const BASE = "/api";
@@ -31,7 +32,7 @@ async function fetchWithRetry(
 
 export async function listProjects(): Promise<Project[]> {
   const res = await fetchWithRetry(`${BASE}/projects`);
-  if (!res.ok) throw new Error("Failed to list projects");
+  await throwIfNotOk(res, "Failed to list projects");
   return res.json();
 }
 
@@ -41,7 +42,7 @@ export async function createProject(name: string, path: string): Promise<Project
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, path }),
   });
-  if (!res.ok) throw new Error("Failed to create project");
+  await throwIfNotOk(res, "Failed to create project");
   return res.json();
 }
 
@@ -62,39 +63,36 @@ export async function updateProject(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? "Failed to update project");
-  }
+  await throwIfNotOk(res, "Failed to update project");
   return res.json();
 }
 
 export async function deleteProject(id: string): Promise<void> {
   const res = await fetch(`${BASE}/projects/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete project");
+  await throwIfNotOk(res, "Failed to delete project");
 }
 
 export async function listPresetDefinitions(): Promise<PresetDefinition[]> {
   const res = await fetchWithRetry(`${BASE}/preset-definitions`);
-  if (!res.ok) throw new Error("Failed to list preset definitions");
+  await throwIfNotOk(res, "Failed to list preset definitions");
   return res.json();
 }
 
 export async function healthCheck(): Promise<{ status: string }> {
   const res = await fetchWithRetry(`${BASE}/health`);
-  if (!res.ok) throw new Error("Health check failed");
+  await throwIfNotOk(res, "Health check failed");
   return res.json();
 }
 
 export async function getDiskStats(): Promise<DiskStats> {
   const res = await fetchWithRetry(`${BASE}/storage/disk`);
-  if (!res.ok) throw new Error("Failed to fetch disk stats");
+  await throwIfNotOk(res, "Failed to fetch disk stats");
   return res.json();
 }
 
 export async function getStorageUsage(refresh = false): Promise<StorageUsage> {
   const res = await fetchWithRetry(`${BASE}/storage/usage${refresh ? "?refresh=1" : ""}`);
-  if (!res.ok) throw new Error("Failed to fetch storage usage");
+  await throwIfNotOk(res, "Failed to fetch storage usage");
   return res.json();
 }
 
@@ -102,10 +100,7 @@ export async function deleteOrphanedWorktree(path: string): Promise<void> {
   const res = await fetch(`${BASE}/storage/worktrees?path=${encodeURIComponent(path)}`, {
     method: "DELETE",
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? "Failed to delete worktree");
-  }
+  await throwIfNotOk(res, "Failed to delete worktree");
 }
 
 export interface DirectoryEntry {
@@ -128,14 +123,14 @@ export interface PathValidation {
 
 export async function validatePath(path: string): Promise<PathValidation> {
   const res = await fetchWithRetry(`${BASE}/filesystem/validate?path=${encodeURIComponent(path)}`);
-  if (!res.ok) throw new Error("Failed to validate path");
+  await throwIfNotOk(res, "Failed to validate path");
   return res.json();
 }
 
 export async function browseDirectory(path?: string): Promise<BrowseResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
   const res = await fetchWithRetry(`${BASE}/filesystem/browse${params}`);
-  if (!res.ok) throw new Error("Failed to browse directory");
+  await throwIfNotOk(res, "Failed to browse directory");
   return res.json();
 }
 
@@ -156,7 +151,7 @@ export interface FileListResult {
 export async function listProjectFiles(projectId: string, path = ""): Promise<FileListResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
   const res = await fetchWithRetry(`${BASE}/projects/${projectId}/files${params}`);
-  if (!res.ok) throw new Error("Failed to list files");
+  await throwIfNotOk(res, "Failed to list files");
   return res.json();
 }
 
@@ -164,7 +159,7 @@ export async function getFileContent(projectId: string, path: string): Promise<s
   const res = await fetchWithRetry(
     `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch file content");
+  await throwIfNotOk(res, "Failed to fetch file content");
   return res.text();
 }
 

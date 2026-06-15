@@ -8,77 +8,87 @@ import type {
   TrackedFilesResult,
 } from "~/lib/generated-types";
 import type { WsClient } from "~/lib/ws-client";
+import { define, LONG, QUICK } from "~/lib/ws-rpc";
 
 export type { ProjectCommitResult, ProjectUncommittedFilesResult, TrackedFilesResult };
 
-export async function getProjectGitStatus(
-  ws: WsClient,
-  projectId: string,
-): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.git-status", { projectId }, 10_000);
+const gitStatusRpc = define<ProjectGitStatus, { projectId: string }>("project.git-status", QUICK);
+export function getProjectGitStatus(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return gitStatusRpc(ws, { projectId });
 }
 
-export async function fetchProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.fetch", { projectId });
+const fetchRpc = define<ProjectGitStatus, { projectId: string }>("project.fetch");
+export function fetchProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return fetchRpc(ws, { projectId });
 }
 
-export async function pushProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.push", { projectId }, 120_000);
+const pushRpc = define<ProjectGitStatus, { projectId: string }>("project.push", LONG);
+export function pushProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return pushRpc(ws, { projectId });
 }
 
-export async function commitProject(
+const commitRpc = define<ProjectCommitResult, { projectId: string; message: string }>(
+  "project.commit",
+  LONG,
+);
+export function commitProject(
   ws: WsClient,
   projectId: string,
   message: string,
 ): Promise<ProjectCommitResult> {
-  return ws.request<ProjectCommitResult>("project.commit", { projectId, message }, 120_000);
+  return commitRpc(ws, { projectId, message });
 }
 
-export async function listProjectBranches(
-  ws: WsClient,
-  projectId: string,
-): Promise<BranchListResult> {
-  return ws.request<BranchListResult>("project.list-branches", { projectId });
+const listBranchesRpc = define<BranchListResult, { projectId: string }>("project.list-branches");
+export function listProjectBranches(ws: WsClient, projectId: string): Promise<BranchListResult> {
+  return listBranchesRpc(ws, { projectId });
 }
 
-export async function checkoutProjectBranch(
+const checkoutRpc = define<ProjectGitStatus, { projectId: string; branch: string }>(
+  "project.checkout",
+);
+export function checkoutProjectBranch(
   ws: WsClient,
   projectId: string,
   branch: string,
 ): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.checkout", { projectId, branch });
+  return checkoutRpc(ws, { projectId, branch });
 }
 
-export async function pullProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.pull", { projectId }, 120_000);
+const pullRpc = define<ProjectGitStatus, { projectId: string }>("project.pull", LONG);
+export function pullProject(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return pullRpc(ws, { projectId });
 }
 
-export async function getProjectUncommittedFiles(
+const uncommittedFilesRpc = define<ProjectUncommittedFilesResult, { projectId: string }>(
+  "project.uncommitted-files",
+);
+export function getProjectUncommittedFiles(
   ws: WsClient,
   projectId: string,
 ): Promise<ProjectUncommittedFilesResult> {
-  return ws.request<ProjectUncommittedFilesResult>("project.uncommitted-files", { projectId });
+  return uncommittedFilesRpc(ws, { projectId });
 }
 
-export async function generateProjectCommitMessage(
+const generateCommitMessageRpc = define<CommitMessageResult, { projectId: string }>(
+  "project.generate-commit-message",
+  LONG,
+);
+export function generateProjectCommitMessage(
   ws: WsClient,
   projectId: string,
 ): Promise<CommitMessageResult> {
-  return ws.request<CommitMessageResult>("project.generate-commit-message", { projectId }, 120_000);
+  return generateCommitMessageRpc(ws, { projectId });
 }
 
-export async function discardProjectChanges(
-  ws: WsClient,
-  projectId: string,
-): Promise<ProjectGitStatus> {
-  return ws.request<ProjectGitStatus>("project.discard", { projectId });
+const discardRpc = define<ProjectGitStatus, { projectId: string }>("project.discard");
+export function discardProjectChanges(ws: WsClient, projectId: string): Promise<ProjectGitStatus> {
+  return discardRpc(ws, { projectId });
 }
 
-export async function getTrackedFiles(
-  ws: WsClient,
-  projectId: string,
-): Promise<TrackedFilesResult> {
-  return ws.request<TrackedFilesResult>("project.tracked-files", { projectId });
+const trackedFilesRpc = define<TrackedFilesResult, { projectId: string }>("project.tracked-files");
+export function getTrackedFiles(ws: WsClient, projectId: string): Promise<TrackedFilesResult> {
+  return trackedFilesRpc(ws, { projectId });
 }
 
 export interface CommandFile {
@@ -91,28 +101,34 @@ export interface CommandsResult {
   commands: CommandFile[];
 }
 
-export async function getCommands(ws: WsClient, projectId: string): Promise<CommandsResult> {
-  return ws.request<CommandsResult>("project.commands", { projectId });
+const commandsRpc = define<CommandsResult, { projectId: string }>("project.commands");
+export function getCommands(ws: WsClient, projectId: string): Promise<CommandsResult> {
+  return commandsRpc(ws, { projectId });
 }
 
 // --- Favorites ---
 
-export async function setProjectFavorite(
+const setFavoriteRpc = define<Project, { projectId: string; favorite: boolean }>(
+  "project.set-favorite",
+);
+export function setProjectFavorite(
   ws: WsClient,
   projectId: string,
   favorite: boolean,
 ): Promise<Project> {
-  return ws.request<Project>("project.set-favorite", { projectId, favorite });
+  return setFavoriteRpc(ws, { projectId, favorite });
 }
 
-export async function setProjectPinned(
+const setPinnedRpc = define<Project, { projectId: string; pinned: boolean }>("project.set-pinned");
+export function setProjectPinned(
   ws: WsClient,
   projectId: string,
   pinned: boolean,
 ): Promise<Project> {
-  return ws.request<Project>("project.set-pinned", { projectId, pinned });
+  return setPinnedRpc(ws, { projectId, pinned });
 }
 
-export async function reorderProjects(ws: WsClient, projectIds: string[]): Promise<void> {
-  await ws.request("project.reorder", { projectIds });
+const reorderRpc = define<void, { projectIds: string[] }>("project.reorder");
+export function reorderProjects(ws: WsClient, projectIds: string[]): Promise<void> {
+  return reorderRpc(ws, { projectIds });
 }
