@@ -84,7 +84,7 @@ describe("extractTodosFromTurns", () => {
       turn([todoWrite([{ content: "old", status: "completed" }])]),
       turn([todoWrite([{ content: "new", status: "pending" }])]),
     ];
-    expect(extractTodosFromTurns(turns)?.[0].content).toBe("new");
+    expect(extractTodosFromTurns(turns)?.[0]?.content).toBe("new");
   });
 
   it("returns null when no turn has todos", () => {
