@@ -96,13 +96,6 @@ export function getFileIcon(name: string, isDir: boolean) {
   return File;
 }
 
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
 /** Special filenames that should be treated as text even without a recognized extension. */
 const SPECIAL_TEXT_NAMES = new Set([
   "Dockerfile",

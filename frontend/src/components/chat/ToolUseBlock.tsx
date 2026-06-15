@@ -6,6 +6,7 @@ import { Markdown } from "~/components/chat/Markdown";
 import { ToolIcon } from "~/components/chat/ToolIcons";
 import { useTheme } from "~/hooks/useTheme";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
+import { stripPrefix } from "~/lib/tool-format";
 import type { ToolContentBlock } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -19,16 +20,6 @@ interface ToolUseBlockProps {
   worktreePath?: string;
   resultContent?: ToolContentBlock[];
   onImageClick?: (src: string) => void;
-}
-
-function stripPrefix(path: string, projectPath?: string, worktreePath?: string): string {
-  for (const prefix of [worktreePath, projectPath]) {
-    if (prefix && path.startsWith(prefix)) {
-      const stripped = path.slice(prefix.length);
-      return stripped.startsWith("/") ? stripped.slice(1) : stripped;
-    }
-  }
-  return path;
 }
 
 export function formatSummary(

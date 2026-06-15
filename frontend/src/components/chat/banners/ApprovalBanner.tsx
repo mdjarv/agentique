@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval, setAutoApproveMode } from "~/lib/session/actions";
+import { stripPrefix } from "~/lib/tool-format";
 import { getErrorMessage } from "~/lib/utils";
 import type { PendingApproval } from "~/stores/chat-store";
 
@@ -13,16 +14,6 @@ interface ApprovalBannerProps {
   approval: PendingApproval;
   projectPath?: string;
   worktreePath?: string;
-}
-
-function stripPrefix(path: string, projectPath?: string, worktreePath?: string): string {
-  for (const prefix of [worktreePath, projectPath]) {
-    if (prefix && path.startsWith(prefix)) {
-      const stripped = path.slice(prefix.length);
-      return stripped.startsWith("/") ? stripped.slice(1) : stripped;
-    }
-  }
-  return path;
 }
 
 interface FormattedInput {

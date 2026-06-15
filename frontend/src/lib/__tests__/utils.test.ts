@@ -1,5 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { getErrorMessage, relativeTime, sessionShortId, uuid } from "~/lib/utils";
+import { formatBytes, getErrorMessage, relativeTime, sessionShortId, uuid } from "~/lib/utils";
+
+describe("formatBytes", () => {
+  it("returns '0 B' for zero, negatives, and non-finite input", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(-5)).toBe("0 B");
+    expect(formatBytes(Number.NaN)).toBe("0 B");
+    expect(formatBytes(Number.POSITIVE_INFINITY)).toBe("0 B");
+  });
+
+  it("formats bytes with no decimals", () => {
+    expect(formatBytes(500)).toBe("500 B");
+    expect(formatBytes(1023)).toBe("1023 B");
+  });
+
+  it("uses 2 decimals under 10, 1 decimal under 100, 0 at/above 100", () => {
+    expect(formatBytes(1024)).toBe("1.00 KB");
+    expect(formatBytes(1024 * 15)).toBe("15.0 KB");
+    expect(formatBytes(1024 * 150)).toBe("150 KB");
+  });
+
+  it("scales through MB/GB/TB", () => {
+    expect(formatBytes(1024 ** 2)).toBe("1.00 MB");
+    expect(formatBytes(1024 ** 3)).toBe("1.00 GB");
+    expect(formatBytes(1024 ** 4)).toBe("1.00 TB");
+  });
+
+  it("clamps to the largest unit (PB) rather than overflowing", () => {
+    expect(formatBytes(1024 ** 6)).toContain("PB");
+  });
+});
 
 describe("uuid", () => {
   it("returns valid v4 UUID format", () => {

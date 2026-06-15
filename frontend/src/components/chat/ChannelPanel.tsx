@@ -10,6 +10,7 @@ import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBad
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ANIMATE_DEFAULT, useAutoAnimate, useMergedAutoAnimate } from "~/hooks/useAutoAnimate";
+import { useAutosizeTextarea } from "~/hooks/useAutosizeTextarea";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
@@ -172,11 +173,8 @@ export const ChannelPanel = memo(function ChannelPanel({
 
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const resizeComposer = useCallback((el = textareaRef.current) => {
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, []);
+  // Auto-grow keyed on `message`: covers both typing and the reset-to-"" on send.
+  useAutosizeTextarea(textareaRef, message);
 
   const handleBroadcast = useCallback(async () => {
     if (!message.trim() || sending) return;
@@ -185,13 +183,12 @@ export const ChannelPanel = memo(function ChannelPanel({
     try {
       await broadcastToChannel(ws, channelId, message.trim());
       setMessage("");
-      requestAnimationFrame(() => resizeComposer());
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to send message"));
     } finally {
       setSending(false);
     }
-  }, [ws, channelId, message, sending, resizeComposer]);
+  }, [ws, channelId, message, sending]);
 
   const handleMemberClick = useCallback(
     (sessionId: string) => {
@@ -374,10 +371,7 @@ export const ChannelPanel = memo(function ChannelPanel({
             <textarea
               ref={textareaRef}
               value={message}
-              onChange={(e) => {
-                setMessage(e.target.value);
-                resizeComposer(e.currentTarget);
-              }}
+              onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();

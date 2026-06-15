@@ -2,7 +2,8 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { type FileEntry, type FileListResult, listProjectFiles } from "~/lib/api";
-import { formatFileSize, getFileIcon } from "./fileUtils";
+import { formatBytes } from "~/lib/utils";
+import { getFileIcon } from "./fileUtils";
 
 interface FileListProps {
   projectId: string;
@@ -68,7 +69,7 @@ function FileRow({
       </span>
       {!entry.isDir && (
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {formatFileSize(entry.size)}
+          {formatBytes(entry.size)}
         </span>
       )}
       <span className="shrink-0 text-xs text-muted-foreground w-16 text-right tabular-nums">

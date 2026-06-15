@@ -1,7 +1,6 @@
 import { File, FileCode, FileText, Folder, Image } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import {
-  formatFileSize,
   getFileIcon,
   getLanguageForSpecialFile,
   getLanguageFromExtension,
@@ -87,24 +86,6 @@ describe("getFileIcon", () => {
 
   it("returns File for unknown", () => {
     expect(getFileIcon("data.xyz", false)).toBe(File);
-  });
-});
-
-describe("formatFileSize", () => {
-  it("formats bytes", () => {
-    expect(formatFileSize(500)).toBe("500 B");
-  });
-
-  it("formats kilobytes", () => {
-    expect(formatFileSize(1024)).toBe("1.0 KB");
-  });
-
-  it("formats megabytes", () => {
-    expect(formatFileSize(1024 * 1024)).toBe("1.0 MB");
-  });
-
-  it("formats gigabytes", () => {
-    expect(formatFileSize(1024 * 1024 * 1024)).toBe("1.0 GB");
   });
 });
 
