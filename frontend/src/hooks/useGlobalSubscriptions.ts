@@ -41,7 +41,12 @@ function subscribeAndLoad(
   });
   ws.request<ListSessionsResult>("session.list", { projectId }, 10_000)
     .then((result) => {
-      useChatStore.getState().setSessions(result.sessions as SessionMetadata[], projectId);
+      // forceHistory is true only on reconnect: make session.list authoritative
+      // for pending approval/question state so requests resolved while
+      // disconnected are cleared (not just added).
+      useChatStore
+        .getState()
+        .setSessions(result.sessions as SessionMetadata[], projectId, forceHistory);
       for (const session of result.sessions) {
         if (!session.completedAt) {
           loadSessionHistory(ws, session.id, forceHistory);
@@ -56,7 +61,14 @@ function subscribeAndLoad(
     .then((status) => useAppStore.getState().setProjectGitStatus(status))
     .catch((err) => console.error("getProjectGitStatus failed", err));
   listChannels(ws, projectId)
-    .then((channels) => useChannelStore.getState().mergeChannels(channels))
+    .then((channels) => {
+      // On reconnect the fetched list is authoritative for this project: prune
+      // channels deleted while disconnected. On the normal subscribe path use
+      // mergeChannels to avoid a stale-RPC-vs-fresh-broadcast race.
+      const store = useChannelStore.getState();
+      if (forceHistory) store.reconcileChannels(channels, projectId);
+      else store.mergeChannels(channels);
+    })
     .catch((err) => console.error("listChannels failed", err));
 }
 
