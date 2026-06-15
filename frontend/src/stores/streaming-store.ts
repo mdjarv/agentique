@@ -11,6 +11,11 @@ interface StreamingState {
   toolOutputs: Record<string, Record<string, string>>;
   toolProgress: Record<string, Record<string, ToolProgress>>;
   reasoningDeltas: Record<string, Record<string, string>>;
+  /** Maps a streaming content-block index → tool_use id, per session. Set on
+   *  content_block_start, read on input_json_delta. Lives here (rather than a
+   *  module-level Map) so clearSession/reset reclaim it and it can't leak when a
+   *  turn is interrupted or a session is deleted mid-stream. */
+  toolBlockIndex: Record<string, Record<number, string>>;
 
   appendText: (sessionId: string, text: string) => void;
   clearText: (sessionId: string) => void;
@@ -24,7 +29,9 @@ interface StreamingState {
   appendReasoning: (sessionId: string, itemId: string, delta: string) => void;
   clearReasoning: (sessionId: string, itemId: string) => void;
   clearAllReasoning: (sessionId: string) => void;
-  /** Clear all streaming state for a session (text + tool inputs). Use on reconnect. */
+  setToolBlockId: (sessionId: string, index: number, toolId: string) => void;
+  clearToolBlockIndex: (sessionId: string) => void;
+  /** Clear all streaming state for a session. Use on reconnect and session delete. */
   clearSession: (sessionId: string) => void;
   /** Reset all streaming state. Use on WS reconnect to drop orphaned data. */
   reset: () => void;
@@ -36,6 +43,7 @@ export const useStreamingStore = create<StreamingState>((set) => ({
   toolOutputs: {},
   toolProgress: {},
   reasoningDeltas: {},
+  toolBlockIndex: {},
 
   appendText: (sessionId, text) =>
     set((s) => ({
@@ -169,6 +177,21 @@ export const useStreamingStore = create<StreamingState>((set) => ({
       return { reasoningDeltas: rest };
     }),
 
+  setToolBlockId: (sessionId, index, toolId) =>
+    set((s) => ({
+      toolBlockIndex: {
+        ...s.toolBlockIndex,
+        [sessionId]: { ...s.toolBlockIndex[sessionId], [index]: toolId },
+      },
+    })),
+
+  clearToolBlockIndex: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.toolBlockIndex)) return s;
+      const { [sessionId]: _, ...rest } = s.toolBlockIndex;
+      return { toolBlockIndex: rest };
+    }),
+
   clearSession: (sessionId) =>
     set((s) => {
       const hasText = sessionId in s.texts;
@@ -176,21 +199,32 @@ export const useStreamingStore = create<StreamingState>((set) => ({
       const hasOutputs = sessionId in s.toolOutputs;
       const hasProgress = sessionId in s.toolProgress;
       const hasReasoning = sessionId in s.reasoningDeltas;
-      if (!hasText && !hasInputs && !hasOutputs && !hasProgress && !hasReasoning) return s;
+      const hasBlockIndex = sessionId in s.toolBlockIndex;
+      if (!hasText && !hasInputs && !hasOutputs && !hasProgress && !hasReasoning && !hasBlockIndex)
+        return s;
       const { [sessionId]: _t, ...restTexts } = s.texts;
       const { [sessionId]: _i, ...restInputs } = s.toolInputs;
       const { [sessionId]: _o, ...restOutputs } = s.toolOutputs;
       const { [sessionId]: _p, ...restProgress } = s.toolProgress;
       const { [sessionId]: _r, ...restReasoning } = s.reasoningDeltas;
+      const { [sessionId]: _b, ...restBlockIndex } = s.toolBlockIndex;
       return {
         texts: hasText ? restTexts : s.texts,
         toolInputs: hasInputs ? restInputs : s.toolInputs,
         toolOutputs: hasOutputs ? restOutputs : s.toolOutputs,
         toolProgress: hasProgress ? restProgress : s.toolProgress,
         reasoningDeltas: hasReasoning ? restReasoning : s.reasoningDeltas,
+        toolBlockIndex: hasBlockIndex ? restBlockIndex : s.toolBlockIndex,
       };
     }),
 
   reset: () =>
-    set({ texts: {}, toolInputs: {}, toolOutputs: {}, toolProgress: {}, reasoningDeltas: {} }),
+    set({
+      texts: {},
+      toolInputs: {},
+      toolOutputs: {},
+      toolProgress: {},
+      reasoningDeltas: {},
+      toolBlockIndex: {},
+    }),
 }));

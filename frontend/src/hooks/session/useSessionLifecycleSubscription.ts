@@ -8,6 +8,7 @@ import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
 import type { SessionMetadata } from "~/stores/chat-types";
 import { usePulseStore } from "~/stores/pulse-store";
+import { useStreamingStore } from "~/stores/streaming-store";
 
 /** Subscribes to session lifecycle WS events: state, created, deleted, renamed, pr-updated. */
 export function useSessionLifecycleSubscription(
@@ -88,6 +89,8 @@ export function useSessionLifecycleSubscription(
       }
 
       store.removeSession(deletedId);
+      // Reclaim any in-flight streaming buffers/index for the removed session.
+      useStreamingStore.getState().clearSession(deletedId);
 
       if (wasActive && deletedSession) {
         const projectId = deletedSession.meta.projectId;

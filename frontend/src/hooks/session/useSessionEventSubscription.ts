@@ -7,8 +7,6 @@ import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
-const toolBlockIndex = new Map<string, Map<number, string>>();
-
 function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>) {
   try {
     const inner = rawEvent.event;
@@ -51,13 +49,8 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
       if (contentBlock == null || typeof contentBlock !== "object") return;
       const cb = contentBlock as Record<string, unknown>;
       if (cb.type === "tool_use") {
-        let sessionMap = toolBlockIndex.get(sessionId);
-        if (!sessionMap) {
-          sessionMap = new Map();
-          toolBlockIndex.set(sessionId, sessionMap);
-        }
         if (typeof evt.index === "number" && typeof cb.id === "string") {
-          sessionMap.set(evt.index, cb.id);
+          useStreamingStore.getState().setToolBlockId(sessionId, evt.index, cb.id);
         }
       } else if (cb.type === "text") {
         const existing = useStreamingStore.getState().texts[sessionId];
@@ -74,7 +67,9 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
       const d = delta as Record<string, unknown>;
       if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
         const toolId =
-          typeof evt.index === "number" ? toolBlockIndex.get(sessionId)?.get(evt.index) : undefined;
+          typeof evt.index === "number"
+            ? useStreamingStore.getState().toolBlockIndex[sessionId]?.[evt.index]
+            : undefined;
         if (toolId) {
           useStreamingStore.getState().appendToolInput(sessionId, toolId, d.partial_json);
         }
@@ -85,10 +80,6 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
   } catch {
     // Ignore malformed stream events
   }
-}
-
-function clearToolBlockIndex(sessionId: string) {
-  toolBlockIndex.delete(sessionId);
 }
 
 /** Subscribes to session.event and session.turn-started WS events. */
@@ -134,7 +125,7 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         streaming.clearText(sid);
         streaming.clearAllToolInputs(sid);
         streaming.clearAllReasoning(sid);
-        clearToolBlockIndex(sid);
+        streaming.clearToolBlockIndex(sid);
       }
     });
 
