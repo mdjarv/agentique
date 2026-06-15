@@ -31,11 +31,15 @@ export class WsClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private hiddenSince: number | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatMisses = 0;
 
   // Microtask batching for push events: multiple WS messages arriving in the
   // same JS event loop tick get dispatched together so React can batch renders.
   private pushBuffer: Array<{ type: string; payload: unknown }> = [];
   private flushScheduled = false;
+  // Backpressure cap: under an extreme synchronous burst the buffer would grow
+  // unbounded between microtasks, so once it reaches this size we flush inline.
+  private static readonly MAX_PUSH_BUFFER = 1000;
 
   constructor(url: string) {
     this.url = url;
@@ -206,11 +210,23 @@ export class WsClient {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     if (document.visibilityState === "hidden") return;
+    this.heartbeatMisses = 0;
     this.heartbeatTimer = setInterval(() => {
-      this.request("ping", {}, 10_000).catch(() => {
-        console.warn("[WsClient] heartbeat failed, force-reconnecting");
-        this.forceReconnect();
-      });
+      this.request("ping", {}, 10_000).then(
+        () => {
+          this.heartbeatMisses = 0;
+        },
+        () => {
+          // Tolerate a single miss — one slow pong (e.g. the server busy
+          // streaming a large turn) shouldn't tear down a live socket and
+          // trigger a full history re-fetch. Reconnect only on two in a row.
+          this.heartbeatMisses += 1;
+          if (this.heartbeatMisses >= 2) {
+            console.warn("[WsClient] heartbeat missed twice, force-reconnecting");
+            this.forceReconnect();
+          }
+        },
+      );
     }, 25_000);
   }
 
@@ -325,7 +341,12 @@ export class WsClient {
       // Push event — buffer and flush via microtask so React can batch renders.
       if (msg.type) {
         this.pushBuffer.push({ type: msg.type, payload: msg.payload });
-        if (!this.flushScheduled) {
+        if (this.pushBuffer.length >= WsClient.MAX_PUSH_BUFFER) {
+          // Backpressure: a synchronous burst this large would keep growing the
+          // buffer before any microtask runs, so drain it now (any already-
+          // scheduled microtask becomes a harmless no-op on the empty buffer).
+          this.flushPushBuffer();
+        } else if (!this.flushScheduled) {
           this.flushScheduled = true;
           queueMicrotask(() => this.flushPushBuffer());
         }

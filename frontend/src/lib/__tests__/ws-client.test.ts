@@ -344,4 +344,96 @@ describe("WsClient", () => {
       expect(MockWebSocket.instances.length).toBeGreaterThan(1);
     });
   });
+
+  describe("heartbeat resilience", () => {
+    const failPing = (ws: MockWebSocket) => {
+      const ping = ws.sent
+        .map((s) => JSON.parse(s))
+        .filter((m) => m.type === "ping")
+        .at(-1);
+      expect(ping).toBeDefined();
+      ws.simulateMessage(
+        JSON.stringify({ id: ping.id, type: "response", error: { message: "no pong" } }),
+      );
+    };
+
+    it("tolerates a single heartbeat miss without reconnecting", async () => {
+      const client = createClient();
+      client.connect();
+      MockWebSocket.last().simulateOpen();
+      const ws = MockWebSocket.last();
+
+      await vi.advanceTimersByTimeAsync(25_000); // first heartbeat tick → ping sent
+      failPing(ws);
+      await vi.advanceTimersByTimeAsync(0); // let the rejection handler run
+
+      // One miss must NOT tear down a live socket.
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    });
+
+    it("force-reconnects after two consecutive heartbeat misses", async () => {
+      const client = createClient();
+      client.connect();
+      MockWebSocket.last().simulateOpen();
+      const ws = MockWebSocket.last();
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      failPing(ws);
+      await vi.advanceTimersByTimeAsync(0); // miss 1
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      failPing(ws);
+      await vi.advanceTimersByTimeAsync(0); // miss 2 → forceReconnect
+
+      expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+      await vi.advanceTimersByTimeAsync(500); // reconnect backoff
+      expect(MockWebSocket.instances.length).toBeGreaterThan(1);
+    });
+
+    it("resets the miss counter after a successful pong", async () => {
+      const client = createClient();
+      client.connect();
+      MockWebSocket.last().simulateOpen();
+      const ws = MockWebSocket.last();
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      failPing(ws); // miss 1
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Next ping succeeds → counter resets.
+      await vi.advanceTimersByTimeAsync(25_000);
+      const ping = ws.sent
+        .map((s) => JSON.parse(s))
+        .filter((m) => m.type === "ping")
+        .at(-1);
+      ws.simulateMessage(JSON.stringify({ id: ping.id, type: "response", payload: {} }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A subsequent single miss should again be tolerated (counter was reset).
+      await vi.advanceTimersByTimeAsync(25_000);
+      failPing(ws);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    });
+  });
+
+  describe("push buffer backpressure", () => {
+    it("flushes synchronously once the buffer hits its cap", () => {
+      const client = createClient();
+      client.connect();
+      MockWebSocket.last().simulateOpen();
+      const ws = MockWebSocket.last();
+
+      const handler = vi.fn();
+      client.subscribe("custom.burst", handler);
+
+      // A synchronous burst at the cap must dispatch WITHOUT awaiting a microtask.
+      for (let i = 0; i < 1000; i++) {
+        ws.simulateMessage(JSON.stringify({ type: "custom.burst", payload: { i } }));
+      }
+      expect(handler).toHaveBeenCalledTimes(1000);
+    });
+  });
 });
