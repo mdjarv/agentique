@@ -1,47 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ChevronRight,
-  Hash,
-  MessageSquare,
-  Network,
-  Plus,
-  Scissors,
-  Trash2,
-  UserPlus,
-  Users,
-} from "lucide-react";
-import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { Hash, MessageSquare, Plus, UserPlus, Users } from "lucide-react";
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PageHeader } from "~/components/layout/PageHeader";
+import { SessionHierarchy } from "~/components/team/SessionHierarchy";
 import { TeamCard } from "~/components/team/TeamCard";
 import { TeamFormDialog } from "~/components/team/TeamFormDialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { useWebSocket } from "~/hooks/useWebSocket";
-import { dissolveChannel } from "~/lib/channel-actions";
-import { deleteSession } from "~/lib/session/actions";
-import {
-  buildSessionHierarchy,
-  countDescendants,
-  type HierarchyTreeNode,
-} from "~/lib/session-hierarchy";
+import { buildSessionHierarchy } from "~/lib/session-hierarchy";
 import type { AgentProfileInfo } from "~/lib/team-actions";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
-import type { SessionMetadata } from "~/stores/chat-types";
 import { useTeamStore } from "~/stores/team-store";
 
 export const Route = createFileRoute("/teams")({
@@ -94,11 +65,7 @@ function TeamsDashboard() {
           {/* ── Hierarchy ─────────────────────────────── */}
           {hierarchy.length > 0 && (
             <Section title="Session hierarchy">
-              <div className="space-y-1">
-                {hierarchy.map((node) => (
-                  <HierarchyNode key={node.session.id} node={node} projects={projects} />
-                ))}
-              </div>
+              <SessionHierarchy nodes={hierarchy} projects={projects} />
             </Section>
           )}
 
@@ -222,238 +189,6 @@ function EmptyState({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-// ─── Hierarchy ──────────────────────────────────────────
-
-function HierarchyNode({
-  node,
-  projects,
-  depth = 0,
-}: {
-  node: HierarchyTreeNode;
-  projects: { id: string; name: string; slug: string }[];
-  depth?: number;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [dissolveOpen, setDissolveOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [dissolving, setDissolving] = useState(false);
-  const ws = useWebSocket();
-  const hasChildren = node.children.length > 0;
-  const project = projects.find((p) => p.id === node.session.projectId);
-  const projectName = project?.name ?? "";
-  const projectSlug = project?.slug ?? "";
-  const stateColor = stateDotColor(node.session.state);
-  const shortId = node.session.id.split("-")[0] ?? node.session.id;
-  const descendantCount = countDescendants(node);
-
-  // Channels this session is a lead of — used to expose the Dissolve action
-  // only where it has a defined effect.
-  const leadChannelIds = useMemo(() => {
-    const roles = node.session.channelRoles ?? {};
-    return Object.entries(roles)
-      .filter(([, role]) => role === "lead")
-      .map(([id]) => id);
-  }, [node.session.channelRoles]);
-  const canDissolve = leadChannelIds.length > 0;
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await deleteSession(ws, node.session.id);
-      toast.success(
-        descendantCount > 0
-          ? `Deleted ${node.session.name} and ${descendantCount} descendant(s)`
-          : `Deleted ${node.session.name}`,
-      );
-      setConfirmOpen(false);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Delete failed"));
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleDissolve = async () => {
-    setDissolving(true);
-    try {
-      // Dissolve every channel this session leads. Typically there's only
-      // one (the worker channel), but we don't want to silently ignore
-      // additional lead memberships.
-      for (const chId of leadChannelIds) {
-        await dissolveChannel(ws, chId);
-      }
-      toast.success(
-        leadChannelIds.length === 1
-          ? `Dissolved ${node.session.name}'s channel`
-          : `Dissolved ${leadChannelIds.length} channels led by ${node.session.name}`,
-      );
-      setDissolveOpen(false);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Dissolve failed"));
-    } finally {
-      setDissolving(false);
-    }
-  };
-
-  return (
-    <div>
-      <div
-        className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-      >
-        <button
-          type="button"
-          aria-label={expanded ? "Collapse" : "Expand"}
-          onClick={() => hasChildren && setExpanded((v) => !v)}
-          className={cn(
-            "flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground",
-            !hasChildren && "invisible",
-          )}
-        >
-          {hasChildren &&
-            (expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />)}
-        </button>
-        <span
-          className={cn("size-2 shrink-0 rounded-full", stateColor)}
-          title={`State: ${node.session.state}`}
-        />
-        <Network className="size-3 shrink-0 text-muted-foreground" />
-        {projectSlug ? (
-          <Link
-            to="/project/$projectSlug/session/$sessionShortId"
-            params={{ projectSlug, sessionShortId: shortId }}
-            className="flex min-w-0 flex-1 items-center gap-2 truncate hover:underline"
-          >
-            <span className="truncate text-sm font-medium">{node.session.name}</span>
-            {hasChildren && (
-              <span className="text-[10px] text-muted-foreground tabular-nums">
-                {node.children.length}
-              </span>
-            )}
-          </Link>
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
-            <span className="truncate text-sm font-medium">{node.session.name}</span>
-            {hasChildren && (
-              <span className="text-[10px] text-muted-foreground tabular-nums">
-                {node.children.length}
-              </span>
-            )}
-          </span>
-        )}
-        {projectName && (
-          <span className="truncate text-[10px] text-muted-foreground">{projectName}</span>
-        )}
-        {canDissolve && (
-          <button
-            type="button"
-            aria-label={`Dissolve channel led by ${node.session.name}`}
-            title="Dissolve — stop workers, keep this session"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDissolveOpen(true);
-            }}
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-600 group-hover:opacity-100 focus:opacity-100"
-          >
-            <Scissors className="size-3" />
-          </button>
-        )}
-        <button
-          type="button"
-          aria-label={`Delete ${node.session.name}`}
-          title={
-            descendantCount > 0
-              ? `Delete — remove this session and ${descendantCount} descendant(s)`
-              : "Delete — remove this session"
-          }
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirmOpen(true);
-          }}
-          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-        >
-          <Trash2 className="size-3" />
-        </button>
-      </div>
-      {hasChildren && expanded && (
-        <div>
-          {node.children.map((c) => (
-            <HierarchyNode key={c.session.id} node={c} projects={projects} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {node.session.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {descendantCount > 0 ? (
-                <>
-                  This session has <strong>{descendantCount}</strong> descendant session
-                  {descendantCount === 1 ? "" : "s"} that will be deleted with it. Each descendant's
-                  worktree and branch will be removed. This cannot be undone.
-                </>
-              ) : (
-                <>
-                  This will stop the session, remove its worktree and branch, and clear its history.
-                  This cannot be undone.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={dissolveOpen} onOpenChange={setDissolveOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Dissolve {node.session.name}'s channel?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Stops every worker in{" "}
-              {leadChannelIds.length === 1
-                ? "the channel"
-                : `${leadChannelIds.length} channels led by this session`}
-              , removes their worktrees and branches, and deletes the channel.{" "}
-              <strong>{node.session.name} itself stays alive</strong> as a regular session — its
-              worktree and history are preserved. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={dissolving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDissolve} disabled={dissolving}>
-              {dissolving ? "Dissolving…" : "Dissolve"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function stateDotColor(state: SessionMetadata["state"]): string {
-  switch (state) {
-    case "running":
-      return "bg-emerald-500";
-    case "idle":
-      return "bg-sky-500";
-    case "merging":
-      return "bg-amber-500";
-    case "failed":
-      return "bg-red-500";
-    case "done":
-    case "stopped":
-      return "bg-muted-foreground/40";
-    default:
-      return "bg-muted-foreground/40";
-  }
 }
 
 function ProfileCard({
