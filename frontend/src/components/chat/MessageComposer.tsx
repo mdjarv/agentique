@@ -1,55 +1,16 @@
-import {
-  ClipboardPaste,
-  FileText,
-  FolderOpen,
-  Gauge,
-  GitBranch,
-  ListChecks,
-  ListPlus,
-  MessageSquare,
-  Mic,
-  MicOff,
-  Paperclip,
-  SendHorizonal,
-  ShieldAlert,
-  ShieldCheck,
-  Square,
-  X,
-} from "lucide-react";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { ClipboardPaste, ListPlus, Mic, MicOff, SendHorizonal, Square } from "lucide-react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { useAttachments } from "~/hooks/useAttachments";
-import { useAutocomplete } from "~/hooks/useAutocomplete";
-import { useIsMobile } from "~/hooks/useIsMobile";
-import { useSpeechRecognition } from "~/hooks/useSpeechRecognition";
-import {
-  ACCEPTED_TYPES,
-  EFFORT_COLORS,
-  EFFORT_LABELS,
-  EFFORT_LEVELS,
-  type EffortLevel,
-  isImage,
-  PERMISSION_BG,
-  PERMISSION_COLORS,
-  PERMISSION_DESCRIPTIONS,
-  PERMISSION_LABELS,
-  PERMISSION_MODES,
-} from "~/lib/composer-constants";
-import {
-  MODEL_LABELS,
-  MODEL_PROVIDER,
-  MODELS,
-  type ModelId,
-  PROVIDER_LABELS,
-  PROVIDERS,
-  type ProviderId,
-} from "~/lib/session/actions";
+import { ACCEPTED_TYPES, type EffortLevel } from "~/lib/composer-constants";
+import type { ModelId, ProviderId } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
-import { useProviderStore } from "~/stores/provider-store";
-import { AutocompletePopup } from "./AutocompletePopup";
+import { AttachmentStrip } from "./composer/AttachmentStrip";
+import { ComposerTextarea, type ComposerTextareaHandle } from "./composer/ComposerTextarea";
+import { ComposerToolbar } from "./composer/ComposerToolbar";
+import { useComposerSend } from "./composer/useComposerSend";
+import { useComposerSpeech } from "./composer/useComposerSpeech";
 import { ImageLightbox } from "./ImageLightbox";
-import { ToolbarDropdown, type ToolbarDropdownOption } from "./ToolbarDropdown";
-import { ToolbarToggle } from "./ToolbarToggle";
 
 export type { EffortLevel };
 
@@ -96,70 +57,13 @@ interface MessageComposerProps {
   onUnstash?: () => string | undefined;
 }
 
-const PERMISSION_OPTIONS: ToolbarDropdownOption[] = PERMISSION_MODES.map((m) => ({
-  value: m,
-  label: PERMISSION_LABELS[m],
-  icon:
-    m === "fullAuto" ? <ShieldAlert className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />,
-  color: PERMISSION_COLORS[m],
-  description: PERMISSION_DESCRIPTIONS[m],
-}));
-
-/** Static fallback options used until the backend catalog hydrates. */
-const STATIC_MODEL_OPTIONS: ToolbarDropdownOption[] = MODELS.map((m) => ({
-  value: m,
-  label: MODEL_LABELS[m],
-  group: PROVIDER_LABELS[MODEL_PROVIDER[m]],
-}));
-
-interface BuiltOptions {
-  options: ToolbarDropdownOption[];
-  /** model slug → provider, built from whatever catalog is available. */
-  providerOf: (slug: string) => ProviderId | undefined;
-}
-
-function buildModelOptions(
-  catalog: Record<string, { slug: string; displayName: string; description?: string }[]>,
-  filterProvider: ProviderId | undefined,
-): BuiltOptions {
-  const providers = filterProvider ? [filterProvider] : PROVIDERS;
-  const providerOf = new Map<string, ProviderId>();
-  const options: ToolbarDropdownOption[] = [];
-
-  for (const p of providers) {
-    const groupLabel = PROVIDER_LABELS[p];
-    const dynamic = catalog[p];
-    const entries =
-      dynamic && dynamic.length > 0
-        ? dynamic.map((m) => ({
-            value: m.slug,
-            label: m.displayName || m.slug,
-            description: m.description,
-          }))
-        : STATIC_MODEL_OPTIONS.filter((o) => MODEL_PROVIDER[o.value as ModelId] === p).map(
-            ({ value, label }) => ({ value, label, description: undefined as string | undefined }),
-          );
-
-    for (const entry of entries) {
-      providerOf.set(entry.value, p);
-      options.push({
-        value: entry.value,
-        label: entry.label,
-        group: groupLabel,
-        ...(entry.description ? { description: entry.description } : {}),
-      });
-    }
-  }
-
-  return { options, providerOf: (slug) => providerOf.get(slug) };
-}
-
-const EFFORT_OPTIONS: ToolbarDropdownOption[] = EFFORT_LEVELS.map((lvl) => ({
-  value: lvl,
-  label: EFFORT_LABELS[lvl],
-  color: EFFORT_COLORS[lvl],
-}));
-
+/**
+ * Presentational shell + coordinator. It owns attachments and the submit/speech
+ * lifecycles, but the `text` state lives inside {@link ComposerTextarea}; the
+ * shell talks to it through an imperative handle. The toolbar and right-hand
+ * actions are passed in as a stable `bottomBar` element, so a keystroke (which
+ * only mutates the inner textarea) never re-renders this subtree.
+ */
 export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
   function MessageComposer(
     {
@@ -193,23 +97,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     },
     ref,
   ) {
-    const isMobile = useIsMobile();
-    const catalog = useProviderStore((s) => s.models);
-    const { options: modelOptions, providerOf } = buildModelOptions(catalog, provider);
-    const [text, setTextState] = useState(initialText ?? "");
-    const [submitting, setSubmitting] = useState(false);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const submittingRef = useRef(false);
-    const textRef = useRef(text);
-    textRef.current = text;
-    const setText = useCallback((value: string) => {
-      textRef.current = value;
-      setTextState(value);
-    }, []);
-    const onTextPersistRef = useRef(onTextPersist);
-    onTextPersistRef.current = onTextPersist;
-    const mountedRef = useRef(true);
-
     const {
       attachments,
       isDragging,
@@ -225,495 +112,172 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       handleDragLeave,
     } = useAttachments();
 
-    const autocomplete = useAutocomplete({ projectId, textareaRef, text, onTextChange: setText });
+    const inputRef = useRef<ComposerTextareaHandle>(null);
+    const [hasContent, setHasContent] = useState((initialText ?? "").trim().length > 0);
 
-    useEffect(() => {
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
+    // Stable bridges to the inner textarea's state.
+    const getText = useCallback(() => inputRef.current?.getText() ?? "", []);
+    const setText = useCallback((value: string) => inputRef.current?.setText(value), []);
+    const clearComposer = useCallback(() => inputRef.current?.clear(), []);
+    const handleContentChange = useCallback((value: boolean) => setHasContent(value), []);
 
-    // --- Speech recognition (dictation mode) ---
-    // speechBaseRef: text that existed when the current recognition session started.
-    // Everything after this base is replaced by the latest transcript on each update.
-    const speechBaseRef = useRef("");
+    const speech = useComposerSpeech({ getText, setText });
 
-    const speech = useSpeechRecognition({
-      onBeforeStart: useCallback(() => {
-        speechBaseRef.current = textRef.current;
-      }, []),
-      onTranscript: useCallback(
-        (transcript: string) => {
-          const base = speechBaseRef.current;
-          const spacer = base && !base.endsWith(" ") && !base.endsWith("\n") ? " " : "";
-          setText(base + spacer + transcript);
-          requestAnimationFrame(() => {
-            const el = textareaRef.current;
-            if (el) {
-              el.style.height = "auto";
-              el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-            }
-          });
-        },
-        [setText],
-      ),
+    const send = useComposerSend({
+      getText,
+      setText,
+      clearComposer,
+      getAttachments: () => attachments,
+      clearAttachments: clearAll,
+      onSend,
+      disabled,
+      onBeforeSend: speech.forceStop,
     });
 
-    // Press-and-hold: hold >500ms starts "hold mode" — release stops.
-    // Short click (<500ms) toggles.
-    // If already listening on pointerDown, force-stop immediately (escape hatch).
-    const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const holdActiveRef = useRef(false);
-    const didForceStopRef = useRef(false);
-
-    const handleMicPointerDown = useCallback(
-      (e: React.PointerEvent) => {
-        if (e.button !== 0) return;
-        try {
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        } catch {
-          // Pointer capture not supported or invalid pointer — continue without it.
-        }
-
-        // Clear any leftover hold timer (e.g. if previous pointerUp was missed).
-        if (holdTimerRef.current) {
-          clearTimeout(holdTimerRef.current);
-          holdTimerRef.current = null;
-        }
-        didForceStopRef.current = false;
-
-        // Escape hatch: if UI shows listening, force-stop unconditionally.
-        if (speech.isListening) {
-          speech.forceStop();
-          didForceStopRef.current = true;
-          return;
-        }
-
-        holdActiveRef.current = false;
-        holdTimerRef.current = setTimeout(() => {
-          holdTimerRef.current = null;
-          holdActiveRef.current = true;
-          speech.start();
-        }, 500);
-      },
-      [speech],
+    useImperativeHandle(
+      ref,
+      () => ({
+        setText: (value: string) => inputRef.current?.setText(value, { focus: true }),
+      }),
+      [],
     );
 
-    const handleMicPointerUp = useCallback(() => {
-      if (holdTimerRef.current) {
-        clearTimeout(holdTimerRef.current);
-        holdTimerRef.current = null;
-      }
-      if (didForceStopRef.current) {
-        didForceStopRef.current = false;
+    // Enter-key behavior: empty-submit hook fires only with no text and no attachments.
+    const handleEnter = useCallback(() => {
+      if (!getText().trim() && attachments.length === 0 && onEmptySubmit) {
+        onEmptySubmit();
         return;
       }
-      if (holdActiveRef.current) {
-        holdActiveRef.current = false;
-        speech.stop();
-      } else {
-        speech.toggle();
-      }
-    }, [speech]);
+      void send.handleSend();
+    }, [getText, attachments.length, onEmptySubmit, send.handleSend]);
 
-    // Clean up hold timer if component unmounts mid-press.
-    useEffect(() => {
-      return () => {
-        if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-      };
-    }, []);
+    const onAttachClick = useCallback(() => fileInputRef.current?.click(), [fileInputRef]);
 
-    useImperativeHandle(ref, () => ({
-      setText: (value: string) => {
-        setText(value);
-        requestAnimationFrame(() => {
-          const el = textareaRef.current;
-          if (el) {
-            el.style.height = "auto";
-            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-            el.focus();
-          }
-        });
-      },
-    }));
+    const isSendDisabled =
+      !!disabled || send.submitting || (!hasContent && attachments.length === 0);
 
-    useEffect(() => {
-      const el = textareaRef.current;
-      if (el?.value) {
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-        el.selectionStart = el.selectionEnd = el.value.length;
-      }
-      return () => {
-        onTextPersistRef.current?.(textRef.current);
-      };
-    }, []);
+    const stashBanner = stashedText ? (
+      <button
+        type="button"
+        onClick={() => {
+          const restored = onUnstash?.();
+          if (restored) inputRef.current?.setText(restored, { focus: true });
+        }}
+        className="flex items-center gap-1.5 mx-3 mt-2 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors cursor-pointer group"
+        title="Click to restore stashed text"
+      >
+        <ClipboardPaste className="h-3 w-3 shrink-0" />
+        <span className="truncate max-w-[300px]">{stashedText}</span>
+        {(stashDepth ?? 0) > 1 && (
+          <span className="text-primary/70 shrink-0 font-medium">({stashDepth})</span>
+        )}
+        <span className="text-primary/50 group-hover:text-primary/70 shrink-0">⌃S restore</span>
+      </button>
+    ) : undefined;
 
-    useEffect(() => {
-      const timer = setTimeout(() => {
-        onTextPersistRef.current?.(text);
-      }, 500);
-      return () => clearTimeout(timer);
-    }, [text]);
+    const bottomBar = (
+      <div className="flex items-center justify-between px-2 pb-2">
+        <ComposerToolbar
+          attachmentsSupported={attachmentsSupported}
+          onAttachClick={onAttachClick}
+          disabled={!!disabled || send.submitting}
+          templatePicker={templatePicker}
+          worktree={worktree}
+          onWorktreeChange={onWorktreeChange}
+          planMode={planMode}
+          onPlanModeChange={onPlanModeChange}
+          isRunning={isRunning}
+          autoApproveMode={autoApproveMode}
+          onAutoApproveModeChange={onAutoApproveModeChange}
+          provider={provider}
+          onProviderChange={onProviderChange}
+          model={model}
+          onModelChange={onModelChange}
+          effort={effort}
+          onEffortChange={onEffortChange}
+        />
 
-    const handleSend = async () => {
-      const submittedText = textRef.current;
-      const trimmed = submittedText.trim();
-      if ((!trimmed && attachments.length === 0) || disabled || submittingRef.current) return;
-      submittingRef.current = true;
-      setSubmitting(true);
-      speech.forceStop();
-      autocomplete.close();
-      setText("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
-
-      let shouldClear = false;
-      try {
-        const result = await onSend(trimmed, attachments.length > 0 ? attachments : undefined);
-        shouldClear = result !== false;
-      } catch (err) {
-        console.error("send failed", err);
-      } finally {
-        submittingRef.current = false;
-        if (mountedRef.current) setSubmitting(false);
-      }
-
-      if (!mountedRef.current) return;
-      if (!shouldClear) {
-        if (textRef.current === "") {
-          setText(submittedText);
-          requestAnimationFrame(() => {
-            const el = textareaRef.current;
-            if (el) {
-              el.style.height = "auto";
-              el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-            }
-          });
-        }
-        return;
-      }
-
-      clearAll();
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Ctrl/Cmd+S → stash current input, or pop stash if input is empty
-      if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-        e.preventDefault();
-        const trimmed = text.trim();
-        if (trimmed && onStash) {
-          onStash(trimmed);
-          setText("");
-          if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-          }
-        } else if (!trimmed && onUnstash) {
-          const restored = onUnstash();
-          if (restored) {
-            setText(restored);
-            requestAnimationFrame(() => {
-              const el = textareaRef.current;
-              if (el) {
-                el.style.height = "auto";
-                el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-              }
-            });
-          }
-        }
-        return;
-      }
-      // Ctrl/Cmd+Shift+M → toggle dictation
-      if (e.key === "M" && e.shiftKey && (e.ctrlKey || e.metaKey) && speech.isSupported) {
-        e.preventDefault();
-        speech.toggle();
-        return;
-      }
-      autocomplete.onKeyDown(e);
-      if (e.defaultPrevented) return;
-      if (e.key === "Enter" && !e.shiftKey && !isMobile && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        if (!text.trim() && attachments.length === 0 && onEmptySubmit) {
-          onEmptySubmit();
-          return;
-        }
-        void handleSend();
-      }
-    };
-
-    const handleInput = () => {
-      const el = textareaRef.current;
-      if (el) {
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-      }
-    };
-
-    const showWorktreeToggle = worktree !== undefined && !!onWorktreeChange;
-    const showEffortDropdown = effort !== undefined && !!onEffortChange;
-    const hasToggles = showWorktreeToggle || onPlanModeChange || autoApproveMode !== undefined;
-    const mode = autoApproveMode ?? "manual";
+        <div className="flex items-center gap-1">
+          {speech.isSupported && (
+            <button
+              type="button"
+              {...speech.micHandlers}
+              disabled={!!disabled || send.submitting}
+              className={cn(
+                "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
+                speech.isListening
+                  ? "text-destructive bg-destructive/10 mic-pulse"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+              )}
+              aria-label={speech.isListening ? "Stop dictation" : "Start dictation"}
+              title="Click to toggle, hold to dictate (Ctrl+Shift+M)"
+            >
+              {speech.isListening ? (
+                <MicOff className="h-3.5 w-3.5" />
+              ) : (
+                <Mic className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          {isRunning && (
+            <button
+              type="button"
+              onClick={onInterrupt}
+              className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
+              aria-label="Stop"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void send.handleSend()}
+            disabled={isSendDisabled}
+            className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-agent text-background flex items-center justify-center transition-colors hover:bg-agent/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+            aria-label={isRunning ? "Queue message" : "Send message"}
+          >
+            {isRunning ? (
+              <ListPlus className="h-3.5 w-3.5" />
+            ) : (
+              <SendHorizonal className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
 
     return (
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
-        {attachments.length > 0 && (
-          <div className="flex gap-2 flex-wrap mb-2">
-            {attachments.map((a) => (
-              <div key={a.id} className="relative group">
-                {isImage(a.mimeType) ? (
-                  <button
-                    type="button"
-                    className="p-0 border-none bg-transparent cursor-pointer"
-                    onClick={() => setLightboxSrc(a.previewUrl ?? a.dataUrl)}
-                  >
-                    <img
-                      src={a.previewUrl ?? a.dataUrl}
-                      alt={a.name}
-                      className="h-16 w-16 object-cover rounded-md border"
-                    />
-                  </button>
-                ) : (
-                  <div className="h-16 w-16 rounded-md border bg-muted flex flex-col items-center justify-center gap-1 px-1">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-[9px] text-muted-foreground truncate w-full text-center">
-                      {a.name}
-                    </span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(a.id)}
-                  className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center max-md:opacity-100 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <AttachmentStrip
+          attachments={attachments}
+          onRemove={removeAttachment}
+          onPreview={setLightboxSrc}
+        />
 
-        <div className="relative">
-          {autocomplete.isOpen && autocomplete.triggerType && (
-            <AutocompletePopup
-              items={autocomplete.items}
-              selectedIndex={autocomplete.selectedIndex}
-              triggerType={autocomplete.triggerType}
-              onSelect={autocomplete.accept}
-            />
-          )}
-          <div
-            className={cn(
-              "rounded-xl border bg-agent/5 transition-all",
-              isDragging
-                ? "border-agent ring-2 ring-agent/30"
-                : "focus-within:border-agent/50 focus-within:ring-1 focus-within:ring-agent/30",
-            )}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-          >
-            {stashedText && (
-              <button
-                type="button"
-                onClick={() => {
-                  const restored = onUnstash?.();
-                  if (restored) {
-                    setText(restored);
-                    requestAnimationFrame(() => {
-                      const el = textareaRef.current;
-                      if (el) {
-                        el.style.height = "auto";
-                        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-                        el.focus();
-                      }
-                    });
-                  }
-                }}
-                className="flex items-center gap-1.5 mx-3 mt-2 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors cursor-pointer group"
-                title="Click to restore stashed text"
-              >
-                <ClipboardPaste className="h-3 w-3 shrink-0" />
-                <span className="truncate max-w-[300px]">{stashedText}</span>
-                {(stashDepth ?? 0) > 1 && (
-                  <span className="text-primary/70 shrink-0 font-medium">({stashDepth})</span>
-                )}
-                <span className="text-primary/50 group-hover:text-primary/70 shrink-0">
-                  ⌃S restore
-                </span>
-              </button>
-            )}
-            <textarea
-              ref={textareaRef}
-              autoFocus
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                handleInput();
-              }}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder={
-                placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")
-              }
-              enterKeyHint={isMobile ? "enter" : "send"}
-              className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
-              rows={1}
-              style={{ maxHeight: "200px" }}
-              disabled={disabled || submitting}
-              aria-busy={submitting}
-            />
-
-            {/* Bottom bar */}
-            <div className="flex items-center justify-between px-2 pb-2">
-              <div className="flex items-center gap-0.5 max-md:gap-1 max-md:overflow-x-auto max-md:flex-nowrap min-w-0">
-                {attachmentsSupported && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={disabled || submitting}
-                    className="h-7 w-7 max-md:h-10 max-md:w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
-                    aria-label="Attach files"
-                  >
-                    <Paperclip className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {templatePicker}
-
-                {hasToggles && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
-
-                {showWorktreeToggle && (
-                  <ToolbarToggle
-                    active={worktree ?? false}
-                    onChange={onWorktreeChange}
-                    activeIcon={<GitBranch className="h-3 w-3" />}
-                    inactiveIcon={<FolderOpen className="h-3 w-3" />}
-                    activeLabel="Worktree"
-                    inactiveLabel="Local"
-                    activeColor="bg-primary/10 text-primary"
-                    inactiveColor="bg-orange/10 text-orange"
-                  />
-                )}
-                {onPlanModeChange && (
-                  <ToolbarToggle
-                    active={planMode ?? false}
-                    onChange={onPlanModeChange}
-                    activeIcon={<ListChecks className="h-3 w-3" />}
-                    inactiveIcon={<MessageSquare className="h-3 w-3" />}
-                    activeLabel="Plan"
-                    inactiveLabel="Chat"
-                    activeColor="bg-warning/10 text-warning"
-                    inactiveColor="bg-primary/10 text-primary"
-                    disabled={isRunning}
-                  />
-                )}
-                {autoApproveMode !== undefined && (
-                  <ToolbarDropdown
-                    value={mode}
-                    onChange={
-                      onAutoApproveModeChange
-                        ? (v) => onAutoApproveModeChange(v as AutoApproveMode)
-                        : undefined
-                    }
-                    options={PERMISSION_OPTIONS}
-                    icon={
-                      mode === "fullAuto" ? (
-                        <ShieldAlert className="h-3 w-3" />
-                      ) : (
-                        <ShieldCheck className="h-3 w-3" />
-                      )
-                    }
-                    triggerColor={PERMISSION_COLORS[mode]}
-                    triggerBgColor={PERMISSION_BG[mode]}
-                    readOnlyColor={PERMISSION_COLORS[mode]}
-                  />
-                )}
-
-                {(showEffortDropdown || model) && (
-                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
-                )}
-
-                {model && (
-                  <ToolbarDropdown
-                    value={model}
-                    onChange={
-                      onModelChange
-                        ? (v) => {
-                            const next = v as ModelId;
-                            const nextProvider = providerOf(v) ?? MODEL_PROVIDER[next];
-                            if (nextProvider && nextProvider !== provider) {
-                              onProviderChange?.(nextProvider);
-                            }
-                            onModelChange(next);
-                          }
-                        : undefined
-                    }
-                    options={modelOptions}
-                  />
-                )}
-                {showEffortDropdown && effort !== undefined && (
-                  <ToolbarDropdown
-                    value={effort}
-                    onChange={onEffortChange ? (v) => onEffortChange(v as EffortLevel) : undefined}
-                    options={EFFORT_OPTIONS}
-                    icon={<Gauge className="h-3 w-3" />}
-                    triggerColor={EFFORT_COLORS[effort]}
-                    readOnlyColor={EFFORT_COLORS[effort]}
-                  />
-                )}
-              </div>
-
-              <div className="flex items-center gap-1">
-                {speech.isSupported && (
-                  <button
-                    type="button"
-                    onPointerDown={handleMicPointerDown}
-                    onPointerUp={handleMicPointerUp}
-                    onContextMenu={(e) => e.preventDefault()}
-                    disabled={disabled || submitting}
-                    className={cn(
-                      "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
-                      speech.isListening
-                        ? "text-destructive bg-destructive/10 mic-pulse"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-                    )}
-                    aria-label={speech.isListening ? "Stop dictation" : "Start dictation"}
-                    title="Click to toggle, hold to dictate (Ctrl+Shift+M)"
-                  >
-                    {speech.isListening ? (
-                      <MicOff className="h-3.5 w-3.5" />
-                    ) : (
-                      <Mic className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                )}
-                {isRunning && (
-                  <button
-                    type="button"
-                    onClick={onInterrupt}
-                    className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
-                    aria-label="Stop"
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={disabled || submitting || (!text.trim() && attachments.length === 0)}
-                  className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-agent text-background flex items-center justify-center transition-colors hover:bg-agent/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  aria-label={isRunning ? "Queue message" : "Send message"}
-                >
-                  {isRunning ? (
-                    <ListPlus className="h-3.5 w-3.5" />
-                  ) : (
-                    <SendHorizonal className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ComposerTextarea
+          ref={inputRef}
+          projectId={projectId}
+          initialText={initialText}
+          placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
+          disabled={!!disabled || send.submitting}
+          busy={send.submitting}
+          isDragging={isDragging}
+          dropHandlers={{
+            onDrop: handleDrop,
+            onDragOver: handleDragOver,
+            onDragLeave: handleDragLeave,
+          }}
+          onPaste={handlePaste}
+          stashBanner={stashBanner}
+          bottomBar={bottomBar}
+          onContentChange={handleContentChange}
+          onSubmit={handleEnter}
+          onStash={onStash}
+          onUnstash={onUnstash}
+          onToggleSpeech={speech.isSupported ? speech.toggle : undefined}
+          speechSupported={speech.isSupported}
+          onTextPersist={onTextPersist}
+        />
 
         <input
           ref={fileInputRef}
