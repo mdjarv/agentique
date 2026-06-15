@@ -7,6 +7,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
 import type { SessionMetadata } from "~/stores/chat-types";
+import { useEventSeqStore } from "~/stores/event-seq";
 import { usePulseStore } from "~/stores/pulse-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
@@ -91,6 +92,8 @@ export function useSessionLifecycleSubscription(
       store.removeSession(deletedId);
       // Reclaim any in-flight streaming buffers/index for the removed session.
       useStreamingStore.getState().clearSession(deletedId);
+      // Drop its wire-sequence tracking too.
+      useEventSeqStore.getState().clearSession(deletedId);
 
       if (wasActive && deletedSession) {
         const projectId = deletedSession.meta.projectId;

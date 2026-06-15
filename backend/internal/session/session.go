@@ -454,7 +454,7 @@ func (s *Session) SendMessage(prompt string, attachments []QueryAttachment) erro
 			slog.Error("persist user_message event failed", "session_id", s.ID, "error", err)
 		}
 	}
-	s.broadcast("session.event", PushSessionEvent{SessionID: s.ID, Event: wireEvent})
+	s.broadcastSessionEvent(wireEvent)
 	return nil
 }
 
@@ -504,8 +504,27 @@ func (s *Session) QueuePendingMessage(prompt string, attachments []QueryAttachme
 	s.mu.Unlock()
 
 	wireEvent := WireUserMessageEvent{Type: "user_message", Content: prompt, MessageID: messageID, Attachments: attachments, Queued: true}
-	s.broadcast("session.event", PushSessionEvent{SessionID: s.ID, Event: wireEvent})
+	s.broadcastSessionEvent(wireEvent)
 	return true
+}
+
+// broadcastSessionEvent broadcasts a session.event for this session, stamped
+// with the pipeline's epoch and the next monotonic wire-sequence number. All
+// Session-originated session.event emissions (mid-turn echoes, queued echoes,
+// runtime-bridge errors) route through here so the per-session sequence the
+// frontend tracks stays gap-free across emission sites.
+func (s *Session) broadcastSessionEvent(wireEvent any) {
+	var seq, epoch int64
+	if s.pipeline != nil {
+		seq = s.pipeline.NextWireSeq()
+		epoch = s.pipeline.Epoch()
+	}
+	s.broadcast("session.event", PushSessionEvent{
+		SessionID: s.ID,
+		Event:     wireEvent,
+		Seq:       seq,
+		Epoch:     epoch,
+	})
 }
 
 // flushPendingMessages replays buffered mid-turn messages as a single fresh turn

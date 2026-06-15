@@ -42,13 +42,10 @@ func safeProcessEvent(s *Session, event runtime.CLIEvent) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic in pipeline.ProcessEvent", "session_id", s.ID, "panic", r)
-			s.broadcast("session.event", PushSessionEvent{
-				SessionID: s.ID,
-				Event: WireErrorEvent{
-					Type:    "error",
-					Content: fmt.Sprintf("internal error processing event: %v", r),
-					Fatal:   false,
-				},
+			s.broadcastSessionEvent(WireErrorEvent{
+				Type:    "error",
+				Content: fmt.Sprintf("internal error processing event: %v", r),
+				Fatal:   false,
 			})
 		}
 	}()
@@ -125,13 +122,10 @@ func handleWatchdogEvent(s *Session, ev runtime.WatchdogEvent) {
 		slog.Warn("watchdog warning", "session_id", s.ID, "kind", ev.Kind, "message", msg, "elapsed", ev.Elapsed)
 	}
 
-	s.broadcast("session.event", PushSessionEvent{
-		SessionID: s.ID,
-		Event: WireErrorEvent{
-			Type:    "error",
-			Content: msg,
-			Fatal:   fatal,
-		},
+	s.broadcastSessionEvent(WireErrorEvent{
+		Type:    "error",
+		Content: msg,
+		Fatal:   fatal,
 	})
 }
 

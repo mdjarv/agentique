@@ -263,6 +263,8 @@ export const HistoryResultSchema = z.object({
   turns: z.array(HistoryTurnSchema),
   hasMore: z.boolean(),
   totalTurns: z.number(),
+  epoch: z.number(),
+  highWaterSeq: z.number(),
 });
 
 export const GitSnapshotSchema = z.object({
@@ -682,6 +684,8 @@ export const ScreencastMetadataSchema = z.object({
 export const PushSessionEventSchema = z.object({
   sessionId: z.string(),
   event: z.unknown(),
+  seq: z.number(),
+  epoch: z.number(),
 });
 
 export const PushSessionRenamedSchema = z.object({

@@ -588,7 +588,20 @@ func (s *Service) persistAgentMessageWithID(ctx context.Context, sessionID, proj
 	}); err != nil {
 		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
 	}
-	s.hub.Publish(projectID, "session.event", PushSessionEvent{SessionID: sessionID, Event: event})
+	// Stamp the wire sequence from the live pipeline when the target session is
+	// loaded; an offline session has no pipeline, so this push goes out
+	// unsequenced (seq 0) and the frontend skips gap/dedup checks for it.
+	var wireSeq, wireEpoch int64
+	if live != nil {
+		wireSeq = live.pipeline.NextWireSeq()
+		wireEpoch = live.pipeline.Epoch()
+	}
+	s.hub.Publish(projectID, "session.event", PushSessionEvent{
+		SessionID: sessionID,
+		Event:     event,
+		Seq:       wireSeq,
+		Epoch:     wireEpoch,
+	})
 }
 
 // RouteAgentMessage delivers a message from one session to another within the same channel.

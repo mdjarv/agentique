@@ -6,11 +6,22 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
 )
+
+// pipelineEpochCounter mints a process-global, collision-free epoch for each
+// EventPipeline. A counter (not a timestamp) is used deliberately: two
+// evict+resume cycles within the same millisecond would mint a duplicate
+// timestamp epoch, so the frontend would miss the pipeline change and keep
+// dropping the resumed stream's low sequence numbers as stale — a silent
+// freeze. A monotonic counter can never collide.
+var pipelineEpochCounter atomic.Int64
+
+func nextPipelineEpoch() int64 { return pipelineEpochCounter.Add(1) }
 
 // EventSink bundles the two universal outputs of event processing.
 type EventSink struct {
@@ -62,6 +73,13 @@ type EventPipeline struct {
 	model     string
 	sink      EventSink
 
+	// epoch is fixed for this pipeline's lifetime; wireSeq is the per-session
+	// monotonic wire-sequence counter (1-based) stamped on every broadcast.
+	// Both feed the frontend's gap/dedup/resync logic. Independent of the DB
+	// (turnIndex, seqInTurn) used for persistence ordering.
+	epoch   int64
+	wireSeq atomic.Int64
+
 	mu                sync.Mutex
 	claudeSessionID   string
 	resolvedModel     string // upstream-reported model ID from the first InitEvent (e.g. "claude-opus-4-8")
@@ -89,6 +107,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		sessionID:         cfg.SessionID,
 		model:             cfg.Model,
 		sink:              cfg.Sink,
+		epoch:             nextPipelineEpoch(),
 		turnIndex:         cfg.InitialTurnIndex,
 		toolCategories:    make(map[string]string),
 		taskStatus:        make(map[string]bool),
@@ -148,6 +167,19 @@ func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 	p.handleTerminalEvents(event)
 }
 
+// broadcastSessionEvent stamps the wire event with this pipeline's epoch and a
+// freshly-allocated monotonic sequence number, then broadcasts it. Every
+// pipeline-originated session.event goes through here so the frontend sees a
+// gap-free per-session sequence.
+func (p *EventPipeline) broadcastSessionEvent(wireEvent any) {
+	p.sink.Broadcast("session.event", PushSessionEvent{
+		SessionID: p.sessionID,
+		Event:     wireEvent,
+		Seq:       p.NextWireSeq(),
+		Epoch:     p.epoch,
+	})
+}
+
 // emitWireEvent runs stages 3–7 for a single wire event: transient filtering,
 // persistence, tool tracking, and broadcasting.
 func (p *EventPipeline) emitWireEvent(wireEvent any) {
@@ -164,7 +196,7 @@ func (p *EventPipeline) emitWireEvent(wireEvent any) {
 
 	// Stage 3: Transient events — broadcast only, skip DB.
 	if isTransient(wireEvent) {
-		p.sink.Broadcast("session.event", PushSessionEvent{SessionID: p.sessionID, Event: wireEvent})
+		p.broadcastSessionEvent(wireEvent)
 		return
 	}
 
@@ -178,7 +210,7 @@ func (p *EventPipeline) emitWireEvent(wireEvent any) {
 	p.trackToolResult(wireEvent)
 
 	// Stage 7: Broadcast to all project clients.
-	p.sink.Broadcast("session.event", PushSessionEvent{SessionID: p.sessionID, Event: wireEvent})
+	p.broadcastSessionEvent(wireEvent)
 
 	// Stage 8: Activity feed — emit for result/error events.
 	if p.onActivityEvent != nil {
@@ -209,13 +241,10 @@ func (p *EventPipeline) handleReplayConfirmation() {
 	p.pendingMessageIDs = p.pendingMessageIDs[1:]
 	p.mu.Unlock()
 
-	p.sink.Broadcast("session.event", PushSessionEvent{
-		SessionID: p.sessionID,
-		Event: WireMessageDeliveryEvent{
-			Type:      "message_delivery",
-			Status:    "delivered",
-			MessageID: msgID,
-		},
+	p.broadcastSessionEvent(WireMessageDeliveryEvent{
+		Type:      "message_delivery",
+		Status:    "delivered",
+		MessageID: msgID,
 	})
 }
 
@@ -284,6 +313,19 @@ func (p *EventPipeline) TurnIndex() int {
 	defer p.mu.Unlock()
 	return p.turnIndex
 }
+
+// Epoch returns this pipeline's lifetime identifier, stamped on every
+// session.event so the frontend can detect a resume/rebuild (epoch change).
+func (p *EventPipeline) Epoch() int64 { return p.epoch }
+
+// NextWireSeq atomically allocates the next monotonic wire-sequence number for
+// this session's push stream. 1-based; never resets within a pipeline life.
+func (p *EventPipeline) NextWireSeq() int64 { return p.wireSeq.Add(1) }
+
+// CurrentWireSeq returns the highest wire-sequence number allocated so far
+// (0 before the first event). Used as the high-water mark in history responses
+// so a force-reload can reseed the frontend's last-seen seq.
+func (p *EventPipeline) CurrentWireSeq() int64 { return p.wireSeq.Load() }
 
 // ClaudeSessionID returns the captured Claude CLI session ID.
 func (p *EventPipeline) ClaudeSessionID() string {

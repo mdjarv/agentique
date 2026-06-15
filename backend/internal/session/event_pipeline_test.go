@@ -834,3 +834,59 @@ func TestPipeline_SetClaudeSessionID(t *testing.T) {
 		t.Errorf("expected restored-id to be preserved, got %q", p.ClaudeSessionID())
 	}
 }
+
+func TestPipeline_WireSeqAndEpoch(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	// Mix of transient (rate_limit) and persisted (text) events — every
+	// session.event broadcast must carry a monotonic, gap-free wire seq.
+	p.ProcessEvent(runtime.RateLimitEvent{Status: "normal", Utilization: 0.5})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "a"})
+	p.ProcessEvent(runtime.AssistantTextEvent{Content: "b"})
+
+	var seqs []int64
+	for _, b := range sink.broadcasts {
+		if b.PushType != "session.event" {
+			continue
+		}
+		pse, ok := b.Payload.(PushSessionEvent)
+		if !ok {
+			t.Fatalf("session.event payload is %T, want PushSessionEvent", b.Payload)
+		}
+		if pse.Epoch != p.Epoch() {
+			t.Errorf("event epoch = %d, want pipeline epoch %d", pse.Epoch, p.Epoch())
+		}
+		seqs = append(seqs, pse.Seq)
+	}
+
+	want := []int64{1, 2, 3}
+	if len(seqs) != len(want) {
+		t.Fatalf("got %d session.event broadcasts, want %d (seqs=%v)", len(seqs), len(want), seqs)
+	}
+	for i := range want {
+		if seqs[i] != want[i] {
+			t.Errorf("seq[%d] = %d, want %d (full=%v)", i, seqs[i], want[i], seqs)
+		}
+	}
+
+	// CurrentWireSeq tracks the high-water mark for history responses.
+	if hw := p.CurrentWireSeq(); hw != 3 {
+		t.Errorf("CurrentWireSeq = %d, want 3", hw)
+	}
+}
+
+func TestPipeline_EpochUniquePerPipeline(t *testing.T) {
+	// A fresh pipeline (the resume/rebuild case) must mint a distinct epoch so
+	// the frontend detects the restart and resyncs instead of dropping the
+	// resumed stream's low sequence numbers as stale.
+	p1 := newTestPipeline(newTestSink())
+	p2 := newTestPipeline(newTestSink())
+	if p1.Epoch() == p2.Epoch() {
+		t.Errorf("two pipelines share epoch %d; epochs must be unique per lifetime", p1.Epoch())
+	}
+	if p2.Epoch() <= p1.Epoch() {
+		t.Errorf("epoch not monotonic: p1=%d p2=%d", p1.Epoch(), p2.Epoch())
+	}
+}

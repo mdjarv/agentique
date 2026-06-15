@@ -12,9 +12,20 @@ import (
 // JSON tags MUST match the frontend schemas in ws-push-schemas.ts.
 
 // PushSessionEvent wraps a wire event for a given session.
+//
+// Seq is a per-session, monotonic wire-sequence number stamped on every
+// session.event broadcast (1-based; 0 means "unsequenced" — used only for the
+// rare channel-message push to a session that isn't live). Epoch identifies the
+// emitting pipeline's lifetime (a fresh value on every resume/rebuild). The
+// frontend uses (epoch, seq) to detect gaps, drop duplicates/out-of-order
+// events, and trigger a history resync when the pipeline was rebuilt — see the
+// event-seq store. Seq resets to 0 within a new pipeline life, so Epoch is what
+// disambiguates "the counter restarted" from "an old duplicate".
 type PushSessionEvent struct {
 	SessionID string `json:"sessionId"`
 	Event     any    `json:"event"`
+	Seq       int64  `json:"seq"`
+	Epoch     int64  `json:"epoch"`
 }
 
 // PushTurnStarted signals a new turn has begun.

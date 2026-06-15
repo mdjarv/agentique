@@ -151,10 +151,19 @@ type ListSessionsResult struct {
 }
 
 // HistoryResult is the wire type for session history responses.
+//
+// Epoch and HighWaterSeq let the frontend reseed its per-session wire-sequence
+// tracker after a (force) history load: Epoch is the live pipeline's lifetime
+// id and HighWaterSeq is the highest wire seq broadcast so far. After applying
+// this snapshot the frontend sets {epoch, lastSeq} = {Epoch, HighWaterSeq}, so a
+// subsequent live event already contained in the snapshot (seq <= HighWaterSeq)
+// is dropped. Both are 0 when the session isn't live (no pipeline).
 type HistoryResult struct {
-	Turns      []HistoryTurn `json:"turns"`
-	HasMore    bool          `json:"hasMore"`
-	TotalTurns int           `json:"totalTurns"`
+	Turns        []HistoryTurn `json:"turns"`
+	HasMore      bool          `json:"hasMore"`
+	TotalTurns   int           `json:"totalTurns"`
+	Epoch        int64         `json:"epoch"`
+	HighWaterSeq int64         `json:"highWaterSeq"`
 }
 
 // idempotencyEntry stores a cached CreateSession result with an expiry time.
@@ -953,6 +962,18 @@ func (s *Service) resolveProjectPaths(ctx context.Context, sessions []store.Sess
 // GetHistory returns turn history for a session. If limit > 0, returns only
 // the most recent N turns plus metadata for the frontend to request the rest.
 func (s *Service) GetHistory(ctx context.Context, sessionID string, limit int) (HistoryResult, error) {
+	// Read the live pipeline's epoch + high-water seq BEFORE the DB read so the
+	// high-water never exceeds what the snapshot contains: an event is persisted
+	// (DB) before its wire seq is allocated at broadcast, so any event with
+	// seq <= highWater read here was persisted earlier and is in the snapshot.
+	// Reading it after the DB read could mark a not-yet-persisted event as
+	// already-seen and the frontend would drop it permanently. 0 when offline.
+	var epoch, highWater int64
+	if live := s.mgr.Get(sessionID); live != nil {
+		epoch = live.pipeline.Epoch()
+		highWater = live.pipeline.CurrentWireSeq()
+	}
+
 	if limit > 0 {
 		totalTurns, err := s.queries.CountTurnsBySession(ctx, sessionID)
 		if err != nil {
@@ -963,9 +984,11 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string, limit int) (
 			return HistoryResult{}, err
 		}
 		return HistoryResult{
-			Turns:      turns,
-			HasMore:    int(totalTurns) > len(turns),
-			TotalTurns: int(totalTurns),
+			Turns:        turns,
+			HasMore:      int(totalTurns) > len(turns),
+			TotalTurns:   int(totalTurns),
+			Epoch:        epoch,
+			HighWaterSeq: highWater,
 		}, nil
 	}
 
@@ -974,8 +997,10 @@ func (s *Service) GetHistory(ctx context.Context, sessionID string, limit int) (
 		return HistoryResult{}, err
 	}
 	return HistoryResult{
-		Turns:      turns,
-		TotalTurns: len(turns),
+		Turns:        turns,
+		TotalTurns:   len(turns),
+		Epoch:        epoch,
+		HighWaterSeq: highWater,
 	}, nil
 }
 

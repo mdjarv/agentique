@@ -3,9 +3,11 @@ import type { useWebSocket } from "~/hooks/useWebSocket";
 import { fromWireAttachment } from "~/lib/attachment-utils";
 import type { ChannelMessage } from "~/lib/channel-actions";
 import { parseServerEvent } from "~/lib/events";
+import { loadSessionHistory } from "~/lib/session/history";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
 import { applyEvent } from "~/stores/event-orchestrator";
+import { decideSeq, useEventSeqStore } from "~/stores/event-seq";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 /** Subscribes to session.event and session.turn-started WS events. */
@@ -15,9 +17,28 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
       const raw = payload.event as Record<string, unknown>;
       const event = parseServerEvent(raw);
       if (!event) return;
+      const sid = payload.sessionId;
+
+      // --- Wire-sequence gate (runs FIRST, before any store mutation) ---
+      // seq 0 = unsequenced (e.g. a channel message to an offline session) —
+      // skip ordering/dedup checks and apply directly. Otherwise drop
+      // duplicates/out-of-order, and resync on a gap or pipeline rebuild.
+      if (payload.seq > 0) {
+        const prev = useEventSeqStore.getState().states[sid];
+        const { action, next } = decideSeq(prev, payload.epoch, payload.seq);
+        if (action === "drop") return;
+        useEventSeqStore.getState().record(sid, next);
+        if (action === "resync") {
+          // Backfill missed events. Coalesced by loadSessionHistory's
+          // historyLoading in-flight guard; the force-load reseeds the seq
+          // state authoritatively from the response's high-water mark.
+          loadSessionHistory(ws, sid, true);
+        }
+      }
+
       // The orchestrator owns all cross-store sequencing (chat-store +
       // streaming-store + toolBlockIndex). The hook just parses and delegates.
-      applyEvent(payload.sessionId, event, raw);
+      applyEvent(sid, event, raw);
     });
 
     const unsubChannelMessage = ws.subscribe("channel.message", (payload) => {
