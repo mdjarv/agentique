@@ -19,7 +19,7 @@ import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
-import { cn, copyToClipboard, getErrorMessage } from "~/lib/utils";
+import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { DEFAULT_SESSION_DEFAULTS, useUIStore } from "~/stores/ui-store";
@@ -107,7 +107,7 @@ export function NewChatPanel({
     (_channelId: string, firstSessionId: string) => {
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: firstSessionId.split("-")[0] ?? "" },
+        params: { projectSlug, sessionShortId: sessionShortId(firstSessionId) },
         replace: true,
       });
     },
@@ -141,7 +141,7 @@ export function NewChatPanel({
       useUIStore.getState().clearDraft(draftKey);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug, sessionShortId: sessionShortId(sessionId) },
         replace: true,
       });
       return true;

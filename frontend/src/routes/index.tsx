@@ -13,7 +13,7 @@ import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
 import { Button } from "~/components/ui/button";
 import type { Project } from "~/lib/generated-types";
-import { cn, relativeTime } from "~/lib/utils";
+import { cn, relativeTime, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
 
@@ -274,7 +274,7 @@ function RecentSessionRow({
       to="/project/$projectSlug/session/$sessionShortId"
       params={{
         projectSlug,
-        sessionShortId: meta.id.split("-")[0] ?? meta.id,
+        sessionShortId: sessionShortId(meta.id),
       }}
       className="block"
     >

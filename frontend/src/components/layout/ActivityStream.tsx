@@ -37,7 +37,7 @@ import { joinChannel, leaveChannel } from "~/lib/channel-actions";
 import { getProjectColor } from "~/lib/project-colors";
 import { deleteSessionsBulk } from "~/lib/session/actions";
 import type { Project } from "~/lib/types";
-import { getErrorMessage } from "~/lib/utils";
+import { getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
 import { ChannelStreamItem } from "./ChannelStreamItem";
@@ -211,7 +211,7 @@ export function ActivityStream({ searchQuery, filterProjectId = null }: Activity
       useAppStore.getState().setSidebarOpen(false);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug: slug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug: slug, sessionShortId: sessionShortId(sessionId) },
       });
     },
     [navigate, projectBySession],

@@ -22,7 +22,7 @@ import {
 } from "~/lib/channel-actions";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import { getSessionIconComponent } from "~/lib/session/icons";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionState } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -194,7 +194,7 @@ export const ChannelPanel = memo(function ChannelPanel({
     (sessionId: string) => {
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug, sessionShortId: sessionShortId(sessionId) },
       });
     },
     [navigate, projectSlug],

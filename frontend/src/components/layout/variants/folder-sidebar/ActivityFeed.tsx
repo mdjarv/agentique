@@ -3,7 +3,7 @@ import { Activity } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { ActivityItem } from "~/lib/generated-types";
-import { cn } from "~/lib/utils";
+import { cn, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -138,7 +138,7 @@ export function ActivityFeed({ projectId }: { projectId: string }) {
         // Navigate to session
         navigate({
           to: "/project/$projectSlug/session/$sessionShortId",
-          params: { projectSlug, sessionShortId: item.sourceId.split("-")[0] ?? "" },
+          params: { projectSlug, sessionShortId: sessionShortId(item.sourceId) },
         });
       }
     },

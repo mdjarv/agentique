@@ -13,7 +13,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { useSessionTeardown } from "~/hooks/session/useSessionTeardown";
 import { countDescendants, type HierarchyTreeNode } from "~/lib/session-hierarchy";
-import { cn } from "~/lib/utils";
+import { cn, sessionShortId } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-types";
 
 interface ProjectRef {
@@ -55,7 +55,7 @@ function HierarchyNode({
   const projectName = project?.name ?? "";
   const projectSlug = project?.slug ?? "";
   const stateColor = stateDotColor(node.session.state);
-  const shortId = node.session.id.split("-")[0] ?? node.session.id;
+  const shortId = sessionShortId(node.session.id);
   const descendantCount = countDescendants(node);
 
   // Channels this session is a lead of — used to expose the Dissolve action

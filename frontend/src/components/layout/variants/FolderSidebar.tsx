@@ -13,7 +13,7 @@ import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { setProjectPinned } from "~/lib/project-actions";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -96,7 +96,7 @@ export function FolderSidebar() {
       useAppStore.getState().setSidebarOpen(false);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug: project.slug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug: project.slug, sessionShortId: sessionShortId(sessionId) },
       });
     },
     [navigate, projects],

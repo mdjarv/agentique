@@ -27,7 +27,7 @@ import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 // `~/lib/prompt-parsing.ts`.
 import { type PromptBlock, parsePromptBlocks } from "~/lib/prompt-parsing";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session/actions";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -320,7 +320,7 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
     if (sessionId && navSlug) {
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug: navSlug, sessionShortId: sessionId.split("-")[0] ?? "" },
+        params: { projectSlug: navSlug, sessionShortId: sessionShortId(sessionId) },
       });
     }
   }, [sessionId, navSlug, navigate]);
