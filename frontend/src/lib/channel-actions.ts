@@ -1,4 +1,5 @@
 import type { WsClient } from "~/lib/ws-client";
+import { define, LONG } from "~/lib/ws-rpc";
 
 export interface ChannelInfo {
   id: string;
@@ -54,73 +55,78 @@ export interface TimelineEvent {
   messageType?: AgentMessageType;
 }
 
-export async function createChannel(
-  ws: WsClient,
-  projectId: string,
-  name: string,
-): Promise<ChannelInfo> {
-  return ws.request<ChannelInfo>("channel.create", { projectId, name });
+const createChannelRpc = define<ChannelInfo, { projectId: string; name: string }>("channel.create");
+export function createChannel(ws: WsClient, projectId: string, name: string): Promise<ChannelInfo> {
+  return createChannelRpc(ws, { projectId, name });
 }
 
-export async function deleteChannel(ws: WsClient, channelId: string): Promise<void> {
-  await ws.request("channel.delete", { channelId });
+const deleteChannelRpc = define<void, { channelId: string }>("channel.delete");
+export function deleteChannel(ws: WsClient, channelId: string): Promise<void> {
+  return deleteChannelRpc(ws, { channelId });
 }
 
-export async function dissolveChannel(ws: WsClient, channelId: string): Promise<void> {
-  await ws.request("channel.dissolve", { channelId });
+const dissolveChannelRpc = define<void, { channelId: string }>("channel.dissolve");
+export function dissolveChannel(ws: WsClient, channelId: string): Promise<void> {
+  return dissolveChannelRpc(ws, { channelId });
 }
 
-export async function dissolveChannelKeepHistory(ws: WsClient, channelId: string): Promise<void> {
-  await ws.request("channel.dissolve-keep", { channelId });
+const dissolveKeepRpc = define<void, { channelId: string }>("channel.dissolve-keep");
+export function dissolveChannelKeepHistory(ws: WsClient, channelId: string): Promise<void> {
+  return dissolveKeepRpc(ws, { channelId });
 }
 
-export async function joinChannel(
+const joinChannelRpc = define<ChannelInfo, { sessionId: string; channelId: string; role: string }>(
+  "channel.join",
+);
+export function joinChannel(
   ws: WsClient,
   sessionId: string,
   channelId: string,
   role: string,
 ): Promise<ChannelInfo> {
-  return ws.request<ChannelInfo>("channel.join", { sessionId, channelId, role });
+  return joinChannelRpc(ws, { sessionId, channelId, role });
 }
 
-export async function leaveChannel(
-  ws: WsClient,
-  sessionId: string,
-  channelId: string,
-): Promise<void> {
-  await ws.request("channel.leave", { sessionId, channelId });
+const leaveChannelRpc = define<void, { sessionId: string; channelId: string }>("channel.leave");
+export function leaveChannel(ws: WsClient, sessionId: string, channelId: string): Promise<void> {
+  return leaveChannelRpc(ws, { sessionId, channelId });
 }
 
-export async function listChannels(ws: WsClient, projectId: string): Promise<ChannelInfo[]> {
-  return ws.request<ChannelInfo[]>("channel.list", { projectId });
+const listChannelsRpc = define<ChannelInfo[], { projectId: string }>("channel.list");
+export function listChannels(ws: WsClient, projectId: string): Promise<ChannelInfo[]> {
+  return listChannelsRpc(ws, { projectId });
 }
 
-export async function getChannelInfo(ws: WsClient, channelId: string): Promise<ChannelInfo> {
-  return ws.request<ChannelInfo>("channel.info", { channelId });
+const channelInfoRpc = define<ChannelInfo, { channelId: string }>("channel.info");
+export function getChannelInfo(ws: WsClient, channelId: string): Promise<ChannelInfo> {
+  return channelInfoRpc(ws, { channelId });
 }
 
-export async function getChannelTimeline(
-  ws: WsClient,
-  channelId: string,
-): Promise<ChannelMessage[]> {
-  return ws.request<ChannelMessage[]>("channel.timeline", { channelId });
+const channelTimelineRpc = define<ChannelMessage[], { channelId: string }>("channel.timeline");
+export function getChannelTimeline(ws: WsClient, channelId: string): Promise<ChannelMessage[]> {
+  return channelTimelineRpc(ws, { channelId });
 }
 
-export async function sendChannelMessage(
+const sendMessageRpc = define<
+  void,
+  { senderSessionId: string; targetSessionId: string; content: string }
+>("channel.send-message");
+export function sendChannelMessage(
   ws: WsClient,
   senderSessionId: string,
   targetSessionId: string,
   content: string,
 ): Promise<void> {
-  await ws.request("channel.send-message", { senderSessionId, targetSessionId, content });
+  return sendMessageRpc(ws, { senderSessionId, targetSessionId, content });
 }
 
-export async function broadcastToChannel(
+const broadcastRpc = define<void, { channelId: string; content: string }>("channel.broadcast");
+export function broadcastToChannel(
   ws: WsClient,
   channelId: string,
   content: string,
 ): Promise<void> {
-  await ws.request("channel.broadcast", { channelId, content });
+  return broadcastRpc(ws, { channelId, content });
 }
 
 export interface SwarmMemberSpec {
@@ -140,16 +146,16 @@ export interface CreateSwarmResult {
   errors?: string[];
 }
 
-export async function createSwarm(
+const createSwarmRpc = define<
+  CreateSwarmResult,
+  { projectId: string; channelName: string; leadSessionId?: string; members: SwarmMemberSpec[] }
+>("channel.create-swarm", LONG);
+export function createSwarm(
   ws: WsClient,
   projectId: string,
   channelName: string,
   members: SwarmMemberSpec[],
   leadSessionId?: string,
 ): Promise<CreateSwarmResult> {
-  return ws.request<CreateSwarmResult>(
-    "channel.create-swarm",
-    { projectId, channelName, leadSessionId, members },
-    120_000,
-  );
+  return createSwarmRpc(ws, { projectId, channelName, leadSessionId, members });
 }

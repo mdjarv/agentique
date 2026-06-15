@@ -1,4 +1,5 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { throwIfNotOk } from "~/lib/http";
 
 const BASE = "/api/auth";
 
@@ -17,7 +18,7 @@ export async function updateUserPreferences(prefs: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prefs),
   });
-  if (!res.ok) throw new Error("Failed to update preferences");
+  await throwIfNotOk(res, "Failed to update preferences");
   return res.json();
 }
 
@@ -31,7 +32,7 @@ export interface AuthStatus {
 
 export async function getAuthStatus(): Promise<AuthStatus> {
   const res = await fetch(`${BASE}/status`);
-  if (!res.ok) throw new Error("Failed to get auth status");
+  await throwIfNotOk(res, "Failed to get auth status");
   return res.json();
 }
 
@@ -42,10 +43,7 @@ export async function register(displayName: string, inviteToken?: string): Promi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ displayName, inviteToken }),
   });
-  if (!beginRes.ok) {
-    const err = await beginRes.json().catch(() => null);
-    throw new Error(err?.error ?? "Registration failed");
-  }
+  await throwIfNotOk(beginRes, "Registration failed");
   const beginData = await beginRes.json();
 
   // Step 2: Create passkey via browser API.
@@ -61,10 +59,7 @@ export async function register(displayName: string, inviteToken?: string): Promi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(credential),
   });
-  if (!finishRes.ok) {
-    const err = await finishRes.json().catch(() => null);
-    throw new Error(err?.error ?? "Registration verification failed");
-  }
+  await throwIfNotOk(finishRes, "Registration verification failed");
 
   const result = await finishRes.json();
   return result.user;
@@ -73,7 +68,7 @@ export async function register(displayName: string, inviteToken?: string): Promi
 export async function login(): Promise<AuthUser> {
   // Step 1: Begin login — get WebAuthn options from server.
   const beginRes = await fetch(`${BASE}/login/begin`, { method: "POST" });
-  if (!beginRes.ok) throw new Error("Login failed");
+  await throwIfNotOk(beginRes, "Login failed");
   const beginData = await beginRes.json();
 
   // Step 2: Authenticate via browser API.
@@ -86,10 +81,7 @@ export async function login(): Promise<AuthUser> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(credential),
   });
-  if (!finishRes.ok) {
-    const err = await finishRes.json().catch(() => null);
-    throw new Error(err?.error ?? "Login verification failed");
-  }
+  await throwIfNotOk(finishRes, "Login verification failed");
 
   const result = await finishRes.json();
   return result.user;
@@ -101,7 +93,7 @@ export async function logout(): Promise<void> {
 
 export async function createInvite(): Promise<{ token: string; expiresAt: string }> {
   const res = await fetch(`${BASE}/invite`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to create invite");
+  await throwIfNotOk(res, "Failed to create invite");
   return res.json();
 }
 

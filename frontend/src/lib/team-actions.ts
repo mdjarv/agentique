@@ -1,5 +1,6 @@
 import { createSession } from "~/lib/session/actions";
 import type { WsClient } from "~/lib/ws-client";
+import { define, MEDIUM } from "~/lib/ws-rpc";
 
 // --- Types ---
 
@@ -42,27 +43,23 @@ export interface TeamInfo {
 
 // --- Agent Profile actions ---
 
-export function listAgentProfiles(ws: WsClient): Promise<AgentProfileInfo[]> {
-  return ws.request<AgentProfileInfo[]>("agent-profile.list");
-}
+export const listAgentProfiles = define<AgentProfileInfo[]>("agent-profile.list");
 
-export function createAgentProfile(
-  ws: WsClient,
-  params: {
+export const createAgentProfile = define<
+  AgentProfileInfo,
+  {
     name: string;
     role: string;
     description: string;
     projectId: string;
     avatar: string;
     config: string;
-  },
-): Promise<AgentProfileInfo> {
-  return ws.request<AgentProfileInfo>("agent-profile.create", params);
-}
+  }
+>("agent-profile.create");
 
-export function updateAgentProfile(
-  ws: WsClient,
-  params: {
+export const updateAgentProfile = define<
+  AgentProfileInfo,
+  {
     id: string;
     name: string;
     role: string;
@@ -70,52 +67,37 @@ export function updateAgentProfile(
     projectId: string;
     avatar: string;
     config: string;
-  },
-): Promise<AgentProfileInfo> {
-  return ws.request<AgentProfileInfo>("agent-profile.update", params);
-}
+  }
+>("agent-profile.update");
 
+const deleteAgentProfileRpc = define<void, { id: string }>("agent-profile.delete");
 export function deleteAgentProfile(ws: WsClient, id: string): Promise<void> {
-  return ws.request("agent-profile.delete", { id });
+  return deleteAgentProfileRpc(ws, { id });
 }
 
 // --- Team actions ---
 
-export function listTeams(ws: WsClient): Promise<TeamInfo[]> {
-  return ws.request<TeamInfo[]>("team.list");
-}
+export const listTeams = define<TeamInfo[]>("team.list");
 
-export function createTeam(
-  ws: WsClient,
-  params: { name: string; description: string },
-): Promise<TeamInfo> {
-  return ws.request<TeamInfo>("team.create", params);
-}
+export const createTeam = define<TeamInfo, { name: string; description: string }>("team.create");
 
-export function updateTeam(
-  ws: WsClient,
-  params: { id: string; name: string; description: string },
-): Promise<TeamInfo> {
-  return ws.request<TeamInfo>("team.update", params);
-}
+export const updateTeam = define<TeamInfo, { id: string; name: string; description: string }>(
+  "team.update",
+);
 
+const deleteTeamRpc = define<void, { id: string }>("team.delete");
 export function deleteTeam(ws: WsClient, id: string): Promise<void> {
-  return ws.request("team.delete", { id });
+  return deleteTeamRpc(ws, { id });
 }
 
-export function addTeamMember(
-  ws: WsClient,
-  params: { teamId: string; agentProfileId: string; sortOrder: number },
-): Promise<TeamInfo> {
-  return ws.request<TeamInfo>("team.add-member", params);
-}
+export const addTeamMember = define<
+  TeamInfo,
+  { teamId: string; agentProfileId: string; sortOrder: number }
+>("team.add-member");
 
-export function removeTeamMember(
-  ws: WsClient,
-  params: { teamId: string; agentProfileId: string },
-): Promise<TeamInfo> {
-  return ws.request<TeamInfo>("team.remove-member", params);
-}
+export const removeTeamMember = define<TeamInfo, { teamId: string; agentProfileId: string }>(
+  "team.remove-member",
+);
 
 // --- Persona types ---
 
@@ -146,19 +128,15 @@ export interface PersonaInteraction {
 
 // --- Persona actions ---
 
-export function askPersona(
-  ws: WsClient,
-  params: { profileId: string; teamId: string; question: string },
-): Promise<PersonaQueryResult> {
-  return ws.request<PersonaQueryResult>("persona.query", params);
-}
+export const askPersona = define<
+  PersonaQueryResult,
+  { profileId: string; teamId: string; question: string }
+>("persona.query");
 
-export function listPersonaInteractions(
-  ws: WsClient,
-  params: { teamId: string; limit?: number; offset?: number },
-): Promise<PersonaInteraction[]> {
-  return ws.request<PersonaInteraction[]>("persona.list", params);
-}
+export const listPersonaInteractions = define<
+  PersonaInteraction[],
+  { teamId: string; limit?: number; offset?: number }
+>("persona.list");
 
 // --- Launch helpers ---
 
@@ -186,9 +164,9 @@ export interface GenerateProfileResult {
   config: string;
 }
 
-export function generateAgentProfile(
-  ws: WsClient,
-  params: {
+export const generateAgentProfile = define<
+  GenerateProfileResult,
+  {
     projectId: string;
     brief?: string;
     name?: string;
@@ -198,7 +176,5 @@ export function generateAgentProfile(
     systemPromptAdditions?: string;
     customInstructions?: string;
     capabilities?: string[];
-  },
-): Promise<GenerateProfileResult> {
-  return ws.request<GenerateProfileResult>("agent-profile.generate", params, 60000);
-}
+  }
+>("agent-profile.generate", MEDIUM);
