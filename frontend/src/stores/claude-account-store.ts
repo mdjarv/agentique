@@ -1,11 +1,6 @@
 import { create } from "zustand";
-import {
-  claudeLogin,
-  claudeLoginCancel,
-  claudeLoginCode,
-  claudeLogout,
-  getClaudeAccount,
-} from "~/lib/claude-account-api";
+import { getClaudeAccount } from "~/lib/claude-account-api";
+import { createClaudeLoginService } from "~/lib/claude-login-service";
 
 interface ClaudeAccountState {
   loggedIn: boolean;
@@ -27,160 +22,63 @@ interface ClaudeAccountState {
   closeLoginDialog: () => void;
 }
 
-const POLL_INTERVAL = 2000;
-const POLL_TIMEOUT = 5 * 60 * 1000;
-
-let pollAbortController: AbortController | null = null;
-
-export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => ({
-  loggedIn: false,
-  email: null,
-  orgName: null,
-  subscriptionType: null,
-  loading: true,
-  switching: false,
-  loginUrl: null,
-  loginDialogOpen: false,
-  error: null,
-  submittingCode: false,
-
-  fetchStatus: async () => {
-    try {
-      const account = await getClaudeAccount();
+export const useClaudeAccountStore = create<ClaudeAccountState>((set, get) => {
+  // The service owns all side effects (window.open, the polling loop, its own
+  // abort controller). The store only holds flags/status and exposes a sink the
+  // service writes resolved state through — keeping the store DOM-free.
+  const service = createClaudeLoginService({
+    applyAccount: (account) =>
       set({
         loggedIn: account.loggedIn,
         email: account.email ?? null,
         orgName: account.orgName ?? null,
         subscriptionType: account.subscriptionType ?? null,
-        loading: false,
-      });
-    } catch {
-      set({ loading: false });
-    }
-  },
+      }),
+    patch: (state) => set(state),
+  });
 
-  switchAccount: async () => {
-    set({ switching: true, loginDialogOpen: true, error: null });
-    try {
-      await claudeLogout();
-      set({ loggedIn: false, email: null, orgName: null, subscriptionType: null });
-      await get().loginAccount();
-    } catch (err) {
-      set({
-        switching: false,
-        loginUrl: null,
-        error: err instanceof Error ? err.message : "Switch failed",
-      });
-    }
-  },
+  return {
+    loggedIn: false,
+    email: null,
+    orgName: null,
+    subscriptionType: null,
+    loading: true,
+    switching: false,
+    loginUrl: null,
+    loginDialogOpen: false,
+    error: null,
+    submittingCode: false,
 
-  loginAccount: async () => {
-    set({ switching: true, loginDialogOpen: true, error: null });
-    try {
-      const result = await claudeLogin();
-      if (result.url) {
-        window.open(result.url, "_blank");
-      }
-      set({ loginUrl: result.url ?? null });
-      if (result.status === "already_logged_in") {
-        await get().fetchStatus();
-        set({ switching: false, loginUrl: null, loginDialogOpen: false });
-        return;
-      }
-      pollAbortController = new AbortController();
-      await pollUntilLoggedIn(set, pollAbortController.signal);
-    } catch (err) {
-      set({
-        switching: false,
-        loginUrl: null,
-        error: err instanceof Error ? err.message : "Login failed",
-      });
-    }
-  },
-
-  cancelLogin: async () => {
-    pollAbortController?.abort();
-    pollAbortController = null;
-    try {
-      await claudeLoginCancel();
-    } catch {
-      // best effort
-    }
-    set({ switching: false, loginUrl: null, loginDialogOpen: false, error: null });
-  },
-
-  submitCode: async (code: string) => {
-    set({ submittingCode: true, error: null });
-    try {
-      await claudeLoginCode(code);
-    } catch (err) {
-      set({
-        submittingCode: false,
-        error: err instanceof Error ? err.message : "Code submission failed",
-      });
-      return;
-    }
-    set({ submittingCode: false });
-
-    // Cancel any existing poll (may have timed out) and start fresh
-    pollAbortController?.abort();
-    pollAbortController = new AbortController();
-    set({ switching: true, error: null });
-    await pollUntilLoggedIn(set, pollAbortController.signal);
-  },
-
-  closeLoginDialog: () => {
-    // If login is in progress, cancel it
-    if (get().switching) {
-      get().cancelLogin();
-    } else {
-      set({ loginDialogOpen: false, error: null });
-    }
-  },
-}));
-
-type SetFn = (partial: Partial<ClaudeAccountState>) => void;
-
-async function pollUntilLoggedIn(set: SetFn, signal: AbortSignal): Promise<void> {
-  const deadline = Date.now() + POLL_TIMEOUT;
-
-  return new Promise<void>((resolve) => {
-    const check = async () => {
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
-      if (Date.now() > deadline) {
-        set({ switching: false, loginUrl: null, error: "Login timed out" });
-        claudeLoginCancel().catch((err) => console.error("claudeLoginCancel failed", err));
-        resolve();
-        return;
-      }
+    fetchStatus: async () => {
       try {
         const account = await getClaudeAccount();
-        if (account.loggedIn) {
-          set({
-            loggedIn: true,
-            email: account.email ?? null,
-            orgName: account.orgName ?? null,
-            subscriptionType: account.subscriptionType ?? null,
-            switching: false,
-            loginUrl: null,
-            loginDialogOpen: false,
-            error: null,
-          });
-          resolve();
-          return;
-        }
-      } catch (err) {
-        console.error("getClaudeAccount failed during login polling", err);
+        set({
+          loggedIn: account.loggedIn,
+          email: account.email ?? null,
+          orgName: account.orgName ?? null,
+          subscriptionType: account.subscriptionType ?? null,
+          loading: false,
+        });
+      } catch {
+        set({ loading: false });
       }
-      if (signal.aborted) {
-        resolve();
-        return;
+    },
+
+    switchAccount: () => service.switchAccount(),
+
+    loginAccount: () => service.login(),
+
+    cancelLogin: () => service.cancel(),
+
+    submitCode: (code: string) => service.submitCode(code),
+
+    closeLoginDialog: () => {
+      // If login is in progress, cancel it (aborts the poll); otherwise just close.
+      if (get().switching) {
+        service.cancel();
+      } else {
+        set({ loginDialogOpen: false, error: null });
       }
-      setTimeout(check, POLL_INTERVAL);
-    };
-    setTimeout(check, POLL_INTERVAL);
-  });
-}
+    },
+  };
+});
