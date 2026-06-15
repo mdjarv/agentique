@@ -71,6 +71,55 @@ describe("channel-store", () => {
     });
   });
 
+  describe("reconcileChannels", () => {
+    it("prunes channels of the project absent from the fetched list", () => {
+      useChannelStore
+        .getState()
+        .setChannels([makeChannel({ id: "keep" }), makeChannel({ id: "gone" })]);
+      useChannelStore.getState().setTimeline("gone", [makeEvent({ channelId: "gone" })]);
+
+      useChannelStore.getState().reconcileChannels([makeChannel({ id: "keep" })], "proj-1");
+
+      expect(useChannelStore.getState().channels.keep).toBeDefined();
+      expect(useChannelStore.getState().channels.gone).toBeUndefined();
+      // Pruned channel's timeline is dropped too.
+      expect(useChannelStore.getState().timelines.gone).toBeUndefined();
+    });
+
+    it("does not prune channels belonging to other projects", () => {
+      useChannelStore
+        .getState()
+        .setChannels([
+          makeChannel({ id: "mine", projectId: "proj-1" }),
+          makeChannel({ id: "theirs", projectId: "proj-2" }),
+        ]);
+
+      // Fetched list for proj-1 is empty — must not touch proj-2's channel.
+      useChannelStore.getState().reconcileChannels([], "proj-1");
+
+      expect(useChannelStore.getState().channels.mine).toBeUndefined();
+      expect(useChannelStore.getState().channels.theirs).toBeDefined();
+    });
+
+    it("adds new channels from the fetched list", () => {
+      useChannelStore.getState().reconcileChannels([makeChannel({ id: "fresh" })], "proj-1");
+      expect(useChannelStore.getState().channels.fresh).toBeDefined();
+    });
+
+    it("does not overwrite a channel with more members (stale check)", () => {
+      const existing = makeChannel({
+        id: "c1",
+        members: [makeMember({ sessionId: "s1" }), makeMember({ sessionId: "s2" })],
+      });
+      useChannelStore.getState().setChannels([existing]);
+
+      const stale = makeChannel({ id: "c1", members: [makeMember({ sessionId: "s1" })] });
+      useChannelStore.getState().reconcileChannels([stale], "proj-1");
+
+      expect(useChannelStore.getState().channels.c1?.members).toHaveLength(2);
+    });
+  });
+
   describe("addChannel / removeChannel", () => {
     it("adds a channel", () => {
       useChannelStore.getState().addChannel(makeChannel({ id: "c1" }));

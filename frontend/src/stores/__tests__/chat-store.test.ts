@@ -429,6 +429,54 @@ describe("chat-store", () => {
       expect(s?.meta.state).toBe("running");
       expect(s?.turns).toHaveLength(1); // preserved
     });
+
+    it("preserves a live pending approval on the non-authoritative path", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().setPendingApproval("sess-1", {
+        approvalId: "a1",
+        toolName: "Bash",
+        input: {},
+      });
+
+      // Normal subscribe: fetched meta has no pending field → keep the live one
+      // (guards the live-push-vs-stale-list race).
+      useChatStore.getState().setSessions([makeMeta()], "proj-1");
+      expect(useChatStore.getState().sessions["sess-1"]?.pendingApproval?.approvalId).toBe("a1");
+    });
+
+    it("clears a stale pending approval on the authoritative (reconnect) path", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().setPendingApproval("sess-1", {
+        approvalId: "a1",
+        toolName: "Bash",
+        input: {},
+      });
+      useChatStore.getState().setPendingQuestion("sess-1", {
+        questionId: "q1",
+        questions: [],
+      });
+
+      // Reconnect: authoritative list lacks the pending request (resolved while
+      // disconnected) → it must be cleared.
+      useChatStore.getState().setSessions([makeMeta()], "proj-1", true);
+      const s = useChatStore.getState().sessions["sess-1"];
+      expect(s?.pendingApproval).toBeNull();
+      expect(s?.pendingQuestion).toBeNull();
+    });
+
+    it("repopulates a pending approval from the authoritative list", () => {
+      useChatStore.getState().addSession(makeMeta());
+
+      // Approval raised while disconnected — present in the reconnect snapshot.
+      useChatStore
+        .getState()
+        .setSessions(
+          [makeMeta({ pendingApproval: { approvalId: "a9", toolName: "Edit", input: {} } })],
+          "proj-1",
+          true,
+        );
+      expect(useChatStore.getState().sessions["sess-1"]?.pendingApproval?.approvalId).toBe("a9");
+    });
   });
 
   // --- Pending state buffer ---

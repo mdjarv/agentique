@@ -151,7 +151,7 @@ export interface ChatState {
   historyLoading: Set<string>;
 
   // Session management
-  setSessions: (sessions: SessionMetadata[], projectId: string) => void;
+  setSessions: (sessions: SessionMetadata[], projectId: string, authoritative?: boolean) => void;
   addSession: (meta: SessionMetadata) => void;
   removeSession: (id: string) => void;
   setActiveSessionId: (id: string | null) => void;
@@ -195,7 +195,7 @@ export const useChatStore = create<ChatState>((set) => ({
   loadedProjects: new Set<string>(),
   historyLoading: new Set<string>(),
 
-  setSessions: (metas, projectId) =>
+  setSessions: (metas, projectId, authoritative = false) =>
     set((s) => {
       // Keep sessions from other projects, replace sessions for this project
       const sessions: Record<string, SessionData> = {};
@@ -226,8 +226,20 @@ export const useChatStore = create<ChatState>((set) => ({
             meta: mergedMeta,
             planMode: mergedMeta.permissionMode === "plan",
             autoApproveMode: (mergedMeta.autoApproveMode as AutoApproveMode) ?? "manual",
-            pendingApproval: tagged.pendingApproval ?? existing.pendingApproval,
-            pendingQuestion: tagged.pendingQuestion ?? existing.pendingQuestion,
+            // On the reconnect (authoritative) path the fetched list is the
+            // source of truth: an absent pending field CLEARS a stale one that
+            // was resolved while disconnected. On the normal path keep the
+            // existing value to avoid a live-push-vs-stale-list race.
+            // Narrow known race: an approval raised between project.subscribe
+            // completing and session.list resolving could be cleared by the
+            // older-snapshot list. Net improvement over the persistent-stale
+            // bug; the proper fix is server-side replay/sequencing (out of scope).
+            pendingApproval: authoritative
+              ? (tagged.pendingApproval ?? null)
+              : (tagged.pendingApproval ?? existing.pendingApproval),
+            pendingQuestion: authoritative
+              ? (tagged.pendingQuestion ?? null)
+              : (tagged.pendingQuestion ?? existing.pendingQuestion),
           };
         } else {
           const data = emptySessionData(tagged);

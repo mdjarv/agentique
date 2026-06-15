@@ -7,6 +7,7 @@ interface ChannelState {
 
   setChannels: (channels: ChannelInfo[]) => void;
   mergeChannels: (channels: ChannelInfo[]) => void;
+  reconcileChannels: (channels: ChannelInfo[], projectId: string) => void;
   addChannel: (channel: ChannelInfo) => void;
   removeChannel: (channelId: string) => void;
   updateChannelName: (channelId: string, name: string) => void;
@@ -41,6 +42,35 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
         merged[c.id] = c;
       }
       return { channels: merged };
+    }),
+
+  // Authoritative reconciliation for a single project's channels — used on the
+  // reconnect path where `channel.list` is the source of truth for `projectId`.
+  // Unlike mergeChannels (add/update only), this PRUNES channels belonging to
+  // `projectId` that are absent from the fetched list (deleted while
+  // disconnected), dropping their timelines too. Channels of OTHER projects are
+  // left untouched, because `channel.list` is per-project and says nothing about
+  // them. Update logic mirrors mergeChannels' stale-vs-fresh member guard.
+  reconcileChannels: (channels, projectId) =>
+    set((s) => {
+      const fetchedIds = new Set(channels.map((c) => c.id));
+      const next: Record<string, ChannelInfo> = {};
+      const timelines = { ...s.timelines };
+      for (const [id, c] of Object.entries(s.channels)) {
+        // Prune only this project's channels that the fetch no longer lists.
+        if (c.projectId === projectId && !fetchedIds.has(id)) {
+          delete timelines[id];
+          continue;
+        }
+        next[id] = c;
+      }
+      for (const c of channels) {
+        const existing = next[c.id];
+        // Don't overwrite a channel that has more members (stale RPC vs fresh broadcast).
+        if (existing && existing.members.length >= c.members.length) continue;
+        next[c.id] = c;
+      }
+      return { channels: next, timelines };
     }),
 
   addChannel: (channel) => set((s) => ({ channels: { ...s.channels, [channel.id]: channel } })),
