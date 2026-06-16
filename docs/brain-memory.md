@@ -45,6 +45,9 @@ backend/internal/brain/             # AGENTIQUE GLUE (stays here)
 agentique policy (scope = project, env-driven config, REST/MCP surfaces). When a
 second consumer (formica/hittat) needs memory, lift `internal/memory/**` into
 `agentkit/memory` and keep `internal/brain` as the agentique-specific glue.
+**See `docs/agentkit-extraction.md` for the mechanical lift playbook** (what
+moves, the dependency invariant + verify command, import rewrites, and the public
+API surface).
 
 ## Storage
 
