@@ -118,9 +118,17 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 	if source == "" {
 		source = memory.SourceAgent
 	}
-	existing, err := s.store.List(ctx, recallScopes(scope)...)
+	all, err := s.store.List(ctx, recallScopes(scope)...)
 	if err != nil {
 		return memory.Record{}, err
+	}
+	// Dedup against durable facts only — never against raw episodic captures,
+	// which would drop the durable write and echo a capture back to the caller.
+	existing := make([]memory.Record, 0, len(all))
+	for _, r := range all {
+		if r.Source != memory.SourceCapture {
+			existing = append(existing, r)
+		}
 	}
 	if dup, ok := memory.FindDuplicate(text, existing, memory.DefaultDuplicateThreshold); ok {
 		return dup, nil

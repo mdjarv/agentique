@@ -102,8 +102,12 @@ func (s *Store) index(ctx context.Context, r memory.Record) {
 		return
 	}
 	emb, err := s.embedder.Embed(ctx, []string{r.Text})
-	if err != nil || len(emb) == 0 {
+	if err != nil {
 		s.onErr(fmt.Errorf("chroma: embed %s: %w", r.ID, err))
+		return
+	}
+	if len(emb) == 0 {
+		s.onErr(fmt.Errorf("chroma: embed %s: embedder returned no vector", r.ID))
 		return
 	}
 	md := map[string]any{

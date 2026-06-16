@@ -180,6 +180,51 @@ func TestConsolidateOverDeletionSafetyNet(t *testing.T) {
 	}
 }
 
+func TestConsolidateKeepsCapturesOnEmptyExtraction(t *testing.T) {
+	store := newMemStore(capture("c1", "some episode"), capture("c2", "another episode"))
+	// Extractor has a weak turn and returns nothing (valid, no error).
+	ex := fakeExtractor{extract: func(_ []string) []Candidate { return nil }}
+	rep, err := Consolidate(context.Background(), store, ex, ScopeGlobal, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.CapturesConsumed) != 0 {
+		t.Fatalf("empty extraction must not consume captures, got %+v", rep.CapturesConsumed)
+	}
+	all, _ := store.List(context.Background())
+	if len(all) != 2 {
+		t.Fatalf("captures must survive an empty extraction, got %d", len(all))
+	}
+}
+
+func TestConsolidateAllowsAbstractionHeavyReorg(t *testing.T) {
+	var recs []Record
+	for _, id := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} { // 8 facts
+		recs = append(recs, mk(id, ScopeGlobal, "fact "+id, CategoryFact, SourceAgent))
+	}
+	store := newMemStore(recs...)
+	// Keep 1 original, add 4 abstractions => 5 survivors of 8 => NOT refused.
+	ex := fakeExtractor{reorganize: func(_ []Fact) []Fact {
+		return []Fact{
+			{ID: "a", Text: "fact a"},
+			{Text: "general rule 1", Category: CategoryPreference},
+			{Text: "general rule 2", Category: CategoryPreference},
+			{Text: "general rule 3", Category: CategoryPreference},
+			{Text: "general rule 4", Category: CategoryPreference},
+		}
+	}}
+	rep, err := Consolidate(context.Background(), store, ex, ScopeGlobal, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ReorgRefused {
+		t.Fatal("abstraction-heavy reorg with 5/8 survivors should not be refused")
+	}
+	if len(rep.Abstracted) != 4 {
+		t.Fatalf("expected 4 abstractions, got %d", len(rep.Abstracted))
+	}
+}
+
 func TestConsolidateFingerprintSkip(t *testing.T) {
 	store := newMemStore(
 		mk("a", ScopeGlobal, "fact a", CategoryFact, SourceAgent),

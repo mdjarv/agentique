@@ -60,8 +60,17 @@ export function BrainPage() {
 
   const handleConsolidate = async (scope: string) => {
     try {
-      await consolidate(scope);
-      toast.success(`Consolidated ${labelForScope(scope)}`);
+      const rep = await consolidate(scope);
+      const changes =
+        (rep.promoted?.length ?? 0) +
+        (rep.rewritten?.length ?? 0) +
+        (rep.abstracted?.length ?? 0) +
+        (rep.deleted?.length ?? 0) +
+        (rep.decayed?.length ?? 0);
+      const label = labelForScope(scope);
+      if (rep.reorgRefused) toast.warning(`${label}: reorganization skipped (safety limit)`);
+      else if (rep.skipped || changes === 0) toast.message(`${label}: already tidy`);
+      else toast.success(`Tidied ${label}: ${changes} change${changes === 1 ? "" : "s"}`);
     } catch (err) {
       toast.error(getErrorMessage(err, "Consolidation failed"));
     }
@@ -203,7 +212,10 @@ function MemoryCard({ memory }: { memory: Memory }) {
         <button
           type="button"
           className="text-sm text-left w-full whitespace-pre-wrap"
-          onDoubleClick={() => setEditing(true)}
+          onDoubleClick={() => {
+            setText(memory.text);
+            setEditing(true);
+          }}
           title="Double-click to edit"
         >
           {memory.text}

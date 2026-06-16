@@ -153,6 +153,40 @@ func TestRecallHybridVectorLiftsWeakKeyword(t *testing.T) {
 	}
 }
 
+func TestRecallEmptyVectorResultFallsBackToKeyword(t *testing.T) {
+	// Five single-token facts; the query matches only 'a' weakly. Under
+	// keyword-only ranking 'a' clears the cutoff; if an empty (but successful)
+	// vector search were treated as "vector available", the keyword weight would
+	// collapse and 'a' would be wrongly dropped.
+	base := newMemStore(
+		rec("a", "alpha", CategoryFact),
+		rec("b", "bravo", CategoryFact),
+		rec("c", "charlie", CategoryFact),
+		rec("d", "delta", CategoryFact),
+		rec("e", "echo", CategoryFact),
+	)
+	q := Query{Text: "alpha zulu yankee xray whiskey", K: 3}
+
+	// Sanity: keyword-only store surfaces 'a'.
+	kw, err := Recall(context.Background(), base, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(kw.Recalled, "a") {
+		t.Fatalf("keyword-only baseline should surface 'a', got %+v", kw.Recalled)
+	}
+
+	// A Searcher that returns no hits must behave identically (graceful fallback).
+	ss := &searchStore{memStore: base, hits: nil}
+	res, err := Recall(context.Background(), ss, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(res.Recalled, "a") {
+		t.Fatalf("empty vector result must fall back to keyword recall and surface 'a', got %+v", res.Recalled)
+	}
+}
+
 func TestBumpUses(t *testing.T) {
 	r := rec("a", "fact", CategoryFact)
 	store := newMemStore(r)

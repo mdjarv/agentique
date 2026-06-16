@@ -69,11 +69,13 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 		return res, nil
 	}
 
-	// Optional semantic scores. Any failure degrades to keyword-only — recall
-	// must never break because the vector index is down.
+	// Optional semantic scores. Any failure — or an empty result — degrades to
+	// keyword-only: recall must never break, nor silently down-weight keyword
+	// matches, because the vector index is down OR simply returned nothing (e.g.
+	// a freshly enabled, not-yet-reindexed collection).
 	var vec map[string]float64
 	if s, ok := store.(Searcher); ok {
-		if hits, serr := s.Search(ctx, q.Text, q.Scopes, k*3); serr == nil {
+		if hits, serr := s.Search(ctx, q.Text, q.Scopes, k*3); serr == nil && len(hits) > 0 {
 			vec = make(map[string]float64, len(hits))
 			for _, h := range hits {
 				vec[h.ID] = h.Score

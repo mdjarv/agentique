@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   consolidate as apiConsolidate,
+  type ConsolidateReport,
   type CreateMemoryInput,
   createMemory,
   deleteMemory,
@@ -24,7 +25,7 @@ interface BrainState {
   remove: (id: string) => Promise<void>;
   pin: (id: string, pinned: boolean) => Promise<void>;
   lock: (id: string, locked: boolean) => Promise<void>;
-  consolidate: (scope: string) => Promise<void>;
+  consolidate: (scope: string) => Promise<ConsolidateReport>;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -83,9 +84,10 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   },
 
   consolidate: async (scope) => {
-    await apiConsolidate(scope);
+    const report = await apiConsolidate(scope);
     // Reload to reflect promotions/merges/decay.
     const memories = await listMemories();
     set({ memories });
+    return report;
   },
 }));

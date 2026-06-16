@@ -186,6 +186,11 @@ func promoteCaptures(ctx context.Context, store Store, ex Extractor, scope Scope
 	if eerr != nil {
 		return nil, nil, fmt.Errorf("memory: extract captures: %w", eerr)
 	}
+	if len(cands) == 0 {
+		// A weak/empty extraction must not destroy raw episodic material — keep
+		// the captures for a future pass rather than consuming them for nothing.
+		return nil, nil, nil
+	}
 	existing := append([]Record(nil), durable...)
 	for _, cand := range cands {
 		text := strings.TrimSpace(cand.Text)
@@ -236,8 +241,12 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 		outByID[f.ID] = f
 	}
 
-	// Over-deletion safety net: refuse if a non-trivial set would lose >half.
-	if len(input) >= minFactsForDeletionGuard && len(outByID)*2 < len(input) {
+	// Over-deletion safety net: refuse if a non-trivial set would lose >half of
+	// its facts. Survivors include both retained originals and newly abstracted
+	// facts, so a legitimate merge (drop N originals, add M abstractions) is not
+	// mistaken for mass deletion.
+	survivors := len(outByID) + len(news)
+	if len(input) >= minFactsForDeletionGuard && survivors*2 < len(input) {
 		return input, true, nil
 	}
 
