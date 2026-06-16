@@ -508,23 +508,19 @@ func (s *Session) QueuePendingMessage(prompt string, attachments []QueryAttachme
 	return true
 }
 
-// broadcastSessionEvent broadcasts a session.event for this session, stamped
-// with the pipeline's epoch and the next monotonic wire-sequence number. All
+// broadcastSessionEvent broadcasts a session.event for this session. All
 // Session-originated session.event emissions (mid-turn echoes, queued echoes,
-// runtime-bridge errors) route through here so the per-session sequence the
-// frontend tracks stays gap-free across emission sites.
+// runtime-bridge errors) route through the pipeline's single serialized emitter
+// so the per-session wire sequence the frontend tracks stays gap-free and
+// correctly ordered across emission sites and goroutines.
 func (s *Session) broadcastSessionEvent(wireEvent any) {
-	var seq, epoch int64
 	if s.pipeline != nil {
-		seq = s.pipeline.NextWireSeq()
-		epoch = s.pipeline.Epoch()
+		s.pipeline.EmitSessionEvent(wireEvent)
+		return
 	}
-	s.broadcast("session.event", PushSessionEvent{
-		SessionID: s.ID,
-		Event:     wireEvent,
-		Seq:       seq,
-		Epoch:     epoch,
-	})
+	// No pipeline (not expected for a live session): emit unsequenced; the
+	// frontend skips gap/dedup checks for seq 0.
+	s.broadcast("session.event", PushSessionEvent{SessionID: s.ID, Event: wireEvent})
 }
 
 // flushPendingMessages replays buffered mid-turn messages as a single fresh turn
@@ -609,7 +605,10 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 	if s.rt == nil {
 		return nil, false, false, ErrNotLive
 	}
-	if s.state == StateRunning {
+	// Refuse StateRunning (already querying) and StateMerging (a git op holds
+	// the worktree) — starting a turn during a merge/rebase would write the
+	// worktree concurrently with the git op.
+	if s.state == StateRunning || s.state == StateMerging {
 		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, s.state)
 	}
 	s.queryCount++

@@ -68,6 +68,52 @@ func newTestPipeline(sink *testSink, opts ...func(*PipelineConfig)) *EventPipeli
 	return NewEventPipeline(cfg)
 }
 
+// TestEmitSessionEventOrdering verifies that concurrent emissions from many
+// goroutines produce broadcasts whose wire sequence numbers are strictly
+// increasing in broadcast order — i.e. broadcast order always equals seq order.
+// Without emitMu serializing {alloc seq + publish}, a goroutine can allocate a
+// lower seq but publish it after a higher one, which the frontend reads as a
+// gap (spurious resync) or a stale drop (a non-persisted transient lost). Run
+// with -race to exercise the interleaving aggressively.
+func TestEmitSessionEventOrdering(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+
+	const goroutines = 32
+	const perGoroutine = 25
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for i := 0; i < perGoroutine; i++ {
+				p.EmitSessionEvent("evt")
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if want := goroutines * perGoroutine; len(sink.broadcasts) != want {
+		t.Fatalf("got %d broadcasts, want %d", len(sink.broadcasts), want)
+	}
+	var prev int64
+	for i, b := range sink.broadcasts {
+		ev, ok := b.Payload.(PushSessionEvent)
+		if !ok {
+			t.Fatalf("broadcast %d: payload is %T, want PushSessionEvent", i, b.Payload)
+		}
+		if ev.Seq != prev+1 {
+			t.Fatalf("broadcast %d: seq %d out of order (prev %d) — broadcast order != seq order", i, ev.Seq, prev)
+		}
+		prev = ev.Seq
+	}
+}
+
 func TestPipeline_TransientEventsSkipDB(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)

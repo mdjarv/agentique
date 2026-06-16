@@ -86,9 +86,13 @@ func (s *Session) setState(state State) error {
 		s.mu.Unlock()
 		return err
 	}
-	s.persistState(state)
 	s.state = state
 	s.mu.Unlock()
+
+	// Persist outside the lock so the blocking DB write (RetryWrite, can stall
+	// on SQLITE_BUSY) doesn't serialize every other s.mu holder behind it —
+	// mirrors handleRuntimeStateChange in runtime_bridge.go.
+	s.persistState(state)
 
 	select {
 	case s.stateChangedCh <- struct{}{}:

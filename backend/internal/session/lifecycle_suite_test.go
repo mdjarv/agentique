@@ -77,10 +77,15 @@ func (s *LifecycleSuite) TestCreateAndQuery() {
 
 	s.waitForState(sess, StateIdle, 2*time.Second)
 
-	// Verify events persisted in DB.
-	events, err := s.Queries.ListEventsBySession(context.Background(), sess.ID)
-	s.Require().NoError(err)
-	s.GreaterOrEqual(len(events), 3) // prompt + text + result
+	// Verify events persisted in DB. Persistence is asynchronous relative to the
+	// StateIdle transition, so poll rather than reading immediately (an instant
+	// read races the final writes — notably under -race).
+	var events []store.SessionEvent
+	s.Require().Eventually(func() bool {
+		var err error
+		events, err = s.Queries.ListEventsBySession(context.Background(), sess.ID)
+		return err == nil && len(events) >= 3 // prompt + text + result
+	}, 2*time.Second, 5*time.Millisecond, "events not persisted in time")
 
 	// First event should be the prompt.
 	s.Equal("prompt", events[0].Type)

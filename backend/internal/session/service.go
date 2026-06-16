@@ -1177,6 +1177,17 @@ func (s *Service) recoverWorktreeFresh(ctx context.Context, sessionID string, db
 
 // resumeSession attempts to resume a non-live session from its Claude session ID.
 func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session, error) {
+	// Serialize against an in-progress git op on this session: a resumed turn
+	// must not write the worktree while a merge/rebase/commit/clean mutates it.
+	// TryLock so the caller gets a clear error instead of blocking for the git
+	// op's full duration. Held across the whole resume (including registration)
+	// so a git op starting concurrently observes the resume and waits/refuses.
+	opMu := s.mgr.gitOpLock(sessionID)
+	if !opMu.TryLock() {
+		return nil, fmt.Errorf("a git operation is in progress for this session; retry shortly")
+	}
+	defer opMu.Unlock()
+
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, ErrNotFound

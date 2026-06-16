@@ -89,7 +89,9 @@ export const useTeamStore = create<TeamState>((set) => ({
       return {
         interactions: {
           ...s.interactions,
-          [interaction.teamId]: [interaction, ...existing],
+          // Cap per-team history so a long-lived session with active personas
+          // doesn't grow this array unbounded (the seed load uses limit: 50).
+          [interaction.teamId]: [interaction, ...existing].slice(0, 200),
         },
       };
     }),

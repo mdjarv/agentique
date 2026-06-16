@@ -5,7 +5,7 @@ INSERT INTO session_events (session_id, turn_index, seq, type, data) VALUES (?, 
 INSERT INTO session_events (session_id, turn_index, seq, type, data, message_id) VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: ListEventsBySession :many
-SELECT * FROM session_events WHERE session_id = ? ORDER BY turn_index, seq;
+SELECT * FROM session_events WHERE session_id = ? ORDER BY turn_index, seq, id;
 
 -- name: ListRecentEventsBySession :many
 SELECT e.* FROM session_events e
@@ -14,7 +14,7 @@ WHERE e.session_id = ?
     SELECT COALESCE(MAX(sub.turn_index), 0) - CAST(? AS INTEGER) + 1
     FROM session_events sub WHERE sub.session_id = e.session_id
   )
-ORDER BY e.turn_index, e.seq;
+ORDER BY e.turn_index, e.seq, e.id;
 
 -- name: CountTurnsBySession :one
 SELECT CAST(COALESCE(MAX(turn_index) + 1, 0) AS INTEGER) FROM session_events WHERE session_id = ?;

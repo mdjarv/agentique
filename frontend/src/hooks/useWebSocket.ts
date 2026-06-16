@@ -15,11 +15,12 @@ function getClient(): WsClient {
 
 /** Force reconnect the global WS client (e.g. after auth changes). */
 export function reconnectWebSocket(): void {
-  if (globalClient) {
-    globalClient.disconnect();
-    globalClient = null;
-  }
-  getClient();
+  // Reconnect in place instead of disconnecting + replacing the object, so any
+  // component already holding the client via useRef keeps a valid, live
+  // reference (useRef never observes a swapped-out instance — it would keep
+  // subscribing/requesting on a permanently-dead socket). forceReconnect drops
+  // the current socket and re-establishes with the latest auth.
+  getClient().forceReconnect();
 }
 
 export function useWebSocket(): WsClient {

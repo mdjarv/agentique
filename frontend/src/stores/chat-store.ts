@@ -474,11 +474,18 @@ export const useChatStore = create<ChatState>((set) => ({
 
       const todos = extractTodosFromTurns(merged);
       const contextUsage = extractContextUsageFromTurns(merged);
+      // Preserve any carried-over queued message (a provider-without-native-
+      // mid-turn echo targeting the NEXT turn). History only contains durable
+      // turns, so a mid-window resync would otherwise drop the "queued" bubble
+      // until its replayed turn lands. Mirrors the carry-over in apply-event.ts.
+      const carryOver = session.streamingEvents.filter(
+        (e) => e.type === "user_message" && e.deliveryStatus === "queued",
+      );
       const result = {
         historyLoading: nextLoading,
         ...updateSession(s, sessionId, {
           turns: merged,
-          streamingEvents: [],
+          streamingEvents: carryOver,
           historyComplete: complete,
           todos,
           contextUsage,

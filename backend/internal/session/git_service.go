@@ -210,7 +210,7 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, mode string) (
 	slog.Info("merge started", "session_id", sessionID, "branch", branch, "mode", mode)
 
 	live := g.mgr.Get(sessionID)
-	guard, err := tryLockForGitOp(live, "merging", StateIdle)
+	guard, err := tryLockForGitOp(g.mgr, sessionID, live, "merging", StateIdle)
 	if err != nil {
 		return MergeResult{}, err
 	}
@@ -340,7 +340,7 @@ func (g *GitService) Rebase(ctx context.Context, sessionID string) (RebaseResult
 	slog.Info("rebase started", "session_id", sessionID, "branch", branch)
 
 	live := g.mgr.Get(sessionID)
-	guard, err := tryLockForGitOp(live, "rebasing", StateIdle)
+	guard, err := tryLockForGitOp(g.mgr, sessionID, live, "rebasing", StateIdle)
 	if err != nil {
 		return RebaseResult{}, err
 	}
@@ -407,7 +407,7 @@ func (g *GitService) CreatePR(ctx context.Context, p CreatePRParams) (CreatePRRe
 	}
 
 	live := g.mgr.Get(p.SessionID)
-	guard, err := tryLockForGitOp(live, "creating_pr", StateIdle)
+	guard, err := tryLockForGitOp(g.mgr, p.SessionID, live, "creating_pr", StateIdle)
 	if err != nil {
 		return CreatePRResult{}, err
 	}
@@ -576,7 +576,7 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 	}
 
 	live := g.mgr.Get(sessionID)
-	guard, err := tryLockForGitOp(live, "committing", targetState)
+	guard, err := tryLockForGitOp(g.mgr, sessionID, live, "committing", targetState)
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -757,7 +757,7 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 	}
 
 	live := g.mgr.Get(sessionID)
-	guard, err := tryLockForGitOp(live, "cleaning", StateStopped)
+	guard, err := tryLockForGitOp(g.mgr, sessionID, live, "cleaning", StateStopped)
 	if err != nil {
 		return CleanResult{}, err
 	}

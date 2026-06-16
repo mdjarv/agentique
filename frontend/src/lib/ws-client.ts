@@ -307,7 +307,14 @@ export class WsClient {
       const handlers = this.pushHandlers.get(type);
       if (handlers) {
         for (const handler of handlers) {
-          handler(validated);
+          // Isolate handlers: one throwing subscriber must not abort the rest
+          // of the batch (which may carry unrelated sessions'/channels' events
+          // coalesced into the same tick).
+          try {
+            handler(validated);
+          } catch (err) {
+            console.error("[WsClient] push handler threw", type, err);
+          }
         }
       }
     }

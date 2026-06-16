@@ -52,7 +52,20 @@ type Manager struct {
 
 	rt             *runtime.Manager
 	connWrap       *capturingConnector
-	db             *sql.DB
+	// routeMu serializes the provider-routing handshake (hintNext → the
+	// connector's Connect → pop) across Create/Resume/Reconnect. The shared
+	// hint + LIFO pop are only sound when this whole span runs serially —
+	// otherwise concurrent creates from different connections clobber the hint
+	// (wrong provider persisted) or pop() returns another session's CLISession.
+	routeMu        sync.Mutex
+	// gitOpLocks holds a per-session mutex serializing exclusive worktree
+	// operations (git merge/rebase/commit/clean/PR) against lazy resume, so a
+	// resumed turn can't write a worktree while a git op mutates it. Keyed by
+	// session ID; entries are created lazily via LoadOrStore and intentionally
+	// never reaped — the lock identity must stay stable, and one tiny mutex per
+	// session is negligible.
+	gitOpLocks sync.Map
+	db         *sql.DB
 	queries        managerQueries
 	broadcaster    eventbus.Broadcaster
 	gitStatus      branchStatusQuerier
@@ -233,8 +246,13 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
 	provider := normalizeProvider(params.Provider)
-	m.connWrap.hintNext(provider)
 	extra := providerExtra(provider, params.Name)
+
+	// Serialize the routing handshake under routeMu: hint the provider, run
+	// Connect (inside rt.Create), then pop this call's captured CLISession —
+	// concurrent creates must not interleave between these steps.
+	m.routeMu.Lock()
+	m.connWrap.hintNext(provider)
 
 	// Use a detached context so the CLI process lifetime is independent of
 	// the request ctx — when the WS that initiated the create disconnects,
@@ -259,9 +277,12 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		},
 	})
 	if err != nil {
+		m.routeMu.Unlock()
 		return nil, err
 	}
-	sess.setRuntime(rtSess, m.connWrap.pop())
+	cli := m.connWrap.pop()
+	m.routeMu.Unlock()
+	sess.setRuntime(rtSess, cli)
 
 	_, dbErr := m.queries.CreateSession(context.Background(), store.CreateSessionParams{
 		ID:        id,
@@ -379,8 +400,11 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
 	provider := normalizeProvider(p.Provider)
-	m.connWrap.hintNext(provider)
 	extra := providerExtra(provider, p.Name)
+
+	// Serialize the routing handshake under routeMu — see Create.
+	m.routeMu.Lock()
+	m.connWrap.hintNext(provider)
 
 	// Detached context: see comment in Create — the CLI process must outlive
 	// the request that started it.
@@ -404,9 +428,12 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		},
 	})
 	if err != nil {
+		m.routeMu.Unlock()
 		return nil, err
 	}
-	sess.setRuntime(rtSess, m.connWrap.pop())
+	cli := m.connWrap.pop()
+	m.routeMu.Unlock()
+	sess.setRuntime(rtSess, cli)
 
 	if err := m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
@@ -462,8 +489,11 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
 	provider := normalizeProvider(p.Provider)
-	m.connWrap.hintNext(provider)
 	extra := providerExtra(provider, p.Name)
+
+	// Serialize the routing handshake under routeMu — see Create.
+	m.routeMu.Lock()
+	m.connWrap.hintNext(provider)
 
 	// Detached context: see comment in Create — the CLI process must outlive
 	// the request that started it.
@@ -486,9 +516,12 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		},
 	})
 	if err != nil {
+		m.routeMu.Unlock()
 		return nil, err
 	}
-	sess.setRuntime(rtSess, m.connWrap.pop())
+	cli := m.connWrap.pop()
+	m.routeMu.Unlock()
+	sess.setRuntime(rtSess, cli)
 
 	if err := m.queries.UpdateSessionState(context.Background(), store.UpdateSessionStateParams{
 		State: string(StateIdle),
@@ -647,6 +680,16 @@ func (m *Manager) broadcastFunc(projectID string) func(string, any) {
 	return func(pushType string, payload any) {
 		m.broadcaster.Publish(projectID, pushType, payload)
 	}
+}
+
+// gitOpLock returns the per-session exclusive-operation mutex, creating it on
+// first use. It is held for the full duration of a git op (via gitOpGuard) and
+// across lazy resume (Service.resumeSession) so the two are mutually exclusive
+// per session — preventing a resumed turn from writing the worktree while a git
+// operation mutates it.
+func (m *Manager) gitOpLock(sessionID string) *sync.Mutex {
+	v, _ := m.gitOpLocks.LoadOrStore(sessionID, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 // resolveEffort maps a string effort level to a runtime.Effort constant.

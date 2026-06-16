@@ -109,7 +109,7 @@ func (q *Queries) InsertEventWithMessageID(ctx context.Context, arg InsertEventW
 }
 
 const listEventsBySession = `-- name: ListEventsBySession :many
-SELECT id, session_id, turn_index, seq, type, data, created_at, message_id FROM session_events WHERE session_id = ? ORDER BY turn_index, seq
+SELECT id, session_id, turn_index, seq, type, data, created_at, message_id FROM session_events WHERE session_id = ? ORDER BY turn_index, seq, id
 `
 
 func (q *Queries) ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error) {
@@ -151,7 +151,7 @@ WHERE e.session_id = ?
     SELECT COALESCE(MAX(sub.turn_index), 0) - CAST(? AS INTEGER) + 1
     FROM session_events sub WHERE sub.session_id = e.session_id
   )
-ORDER BY e.turn_index, e.seq
+ORDER BY e.turn_index, e.seq, e.id
 `
 
 type ListRecentEventsBySessionParams struct {

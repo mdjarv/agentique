@@ -80,6 +80,16 @@ type EventPipeline struct {
 	epoch   int64
 	wireSeq atomic.Int64
 
+	// emitMu serializes wire-seq allocation with the immediately-following
+	// publish so broadcast order always matches wire-seq order — even when
+	// session.events originate on different goroutines (the event loop,
+	// Session.SendMessage/QueuePendingMessage, the async channel-message
+	// routing spawned from trackToolUse). Without it, a goroutine could
+	// allocate seq N and publish it after the loop has already published N+1,
+	// which the frontend reads as a gap (spurious RESYNC) or a stale drop (a
+	// non-persisted transient like the codex "queued" echo lost permanently).
+	emitMu sync.Mutex
+
 	mu                sync.Mutex
 	claudeSessionID   string
 	resolvedModel     string // upstream-reported model ID from the first InitEvent (e.g. "claude-opus-4-8")
@@ -89,6 +99,7 @@ type EventPipeline struct {
 	pendingMessageIDs []string // FIFO queue of messageIds awaiting replay confirmation
 	pulse             pulseState
 	pulseTimer        *time.Timer // debounce timer for pulse broadcast
+	pulseStopped      bool        // set on close; blocks re-arming the timer
 	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
 
 	onClaudeSessionID func(string)
@@ -167,17 +178,27 @@ func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 	p.handleTerminalEvents(event)
 }
 
-// broadcastSessionEvent stamps the wire event with this pipeline's epoch and a
-// freshly-allocated monotonic sequence number, then broadcasts it. Every
-// pipeline-originated session.event goes through here so the frontend sees a
-// gap-free per-session sequence.
-func (p *EventPipeline) broadcastSessionEvent(wireEvent any) {
+// EmitSessionEvent stamps the wire event with this pipeline's epoch and the
+// next monotonic wire-sequence number, then publishes it via the sink — with
+// the allocation and the publish held atomically under emitMu so broadcast
+// order always equals wire-seq order. This is the single funnel for ALL
+// session.event emissions on a session (the event loop, Session-originated
+// mid-turn/queued echoes, and channel message routing) so the frontend sees a
+// gap-free per-session sequence regardless of the originating goroutine.
+func (p *EventPipeline) EmitSessionEvent(wireEvent any) {
+	p.emitMu.Lock()
+	defer p.emitMu.Unlock()
 	p.sink.Broadcast("session.event", PushSessionEvent{
 		SessionID: p.sessionID,
 		Event:     wireEvent,
-		Seq:       p.NextWireSeq(),
+		Seq:       p.wireSeq.Add(1),
 		Epoch:     p.epoch,
 	})
+}
+
+// broadcastSessionEvent is the pipeline-internal alias for EmitSessionEvent.
+func (p *EventPipeline) broadcastSessionEvent(wireEvent any) {
+	p.EmitSessionEvent(wireEvent)
 }
 
 // emitWireEvent runs stages 3–7 for a single wire event: transient filtering,
@@ -317,10 +338,6 @@ func (p *EventPipeline) TurnIndex() int {
 // Epoch returns this pipeline's lifetime identifier, stamped on every
 // session.event so the frontend can detect a resume/rebuild (epoch change).
 func (p *EventPipeline) Epoch() int64 { return p.epoch }
-
-// NextWireSeq atomically allocates the next monotonic wire-sequence number for
-// this session's push stream. 1-based; never resets within a pipeline life.
-func (p *EventPipeline) NextWireSeq() int64 { return p.wireSeq.Add(1) }
 
 // CurrentWireSeq returns the highest wire-sequence number allocated so far
 // (0 before the first event). Used as the high-water mark in history responses
@@ -591,6 +608,12 @@ const pulseDebounce = 2 * time.Second
 func (p *EventPipeline) schedulePulseBroadcast() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// Don't re-arm after close: an in-flight ProcessEvent on the event-loop
+	// goroutine can still reach here after StopPulseTimer, leaving a stray timer
+	// that fires a pulse broadcast on a torn-down session.
+	if p.pulseStopped {
+		return
+	}
 	if p.pulseTimer != nil {
 		p.pulseTimer.Stop()
 	}
@@ -637,9 +660,11 @@ func (p *EventPipeline) resetPulse() {
 	p.mu.Unlock()
 }
 
-// StopPulseTimer cancels any pending pulse broadcast. Called on session close.
+// StopPulseTimer cancels any pending pulse broadcast and blocks future
+// re-arming. Called on session close.
 func (p *EventPipeline) StopPulseTimer() {
 	p.mu.Lock()
+	p.pulseStopped = true
 	if p.pulseTimer != nil {
 		p.pulseTimer.Stop()
 		p.pulseTimer = nil

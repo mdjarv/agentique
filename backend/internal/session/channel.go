@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -173,7 +174,20 @@ func (s *Service) dissolveWorkers(
 			continue
 		}
 
-		// Sole-channel worker: stop, clean up worktree, delete.
+		// Sole-channel worker: tear down. First recursively clean up any of this
+		// worker's own descendants (it may itself be a lead of another channel)
+		// so their worktrees aren't orphaned on disk — the parent_session_id
+		// cascade deletes their rows regardless, but only DeleteSession removes
+		// their worktrees/branches.
+		if kids, kerr := s.queries.ListChildSessions(ctx, sql.NullString{String: m.ID, Valid: true}); kerr == nil {
+			for _, kid := range kids {
+				if delErr := s.DeleteSession(ctx, kid.ID); delErr != nil {
+					slog.Warn(logPrefix+": descendant cleanup failed",
+						"parent_id", m.ID, "child_id", kid.ID, "error", delErr)
+				}
+			}
+		}
+		// Now stop, clean up worktree, delete this worker.
 		if live := s.mgr.Get(m.ID); live != nil {
 			_ = s.mgr.Stop(ctx, m.ID)
 		}
@@ -588,19 +602,18 @@ func (s *Service) persistAgentMessageWithID(ctx context.Context, sessionID, proj
 	}); err != nil {
 		slog.Warn("persist agent message failed", "session_id", sessionID, "error", err)
 	}
-	// Stamp the wire sequence from the live pipeline when the target session is
-	// loaded; an offline session has no pipeline, so this push goes out
-	// unsequenced (seq 0) and the frontend skips gap/dedup checks for it.
-	var wireSeq, wireEpoch int64
+	// Route the wire emit through the live pipeline's single serialized emitter
+	// so its seq allocation + publish stay ordered against the session's other
+	// emissions (event loop, mid-turn echoes). The pipeline's sink publishes to
+	// this same bus and project. An offline session has no pipeline, so the push
+	// goes out unsequenced (seq 0) and the frontend skips gap/dedup checks.
 	if live != nil {
-		wireSeq = live.pipeline.NextWireSeq()
-		wireEpoch = live.pipeline.Epoch()
+		live.pipeline.EmitSessionEvent(event)
+		return
 	}
 	s.hub.Publish(projectID, "session.event", PushSessionEvent{
 		SessionID: sessionID,
 		Event:     event,
-		Seq:       wireSeq,
-		Epoch:     wireEpoch,
 	})
 }
 
@@ -941,6 +954,15 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 
 		if _, err := s.JoinChannel(ctx, result.SessionID, ch.ID, role); err != nil {
 			errs = append(errs, fmt.Sprintf("member %d join: %v", i, err))
+			// The worker was created but never joined the channel — it has no
+			// lead, no dissolve/cleanup path, and a live worktree. Tear it down
+			// rather than leave it orphaned and running detached.
+			if delErr := s.DeleteSession(ctx, result.SessionID); delErr != nil {
+				slog.Warn("swarm: cleanup of unjoined worker failed",
+					"session_id", result.SessionID, "error", delErr)
+			}
+			sessionIDs[i] = ""
+			continue
 		}
 
 		// Augment the worker's initial prompt with channel framing.
@@ -1202,9 +1224,31 @@ func (s *Service) emitSpawnAudit(ctx context.Context, channelID, senderID, sende
 // wireDissolveChannelCallback sets up the @dissolve interception callback on a
 // live session. When the leader calls SendMessage(to="@dissolve"), it triggers
 // DissolveChannel which cleans up all workers and the channel.
-func (s *Service) wireDissolveChannelCallback(sess *Session, channelID string) {
+//
+// The lead's channel is resolved dynamically at dissolve time rather than
+// captured here, so a session that leads multiple channels is handled
+// unambiguously (and overwriting this single callback per channel/resume is
+// harmless — every closure is functionally identical). channelID is unused.
+func (s *Service) wireDissolveChannelCallback(sess *Session, _ string) {
 	sess.SetDissolveChannelCallback(func(senderID string) error {
-		return s.DissolveChannel(context.Background(), channelID)
+		channels, err := s.queries.ListSessionChannels(context.Background(), senderID)
+		if err != nil {
+			return fmt.Errorf("list channels: %w", err)
+		}
+		var led []string
+		for _, ch := range channels {
+			if ch.Role == "lead" {
+				led = append(led, ch.ChannelID)
+			}
+		}
+		switch len(led) {
+		case 0:
+			return fmt.Errorf("you do not lead any channel")
+		case 1:
+			return s.DissolveChannel(context.Background(), led[0])
+		default:
+			return fmt.Errorf("you lead %d channels — @dissolve is ambiguous; dissolve a specific channel from the Teams view instead", len(led))
+		}
 	})
 }
 
