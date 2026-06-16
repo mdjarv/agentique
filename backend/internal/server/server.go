@@ -16,6 +16,7 @@ import (
 	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/mdjarv/agentique/backend/internal/auth"
+	"github.com/mdjarv/agentique/backend/internal/brain"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/claudeaccount"
 	"github.com/mdjarv/agentique/backend/internal/config"
@@ -23,6 +24,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
+	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
@@ -62,6 +64,14 @@ type Config struct {
 	// agentique HTTP MCP endpoint (e.g. "http://localhost:19201/mcp"). Must
 	// be reachable from the local machine; not exposed publicly.
 	MCPInternalURL string
+
+	// Brain (persistent agent memory). BrainDir enables the feature; the optional
+	// Chroma/embed fields enable semantic recall (otherwise keyword recall is used).
+	BrainDir        string
+	BrainChromaURL  string
+	BrainEmbedURL   string
+	BrainEmbedModel string
+	BrainEmbedKey   string
 }
 
 func devModePreamble(dbPath string) string {
@@ -210,7 +220,46 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
 	mux.Handle("GET /ws", wsh)
 
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc)
+	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is
+	// set. Failure to initialize must not take down the server — memory is an
+	// enhancement, so we log and continue without it.
+	var memProvider mcphttp.MemoryStore
+	if cfg.BrainDir != "" {
+		brainSvc, err := brain.New(context.Background(), brain.Config{
+			Dir:         cfg.BrainDir,
+			ChromaURL:   cfg.BrainChromaURL,
+			EmbedURL:    cfg.BrainEmbedURL,
+			EmbedModel:  cfg.BrainEmbedModel,
+			EmbedAPIKey: cfg.BrainEmbedKey,
+		})
+		if err != nil {
+			slog.Error("brain: disabled (init failed)", "error", err)
+		} else {
+			scopeResolver := func(ctx context.Context, sessionID string) memory.Scope {
+				s, err := queries.GetSession(ctx, sessionID)
+				if err != nil {
+					return memory.ScopeGlobal
+				}
+				return brain.ScopeForProject(s.ProjectID)
+			}
+			memProvider = brain.NewMCPAdapter(brainSvc, scopeResolver)
+
+			bh := &brain.Handler{Service: brainSvc}
+			mux.Handle("GET /api/brain/memories", httperror.HandlerFunc(bh.HandleList))
+			mux.Handle("POST /api/brain/memories", httperror.HandlerFunc(bh.HandleCreate))
+			mux.Handle("GET /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleGet))
+			mux.Handle("PUT /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleUpdate))
+			mux.Handle("DELETE /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleDelete))
+			mux.Handle("POST /api/brain/memories/{id}/pin", httperror.HandlerFunc(bh.HandlePin))
+			mux.Handle("POST /api/brain/memories/{id}/lock", httperror.HandlerFunc(bh.HandleLock))
+			mux.Handle("GET /api/brain/search", httperror.HandlerFunc(bh.HandleSearch))
+			mux.Handle("POST /api/brain/consolidate", httperror.HandlerFunc(bh.HandleConsolidate))
+			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
+			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
+		}
+	}
+
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider)
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)

@@ -33,6 +33,8 @@ const (
 	ToolListDevURLs    = "ListDevUrls"
 	ToolKillDevPort    = "KillDevUrlPort"
 	ToolSetSessionName = "SetSessionName"
+	ToolMemoryAdd      = "MemoryAdd"
+	ToolMemorySearch   = "MemorySearch"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -65,10 +67,19 @@ type SessionRenamer interface {
 	RenameSession(ctx context.Context, sessionID, name string) error
 }
 
+// MemoryStore is the agent-facing contract for the brain memory tools. It is
+// scoped per session by the implementation (an agent only sees its own project's
+// memories plus global). Implemented by brain.MCPAdapter. May be nil — the
+// memory tools are then not registered.
+type MemoryStore interface {
+	MemoryAdd(ctx context.Context, sessionID, text, category string) (string, error)
+	MemorySearch(ctx context.Context, sessionID, query string) (string, error)
+}
+
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
 // tests that don't exercise SetSessionName — calls to that tool will then
-// return an error result.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) http.Handler {
+// return an error result. mem may be nil to omit the brain memory tools.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
 	register(h, akmcp.Tool{
@@ -159,7 +170,60 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer) 
 		}),
 	})
 
+	if mem != nil {
+		registerMemoryTools(h, mem)
+	}
+
 	return h
+}
+
+func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
+	type addArgs struct {
+		Text     string `json:"text"`
+		Category string `json:"category"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolMemoryAdd,
+		Description: "Save a durable fact to your persistent memory ('brain') for this project. Use for things worth remembering across sessions: user preferences, project conventions, architectural decisions, gotchas. Keep each fact short and self-contained. Do NOT save transient task state or secrets.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"text": akmcp.StringProp{Description: "The fact to remember, phrased as a standalone statement."},
+				"category": akmcp.StringProp{
+					Enum:        []string{"fact", "identity", "preference", "contact", "project", "goal", "task"},
+					Description: "Kind of fact. 'identity' facts are auto-pinned.",
+				},
+			},
+			Required: []string{"text"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args addArgs) akmcp.Result {
+			msg, err := mem.MemoryAdd(ctx, sid, args.Text, args.Category)
+			if err != nil {
+				return akmcp.ErrorResultf("memory add failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
+
+	type searchArgs struct {
+		Query string `json:"query"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolMemorySearch,
+		Description: "Search your persistent memory ('brain') for facts relevant to a query, plus always-included pinned facts. Call this at the start of a task to recall what you already know about this project and the user's preferences.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"query": akmcp.StringProp{Description: "What you want to recall (keywords or a short question)."},
+			},
+			Required: []string{"query"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args searchArgs) akmcp.Result {
+			msg, err := mem.MemorySearch(ctx, sid, args.Query)
+			if err != nil {
+				return akmcp.ErrorResultf("memory search failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
 }
 
 // register panics on registration failures because they indicate programmer

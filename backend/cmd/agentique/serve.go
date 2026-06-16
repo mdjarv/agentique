@@ -224,6 +224,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		DevURLSlots:         fileCfg.DevURLs,
 		MCPInternalURL:      mcpInternalURL,
+		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic
+		// recall is opt-in via env (otherwise keyword recall over markdown files).
+		BrainDir:        filepath.Join(filepath.Dir(dbFile), "brain"),
+		BrainChromaURL:  os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"),
+		BrainEmbedURL:   os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"),
+		BrainEmbedModel: os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
+		BrainEmbedKey:   os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

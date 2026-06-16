@@ -254,6 +254,8 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueReleaseDevURLTool:  allow,
 		AgentiqueListDevURLsTool:    allow,
 		AgentiqueSetSessionNameTool: allow,
+		AgentiqueMemoryAddTool:      allow,
+		AgentiqueMemorySearchTool:   allow,
 	}
 }
 
