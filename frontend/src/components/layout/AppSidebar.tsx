@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Cpu, FileText, Hash, LayoutList } from "lucide-react";
+import { Brain, Cpu, FileText, Hash, LayoutList } from "lucide-react";
 
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
@@ -41,6 +41,17 @@ function SidebarHeader() {
       </Link>
       <div className="flex items-center gap-1">
         <NewProjectDialog />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/brain"
+              className="size-7 rounded-md flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            >
+              <Brain className="size-4" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Brain (persistent memory)</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Link

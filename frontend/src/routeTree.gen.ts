@@ -13,6 +13,7 @@ import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as ProjectsRouteImport } from "./routes/projects";
+import { Route as BrainRouteImport } from "./routes/brain";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
@@ -45,6 +46,11 @@ const StorageRoute = StorageRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: "/projects",
   path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const BrainRoute = BrainRouteImport.update({
+  id: "/brain",
+  path: "/brain",
   getParentRoute: () => rootRouteImport,
 } as any);
 const IndexRoute = IndexRouteImport.update({
@@ -119,6 +125,7 @@ const ProjectProjectSlugChannelChannelIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/brain": typeof BrainRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -138,6 +145,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/brain": typeof BrainRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -157,6 +165,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/brain": typeof BrainRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/brain"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/brain"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/brain"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -235,6 +247,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  BrainRoute: typeof BrainRoute;
   ProjectsRoute: typeof ProjectsRoute;
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
@@ -276,6 +289,13 @@ declare module "@tanstack/react-router" {
       path: "/projects";
       fullPath: "/projects";
       preLoaderRoute: typeof ProjectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/brain": {
+      id: "/brain";
+      path: "/brain";
+      fullPath: "/brain";
+      preLoaderRoute: typeof BrainRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/": {
@@ -395,6 +415,7 @@ const ProjectProjectSlugRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BrainRoute: BrainRoute,
   ProjectsRoute: ProjectsRoute,
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
