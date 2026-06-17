@@ -46,6 +46,7 @@ type frontmatter struct {
 	Uses        int       `yaml:"uses"`
 	Created     time.Time `yaml:"created"`
 	Updated     time.Time `yaml:"updated"`
+	LastUsed    time.Time `yaml:"last_used,omitempty"`
 	DerivedFrom []string  `yaml:"derived_from,omitempty"`
 	Related     []string  `yaml:"related,omitempty"`
 	Community   int       `yaml:"community,omitempty"`
@@ -64,6 +65,7 @@ func toFrontmatter(r memory.Record) frontmatter {
 		Uses:        r.Uses,
 		Created:     r.CreatedAt.UTC(),
 		Updated:     r.UpdatedAt.UTC(),
+		LastUsed:    r.LastUsedAt.UTC(),
 		DerivedFrom: r.DerivedFrom,
 		Related:     r.Related,
 		Community:   r.Community,
@@ -89,6 +91,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		Pinned:          m.Pinned,
 		Locked:          m.Locked,
 		Uses:            m.Uses,
+		LastUsedAt:      m.LastUsed,
 		CreatedAt:       m.Created,
 		UpdatedAt:       m.Updated,
 		DerivedFrom:     m.DerivedFrom,

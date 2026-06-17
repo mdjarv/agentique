@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrNotFound is returned by Store.Get when no record matches the given ID.
@@ -34,11 +35,14 @@ type Result struct {
 	Recalled []Record
 }
 
-// BumpUses increments the Uses counter of the given records and persists them.
-// Call after the records have actually been injected into a prompt. Missing IDs
-// are skipped. UpdatedAt is intentionally left untouched so a uses bump does not
-// look like a content edit.
+// BumpUses increments the Uses counter of the given records and stamps LastUsedAt,
+// persisting them. Call after the records have actually been injected into a prompt:
+// this is the "retrieval practice" event (RFC-LD D1/D2) — it raises both storage
+// (cumulative Uses) and retrieval (recency) strength. Missing IDs are skipped.
+// UpdatedAt is intentionally left untouched so a uses bump does not look like a
+// content edit; LastUsedAt is the separate recall timestamp.
 func BumpUses(ctx context.Context, store Store, ids ...string) error {
+	now := time.Now().UTC()
 	for _, id := range ids {
 		r, err := store.Get(ctx, id)
 		if err != nil {
@@ -48,6 +52,7 @@ func BumpUses(ctx context.Context, store Store, ids ...string) error {
 			return err
 		}
 		r.Uses++
+		r.LastUsedAt = now
 		if err := store.Put(ctx, r); err != nil {
 			return err
 		}

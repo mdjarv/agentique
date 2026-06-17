@@ -146,7 +146,11 @@ func rank(query string, candidates []Record, vec map[string]float64, k int) []Re
 		if b, ok := categoryBoost(qcats, c.Category); ok {
 			kw = math.Min(kw*b, 1.0)
 		}
-		rec := recency(now, c.UpdatedAt)
+		// Two-factor recall (RFC-LD D1): the small tiebreaker term is now the fact's
+		// retrieval strength (storage decayed by disuse) rather than raw last-edit
+		// recency — a fact recalled recently surfaces over an equally-relevant one that
+		// has gone cold. Same weight as before, so it stays a tiebreaker (predictable).
+		rec := RetrievalStrength(c, now)
 
 		var final float64
 		if haveVec {
@@ -230,14 +234,6 @@ func uniqueTokens(s string) []string {
 		out = append(out, t)
 	}
 	return out
-}
-
-func recency(now, t time.Time) float64 {
-	days := now.Sub(t).Hours() / 24
-	if days < 0 {
-		days = 0
-	}
-	return 1.0 / (1.0 + days*0.05)
 }
 
 // categoryBoosts lift facts that are usually high-value as ambient context when

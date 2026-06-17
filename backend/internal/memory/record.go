@@ -64,6 +64,11 @@ type Record struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// LastUsedAt is when this fact was last recalled (BumpUses) — distinct from
+	// UpdatedAt (last content edit). It drives retrieval strength and decay-by-disuse
+	// (RFC-LD D1): a fact recalled recently stays accessible even if old. Zero until
+	// first used; a rebuildable signal, never the source of truth.
+	LastUsedAt time.Time
 
 	// DerivedFrom links a consolidated record back to the capture record IDs it
 	// was abstracted from, for provenance and reversibility.

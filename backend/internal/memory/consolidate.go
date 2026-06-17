@@ -59,20 +59,45 @@ type DecayPolicy struct {
 	// over half of it. Ground-truth/EXTRACTED facts are human-authored and therefore
 	// already exempt from decay entirely (isProtected). Off by default, like decay.
 	ConfidenceWeighted bool
+	// StrengthWeighted sharpens decay by storage strength (RFC-LD D1): a well-
+	// established fact (high confidence / many uses / deep provenance) keeps the full
+	// MaxAge, a weakly-held one decays sooner. It also measures staleness from
+	// LastUsedAt (disuse) rather than UpdatedAt (last edit), so a fact recalled
+	// recently is protected even if old. Off by default, like decay. Composes with
+	// ConfidenceWeighted (both factors multiply).
+	StrengthWeighted bool
 }
 
 // effectiveMaxAge returns the staleness threshold for a record under this policy:
-// the configured MaxAge, scaled down by the record's confidence score when
-// ConfidenceWeighted is set so the brain forgets low-confidence facts sooner.
+// the configured MaxAge, scaled down by the record's confidence score
+// (ConfidenceWeighted) and/or storage strength (StrengthWeighted) so the brain
+// forgets what it holds least firmly first. The factors compose multiplicatively.
 func (d DecayPolicy) effectiveMaxAge(r Record) time.Duration {
-	if !d.ConfidenceWeighted {
+	factor := 1.0
+	if d.ConfidenceWeighted {
+		score := NormalizeConfidence(r).ConfidenceScore
+		if score <= 0 || score > 1 {
+			score = DefaultInferredScore
+		}
+		factor *= score
+	}
+	if d.StrengthWeighted {
+		factor *= StorageStrength(r)
+	}
+	if factor == 1.0 {
 		return d.MaxAge
 	}
-	score := NormalizeConfidence(r).ConfidenceScore
-	if score <= 0 || score > 1 {
-		score = DefaultInferredScore
+	return time.Duration(float64(d.MaxAge) * factor)
+}
+
+// staleAge returns how long a record has gone without being touched, for decay. With
+// StrengthWeighted this is disuse (time since LastUsedAt, falling back to UpdatedAt);
+// otherwise it is time since the last content edit, preserving pre-D1 behavior.
+func (d DecayPolicy) staleAge(r Record, now time.Time) time.Duration {
+	if d.StrengthWeighted {
+		return now.Sub(lastSeen(r))
 	}
-	return time.Duration(float64(d.MaxAge) * score)
+	return now.Sub(r.UpdatedAt)
 }
 
 // ConsolidateOptions configures a consolidation pass.
@@ -308,7 +333,7 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	if opts.Decay.MaxAge > 0 {
 		kept := reorgInput[:0]
 		for _, r := range reorgInput {
-			if now.Sub(r.UpdatedAt) > opts.Decay.effectiveMaxAge(r) && r.Uses < opts.Decay.MinUses {
+			if opts.Decay.staleAge(r, now) > opts.Decay.effectiveMaxAge(r) && r.Uses < opts.Decay.MinUses {
 				if !opts.DryRun {
 					if err := store.Delete(ctx, r.ID); err != nil {
 						return rep, err

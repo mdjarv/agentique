@@ -21,6 +21,7 @@ func sampleRecord() memory.Record {
 	r.Uses = 3
 	r.CreatedAt = time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
 	r.UpdatedAt = time.Date(2026, 6, 16, 12, 30, 0, 0, time.UTC)
+	r.LastUsedAt = time.Date(2026, 6, 17, 9, 0, 0, 0, time.UTC)
 	r.DerivedFrom = []string{"cap-1", "cap-2"}
 	r.Related = []string{"rec-9"}
 	r.Community = 4
@@ -45,6 +46,9 @@ func TestPutGetRoundTrip(t *testing.T) {
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("timestamps mismatch: %v / %v", got.CreatedAt, got.UpdatedAt)
+	}
+	if !got.LastUsedAt.Equal(want.LastUsedAt) {
+		t.Fatalf("last-used mismatch: got %v want %v", got.LastUsedAt, want.LastUsedAt)
 	}
 	if !reflect.DeepEqual(got.DerivedFrom, want.DerivedFrom) || !reflect.DeepEqual(got.Related, want.Related) {
 		t.Fatalf("links mismatch: %+v", got)
