@@ -2,12 +2,22 @@
 
 Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 
-> **Progress:** graph-view v1 and **P1 (link graph + associative recall) are
-> implemented** — see `memory/link.go`, `recall.go`'s `expandAssociative`, and the
-> relink hooks in `consolidate.go`/`promote.go`. P3 (community detection →
-> cluster-aware consolidation) is next; P2/P5 not started. Open decision #1 was
-> resolved as: *persist* consolidation-discovered similarity edges in `Related`
-> (rebuilt each apply); the graph view still recomputes Jaccard for dashed edges.
+> **Progress:** graph-view v1, **P1 (link graph + associative recall)** and **P3
+> (community detection → cluster-aware consolidation + aggressive Tidy)** are
+> implemented — see `memory/{link,community}.go`, `recall.go`'s `expandAssociative`,
+> the cluster-aware chunker in `brain/extractor.go`, and the relink/cluster hooks in
+> `consolidate.go`. P2/P5 not started. Decisions resolved:
+> - **#1** (edge persistence): *persist* similarity edges in `Related` (rebuilt each
+>   apply); the graph view still recomputes Jaccard for dashed edges.
+> - **#2** (community algorithm): **label propagation**, made deterministic by
+>   sorting nodes by id and breaking label ties by smallest id — reproducible plans
+>   without Louvain's extra code.
+> - **community threshold**: topic clustering uses a *separate, lower* Jaccard
+>   threshold (`DefaultCommunityThreshold` = 0.15) than the 0.3 Related-edge
+>   threshold. Verified on the live reviewbot scope: at 0.3, 386/404 facts are
+>   singletons (chunking degenerates to fixed-size); 0.15 yields coherent topic
+>   clusters and co-locates 229 facts that the old chunker scattered, while staying
+>   above the ≈0.10 point where everything collapses into one blob.
 
 ## Motivation
 
@@ -67,7 +77,7 @@ LLM-distilled capture = `INFERRED`; cross-project generalization = `INFERRED` + 
 things: a sharper decay signal (decay low-confidence, low-`Uses` facts faster) and the
 "confirm what I'm unsure about" UX in P4.
 
-### P3 — Community detection in Go
+### P3 — Community detection in Go ✅ implemented
 
 Build a similarity graph (edges from `Related` + Jaccard/embedding similarity) and run label
 propagation or Louvain (pure Go, no `graspologic`/NetworkX). Outputs a `community` tag per record.
@@ -78,6 +88,29 @@ Two payoffs:
 
 Centrality is cheap and immediately useful: degree (→ "god nodes" / load-bearing facts) and
 betweenness (→ bridge facts) straight off the adjacency list.
+
+**Shipped (2026-06-17):**
+- `memory/community.go` — `DetectCommunities` (deterministic label propagation over
+  `Related` ∪ token-Jaccard ≥ `DefaultCommunityThreshold`) and `AssignCommunities`
+  (persists a scope-local `Record.Community`, idempotent, run after `RelinkScope` on
+  apply; previews skip it).
+- **Cluster-aware chunking** — `PlanConsolidation` tags each reorg fact with its
+  community; `brain/extractor.go`'s `chunkByCommunity` packs whole communities into
+  `≤ maxReorgBatch` chunks so related facts merge across a large scope, not just
+  within an arbitrary 100-fact slice.
+- **Aggressive Tidy** — a less-conservative reorganize prompt that collapses families
+  of granular facts into broad rules, exposed as a conservative/aggressive toggle in
+  the Brain tab (and `brain consolidate --aggressive`). Safe because it's
+  preview-gated. The over-deletion guard is now a configurable `MinSurvivorRatio`
+  (default 0.5; aggressive lowers it to 0.2) captured into the `Plan` so preview and
+  apply enforce the identical guard.
+- **Force-rerun** — `ConsolidateOptions.Force` skips the unchanged-fingerprint
+  short-circuit; surfaced as a "Force re-run" button on an already-tidied scope and a
+  `brain consolidate --rerun` flag (needed to re-tidy after prompt/algorithm changes).
+- **Cluster coloring** — the graph view's "Color by scope/cluster" toggle paints
+  nodes by `community`.
+
+Not yet done: centrality (degree/betweenness) — cheap follow-up off the adjacency list.
 
 ### P4 — Graph view ("what the brain knows about you")
 
@@ -128,8 +161,11 @@ codebase-specific facts.
 1. **Edge persistence vs. recompute.** Persist similarity edges into `Related`, or recompute on read
    and reserve `Related` for curated/provenance links only? (Affects determinism of the graph view
    and what consolidation may overwrite.)
-2. **Community algorithm.** Label propagation (simplest, non-deterministic ordering) vs. Louvain
-   (stable-ish, more code). Need a seed/tie-break for reproducible plans.
+2. ~~**Community algorithm.**~~ **Resolved: label propagation**, made deterministic
+   by id-sorted node order + smallest-id label tie-break (no Louvain). The topic
+   threshold is a *separate, lower* tunable (`DefaultCommunityThreshold` = 0.15) than
+   the 0.3 Related-edge threshold — see the progress note for the reviewbot data
+   behind that number.
 3. **Recall fan-out budget.** How many hops / neighbors, and the decay applied to associative hits,
    without blowing the recall token budget.
 4. **Confidence backfill.** How to assign confidence to facts that predate P2 (default `INFERRED`?
@@ -141,8 +177,8 @@ codebase-specific facts.
 
 1. ~~**Graph-view v1** — force-graph over `derivedFrom` + computed similarity. No backend change.~~ ✅ done.
 2. ~~**P1** — populate `Related` in consolidation; associative recall.~~ ✅ done (`memory/link.go`).
-3. **P3** — community detection → cluster coloring + within-community consolidation. ← next.
-4. **P2** — confidence tiers + the "confirm" UX.
+3. ~~**P3** — community detection → cluster coloring + within-community (cluster-aware) consolidation + aggressive Tidy.~~ ✅ done (`memory/community.go`, `brain/extractor.go`).
+4. **P2** — confidence tiers + the "confirm" UX. ← next.
 5. neo4j: parked as a documented optional export.
 
 ## References

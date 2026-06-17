@@ -91,8 +91,15 @@ construction:
   extraction never consumes captures.
 - **reorganize** the non-protected durable set: merge duplicates, rewrite vague
   entries, abstract repeated episodes into general rules. Invented IDs are
-  dropped; an over-deletion safety net refuses a reorganization that would shrink
-  a set of ≥8 facts to under half (counting both retained and abstracted facts).
+  dropped; an over-deletion safety net refuses a reorganization that shrinks a set
+  of ≥8 facts below a survivor ratio (default 0.5; an aggressive Tidy lowers it to
+  0.2). The ratio is captured into the `Plan` so preview and apply enforce the same
+  guard. Chunking is **cluster-aware** (RFC P3): facts are tagged with a topic
+  community (`DetectCommunities`) and whole communities are packed into one
+  reorganize call, so related facts merge across a large scope — not just within an
+  arbitrary 100-fact slice. A **conservative** prompt merges only true duplicates;
+  an **aggressive** prompt collapses families of granular facts into broad rules
+  (preview-gated).
 - **decay** stale, low-use facts (opt-in via `DecayPolicy`).
 - **never touches** pinned, locked, or human-authored facts.
 - a **fingerprint** of the reorganizable set is persisted per scope; an unchanged
@@ -101,6 +108,11 @@ construction:
   edge graph from token-Jaccard neighbours (≥0.3, below the 0.6 dup threshold;
   degree-capped, bidirectional, deterministic/idempotent). Previews skip it
   (derived metadata). Powers associative recall and the graph view's curated edges.
+- **cluster** (RFC P3): after relink, `AssignCommunities` recomputes each fact's
+  scope-local `Community` (topic cluster) over the fresh edges + token-Jaccard ≥
+  `DefaultCommunityThreshold` (0.15 — lower than the Related threshold; topic groups
+  are broader than near-duplicate links). Deterministic/idempotent, previews skip it.
+  Drives cluster-aware chunking and graph-view cluster coloring.
 
 The pass returns a `Report` (the changelog) describing exactly what changed.
 
@@ -120,8 +132,10 @@ Auto-approved, scoped to the calling session's project (+ global):
 
 - `/api/brain/memories` (GET/POST), `/{id}` (GET/PUT/DELETE), `/{id}/pin`,
   `/{id}/lock`, `/search`, `/status`.
-- **Consolidation is preview → apply.** `POST /consolidate/preview {scope,model}`
-  and `POST /consolidate/global/preview {model}` start a background job (they
+- **Consolidation is preview → apply.** `POST /consolidate/preview
+  {scope,model,mode,force}` (mode `conservative|aggressive`; force re-runs an
+  unchanged scope) and `POST /consolidate/global/preview {model}` start a background
+  job (they
   return `202` with the initial job; progress + the final `{report, plan}` arrive
   over the WebSocket bus and via `GET /consolidate/job`). `POST /consolidate/apply
   {plan}` and `/consolidate/global/apply {plan}` replay the held plan
@@ -148,8 +162,10 @@ the real data dir: `AGENTIQUE_DB=~/.local/share/agentique/agentique.db`.
 
 - `backfill [--project --limit --min-events --model --dry-run -f]` — retroactively
   distill memories from past session transcripts.
-- `consolidate (--project|--scope) [--model --dry-run -f]` — run the sleep pass over
-  one scope (no `--model` = deterministic).
+- `consolidate (--project|--scope) [--model --aggressive --rerun --dry-run -f]` — run
+  the sleep pass over one scope (no `--model` = deterministic). `--aggressive`
+  collapses granular facts into broad rules (relaxes the over-deletion guard);
+  `--rerun` reorganizes even an unchanged scope (ignores the saved fingerprint).
 - `export <file>` — write all memories to a portable JSON bundle (project scopes
   tagged with name/slug).
 - `import <file> [--map src=local -y]` — merge a bundle. Global merges directly;
@@ -213,6 +229,9 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
 - `promote.go` — cross-scope `Promoter` + `PlanGlobalPromotion`/`ApplyGlobalPromotion`.
 - `link.go` — `RelinkScope` (the `Related` similarity graph); `recall.go`'s
   `expandAssociative` consumes it. See `docs/brain-graph-layer.md` (RFC).
+- `community.go` — `DetectCommunities` (deterministic label propagation) +
+  `AssignCommunities` (persists `Record.Community`); feeds cluster-aware chunking
+  (`brain/extractor.go`) and graph cluster coloring. RFC P3.
 - `dedup.go` `tokenize.go` `filestore/` `chroma/` `embedhttp/`.
 
 agentique glue — `backend/internal/brain/`:
@@ -256,7 +275,8 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
-  (community detection → cluster-aware consolidation) is the next step.
+  (community detection → cluster-aware consolidation + aggressive Tidy) is **done**;
+  centrality (degree/betweenness "god nodes") and P2 confidence tiers remain.
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
   captures for a later sleep pass; the `SourceCapture` path exists but nothing

@@ -21,17 +21,12 @@ only, so a restart mid-preview drops it (mitigated: the frontend re-hydrates on 
 reconnect and clears the stale spinner). → `internal/memory/{consolidate,promote}.go`,
 `internal/brain/job.go`.
 
-### Brain: reorganize merges only within a 100-fact chunk
-Large scopes (reviewbot ~427) are chunked at `maxReorgBatch=100`; related facts in
-different chunks never merge in one Tidy pass, so big scopes don't meaningfully
-shrink. This is the open RFC **P3** (community detection → cluster-aware chunking).
-Until then the encode-prompt tightening only limits *future* growth and repeated
-Tidies converge slowly. → `internal/brain/extractor.go`, `docs/brain-graph-layer.md`.
-
 ### Brain: `RelinkScope` overwrites `Related` (will clobber curated links)
 Relink rebuilds the entire `Related` edge set each apply — correct while nothing
 else writes the field, but the moment a curated/human `[[link]]` UI lands it will
 silently erase those edges. Must tag auto vs. curated edges first (noted in-code).
+`Record.Community` (P3) is a *separate* field, so it isn't affected by this — but it
+shares the same "rebuilt each apply, will fight a curated source" shape.
 → `internal/memory/link.go`.
 
 ### Remaining delta events have no frontend renderers
@@ -81,18 +76,20 @@ agentkit…), scoped to reviewbot. The tightened extract prompt prevents *new*
 leakage but there's no cleanup of the existing ~40; global-consolidation can promote
 genuinely cross-cutting ones but won't catch codebase-specific leaks. → data debt.
 
-### Brain: two similarity engines + per-apply relink write cost
-The backend persists token-Jaccard edges (`RelinkScope`, O(n²) + up to N markdown
-writes on a scope's first relink) while the graph view *also* recomputes Jaccard
-client-side for dashed edges — redundant, and the persisted edges can drift from the
-live recompute. O(n²) per apply is fine at current scale (dozens–low-thousands) but
-is a smell for very large scopes. → `internal/memory/link.go`,
-`frontend/src/components/brain/BrainGraph.tsx`.
+### Brain: three similarity passes + per-apply relink/cluster write cost
+On each real apply the backend runs `RelinkScope` (O(n²) Jaccard + up to N markdown
+writes) **and then** `AssignCommunities` (another O(n²) detect + up to N more writes),
+while the graph view *also* recomputes Jaccard client-side for dashed edges. Three
+passes over the same similarity signal; the two backend passes each list+write the
+scope. Fine at current scale (dozens–low-thousands) but a clear merge target — both
+could share one tokenize+adjacency build and one write per changed record.
+→ `internal/memory/{link,community}.go`, `frontend/src/components/brain/BrainGraph.tsx`.
 
 ### Brain: tunables are hardcoded constants
 `maxReorgBatch=100`, `maxPromoteBatch=120`, `maxParallelBatches`/`maxParallelReorg=4`,
-`maxRelatedDegree=6`, `DefaultRelatedThreshold=0.3`, recall fan-out (`assocPerSeed=3`,
-total ≤K) — no flags/config to tune per deployment or scope size.
+`maxRelatedDegree=6`, `DefaultRelatedThreshold=0.3`, `DefaultCommunityThreshold=0.15`,
+`AggressiveMinSurvivorRatio=0.2` / `defaultMinSurvivorRatio=0.5`, recall fan-out
+(`assocPerSeed=3`, total ≤K) — no flags/config to tune per deployment or scope size.
 
 ### Brain: single consolidation job slot
 Only one consolidation runs at a time (`beginJob` 409s a second); "Tidy all" is
