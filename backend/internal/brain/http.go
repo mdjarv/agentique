@@ -8,11 +8,29 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/msggen"
 )
 
-// Handler serves the Brain tab HTTP API over a Service.
+// Handler serves the Brain tab HTTP API over a Service. Runner backs the LLM
+// reorganization during consolidation preview; it may be nil, in which case
+// preview falls back to deterministic dedup/decay only.
 type Handler struct {
 	Service *Service
+	Runner  msggen.Runner
+}
+
+// extractorFor builds the consolidation Extractor for a requested model. An empty
+// model (or a missing Runner) yields nil — deterministic dedup/decay only. The
+// model is the caller's choice; we never default it.
+func (h *Handler) extractorFor(model string) (memory.Extractor, error) {
+	if model == "" || h.Runner == nil {
+		return nil, nil
+	}
+	m, err := ParseModel(model)
+	if err != nil {
+		return nil, httperror.BadRequest(err.Error())
+	}
+	return NewClaudeExtractor(h.Runner, m), nil
 }
 
 type memoryDTO struct {
@@ -196,24 +214,7 @@ type reportDTO struct {
 	ReorgRefused     bool        `json:"reorgRefused"`
 }
 
-// HandleConsolidate POST /api/brain/consolidate  {scope}
-// Runs the consolidation pass for a scope. Without a configured Extractor this
-// performs deterministic decay only; it always returns the changelog.
-func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) error {
-	var body struct {
-		Scope string `json:"scope"`
-	}
-	if err := decode(r, &body); err != nil {
-		return err
-	}
-	scope := memory.Scope(body.Scope)
-	if scope == "" {
-		scope = memory.ScopeGlobal
-	}
-	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{})
-	if err != nil {
-		return err
-	}
+func toReportDTO(rep memory.Report) reportDTO {
 	dto := reportDTO{
 		Scope:            string(rep.Scope),
 		Promoted:         toDTOs(rep.Promoted),
@@ -227,7 +228,92 @@ func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) erro
 	for _, c := range rep.Rewritten {
 		dto.Rewritten = append(dto.Rewritten, changeDTO{Before: toDTO(c.Before), After: toDTO(c.After)})
 	}
-	httperror.JSON(w, http.StatusOK, dto)
+	return dto
+}
+
+// HandleConsolidate POST /api/brain/consolidate  {scope}
+// Deterministic dedup/decay only (no model), one-shot. Retained for callers that
+// don't want the preview→apply flow; the Brain tab uses preview/apply below.
+func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Scope string `json:"scope"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	scope := memory.Scope(body.Scope)
+	if scope == "" {
+		scope = memory.ScopeGlobal
+	}
+	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false)
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
+	return nil
+}
+
+// previewDTO is the preview response: the changelog to render plus the plan the
+// client holds and posts back to apply (stateless — no server-side plan cache).
+type previewDTO struct {
+	Report reportDTO   `json:"report"`
+	Plan   memory.Plan `json:"plan"`
+}
+
+// HandlePreviewConsolidate POST /api/brain/consolidate/preview  {scope, model}
+// Runs the LLM phase once and returns the proposed changelog PLUS the plan that
+// produced it. The client holds the plan and posts it back to apply — so applying
+// commits exactly what was previewed and never re-runs the model.
+func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Scope string `json:"scope"`
+		Model string `json:"model"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	scope := memory.Scope(body.Scope)
+	if scope == "" {
+		scope = memory.ScopeGlobal
+	}
+	ex, err := h.extractorFor(body.Model)
+	if err != nil {
+		return err
+	}
+	plan, err := h.Service.Plan(r.Context(), scope, ex, memory.DecayPolicy{})
+	if err != nil {
+		return err
+	}
+	rep, err := h.Service.ApplyPlan(r.Context(), scope, plan, memory.DecayPolicy{}, true)
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, previewDTO{Report: toReportDTO(rep), Plan: plan})
+	return nil
+}
+
+// HandleApplyConsolidate POST /api/brain/consolidate/apply  {plan}
+// Applies a plan from a prior preview deterministically — no model call. Returns
+// 409 if the scope changed since the preview (stale plan); the client re-previews.
+func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Plan memory.Plan `json:"plan"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	scope := body.Plan.Scope
+	if scope == "" {
+		return httperror.BadRequest("plan is missing a scope")
+	}
+	rep, err := h.Service.ApplyPlan(r.Context(), scope, body.Plan, memory.DecayPolicy{}, false)
+	if errors.Is(err, memory.ErrStalePlan) {
+		return httperror.Conflict("the brain changed since this preview — re-run preview")
+	}
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
 }
 

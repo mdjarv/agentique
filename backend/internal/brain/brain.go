@@ -228,20 +228,61 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 
 // Consolidate runs the consolidation pass for one scope, threading the persisted
 // fingerprint so the LLM reorganization is skipped when nothing changed. A nil
-// Extractor restricts the pass to deterministic decay.
-func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy) (memory.Report, error) {
+// Extractor restricts the pass to deterministic decay. When dryRun is set the
+// pass writes nothing — it returns the changelog it WOULD apply and leaves the
+// persisted fingerprint untouched so a later real run still proceeds.
+func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool) (memory.Report, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
 	rep, err := memory.Consolidate(ctx, s.store, ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint: fps[string(scope)],
 		Decay:           decay,
+		DryRun:          dryRun,
 	})
 	if err != nil {
 		return rep, err
 	}
-	fps[string(scope)] = rep.Fingerprint
-	s.saveFingerprints(fps)
+	if !dryRun {
+		fps[string(scope)] = rep.Fingerprint
+		s.saveFingerprints(fps)
+	}
+	return rep, nil
+}
+
+// Plan runs the LLM phase of consolidation for a scope and returns the proposal
+// without writing anything. The model runs only here; the caller previews the plan
+// (ApplyPlan with dryRun) and then applies it (ApplyPlan), so Opus is never invoked
+// twice for one preview→apply cycle.
+func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy) (memory.Plan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fps := s.loadFingerprints()
+	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
+		PrevFingerprint: fps[string(scope)],
+		Decay:           decay,
+	})
+}
+
+// ApplyPlan applies (dryRun=false) or previews (dryRun=true) a plan deterministically
+// — no model calls. It returns memory.ErrStalePlan if the scope changed since the
+// plan was made. A real apply persists the new fingerprint so the next pass can skip
+// an unchanged set.
+func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory.Plan, decay memory.DecayPolicy, dryRun bool) (memory.Report, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rep, err := memory.ApplyPlan(ctx, s.store, scope, plan, memory.ConsolidateOptions{
+		Decay:  decay,
+		DryRun: dryRun,
+	})
+	if err != nil {
+		return rep, err
+	}
+	if !dryRun {
+		fps := s.loadFingerprints()
+		fps[string(scope)] = rep.Fingerprint
+		s.saveFingerprints(fps)
+	}
 	return rep, nil
 }
 

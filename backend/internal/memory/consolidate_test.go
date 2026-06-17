@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -32,6 +33,84 @@ func mk(id string, scope Scope, text string, cat Category, src Source) Record {
 }
 
 func capture(id, text string) Record { return mk(id, ScopeGlobal, text, CategoryFact, SourceCapture) }
+
+// The whole point of the Plan/Apply split: the model runs once at plan time;
+// neither preview (dry-run apply) nor real apply calls it again.
+func TestPlanApplyRunsModelOnce(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore(
+		mk("a", ScopeGlobal, "vague a", CategoryFact, SourceConsolidated),
+		mk("b", ScopeGlobal, "fact b", CategoryFact, SourceConsolidated),
+	)
+	var reorgCalls int
+	ex := fakeExtractor{reorganize: func(facts []Fact) []Fact {
+		reorgCalls++
+		return []Fact{{ID: "a", Text: "clarified a", Category: CategoryFact}} // keep a (rewritten), drop b
+	}}
+
+	p, err := PlanConsolidation(ctx, store, ex, ScopeGlobal, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reorgCalls != 1 || !p.ReorganizeRan || len(p.Reorganized) != 1 {
+		t.Fatalf("plan should call model once and capture output: calls=%d plan=%+v", reorgCalls, p)
+	}
+
+	// Preview: dry-run apply must not call the model and must not write.
+	prev, err := ApplyPlan(ctx, store, ScopeGlobal, p, ConsolidateOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reorgCalls != 1 {
+		t.Fatalf("dry-run apply must not call the model, calls=%d", reorgCalls)
+	}
+	if len(prev.Rewritten) != 1 || len(prev.Deleted) != 1 {
+		t.Fatalf("preview changelog wrong: rewritten=%d deleted=%d", len(prev.Rewritten), len(prev.Deleted))
+	}
+	if all, _ := store.List(ctx); len(all) != 2 {
+		t.Fatalf("dry-run must not write, store has %d", len(all))
+	}
+
+	// Apply for real: still no second model call; the previewed change lands.
+	rep, err := ApplyPlan(ctx, store, ScopeGlobal, p, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reorgCalls != 1 {
+		t.Fatalf("real apply must not call the model, calls=%d", reorgCalls)
+	}
+	if len(rep.Rewritten) != 1 || len(rep.Deleted) != 1 {
+		t.Fatalf("apply changelog wrong: rewritten=%d deleted=%d", len(rep.Rewritten), len(rep.Deleted))
+	}
+	all, _ := store.List(ctx)
+	if len(all) != 1 || all[0].ID != "a" || all[0].Text != "clarified a" {
+		t.Fatalf("apply result wrong: %+v", all)
+	}
+}
+
+// A plan applied after the underlying set changed must be refused, not clobber the
+// newer state.
+func TestApplyPlanRefusesStale(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore(
+		mk("a", ScopeGlobal, "fact a", CategoryFact, SourceConsolidated),
+		mk("b", ScopeGlobal, "fact b", CategoryFact, SourceConsolidated),
+	)
+	ex := fakeExtractor{reorganize: func(facts []Fact) []Fact {
+		return []Fact{{ID: "a", Text: "merged", Category: CategoryFact}}
+	}}
+	p, err := PlanConsolidation(ctx, store, ex, ScopeGlobal, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new reorganizable fact appears after planning.
+	if err := store.Put(ctx, mk("c", ScopeGlobal, "new fact c", CategoryFact, SourceConsolidated)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyPlan(ctx, store, ScopeGlobal, p, ConsolidateOptions{}); !errors.Is(err, ErrStalePlan) {
+		t.Fatalf("expected ErrStalePlan, got %v", err)
+	}
+}
 
 func TestConsolidatePromotesCaptures(t *testing.T) {
 	store := newMemStore(capture("c1", "user ran the build with just"), capture("c2", "user fixed a flaky test"))

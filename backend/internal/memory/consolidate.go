@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,17 +13,17 @@ import (
 
 // Candidate is a proposed durable fact produced by an Extractor from raw episodes.
 type Candidate struct {
-	Text     string
-	Category Category
+	Text     string   `json:"text"`
+	Category Category `json:"category"`
 }
 
 // Fact is the minimal id+text+category view of a Record handed to an Extractor's
 // Reorganize step. Protected metadata (pinned/locked/uses/source/timestamps) is
 // never exposed to the model, so reorganization cannot tamper with it.
 type Fact struct {
-	ID       string
-	Text     string
-	Category Category
+	ID       string   `json:"id"`
+	Text     string   `json:"text"`
+	Category Category `json:"category"`
 }
 
 // Extractor is the LLM-backed cognition behind consolidation. The host
@@ -54,6 +55,10 @@ type ConsolidateOptions struct {
 	Decay           DecayPolicy
 	// DuplicateThreshold for promoting captures; <=0 uses DefaultDuplicateThreshold.
 	DuplicateThreshold float64
+	// DryRun runs the full pass — including the LLM calls — and populates the
+	// Report with every change it WOULD make, but writes nothing to the Store. Used
+	// for safe previews on live, session-shared memory.
+	DryRun bool
 }
 
 // Change records a rewritten fact.
@@ -87,13 +92,92 @@ func isProtected(r Record) bool {
 	return r.Pinned || r.Locked || r.Source == SourceHuman
 }
 
-// Consolidate runs the "sleep" pass over one scope: distill episodic captures into
-// durable facts, reorganize (merge/rewrite/abstract) the durable set, and decay
-// stale low-value facts. It is conservative by construction — it never mutates
-// pinned, locked or human-authored facts, never deletes more than half of a
-// non-trivial set, and skips the LLM reorganization when nothing has changed. A
-// nil Extractor restricts the pass to deterministic decay.
-func Consolidate(ctx context.Context, store Store, ex Extractor, scope Scope, opts ConsolidateOptions) (Report, error) {
+// Plan is the serializable output of the LLM phase of a consolidation pass: the
+// model's proposed reorganization plus any captures it distilled, together with a
+// fingerprint of the set it was computed against. It is sufficient to apply the
+// pass deterministically (no further model calls), so a UI can preview a plan and
+// then apply EXACTLY what was shown — the expensive, non-deterministic model step
+// runs once, at plan time.
+type Plan struct {
+	Scope             Scope       `json:"scope"`
+	InputFingerprint  string      `json:"inputFingerprint"`  // fingerprint of the reorganizable set at plan time
+	Reorganized       []Fact      `json:"reorganized"`       // ex.Reorganize output
+	ReorganizeRan     bool        `json:"reorganizeRan"`     // a reorganization was performed (vs skipped / no extractor)
+	ReorganizeSkipped bool        `json:"reorganizeSkipped"` // skipped because the set was unchanged since the last pass
+	Promoted          []Candidate `json:"promoted"`          // ex.Extract output distilled from captures
+	CaptureIDs        []string    `json:"captureIds"`        // captures considered; consumed on apply when promotion yields facts
+}
+
+// ErrStalePlan is returned by ApplyPlan when the scope's reorganizable set changed
+// since the plan was computed, so applying it could clobber newer edits. The caller
+// should re-plan (re-preview) rather than apply blindly.
+var ErrStalePlan = errors.New("memory: consolidation plan is stale; re-plan")
+
+// PlanConsolidation runs the LLM phase ONLY: it distills captures and computes the
+// reorganization, returning a Plan and writing nothing. A nil Extractor yields an
+// empty plan (deterministic decay still happens in ApplyPlan). Promoted captures
+// are reorganized on the NEXT pass, not this one, so the plan stays a pure function
+// of the current durable set.
+func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Scope, opts ConsolidateOptions) (Plan, error) {
+	p := Plan{Scope: scope}
+	all, err := store.List(ctx, scope)
+	if err != nil {
+		return p, err
+	}
+	var captures, durable []Record
+	for _, r := range all {
+		if r.Source == SourceCapture {
+			captures = append(captures, r)
+		} else {
+			durable = append(durable, r)
+		}
+	}
+
+	// LLM: distill captures into candidate facts (no write).
+	if ex != nil && len(captures) > 0 {
+		episodes := make([]string, len(captures))
+		p.CaptureIDs = make([]string, len(captures))
+		for i, c := range captures {
+			episodes[i] = c.Text
+			p.CaptureIDs[i] = c.ID
+		}
+		cands, eerr := ex.Extract(ctx, episodes)
+		if eerr != nil {
+			return p, fmt.Errorf("memory: extract captures: %w", eerr)
+		}
+		p.Promoted = cands
+	}
+
+	// LLM: reorganize the non-protected durable set (no write).
+	var reorgInput []Record
+	for _, r := range durable {
+		if !isProtected(r) {
+			reorgInput = append(reorgInput, r)
+		}
+	}
+	p.InputFingerprint = fingerprint(reorgInput)
+	if ex != nil && len(reorgInput) > 0 {
+		if p.InputFingerprint == opts.PrevFingerprint {
+			p.ReorganizeSkipped = true
+		} else {
+			out, rerr := ex.Reorganize(ctx, toFacts(reorgInput))
+			if rerr != nil {
+				return p, fmt.Errorf("memory: reorganize: %w", rerr)
+			}
+			p.Reorganized = out
+			p.ReorganizeRan = true
+		}
+	}
+	return p, nil
+}
+
+// ApplyPlan applies a previously computed Plan DETERMINISTICALLY — no model calls.
+// It refuses with ErrStalePlan if the reorganizable set changed since the plan was
+// made. With opts.DryRun set it builds the full changelog but writes nothing, which
+// is how a preview is rendered from the same plan that apply will replay. It never
+// mutates pinned, locked or human-authored facts and enforces the over-deletion
+// safety net.
+func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts ConsolidateOptions) (Report, error) {
 	dupThreshold := opts.DuplicateThreshold
 	if dupThreshold <= 0 {
 		dupThreshold = DefaultDuplicateThreshold
@@ -105,53 +189,45 @@ func Consolidate(ctx context.Context, store Store, ex Extractor, scope Scope, op
 	if err != nil {
 		return rep, err
 	}
-
-	var captures, durable []Record
+	var durable []Record
 	for _, r := range all {
-		if r.Source == SourceCapture {
-			captures = append(captures, r)
-		} else {
+		if r.Source != SourceCapture {
 			durable = append(durable, r)
 		}
 	}
-
-	// 1) Promote episodic captures into durable facts.
-	if ex != nil && len(captures) > 0 {
-		promoted, consumed, perr := promoteCaptures(ctx, store, ex, scope, captures, durable, dupThreshold)
-		if perr != nil {
-			return rep, perr
-		}
-		durable = append(durable, promoted...)
-		rep.Promoted = promoted
-		rep.CapturesConsumed = consumed
-	}
-
-	// Partition: protected facts pass through untouched.
 	var reorgInput []Record
 	for _, r := range durable {
 		if !isProtected(r) {
 			reorgInput = append(reorgInput, r)
 		}
 	}
+	// Staleness guard: the plan was computed against a specific set; if it changed
+	// (manual edits, another pass) applying could clobber newer state.
+	if fingerprint(reorgInput) != p.InputFingerprint {
+		return rep, ErrStalePlan
+	}
 
-	// 2) Reorganize the non-protected durable set.
-	rep.Fingerprint = fingerprint(reorgInput)
-	if ex != nil && len(reorgInput) > 0 {
-		if rep.Fingerprint == opts.PrevFingerprint {
-			rep.Skipped = true
-		} else {
-			out, rerr := ex.Reorganize(ctx, toFacts(reorgInput))
-			if rerr != nil {
-				return rep, fmt.Errorf("memory: reorganize: %w", rerr)
-			}
-			applied, refused, aerr := applyReorg(ctx, store, now, reorgInput, out, &rep)
-			if aerr != nil {
-				return rep, aerr
-			}
-			rep.ReorgRefused = refused
-			if !refused {
-				reorgInput = applied
-			}
+	// 1) Promote the captures the plan distilled (deterministic write).
+	if len(p.Promoted) > 0 {
+		promoted, consumed, perr := writePromoted(ctx, store, scope, p.Promoted, p.CaptureIDs, durable, dupThreshold, opts.DryRun)
+		if perr != nil {
+			return rep, perr
+		}
+		rep.Promoted = promoted
+		rep.CapturesConsumed = consumed
+	}
+
+	// 2) Apply the reorganization the plan proposed.
+	if p.ReorganizeSkipped {
+		rep.Skipped = true
+	} else if p.ReorganizeRan {
+		applied, refused, aerr := applyReorg(ctx, store, now, reorgInput, p.Reorganized, &rep, opts.DryRun)
+		if aerr != nil {
+			return rep, aerr
+		}
+		rep.ReorgRefused = refused
+		if !refused {
+			reorgInput = applied
 		}
 	}
 
@@ -160,8 +236,10 @@ func Consolidate(ctx context.Context, store Store, ex Extractor, scope Scope, op
 		kept := reorgInput[:0]
 		for _, r := range reorgInput {
 			if now.Sub(r.UpdatedAt) > opts.Decay.MaxAge && r.Uses < opts.Decay.MinUses {
-				if err := store.Delete(ctx, r.ID); err != nil {
-					return rep, err
+				if !opts.DryRun {
+					if err := store.Delete(ctx, r.ID); err != nil {
+						return rep, err
+					}
 				}
 				rep.Decayed = append(rep.Decayed, r)
 				continue
@@ -175,17 +253,25 @@ func Consolidate(ctx context.Context, store Store, ex Extractor, scope Scope, op
 	return rep, nil
 }
 
-func promoteCaptures(ctx context.Context, store Store, ex Extractor, scope Scope, captures, durable []Record, dupThreshold float64) (promoted []Record, consumed []string, err error) {
-	episodes := make([]string, len(captures))
-	captureIDs := make([]string, len(captures))
-	for i, c := range captures {
-		episodes[i] = c.Text
-		captureIDs[i] = c.ID
+// Consolidate runs the full "sleep" pass in one shot: plan (LLM) then apply. It is
+// conservative by construction — it never mutates pinned, locked or human-authored
+// facts, never deletes more than half of a non-trivial set, and skips the LLM
+// reorganization when nothing has changed. A nil Extractor restricts the pass to
+// deterministic decay. For a preview→apply UI, call PlanConsolidation and ApplyPlan
+// separately so the model runs only once.
+func Consolidate(ctx context.Context, store Store, ex Extractor, scope Scope, opts ConsolidateOptions) (Report, error) {
+	p, err := PlanConsolidation(ctx, store, ex, scope, opts)
+	if err != nil {
+		return Report{Scope: scope}, err
 	}
-	cands, eerr := ex.Extract(ctx, episodes)
-	if eerr != nil {
-		return nil, nil, fmt.Errorf("memory: extract captures: %w", eerr)
-	}
+	return ApplyPlan(ctx, store, scope, p, opts)
+}
+
+// writePromoted turns already-extracted candidates into durable facts: it dedups
+// them against the current durable set, writes the survivors (unless dryRun) and
+// consumes the captures they came from. The LLM Extract that produced cands runs
+// earlier, in PlanConsolidation, so this step is deterministic.
+func writePromoted(ctx context.Context, store Store, scope Scope, cands []Candidate, captureIDs []string, durable []Record, dupThreshold float64, dryRun bool) (promoted []Record, consumed []string, err error) {
 	if len(cands) == 0 {
 		// A weak/empty extraction must not destroy raw episodic material — keep
 		// the captures for a future pass rather than consuming them for nothing.
@@ -205,11 +291,17 @@ func promoteCaptures(ctx context.Context, store Store, ex Extractor, scope Scope
 		if r.Category == CategoryIdentity {
 			r.Pinned = true // identity facts are core context (Odysseus behavior)
 		}
-		if err := store.Put(ctx, r); err != nil {
-			return nil, nil, err
+		if !dryRun {
+			if err := store.Put(ctx, r); err != nil {
+				return nil, nil, err
+			}
 		}
 		existing = append(existing, r)
 		promoted = append(promoted, r)
+	}
+	if dryRun {
+		// Report what would be consumed without removing the raw captures.
+		return promoted, captureIDs, nil
 	}
 	// Captures have been distilled; remove them so they aren't reprocessed.
 	for _, id := range captureIDs {
@@ -223,7 +315,7 @@ func promoteCaptures(ctx context.Context, store Store, ex Extractor, scope Scope
 // applyReorg validates and applies an Extractor's reorganization. It drops
 // invented IDs, enforces the over-deletion safety net, then applies rewrites,
 // deletions and new abstractions. On refusal it leaves the input untouched.
-func applyReorg(ctx context.Context, store Store, now time.Time, input []Record, out []Fact, rep *Report) (applied []Record, refused bool, err error) {
+func applyReorg(ctx context.Context, store Store, now time.Time, input []Record, out []Fact, rep *Report, dryRun bool) (applied []Record, refused bool, err error) {
 	inputByID := make(map[string]Record, len(input))
 	for _, r := range input {
 		inputByID[r.ID] = r
@@ -254,8 +346,10 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 	for _, r := range input {
 		f, kept := outByID[r.ID]
 		if !kept {
-			if err := store.Delete(ctx, r.ID); err != nil {
-				return nil, false, err
+			if !dryRun {
+				if err := store.Delete(ctx, r.ID); err != nil {
+					return nil, false, err
+				}
 			}
 			rep.Deleted = append(rep.Deleted, r)
 			continue
@@ -269,8 +363,10 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 			}
 			r.Source = SourceConsolidated
 			r.UpdatedAt = now
-			if err := store.Put(ctx, r); err != nil {
-				return nil, false, err
+			if !dryRun {
+				if err := store.Put(ctx, r); err != nil {
+					return nil, false, err
+				}
 			}
 			rep.Rewritten = append(rep.Rewritten, Change{Before: before, After: r})
 		}
@@ -282,8 +378,10 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 			continue
 		}
 		nr := New(rep.Scope, text, f.Category, SourceConsolidated)
-		if err := store.Put(ctx, nr); err != nil {
-			return nil, false, err
+		if !dryRun {
+			if err := store.Put(ctx, nr); err != nil {
+				return nil, false, err
+			}
 		}
 		rep.Abstracted = append(rep.Abstracted, nr)
 		applied = append(applied, nr)
