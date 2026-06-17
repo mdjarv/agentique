@@ -18,6 +18,24 @@ export interface Memory {
   // Derived topic-cluster id within the scope (set by consolidation). Scope-local:
   // only comparable among memories of the same scope.
   community?: number;
+  // Confidence tier (extracted | inferred | ambiguous) + its 0..1 score (RFC P2).
+  confidence?: string;
+  confidenceScore?: number;
+}
+
+// NEEDS_CONFIRMATION_SCORE mirrors the backend's NeedsConfirmationScore: facts at or
+// below it (and not pinned/locked/human) are the ones the brain offers up to confirm.
+export const NEEDS_CONFIRMATION_SCORE = 0.65;
+
+// needsConfirmation reports whether a memory is a candidate for the "confirm what I'm
+// unsure about" UX: a non-protected, low-confidence fact.
+export function needsConfirmation(m: Memory): boolean {
+  return (
+    !m.pinned &&
+    !m.locked &&
+    m.source !== "human" &&
+    (m.confidenceScore ?? 1) <= NEEDS_CONFIRMATION_SCORE
+  );
 }
 
 export interface BrainStatus {
@@ -105,6 +123,44 @@ export async function setLocked(id: string, locked: boolean): Promise<Memory> {
     body: JSON.stringify({ locked }),
   });
   await throwIfNotOk(res, "Failed to update lock");
+  return res.json();
+}
+
+// confirmMemory accepts a low-confidence fact as ground truth (the confirm UX): it
+// becomes human-authored/EXTRACTED and is thereafter protected from consolidation.
+export async function confirmMemory(id: string): Promise<Memory> {
+  const res = await fetch(`${BASE}/memories/${id}/confirm`, { method: "POST" });
+  await throwIfNotOk(res, "Failed to confirm memory");
+  return res.json();
+}
+
+// GraphNode is a memory enriched with its structural-graph centrality (RFC P2):
+// degree (load-bearing "god nodes") and normalized betweenness (bridge facts).
+export interface GraphNode extends Memory {
+  degree: number;
+  betweenness: number;
+}
+
+// GraphReport is the derived "what the brain knows" panel. Each list holds node ids
+// resolved against GraphData.nodes.
+export interface GraphReport {
+  godNodes: string[];
+  bridges: string[];
+  needsConfirmation: string[];
+  isolated: string[];
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  report: GraphReport;
+}
+
+// getGraph fetches the force-graph payload: every durable memory annotated with
+// centrality, plus the derived insight report. Computed server-side, request-time.
+export async function getGraph(scope?: string): Promise<GraphData> {
+  const q = scope ? `?scope=${encodeURIComponent(scope)}` : "";
+  const res = await fetch(`${BASE}/graph${q}`);
+  await throwIfNotOk(res, "Failed to load brain graph");
   return res.json();
 }
 

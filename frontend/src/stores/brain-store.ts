@@ -6,10 +6,13 @@ import {
   type ConsolidationJob,
   type ConsolidationPlan,
   type CreateMemoryInput,
+  confirmMemory,
   createMemory,
   deleteMemory,
   type GlobalConsolidationPlan,
+  type GraphData,
   getConsolidationJob,
+  getGraph,
   getStatus,
   listMemories,
   type Memory,
@@ -37,6 +40,11 @@ interface BrainState {
   loaded: boolean;
   loading: boolean;
 
+  // The force-graph payload (centrality + insight report). Loaded on demand when the
+  // graph view is shown; null until then. A rebuildable, request-time index.
+  graph: GraphData | null;
+  graphLoading: boolean;
+
   // Consolidation runs as a background job on the server; progress and the final
   // result arrive over the WebSocket (via setJob), so these mirror that job and
   // are shared across tabs. preview/globalPreview hold the model's proposal once a
@@ -57,11 +65,13 @@ interface BrainState {
   flareSeq: number;
 
   load: () => Promise<void>;
+  loadGraph: () => Promise<void>;
   create: (input: CreateMemoryInput) => Promise<Memory>;
   update: (id: string, input: { text?: string; category?: string }) => Promise<Memory>;
   remove: (id: string) => Promise<void>;
   pin: (id: string, pinned: boolean) => Promise<void>;
   lock: (id: string, locked: boolean) => Promise<void>;
+  confirm: (id: string) => Promise<void>;
 
   startPreview: (scope: string, model: string, mode?: TidyMode, force?: boolean) => Promise<void>;
   startGlobalConsolidate: (model: string) => Promise<void>;
@@ -92,6 +102,8 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   semantic: false,
   loaded: false,
   loading: false,
+  graph: null,
+  graphLoading: false,
   preview: null,
   previewScope: null,
   previewing: false,
@@ -115,10 +127,28 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     }
   },
 
+  loadGraph: async () => {
+    if (get().graphLoading) return;
+    set({ graphLoading: true });
+    try {
+      set({ graph: await getGraph(), graphLoading: false });
+    } catch (err) {
+      console.error("Failed to load brain graph:", err);
+      set({ graphLoading: false });
+    }
+  },
+
   create: async (input) => {
     const m = await createMemory(input);
     set((s) => ({ memories: upsert(s.memories, m) }));
     return m;
+  },
+
+  confirm: async (id) => {
+    const m = await confirmMemory(id);
+    set((s) => ({ memories: upsert(s.memories, m) }));
+    // The confirm queue/report just changed; refresh the graph if it's open.
+    if (get().graph) void get().loadGraph();
   },
 
   update: async (id, input) => {

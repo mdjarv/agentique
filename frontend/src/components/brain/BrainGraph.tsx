@@ -1,10 +1,16 @@
+import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, {
   type ForceGraphMethods,
   type LinkObject,
   type NodeObject,
 } from "react-force-graph-2d";
-import type { Memory } from "~/lib/brain-api";
+import type { GraphReport, Memory } from "~/lib/brain-api";
+
+// GraphMemory is a memory optionally carrying its server-computed centrality. When
+// the graph endpoint has loaded, degree/betweenness are present and drive node
+// sizing and the insights panel; before then the component degrades to the plain list.
+type GraphMemory = Memory & { degree?: number; betweenness?: number };
 
 // BrainGraph renders the brain as an Obsidian-style force-directed graph.
 // Nodes are memories; edges come from three sources (cheapest first):
@@ -26,6 +32,7 @@ interface NodeData {
   uses: number;
   pinned: boolean;
   community: number;
+  degree: number;
   val: number;
 }
 
@@ -113,12 +120,53 @@ function esc(s: string): string {
   return s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
 }
 
+// InsightSection renders one click-to-focus list of node ids (god nodes / bridges).
+function InsightSection({
+  title,
+  hint,
+  ids,
+  labelFor,
+  onPick,
+}: {
+  title: string;
+  hint: string;
+  ids: string[];
+  labelFor: (id: string) => string;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 font-medium text-muted-foreground" title={hint}>
+        {title}
+      </div>
+      <ul className="space-y-0.5">
+        {ids.map((id) => (
+          <li key={id}>
+            <button
+              type="button"
+              className="w-full truncate text-left hover:text-foreground"
+              onClick={() => onPick(id)}
+              title={labelFor(id)}
+            >
+              {labelFor(id)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function BrainGraph({
   memories,
+  report,
   labelForScope,
+  onConfirm,
 }: {
-  memories: Memory[];
+  memories: GraphMemory[];
+  report: GraphReport | null;
   labelForScope: (scope: string) => string;
+  onConfirm: (id: string) => void;
 }) {
   const [showSimilar, setShowSimilar] = useState(true);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
@@ -153,7 +201,10 @@ export function BrainGraph({
       uses: m.uses,
       pinned: m.pinned,
       community: m.community ?? 0,
-      val: 2 + Math.min(m.uses, 12) + (m.pinned ? 2 : 0),
+      degree: m.degree ?? 0,
+      // Size blends use-count, pinned, and structural degree so load-bearing "god
+      // nodes" read bigger — the graphify signal made visual.
+      val: 2 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
     }));
 
     const idSet = new Set(memories.map((m) => m.id));
@@ -257,6 +308,19 @@ export function BrainGraph({
     scopes.sort((a, b) => (a === "global" ? -1 : b === "global" ? 1 : a.localeCompare(b)));
     return scopes.map((s) => ({ scope: s, label: labelForScope(s), color: scopeColor(s) }));
   }, [nodes, labelForScope]);
+
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [String(n.id), n])), [nodes]);
+
+  // focusNode pans+zooms to a node by id (the engine has stamped x/y on the node
+  // objects after layout), so the insights lists are clickable shortcuts.
+  const focusNode = (id: string) => {
+    const n = nodeById.get(id);
+    if (n?.x != null && n?.y != null) {
+      fgRef.current?.centerAt(n.x, n.y, 500);
+      fgRef.current?.zoom(4, 500);
+      setHoverId(id);
+    }
+  };
 
   return (
     <div ref={wrapRef} className="relative h-full w-full text-foreground">
@@ -362,6 +426,66 @@ export function BrainGraph({
           </select>
         </label>
       </div>
+
+      {/* Insights — graphify analyze.py analogs (RFC P2). */}
+      {report &&
+        (report.godNodes.length > 0 ||
+          report.bridges.length > 0 ||
+          report.needsConfirmation.length > 0) && (
+          <div className="absolute left-3 top-3 max-h-[calc(100%-1.5rem)] w-60 space-y-2 overflow-y-auto rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
+            {report.godNodes.length > 0 && (
+              <InsightSection
+                title="Load-bearing"
+                hint="Most-connected facts — much hangs off these"
+                ids={report.godNodes}
+                labelFor={(id) => nodeById.get(id)?.label ?? id}
+                onPick={focusNode}
+              />
+            )}
+            {report.bridges.length > 0 && (
+              <InsightSection
+                title="Bridges"
+                hint="Connect otherwise-separate topics — riskiest to lose"
+                ids={report.bridges}
+                labelFor={(id) => nodeById.get(id)?.label ?? id}
+                onPick={focusNode}
+              />
+            )}
+            {report.needsConfirmation.length > 0 && (
+              <div>
+                <div
+                  className="mb-1 font-medium text-amber-600"
+                  title="The brain's least-trusted facts — confirm to keep as ground truth, or delete"
+                >
+                  Confirm?{" "}
+                  <span className="text-muted-foreground">({report.needsConfirmation.length})</span>
+                </div>
+                <ul className="space-y-1">
+                  {report.needsConfirmation.map((id) => (
+                    <li key={id} className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate text-left hover:text-foreground"
+                        onClick={() => focusNode(id)}
+                        title={nodeById.get(id)?.label ?? id}
+                      >
+                        {nodeById.get(id)?.label ?? id}
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={() => onConfirm(id)}
+                        title="Confirm — keep as ground truth"
+                      >
+                        <Check className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Legend */}
       <div className="absolute bottom-3 left-3 max-w-[14rem] space-y-1 rounded-md border bg-card/80 p-2 text-xs backdrop-blur">

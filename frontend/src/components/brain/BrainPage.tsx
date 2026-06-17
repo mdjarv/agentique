@@ -1,6 +1,7 @@
 import {
   ArrowUpToLine,
   Brain,
+  Check,
   ChevronRight,
   List,
   Loader2,
@@ -21,7 +22,12 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import type { ConsolidateReport, Memory, TidyMode } from "~/lib/brain-api";
+import {
+  type ConsolidateReport,
+  type Memory,
+  needsConfirmation,
+  type TidyMode,
+} from "~/lib/brain-api";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
@@ -40,6 +46,10 @@ export function BrainPage() {
     semantic,
     loaded,
     load,
+    graph,
+    loadGraph,
+    confirm,
+    flareSeq,
     create,
     preview,
     previewScope,
@@ -83,6 +93,12 @@ export function BrainPage() {
     hydrateJob();
   }, [loaded, load, hydrateJob]);
 
+  // Load (and keep fresh) the centrality graph only while the graph view is open.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: flareSeq is a trigger-only dep — it bumps on any memory change (here or another tab) to re-fetch the graph so the insights + confirm queue stay fresh after a tidy/confirm; its value isn't read in the body.
+  useEffect(() => {
+    if (view === "graph") loadGraph();
+  }, [view, loadGraph, flareSeq]);
+
   const labelForScope = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
     return (scope: string) => {
@@ -120,12 +136,14 @@ export function BrainPage() {
       });
   }, [memories, filter, labelForScope]);
 
-  // Graph view shows the same filtered set as the list, flat (grouping is
-  // expressed by node color, not sections).
+  // Graph view shows the same filtered set as the list, flat (grouping is expressed
+  // by node color, not sections). It uses the centrality-annotated nodes from the
+  // graph endpoint once loaded, falling back to the plain list while it loads.
   const graphMemories = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    return f ? memories.filter((m) => m.text.toLowerCase().includes(f)) : memories;
-  }, [memories, filter]);
+    const base = graph?.nodes ?? memories;
+    return f ? base.filter((m) => m.text.toLowerCase().includes(f)) : base;
+  }, [graph, memories, filter]);
 
   const handleTidy = async (scope: string, force = false) => {
     try {
@@ -271,7 +289,19 @@ export function BrainPage() {
 
       {view === "graph" && (
         <div className="min-h-0 flex-1">
-          <BrainGraph memories={graphMemories} labelForScope={labelForScope} />
+          <BrainGraph
+            memories={graphMemories}
+            report={graph?.report ?? null}
+            labelForScope={labelForScope}
+            onConfirm={async (id) => {
+              try {
+                await confirm(id);
+                toast.success("Confirmed — kept as ground truth");
+              } catch (err) {
+                toast.error(getErrorMessage(err, "Failed to confirm"));
+              }
+            }}
+          />
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 space-y-6" hidden={view !== "list"}>
@@ -531,10 +561,25 @@ function categoryColor(cat: string): string {
   }
 }
 
+// confidenceStyle maps a confidence tier to a muted dot + label. EXTRACTED (ground
+// truth) is not shown — there's nothing to second-guess.
+function confidenceStyle(tier: string | undefined): { dot: string; label: string } | null {
+  switch (tier) {
+    case "ambiguous":
+      return { dot: "bg-amber-500", label: "unsure" };
+    case "inferred":
+      return { dot: "bg-muted-foreground/50", label: "inferred" };
+    default:
+      return null;
+  }
+}
+
 function MemoryCard({ memory }: { memory: Memory }) {
-  const { update, remove, pin, lock } = useBrainStore();
+  const { update, remove, pin, lock, confirm } = useBrainStore();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(memory.text);
+  const conf = confidenceStyle(memory.confidence);
+  const canConfirm = needsConfirmation(memory);
 
   const act = async (fn: () => Promise<unknown>, errMsg: string) => {
     try {
@@ -597,9 +642,26 @@ function MemoryCard({ memory }: { memory: Memory }) {
             · used {memory.uses}×
           </span>
         )}
+        {conf && (
+          <span
+            className="flex items-center gap-1 text-[10px] text-muted-foreground"
+            title={`Confidence: ${memory.confidence} (${((memory.confidenceScore ?? 0) * 100).toFixed(0)}%)`}
+          >
+            <span className={`inline-block size-1.5 rounded-full ${conf.dot}`} />
+            {conf.label}
+          </span>
+        )}
         {memory.locked && <Lock className="size-3 text-muted-foreground" aria-label="locked" />}
 
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canConfirm && (
+            <IconBtn
+              title="Confirm — keep as ground truth (exempt from consolidation)"
+              onClick={() => act(() => confirm(memory.id), "Failed to confirm")}
+            >
+              <Check className="size-3.5" />
+            </IconBtn>
+          )}
           <IconBtn
             title={memory.pinned ? "Unpin" : "Pin (always injected)"}
             onClick={() => act(() => pin(memory.id, !memory.pinned), "Failed to pin")}
