@@ -70,6 +70,12 @@ type Record struct {
 	DerivedFrom []string
 	// Related links to other record IDs (the [[link]] graph).
 	Related []string
+	// Community is a derived topic-cluster id within the record's scope (from
+	// AssignCommunities / DetectCommunities). Like Embedding and Related it is a
+	// rebuildable index, never the source of truth — it powers cluster coloring in
+	// the graph view and cluster-aware consolidation. Scope-local: cluster ids are
+	// only comparable among records of the same scope.
+	Community int
 
 	// Embedding is an optional derived vector cache; never the source of truth.
 	Embedding []float32

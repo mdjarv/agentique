@@ -48,6 +48,7 @@ type frontmatter struct {
 	Updated     time.Time `yaml:"updated"`
 	DerivedFrom []string  `yaml:"derived_from,omitempty"`
 	Related     []string  `yaml:"related,omitempty"`
+	Community   int       `yaml:"community,omitempty"`
 }
 
 func toFrontmatter(r memory.Record) frontmatter {
@@ -63,6 +64,7 @@ func toFrontmatter(r memory.Record) frontmatter {
 		Updated:     r.UpdatedAt.UTC(),
 		DerivedFrom: r.DerivedFrom,
 		Related:     r.Related,
+		Community:   r.Community,
 	}
 }
 
@@ -84,6 +86,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		UpdatedAt:   m.Updated,
 		DerivedFrom: m.DerivedFrom,
 		Related:     m.Related,
+		Community:   m.Community,
 	}
 }
 

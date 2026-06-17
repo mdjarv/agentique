@@ -23,6 +23,7 @@ func sampleRecord() memory.Record {
 	r.UpdatedAt = time.Date(2026, 6, 16, 12, 30, 0, 0, time.UTC)
 	r.DerivedFrom = []string{"cap-1", "cap-2"}
 	r.Related = []string{"rec-9"}
+	r.Community = 4
 	return r
 }
 
@@ -47,6 +48,9 @@ func TestPutGetRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.DerivedFrom, want.DerivedFrom) || !reflect.DeepEqual(got.Related, want.Related) {
 		t.Fatalf("links mismatch: %+v", got)
+	}
+	if got.Community != want.Community {
+		t.Fatalf("community mismatch: got %d want %d", got.Community, want.Community)
 	}
 }
 

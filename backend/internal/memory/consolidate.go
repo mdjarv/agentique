@@ -291,10 +291,14 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 
 	rep.Fingerprint = fingerprint(reorgInput)
 
-	// Rebuild the scope's link graph from the settled set (associative-recall +
-	// graph-view signal). Derived metadata, so previews skip it.
+	// Rebuild the scope's link graph from the settled set, then recompute topic
+	// communities over those fresh edges (associative-recall + graph-view signal +
+	// cluster-aware future passes). Both are derived metadata, so previews skip them.
 	if !opts.DryRun {
 		if _, err := RelinkScope(ctx, store, scope); err != nil {
+			return rep, err
+		}
+		if _, err := AssignCommunities(ctx, store, scope); err != nil {
 			return rep, err
 		}
 	}

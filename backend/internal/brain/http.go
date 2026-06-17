@@ -40,6 +40,7 @@ type memoryDTO struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 	DerivedFrom []string  `json:"derivedFrom,omitempty"`
 	Related     []string  `json:"related,omitempty"`
+	Community   int       `json:"community"`
 }
 
 func toDTO(r memory.Record) memoryDTO {
@@ -47,6 +48,7 @@ func toDTO(r memory.Record) memoryDTO {
 		ID: r.ID, Scope: string(r.Scope), Text: r.Text, Category: string(r.Category),
 		Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked, Uses: r.Uses,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DerivedFrom: r.DerivedFrom, Related: r.Related,
+		Community: r.Community,
 	}
 }
 

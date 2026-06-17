@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -70,5 +71,37 @@ func TestDetectCommunitiesDeterministic(t *testing.T) {
 func TestDetectCommunitiesEmpty(t *testing.T) {
 	if got := DetectCommunities(nil, DefaultRelatedThreshold); len(got) != 0 {
 		t.Fatalf("empty input should yield no communities, got %v", got)
+	}
+}
+
+func TestAssignCommunitiesPersistsAndIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore(
+		mk("a", scopeA, "user prefers dark mode in the editor", CategoryPreference, SourceConsolidated),
+		mk("b", scopeA, "dark mode is the editor preference", CategoryPreference, SourceConsolidated),
+		mk("c", scopeA, "deployment runs through docker compose", CategoryProject, SourceConsolidated),
+		mk("d", scopeA, "docker compose handles deployment", CategoryProject, SourceConsolidated),
+	)
+	changed, err := AssignCommunities(ctx, store, scopeA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed == 0 {
+		t.Fatal("first assignment should write communities")
+	}
+
+	a, _ := store.Get(ctx, "a")
+	b, _ := store.Get(ctx, "b")
+	c, _ := store.Get(ctx, "c")
+	if a.Community != b.Community {
+		t.Fatalf("editor facts should share a community: a=%d b=%d", a.Community, b.Community)
+	}
+	if a.Community == c.Community {
+		t.Fatalf("editor and deployment facts must differ: a=%d c=%d", a.Community, c.Community)
+	}
+
+	// Idempotent: a second run over an unchanged set rewrites nothing.
+	if again, _ := AssignCommunities(ctx, store, scopeA); again != 0 {
+		t.Fatalf("re-assign over an unchanged set should be a no-op, wrote %d", again)
 	}
 }

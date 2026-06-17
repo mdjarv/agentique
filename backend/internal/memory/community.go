@@ -1,6 +1,46 @@
 package memory
 
-import "sort"
+import (
+	"context"
+	"sort"
+)
+
+// AssignCommunities recomputes the topic-cluster id of every durable fact in a
+// scope (DetectCommunities over the current Related graph + token-Jaccard) and
+// persists it onto each record. Like RelinkScope it is deterministic and
+// idempotent — a record whose community is unchanged is not rewritten, so it
+// doesn't churn files or timestamps — and it ignores captures. Returns the number
+// of records whose community changed. Run it AFTER RelinkScope so it sees the
+// freshly rebuilt edges.
+func AssignCommunities(ctx context.Context, store Store, scope Scope) (int, error) {
+	all, err := store.List(ctx, scope)
+	if err != nil {
+		return 0, err
+	}
+	facts := make([]Record, 0, len(all))
+	for _, r := range all {
+		if r.Source != SourceCapture {
+			facts = append(facts, r)
+		}
+	}
+	if len(facts) == 0 {
+		return 0, nil
+	}
+	comm := DetectCommunities(facts, DefaultRelatedThreshold)
+	changed := 0
+	for _, r := range facts {
+		c := comm[r.ID]
+		if r.Community == c {
+			continue
+		}
+		r.Community = c
+		if err := store.Put(ctx, r); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
 
 // DetectCommunities partitions a record set into communities (topic clusters) via
 // deterministic label propagation over a similarity graph. Edges come from two

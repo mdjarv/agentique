@@ -15,6 +15,9 @@ export interface Memory {
   updatedAt: string;
   derivedFrom?: string[];
   related?: string[];
+  // Derived topic-cluster id within the scope (set by consolidation). Scope-local:
+  // only comparable among memories of the same scope.
+  community?: number;
 }
 
 export interface BrainStatus {

@@ -25,8 +25,11 @@ interface NodeData {
   source: string;
   uses: number;
   pinned: boolean;
+  community: number;
   val: number;
 }
+
+type ColorBy = "scope" | "community";
 
 type EdgeKind = "provenance" | "related" | "similar";
 interface LinkData {
@@ -72,6 +75,19 @@ function scopeColor(scope: string): string {
   return PALETTE[hashStr(scope) % PALETTE.length] ?? GLOBAL_COLOR;
 }
 
+// communityColor colors a node by its topic cluster. Community ids are scope-local,
+// so the palette key mixes scope + community to keep clusters from different scopes
+// distinct (RFC P3 — "color = community after P3").
+function communityColor(scope: string, community: number): string {
+  return PALETTE[hashStr(`${scope}#${community}`) % PALETTE.length] ?? GLOBAL_COLOR;
+}
+
+function nodeColor(node: NodeData, colorBy: ColorBy): string {
+  return colorBy === "community"
+    ? communityColor(node.scope, node.community)
+    : scopeColor(node.scope);
+}
+
 function tokenize(text: string): Set<string> {
   const out = new Set<string>();
   for (const w of text.toLowerCase().split(/[^a-z0-9]+/)) {
@@ -105,6 +121,7 @@ export function BrainGraph({
   labelForScope: (scope: string) => string;
 }) {
   const [showSimilar, setShowSimilar] = useState(true);
+  const [colorBy, setColorBy] = useState<ColorBy>("scope");
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [fg, setFg] = useState("#9ca3af");
@@ -135,6 +152,7 @@ export function BrainGraph({
       source: m.source,
       uses: m.uses,
       pinned: m.pinned,
+      community: m.community ?? 0,
       val: 2 + Math.min(m.uses, 12) + (m.pinned ? 2 : 0),
     }));
 
@@ -223,6 +241,13 @@ export function BrainGraph({
     g.d3ReheatSimulation();
   }, [nodes]);
 
+  // Recoloring doesn't touch graphData, so the settled canvas won't repaint on its
+  // own — nudge a redraw when the color dimension changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `colorBy` is a trigger-only dep — the new color is read by nodeCanvasObject on the next paint; this effect just forces that paint.
+  useEffect(() => {
+    (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
+  }, [colorBy]);
+
   const neighbors = hoverId ? adjacency.get(hoverId) : null;
   const linkTouchesHover = (l: GLink) =>
     hoverId != null && (endId(l.source) === hoverId || endId(l.target) === hoverId);
@@ -263,7 +288,7 @@ export function BrainGraph({
               ctx.globalAlpha = dim ? 0.15 : 1;
               ctx.beginPath();
               ctx.arc(x, y, r, 0, 2 * Math.PI);
-              ctx.fillStyle = scopeColor(node.scope);
+              ctx.fillStyle = nodeColor(node, colorBy);
               ctx.fill();
               if (node.pinned) {
                 ctx.strokeStyle = "#facc15";
@@ -315,14 +340,28 @@ export function BrainGraph({
       )}
 
       {/* Controls */}
-      <label className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
-        <input
-          type="checkbox"
-          checked={showSimilar}
-          onChange={(e) => setShowSimilar(e.target.checked)}
-        />
-        Similarity links
-      </label>
+      <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
+        <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
+          <input
+            type="checkbox"
+            checked={showSimilar}
+            onChange={(e) => setShowSimilar(e.target.checked)}
+          />
+          Similarity links
+        </label>
+        <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
+          <span className="text-muted-foreground">Color</span>
+          <select
+            value={colorBy}
+            onChange={(e) => setColorBy(e.target.value as ColorBy)}
+            className="bg-transparent outline-none"
+            title="Color nodes by scope, or by topic cluster (community) detected during consolidation"
+          >
+            <option value="scope">by scope</option>
+            <option value="community">by cluster</option>
+          </select>
+        </label>
+      </div>
 
       {/* Legend */}
       <div className="absolute bottom-3 left-3 max-w-[14rem] space-y-1 rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
@@ -331,15 +370,21 @@ export function BrainGraph({
           <span className="ml-1 inline-block h-0 w-5 border-t border-dashed border-foreground/60" />
           similar
         </div>
-        {scopeLegend.map((s) => (
-          <div key={s.scope} className="flex items-center gap-1.5 truncate">
-            <span
-              className="inline-block size-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: s.color }}
-            />
-            <span className="truncate">{s.label}</span>
+        {colorBy === "community" ? (
+          <div className="text-muted-foreground">
+            Colored by topic cluster — facts in the same cluster consolidate together.
           </div>
-        ))}
+        ) : (
+          scopeLegend.map((s) => (
+            <div key={s.scope} className="flex items-center gap-1.5 truncate">
+              <span
+                className="inline-block size-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className="truncate">{s.label}</span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
