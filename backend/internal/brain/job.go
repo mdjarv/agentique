@@ -34,14 +34,15 @@ const (
 // Apply it.
 type JobState struct {
 	ID      string     `json:"id"`
-	Kind    string     `json:"kind"`  // "scope" | "global"
+	Kind    string     `json:"kind"`  // "scope" | "global" | "all"
 	Scope   string     `json:"scope,omitempty"`
 	Model   string     `json:"model,omitempty"`
 	Phase   string     `json:"phase"` // running | done | error
 	Current int        `json:"current"`
 	Total   int        `json:"total"`
-	Report  *reportDTO `json:"report,omitempty"` // changelog, set on done
-	Plan    any        `json:"plan,omitempty"`   // memory.Plan (scope) or memory.GlobalPlan (global)
+	Report  *reportDTO `json:"report,omitempty"`  // changelog, set on done (scope/global)
+	Plan    any        `json:"plan,omitempty"`    // memory.Plan (scope) or memory.GlobalPlan (global)
+	Changes int        `json:"changes,omitempty"` // aggregate change count for "all"
 	Error   string     `json:"error,omitempty"`
 }
 
@@ -180,6 +181,54 @@ func (h *Handler) runGlobalJob(job JobState, m claudecli.Model) {
 		return
 	}
 	h.finishJob(job, rep, plan)
+}
+
+// startTidyAllJob kicks off a bulk consolidation of every scope in the background.
+// Unlike preview jobs it AUTO-APPLIES each scope (an on-demand sleep pass), relying
+// on the consolidation guards; progress is per-scope.
+func (h *Handler) startTidyAllJob(model string) (JobState, error) {
+	if h.Runner == nil {
+		return JobState{}, httperror.BadRequest("tidy all requires a model")
+	}
+	m, err := ParseModel(model)
+	if err != nil {
+		return JobState{}, httperror.BadRequest(err.Error())
+	}
+	job, err := h.beginJob(JobState{ID: uuid.NewString(), Kind: "all", Model: model, Phase: phaseRunning})
+	if err != nil {
+		return JobState{}, err
+	}
+	go h.runTidyAllJob(job, m)
+	return job, nil
+}
+
+func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
+	ctx := context.Background()
+	ex := NewClaudeExtractor(h.Runner, m)
+	scopes, err := h.Service.ListScopes(ctx)
+	if err != nil {
+		h.failJob(job, err)
+		return
+	}
+	job.Total = len(scopes)
+	h.publishJob(job)
+	for i, scope := range scopes {
+		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false)
+		if cerr != nil {
+			// One bad scope shouldn't sink the bulk pass — log and continue.
+			slog.Warn("brain: tidy all: scope failed", "scope", scope, "error", cerr)
+		} else {
+			changes := len(rep.Promoted) + len(rep.Rewritten) + len(rep.Abstracted) + len(rep.Deleted) + len(rep.Decayed)
+			job.Changes += changes
+			if changes > 0 {
+				h.brainChanged() // flare + refresh as each scope lands
+			}
+		}
+		job.Current = i + 1
+		h.publishJob(job)
+	}
+	job.Phase = phaseDone
+	h.publishJob(job)
 }
 
 // HandleConsolidateJob GET /api/brain/consolidate/job

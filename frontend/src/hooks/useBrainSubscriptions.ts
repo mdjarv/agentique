@@ -14,6 +14,9 @@ export function useBrainSubscriptions(ws: ReturnType<typeof useWebSocket>) {
       useBrainStore.getState().setJob(job);
       if (job.phase === "error") {
         toast.error(job.error || "Consolidation failed");
+      } else if (job.kind === "all" && job.phase === "done") {
+        const n = job.changes ?? 0;
+        toast.success(`Tidied all scopes — ${n} change${n === 1 ? "" : "s"}`);
       }
     });
     const unsubUpdated = ws.subscribe("brain.updated", () => {

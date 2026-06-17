@@ -150,7 +150,7 @@ export interface ConsolidationPlan {
 // model run, and every tab sees the same job.
 export interface ConsolidationJob {
   id: string;
-  kind: "scope" | "global";
+  kind: "scope" | "global" | "all";
   scope?: string;
   model?: string;
   phase: "running" | "done" | "error";
@@ -158,6 +158,7 @@ export interface ConsolidationJob {
   total: number;
   report?: ConsolidateReport;
   plan?: ConsolidationPlan | GlobalConsolidationPlan;
+  changes?: number; // aggregate change count for kind "all"
   error?: string;
 }
 
@@ -170,6 +171,18 @@ export async function startScopePreview(scope: string, model: string): Promise<C
     body: JSON.stringify({ scope, model }),
   });
   await throwIfNotOk(res, "Failed to start preview");
+  return (await res.json()).job;
+}
+
+// startTidyAll kicks off a bulk consolidation of every scope (auto-applied). The
+// model runs in the background; progress arrives over the WS bus.
+export async function startTidyAll(model: string): Promise<ConsolidationJob> {
+  const res = await fetch(`${BASE}/consolidate/all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  await throwIfNotOk(res, "Failed to start tidy all");
   return (await res.json()).job;
 }
 

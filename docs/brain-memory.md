@@ -112,6 +112,10 @@ Auto-approved, scoped to the calling session's project (+ global):
   {plan}` and `/consolidate/global/apply {plan}` replay the held plan
   deterministically — no model call — returning `409` on a stale plan.
 - `POST /consolidate {scope}` remains for a synchronous deterministic-only pass.
+- `POST /consolidate/all {model}` — the "Tidy all" button: a background job that
+  consolidates **every scope and auto-applies each** (an on-demand sleep pass,
+  kind `"all"`), relying on the guards; progress is per-scope. One job at a time, so
+  it can't overlap a single-scope/global tidy.
 
 Background consolidation runs off the request context so a request hiccup can't
 SIGTERM the model subprocess; see `brain/job.go`. Job state is **in-memory** (one

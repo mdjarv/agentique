@@ -48,6 +48,8 @@ export function BrainPage() {
     startGlobalConsolidate,
     applyGlobalPreview,
     dismissGlobalPreview,
+    tidyingAll,
+    startTidyAll,
     hydrateJob,
   } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
@@ -143,6 +145,14 @@ export function BrainPage() {
     }
   };
 
+  const handleTidyAll = async () => {
+    try {
+      await startTidyAll(model);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Tidy all failed"));
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader>
@@ -166,6 +176,24 @@ export function BrainPage() {
             </option>
           ))}
         </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={tidyingAll}
+          onClick={handleTidyAll}
+          title={`Consolidate every scope with ${model} and apply automatically`}
+        >
+          {tidyingAll ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Sparkles className="size-4" />
+          )}
+          {tidyingAll
+            ? progress
+              ? `Tidying… ${progress.current}/${progress.total}`
+              : "Tidying…"
+            : "Tidy all"}
+        </Button>
         <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
           <Plus className="size-4" /> Add
         </Button>

@@ -263,6 +263,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("POST /api/brain/consolidate/apply", httperror.HandlerFunc(bh.HandleApplyConsolidate))
 			mux.Handle("POST /api/brain/consolidate/global/preview", httperror.HandlerFunc(bh.HandlePreviewGlobal))
 			mux.Handle("POST /api/brain/consolidate/global/apply", httperror.HandlerFunc(bh.HandleApplyGlobal))
+			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleTidyAll))
 			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
 			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
 			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())

@@ -302,6 +302,24 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
+// HandleTidyAll POST /api/brain/consolidate/all  {model}
+// Starts a background job that consolidates every scope and auto-applies each
+// (an on-demand sleep pass). Returns the initial job; progress arrives over WS.
+func (h *Handler) HandleTidyAll(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	job, err := h.startTidyAllJob(body.Model)
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusAccepted, map[string]any{"job": job})
+	return nil
+}
+
 // HandlePreviewGlobal POST /api/brain/consolidate/global/preview  {model}
 // Starts the cross-scope promotion preview as a background job (it runs the model
 // across all projects — potentially many batches). Returns the initial state;
