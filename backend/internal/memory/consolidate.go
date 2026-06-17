@@ -456,7 +456,7 @@ func toFacts(rs []Record) []Fact {
 // arbitrary 100-fact slice. The labels never reach the model and don't affect the
 // fingerprint (which hashes only id/text/category), so plans stay reproducible.
 func factsForReorg(rs []Record) []Fact {
-	comm := DetectCommunities(rs, DefaultRelatedThreshold)
+	comm := DetectCommunities(rs, DefaultCommunityThreshold)
 	out := make([]Fact, len(rs))
 	for i, r := range rs {
 		out[i] = Fact{ID: r.ID, Text: r.Text, Category: r.Category, Community: comm[r.ID]}

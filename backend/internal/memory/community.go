@@ -5,6 +5,16 @@ import (
 	"sort"
 )
 
+// DefaultCommunityThreshold is the token-Jaccard similarity at or above which two
+// facts are joined for *topic clustering* (DetectCommunities). It is deliberately
+// LOWER than DefaultRelatedThreshold (0.3): a Related edge means "nearly the same
+// fact", whereas a community is a broader topic group. On real bloated scopes 0.3
+// leaves almost everything a singleton (so cluster-aware chunking degenerates to
+// fixed-size); 0.15 surfaces coherent topic clusters (e.g. all of a project's
+// "config/discovery" facts) that fit in one reorganize call, while staying above
+// the point where unrelated facts collapse into one giant blob. Tunable.
+const DefaultCommunityThreshold = 0.15
+
 // AssignCommunities recomputes the topic-cluster id of every durable fact in a
 // scope (DetectCommunities over the current Related graph + token-Jaccard) and
 // persists it onto each record. Like RelinkScope it is deterministic and
@@ -26,7 +36,7 @@ func AssignCommunities(ctx context.Context, store Store, scope Scope) (int, erro
 	if len(facts) == 0 {
 		return 0, nil
 	}
-	comm := DetectCommunities(facts, DefaultRelatedThreshold)
+	comm := DetectCommunities(facts, DefaultCommunityThreshold)
 	changed := 0
 	for _, r := range facts {
 		c := comm[r.ID]
