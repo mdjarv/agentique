@@ -190,6 +190,50 @@ func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// ImportRecords merges records into targetScope, skipping any that duplicate an
+// existing fact in that scope (or global). It preserves text/category/source and
+// the pinned/locked flags but assigns fresh IDs and timestamps, so importing the
+// same bundle twice is idempotent. Returns the number of new facts written.
+func (s *Service) ImportRecords(ctx context.Context, targetScope memory.Scope, recs []memory.Record) (int, error) {
+	existing, err := s.store.List(ctx, recallScopes(targetScope)...)
+	if err != nil {
+		return 0, err
+	}
+	pool := make([]memory.Record, 0, len(existing))
+	for _, r := range existing {
+		if r.Source != memory.SourceCapture {
+			pool = append(pool, r)
+		}
+	}
+	added := 0
+	for _, src := range recs {
+		text := strings.TrimSpace(src.Text)
+		if text == "" {
+			continue
+		}
+		if _, dup := memory.FindDuplicate(text, pool, memory.DefaultDuplicateThreshold); dup {
+			continue
+		}
+		category := src.Category
+		if category == "" {
+			category = memory.CategoryFact
+		}
+		source := src.Source
+		if source == "" {
+			source = memory.SourceHuman
+		}
+		nr := memory.New(targetScope, text, category, source)
+		nr.Pinned = src.Pinned
+		nr.Locked = src.Locked
+		if err := s.store.Put(ctx, nr); err != nil {
+			return added, err
+		}
+		pool = append(pool, nr)
+		added++
+	}
+	return added, nil
+}
+
 // ListScopes returns the distinct scopes that currently hold memories — used by
 // the periodic "sleep" pass to know what to consolidate.
 func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {

@@ -62,6 +62,47 @@ func TestPinnedPreambleAndListScopes(t *testing.T) {
 	}
 }
 
+func TestImportRecordsDedupAndFlags(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	scope := ScopeForProject("p1")
+	if _, err := s.Add(ctx, scope, "Project builds with just.", memory.CategoryProject, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	recs := []memory.Record{
+		{Text: "project builds with just", Category: memory.CategoryProject, Source: memory.SourceConsolidated}, // dup → skip
+		{Text: "User prefers concise replies.", Category: memory.CategoryPreference, Source: memory.SourceHuman, Pinned: true},
+		{Text: "Locked convention.", Category: memory.CategoryFact, Source: memory.SourceConsolidated, Locked: true},
+		{Text: "   ", Category: memory.CategoryFact}, // empty → skip
+	}
+	n, err := s.ImportRecords(ctx, scope, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("want 2 imported (dup + empty skipped), got %d", n)
+	}
+
+	all, _ := s.List(ctx, scope)
+	var pinned, locked int
+	for _, r := range all {
+		if r.Pinned {
+			pinned++
+		}
+		if r.Locked {
+			locked++
+		}
+	}
+	if pinned != 1 || locked != 1 {
+		t.Fatalf("import must preserve pinned/locked flags: pinned=%d locked=%d", pinned, locked)
+	}
+
+	if n2, _ := s.ImportRecords(ctx, scope, recs); n2 != 0 {
+		t.Fatalf("re-import should be idempotent, got %d new", n2)
+	}
+}
+
 func TestAddDedupAndIdentityPin(t *testing.T) {
 	s := newSvc(t)
 	ctx := context.Background()
