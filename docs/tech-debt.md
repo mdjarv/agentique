@@ -88,22 +88,28 @@ could share one tokenize+adjacency build and one write per changed record.
 ### Brain: large reorganize chunks intermittently crash the CLI
 A structured-output reorganize of a ~45-fact chunk sometimes crashes the `claude`
 subprocess (`claudecli: exit 1`, **no** result events — not `error_max_turns`,
-which claudecli classifies as non-fatal). Mitigated, not fixed: per-chunk retry
-(`reorgMaxAttempts=3`) + resilient no-op (a chunk that still fails keeps its facts
-unchanged instead of aborting the scope). On a live reviewbot aggressive Tidy
-(`opus`, 9 chunks) the crash rate was high enough that 2 chunks (~90 facts)
-exhausted all 3 retries and were left un-tidied (the other 7 still previewed
-222 deletions + 102 rewrites; a re-run converges). Worth: raising retries, lowering
-the aggressive batch further, or root-causing the CLI crash (capture
-`Error.LastEvents` / stderr — `WithStderrCallback` produced nothing, so it's a
-silent subprocess death). → `internal/brain/extractor.go`.
+which claudecli classifies as non-fatal). Mitigated, not fixed. Current mitigations:
+per-chunk retry (`reorgMaxAttempts=4`, raised from 3) + resilient no-op (a chunk that
+still fails keeps its facts unchanged instead of aborting the scope) + a smaller
+aggressive batch (`aggressiveMaxReorgBatch=35` vs the conservative 50), since
+aggressive runs on exactly the bloated, long-fact scopes that crash most.
+**Instrumentation added (2026-06-17):** the retry and give-up logs now capture
+`claudecli.Error.{ExitCode,Stderr,LastEvents}` via `cliErrorFields` — `LastEvents`
+holds the last raw stdout JSONL lines before the exit, the one handle on this
+otherwise-silent death (`WithStderrCallback` produced nothing). Next step: read those
+`lastEvents` from a live crash to root-cause whether it's an output-budget wall (→
+shrink the batch by token estimate, not fact count) or a CLI bug (→ upstream).
+→ `internal/brain/extractor.go`.
 
 ### Brain: tunables are hardcoded constants
-`maxReorgBatch=50`, `reorgMaxAttempts=3`, `maxPromoteBatch=120`,
-`maxParallelBatches`/`maxParallelReorg=4`, `maxRelatedDegree=6`,
+`maxReorgBatch=50`, `aggressiveMaxReorgBatch=35`, `reorgMaxAttempts=4`,
+`maxPromoteBatch=120`, `maxParallelBatches`/`maxParallelReorg=4`, `maxRelatedDegree=6`,
 `DefaultRelatedThreshold=0.3`, `DefaultCommunityThreshold=0.15`,
-`AggressiveMinSurvivorRatio=0.2` / `defaultMinSurvivorRatio=0.5`, recall fan-out
-(`assocPerSeed=3`, total ≤K) — no flags/config to tune per deployment or scope size.
+`AggressiveMinSurvivorRatio=0.2` / `defaultMinSurvivorRatio=0.5`, the P2 confidence
+scores (`DefaultInferredScore=0.8`, `CrossProjectInferredScore=0.65`,
+`AmbiguousScoreThreshold=0.55`) and report caps (`maxGodNodes`/`maxBridges=8`,
+`maxNeedsConfirmation=25`), recall fan-out (`assocPerSeed=3`, total ≤K) — no
+flags/config to tune per deployment or scope size.
 
 ### Brain: single consolidation job slot
 Only one consolidation runs at a time (`beginJob` 409s a second); "Tidy all" is

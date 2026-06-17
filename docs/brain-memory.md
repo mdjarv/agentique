@@ -100,7 +100,9 @@ construction:
   arbitrary 100-fact slice. A **conservative** prompt merges only true duplicates;
   an **aggressive** prompt collapses families of granular facts into broad rules
   (preview-gated).
-- **decay** stale, low-use facts (opt-in via `DecayPolicy`).
+- **decay** stale, low-use facts (opt-in via `DecayPolicy`). With
+  `ConfidenceWeighted` set, each fact's effective max-age is scaled by its confidence
+  score (RFC P2), so the brain forgets what it is least sure about first.
 - **never touches** pinned, locked, or human-authored facts.
 - a **fingerprint** of the reorganizable set is persisted per scope; an unchanged
   set skips the (expensive) LLM reorganization.
@@ -131,7 +133,8 @@ Auto-approved, scoped to the calling session's project (+ global):
 ## Brain tab REST API
 
 - `/api/brain/memories` (GET/POST), `/{id}` (GET/PUT/DELETE), `/{id}/pin`,
-  `/{id}/lock`, `/search`, `/status`.
+  `/{id}/lock`, `/{id}/confirm` (accept a low-confidence fact as ground truth),
+  `/search`, `/graph` (centrality + insight report), `/status`.
 - **Consolidation is preview → apply.** `POST /consolidate/preview
   {scope,model,mode,force}` (mode `conservative|aggressive`; force re-runs an
   unchanged scope) and `POST /consolidate/global/preview {model}` start a background
@@ -232,6 +235,12 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
 - `community.go` — `DetectCommunities` (deterministic label propagation) +
   `AssignCommunities` (persists `Record.Community`); feeds cluster-aware chunking
   (`brain/extractor.go`) and graph cluster coloring. RFC P3.
+- `confidence.go` — `ConfidenceTier`/`ConfidenceScore` on `Record` (RFC P2): the
+  source→confidence mapping (`ConfidenceForSource`), score-canonical tier derivation
+  (`TierForScore`), and lazy backfill (`NormalizeConfidence`). Drives
+  `DecayPolicy.ConfidenceWeighted` and the confirm UX.
+- `centrality.go` — `ComputeCentrality` (degree + Brandes betweenness over the
+  `Related`/`DerivedFrom` structural graph); request-time, never persisted. RFC P2.
 - `dedup.go` `tokenize.go` `filestore/` `chroma/` `embedhttp/`.
 
 agentique glue — `backend/internal/brain/`:
@@ -239,6 +248,8 @@ agentique glue — `backend/internal/brain/`:
   `PinnedPreamble`, `ListScopes`, `LearnFromTranscript`, `ImportRecords`.
 - `extractor.go` — `ClaudeExtractor` (model is a required param; JSON-schema
   constrained; chunked; `Extract`/`Reorganize`/`Promote`).
+- `graph.go` — `GET /api/brain/graph`: centrality-annotated nodes + a derived
+  insight report (god nodes, bridges, confirm queue, isolated gaps). RFC P2.
 - `job.go` — async consolidation jobs + WS push types (`brain.consolidation`,
   `EventBrainUpdated`).
 - `automation.go` — the scheduled "sleep" loop.
@@ -275,8 +286,9 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
-  (community detection → cluster-aware consolidation + aggressive Tidy) is **done**;
-  centrality (degree/betweenness "god nodes") and P2 confidence tiers remain.
+  (community detection → cluster-aware consolidation + aggressive Tidy) and P2
+  (confidence tiers + degree/betweenness centrality + the confirm UX) are **done**;
+  the cross-scope graph play (P5) is the only remaining RFC proposal.
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
   captures for a later sleep pass; the `SourceCapture` path exists but nothing

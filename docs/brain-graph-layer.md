@@ -2,16 +2,21 @@
 
 Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 
-> **Progress:** graph-view v1, **P1 (link graph + associative recall)** and **P3
-> (community detection → cluster-aware consolidation + aggressive Tidy)** are
-> implemented — see `memory/{link,community}.go`, `recall.go`'s `expandAssociative`,
-> the cluster-aware chunker in `brain/extractor.go`, and the relink/cluster hooks in
-> `consolidate.go`. P2/P5 not started. Decisions resolved:
+> **Progress:** graph-view v1, **P1 (link graph + associative recall)**, **P3
+> (community detection → cluster-aware consolidation + aggressive Tidy)** and **P2
+> (confidence tiers + centrality + confirm UX)** are implemented — see
+> `memory/{link,community,confidence,centrality}.go`, `recall.go`'s
+> `expandAssociative`, the cluster-aware chunker in `brain/extractor.go`, the
+> `brain/graph.go` insight endpoint, and the relink/cluster/confidence hooks in
+> `consolidate.go`. P5 not started. Decisions resolved:
 > - **#1** (edge persistence): *persist* similarity edges in `Related` (rebuilt each
 >   apply); the graph view still recomputes Jaccard for dashed edges.
 > - **#2** (community algorithm): **label propagation**, made deterministic by
 >   sorting nodes by id and breaking label ties by smallest id — reproducible plans
 >   without Louvain's extra code.
+> - **#4** (confidence backfill): *derive lazily from `Source` on load*, never blank
+>   — human→EXTRACTED/ground-truth, everything else→INFERRED at the default score;
+>   the derived value is persisted on the record's next write (see P2 below).
 > - **community threshold**: topic clustering uses a *separate, lower* Jaccard
 >   threshold (`DefaultCommunityThreshold` = 0.15) than the 0.3 Related-edge
 >   threshold. Verified on the live reviewbot scope: at 0.3, 386/404 facts are
@@ -69,13 +74,42 @@ appended, never rewritten.
 project's own "cognitive loop" framing. Bounded fan-out (e.g. ≤ N neighbors per seed, total cap) so
 the hot path stays cheap.
 
-### P2 — Confidence tiers on facts
+### P2 — Confidence tiers on facts ✅ implemented
 
 Adopt graphify's three-tier rubric (`EXTRACTED` / `INFERRED` / `AMBIGUOUS`, with a 0.55–0.95 score
 for inferred). We have `Source` but no confidence. Mapping: hand-edited / human = ground truth;
 LLM-distilled capture = `INFERRED`; cross-project generalization = `INFERRED` + score. Drives two
 things: a sharper decay signal (decay low-confidence, low-`Uses` facts faster) and the
-"confirm what I'm unsure about" UX in P4.
+"confirm what I'm unsure about" UX.
+
+**Shipped (2026-06-17):**
+- `memory/confidence.go` — `ConfidenceTier` (`extracted`/`inferred`/`ambiguous`) +
+  a 0..1 `ConfidenceScore` on `Record`. The **score is canonical**; the tier is
+  always derived from `(Source, score)` via `TierForScore`, so the pair can't drift.
+  `ConfidenceForSource` is the RFC mapping: human→`EXTRACTED`@1.0,
+  everything-else→`INFERRED`@0.8; `ApplyGlobalPromotion` overrides a generalized fact
+  to `CrossProjectInferredScore` (0.65) — a riskier inference lands near the bottom of
+  the band where the confirm UX surfaces it. `New()` stamps confidence from Source;
+  the reorganize-rewrite path reconciles it; `filestore` persists `confidence` /
+  `confidence_score` and **backfills missing values from Source on load**
+  (open-decision #4) so pre-P2 facts need no migration.
+- **Sharper decay** — `DecayPolicy.ConfidenceWeighted` scales each fact's effective
+  `MaxAge` by its score, so the brain forgets what it is least sure about first.
+  Off by default, like decay itself (EXTRACTED facts are human-authored → already
+  exempt from decay via `isProtected`). The mechanism lives in the core; no live path
+  enables decay today.
+- **Centrality** (the cheap win below) — `memory/centrality.go`.
+- **Confirm UX** — `brain/graph.go` derives a `needsConfirmation` queue (non-protected
+  facts at/under `NeedsConfirmationScore`); `POST /memories/{id}/confirm`
+  (`Service.Confirm`) accepts a fact as ground truth (human/`EXTRACTED`, thereafter
+  protected). The Brain tab shows a confidence dot on each card with a Confirm action,
+  and the graph view's Insights panel lists the confirm queue inline. The reject side
+  is a plain Delete.
+
+`AMBIGUOUS` is the bucket for an inferred fact whose score has fallen below
+`AmbiguousScoreThreshold` (0.55). At creation nothing is AMBIGUOUS (the lowest
+assigned score is 0.65); the tier becomes reachable through a hand-edit or, once
+enabled, confidence-weighted decay erosion — a documented future extension.
 
 ### P3 — Community detection in Go ✅ implemented
 
@@ -109,8 +143,14 @@ betweenness (→ bridge facts) straight off the adjacency list.
   `brain consolidate --rerun` flag (needed to re-tidy after prompt/algorithm changes).
 - **Cluster coloring** — the graph view's "Color by scope/cluster" toggle paints
   nodes by `community`.
-
-Not yet done: centrality (degree/betweenness) — cheap follow-up off the adjacency list.
+- **Centrality** (shipped with P2) — `memory/centrality.go`'s `ComputeCentrality`:
+  degree and Brandes betweenness (normalized to [0,1]) over the structural graph
+  (`Related` ∪ resolved `DerivedFrom`, the solid-edge signal — not the cosmetic dashed
+  Jaccard). Deterministic, request-time, never persisted. `GET /api/brain/graph`
+  serves it with a derived report — god nodes (top degree, load-bearing), bridges
+  (top betweenness, the riskiest to lose), isolated gaps, and the confirm queue —
+  which the graph view's Insights panel renders. Node size now blends degree, so god
+  nodes read bigger.
 
 ### P4 — Graph view ("what the brain knows about you")
 
@@ -168,18 +208,25 @@ codebase-specific facts.
    behind that number.
 3. **Recall fan-out budget.** How many hops / neighbors, and the decay applied to associative hits,
    without blowing the recall token budget.
-4. **Confidence backfill.** How to assign confidence to facts that predate P2 (default `INFERRED`?
-   leave blank and treat as unknown?).
+4. ~~**Confidence backfill.**~~ **Resolved: derive lazily from `Source` on load**,
+   never blank — `filestore.toRecord` calls `memory.NormalizeConfidence`, so a fact
+   with no `confidence` frontmatter (everything written before P2) gets the
+   source-implied tier/score and is persisted on its next write. Chosen over
+   leave-blank because `Source` already encodes the exact provenance the mapping keys
+   on (so the derivation is lossless) and a blank/unknown state would force every
+   consumer — decay, the confirm queue, the graph — to special-case it. No migration
+   pass needed.
 5. **Where the graph index lives.** Computed per-request in `brain`, or a cached adjacency in
-   `memory` invalidated on write? Start request-time; cache if it bites.
+   `memory` invalidated on write? **Started request-time** (P2's `GET /api/brain/graph`
+   computes centrality + report on each call); cache if it bites.
 
 ## Sequencing
 
 1. ~~**Graph-view v1** — force-graph over `derivedFrom` + computed similarity. No backend change.~~ ✅ done.
 2. ~~**P1** — populate `Related` in consolidation; associative recall.~~ ✅ done (`memory/link.go`).
 3. ~~**P3** — community detection → cluster coloring + within-community (cluster-aware) consolidation + aggressive Tidy.~~ ✅ done (`memory/community.go`, `brain/extractor.go`).
-4. **P2** — confidence tiers + the "confirm" UX. ← next.
-5. neo4j: parked as a documented optional export.
+4. ~~**P2** — confidence tiers + centrality + the "confirm" UX.~~ ✅ done (`memory/{confidence,centrality}.go`, `brain/graph.go`).
+5. neo4j: parked as a documented optional export. **P5** (ConsolidateGlobal via the graph) is the only remaining proposal.
 
 ## References
 
