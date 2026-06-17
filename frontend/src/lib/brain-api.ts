@@ -144,21 +144,41 @@ export interface ConsolidationPlan {
   captureIds: string[] | null;
 }
 
-export interface PreviewResult {
-  report: ConsolidateReport;
-  plan: ConsolidationPlan;
+// ConsolidationJob is the server-side state of a (potentially long) preview that
+// runs in the background. Progress and the final {report, plan} arrive over the
+// WebSocket — never via the kickoff request — so a request hiccup can't kill the
+// model run, and every tab sees the same job.
+export interface ConsolidationJob {
+  id: string;
+  kind: "scope" | "global";
+  scope?: string;
+  model?: string;
+  phase: "running" | "done" | "error";
+  current: number;
+  total: number;
+  report?: ConsolidateReport;
+  plan?: ConsolidationPlan | GlobalConsolidationPlan;
+  error?: string;
 }
 
-// previewConsolidate runs the LLM phase once and returns the proposed changelog
-// plus the plan that produced it. An empty model = deterministic dedup/decay only.
-export async function previewConsolidate(scope: string, model: string): Promise<PreviewResult> {
+// startScopePreview kicks off a per-scope preview job and returns its initial
+// (running) state. The result arrives over the WS bus. Empty model = deterministic.
+export async function startScopePreview(scope: string, model: string): Promise<ConsolidationJob> {
   const res = await fetch(`${BASE}/consolidate/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope, model }),
   });
-  await throwIfNotOk(res, "Failed to preview consolidation");
-  return res.json();
+  await throwIfNotOk(res, "Failed to start preview");
+  return (await res.json()).job;
+}
+
+// getConsolidationJob returns the current/most-recent job so a freshly opened tab
+// can resync to an in-flight (or just-finished) consolidation.
+export async function getConsolidationJob(): Promise<ConsolidationJob | null> {
+  const res = await fetch(`${BASE}/consolidate/job`);
+  await throwIfNotOk(res, "Failed to load consolidation job");
+  return (await res.json()).job;
 }
 
 // applyConsolidate applies a previewed plan deterministically (no model call).
@@ -181,21 +201,17 @@ export interface GlobalConsolidationPlan {
   fingerprints: Record<string, string>;
 }
 
-export interface GlobalPreviewResult {
-  report: ConsolidateReport;
-  plan: GlobalConsolidationPlan;
-}
-
-// previewGlobalConsolidate scans all projects and proposes cross-cutting facts to
-// promote to global, subsuming the per-project copies. Runs the model once.
-export async function previewGlobalConsolidate(model: string): Promise<GlobalPreviewResult> {
+// startGlobalPreview kicks off the cross-scope promotion preview as a background
+// job (it scans all projects — potentially many model batches). The result arrives
+// over the WS bus. Throws 409 if a consolidation is already running.
+export async function startGlobalPreview(model: string): Promise<ConsolidationJob> {
   const res = await fetch(`${BASE}/consolidate/global/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model }),
   });
-  await throwIfNotOk(res, "Failed to preview global consolidation");
-  return res.json();
+  await throwIfNotOk(res, "Failed to start global preview");
+  return (await res.json()).job;
 }
 
 // applyGlobalConsolidate applies a global plan deterministically. 409 if a project

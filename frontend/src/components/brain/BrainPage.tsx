@@ -38,15 +38,17 @@ export function BrainPage() {
     previewScope,
     previewing,
     applying,
+    progress,
     startPreview,
     applyPreview,
     dismissPreview,
     globalPreview,
     globalPreviewing,
     globalApplying,
-    startGlobalPreview,
+    startGlobalConsolidate,
     applyGlobalPreview,
     dismissGlobalPreview,
+    hydrateJob,
   } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
   const [filter, setFilter] = useState("");
@@ -66,7 +68,9 @@ export function BrainPage() {
 
   useEffect(() => {
     if (!loaded) load();
-  }, [loaded, load]);
+    // Resync to any consolidation already running (e.g. started in another tab).
+    hydrateJob();
+  }, [loaded, load, hydrateJob]);
 
   const labelForScope = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
@@ -124,7 +128,7 @@ export function BrainPage() {
 
   const handleGlobalConsolidate = async () => {
     try {
-      await startGlobalPreview(model);
+      await startGlobalConsolidate(model);
     } catch (err) {
       toast.error(getErrorMessage(err, "Global preview failed"));
     }
@@ -250,6 +254,7 @@ export function BrainPage() {
                 <ConsolidatePreview
                   previewing={globalPreviewing}
                   applying={globalApplying}
+                  progress={progress}
                   report={globalPreview?.report ?? null}
                   onApply={handleApplyGlobal}
                   onDismiss={dismissGlobalPreview}
@@ -260,6 +265,7 @@ export function BrainPage() {
                 <ConsolidatePreview
                   previewing={previewing}
                   applying={applying}
+                  progress={progress}
                   report={preview?.report ?? null}
                   onApply={handleApply}
                   onDismiss={dismissPreview}
@@ -292,6 +298,7 @@ export function BrainPage() {
 function ConsolidatePreview({
   previewing,
   applying,
+  progress,
   report,
   onApply,
   onDismiss,
@@ -299,6 +306,7 @@ function ConsolidatePreview({
 }: {
   previewing: boolean;
   applying: boolean;
+  progress: { current: number; total: number } | null;
   report: ConsolidateReport | null;
   onApply: () => void;
   onDismiss: () => void;
@@ -307,7 +315,10 @@ function ConsolidatePreview({
   if (previewing) {
     return (
       <div className="mb-3 rounded-md border bg-muted/30 p-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" /> Analyzing memories…
+        <Loader2 className="size-3.5 animate-spin" />
+        {progress
+          ? `Analyzing memories… ${progress.current}/${progress.total}`
+          : "Analyzing memories…"}
       </div>
     );
   }

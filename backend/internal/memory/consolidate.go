@@ -59,6 +59,13 @@ type ConsolidateOptions struct {
 	// Report with every change it WOULD make, but writes nothing to the Store. Used
 	// for safe previews on live, session-shared memory.
 	DryRun bool
+	// Progress, when set, is called after each batch of a chunked LLM pass with the
+	// number of batches completed and the total. Lets a host report live progress.
+	Progress func(done, total int)
+	// OnError, when set, is called for a recoverable per-batch LLM error; the pass
+	// logs it via the host and continues with the remaining batches instead of
+	// aborting. A context cancellation always aborts regardless.
+	OnError func(error)
 }
 
 // Change records a rewritten fact.

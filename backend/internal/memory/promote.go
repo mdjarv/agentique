@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 )
@@ -80,16 +80,30 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 		return candidates[i].ID < candidates[j].ID
 	})
 
-	for i := 0; i < len(candidates); i += maxPromoteBatch {
+	total := (len(candidates) + maxPromoteBatch - 1) / maxPromoteBatch
+	for i, done := 0, 0; i < len(candidates); i += maxPromoteBatch {
 		end := i + maxPromoteBatch
 		if end > len(candidates) {
 			end = len(candidates)
 		}
 		got, perr := pr.Promote(ctx, candidates[i:end])
 		if perr != nil {
-			return plan, fmt.Errorf("memory: promote: %w", perr)
+			// A cancelled context aborts the whole pass; any other batch error is
+			// recoverable — skip this batch and keep going so one bad call can't sink
+			// a 15-batch run.
+			if ctx.Err() != nil || errors.Is(perr, context.Canceled) {
+				return plan, perr
+			}
+			if opts.OnError != nil {
+				opts.OnError(perr)
+			}
+		} else {
+			plan.Promotions = append(plan.Promotions, got...)
 		}
-		plan.Promotions = append(plan.Promotions, got...)
+		done++
+		if opts.Progress != nil {
+			opts.Progress(done, total)
+		}
 	}
 
 	for scope, rs := range byScope {

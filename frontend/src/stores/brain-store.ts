@@ -2,20 +2,32 @@ import { create } from "zustand";
 import {
   applyConsolidate,
   applyGlobalConsolidate,
+  type ConsolidateReport,
+  type ConsolidationJob,
+  type ConsolidationPlan,
   type CreateMemoryInput,
   createMemory,
   deleteMemory,
-  type GlobalPreviewResult,
+  type GlobalConsolidationPlan,
+  getConsolidationJob,
   getStatus,
   listMemories,
   type Memory,
-  type PreviewResult,
-  previewConsolidate,
-  previewGlobalConsolidate,
   setLocked,
   setPinned,
+  startGlobalPreview,
+  startScopePreview,
   updateMemory,
 } from "~/lib/brain-api";
+
+interface ScopePreview {
+  report: ConsolidateReport;
+  plan: ConsolidationPlan;
+}
+interface GlobalPreview {
+  report: ConsolidateReport;
+  plan: GlobalConsolidationPlan;
+}
 
 interface BrainState {
   memories: Memory[];
@@ -23,13 +35,22 @@ interface BrainState {
   loaded: boolean;
   loading: boolean;
 
-  // A single in-flight consolidation preview (one scope at a time): the model's
-  // proposal, awaiting Apply or Dismiss. The model runs at preview; apply replays
-  // the held plan with no further model call.
-  preview: PreviewResult | null;
+  // Consolidation runs as a background job on the server; progress and the final
+  // result arrive over the WebSocket (via setJob), so these mirror that job and
+  // are shared across tabs. preview/globalPreview hold the model's proposal once a
+  // job finishes; the matching plan is posted back to apply.
+  preview: ScopePreview | null;
   previewScope: string | null;
   previewing: boolean;
   applying: boolean;
+  globalPreview: GlobalPreview | null;
+  globalPreviewing: boolean;
+  globalApplying: boolean;
+  progress: { current: number; total: number } | null;
+
+  // Bumped on any memory change (local or from another tab) to drive the nav
+  // "flare". A counter, not a flag, so repeated changes each re-trigger it.
+  flareSeq: number;
 
   load: () => Promise<void>;
   create: (input: CreateMemoryInput) => Promise<Memory>;
@@ -39,17 +60,16 @@ interface BrainState {
   lock: (id: string, locked: boolean) => Promise<void>;
 
   startPreview: (scope: string, model: string) => Promise<void>;
+  startGlobalConsolidate: (model: string) => Promise<void>;
   applyPreview: () => Promise<number>;
-  dismissPreview: () => void;
-
-  // Cross-scope "Consolidate Global": scans all projects and promotes cross-cutting
-  // facts to global. Separate from the per-scope preview above.
-  globalPreview: GlobalPreviewResult | null;
-  globalPreviewing: boolean;
-  globalApplying: boolean;
-  startGlobalPreview: (model: string) => Promise<void>;
   applyGlobalPreview: () => Promise<number>;
+  dismissPreview: () => void;
   dismissGlobalPreview: () => void;
+
+  // Driven by WebSocket pushes (and an initial fetch).
+  setJob: (job: ConsolidationJob | null) => void;
+  hydrateJob: () => Promise<void>;
+  onBrainUpdated: () => void;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -74,6 +94,8 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   globalPreview: null,
   globalPreviewing: false,
   globalApplying: false,
+  progress: null,
+  flareSeq: 0,
 
   load: async () => {
     if (get().loading) return;
@@ -115,14 +137,16 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   },
 
   startPreview: async (scope, model) => {
-    set({ previewing: true, preview: null, previewScope: scope });
-    try {
-      const result = await previewConsolidate(scope, model);
-      set({ preview: result, previewScope: scope, previewing: false });
-    } catch (err) {
-      set({ previewing: false, preview: null, previewScope: null });
-      throw err;
-    }
+    // Kick off the job; progress + result arrive via setJob over the WS.
+    set({ previewScope: scope, previewing: true, preview: null, progress: null });
+    const job = await startScopePreview(scope, model);
+    get().setJob(job);
+  },
+
+  startGlobalConsolidate: async (model) => {
+    set({ globalPreviewing: true, globalPreview: null, progress: null });
+    const job = await startGlobalPreview(model);
+    get().setJob(job);
   },
 
   applyPreview: async () => {
@@ -138,26 +162,11 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     set({ applying: true });
     try {
       await applyConsolidate(preview.plan);
-      // Reload to reflect promotions/merges/decay.
       const memories = await listMemories();
-      set({ memories, applying: false, preview: null, previewScope: null });
+      set({ memories, applying: false, preview: null, previewScope: null, progress: null });
       return changes;
     } catch (err) {
-      // Clear the (now likely stale) preview so the user re-previews.
-      set({ applying: false, preview: null, previewScope: null });
-      throw err;
-    }
-  },
-
-  dismissPreview: () => set({ preview: null, previewScope: null }),
-
-  startGlobalPreview: async (model) => {
-    set({ globalPreviewing: true, globalPreview: null });
-    try {
-      const result = await previewGlobalConsolidate(model);
-      set({ globalPreview: result, globalPreviewing: false });
-    } catch (err) {
-      set({ globalPreviewing: false, globalPreview: null });
+      set({ applying: false, preview: null, previewScope: null, progress: null });
       throw err;
     }
   },
@@ -171,13 +180,57 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     try {
       await applyGlobalConsolidate(globalPreview.plan);
       const memories = await listMemories();
-      set({ memories, globalApplying: false, globalPreview: null });
+      set({ memories, globalApplying: false, globalPreview: null, progress: null });
       return changes;
     } catch (err) {
-      set({ globalApplying: false, globalPreview: null });
+      set({ globalApplying: false, globalPreview: null, progress: null });
       throw err;
     }
   },
 
-  dismissGlobalPreview: () => set({ globalPreview: null }),
+  dismissPreview: () =>
+    set({ preview: null, previewScope: null, previewing: false, progress: null }),
+  dismissGlobalPreview: () => set({ globalPreview: null, globalPreviewing: false, progress: null }),
+
+  setJob: (job) => {
+    if (!job) return;
+    const progress =
+      job.phase === "running" && job.total > 0 ? { current: job.current, total: job.total } : null;
+    if (job.kind === "scope") {
+      set({
+        previewScope: job.phase === "error" ? null : (job.scope ?? null),
+        previewing: job.phase === "running",
+        preview:
+          job.phase === "done" && job.report && job.plan
+            ? { report: job.report, plan: job.plan as ConsolidationPlan }
+            : null,
+        progress,
+      });
+    } else {
+      set({
+        globalPreviewing: job.phase === "running",
+        globalPreview:
+          job.phase === "done" && job.report && job.plan
+            ? { report: job.report, plan: job.plan as GlobalConsolidationPlan }
+            : null,
+        progress,
+      });
+    }
+  },
+
+  hydrateJob: async () => {
+    try {
+      get().setJob(await getConsolidationJob());
+    } catch (err) {
+      console.error("Failed to hydrate consolidation job:", err);
+    }
+  },
+
+  onBrainUpdated: () => {
+    set((s) => ({ flareSeq: s.flareSeq + 1 }));
+    // Keep the list fresh across tabs (a change may have come from elsewhere).
+    listMemories()
+      .then((memories) => set({ memories }))
+      .catch((err) => console.error("Failed to refresh memories:", err));
+  },
 }));

@@ -1,13 +1,32 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { Brain, Cpu, FileText, Hash, LayoutList } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { useBrainStore } from "~/stores/brain-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { FolderSidebar } from "./variants/FolderSidebar";
 import { TeamsTab } from "./variants/folder-sidebar/TeamsTab";
+
+// useBrainFlare returns true for a short window after the brain changes (a memory
+// added/edited/removed, or a consolidation applied — anywhere, any tab), so the
+// nav button can pulse to signal the brain is alive.
+function useBrainFlare(): boolean {
+  const flareSeq = useBrainStore((s) => s.flareSeq);
+  const [flaring, setFlaring] = useState(false);
+  const seenRef = useRef(flareSeq);
+  useEffect(() => {
+    if (flareSeq === seenRef.current) return; // skip the initial value
+    seenRef.current = flareSeq;
+    setFlaring(true);
+    const t = setTimeout(() => setFlaring(false), 2200);
+    return () => clearTimeout(t);
+  }, [flareSeq]);
+  return flaring;
+}
 
 interface AppSidebarProps {
   className?: string;
@@ -28,6 +47,7 @@ export function AppSidebar({ className }: AppSidebarProps) {
 }
 
 function SidebarHeader() {
+  const flaring = useBrainFlare();
   return (
     <div className="px-4 border-b flex items-center justify-between h-12">
       <Link to="/" className="flex items-center gap-2.5">
@@ -45,7 +65,12 @@ function SidebarHeader() {
           <TooltipTrigger asChild>
             <Link
               to="/brain"
-              className="size-7 rounded-md flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              className={cn(
+                "size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50",
+                flaring
+                  ? "text-primary brain-flare"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
               <Brain className="size-4" />
             </Link>

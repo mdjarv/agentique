@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/allbin/agentkit/eventbus"
 
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
@@ -13,24 +16,15 @@ import (
 
 // Handler serves the Brain tab HTTP API over a Service. Runner backs the LLM
 // reorganization during consolidation preview; it may be nil, in which case
-// preview falls back to deterministic dedup/decay only.
+// preview falls back to deterministic dedup/decay only. Bus broadcasts job
+// progress and memory-change events to every connected tab.
 type Handler struct {
 	Service *Service
 	Runner  msggen.Runner
-}
+	Bus     eventbus.Broadcaster
 
-// extractorFor builds the consolidation Extractor for a requested model. An empty
-// model (or a missing Runner) yields nil — deterministic dedup/decay only. The
-// model is the caller's choice; we never default it.
-func (h *Handler) extractorFor(model string) (memory.Extractor, error) {
-	if model == "" || h.Runner == nil {
-		return nil, nil
-	}
-	m, err := ParseModel(model)
-	if err != nil {
-		return nil, httperror.BadRequest(err.Error())
-	}
-	return NewClaudeExtractor(h.Runner, m), nil
+	jobMu sync.Mutex
+	job   *JobState // single active/most-recent consolidation job
 }
 
 type memoryDTO struct {
@@ -110,6 +104,7 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httperror.BadRequest(err.Error())
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusCreated, toDTO(rec))
 	return nil
 }
@@ -137,6 +132,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return mapErr(err)
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toDTO(rec))
 	return nil
 }
@@ -146,6 +142,7 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) error {
 	if err := h.Service.Delete(r.Context(), r.PathValue("id")); err != nil {
 		return mapErr(err)
 	}
+	h.brainChanged()
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -162,6 +159,7 @@ func (h *Handler) HandlePin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return mapErr(err)
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toDTO(rec))
 	return nil
 }
@@ -178,6 +176,7 @@ func (h *Handler) HandleLock(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return mapErr(err)
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toDTO(rec))
 	return nil
 }
@@ -253,17 +252,10 @@ func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// previewDTO is the preview response: the changelog to render plus the plan the
-// client holds and posts back to apply (stateless — no server-side plan cache).
-type previewDTO struct {
-	Report reportDTO   `json:"report"`
-	Plan   memory.Plan `json:"plan"`
-}
-
 // HandlePreviewConsolidate POST /api/brain/consolidate/preview  {scope, model}
-// Runs the LLM phase once and returns the proposed changelog PLUS the plan that
-// produced it. The client holds the plan and posts it back to apply — so applying
-// commits exactly what was previewed and never re-runs the model.
+// Starts the preview as a background job and returns its initial state. The model
+// runs off the request context, so a request hiccup can't kill it; progress and
+// the final {report, plan} arrive over the WebSocket bus (and via GET .../job).
 func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Scope string `json:"scope"`
@@ -276,19 +268,11 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	ex, err := h.extractorFor(body.Model)
+	job, err := h.startScopeJob(scope, body.Model)
 	if err != nil {
 		return err
 	}
-	plan, err := h.Service.Plan(r.Context(), scope, ex, memory.DecayPolicy{})
-	if err != nil {
-		return err
-	}
-	rep, err := h.Service.ApplyPlan(r.Context(), scope, plan, memory.DecayPolicy{}, true)
-	if err != nil {
-		return err
-	}
-	httperror.JSON(w, http.StatusOK, previewDTO{Report: toReportDTO(rep), Plan: plan})
+	httperror.JSON(w, http.StatusAccepted, map[string]any{"job": job})
 	return nil
 }
 
@@ -313,20 +297,15 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return err
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
 }
 
-// globalPreviewDTO is the global-consolidation preview response: the cross-scope
-// changelog plus the plan the client posts back to apply.
-type globalPreviewDTO struct {
-	Report reportDTO         `json:"report"`
-	Plan   memory.GlobalPlan `json:"plan"`
-}
-
 // HandlePreviewGlobal POST /api/brain/consolidate/global/preview  {model}
-// Scans all projects and proposes facts to lift into global, subsuming the
-// per-project copies. Runs the model once; returns the changelog plus the plan.
+// Starts the cross-scope promotion preview as a background job (it runs the model
+// across all projects — potentially many batches). Returns the initial state;
+// progress + the final {report, plan} arrive over the WebSocket bus.
 func (h *Handler) HandlePreviewGlobal(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Model string `json:"model"`
@@ -334,22 +313,11 @@ func (h *Handler) HandlePreviewGlobal(w http.ResponseWriter, r *http.Request) er
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	if body.Model == "" || h.Runner == nil {
-		return httperror.BadRequest("global consolidation requires a model")
-	}
-	m, err := ParseModel(body.Model)
-	if err != nil {
-		return httperror.BadRequest(err.Error())
-	}
-	plan, err := h.Service.PlanGlobal(r.Context(), NewClaudeExtractor(h.Runner, m))
+	job, err := h.startGlobalJob(body.Model)
 	if err != nil {
 		return err
 	}
-	rep, err := h.Service.ApplyGlobal(r.Context(), plan, true)
-	if err != nil {
-		return err
-	}
-	httperror.JSON(w, http.StatusOK, globalPreviewDTO{Report: toReportDTO(rep), Plan: plan})
+	httperror.JSON(w, http.StatusAccepted, map[string]any{"job": job})
 	return nil
 }
 
@@ -370,6 +338,7 @@ func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
 }

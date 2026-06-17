@@ -254,9 +254,11 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 // without writing anything. The model runs only here; the caller previews the plan
 // (ApplyPlan with dryRun) and then applies it (ApplyPlan), so Opus is never invoked
 // twice for one preview→apply cycle.
+// Plan is read-only (lists facts, calls the model), so it deliberately does NOT
+// hold s.mu: that lock guards writes/fingerprints and must not be held across a
+// multi-minute LLM run, which would block every other brain op (incl. live
+// MemorySearch). Staleness is caught by ApplyPlan's fingerprint check.
 func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy) (memory.Plan, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
 	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint: fps[string(scope)],
@@ -290,10 +292,11 @@ func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory
 // project scope and proposes which facts to lift into global (recurring across
 // projects, or inherently user-level), subsuming the per-project copies. Writes
 // nothing; the model runs only here.
-func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter) (memory.GlobalPlan, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return memory.PlanGlobalPromotion(ctx, s.store, pr, memory.ConsolidateOptions{})
+// PlanGlobal is read-only (see Plan); it takes opts so the host can thread live
+// progress and per-batch error callbacks through the chunked promotion pass. No
+// lock is held during the LLM run.
+func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter, opts memory.ConsolidateOptions) (memory.GlobalPlan, error) {
+	return memory.PlanGlobalPromotion(ctx, s.store, pr, opts)
 }
 
 // ApplyGlobal applies (dryRun=false) or previews (dryRun=true) a global plan

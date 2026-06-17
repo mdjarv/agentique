@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useSessionSubscriptions } from "~/hooks/session/useSessionSubscriptions";
+import { useBrainSubscriptions } from "~/hooks/useBrainSubscriptions";
 import { useChannelSubscriptions } from "~/hooks/useChannelSubscriptions";
 import { useTeamSubscriptions } from "~/hooks/useTeamSubscriptions";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -84,6 +85,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
   useSessionSubscriptions(ws, navigate);
   useChannelSubscriptions(ws);
   useTeamSubscriptions(ws);
+  useBrainSubscriptions(ws);
 
   // Load teams once on mount
   const teamsLoadedRef = useRef(false);

@@ -125,6 +125,50 @@ func TestApplyGlobalDropsUnknownAndProtectedSubsumes(t *testing.T) {
 	}
 }
 
+type errOnNthPromoter struct {
+	n     int
+	calls int
+}
+
+func (p *errOnNthPromoter) Promote(_ context.Context, c []ScopedFact) ([]Promotion, error) {
+	p.calls++
+	if p.calls == p.n {
+		return nil, errors.New("boom")
+	}
+	return []Promotion{{Text: "g " + c[0].Text, Category: CategoryFact, Subsumes: []string{c[0].ID}}}, nil
+}
+
+// A failed batch is reported and skipped (not fatal); progress reaches the end.
+func TestPlanGlobalResilientAndProgress(t *testing.T) {
+	ctx := context.Background()
+	orig := maxPromoteBatch
+	maxPromoteBatch = 1
+	defer func() { maxPromoteBatch = orig }()
+
+	store := newMemStore(
+		projFact("a1", scopeA, "one"),
+		projFact("a2", scopeA, "two"),
+		projFact("a3", scopeA, "three"),
+	)
+	var errs, lastDone, lastTotal int
+	plan, err := PlanGlobalPromotion(ctx, store, &errOnNthPromoter{n: 2}, ConsolidateOptions{
+		OnError:  func(error) { errs++ },
+		Progress: func(done, total int) { lastDone, lastTotal = done, total },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs != 1 {
+		t.Fatalf("a failed batch should call OnError once, got %d", errs)
+	}
+	if len(plan.Promotions) != 2 {
+		t.Fatalf("the 2 good batches should still produce promotions, got %d", len(plan.Promotions))
+	}
+	if lastDone != 3 || lastTotal != 3 {
+		t.Fatalf("progress should end at 3/3, got %d/%d", lastDone, lastTotal)
+	}
+}
+
 func TestApplyGlobalOverDeletionGuard(t *testing.T) {
 	ctx := context.Background()
 	recs := make([]Record, 0, 10)

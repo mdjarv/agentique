@@ -758,6 +758,29 @@
   }
 }
 
+/* --- Brain flare (the brain updated: memory added/changed, consolidation applied) --- */
+@keyframes brain-flare {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent);
+  }
+  40% {
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--primary) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+  }
+}
+
+.brain-flare {
+  animation: brain-flare 1.1s ease-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brain-flare {
+    animation: none;
+  }
+}
+
 /* --- Sidebar shadow (light mode depth) --- */
 .light .bg-sidebar\/80 {
   box-shadow:

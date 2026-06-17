@@ -244,7 +244,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			}
 			memProvider = brain.NewMCPAdapter(brainSvc, scopeResolver)
 
-			bh := &brain.Handler{Service: brainSvc, Runner: runner}
+			bh := &brain.Handler{Service: brainSvc, Runner: runner, Bus: bus}
 			mux.Handle("GET /api/brain/memories", httperror.HandlerFunc(bh.HandleList))
 			mux.Handle("POST /api/brain/memories", httperror.HandlerFunc(bh.HandleCreate))
 			mux.Handle("GET /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleGet))
@@ -258,6 +258,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("POST /api/brain/consolidate/apply", httperror.HandlerFunc(bh.HandleApplyConsolidate))
 			mux.Handle("POST /api/brain/consolidate/global/preview", httperror.HandlerFunc(bh.HandlePreviewGlobal))
 			mux.Handle("POST /api/brain/consolidate/global/apply", httperror.HandlerFunc(bh.HandleApplyGlobal))
+			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
 			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
 			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
 		}
