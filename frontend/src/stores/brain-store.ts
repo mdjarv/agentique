@@ -18,6 +18,7 @@ import {
   startGlobalPreview,
   startScopePreview,
   startTidyAll,
+  type TidyMode,
   updateMemory,
 } from "~/lib/brain-api";
 
@@ -62,7 +63,7 @@ interface BrainState {
   pin: (id: string, pinned: boolean) => Promise<void>;
   lock: (id: string, locked: boolean) => Promise<void>;
 
-  startPreview: (scope: string, model: string) => Promise<void>;
+  startPreview: (scope: string, model: string, mode?: TidyMode, force?: boolean) => Promise<void>;
   startGlobalConsolidate: (model: string) => Promise<void>;
   startTidyAll: (model: string) => Promise<void>;
   applyPreview: () => Promise<number>;
@@ -141,10 +142,10 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     set((s) => ({ memories: upsert(s.memories, m) }));
   },
 
-  startPreview: async (scope, model) => {
+  startPreview: async (scope, model, mode = "conservative", force = false) => {
     // Kick off the job; progress + result arrive via setJob over the WS.
     set({ previewScope: scope, previewing: true, preview: null, progress: null });
-    const job = await startScopePreview(scope, model);
+    const job = await startScopePreview(scope, model, mode, force);
     get().setJob(job);
   },
 

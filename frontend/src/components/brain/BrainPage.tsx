@@ -21,7 +21,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import type { ConsolidateReport, Memory } from "~/lib/brain-api";
+import type { ConsolidateReport, Memory, TidyMode } from "~/lib/brain-api";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
@@ -29,6 +29,10 @@ import { useBrainStore } from "~/stores/brain-store";
 const CATEGORIES = ["fact", "identity", "preference", "contact", "project", "goal", "task"];
 const GLOBAL_SCOPE = "global";
 const MODELS = ["opus", "sonnet", "haiku"];
+const TIDY_MODES: { value: TidyMode; label: string }[] = [
+  { value: "conservative", label: "Conservative" },
+  { value: "aggressive", label: "Aggressive" },
+];
 
 export function BrainPage() {
   const {
@@ -59,6 +63,7 @@ export function BrainPage() {
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
+  const [mode, setMode] = useState<TidyMode>("conservative");
   const [view, setView] = useState<"list" | "graph">("list");
   // Global is expanded by default; projects collapse to keep the (large) list
   // navigable. An active filter force-expands everything so matches are visible.
@@ -122,9 +127,9 @@ export function BrainPage() {
     return f ? memories.filter((m) => m.text.toLowerCase().includes(f)) : memories;
   }, [memories, filter]);
 
-  const handleTidy = async (scope: string) => {
+  const handleTidy = async (scope: string, force = false) => {
     try {
-      await startPreview(scope, model);
+      await startPreview(scope, model, mode, force);
     } catch (err) {
       toast.error(getErrorMessage(err, "Preview failed"));
     }
@@ -202,6 +207,18 @@ export function BrainPage() {
           {MODELS.map((m) => (
             <option key={m} value={m} className="capitalize">
               {m}
+            </option>
+          ))}
+        </select>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as TidyMode)}
+          className="h-8 rounded-md border bg-background px-2 text-xs"
+          title="Per-scope Tidy strategy. Conservative merges only true duplicates; Aggressive collapses families of granular facts into broad rules to shrink a bloated scope (preview before applying)."
+        >
+          {TIDY_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
             </option>
           ))}
         </select>
@@ -331,6 +348,7 @@ export function BrainPage() {
                   report={preview?.report ?? null}
                   onApply={handleApply}
                   onDismiss={dismissPreview}
+                  onForceRerun={() => handleTidy(g.scope, true)}
                 />
               )}
               {open &&
@@ -364,6 +382,7 @@ function ConsolidatePreview({
   report,
   onApply,
   onDismiss,
+  onForceRerun,
   emptyLabel = "Already tidy — nothing to change.",
 }: {
   previewing: boolean;
@@ -372,6 +391,9 @@ function ConsolidatePreview({
   report: ConsolidateReport | null;
   onApply: () => void;
   onDismiss: () => void;
+  // When set, an empty/skipped preview offers a "Force re-run" that re-tidies the
+  // unchanged scope (e.g. to apply a different strategy or a newer algorithm).
+  onForceRerun?: () => void;
   emptyLabel?: string;
 }) {
   if (previewing) {
@@ -404,8 +426,25 @@ function ConsolidatePreview({
   }
   if (report.skipped || changes === 0) {
     return (
-      <PreviewShell onDismiss={onDismiss}>
-        <span className="text-xs text-muted-foreground">{emptyLabel}</span>
+      <PreviewShell
+        onDismiss={onDismiss}
+        action={
+          onForceRerun ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs"
+              onClick={onForceRerun}
+              title="Re-run the tidy on this unchanged scope (e.g. with a different strategy or a newer algorithm)"
+            >
+              Force re-run
+            </Button>
+          ) : undefined
+        }
+      >
+        <span className="text-xs text-muted-foreground">
+          {report.skipped ? "Already tidied — unchanged since the last pass." : emptyLabel}
+        </span>
       </PreviewShell>
     );
   }
@@ -460,16 +499,21 @@ function ConsolidatePreview({
 function PreviewShell({
   children,
   onDismiss,
+  action,
 }: {
   children: React.ReactNode;
   onDismiss: () => void;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="mb-3 rounded-md border bg-muted/30 p-3 flex items-center gap-2">
       {children}
-      <Button size="sm" variant="ghost" className="ml-auto" onClick={onDismiss}>
-        Dismiss
-      </Button>
+      <div className="ml-auto flex items-center gap-1">
+        {action}
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          Dismiss
+        </Button>
+      </div>
     </div>
   );
 }

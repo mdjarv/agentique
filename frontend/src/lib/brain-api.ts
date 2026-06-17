@@ -162,13 +162,24 @@ export interface ConsolidationJob {
   error?: string;
 }
 
+// TidyMode selects the reorganize strategy: "conservative" merges only true
+// duplicates; "aggressive" collapses families of granular facts into broad rules.
+export type TidyMode = "conservative" | "aggressive";
+
 // startScopePreview kicks off a per-scope preview job and returns its initial
 // (running) state. The result arrives over the WS bus. Empty model = deterministic.
-export async function startScopePreview(scope: string, model: string): Promise<ConsolidationJob> {
+// mode picks the reorganize strategy; force re-runs even if the scope is unchanged
+// since the last pass (otherwise an already-tidied scope previews as "skipped").
+export async function startScopePreview(
+  scope: string,
+  model: string,
+  mode: TidyMode = "conservative",
+  force = false,
+): Promise<ConsolidationJob> {
   const res = await fetch(`${BASE}/consolidate/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scope, model }),
+    body: JSON.stringify({ scope, model, mode, force }),
   });
   await throwIfNotOk(res, "Failed to start preview");
   return (await res.json()).job;
