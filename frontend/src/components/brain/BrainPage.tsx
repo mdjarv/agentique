@@ -2,9 +2,11 @@ import {
   ArrowUpToLine,
   Brain,
   ChevronRight,
+  List,
   Loader2,
   Lock,
   LockOpen,
+  Network,
   Pin,
   PinOff,
   Plus,
@@ -13,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { BrainGraph } from "~/components/brain/BrainGraph";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -56,6 +59,7 @@ export function BrainPage() {
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
+  const [view, setView] = useState<"list" | "graph">("list");
   // Global is expanded by default; projects collapse to keep the (large) list
   // navigable. An active filter force-expands everything so matches are visible.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([GLOBAL_SCOPE]));
@@ -111,6 +115,13 @@ export function BrainPage() {
       });
   }, [memories, filter, labelForScope]);
 
+  // Graph view shows the same filtered set as the list, flat (grouping is
+  // expressed by node color, not sections).
+  const graphMemories = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    return f ? memories.filter((m) => m.text.toLowerCase().includes(f)) : memories;
+  }, [memories, filter]);
+
   const handleTidy = async (scope: string) => {
     try {
       await startPreview(scope, model);
@@ -164,6 +175,24 @@ export function BrainPage() {
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {memories.length} {memories.length === 1 ? "memory" : "memories"}
         </span>
+        <div className="flex items-center overflow-hidden rounded-md border">
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            title="List view"
+            className={`flex size-8 items-center justify-center ${view === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <List className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("graph")}
+            title="Graph view"
+            className={`flex size-8 items-center justify-center ${view === "graph" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Network className="size-4" />
+          </button>
+        </div>
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -223,7 +252,12 @@ export function BrainPage() {
         />
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      {view === "graph" && (
+        <div className="min-h-0 flex-1">
+          <BrainGraph memories={graphMemories} labelForScope={labelForScope} />
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6" hidden={view !== "list"}>
         {groups.length === 0 && (
           <div className="text-center text-sm text-muted-foreground py-12">
             {loaded
