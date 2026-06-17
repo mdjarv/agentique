@@ -52,6 +52,27 @@ type Extractor interface {
 type DecayPolicy struct {
 	MaxAge  time.Duration
 	MinUses int
+	// ConfidenceWeighted sharpens decay by scaling each fact's effective MaxAge by
+	// its confidence score (RFC P2): a low-confidence fact must go stale for a shorter
+	// time before it decays, so the brain forgets what it is least sure about first. A
+	// score-1.0 fact gets the full MaxAge; an AMBIGUOUS fact (score < 0.55) barely
+	// over half of it. Ground-truth/EXTRACTED facts are human-authored and therefore
+	// already exempt from decay entirely (isProtected). Off by default, like decay.
+	ConfidenceWeighted bool
+}
+
+// effectiveMaxAge returns the staleness threshold for a record under this policy:
+// the configured MaxAge, scaled down by the record's confidence score when
+// ConfidenceWeighted is set so the brain forgets low-confidence facts sooner.
+func (d DecayPolicy) effectiveMaxAge(r Record) time.Duration {
+	if !d.ConfidenceWeighted {
+		return d.MaxAge
+	}
+	score := NormalizeConfidence(r).ConfidenceScore
+	if score <= 0 || score > 1 {
+		score = DefaultInferredScore
+	}
+	return time.Duration(float64(d.MaxAge) * score)
 }
 
 // ConsolidateOptions configures a consolidation pass.
@@ -271,11 +292,13 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 		}
 	}
 
-	// 3) Decay stale, low-value facts (deterministic; runs regardless of skip).
+	// 3) Decay stale, low-value facts (deterministic; runs regardless of skip). With
+	// a confidence-weighted policy the staleness threshold shrinks for low-confidence
+	// facts, so the brain forgets what it is least sure about first.
 	if opts.Decay.MaxAge > 0 {
 		kept := reorgInput[:0]
 		for _, r := range reorgInput {
-			if now.Sub(r.UpdatedAt) > opts.Decay.MaxAge && r.Uses < opts.Decay.MinUses {
+			if now.Sub(r.UpdatedAt) > opts.Decay.effectiveMaxAge(r) && r.Uses < opts.Decay.MinUses {
 				if !opts.DryRun {
 					if err := store.Delete(ctx, r.ID); err != nil {
 						return rep, err
@@ -415,6 +438,9 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 				r.Category = f.Category
 			}
 			r.Source = SourceConsolidated
+			// A reorganized fact stays an inference; reconcile its tier with the
+			// (unchanged) score so the (tier, score) pair can't drift after the rewrite.
+			r = NormalizeConfidence(r)
 			r.UpdatedAt = now
 			if !dryRun {
 				if err := store.Put(ctx, r); err != nil {

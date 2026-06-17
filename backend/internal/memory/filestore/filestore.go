@@ -49,6 +49,8 @@ type frontmatter struct {
 	DerivedFrom []string  `yaml:"derived_from,omitempty"`
 	Related     []string  `yaml:"related,omitempty"`
 	Community   int       `yaml:"community,omitempty"`
+	Confidence  string    `yaml:"confidence,omitempty"`
+	ConfScore   float64   `yaml:"confidence_score,omitempty"`
 }
 
 func toFrontmatter(r memory.Record) frontmatter {
@@ -65,6 +67,8 @@ func toFrontmatter(r memory.Record) frontmatter {
 		DerivedFrom: r.DerivedFrom,
 		Related:     r.Related,
 		Community:   r.Community,
+		Confidence:  string(r.Confidence),
+		ConfScore:   r.ConfidenceScore,
 	}
 }
 
@@ -73,21 +77,26 @@ func (m frontmatter) toRecord(body string) memory.Record {
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	return memory.Record{
-		ID:          m.ID,
-		Scope:       scope,
-		Text:        strings.TrimSpace(body),
-		Category:    memory.Category(m.Category),
-		Source:      memory.Source(m.Source),
-		Pinned:      m.Pinned,
-		Locked:      m.Locked,
-		Uses:        m.Uses,
-		CreatedAt:   m.Created,
-		UpdatedAt:   m.Updated,
-		DerivedFrom: m.DerivedFrom,
-		Related:     m.Related,
-		Community:   m.Community,
-	}
+	// NormalizeConfidence backfills facts written before P2 (no confidence in the
+	// frontmatter) from their Source and reconciles the tier with the score, so every
+	// record read from disk carries a coherent confidence pair (RFC open-decision #4).
+	return memory.NormalizeConfidence(memory.Record{
+		ID:              m.ID,
+		Scope:           scope,
+		Text:            strings.TrimSpace(body),
+		Category:        memory.Category(m.Category),
+		Source:          memory.Source(m.Source),
+		Pinned:          m.Pinned,
+		Locked:          m.Locked,
+		Uses:            m.Uses,
+		CreatedAt:       m.Created,
+		UpdatedAt:       m.Updated,
+		DerivedFrom:     m.DerivedFrom,
+		Related:         m.Related,
+		Community:       m.Community,
+		Confidence:      memory.ConfidenceTier(m.Confidence),
+		ConfidenceScore: m.ConfScore,
+	})
 }
 
 const frontmatterDelim = "---"

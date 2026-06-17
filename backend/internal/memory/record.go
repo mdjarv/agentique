@@ -77,20 +77,31 @@ type Record struct {
 	// only comparable among records of the same scope.
 	Community int
 
+	// Confidence is the coarse trust tier (EXTRACTED / INFERRED / AMBIGUOUS) and
+	// ConfidenceScore the finer 0..1 signal behind it (RFC P2). The score is
+	// canonical; the tier is always derived from (Source, score) — see confidence.go.
+	// Confidence sharpens decay and powers the "confirm what I'm unsure about" UX.
+	Confidence      ConfidenceTier
+	ConfidenceScore float64
+
 	// Embedding is an optional derived vector cache; never the source of truth.
 	Embedding []float32
 }
 
-// New constructs a Record, stamping a fresh ID and timestamps. Text is trimmed.
+// New constructs a Record, stamping a fresh ID and timestamps and the confidence
+// tier/score implied by its Source (the RFC P2 mapping). Text is trimmed.
 func New(scope Scope, text string, category Category, source Source) Record {
 	now := time.Now().UTC()
+	tier, score := ConfidenceForSource(source)
 	return Record{
-		ID:        uuid.NewString(),
-		Scope:     scope,
-		Text:      strings.TrimSpace(text),
-		Category:  category,
-		Source:    source,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:              uuid.NewString(),
+		Scope:           scope,
+		Text:            strings.TrimSpace(text),
+		Category:        category,
+		Source:          source,
+		Confidence:      tier,
+		ConfidenceScore: score,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }

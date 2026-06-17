@@ -238,6 +238,11 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 			continue
 		}
 		nr := New(ScopeGlobal, text, p.Category, SourceConsolidated)
+		// A promoted fact is a cross-project generalization — a riskier inference than
+		// a directly distilled one (RFC P2), so it starts lower in the inferred band
+		// where the confirm UX will surface it for the user to confirm or drop.
+		nr.ConfidenceScore = CrossProjectInferredScore
+		nr = NormalizeConfidence(nr)
 		for _, id := range p.Subsumes {
 			if _, ok := deletions[id]; ok {
 				nr.DerivedFrom = append(nr.DerivedFrom, id)
