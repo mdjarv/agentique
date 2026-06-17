@@ -281,15 +281,23 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 
 ## Known limitations / remaining work
 
+Several items below are feedback-loop gaps — recall doesn't strengthen or update memory,
+salience doesn't gate consolidation, the episodic stage is skipped. They are consolidated into
+a forward design: [brain-learning-dynamics.md](brain-learning-dynamics.md) (RFC: learning
+dynamics — what the brain borrows next from human-memory research).
+
 - **The `Extractor` is the caller's, with a caller-chosen model.** `ClaudeExtractor`
   takes the model as a required parameter (no library default). It drives
   `brain backfill`, the preview/apply consolidation (per-scope Tidy + cross-scope
   global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
   API, so semantic recall still needs an external embeddings endpoint.)
-- **Query-relevant recall is still pull-based.** Auto-recall injects *pinned*
-  facts into the preamble; relevance-ranked top-K recall (now graph-augmented via
-  associative recall) for a specific task is still the agent's `MemorySearch` call
-  (no per-turn push of query-relevant facts).
+- **Query-relevant recall is still pull-based, and recall is read-only.** Auto-recall
+  injects *pinned* facts into the preamble; relevance-ranked top-K recall (now
+  graph-augmented via associative recall) for a specific task is still the agent's
+  `MemorySearch` call (no per-turn push). And recall only bumps a flat `Uses` counter
+  — it never strengthens, updates, or weakens a fact based on whether it helped. The
+  fix (recall as a write — testing effect + reconsolidation) is RFC-LD **D2**, the
+  keystone of [brain-learning-dynamics.md](brain-learning-dynamics.md).
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
@@ -301,7 +309,8 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
   captures for a later sleep pass; the `SourceCapture` path exists but nothing
-  writes to it.
+  writes to it. Activating it (stage episodes → replay-and-abstract during sleep,
+  per Complementary Learning Systems) is RFC-LD **D4**.
 - **Chroma collection space.** The collection is created with cosine distance;
   changing the embedding model/space requires a fresh collection name (a stale
   collection of the same name created with a different space would skew scores).

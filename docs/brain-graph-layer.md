@@ -254,6 +254,14 @@ codebase-specific facts.
 4. ~~**P2** — confidence tiers + centrality + the "confirm" UX.~~ ✅ done (`memory/{confidence,centrality}.go`, `brain/graph.go`).
 5. ~~**P5** — ConsolidateGlobal via the graph: cross-scope community guardrail + content-hash manifest.~~ ✅ done (`memory/global_graph.go`). neo4j remains parked as a documented optional export — the only unimplemented item, and a non-goal at current scale.
 
+## What's next
+
+This RFC gave the brain its *structure*. The follow-on — [brain-learning-dynamics.md](brain-learning-dynamics.md)
+— adds the *dynamics* that structure still lacks: feedback loops from human-memory research
+(retrieval strengthens and updates memory, salience gates consolidation, similar-but-distinct facts
+get disambiguated). It reuses everything here — the graph, communities, centrality, and confidence
+are the substrate those loops run on.
+
 ## References
 
 - graphify: `analyze.py` (god nodes / surprising connections / suggested questions / `graph_diff`),
