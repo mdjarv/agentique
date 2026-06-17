@@ -11,6 +11,29 @@ Last full audit: 2026-06-17.
 
 ## P1 — Surprising or limiting
 
+### Brain: consolidation apply is not transactional
+`ApplyPlan` / `ApplyGlobalPromotion` / `writePromoted` write facts one
+`store.Put`/`Delete` at a time with no transaction. A crash or backend restart
+mid-apply leaves a partially-consolidated scope. Self-healing (the plan's
+fingerprint goes stale → next apply returns `ErrStalePlan` → re-preview) and not
+corrupting, but a surprising in-between state. The async preview *job* is in-memory
+only, so a restart mid-preview drops it (mitigated: the frontend re-hydrates on WS
+reconnect and clears the stale spinner). → `internal/memory/{consolidate,promote}.go`,
+`internal/brain/job.go`.
+
+### Brain: reorganize merges only within a 100-fact chunk
+Large scopes (reviewbot ~427) are chunked at `maxReorgBatch=100`; related facts in
+different chunks never merge in one Tidy pass, so big scopes don't meaningfully
+shrink. This is the open RFC **P3** (community detection → cluster-aware chunking).
+Until then the encode-prompt tightening only limits *future* growth and repeated
+Tidies converge slowly. → `internal/brain/extractor.go`, `docs/brain-graph-layer.md`.
+
+### Brain: `RelinkScope` overwrites `Related` (will clobber curated links)
+Relink rebuilds the entire `Related` edge set each apply — correct while nothing
+else writes the field, but the moment a curated/human `[[link]]` UI lands it will
+silently erase those edges. Must tag auto vs. curated edges first (noted in-code).
+→ `internal/memory/link.go`.
+
 ### Remaining delta events have no frontend renderers
 
 - **Status (2026-05-27):** `tool_output_delta` and `tool_progress` are
@@ -51,6 +74,36 @@ Last full audit: 2026-06-17.
   becomes unnecessary.
 
 ## P2 — Smells / drift
+
+### Brain: scope leakage in existing memories
+~9% of reviewbot's facts are about *other* projects it reviews (alltix/mobilix/
+agentkit…), scoped to reviewbot. The tightened extract prompt prevents *new*
+leakage but there's no cleanup of the existing ~40; global-consolidation can promote
+genuinely cross-cutting ones but won't catch codebase-specific leaks. → data debt.
+
+### Brain: two similarity engines + per-apply relink write cost
+The backend persists token-Jaccard edges (`RelinkScope`, O(n²) + up to N markdown
+writes on a scope's first relink) while the graph view *also* recomputes Jaccard
+client-side for dashed edges — redundant, and the persisted edges can drift from the
+live recompute. O(n²) per apply is fine at current scale (dozens–low-thousands) but
+is a smell for very large scopes. → `internal/memory/link.go`,
+`frontend/src/components/brain/BrainGraph.tsx`.
+
+### Brain: tunables are hardcoded constants
+`maxReorgBatch=100`, `maxPromoteBatch=120`, `maxParallelBatches`/`maxParallelReorg=4`,
+`maxRelatedDegree=6`, `DefaultRelatedThreshold=0.3`, recall fan-out (`assocPerSeed=3`,
+total ≤K) — no flags/config to tune per deployment or scope size.
+
+### Brain: single consolidation job slot
+Only one consolidation runs at a time (`beginJob` 409s a second); "Tidy all" is
+sequential and two scopes can't tidy concurrently. Parallel-across-scopes was
+deferred — needs a multi-job map + frontend tracking multiple previews.
+→ `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
+
+### Brain: `brain.Handler` is a grab-bag
+One type owns memory CRUD + search + status + consolidation preview/apply + global
++ tidy-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
+help. → `internal/brain/{http,job}.go`.
 
 ### `claudecli` still imported in session-package files for narrow reasons
 
@@ -108,6 +161,20 @@ the backup header, so correctness risk is low. If the schema changes
 `just sqlc` generation time.
 
 ## P3 — Dependency hygiene
+
+### Brain: the orchestration layer is untested
+The deterministic cores are well covered (Plan/Apply, promote, relink, associative
+recall, extractor parsing). Untested: the async job runners
+(`runScopeJob`/`runGlobalJob`/`runTidyAllJob`), the `server.go` automation wiring
+(auto-recall preamble, auto-encode on delete, scheduled sleep), and the CLI
+`export`/`import` interactive resolution — they need a live runner / DB / stdin.
+→ `internal/brain/job.go`, `internal/server/server.go`, `cmd/agentique/brain.go`.
+
+### Brain: `react-force-graph-2d` added, loosely typed
+The graph view pulled in `react-force-graph-2d` (canvas force-graph). It wasn't
+installed in this worktree post-merge (`just check` failed until `npm install`), and
+`BrainGraph.tsx`'s render callbacks lean on the lib's loose types.
+→ `frontend/package.json`, `frontend/src/components/brain/BrainGraph.tsx`.
 
 ### All provider dependencies are pseudo-versioned
 
