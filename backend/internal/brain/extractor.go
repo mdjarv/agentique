@@ -93,7 +93,7 @@ const categoryEnumJSON = `"fact","preference","project","identity","goal","conta
 // root is an object (the shape claudecli's --json-schema expects); maxItems caps
 // the batch and maxLength enforces the "concise" rule structurally.
 const extractSchema = `{"type":"object","additionalProperties":false,"required":["memories"],` +
-	`"properties":{"memories":{"type":"array","maxItems":5,"items":{` +
+	`"properties":{"memories":{"type":"array","maxItems":3,"items":{` +
 	`"type":"object","additionalProperties":false,"required":["text","category"],` +
 	`"properties":{"text":{"type":"string","minLength":1,"maxLength":160},` +
 	`"category":{"type":"string","enum":[` + categoryEnumJSON + `]}}}}}}`
@@ -110,14 +110,20 @@ const reorganizeSchema = `{"type":"object","additionalProperties":false,"require
 const extractSystemPrompt = `You extract DURABLE, REUSABLE facts about a software project and the user from a coding-session transcript.
 
 Extract ONLY long-lived facts worth recalling in FUTURE, unrelated sessions:
-- project conventions, architecture, where things live
-- build/test/tooling commands and gotchas
-- the user's durable preferences and identity
+- how the project works at a high level: conventions, architecture, where things live
+- build/test/tooling commands and genuine gotchas
+- the user's durable preferences, working style, and identity
 
-IGNORE: transient task state, one-off debugging, anything specific to a single change, and secrets/tokens.
+Prefer FEWER, BROADER facts. A good memory is a general rule someone would want to know BEFORE working here — not an implementation detail.
 
-Return ONLY a JSON object {"memories": [...]} with at most 5 items, each {"text": <concise standalone fact under 20 words>, "category": <one of: fact, preference, project, identity, goal>}.
-Use an empty memories array if nothing durable is present. No prose, no code fences.`
+DO NOT record:
+- transient task state, one-off debugging, or anything specific to a single change
+- low-level trivia easily rediscovered by reading the code (exact timings, field names, specific flag values) UNLESS it is a surprising gotcha
+- facts about OTHER projects this session merely references — record only what is about THIS project and this user
+- secrets or tokens
+
+Return ONLY a JSON object {"memories": [...]} with AT MOST 3 items, each {"text": <concise standalone fact under 20 words>, "category": <one of: fact, preference, project, identity, goal>}.
+Prefer 0-2 high-signal facts over filling the list. Use an empty array if nothing durable is present. No prose, no code fences.`
 
 // promoteSchema constrains Promote output to {"promotions":[{text,category,subsumes}]}.
 const promoteSchema = `{"type":"object","additionalProperties":false,"required":["promotions"],` +
