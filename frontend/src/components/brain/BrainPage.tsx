@@ -1,4 +1,16 @@
-import { Brain, Loader2, Lock, LockOpen, Pin, PinOff, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  ArrowUpToLine,
+  Brain,
+  ChevronRight,
+  Loader2,
+  Lock,
+  LockOpen,
+  Pin,
+  PinOff,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -29,11 +41,28 @@ export function BrainPage() {
     startPreview,
     applyPreview,
     dismissPreview,
+    globalPreview,
+    globalPreviewing,
+    globalApplying,
+    startGlobalPreview,
+    applyGlobalPreview,
+    dismissGlobalPreview,
   } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
+  // Global is expanded by default; projects collapse to keep the (large) list
+  // navigable. An active filter force-expands everything so matches are visible.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([GLOBAL_SCOPE]));
+  const filtering = filter.trim().length > 0;
+  const toggleScope = (scope: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(scope)) next.delete(scope);
+      else next.add(scope);
+      return next;
+    });
 
   useEffect(() => {
     if (!loaded) load();
@@ -60,6 +89,9 @@ export function BrainPage() {
       arr.push(m);
       byScope.set(m.scope, arr);
     }
+    // Global is always present at the top, even when empty — it's where
+    // cross-cutting knowledge lives, and the entry point to seed/promote it.
+    if (!byScope.has(GLOBAL_SCOPE)) byScope.set(GLOBAL_SCOPE, []);
     // Stable ordering: global first, then alphabetical by label; pinned first within a scope.
     return [...byScope.entries()]
       .map(([scope, items]) => ({
@@ -87,6 +119,23 @@ export function BrainPage() {
       toast.success(`Applied ${changes} change${changes === 1 ? "" : "s"}`);
     } catch (err) {
       toast.error(getErrorMessage(err, "Apply failed"));
+    }
+  };
+
+  const handleGlobalConsolidate = async () => {
+    try {
+      await startGlobalPreview(model);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Global preview failed"));
+    }
+  };
+
+  const handleApplyGlobal = async () => {
+    try {
+      const changes = await applyGlobalPreview();
+      toast.success(`Promoted to global: ${changes} change${changes === 1 ? "" : "s"}`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Global apply failed"));
     }
   };
 
@@ -152,23 +201,61 @@ export function BrainPage() {
         )}
         {groups.map((g) => {
           const isPreviewScope = previewScope === g.scope;
+          const isGlobal = g.scope === GLOBAL_SCOPE;
+          const open = filtering || expanded.has(g.scope);
           return (
             <section key={g.scope}>
               <div className="flex items-center gap-2 mb-2">
-                <h2 className="text-sm font-semibold">{labelForScope(g.scope)}</h2>
-                <span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto text-xs"
-                  disabled={previewing && isPreviewScope}
-                  onClick={() => handleTidy(g.scope)}
-                  title={`Preview a tidy with ${model}: merge duplicates, distill captures, decay stale facts`}
+                <button
+                  type="button"
+                  onClick={() => toggleScope(g.scope)}
+                  className="flex items-center gap-2 min-w-0 text-left hover:text-foreground"
                 >
-                  <Sparkles className="size-3.5" />
-                  {previewing && isPreviewScope ? "Previewing…" : "Tidy"}
-                </Button>
+                  <ChevronRight
+                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+                  />
+                  <h2 className="text-sm font-semibold truncate">{labelForScope(g.scope)}</h2>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {g.items.length}
+                  </span>
+                </button>
+                <div className="ml-auto flex items-center gap-1">
+                  {isGlobal && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-xs"
+                      disabled={globalPreviewing}
+                      onClick={handleGlobalConsolidate}
+                      title={`Scan all projects with ${model} and promote cross-cutting facts (recurring conventions, your preferences) to global`}
+                    >
+                      <ArrowUpToLine className="size-3.5" />
+                      {globalPreviewing ? "Scanning…" : "Consolidate"}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs"
+                    disabled={previewing && isPreviewScope}
+                    onClick={() => handleTidy(g.scope)}
+                    title={`Preview a tidy with ${model}: merge duplicates, distill captures, decay stale facts`}
+                  >
+                    <Sparkles className="size-3.5" />
+                    {previewing && isPreviewScope ? "Previewing…" : "Tidy"}
+                  </Button>
+                </div>
               </div>
+              {isGlobal && (globalPreviewing || globalPreview) && (
+                <ConsolidatePreview
+                  previewing={globalPreviewing}
+                  applying={globalApplying}
+                  report={globalPreview?.report ?? null}
+                  onApply={handleApplyGlobal}
+                  onDismiss={dismissGlobalPreview}
+                  emptyLabel="No cross-cutting facts to promote — global is up to date."
+                />
+              )}
               {isPreviewScope && (
                 <ConsolidatePreview
                   previewing={previewing}
@@ -178,11 +265,22 @@ export function BrainPage() {
                   onDismiss={dismissPreview}
                 />
               )}
-              <div className="space-y-2">
-                {g.items.map((m) => (
-                  <MemoryCard key={m.id} memory={m} />
+              {open &&
+                (g.items.length > 0 ? (
+                  <div className="space-y-2">
+                    {g.items.map((m) => (
+                      <MemoryCard key={m.id} memory={m} />
+                    ))}
+                  </div>
+                ) : (
+                  isGlobal && (
+                    <p className="text-xs text-muted-foreground pl-5 pb-1">
+                      No global memories yet — cross-cutting facts (your identity, durable
+                      preferences, conventions across projects) live here and are recalled in every
+                      session.
+                    </p>
+                  )
                 ))}
-              </div>
             </section>
           );
         })}
@@ -197,12 +295,14 @@ function ConsolidatePreview({
   report,
   onApply,
   onDismiss,
+  emptyLabel = "Already tidy — nothing to change.",
 }: {
   previewing: boolean;
   applying: boolean;
   report: ConsolidateReport | null;
   onApply: () => void;
   onDismiss: () => void;
+  emptyLabel?: string;
 }) {
   if (previewing) {
     return (
@@ -232,7 +332,7 @@ function ConsolidatePreview({
   if (report.skipped || changes === 0) {
     return (
       <PreviewShell onDismiss={onDismiss}>
-        <span className="text-xs text-muted-foreground">Already tidy — nothing to change.</span>
+        <span className="text-xs text-muted-foreground">{emptyLabel}</span>
       </PreviewShell>
     );
   }
@@ -266,7 +366,7 @@ function ConsolidatePreview({
         ))}
         {report.promoted?.map((m) => (
           <li key={`pr-${m.id}`} className="text-green-600">
-            + {m.text} <span className="text-muted-foreground">(from capture)</span>
+            + {m.text}
           </li>
         ))}
         {report.deleted?.map((m) => (

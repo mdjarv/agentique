@@ -172,3 +172,42 @@ export async function applyConsolidate(plan: ConsolidationPlan): Promise<Consoli
   await throwIfNotOk(res, "Failed to apply consolidation");
   return res.json();
 }
+
+// GlobalConsolidationPlan is the model's cross-scope promotion proposal: facts to
+// lift into global, each naming the per-project copies it subsumes. Held by the
+// client and posted back to apply (no second model call).
+export interface GlobalConsolidationPlan {
+  promotions: { text: string; category: string; subsumes: string[] }[] | null;
+  fingerprints: Record<string, string>;
+}
+
+export interface GlobalPreviewResult {
+  report: ConsolidateReport;
+  plan: GlobalConsolidationPlan;
+}
+
+// previewGlobalConsolidate scans all projects and proposes cross-cutting facts to
+// promote to global, subsuming the per-project copies. Runs the model once.
+export async function previewGlobalConsolidate(model: string): Promise<GlobalPreviewResult> {
+  const res = await fetch(`${BASE}/consolidate/global/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  await throwIfNotOk(res, "Failed to preview global consolidation");
+  return res.json();
+}
+
+// applyGlobalConsolidate applies a global plan deterministically. 409 if a project
+// changed since the preview — the caller should re-preview.
+export async function applyGlobalConsolidate(
+  plan: GlobalConsolidationPlan,
+): Promise<ConsolidateReport> {
+  const res = await fetch(`${BASE}/consolidate/global/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan }),
+  });
+  await throwIfNotOk(res, "Failed to apply global consolidation");
+  return res.json();
+}

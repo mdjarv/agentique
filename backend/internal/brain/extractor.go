@@ -29,7 +29,10 @@ type ClaudeExtractor struct {
 	model  claudecli.Model
 }
 
-var _ memory.Extractor = (*ClaudeExtractor)(nil)
+var (
+	_ memory.Extractor = (*ClaudeExtractor)(nil)
+	_ memory.Promoter  = (*ClaudeExtractor)(nil)
+)
 
 // NewClaudeExtractor returns an Extractor that calls the given model via runner.
 // See ClaudeExtractor for model-selection guidance; the caller must choose a
@@ -115,6 +118,28 @@ IGNORE: transient task state, one-off debugging, anything specific to a single c
 
 Return ONLY a JSON object {"memories": [...]} with at most 5 items, each {"text": <concise standalone fact under 20 words>, "category": <one of: fact, preference, project, identity, goal>}.
 Use an empty memories array if nothing durable is present. No prose, no code fences.`
+
+// promoteSchema constrains Promote output to {"promotions":[{text,category,subsumes}]}.
+const promoteSchema = `{"type":"object","additionalProperties":false,"required":["promotions"],` +
+	`"properties":{"promotions":{"type":"array","items":{` +
+	`"type":"object","additionalProperties":false,"required":["text","category","subsumes"],` +
+	`"properties":{"text":{"type":"string","minLength":1,"maxLength":240},` +
+	`"category":{"type":"string","enum":[` + categoryEnumJSON + `]},` +
+	`"subsumes":{"type":"array","items":{"type":"string"}}}}}}}`
+
+const promoteSystemPrompt = `You curate a SHARED, cross-project "global" memory from per-project facts.
+
+You are given project facts as {"facts": [{"id","scope","text","category"}]}. "scope" identifies the project; facts in different scopes come from different projects.
+
+Promote a fact to global ONLY when it is useful in EVERY project, not just one:
+- the SAME fact recurs across two or more different scopes (a shared convention, tool or workflow), OR
+- it is inherently about the USER, not a codebase: identity, contact, or a durable personal preference / working style that holds across projects.
+
+Do NOT promote codebase-specific facts: where files live, a project's architecture, build/test commands, project-specific gotchas. When in doubt, do NOT promote — global facts are injected into EVERY session, so noise is costly.
+
+For each promotion: write ONE concise canonical fact (under 20 words) and list in "subsumes" the ids of the project facts it replaces (include every duplicate across scopes; for a single user-level fact, its one id).
+
+Return ONLY a JSON object {"promotions": [{"text","category","subsumes":["id",...]}]}. Empty promotions if nothing qualifies. No prose, no code fences.`
 
 const reorganizeSystemPrompt = `You are a CONSERVATIVE memory curator. You are given facts as a JSON object {"facts": [{"id","text","category"}]}.
 
@@ -240,6 +265,56 @@ func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fa
 	}
 	if len(out) == 0 {
 		return facts, nil
+	}
+	return out, nil
+}
+
+// Promote selects cross-cutting facts to lift to the global scope. It returns the
+// global facts to create, each naming the project-fact ids it subsumes. A promotion
+// with no real ids is dropped (it must generalize at least one fact). On any parse
+// failure it returns nothing — promotion is best-effort and must not abort a pass.
+func (e *ClaudeExtractor) Promote(ctx context.Context, candidates []memory.ScopedFact) ([]memory.Promotion, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	type cj struct {
+		ID       string `json:"id"`
+		Scope    string `json:"scope"`
+		Text     string `json:"text"`
+		Category string `json:"category"`
+	}
+	in := make([]cj, len(candidates))
+	for i, c := range candidates {
+		in[i] = cj{ID: c.ID, Scope: string(c.Scope), Text: c.Text, Category: string(c.Category)}
+	}
+	inJSON, err := json.Marshal(struct {
+		Facts []cj `json:"facts"`
+	}{Facts: in})
+	if err != nil {
+		return nil, nil
+	}
+	prompt := promoteSystemPrompt + "\n\nFACTS:\n" + string(inJSON) + "\n\nReturn ONLY the JSON object."
+	res, err := msggen.RunWithRetry(ctx, e.runner, prompt, e.opts(promoteSchema)...)
+	if err != nil {
+		return nil, err
+	}
+	var wrap struct {
+		Promotions []struct {
+			Text     string   `json:"text"`
+			Category string   `json:"category"`
+			Subsumes []string `json:"subsumes"`
+		} `json:"promotions"`
+	}
+	if !decodeWrapped(res, "promotions", &wrap) {
+		return nil, nil
+	}
+	out := make([]memory.Promotion, 0, len(wrap.Promotions))
+	for _, p := range wrap.Promotions {
+		t := strings.TrimSpace(p.Text)
+		if t == "" || len(p.Subsumes) == 0 {
+			continue
+		}
+		out = append(out, memory.Promotion{Text: t, Category: normalizeCategory(p.Category), Subsumes: p.Subsumes})
 	}
 	return out, nil
 }

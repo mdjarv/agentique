@@ -10,6 +10,14 @@ import (
 type fakeExtractor struct {
 	extract    func(episodes []string) []Candidate
 	reorganize func(facts []Fact) []Fact
+	promote    func(candidates []ScopedFact) []Promotion
+}
+
+func (f fakeExtractor) Promote(_ context.Context, c []ScopedFact) ([]Promotion, error) {
+	if f.promote == nil {
+		return nil, nil
+	}
+	return f.promote(c), nil
 }
 
 func (f fakeExtractor) Extract(_ context.Context, e []string) ([]Candidate, error) {

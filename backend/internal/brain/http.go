@@ -317,6 +317,63 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
+// globalPreviewDTO is the global-consolidation preview response: the cross-scope
+// changelog plus the plan the client posts back to apply.
+type globalPreviewDTO struct {
+	Report reportDTO         `json:"report"`
+	Plan   memory.GlobalPlan `json:"plan"`
+}
+
+// HandlePreviewGlobal POST /api/brain/consolidate/global/preview  {model}
+// Scans all projects and proposes facts to lift into global, subsuming the
+// per-project copies. Runs the model once; returns the changelog plus the plan.
+func (h *Handler) HandlePreviewGlobal(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	if body.Model == "" || h.Runner == nil {
+		return httperror.BadRequest("global consolidation requires a model")
+	}
+	m, err := ParseModel(body.Model)
+	if err != nil {
+		return httperror.BadRequest(err.Error())
+	}
+	plan, err := h.Service.PlanGlobal(r.Context(), NewClaudeExtractor(h.Runner, m))
+	if err != nil {
+		return err
+	}
+	rep, err := h.Service.ApplyGlobal(r.Context(), plan, true)
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, globalPreviewDTO{Report: toReportDTO(rep), Plan: plan})
+	return nil
+}
+
+// HandleApplyGlobal POST /api/brain/consolidate/global/apply  {plan}
+// Applies a global-consolidation plan deterministically — no model call. 409 if any
+// scope changed since the preview.
+func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Plan memory.GlobalPlan `json:"plan"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	rep, err := h.Service.ApplyGlobal(r.Context(), body.Plan, false)
+	if errors.Is(err, memory.ErrStalePlan) {
+		return httperror.Conflict("a project changed since this preview — re-run preview")
+	}
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
+	return nil
+}
+
 // HandleStatus GET /api/brain/status
 func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) error {
 	httperror.JSON(w, http.StatusOK, map[string]any{

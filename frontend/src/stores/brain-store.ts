@@ -1,14 +1,17 @@
 import { create } from "zustand";
 import {
   applyConsolidate,
+  applyGlobalConsolidate,
   type CreateMemoryInput,
   createMemory,
   deleteMemory,
+  type GlobalPreviewResult,
   getStatus,
   listMemories,
   type Memory,
   type PreviewResult,
   previewConsolidate,
+  previewGlobalConsolidate,
   setLocked,
   setPinned,
   updateMemory,
@@ -38,6 +41,15 @@ interface BrainState {
   startPreview: (scope: string, model: string) => Promise<void>;
   applyPreview: () => Promise<number>;
   dismissPreview: () => void;
+
+  // Cross-scope "Consolidate Global": scans all projects and promotes cross-cutting
+  // facts to global. Separate from the per-scope preview above.
+  globalPreview: GlobalPreviewResult | null;
+  globalPreviewing: boolean;
+  globalApplying: boolean;
+  startGlobalPreview: (model: string) => Promise<void>;
+  applyGlobalPreview: () => Promise<number>;
+  dismissGlobalPreview: () => void;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -59,6 +71,9 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   previewScope: null,
   previewing: false,
   applying: false,
+  globalPreview: null,
+  globalPreviewing: false,
+  globalApplying: false,
 
   load: async () => {
     if (get().loading) return;
@@ -135,4 +150,34 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   },
 
   dismissPreview: () => set({ preview: null, previewScope: null }),
+
+  startGlobalPreview: async (model) => {
+    set({ globalPreviewing: true, globalPreview: null });
+    try {
+      const result = await previewGlobalConsolidate(model);
+      set({ globalPreview: result, globalPreviewing: false });
+    } catch (err) {
+      set({ globalPreviewing: false, globalPreview: null });
+      throw err;
+    }
+  },
+
+  applyGlobalPreview: async () => {
+    const { globalPreview } = get();
+    if (!globalPreview) return 0;
+    const r = globalPreview.report;
+    const changes = (r.promoted?.length ?? 0) + (r.deleted?.length ?? 0);
+    set({ globalApplying: true });
+    try {
+      await applyGlobalConsolidate(globalPreview.plan);
+      const memories = await listMemories();
+      set({ memories, globalApplying: false, globalPreview: null });
+      return changes;
+    } catch (err) {
+      set({ globalApplying: false, globalPreview: null });
+      throw err;
+    }
+  },
+
+  dismissGlobalPreview: () => set({ globalPreview: null }),
 }));

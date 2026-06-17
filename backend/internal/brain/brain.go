@@ -286,6 +286,38 @@ func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory
 	return rep, nil
 }
 
+// PlanGlobal runs the LLM phase of cross-scope consolidation: it scans every
+// project scope and proposes which facts to lift into global (recurring across
+// projects, or inherently user-level), subsuming the per-project copies. Writes
+// nothing; the model runs only here.
+func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter) (memory.GlobalPlan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return memory.PlanGlobalPromotion(ctx, s.store, pr, memory.ConsolidateOptions{})
+}
+
+// ApplyGlobal applies (dryRun=false) or previews (dryRun=true) a global plan
+// deterministically — no model calls. Returns memory.ErrStalePlan if any affected
+// scope changed since the plan was made. A real apply invalidates the persisted
+// per-scope fingerprints of the scopes it touched so a later Tidy re-evaluates them.
+func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRun bool) (memory.Report, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rep, err := memory.ApplyGlobalPromotion(ctx, s.store, plan, memory.ConsolidateOptions{DryRun: dryRun})
+	if err != nil {
+		return rep, err
+	}
+	if !dryRun && (len(rep.Deleted) > 0 || len(rep.Promoted) > 0) {
+		fps := s.loadFingerprints()
+		for _, r := range rep.Deleted {
+			delete(fps, string(r.Scope))
+		}
+		delete(fps, string(memory.ScopeGlobal))
+		s.saveFingerprints(fps)
+	}
+	return rep, nil
+}
+
 func (s *Service) loadFingerprints() map[string]string {
 	m := map[string]string{}
 	if data, err := os.ReadFile(s.fpPath); err == nil {
