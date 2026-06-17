@@ -108,7 +108,7 @@ export const ProjectContent = memo(function ProjectContent({
         <button
           type="button"
           onClick={handleSettings}
-          className="size-5 rounded-md flex items-center justify-center cursor-pointer text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/proj:opacity-100 transition-opacity"
+          className="size-5 rounded-md flex items-center justify-center cursor-pointer text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/proj:opacity-100 max-md:opacity-100 transition-opacity"
         >
           <Settings className="size-3" />
         </button>
@@ -124,7 +124,7 @@ export const ProjectContent = memo(function ProjectContent({
               "size-5 rounded-md flex items-center justify-center cursor-pointer transition-all",
               isPinned
                 ? "opacity-100 hover:scale-110"
-                : "opacity-0 group-hover/proj:opacity-60 hover:!opacity-100 text-muted-foreground hover:text-foreground",
+                : "opacity-0 group-hover/proj:opacity-60 hover:!opacity-100 max-md:opacity-100 text-muted-foreground hover:text-foreground",
             )}
             style={isPinned ? { color: color.fg } : undefined}
           >
