@@ -164,7 +164,7 @@ func TestConsolidateFingerprintPersisted(t *testing.T) {
 	s.Add(ctx, memory.ScopeGlobal, "fact one", memory.CategoryFact, memory.SourceAgent)
 	s.Add(ctx, memory.ScopeGlobal, "fact two", memory.CategoryFact, memory.SourceAgent)
 
-	rep1, err := s.Consolidate(ctx, memory.ScopeGlobal, nil, memory.DecayPolicy{}, false, false)
+	rep1, err := s.Consolidate(ctx, memory.ScopeGlobal, nil, memory.DecayPolicy{}, false, TidyOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestConsolidateFingerprintPersisted(t *testing.T) {
 		t.Fatal("expected a fingerprint")
 	}
 	// Second pass with no changes: persisted fingerprint should mark it skipped.
-	rep2, err := s.Consolidate(ctx, memory.ScopeGlobal, fakeNoopExtractor{}, memory.DecayPolicy{}, false, false)
+	rep2, err := s.Consolidate(ctx, memory.ScopeGlobal, fakeNoopExtractor{}, memory.DecayPolicy{}, false, TidyOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestConsolidateFingerprintPersisted(t *testing.T) {
 		t.Fatal("expected second consolidation to be skipped via persisted fingerprint")
 	}
 	// Third pass with force=true: the unchanged set is reorganized anyway (not skipped).
-	rep3, err := s.Consolidate(ctx, memory.ScopeGlobal, fakeNoopExtractor{}, memory.DecayPolicy{}, false, true)
+	rep3, err := s.Consolidate(ctx, memory.ScopeGlobal, fakeNoopExtractor{}, memory.DecayPolicy{}, false, TidyOptions{Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}

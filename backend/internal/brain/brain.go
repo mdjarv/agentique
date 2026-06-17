@@ -336,18 +336,20 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 // fingerprint so the LLM reorganization is skipped when nothing changed. A nil
 // Extractor restricts the pass to deterministic decay. When dryRun is set the
 // pass writes nothing — it returns the changelog it WOULD apply and leaves the
-// persisted fingerprint untouched so a later real run still proceeds. force
-// reorganizes even when the scope is unchanged (re-tidy after a prompt/algorithm
-// change).
-func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun, force bool) (memory.Report, error) {
+// persisted fingerprint untouched so a later real run still proceeds. opts carries
+// Force (reorganize even when the scope is unchanged — re-tidy after a
+// prompt/algorithm change) and MinSurvivorRatio (relax the over-deletion guard for
+// an aggressive pass); its zero value reproduces the conservative behaviour.
+func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool, opts TidyOptions) (memory.Report, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
 	rep, err := memory.Consolidate(ctx, s.store, ex, scope, memory.ConsolidateOptions{
-		PrevFingerprint: fps[string(scope)],
-		Force:           force,
-		Decay:           decay,
-		DryRun:          dryRun,
+		PrevFingerprint:  fps[string(scope)],
+		Force:            opts.Force,
+		Decay:            decay,
+		DryRun:           dryRun,
+		MinSurvivorRatio: opts.MinSurvivorRatio,
 	})
 	if err != nil {
 		return rep, err

@@ -80,7 +80,7 @@ func (a *Automation) runOnce(ctx context.Context) {
 			return
 		default:
 		}
-		rep, err := a.svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, false)
+		rep, err := a.svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, TidyOptions{})
 		if err != nil {
 			slog.Warn("brain: sleep pass: consolidate failed", "scope", scope, "error", err)
 			continue

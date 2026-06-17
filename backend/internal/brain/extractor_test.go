@@ -209,8 +209,8 @@ func TestReorganizeModeSelectsPrompt(t *testing.T) {
 
 func TestReorganizeModePolicy(t *testing.T) {
 	opts, ratio := reorganizeModePolicy("aggressive")
-	if len(opts) != 1 || ratio != aggressiveMinSurvivorRatio {
-		t.Fatalf("aggressive => one option + %v ratio, got %d opts / %v", aggressiveMinSurvivorRatio, len(opts), ratio)
+	if len(opts) != 1 || ratio != AggressiveMinSurvivorRatio {
+		t.Fatalf("aggressive => one option + %v ratio, got %d opts / %v", AggressiveMinSurvivorRatio, len(opts), ratio)
 	}
 	// Applying the option flips the extractor into aggressive mode.
 	e := NewClaudeExtractor(fakeRunner{}, claudecli.ModelHaiku, opts...)

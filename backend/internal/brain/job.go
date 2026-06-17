@@ -216,7 +216,7 @@ func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
 	job.Total = len(scopes)
 	h.publishJob(job)
 	for i, scope := range scopes {
-		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, false)
+		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, TidyOptions{})
 		if cerr != nil {
 			// One bad scope shouldn't sink the bulk pass — log and continue.
 			slog.Warn("brain: tidy all: scope failed", "scope", scope, "error", cerr)

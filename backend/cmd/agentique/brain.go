@@ -27,12 +27,13 @@ var (
 	backfillForce     bool
 	backfillModel     string
 
-	consolidateProject string
-	consolidateScope   string
-	consolidateModel   string
-	consolidateForce   bool
-	consolidateRerun   bool
-	consolidateDryRun  bool
+	consolidateProject    string
+	consolidateScope      string
+	consolidateModel      string
+	consolidateForce      bool
+	consolidateRerun      bool
+	consolidateAggressive bool
+	consolidateDryRun     bool
 )
 
 func init() {
@@ -48,6 +49,7 @@ func init() {
 	consolidateCmd.Flags().StringVar(&consolidateModel, "model", "", "reorganize model: haiku|sonnet|opus (empty = deterministic dedup/decay only, no LLM reorg)")
 	consolidateCmd.Flags().BoolVarP(&consolidateForce, "force", "f", false, "skip confirmation prompt")
 	consolidateCmd.Flags().BoolVar(&consolidateRerun, "rerun", false, "reorganize even if the scope is unchanged since the last pass (ignore the saved fingerprint)")
+	consolidateCmd.Flags().BoolVar(&consolidateAggressive, "aggressive", false, "collapse families of granular facts into broad rules (relaxes the over-deletion guard); requires --model")
 	consolidateCmd.Flags().BoolVar(&consolidateDryRun, "dry-run", false, "preview: run the full pass (LLM included) and print the changelog without writing")
 
 	brainImportCmd.Flags().StringArrayVar(&importMap, "map", nil, "pre-resolve a source project to a local one: --map source-slug=local-slug (repeatable)")
@@ -236,14 +238,22 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 	}
 
 	var ex memory.Extractor
+	tidy := brain.TidyOptions{Force: consolidateRerun}
 	mode := "deterministic dedup/decay only"
 	if consolidateModel != "" {
 		model, err := brain.ParseModel(consolidateModel)
 		if err != nil {
 			return err
 		}
-		ex = brain.NewClaudeExtractor(session.RealBlockingRunner(), model)
-		mode = fmt.Sprintf("LLM reorganization via %s", consolidateModel)
+		var exOpts []brain.ExtractorOption
+		strategy := "conservative"
+		if consolidateAggressive {
+			exOpts = append(exOpts, brain.WithAggressiveReorganize())
+			tidy.MinSurvivorRatio = brain.AggressiveMinSurvivorRatio
+			strategy = "aggressive"
+		}
+		ex = brain.NewClaudeExtractor(session.RealBlockingRunner(), model, exOpts...)
+		mode = fmt.Sprintf("%s LLM reorganization via %s", strategy, consolidateModel)
 	}
 
 	// A dry run writes nothing, so it needs no confirmation.
@@ -260,7 +270,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("DRY RUN — scope %s (%s); nothing will be written.\n", scope, mode)
 	}
 
-	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, consolidateRerun)
+	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, tidy)
 	if err != nil {
 		return fmt.Errorf("consolidate: %w", err)
 	}

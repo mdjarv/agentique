@@ -212,10 +212,10 @@ func (e *ClaudeExtractor) reorganizePrompt() string {
 // ReorganizeModeAggressive is the request/UI value selecting the aggressive curator.
 const ReorganizeModeAggressive = "aggressive"
 
-// aggressiveMinSurvivorRatio is the over-deletion guard floor for an aggressive
+// AggressiveMinSurvivorRatio is the over-deletion guard floor for an aggressive
 // Tidy: a bloated scope may collapse to as little as 20% of its facts in one pass
 // (the guard then only catches a near-total wipe). Conservative Tidy keeps 0.5.
-const aggressiveMinSurvivorRatio = 0.2
+const AggressiveMinSurvivorRatio = 0.2
 
 // reorganizeModePolicy maps an HTTP/UI mode string to the extractor options and the
 // matching over-deletion guard ratio. Unknown/empty resolves to conservative
@@ -223,7 +223,7 @@ const aggressiveMinSurvivorRatio = 0.2
 // aggressive policy so the job runner and any future caller stay consistent.
 func reorganizeModePolicy(mode string) (opts []ExtractorOption, minSurvivorRatio float64) {
 	if strings.EqualFold(strings.TrimSpace(mode), ReorganizeModeAggressive) {
-		return []ExtractorOption{WithAggressiveReorganize()}, aggressiveMinSurvivorRatio
+		return []ExtractorOption{WithAggressiveReorganize()}, AggressiveMinSurvivorRatio
 	}
 	return nil, 0
 }
