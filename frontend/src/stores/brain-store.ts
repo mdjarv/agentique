@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import {
-  consolidate as apiConsolidate,
-  type ConsolidateReport,
+  applyConsolidate,
   type CreateMemoryInput,
   createMemory,
   deleteMemory,
   getStatus,
   listMemories,
   type Memory,
+  type PreviewResult,
+  previewConsolidate,
   setLocked,
   setPinned,
   updateMemory,
@@ -19,13 +20,24 @@ interface BrainState {
   loaded: boolean;
   loading: boolean;
 
+  // A single in-flight consolidation preview (one scope at a time): the model's
+  // proposal, awaiting Apply or Dismiss. The model runs at preview; apply replays
+  // the held plan with no further model call.
+  preview: PreviewResult | null;
+  previewScope: string | null;
+  previewing: boolean;
+  applying: boolean;
+
   load: () => Promise<void>;
   create: (input: CreateMemoryInput) => Promise<Memory>;
   update: (id: string, input: { text?: string; category?: string }) => Promise<Memory>;
   remove: (id: string) => Promise<void>;
   pin: (id: string, pinned: boolean) => Promise<void>;
   lock: (id: string, locked: boolean) => Promise<void>;
-  consolidate: (scope: string) => Promise<ConsolidateReport>;
+
+  startPreview: (scope: string, model: string) => Promise<void>;
+  applyPreview: () => Promise<number>;
+  dismissPreview: () => void;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -43,6 +55,10 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   semantic: false,
   loaded: false,
   loading: false,
+  preview: null,
+  previewScope: null,
+  previewing: false,
+  applying: false,
 
   load: async () => {
     if (get().loading) return;
@@ -83,11 +99,40 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     set((s) => ({ memories: upsert(s.memories, m) }));
   },
 
-  consolidate: async (scope) => {
-    const report = await apiConsolidate(scope);
-    // Reload to reflect promotions/merges/decay.
-    const memories = await listMemories();
-    set({ memories });
-    return report;
+  startPreview: async (scope, model) => {
+    set({ previewing: true, preview: null, previewScope: scope });
+    try {
+      const result = await previewConsolidate(scope, model);
+      set({ preview: result, previewScope: scope, previewing: false });
+    } catch (err) {
+      set({ previewing: false, preview: null, previewScope: null });
+      throw err;
+    }
   },
+
+  applyPreview: async () => {
+    const { preview } = get();
+    if (!preview) return 0;
+    const r = preview.report;
+    const changes =
+      (r.promoted?.length ?? 0) +
+      (r.rewritten?.length ?? 0) +
+      (r.abstracted?.length ?? 0) +
+      (r.deleted?.length ?? 0) +
+      (r.decayed?.length ?? 0);
+    set({ applying: true });
+    try {
+      await applyConsolidate(preview.plan);
+      // Reload to reflect promotions/merges/decay.
+      const memories = await listMemories();
+      set({ memories, applying: false, preview: null, previewScope: null });
+      return changes;
+    } catch (err) {
+      // Clear the (now likely stale) preview so the user re-previews.
+      set({ applying: false, preview: null, previewScope: null });
+      throw err;
+    }
+  },
+
+  dismissPreview: () => set({ preview: null, previewScope: null }),
 }));

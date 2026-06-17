@@ -1,4 +1,4 @@
-import { Brain, Lock, LockOpen, Pin, PinOff, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Brain, Loader2, Lock, LockOpen, Pin, PinOff, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -6,19 +6,34 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import type { Memory } from "~/lib/brain-api";
+import type { ConsolidateReport, Memory } from "~/lib/brain-api";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
 
 const CATEGORIES = ["fact", "identity", "preference", "contact", "project", "goal", "task"];
 const GLOBAL_SCOPE = "global";
+const MODELS = ["opus", "sonnet", "haiku"];
 
 export function BrainPage() {
-  const { memories, semantic, loaded, load, create, consolidate } = useBrainStore();
+  const {
+    memories,
+    semantic,
+    loaded,
+    load,
+    create,
+    preview,
+    previewScope,
+    previewing,
+    applying,
+    startPreview,
+    applyPreview,
+    dismissPreview,
+  } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
+  const [model, setModel] = useState("opus");
 
   useEffect(() => {
     if (!loaded) load();
@@ -58,21 +73,20 @@ export function BrainPage() {
       });
   }, [memories, filter, labelForScope]);
 
-  const handleConsolidate = async (scope: string) => {
+  const handleTidy = async (scope: string) => {
     try {
-      const rep = await consolidate(scope);
-      const changes =
-        (rep.promoted?.length ?? 0) +
-        (rep.rewritten?.length ?? 0) +
-        (rep.abstracted?.length ?? 0) +
-        (rep.deleted?.length ?? 0) +
-        (rep.decayed?.length ?? 0);
-      const label = labelForScope(scope);
-      if (rep.reorgRefused) toast.warning(`${label}: reorganization skipped (safety limit)`);
-      else if (rep.skipped || changes === 0) toast.message(`${label}: already tidy`);
-      else toast.success(`Tidied ${label}: ${changes} change${changes === 1 ? "" : "s"}`);
+      await startPreview(scope, model);
     } catch (err) {
-      toast.error(getErrorMessage(err, "Consolidation failed"));
+      toast.error(getErrorMessage(err, "Preview failed"));
+    }
+  };
+
+  const handleApply = async () => {
+    try {
+      const changes = await applyPreview();
+      toast.success(`Applied ${changes} change${changes === 1 ? "" : "s"}`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Apply failed"));
     }
   };
 
@@ -87,6 +101,18 @@ export function BrainPage() {
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {memories.length} {memories.length === 1 ? "memory" : "memories"}
         </span>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="h-8 rounded-md border bg-background px-2 text-xs capitalize"
+          title="Model used to reorganize when you Tidy a scope"
+        >
+          {MODELS.map((m) => (
+            <option key={m} value={m} className="capitalize">
+              {m}
+            </option>
+          ))}
+        </select>
         <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
           <Plus className="size-4" /> Add
         </Button>
@@ -124,29 +150,153 @@ export function BrainPage() {
               : "Loading…"}
           </div>
         )}
-        {groups.map((g) => (
-          <section key={g.scope}>
-            <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-sm font-semibold">{labelForScope(g.scope)}</h2>
-              <span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="ml-auto text-xs"
-                onClick={() => handleConsolidate(g.scope)}
-                title="Merge duplicates, distill captures, decay stale facts"
-              >
-                <Sparkles className="size-3.5" /> Tidy
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {g.items.map((m) => (
-                <MemoryCard key={m.id} memory={m} />
-              ))}
-            </div>
-          </section>
-        ))}
+        {groups.map((g) => {
+          const isPreviewScope = previewScope === g.scope;
+          return (
+            <section key={g.scope}>
+              <div className="flex items-center gap-2 mb-2">
+                <h2 className="text-sm font-semibold">{labelForScope(g.scope)}</h2>
+                <span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto text-xs"
+                  disabled={previewing && isPreviewScope}
+                  onClick={() => handleTidy(g.scope)}
+                  title={`Preview a tidy with ${model}: merge duplicates, distill captures, decay stale facts`}
+                >
+                  <Sparkles className="size-3.5" />
+                  {previewing && isPreviewScope ? "Previewing…" : "Tidy"}
+                </Button>
+              </div>
+              {isPreviewScope && (
+                <ConsolidatePreview
+                  previewing={previewing}
+                  applying={applying}
+                  report={preview?.report ?? null}
+                  onApply={handleApply}
+                  onDismiss={dismissPreview}
+                />
+              )}
+              <div className="space-y-2">
+                {g.items.map((m) => (
+                  <MemoryCard key={m.id} memory={m} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+function ConsolidatePreview({
+  previewing,
+  applying,
+  report,
+  onApply,
+  onDismiss,
+}: {
+  previewing: boolean;
+  applying: boolean;
+  report: ConsolidateReport | null;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  if (previewing) {
+    return (
+      <div className="mb-3 rounded-md border bg-muted/30 p-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" /> Analyzing memories…
+      </div>
+    );
+  }
+  if (!report) return null;
+
+  const changes =
+    (report.promoted?.length ?? 0) +
+    (report.rewritten?.length ?? 0) +
+    (report.abstracted?.length ?? 0) +
+    (report.deleted?.length ?? 0) +
+    (report.decayed?.length ?? 0);
+
+  if (report.reorgRefused) {
+    return (
+      <PreviewShell onDismiss={onDismiss}>
+        <span className="text-xs text-amber-600">
+          Skipped — this tidy would remove more than half of the scope (safety limit).
+        </span>
+      </PreviewShell>
+    );
+  }
+  if (report.skipped || changes === 0) {
+    return (
+      <PreviewShell onDismiss={onDismiss}>
+        <span className="text-xs text-muted-foreground">Already tidy — nothing to change.</span>
+      </PreviewShell>
+    );
+  }
+
+  return (
+    <div className="mb-3 rounded-md border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium">
+          Preview · {changes} change{changes === 1 ? "" : "s"}
+        </span>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onDismiss} disabled={applying}>
+            Dismiss
+          </Button>
+          <Button size="sm" onClick={onApply} disabled={applying}>
+            {applying ? "Applying…" : "Apply"}
+          </Button>
+        </div>
+      </div>
+      <ul className="space-y-1.5 text-xs">
+        {report.rewritten?.map((c) => (
+          <li key={`rw-${c.after.id}`} className="flex flex-col gap-0.5">
+            <span className="text-muted-foreground line-through">{c.before.text}</span>
+            <span className="text-foreground">→ {c.after.text}</span>
+          </li>
+        ))}
+        {report.abstracted?.map((m) => (
+          <li key={`ab-${m.id}`} className="text-green-600">
+            + {m.text}
+          </li>
+        ))}
+        {report.promoted?.map((m) => (
+          <li key={`pr-${m.id}`} className="text-green-600">
+            + {m.text} <span className="text-muted-foreground">(from capture)</span>
+          </li>
+        ))}
+        {report.deleted?.map((m) => (
+          <li key={`del-${m.id}`} className="text-red-500 line-through">
+            {m.text}
+          </li>
+        ))}
+        {report.decayed?.map((m) => (
+          <li key={`dec-${m.id}`} className="text-red-500/80 line-through">
+            {m.text} <span className="not-line-through text-muted-foreground">(stale)</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PreviewShell({
+  children,
+  onDismiss,
+}: {
+  children: React.ReactNode;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mb-3 rounded-md border bg-muted/30 p-3 flex items-center gap-2">
+      {children}
+      <Button size="sm" variant="ghost" className="ml-auto" onClick={onDismiss}>
+        Dismiss
+      </Button>
     </div>
   );
 }

@@ -122,3 +122,53 @@ export async function consolidate(scope: string): Promise<ConsolidateReport> {
   await throwIfNotOk(res, "Failed to consolidate");
   return res.json();
 }
+
+// Fact is the id+text+category view of a memory the reorganization model returns.
+export interface Fact {
+  id: string;
+  text: string;
+  category: string;
+}
+
+// ConsolidationPlan is the model's proposal from a preview. The client holds it
+// and posts it back to apply, so the model runs once and apply commits exactly
+// what was previewed. Opaque to the UI today; typed so a future "edit before
+// apply" feature can mutate it.
+export interface ConsolidationPlan {
+  scope: string;
+  inputFingerprint: string;
+  reorganized: Fact[] | null;
+  reorganizeRan: boolean;
+  reorganizeSkipped: boolean;
+  promoted: { text: string; category: string }[] | null;
+  captureIds: string[] | null;
+}
+
+export interface PreviewResult {
+  report: ConsolidateReport;
+  plan: ConsolidationPlan;
+}
+
+// previewConsolidate runs the LLM phase once and returns the proposed changelog
+// plus the plan that produced it. An empty model = deterministic dedup/decay only.
+export async function previewConsolidate(scope: string, model: string): Promise<PreviewResult> {
+  const res = await fetch(`${BASE}/consolidate/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope, model }),
+  });
+  await throwIfNotOk(res, "Failed to preview consolidation");
+  return res.json();
+}
+
+// applyConsolidate applies a previewed plan deterministically (no model call).
+// Throws on a 409 stale plan ("the brain changed…") — the caller should re-preview.
+export async function applyConsolidate(plan: ConsolidationPlan): Promise<ConsolidateReport> {
+  const res = await fetch(`${BASE}/consolidate/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan }),
+  });
+  await throwIfNotOk(res, "Failed to apply consolidation");
+  return res.json();
+}
