@@ -163,6 +163,9 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `AGENTIQUE_DB` | Database file path (overridden by `--db`). |
 | `LOG_LEVEL` / `JSON_LOG` | Log level / path of the JSONL log file. |
 | `AGENTIQUE_BRAIN_CHROMA_URL`, `AGENTIQUE_BRAIN_EMBED_URL`, `AGENTIQUE_BRAIN_EMBED_MODEL`, `AGENTIQUE_BRAIN_EMBED_KEY` | Opt into semantic recall for the persistent agent memory ("brain"). Without them, recall falls back to keyword search over markdown files. |
+| `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts → session preamble) is on by default; set to `off` to disable. |
+| `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). |
+| `AGENTIQUE_BRAIN_SLEEP_INTERVAL`, `AGENTIQUE_BRAIN_SLEEP_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). |
 
 ## Data & locations
 
@@ -203,6 +206,9 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 | `agentique cleanup` | Delete merged, terminal sessions. |
 | `agentique restore [name|index]` | List or restore database backups. |
 | `agentique brain backfill` | Extract durable memories from past transcripts. |
+| `agentique brain consolidate` | Run the consolidation "sleep" pass over one scope (`--project`/`--scope`, optional `--model`). |
+| `agentique brain export <file>` | Export the brain to a portable JSON bundle. |
+| `agentique brain import <file>` | Import a bundle, mapping projects to local ones (interactive, or `--map`/`-y`). |
 
 Session arguments accept a unique ID prefix.
 

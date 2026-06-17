@@ -75,6 +75,12 @@ Store implements `Searcher` (Chroma does), in which case it blends vector and
 keyword scores — degrading cleanly to keyword-only when the vector path is
 unavailable or returns nothing.
 
+**Associative recall** (RFC P1): after the flat top-K, `expandAssociative` folds in
+a bounded set of each top match's `Related` neighbours (≤3 per seed, ≤K total) at
+lower priority — reading the persisted link graph, no recompute on the hot path.
+The graph is built by `RelinkScope` (see below), so it's only active on scopes
+that have been consolidated.
+
 ## Consolidation ("sleep")
 
 `memory.Consolidate(store, extractor, scope, opts)` is conservative by
@@ -91,8 +97,17 @@ construction:
 - **never touches** pinned, locked, or human-authored facts.
 - a **fingerprint** of the reorganizable set is persisted per scope; an unchanged
   set skips the (expensive) LLM reorganization.
+- **relink** (RFC P1): on a real apply, `RelinkScope` rebuilds the scope's `Related`
+  edge graph from token-Jaccard neighbours (≥0.3, below the 0.6 dup threshold;
+  degree-capped, bidirectional, deterministic/idempotent). Previews skip it
+  (derived metadata). Powers associative recall and the graph view's curated edges.
 
 The pass returns a `Report` (the changelog) describing exactly what changed.
+
+**Extraction bias.** The extract prompt deliberately prefers FEWER, BROADER facts
+(cap 3), skips code-discoverable trivia unless it's a surprising gotcha, and records
+only facts about the session's own project — to keep scopes high-signal rather than
+accumulating implementation details.
 
 ## Agent surface (MCP tools)
 
@@ -196,6 +211,8 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
   (deterministic, `ErrStalePlan`) + `Consolidate` (one-shot); the `Extractor`
   contract; over-deletion guard; `Progress`/`OnError` hooks.
 - `promote.go` — cross-scope `Promoter` + `PlanGlobalPromotion`/`ApplyGlobalPromotion`.
+- `link.go` — `RelinkScope` (the `Related` similarity graph); `recall.go`'s
+  `expandAssociative` consumes it. See `docs/brain-graph-layer.md` (RFC).
 - `dedup.go` `tokenize.go` `filestore/` `chroma/` `embedhttp/`.
 
 agentique glue — `backend/internal/brain/`:
@@ -217,6 +234,7 @@ Session/server wiring (the additive integration points):
 
 Frontend — `frontend/src/`: `lib/brain-api.ts`, `stores/brain-store.ts`,
 `hooks/useBrainSubscriptions.ts`, `components/brain/BrainPage.tsx`,
+`components/brain/BrainGraph.tsx` (force-graph view, RFC graph-view v1),
 nav flare in `components/layout/AppSidebar.tsx` (`brain-flare` in `index.css`).
 
 **To add a feature:** keep policy (model choice, scope mapping, env) in the glue or
@@ -232,8 +250,13 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
   global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
   API, so semantic recall still needs an external embeddings endpoint.)
 - **Query-relevant recall is still pull-based.** Auto-recall injects *pinned*
-  facts into the preamble; relevance-ranked top-K recall for a specific task is
-  still the agent's `MemorySearch` call (no per-turn push of query-relevant facts).
+  facts into the preamble; relevance-ranked top-K recall (now graph-augmented via
+  associative recall) for a specific task is still the agent's `MemorySearch` call
+  (no per-turn push of query-relevant facts).
+- **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
+  similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
+  graph view still draws client-side Jaccard for dashed edges on top. RFC P3
+  (community detection → cluster-aware consolidation) is the next step.
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
   captures for a later sleep pass; the `SourceCapture` path exists but nothing

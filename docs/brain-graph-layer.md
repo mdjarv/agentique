@@ -2,6 +2,13 @@
 
 Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 
+> **Progress:** graph-view v1 and **P1 (link graph + associative recall) are
+> implemented** — see `memory/link.go`, `recall.go`'s `expandAssociative`, and the
+> relink hooks in `consolidate.go`/`promote.go`. P3 (community detection →
+> cluster-aware consolidation) is next; P2/P5 not started. Open decision #1 was
+> resolved as: *persist* consolidation-discovered similarity edges in `Related`
+> (rebuilt each apply); the graph view still recomputes Jaccard for dashed edges.
+
 ## Motivation
 
 The brain already stores a graph and uses it like a flat list.
@@ -132,10 +139,9 @@ codebase-specific facts.
 
 ## Sequencing
 
-1. **Graph-view v1** — force-graph over `derivedFrom` + computed similarity. No backend change.
-   Proves the UI and makes the dead-link problem visible.
-2. **P1** — populate `Related` in consolidation; associative recall.
-3. **P3** — community detection → cluster coloring + within-community consolidation.
+1. ~~**Graph-view v1** — force-graph over `derivedFrom` + computed similarity. No backend change.~~ ✅ done.
+2. ~~**P1** — populate `Related` in consolidation; associative recall.~~ ✅ done (`memory/link.go`).
+3. **P3** — community detection → cluster coloring + within-community consolidation. ← next.
 4. **P2** — confidence tiers + the "confirm" UX.
 5. neo4j: parked as a documented optional export.
 
