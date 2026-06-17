@@ -3,12 +3,13 @@
 Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 
 > **Progress:** graph-view v1, **P1 (link graph + associative recall)**, **P3
-> (community detection → cluster-aware consolidation + aggressive Tidy)** and **P2
-> (confidence tiers + centrality + confirm UX)** are implemented — see
-> `memory/{link,community,confidence,centrality}.go`, `recall.go`'s
+> (community detection → cluster-aware consolidation + aggressive Tidy)**, **P2
+> (confidence tiers + centrality + confirm UX)** and **P5 (ConsolidateGlobal via the
+> graph)** are implemented — see
+> `memory/{link,community,confidence,centrality,global_graph}.go`, `recall.go`'s
 > `expandAssociative`, the cluster-aware chunker in `brain/extractor.go`, the
 > `brain/graph.go` insight endpoint, and the relink/cluster/confidence hooks in
-> `consolidate.go`. P5 not started. Decisions resolved:
+> `consolidate.go`. **All RFC proposals are now shipped.** Decisions resolved:
 > - **#1** (edge persistence): *persist* similarity edges in `Related` (rebuilt each
 >   apply); the graph view still recomputes Jaccard for dashed edges.
 > - **#2** (community algorithm): **label propagation**, made deterministic by
@@ -175,7 +176,7 @@ low-cohesion / `AMBIGUOUS` facts) → "confirm X?" prompts.
 Library: add `react-force-graph-2d` (canvas, scales past our node counts). We already ship `mermaid`
 but it is static/declarative — wrong tool for an organic, interactive graph.
 
-### P5 — ConsolidateGlobal via the graph
+### P5 — ConsolidateGlobal via the graph ✅ implemented
 
 `HandlePreviewGlobal`/`HandleApplyGlobal` already exist. The graph sharpens them: a cross-scope
 community that touches ≥ 2–3 distinct `project:*` scopes is exactly the "transferable pattern"
@@ -183,6 +184,31 @@ guardrail. graphify's `global_graph.py` dedups shared nodes by label and keeps a
 manifest for incremental rebuild — the same mechanic as "the same tooling/preference fact across N
 projects → one `global` node." Guardrail stays: generalize preferences/workflow/tooling, never
 codebase-specific facts.
+
+**Shipped (2026-06-17):**
+- `memory/global_graph.go` — the cross-scope graph layer, pure Go:
+  - `CrossScopeGroups` runs `DetectCommunities` over the candidate facts (token-Jaccard
+    at `DefaultCommunityThreshold`; `Related` edges are scope-local so they're ignored)
+    and keeps only communities spanning ≥ `DefaultMinPromotionScopes` (2, tunable via
+    `ConsolidateOptions.MinPromotionScopes`) distinct project scopes. Codebase-specific
+    facts live in one scope, so they fall out here with **no content heuristic** — the
+    scope span *is* the guardrail. `crossScopeCandidates` flattens the groups keeping each
+    community contiguous so a topic's copies share a model batch and the Promoter can
+    collapse them into one `global` node ("dedup shared nodes by label" — `labelFor` is
+    the dedup key; identical text → Jaccard 1.0 → same community, adjacent in the batch).
+  - `ScopeManifest` + `manifestsEqual` — the per-scope content-hash **manifest** (the same
+    order-independent fingerprint used as the apply-time staleness guard). Incremental
+    rebuild: `PlanGlobalPromotion` skips the (expensive) model run when no project changed
+    since the last pass; `ConsolidateOptions.Force` overrides, mirroring the single-scope
+    fingerprint short-circuit. A `GlobalPlan.Skipped` flag carries the no-op through apply.
+- `PlanGlobalPromotion` now narrows candidates through the guardrail before batching and
+  short-circuits on an unchanged manifest; `ApplyGlobalPromotion` treats a skipped plan as a
+  deterministic no-op (`Report.Skipped`). Confidence/over-deletion/staleness guards unchanged.
+- `brain.Service` persists the manifest (`.global-manifest.json`, separate from the per-scope
+  Tidy `.fingerprints.json`): `PlanGlobal` loads it as `PrevManifest` and records it when a
+  pass finds nothing to promote; `ApplyGlobal` advances it to the post-apply state. The
+  manifest only advances once promotions are actually applied (or a pass is genuinely clean),
+  so an unapplied preview is never wrongly skipped.
 
 ## Non-goals
 
@@ -226,7 +252,7 @@ codebase-specific facts.
 2. ~~**P1** — populate `Related` in consolidation; associative recall.~~ ✅ done (`memory/link.go`).
 3. ~~**P3** — community detection → cluster coloring + within-community (cluster-aware) consolidation + aggressive Tidy.~~ ✅ done (`memory/community.go`, `brain/extractor.go`).
 4. ~~**P2** — confidence tiers + centrality + the "confirm" UX.~~ ✅ done (`memory/{confidence,centrality}.go`, `brain/graph.go`).
-5. neo4j: parked as a documented optional export. **P5** (ConsolidateGlobal via the graph) is the only remaining proposal.
+5. ~~**P5** — ConsolidateGlobal via the graph: cross-scope community guardrail + content-hash manifest.~~ ✅ done (`memory/global_graph.go`). neo4j remains parked as a documented optional export — the only unimplemented item, and a non-goal at current scale.
 
 ## References
 

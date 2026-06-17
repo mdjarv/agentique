@@ -230,6 +230,13 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
   (deterministic, `ErrStalePlan`) + `Consolidate` (one-shot); the `Extractor`
   contract; over-deletion guard; `Progress`/`OnError` hooks.
 - `promote.go` — cross-scope `Promoter` + `PlanGlobalPromotion`/`ApplyGlobalPromotion`.
+  Narrows candidates through the cross-scope graph guardrail and short-circuits on an
+  unchanged manifest (RFC P5).
+- `global_graph.go` — the cross-scope promotion graph (RFC P5): `CrossScopeGroups`
+  (communities spanning ≥ `DefaultMinPromotionScopes` distinct project scopes — the
+  transferable-pattern guardrail), `crossScopeCandidates`/`labelFor` (dedup-by-label
+  batch colocation), and `ScopeManifest`/`manifestsEqual` (the per-scope content-hash
+  manifest for incremental rebuild). Mirrors graphify's `global_graph.py`.
 - `link.go` — `RelinkScope` (the `Related` similarity graph); `recall.go`'s
   `expandAssociative` consumes it. See `docs/brain-graph-layer.md` (RFC).
 - `community.go` — `DetectCommunities` (deterministic label propagation) +
@@ -286,9 +293,11 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
-  (community detection → cluster-aware consolidation + aggressive Tidy) and P2
-  (confidence tiers + degree/betweenness centrality + the confirm UX) are **done**;
-  the cross-scope graph play (P5) is the only remaining RFC proposal.
+  (community detection → cluster-aware consolidation + aggressive Tidy), P2
+  (confidence tiers + degree/betweenness centrality + the confirm UX) and P5
+  (cross-scope-community guardrail + content-hash manifest for global promotion)
+  are **done** — all RFC proposals are now shipped (neo4j export remains a parked
+  non-goal).
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
   captures for a later sleep pass; the `SourceCapture` path exists but nothing
