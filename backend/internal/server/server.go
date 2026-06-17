@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
@@ -91,6 +92,7 @@ type Server struct {
 	svc            *session.Service
 	browserSvc     *session.BrowserService
 	authSvc        *auth.Service
+	brainAuto      *brain.Automation
 	allowedOrigins map[string]bool
 }
 
@@ -224,6 +226,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// set. Failure to initialize must not take down the server — memory is an
 	// enhancement, so we log and continue without it.
 	var memProvider mcphttp.MemoryStore
+	var brainAuto *brain.Automation
 	if cfg.BrainDir != "" {
 		brainSvc, err := brain.New(context.Background(), brain.Config{
 			Dir:         cfg.BrainDir,
@@ -242,7 +245,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				}
 				return brain.ScopeForProject(s.ProjectID)
 			}
-			memProvider = brain.NewMCPAdapter(brainSvc, scopeResolver)
+			mcpAdapter := brain.NewMCPAdapter(brainSvc, scopeResolver)
+			mcpAdapter.SetBus(bus)
+			memProvider = mcpAdapter
 
 			bh := &brain.Handler{Service: brainSvc, Runner: runner, Bus: bus}
 			mux.Handle("GET /api/brain/memories", httperror.HandlerFunc(bh.HandleList))
@@ -261,6 +266,61 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
 			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
 			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
+
+			// --- Memory automation (the recall → encode → consolidate loop) ---
+
+			// Auto-recall (default on): inject pinned facts into every session's
+			// system preamble so the brain shapes behaviour without the agent having
+			// to call MemorySearch. Disable with AGENTIQUE_BRAIN_RECALL=off.
+			if v := os.Getenv("AGENTIQUE_BRAIN_RECALL"); v != "off" && v != "false" && v != "0" {
+				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
+				slog.Info("brain: auto-recall enabled (pinned facts injected into session preamble)")
+			}
+
+			// Auto-encode (opt-in): distill durable memories from a finished session's
+			// transcript when it's deleted. AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus.
+			if lm := os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"); lm != "" {
+				if m, perr := brain.ParseModel(lm); perr != nil {
+					slog.Warn("brain: auto-encode disabled (bad model)", "model", lm, "error", perr)
+				} else {
+					ex := brain.NewClaudeExtractor(runner, m)
+					svc.SetOnSessionEnd(func(projectID string, events []store.SessionEvent) {
+						tevents := make([]brain.TranscriptEvent, len(events))
+						for i, e := range events {
+							tevents[i] = brain.TranscriptEvent{Type: e.Type, Data: e.Data}
+						}
+						n, lerr := brainSvc.LearnFromTranscript(context.Background(), brain.ScopeForProject(projectID), tevents, ex)
+						if lerr != nil {
+							slog.Warn("brain: auto-encode failed", "project", projectID, "error", lerr)
+							return
+						}
+						if n > 0 {
+							slog.Info("brain: learned from ended session", "project", projectID, "facts", n)
+							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
+						}
+					})
+					slog.Info("brain: auto-encode enabled", "model", lm)
+				}
+			}
+
+			// Scheduled sleep (opt-in): periodic consolidation across all scopes.
+			// AGENTIQUE_BRAIN_SLEEP_INTERVAL=6h (+ optional AGENTIQUE_BRAIN_SLEEP_MODEL).
+			if iv := os.Getenv("AGENTIQUE_BRAIN_SLEEP_INTERVAL"); iv != "" {
+				if d, derr := time.ParseDuration(iv); derr != nil || d <= 0 {
+					slog.Warn("brain: sleep scheduler off (bad interval)", "value", iv, "error", derr)
+				} else {
+					var sm claudecli.Model
+					if smName := os.Getenv("AGENTIQUE_BRAIN_SLEEP_MODEL"); smName != "" {
+						if m, merr := brain.ParseModel(smName); merr == nil {
+							sm = m
+						} else {
+							slog.Warn("brain: sleep model invalid; deterministic dedup only", "model", smName, "error", merr)
+						}
+					}
+					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm)
+					brainAuto.Start()
+				}
+			}
 		}
 	}
 
@@ -284,7 +344,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc}
+	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto}
 
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
@@ -315,6 +375,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 // Shutdown gracefully closes all live sessions and browser instances.
 func (s *Server) Shutdown() {
+	if s.brainAuto != nil {
+		s.brainAuto.Stop()
+	}
 	if s.svc != nil {
 		s.svc.Close()
 	}

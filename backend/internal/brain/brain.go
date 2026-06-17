@@ -167,6 +167,68 @@ func (s *Service) List(ctx context.Context, scopes ...memory.Scope) ([]memory.Re
 	return s.store.List(ctx, scopes...)
 }
 
+// PinnedPreamble formats the always-injected (pinned) facts for a project plus
+// global as a system-preamble block, or "" when there are none. Read-only; this
+// is the automatic, push side of recall (the agent still pulls more via
+// MemorySearch). Pinned facts are exempt from decay, so injection doesn't bump
+// their use count.
+func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
+	scope := ScopeForProject(projectID)
+	// Empty query => pinned only (the relevance path needs a query).
+	res, err := memory.Recall(ctx, s.store, memory.Query{Scopes: recallScopes(scope)})
+	if err != nil || len(res.Pinned) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Memory (your persistent brain)\n\n")
+	b.WriteString("Durable facts learned about this user and project across past sessions — treat them as established context. Use the MemorySearch tool to recall more for the task at hand.\n")
+	for _, r := range res.Pinned {
+		b.WriteString("- ")
+		b.WriteString(r.Text)
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// ListScopes returns the distinct scopes that currently hold memories — used by
+// the periodic "sleep" pass to know what to consolidate.
+func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {
+	all, err := s.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[memory.Scope]struct{}, len(all))
+	var scopes []memory.Scope
+	for _, r := range all {
+		if _, ok := seen[r.Scope]; ok {
+			continue
+		}
+		seen[r.Scope] = struct{}{}
+		scopes = append(scopes, r.Scope)
+	}
+	return scopes, nil
+}
+
+// LearnFromTranscript distills durable facts from a finished session's transcript
+// and adds them to the scope (deduped against existing facts). Best-effort: a
+// chunk that fails extraction is skipped. Returns the count of new facts written.
+func (s *Service) LearnFromTranscript(ctx context.Context, scope memory.Scope, events []TranscriptEvent, ex memory.Extractor) (int, error) {
+	chunks := BuildTranscript(events, extractMaxChars)
+	added := 0
+	for _, chunk := range chunks {
+		cands, err := ex.Extract(ctx, []string{chunk})
+		if err != nil {
+			continue
+		}
+		for _, c := range cands {
+			if _, err := s.Add(ctx, scope, c.Text, c.Category, memory.SourceConsolidated); err == nil {
+				added++
+			}
+		}
+	}
+	return added, nil
+}
+
 // Get returns a single memory by ID.
 func (s *Service) Get(ctx context.Context, id string) (memory.Record, error) {
 	return s.store.Get(ctx, id)

@@ -122,6 +122,26 @@ All three of `CHROMA_URL`, `EMBED_URL`, `EMBED_MODEL` must be set (and Chroma
 reachable) for semantic recall; otherwise the brain logs a warning and uses
 keyword recall.
 
+## Automation (the live recall → encode → consolidate loop)
+
+The cognitive loop runs automatically, not just via the CLI/UI:
+
+- **Auto-recall (on by default).** The project's pinned facts are injected into
+  every session's system preamble at create/resume (`Service.PinnedPreamble` →
+  `Manager.MemoryPreambleFn`), so the brain shapes behaviour without the agent
+  having to call `MemorySearch` (query-relevant recall stays pull-based via that
+  tool). Disable with `AGENTIQUE_BRAIN_RECALL=off`.
+- **Auto-encode (opt-in).** When a session is deleted, its transcript is distilled
+  into durable facts and added to the project scope (async, deduped) — set
+  `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips trivial sessions.
+- **Scheduled "sleep" (opt-in).** `AGENTIQUE_BRAIN_SLEEP_INTERVAL` (e.g. `6h`)
+  starts a background pass that consolidates every scope on each tick; add
+  `AGENTIQUE_BRAIN_SLEEP_MODEL` for LLM reorganization (else deterministic
+  dedup/decay). Auto-apply is safe by the consolidation guards.
+
+Memory changes (HTTP, agent `MemoryAdd`, auto-encode, sleep) broadcast a
+`brain.updated` WebSocket event that flares the nav button and refreshes open tabs.
+
 ## Scope model
 
 agentique is single-user, so scopes are project-based: `global` for cross-project
@@ -131,19 +151,18 @@ map their own concepts (board, persona, …).
 
 ## Known limitations / remaining work
 
-- **The LLM `Extractor` runs only in `brain backfill`, not live consolidation.**
-  `HaikuExtractor` (Claude Haiku via claudecli) is wired into the `agentique
-  brain backfill` command, which retroactively promotes durable facts from past
-  session transcripts. The REST `/consolidate` pass still runs with a `nil`
-  extractor — deterministic decay/dedup only; LLM promotion and reorganization
-  are not yet on the automatic path. `MemoryAdd` (agent-curated) remains the
-  primary live write path and needs no LLM. (Anthropic has no embeddings API, so
-  semantic recall still needs an external embeddings endpoint.)
-- **Auto-capture on turn-end is not wired.** Deliberately deferred until an
-  `Extractor` exists, so raw captures don't accumulate undistilled.
-- **Preamble push-injection is deferred.** Recall today is pull-based via
-  `MemorySearch`. Always-on injection of pinned facts into the session preamble
-  is a planned enhancement.
+- **The `Extractor` is the caller's, with a caller-chosen model.** `ClaudeExtractor`
+  takes the model as a required parameter (no library default). It drives
+  `brain backfill`, the preview/apply consolidation (per-scope Tidy + cross-scope
+  global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
+  API, so semantic recall still needs an external embeddings endpoint.)
+- **Query-relevant recall is still pull-based.** Auto-recall injects *pinned*
+  facts into the preamble; relevance-ranked top-K recall for a specific task is
+  still the agent's `MemorySearch` call (no per-turn push of query-relevant facts).
+- **Episodic `capture` staging is unused.** Auto-encode distills a finished
+  session's transcript directly into durable facts rather than staging raw
+  captures for a later sleep pass; the `SourceCapture` path exists but nothing
+  writes to it.
 - **Chroma collection space.** The collection is created with cosine distance;
   changing the embedding model/space requires a fresh collection name (a stale
   collection of the same name created with a different space would skew scores).

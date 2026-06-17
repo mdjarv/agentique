@@ -71,6 +71,11 @@ type Manager struct {
 	gitStatus      branchStatusQuerier
 	GlobalPreamble string
 
+	// MemoryPreambleFn, when set, returns a system-preamble block of the project's
+	// pinned memories to inject at session create/resume (auto-recall). Read-only;
+	// nil disables it. Wired to the brain Service by the server.
+	MemoryPreambleFn func(ctx context.Context, projectID string) string
+
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
 	mcpTokens      *mcphttp.TokenStore
@@ -188,6 +193,19 @@ func (m *Manager) SetMCPHTTP(tokens *mcphttp.TokenStore, internalURL string) {
 // session destroy.
 func (m *Manager) SetDevURLStore(store *devurls.Store) { m.devURLs = store }
 
+// memoryPreamble returns the project's pinned-memory block (auto-recall),
+// prefixed with blank lines for section separation, or "" when disabled or empty.
+func (m *Manager) memoryPreamble(ctx context.Context, projectID string) string {
+	if m.MemoryPreambleFn == nil || projectID == "" {
+		return ""
+	}
+	block := m.MemoryPreambleFn(ctx, projectID)
+	if block == "" {
+		return ""
+	}
+	return "\n\n" + block
+}
+
 // devURLsPreamble returns a system-prompt section documenting the dev URL
 // capability when at least one slot is configured. Empty string otherwise.
 func (m *Manager) devURLsPreamble(ctx context.Context) string {
@@ -241,7 +259,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID)
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
@@ -395,7 +413,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
@@ -484,7 +502,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 

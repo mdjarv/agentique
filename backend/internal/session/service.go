@@ -188,7 +188,17 @@ type Service struct {
 	idempotencyMu    sync.Mutex
 	idempotencyCache map[string]idempotencyEntry
 
+	// onSessionEnd, when set, is invoked (async, best-effort) just after a session
+	// is deleted, with the project ID and the session's transcript captured before
+	// removal — used to distill durable memories from a finished session.
+	onSessionEnd func(projectID string, events []store.SessionEvent)
+
 	done chan struct{}
+}
+
+// SetOnSessionEnd wires the auto-encode hook fired after a session is deleted.
+func (s *Service) SetOnSessionEnd(fn func(projectID string, events []store.SessionEvent)) {
+	s.onSessionEnd = fn
 }
 
 // NewService creates a new session Service.
@@ -1074,6 +1084,15 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		slog.Warn("session files cleanup failed", "session_id", sessionID, "error", err)
 	}
 
+	// Capture the transcript before deletion so the auto-encode hook can distill
+	// durable memories from it (the FK cascade wipes session_events).
+	var endEvents []store.SessionEvent
+	if s.onSessionEnd != nil {
+		if evs, evErr := s.queries.ListEventsBySession(ctx, sessionID); evErr == nil {
+			endEvents = evs
+		}
+	}
+
 	if err := s.queries.DeleteSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("db delete failed: %w", err)
 	}
@@ -1084,8 +1103,16 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	s.hub.Publish(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
 
+	if s.onSessionEnd != nil && len(endEvents) >= minEventsToEncode {
+		projectID := dbSess.ProjectID
+		go s.onSessionEnd(projectID, endEvents)
+	}
+
 	return nil
 }
+
+// minEventsToEncode skips distilling memories from trivial/empty sessions.
+const minEventsToEncode = 8
 
 // SetSessionModel changes the model for a live session.
 func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) error {

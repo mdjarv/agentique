@@ -228,9 +228,19 @@ export const useBrainStore = create<BrainState>((set, get) => ({
 
   onBrainUpdated: () => {
     set((s) => ({ flareSeq: s.flareSeq + 1 }));
-    // Keep the list fresh across tabs (a change may have come from elsewhere).
-    listMemories()
-      .then((memories) => set({ memories }))
-      .catch((err) => console.error("Failed to refresh memories:", err));
+    // Coalesce bursts (e.g. the sleep pass broadcasts once per scope) into a single
+    // list refresh so we don't fire N fetches back-to-back.
+    scheduleRefresh();
   },
 }));
+
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    listMemories()
+      .then((memories) => useBrainStore.setState({ memories }))
+      .catch((err) => console.error("Failed to refresh memories:", err));
+  }, 600);
+}

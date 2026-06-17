@@ -22,6 +22,46 @@ func newSvc(t *testing.T) *Service {
 	return s
 }
 
+func TestPinnedPreambleAndListScopes(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	scope := ScopeForProject("p1")
+
+	// A pinned (identity auto-pins) fact + a non-pinned one in the project.
+	if _, err := s.Add(ctx, scope, "User's name is Mathias.", memory.CategoryIdentity, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add(ctx, scope, "Project builds with just.", memory.CategoryProject, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+	// A pinned global fact, plus an unrelated project scope.
+	if _, err := s.Add(ctx, memory.ScopeGlobal, "Don't push without asking.", memory.CategoryIdentity, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add(ctx, ScopeForProject("p2"), "other project fact", memory.CategoryFact, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	pre := s.PinnedPreamble(ctx, "p1")
+	if !strings.Contains(pre, "Mathias") || !strings.Contains(pre, "Don't push") {
+		t.Fatalf("preamble should include p1 + global pinned facts, got:\n%s", pre)
+	}
+	if strings.Contains(pre, "builds with just") {
+		t.Fatalf("non-pinned facts must not be injected, got:\n%s", pre)
+	}
+	if strings.Contains(pre, "other project fact") {
+		t.Fatalf("another project's facts must not leak into p1's preamble, got:\n%s", pre)
+	}
+
+	scopes, err := s.ListScopes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scopes) != 3 { // project:p1, project:p2, global
+		t.Fatalf("want 3 scopes, got %d: %v", len(scopes), scopes)
+	}
+}
+
 func TestAddDedupAndIdentityPin(t *testing.T) {
 	s := newSvc(t)
 	ctx := context.Background()

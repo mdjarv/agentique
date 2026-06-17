@@ -15,7 +15,9 @@ import (
 // Push event types broadcast over the WebSocket bus to every connected tab.
 const (
 	consolidationPush = "brain.consolidation" // job lifecycle (running/progress/done/error)
-	brainUpdatedPush  = "brain.updated"       // a memory was added/changed/removed
+	// EventBrainUpdated signals a memory was added/changed/removed (HTTP, agent, or
+	// background automation). Drives the nav "flare" and a list refresh.
+	EventBrainUpdated = "brain.updated"
 )
 
 const (
@@ -65,7 +67,7 @@ func (h *Handler) currentJob() *JobState {
 // "flare" and a memory-list refresh). Best-effort and fire-and-forget.
 func (h *Handler) brainChanged() {
 	if h.Bus != nil {
-		h.Bus.Broadcast(brainUpdatedPush, map[string]string{})
+		h.Bus.Broadcast(EventBrainUpdated, map[string]string{})
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/allbin/agentkit/eventbus"
+
 	"github.com/mdjarv/agentique/backend/internal/memory"
 )
 
@@ -19,6 +21,7 @@ type MCPAdapter struct {
 	svc     *Service
 	resolve ScopeResolver
 	k       int
+	bus     eventbus.Broadcaster // optional; broadcasts the flare when an agent adds a fact
 }
 
 // NewMCPAdapter returns an adapter over svc using resolve to map sessions to scopes.
@@ -26,12 +29,18 @@ func NewMCPAdapter(svc *Service, resolve ScopeResolver) *MCPAdapter {
 	return &MCPAdapter{svc: svc, resolve: resolve, k: memory.DefaultRecallK}
 }
 
+// SetBus wires the broadcaster so an agent-saved memory flares the nav button.
+func (a *MCPAdapter) SetBus(bus eventbus.Broadcaster) { a.bus = bus }
+
 // MemoryAdd stores a fact for the calling session's scope.
 func (a *MCPAdapter) MemoryAdd(ctx context.Context, sessionID, text, category string) (string, error) {
 	scope := a.resolve(ctx, sessionID)
 	r, err := a.svc.Add(ctx, scope, text, memory.Category(strings.TrimSpace(category)), memory.SourceAgent)
 	if err != nil {
 		return "", err
+	}
+	if a.bus != nil {
+		a.bus.Broadcast(EventBrainUpdated, map[string]string{})
 	}
 	return fmt.Sprintf("Remembered [%s]: %s", r.Category, r.Text), nil
 }
