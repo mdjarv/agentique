@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -267,14 +268,20 @@ func (e *ClaudeExtractor) Extract(ctx context.Context, episodes []string) ([]mem
 
 // maxReorgBatch bounds how many facts go to the model in one Reorganize call.
 // Large scopes are chunked so the model never has to re-emit the whole set in a
-// single generation (which risks hitting the output limit and silently dropping
-// facts). A var, not a const, so tests can shrink it.
+// single generation. This is a hard reliability limit, not just an optimization:
+// a structured-output reorganize of a large chunk exhausts the model's turn/output
+// budget and the CLI exits non-zero (verified on the live brain — ~57 facts
+// succeed, ~85 fail with `claudecli: exit 1`), which aborts the whole pass. 50
+// keeps a comfortable margin below that wall for the longer facts in bloated scopes.
 //
 // Chunking is community-aware (chunkByCommunity): facts carry a Community label
 // (memory.factsForReorg) and a whole community lands in one chunk whenever it fits,
 // so related facts merge across the scope rather than only within an arbitrary
-// 100-fact slice. A community larger than the batch is split, but that is rare.
-var maxReorgBatch = 100
+// slice. Cluster-aware chunking is what makes this smaller batch lossless — related
+// facts co-locate instead of scattering. A community larger than the batch is split,
+// but that is rare (e.g. reviewbot's largest is ~22). A var, not a const, so tests
+// can shrink it further.
+var maxReorgBatch = 50
 
 // Reorganize asks the model to merge/clean a set of facts, chunking large sets by
 // topic community and running the chunks with bounded concurrency. On any parse
@@ -294,7 +301,17 @@ func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) (
 	out := make([]memory.Fact, 0, len(facts))
 	for idx := range chunks {
 		if errsByIdx[idx] != nil {
-			return nil, errsByIdx[idx] // a hard model error aborts (parse misses are no-ops)
+			if ctx.Err() != nil {
+				return nil, errsByIdx[idx] // cancellation aborts the whole pass
+			}
+			// One chunk failing (after retries) must not sink the others — a large
+			// scope where 8/9 chunks tidy and one transiently crashed is a useful
+			// partial pass; keep the failed chunk's facts unchanged and let a re-run
+			// pick it up. The over-deletion guard still applies to the merged result.
+			slog.Warn("brain: reorganize chunk failed after retries; keeping it unchanged",
+				"facts", len(chunks[idx]), "error", errsByIdx[idx])
+			out = append(out, chunks[idx]...)
+			continue
 		}
 		out = append(out, results[idx]...)
 	}
@@ -358,6 +375,11 @@ func chunkByCommunity(facts []memory.Fact, max int) [][]memory.Fact {
 // maxParallelReorg caps concurrent Reorganize chunk calls. See memory.maxParallelBatches.
 var maxParallelReorg = 4
 
+// reorgMaxAttempts is how many times a single reorganize chunk is tried before it
+// gives up — covers the intermittent `claudecli: exit 1` crash on large structured
+// generations, which msggen.RunWithRetry doesn't treat as retriable.
+const reorgMaxAttempts = 3
+
 func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
 	if len(facts) == 0 {
 		return facts, nil
@@ -379,7 +401,22 @@ func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fa
 		return facts, nil
 	}
 	prompt := e.reorganizePrompt() + "\n\nFACTS:\n" + string(inJSON) + "\n\nReturn ONLY the JSON object."
-	res, err := msggen.RunWithRetry(ctx, e.runner, prompt, e.opts(reorganizeSchema)...)
+	// A large structured-output generation occasionally crashes the CLI subprocess
+	// (`claudecli: exit 1`, no events) — a transient failure msggen.RunWithRetry
+	// doesn't classify as retriable. Reorganize is idempotent, so retry the whole
+	// chunk a few times before giving up; this turns an intermittent crash from a
+	// pass-aborting error into a no-op at worst.
+	var res *claudecli.BlockingResult
+	for attempt := 0; attempt < reorgMaxAttempts; attempt++ {
+		if res, err = msggen.RunWithRetry(ctx, e.runner, prompt, e.opts(reorganizeSchema)...); err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		slog.Warn("brain: reorganize chunk call failed; retrying",
+			"attempt", attempt+1, "of", reorgMaxAttempts, "facts", len(facts), "error", err)
+	}
 	if err != nil {
 		return nil, err
 	}
