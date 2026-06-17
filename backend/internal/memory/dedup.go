@@ -8,7 +8,12 @@ const DefaultDuplicateThreshold = 0.6
 
 // jaccard returns the token-set Jaccard similarity of two texts in [0,1].
 func jaccard(a, b string) float64 {
-	sa, sb := tokenSet(a), tokenSet(b)
+	return jaccardSets(tokenSet(a), tokenSet(b))
+}
+
+// jaccardSets is jaccard over pre-tokenized sets, so callers doing many pairwise
+// comparisons (e.g. RelinkScope) tokenize each text once.
+func jaccardSets(sa, sb map[string]struct{}) float64 {
 	if len(sa) == 0 && len(sb) == 0 {
 		return 1
 	}

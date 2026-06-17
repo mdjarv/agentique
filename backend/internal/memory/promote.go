@@ -263,6 +263,11 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 		}
 		rep.Deleted = append(rep.Deleted, r)
 	}
+	if !opts.DryRun {
+		if _, err := RelinkScope(ctx, store, ScopeGlobal); err != nil {
+			return rep, err
+		}
+	}
 	return rep, nil
 }
 

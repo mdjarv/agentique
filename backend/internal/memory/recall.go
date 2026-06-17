@@ -84,7 +84,50 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	}
 
 	res.Recalled = rank(q.Text, candidates, vec, k)
+	res.Recalled = expandAssociative(res.Recalled, res.Pinned, all, k)
 	return res, nil
+}
+
+// expandAssociative folds in a bounded set of `Related` neighbors of the top
+// query matches — mirroring human associative recall — appended after the ranked
+// hits at lower priority. Bounded fan-out (≤ assocPerSeed per seed, ≤ k total
+// extra) keeps the hot path cheap; it reads persisted Related, no recompute.
+func expandAssociative(recalled, pinned, all []Record, k int) []Record {
+	if len(recalled) == 0 {
+		return recalled
+	}
+	const assocPerSeed = 3
+	byID := make(map[string]Record, len(all))
+	for _, r := range all {
+		byID[r.ID] = r
+	}
+	included := make(map[string]struct{}, len(recalled)+len(pinned))
+	for _, r := range pinned {
+		included[r.ID] = struct{}{}
+	}
+	for _, r := range recalled {
+		included[r.ID] = struct{}{}
+	}
+	seeds := recalled // snapshot: iterate the ranked hits, not the growing result
+	for _, seed := range seeds {
+		added := 0
+		for _, nid := range seed.Related {
+			if len(recalled)-len(seeds) >= k || added >= assocPerSeed {
+				break
+			}
+			nr, ok := byID[nid]
+			if !ok || nr.Source == SourceCapture {
+				continue
+			}
+			if _, dup := included[nid]; dup {
+				continue
+			}
+			included[nid] = struct{}{}
+			recalled = append(recalled, nr)
+			added++
+		}
+	}
+	return recalled
 }
 
 func rank(query string, candidates []Record, vec map[string]float64, k int) []Record {

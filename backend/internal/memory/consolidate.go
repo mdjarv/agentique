@@ -257,6 +257,14 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	}
 
 	rep.Fingerprint = fingerprint(reorgInput)
+
+	// Rebuild the scope's link graph from the settled set (associative-recall +
+	// graph-view signal). Derived metadata, so previews skip it.
+	if !opts.DryRun {
+		if _, err := RelinkScope(ctx, store, scope); err != nil {
+			return rep, err
+		}
+	}
 	return rep, nil
 }
 
