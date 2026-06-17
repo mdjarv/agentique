@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/memory"
 )
@@ -34,7 +35,7 @@ func TestBuildReportGodNodesBridgesAndConfirm(t *testing.T) {
 		brec("human", 0.4, memory.SourceHuman),
 	}
 	cent := memory.ComputeCentrality(recs)
-	rep := buildReport(recs, cent)
+	rep := buildReport(recs, cent, time.Now().UTC())
 
 	if len(rep.GodNodes) == 0 || rep.GodNodes[0] != "hub" {
 		t.Errorf("god nodes = %v, want hub first", rep.GodNodes)
@@ -117,7 +118,7 @@ func TestConfirmMakesGroundTruth(t *testing.T) {
 	// Confirmed facts are no longer in the confirm queue.
 	all, _ := svc.List(ctx, memory.ScopeGlobal)
 	cent := memory.ComputeCentrality(all)
-	if rep := buildReport(all, cent); len(rep.NeedsConfirmation) != 0 {
+	if rep := buildReport(all, cent, time.Now().UTC()); len(rep.NeedsConfirmation) != 0 {
 		t.Errorf("needsConfirmation after confirm = %v, want empty", rep.NeedsConfirmation)
 	}
 }

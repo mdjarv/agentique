@@ -2,6 +2,7 @@ package memory
 
 import (
 	"math"
+	"sort"
 	"time"
 )
 
@@ -64,6 +65,55 @@ func lastSeen(r Record) time.Time {
 		return r.LastUsedAt
 	}
 	return r.UpdatedAt
+}
+
+const (
+	// reviewStorageFloor: only well-established facts are worth resurfacing for review.
+	reviewStorageFloor = 0.6
+	// reviewRetrievalCeil: ...once they've gone cold (low current accessibility).
+	reviewRetrievalCeil = 0.3
+)
+
+// DueForReview returns the well-established facts that have gone cold — high storage
+// strength but low retrieval strength — so a spaced-review pass can resurface them
+// before disuse decays them away (RFC-LD D6, the spacing effect: review what you know
+// but haven't touched, rather than silently forgetting it). Pinned facts (always
+// injected, never cold) and captures are excluded. Sorted most-due first (largest
+// storage−retrieval gap, then id), capped at limit (<=0 → uncapped). Deterministic.
+func DueForReview(records []Record, now time.Time, limit int) []Record {
+	type scored struct {
+		r   Record
+		gap float64
+	}
+	var out []scored
+	for _, r := range records {
+		if r.Pinned || r.Source == SourceCapture {
+			continue
+		}
+		st := StorageStrength(r)
+		if st < reviewStorageFloor {
+			continue
+		}
+		rt := RetrievalStrength(r, now)
+		if rt > reviewRetrievalCeil {
+			continue
+		}
+		out = append(out, scored{r, st - rt})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].gap != out[j].gap {
+			return out[i].gap > out[j].gap
+		}
+		return out[i].r.ID < out[j].r.ID
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	res := make([]Record, len(out))
+	for i := range out {
+		res[i] = out[i].r
+	}
+	return res
 }
 
 func clamp01(v float64) float64 {

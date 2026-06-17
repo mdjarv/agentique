@@ -3,6 +3,7 @@ package brain
 import (
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
@@ -31,6 +32,12 @@ type graphReportDTO struct {
 	// Isolated are facts with no structural links (a knowledge-gap / low-cohesion
 	// signal — graphify's floating dots).
 	Isolated []string `json:"isolated"`
+	// DueForReview are well-established facts that have gone cold (high storage, low
+	// retrieval) — the spaced-review queue (RFC-LD D6): resurface before forgetting.
+	DueForReview []string `json:"dueForReview"`
+	// Interference are similar-but-not-duplicate fact pairs an agent could conflate —
+	// the "same, or distinct?" disambiguation queue (RFC-LD D5).
+	Interference []memory.InterferencePair `json:"interference"`
 }
 
 type graphDTO struct {
@@ -42,6 +49,8 @@ const (
 	maxGodNodes          = 8
 	maxBridges           = 8
 	maxNeedsConfirmation = 25
+	maxDueForReview      = 15
+	maxInterference      = 25
 )
 
 // confirmable reports whether a fact is eligible for the confirm UX: not pinned,
@@ -81,18 +90,20 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
 	}
 
-	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent)})
+	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent, time.Now().UTC())})
 	return nil
 }
 
 // buildReport derives the insight lists from the records + their centrality. Pure
 // data shaping, factored out so it is unit-testable without an HTTP round-trip.
-func buildReport(recs []memory.Record, cent map[string]memory.Centrality) graphReportDTO {
+func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now time.Time) graphReportDTO {
 	rep := graphReportDTO{
 		GodNodes:          []string{},
 		Bridges:           []string{},
 		NeedsConfirmation: []string{},
 		Isolated:          []string{},
+		DueForReview:      []string{},
+		Interference:      []memory.InterferencePair{},
 	}
 	byID := make(map[string]memory.Record, len(recs))
 	for _, r := range recs {
@@ -144,9 +155,13 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality) graphR
 	// Needs-confirmation: the brain's least-trusted facts. Non-protected facts at or
 	// below the confirmation score (cross-project generalizations, AMBIGUOUS facts).
 	// Lowest score first, then least-used, then oldest — surface the weakest first.
+	// A fact qualifies if it's a low-confidence non-protected fact OR it was explicitly
+	// flagged as contradicted on recall (RFC-LD D2) — a flagged protected fact must
+	// still surface for the human even though its score is untouched.
 	var confirm []string
 	for _, r := range recs {
-		if confirmable(r) && r.ConfidenceScore <= memory.NeedsConfirmationScore {
+		lowConfidence := confirmable(r) && r.ConfidenceScore <= memory.NeedsConfirmationScore
+		if lowConfidence || r.ReviewNote != "" {
 			confirm = append(confirm, r.ID)
 		}
 	}
@@ -174,5 +189,16 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality) graphR
 			rep.Isolated = append(rep.Isolated, id)
 		}
 	}
+
+	// Due-for-review (RFC-LD D6): well-established facts gone cold — resurface before
+	// disuse decays them. Empty right after a tidy (everything is freshly touched);
+	// fills in as facts age without recall.
+	for _, r := range memory.DueForReview(recs, now, maxDueForReview) {
+		rep.DueForReview = append(rep.DueForReview, r.ID)
+	}
+
+	// Interference (RFC-LD D5): similar-but-not-duplicate pairs to disambiguate.
+	rep.Interference = memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference)
+
 	return rep
 }
