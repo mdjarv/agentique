@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -283,12 +284,28 @@ func (e *ClaudeExtractor) Extract(ctx context.Context, episodes []string) ([]mem
 // can shrink it further.
 var maxReorgBatch = 50
 
+// aggressiveMaxReorgBatch is a smaller batch for the aggressive Tidy. Aggressive
+// runs precisely on bloated scopes — longer, denser facts whose structured-output
+// generation is the most likely to hit the silent `claudecli: exit 1` wall (see the
+// maxReorgBatch note and docs/tech-debt.md). A tighter batch trades a few more model
+// calls for materially fewer crash-and-retry cycles on exactly the runs that crash.
+// Cluster-aware chunking keeps the smaller batch lossless. A var so tests can shrink it.
+var aggressiveMaxReorgBatch = 35
+
+// reorgBatchSize returns the per-call fact cap for the extractor's mode.
+func (e *ClaudeExtractor) reorgBatchSize() int {
+	if e.aggressive {
+		return aggressiveMaxReorgBatch
+	}
+	return maxReorgBatch
+}
+
 // Reorganize asks the model to merge/clean a set of facts, chunking large sets by
 // topic community and running the chunks with bounded concurrency. On any parse
 // failure a chunk returns its input unchanged (a safe no-op), so a failed chunk
 // never causes the consolidation core to delete its facts.
 func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
-	chunks := chunkByCommunity(facts, maxReorgBatch)
+	chunks := chunkByCommunity(facts, e.reorgBatchSize())
 	if len(chunks) <= 1 {
 		return e.reorganizeBatch(ctx, facts)
 	}
@@ -309,7 +326,7 @@ func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) (
 			// partial pass; keep the failed chunk's facts unchanged and let a re-run
 			// pick it up. The over-deletion guard still applies to the merged result.
 			slog.Warn("brain: reorganize chunk failed after retries; keeping it unchanged",
-				"facts", len(chunks[idx]), "error", errsByIdx[idx])
+				append([]any{"facts", len(chunks[idx])}, cliErrorFields(errsByIdx[idx])...)...)
 			out = append(out, chunks[idx]...)
 			continue
 		}
@@ -377,8 +394,31 @@ var maxParallelReorg = 4
 
 // reorgMaxAttempts is how many times a single reorganize chunk is tried before it
 // gives up — covers the intermittent `claudecli: exit 1` crash on large structured
-// generations, which msggen.RunWithRetry doesn't treat as retriable.
-const reorgMaxAttempts = 3
+// generations, which msggen.RunWithRetry doesn't treat as retriable. Bumped to 4
+// (from 3): on the live reviewbot aggressive Tidy, chunks that crashed often
+// succeeded on a later try, so one more cheap, idempotent attempt converges more
+// scopes without a re-run.
+const reorgMaxAttempts = 4
+
+// cliErrorFields extracts structured diagnostics from a claudecli failure for
+// logging. The silent `claudecli: exit 1` reorganize crash yields no classified
+// error and an empty stderr, but claudecli buffers the last raw stdout JSONL lines
+// in Error.LastEvents — capturing them here is the only handle we have to root-cause
+// it (docs/tech-debt.md). Returns slog key/value pairs; "error" is always present.
+func cliErrorFields(err error) []any {
+	fields := []any{"error", err}
+	var cliErr *claudecli.Error
+	if errors.As(err, &cliErr) {
+		fields = append(fields, "exitCode", cliErr.ExitCode)
+		if cliErr.Stderr != "" {
+			fields = append(fields, "stderr", cliErr.Stderr)
+		}
+		if len(cliErr.LastEvents) > 0 {
+			fields = append(fields, "lastEvents", cliErr.LastEvents)
+		}
+	}
+	return fields
+}
 
 func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
 	if len(facts) == 0 {
@@ -415,7 +455,7 @@ func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fa
 			return nil, ctx.Err()
 		}
 		slog.Warn("brain: reorganize chunk call failed; retrying",
-			"attempt", attempt+1, "of", reorgMaxAttempts, "facts", len(facts), "error", err)
+			append([]any{"attempt", attempt + 1, "of", reorgMaxAttempts, "facts", len(facts)}, cliErrorFields(err)...)...)
 	}
 	if err != nil {
 		return nil, err

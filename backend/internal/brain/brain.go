@@ -315,6 +315,19 @@ func (s *Service) SetLocked(ctx context.Context, id string, locked bool) (memory
 	return s.mutate(ctx, id, func(r *memory.Record) { r.Locked = locked })
 }
 
+// Confirm marks a low-confidence fact as user-confirmed ground truth: it becomes
+// human-authored (EXTRACTED, top score) and is thereby exempt from consolidation
+// rewrite and decay. This is the accept side of the "confirm what I'm unsure about"
+// UX (RFC P2); the reject side is a plain Delete.
+func (s *Service) Confirm(ctx context.Context, id string) (memory.Record, error) {
+	return s.mutate(ctx, id, func(r *memory.Record) {
+		r.Source = memory.SourceHuman
+		r.Confidence = memory.ConfidenceExtracted
+		r.ConfidenceScore = memory.ScoreGroundTruth
+		r.UpdatedAt = time.Now().UTC()
+	})
+}
+
 func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)) (memory.Record, error) {
 	r, err := s.store.Get(ctx, id)
 	if err != nil {

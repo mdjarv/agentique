@@ -1,0 +1,178 @@
+package brain
+
+import (
+	"net/http"
+	"sort"
+
+	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/memory"
+)
+
+// graphNodeDTO is a memory enriched with its structural-graph centrality (RFC P2).
+// Centrality is computed on demand, never persisted, so it only appears on the graph
+// endpoint — the plain memory list leaves these zero.
+type graphNodeDTO struct {
+	memoryDTO
+	Degree      int     `json:"degree"`
+	Betweenness float64 `json:"betweenness"`
+}
+
+// graphReportDTO is the derived "what the brain knows" panel (graphify analyze.py
+// analogs). It references node ids; the client resolves them against Nodes.
+type graphReportDTO struct {
+	// GodNodes are the most-connected, load-bearing facts (top degree).
+	GodNodes []string `json:"godNodes"`
+	// Bridges are bottleneck facts connecting otherwise-separate clusters (top
+	// betweenness) — the riskiest to lose.
+	Bridges []string `json:"bridges"`
+	// NeedsConfirmation are the brain's least-trusted facts (low confidence,
+	// non-protected): the "confirm what I'm unsure about" queue.
+	NeedsConfirmation []string `json:"needsConfirmation"`
+	// Isolated are facts with no structural links (a knowledge-gap / low-cohesion
+	// signal — graphify's floating dots).
+	Isolated []string `json:"isolated"`
+}
+
+type graphDTO struct {
+	Nodes  []graphNodeDTO `json:"nodes"`
+	Report graphReportDTO `json:"report"`
+}
+
+const (
+	maxGodNodes          = 8
+	maxBridges           = 8
+	maxNeedsConfirmation = 25
+)
+
+// confirmable reports whether a fact is eligible for the confirm UX: not pinned,
+// not locked, not already ground truth (human). Mirrors memory.isProtected's intent
+// from the glue side (that predicate is unexported in the core).
+func confirmable(r memory.Record) bool {
+	return !r.Pinned && !r.Locked && r.Source != memory.SourceHuman
+}
+
+// HandleGraph GET /api/brain/graph?scope= — the force-graph + insights payload.
+// Returns every memory (optionally one scope) annotated with degree/betweenness over
+// the persisted structural link graph, plus a derived report (god nodes, bridges,
+// confirm queue, knowledge gaps). Computed request-time (RFC open-decision #5).
+func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
+	var scopes []memory.Scope
+	if sc := r.URL.Query().Get("scope"); sc != "" {
+		scopes = []memory.Scope{memory.Scope(sc)}
+	}
+	recs, err := h.Service.List(r.Context(), scopes...)
+	if err != nil {
+		return err
+	}
+	// Captures are never part of the knowledge graph (they aren't recalled and have
+	// no structural edges); exclude them so centrality and the report reflect durable
+	// facts only.
+	durable := make([]memory.Record, 0, len(recs))
+	for _, rec := range recs {
+		if rec.Source != memory.SourceCapture {
+			durable = append(durable, rec)
+		}
+	}
+
+	cent := memory.ComputeCentrality(durable)
+	nodes := make([]graphNodeDTO, 0, len(durable))
+	for _, rec := range durable {
+		c := cent[rec.ID]
+		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
+	}
+
+	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent)})
+	return nil
+}
+
+// buildReport derives the insight lists from the records + their centrality. Pure
+// data shaping, factored out so it is unit-testable without an HTTP round-trip.
+func buildReport(recs []memory.Record, cent map[string]memory.Centrality) graphReportDTO {
+	rep := graphReportDTO{
+		GodNodes:          []string{},
+		Bridges:           []string{},
+		NeedsConfirmation: []string{},
+		Isolated:          []string{},
+	}
+	byID := make(map[string]memory.Record, len(recs))
+	for _, r := range recs {
+		byID[r.ID] = r
+	}
+
+	ids := make([]string, len(recs))
+	for i, r := range recs {
+		ids[i] = r.ID
+	}
+
+	// God nodes: most-connected, load-bearing facts. A god node must actually be
+	// load-bearing (degree ≥ 2), so a lone pair doesn't qualify. Ties broken by uses
+	// then id for determinism.
+	god := append([]string(nil), ids...)
+	sort.Slice(god, func(a, b int) bool {
+		da, db := cent[god[a]].Degree, cent[god[b]].Degree
+		if da != db {
+			return da > db
+		}
+		if ua, ub := byID[god[a]].Uses, byID[god[b]].Uses; ua != ub {
+			return ua > ub
+		}
+		return god[a] < god[b]
+	})
+	for _, id := range god {
+		if len(rep.GodNodes) >= maxGodNodes || cent[id].Degree < 2 {
+			break
+		}
+		rep.GodNodes = append(rep.GodNodes, id)
+	}
+
+	// Bridges: highest betweenness (connectors between clusters).
+	bridges := append([]string(nil), ids...)
+	sort.Slice(bridges, func(a, b int) bool {
+		ba, bb := cent[bridges[a]].Betweenness, cent[bridges[b]].Betweenness
+		if ba != bb {
+			return ba > bb
+		}
+		return bridges[a] < bridges[b]
+	})
+	for _, id := range bridges {
+		if len(rep.Bridges) >= maxBridges || cent[id].Betweenness <= 0 {
+			break
+		}
+		rep.Bridges = append(rep.Bridges, id)
+	}
+
+	// Needs-confirmation: the brain's least-trusted facts. Non-protected facts at or
+	// below the confirmation score (cross-project generalizations, AMBIGUOUS facts).
+	// Lowest score first, then least-used, then oldest — surface the weakest first.
+	var confirm []string
+	for _, r := range recs {
+		if confirmable(r) && r.ConfidenceScore <= memory.NeedsConfirmationScore {
+			confirm = append(confirm, r.ID)
+		}
+	}
+	sort.Slice(confirm, func(a, b int) bool {
+		ra, rb := byID[confirm[a]], byID[confirm[b]]
+		if ra.ConfidenceScore != rb.ConfidenceScore {
+			return ra.ConfidenceScore < rb.ConfidenceScore
+		}
+		if ra.Uses != rb.Uses {
+			return ra.Uses < rb.Uses
+		}
+		if !ra.UpdatedAt.Equal(rb.UpdatedAt) {
+			return ra.UpdatedAt.Before(rb.UpdatedAt)
+		}
+		return ra.ID < rb.ID
+	})
+	if len(confirm) > maxNeedsConfirmation {
+		confirm = confirm[:maxNeedsConfirmation]
+	}
+	rep.NeedsConfirmation = append(rep.NeedsConfirmation, confirm...)
+
+	// Isolated: structural gaps (no edges). Reported in id order for stability.
+	for _, id := range ids {
+		if cent[id].Degree == 0 {
+			rep.Isolated = append(rep.Isolated, id)
+		}
+	}
+	return rep
+}

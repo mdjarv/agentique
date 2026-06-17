@@ -41,6 +41,9 @@ type memoryDTO struct {
 	DerivedFrom []string  `json:"derivedFrom,omitempty"`
 	Related     []string  `json:"related,omitempty"`
 	Community   int       `json:"community"`
+	// Confidence tier (extracted/inferred/ambiguous) + its 0..1 score (RFC P2).
+	Confidence      string  `json:"confidence"`
+	ConfidenceScore float64 `json:"confidenceScore"`
 }
 
 func toDTO(r memory.Record) memoryDTO {
@@ -48,7 +51,9 @@ func toDTO(r memory.Record) memoryDTO {
 		ID: r.ID, Scope: string(r.Scope), Text: r.Text, Category: string(r.Category),
 		Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked, Uses: r.Uses,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DerivedFrom: r.DerivedFrom, Related: r.Related,
-		Community: r.Community,
+		Community:       r.Community,
+		Confidence:      string(r.Confidence),
+		ConfidenceScore: r.ConfidenceScore,
 	}
 }
 
@@ -175,6 +180,18 @@ func (h *Handler) HandleLock(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	rec, err := h.Service.SetLocked(r.Context(), r.PathValue("id"), body.Locked)
+	if err != nil {
+		return mapErr(err)
+	}
+	h.brainChanged()
+	httperror.JSON(w, http.StatusOK, toDTO(rec))
+	return nil
+}
+
+// HandleConfirm POST /api/brain/memories/{id}/confirm — accept a low-confidence fact
+// as ground truth (the confirm UX). No body; idempotent.
+func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) error {
+	rec, err := h.Service.Confirm(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return mapErr(err)
 	}
