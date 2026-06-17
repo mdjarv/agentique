@@ -244,7 +244,7 @@ func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) erro
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false)
+	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false, false)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,8 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Scope string `json:"scope"`
 		Model string `json:"model"`
-		Mode  string `json:"mode"` // "" (conservative) | "aggressive"
+		Mode  string `json:"mode"`  // "" (conservative) | "aggressive"
+		Force bool   `json:"force"` // re-tidy even if the scope is unchanged since last pass
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -269,7 +270,7 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	job, err := h.startScopeJob(scope, body.Model, body.Mode)
+	job, err := h.startScopeJob(scope, body.Model, body.Mode, body.Force)
 	if err != nil {
 		return err
 	}

@@ -59,7 +59,11 @@ type ConsolidateOptions struct {
 	// PrevFingerprint lets the pass skip the (expensive) Reorganize step when the
 	// reorganizable set is byte-for-byte unchanged since the last pass.
 	PrevFingerprint string
-	Decay           DecayPolicy
+	// Force runs Reorganize even when the fingerprint is unchanged. Needed to
+	// re-tidy a scope after the prompt or chunking algorithm changes (the set is
+	// the same but the model would now produce a different, better result).
+	Force bool
+	Decay DecayPolicy
 	// DuplicateThreshold for promoting captures; <=0 uses DefaultDuplicateThreshold.
 	DuplicateThreshold float64
 	// MinSurvivorRatio is the fraction of a non-trivial reorganizable set that must
@@ -193,7 +197,7 @@ func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Sco
 	}
 	p.InputFingerprint = fingerprint(reorgInput)
 	if ex != nil && len(reorgInput) > 0 {
-		if p.InputFingerprint == opts.PrevFingerprint {
+		if !opts.Force && p.InputFingerprint == opts.PrevFingerprint {
 			p.ReorganizeSkipped = true
 		} else {
 			out, rerr := ex.Reorganize(ctx, factsForReorg(reorgInput))

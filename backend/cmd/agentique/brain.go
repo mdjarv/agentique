@@ -31,6 +31,7 @@ var (
 	consolidateScope   string
 	consolidateModel   string
 	consolidateForce   bool
+	consolidateRerun   bool
 	consolidateDryRun  bool
 )
 
@@ -46,6 +47,7 @@ func init() {
 	consolidateCmd.Flags().StringVar(&consolidateScope, "scope", "", "raw scope override (e.g. global); takes precedence over --project")
 	consolidateCmd.Flags().StringVar(&consolidateModel, "model", "", "reorganize model: haiku|sonnet|opus (empty = deterministic dedup/decay only, no LLM reorg)")
 	consolidateCmd.Flags().BoolVarP(&consolidateForce, "force", "f", false, "skip confirmation prompt")
+	consolidateCmd.Flags().BoolVar(&consolidateRerun, "rerun", false, "reorganize even if the scope is unchanged since the last pass (ignore the saved fingerprint)")
 	consolidateCmd.Flags().BoolVar(&consolidateDryRun, "dry-run", false, "preview: run the full pass (LLM included) and print the changelog without writing")
 
 	brainImportCmd.Flags().StringArrayVar(&importMap, "map", nil, "pre-resolve a source project to a local one: --map source-slug=local-slug (repeatable)")
@@ -258,7 +260,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("DRY RUN — scope %s (%s); nothing will be written.\n", scope, mode)
 	}
 
-	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun)
+	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, consolidateRerun)
 	if err != nil {
 		return fmt.Errorf("consolidate: %w", err)
 	}

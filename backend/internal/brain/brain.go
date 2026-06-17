@@ -336,13 +336,16 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 // fingerprint so the LLM reorganization is skipped when nothing changed. A nil
 // Extractor restricts the pass to deterministic decay. When dryRun is set the
 // pass writes nothing — it returns the changelog it WOULD apply and leaves the
-// persisted fingerprint untouched so a later real run still proceeds.
-func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool) (memory.Report, error) {
+// persisted fingerprint untouched so a later real run still proceeds. force
+// reorganizes even when the scope is unchanged (re-tidy after a prompt/algorithm
+// change).
+func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun, force bool) (memory.Report, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
 	rep, err := memory.Consolidate(ctx, s.store, ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint: fps[string(scope)],
+		Force:           force,
 		Decay:           decay,
 		DryRun:          dryRun,
 	})
@@ -357,10 +360,12 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 }
 
 // TidyOptions are the per-scope consolidation knobs the brain layer adds on top of
-// the model (which the Extractor carries). MinSurvivorRatio relaxes the
-// over-deletion guard for an aggressive Tidy (0 = conservative default). The zero
-// value reproduces the original conservative behaviour.
+// the model (which the Extractor carries). Force re-runs the reorganization even
+// when the scope is unchanged since the last pass (re-tidy after a prompt/algorithm
+// change). MinSurvivorRatio relaxes the over-deletion guard for an aggressive Tidy
+// (0 = conservative default). The zero value reproduces the original behaviour.
 type TidyOptions struct {
+	Force            bool
 	MinSurvivorRatio float64
 }
 
@@ -376,6 +381,7 @@ func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extrac
 	fps := s.loadFingerprints()
 	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint:  fps[string(scope)],
+		Force:            opts.Force,
 		Decay:            decay,
 		MinSurvivorRatio: opts.MinSurvivorRatio,
 	})

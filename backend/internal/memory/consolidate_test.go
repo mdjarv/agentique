@@ -396,6 +396,30 @@ func TestConsolidateFingerprintSkip(t *testing.T) {
 	}
 }
 
+// Force overrides the fingerprint short-circuit: an unchanged scope is reorganized
+// anyway, so a re-tidy after a prompt/algorithm change isn't blocked.
+func TestConsolidateForceRerunsUnchanged(t *testing.T) {
+	store := newMemStore(
+		mk("a", ScopeGlobal, "user prefers dark mode in the editor", CategoryPreference, SourceAgent),
+		mk("b", ScopeGlobal, "dark mode is the editor preference", CategoryPreference, SourceAgent),
+	)
+	rep1, _ := Consolidate(context.Background(), store, fakeExtractor{}, ScopeGlobal, ConsolidateOptions{})
+
+	// Same fingerprint, but Force => reorganize runs. A merge collapses a→b's text.
+	merge := fakeExtractor{reorganize: func(in []Fact) []Fact {
+		return []Fact{{ID: in[0].ID, Text: "editor uses dark mode", Category: CategoryPreference}}
+	}}
+	plan, err := PlanConsolidation(context.Background(), store, merge, ScopeGlobal, ConsolidateOptions{
+		PrevFingerprint: rep1.Fingerprint, Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ReorganizeSkipped || !plan.ReorganizeRan {
+		t.Fatalf("force should reorganize an unchanged scope, got skipped=%v ran=%v", plan.ReorganizeSkipped, plan.ReorganizeRan)
+	}
+}
+
 func TestConsolidateProtectsPinnedLockedHuman(t *testing.T) {
 	pinned := mk("p", ScopeGlobal, "pinned fact", CategoryIdentity, SourceAgent)
 	pinned.Pinned = true

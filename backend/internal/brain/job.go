@@ -105,19 +105,20 @@ func (h *Handler) finishJob(job JobState, rep memory.Report, plan any) {
 
 // startScopeJob kicks off a per-scope preview (Plan + dry-run apply) in the
 // background and returns the initial running state immediately. mode selects the
-// reorganize strategy ("" = conservative, "aggressive" = collapse hard).
-func (h *Handler) startScopeJob(scope memory.Scope, model, mode string) (JobState, error) {
+// reorganize strategy ("" = conservative, "aggressive" = collapse hard); force
+// re-runs even when the scope is unchanged since the last pass.
+func (h *Handler) startScopeJob(scope memory.Scope, model, mode string, force bool) (JobState, error) {
 	job, err := h.beginJob(JobState{
 		ID: uuid.NewString(), Kind: "scope", Scope: string(scope), Model: model, Phase: phaseRunning,
 	})
 	if err != nil {
 		return JobState{}, err
 	}
-	go h.runScopeJob(job, scope, model, mode)
+	go h.runScopeJob(job, scope, model, mode, force)
 	return job, nil
 }
 
-func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model, mode string) {
+func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model, mode string, force bool) {
 	ctx := context.Background()
 	exOpts, minSurvivorRatio := reorganizeModePolicy(mode)
 	var ex memory.Extractor
@@ -129,7 +130,7 @@ func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model, mode stri
 		}
 		ex = NewClaudeExtractor(h.Runner, m, exOpts...)
 	}
-	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{}, TidyOptions{MinSurvivorRatio: minSurvivorRatio})
+	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{}, TidyOptions{Force: force, MinSurvivorRatio: minSurvivorRatio})
 	if err != nil {
 		h.failJob(job, err)
 		return
@@ -215,7 +216,7 @@ func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
 	job.Total = len(scopes)
 	h.publishJob(job)
 	for i, scope := range scopes {
-		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false)
+		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, false)
 		if cerr != nil {
 			// One bad scope shouldn't sink the bulk pass — log and continue.
 			slog.Warn("brain: tidy all: scope failed", "scope", scope, "error", cerr)
