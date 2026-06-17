@@ -304,6 +304,7 @@ func (s *Service) Update(ctx context.Context, id, text string, category memory.C
 		r.Category = category
 	}
 	r.Source = memory.SourceHuman
+	r.ReviewNote = "" // a hand-edit resolves any pending review
 	r.UpdatedAt = time.Now().UTC()
 	if err := s.store.Put(ctx, r); err != nil {
 		return memory.Record{}, err
@@ -330,7 +331,18 @@ func (s *Service) Confirm(ctx context.Context, id string) (memory.Record, error)
 		r.Source = memory.SourceHuman
 		r.Confidence = memory.ConfidenceExtracted
 		r.ConfidenceScore = memory.ScoreGroundTruth
+		r.ReviewNote = "" // confirming resolves any pending review
 		r.UpdatedAt = time.Now().UTC()
+	})
+}
+
+// Flag records that a memory was found contradicted (RFC-LD D2 reconsolidation):
+// it weakens a non-protected fact into the review band and stores the reason, never
+// deleting it — the human confirms (accepts), edits, or deletes from the queue. The
+// agent-facing entry point is the MemoryFlag MCP tool; the reject UI is Delete.
+func (s *Service) Flag(ctx context.Context, id, reason string) (memory.Record, error) {
+	return s.mutate(ctx, id, func(r *memory.Record) {
+		*r = memory.MarkContradicted(*r, reason, time.Now().UTC())
 	})
 }
 

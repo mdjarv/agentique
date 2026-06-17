@@ -52,6 +52,7 @@ type frontmatter struct {
 	Community   int       `yaml:"community,omitempty"`
 	Confidence  string    `yaml:"confidence,omitempty"`
 	ConfScore   float64   `yaml:"confidence_score,omitempty"`
+	ReviewNote  string    `yaml:"review_note,omitempty"`
 }
 
 func toFrontmatter(r memory.Record) frontmatter {
@@ -71,6 +72,7 @@ func toFrontmatter(r memory.Record) frontmatter {
 		Community:   r.Community,
 		Confidence:  string(r.Confidence),
 		ConfScore:   r.ConfidenceScore,
+		ReviewNote:  r.ReviewNote,
 	}
 }
 
@@ -99,6 +101,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		Community:       m.Community,
 		Confidence:      memory.ConfidenceTier(m.Confidence),
 		ConfidenceScore: m.ConfScore,
+		ReviewNote:      m.ReviewNote,
 	})
 }
 

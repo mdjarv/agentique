@@ -35,6 +35,7 @@ const (
 	ToolSetSessionName = "SetSessionName"
 	ToolMemoryAdd      = "MemoryAdd"
 	ToolMemorySearch   = "MemorySearch"
+	ToolMemoryFlag     = "MemoryFlag"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -74,6 +75,7 @@ type SessionRenamer interface {
 type MemoryStore interface {
 	MemoryAdd(ctx context.Context, sessionID, text, category string) (string, error)
 	MemorySearch(ctx context.Context, sessionID, query string) (string, error)
+	MemoryFlag(ctx context.Context, sessionID, id, reason string) (string, error)
 }
 
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
@@ -220,6 +222,29 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 			msg, err := mem.MemorySearch(ctx, sid, args.Query)
 			if err != nil {
 				return akmcp.ErrorResultf("memory search failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
+
+	type flagArgs struct {
+		ID     string `json:"id"`
+		Reason string `json:"reason"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolMemoryFlag,
+		Description: "Flag a memory from your 'brain' as wrong or outdated when something you found this session contradicts it. Pass the fact's id (shown by MemorySearch) and a short reason. This does NOT delete it — it weakens the fact and queues it for the user to confirm, correct, or remove. Use it whenever a recalled fact turns out to be incorrect.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"id":     akmcp.StringProp{Description: "The id of the memory to flag (from MemorySearch output)."},
+				"reason": akmcp.StringProp{Description: "Briefly, what contradicts this fact or why it's outdated."},
+			},
+			Required: []string{"id"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args flagArgs) akmcp.Result {
+			msg, err := mem.MemoryFlag(ctx, sid, args.ID, args.Reason)
+			if err != nil {
+				return akmcp.ErrorResultf("memory flag failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),

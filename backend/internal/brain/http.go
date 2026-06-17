@@ -44,6 +44,9 @@ type memoryDTO struct {
 	// Confidence tier (extracted/inferred/ambiguous) + its 0..1 score (RFC P2).
 	Confidence      string  `json:"confidence"`
 	ConfidenceScore float64 `json:"confidenceScore"`
+	// ReviewNote, when set, flags the fact for review with the reason it was
+	// contradicted on recall (RFC-LD D2).
+	ReviewNote string `json:"reviewNote,omitempty"`
 }
 
 func toDTO(r memory.Record) memoryDTO {
@@ -54,6 +57,7 @@ func toDTO(r memory.Record) memoryDTO {
 		Community:       r.Community,
 		Confidence:      string(r.Confidence),
 		ConfidenceScore: r.ConfidenceScore,
+		ReviewNote:      r.ReviewNote,
 	}
 }
 
@@ -192,6 +196,22 @@ func (h *Handler) HandleLock(w http.ResponseWriter, r *http.Request) error {
 // as ground truth (the confirm UX). No body; idempotent.
 func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) error {
 	rec, err := h.Service.Confirm(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return mapErr(err)
+	}
+	h.brainChanged()
+	httperror.JSON(w, http.StatusOK, toDTO(rec))
+	return nil
+}
+
+// HandleFlag POST /api/brain/memories/{id}/flag {reason} — mark a fact contradicted
+// (RFC-LD D2): weaken it and queue it for review. Mirrors the agent MemoryFlag tool.
+func (h *Handler) HandleFlag(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = decode(r, &body) // reason is optional
+	rec, err := h.Service.Flag(r.Context(), r.PathValue("id"), body.Reason)
 	if err != nil {
 		return mapErr(err)
 	}

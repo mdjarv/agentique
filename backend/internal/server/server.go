@@ -258,6 +258,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("POST /api/brain/memories/{id}/pin", httperror.HandlerFunc(bh.HandlePin))
 			mux.Handle("POST /api/brain/memories/{id}/lock", httperror.HandlerFunc(bh.HandleLock))
 			mux.Handle("POST /api/brain/memories/{id}/confirm", httperror.HandlerFunc(bh.HandleConfirm))
+			mux.Handle("POST /api/brain/memories/{id}/flag", httperror.HandlerFunc(bh.HandleFlag))
 			mux.Handle("GET /api/brain/search", httperror.HandlerFunc(bh.HandleSearch))
 			mux.Handle("GET /api/brain/graph", httperror.HandlerFunc(bh.HandleGraph))
 			mux.Handle("POST /api/brain/consolidate", httperror.HandlerFunc(bh.HandleConsolidate))

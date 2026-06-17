@@ -45,6 +45,36 @@ func (a *MCPAdapter) MemoryAdd(ctx context.Context, sessionID, text, category st
 	return fmt.Sprintf("Remembered [%s]: %s", r.Category, r.Text), nil
 }
 
+// MemoryFlag records that a recalled fact was found contradicted (RFC-LD D2): it
+// weakens the fact and queues it for the user to confirm/correct/delete — never
+// deletes it outright. The agent passes the id shown in MemorySearch output. Scoped:
+// an agent may only flag facts in its own project or the global scope.
+func (a *MCPAdapter) MemoryFlag(ctx context.Context, sessionID, id, reason string) (string, error) {
+	scope := a.resolve(ctx, sessionID)
+	r, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("no memory with id %q", id)
+	}
+	allowed := false
+	for _, s := range recallScopes(scope) {
+		if r.Scope == s {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", fmt.Errorf("memory %q is not in your project or global scope", id)
+	}
+	flagged, err := a.svc.Flag(ctx, id, reason)
+	if err != nil {
+		return "", err
+	}
+	if a.bus != nil {
+		a.bus.Broadcast(EventBrainUpdated, map[string]string{})
+	}
+	return fmt.Sprintf("Flagged for review [%s]: %s", flagged.Category, flagged.Text), nil
+}
+
 // MemorySearch returns pinned plus query-relevant facts for the session's scope.
 func (a *MCPAdapter) MemorySearch(ctx context.Context, sessionID, query string) (string, error) {
 	scope := a.resolve(ctx, sessionID)
@@ -73,7 +103,7 @@ func formatRecall(res memory.Result) string {
 	if len(res.Pinned) > 0 {
 		b.WriteString("Pinned facts:\n")
 		for _, r := range res.Pinned {
-			fmt.Fprintf(&b, "- [%s] %s\n", r.Category, r.Text)
+			writeRecallLine(&b, r)
 		}
 	}
 	if len(res.Recalled) > 0 {
@@ -82,8 +112,16 @@ func formatRecall(res memory.Result) string {
 		}
 		b.WriteString("Relevant facts:\n")
 		for _, r := range res.Recalled {
-			fmt.Fprintf(&b, "- [%s] %s\n", r.Category, r.Text)
+			writeRecallLine(&b, r)
 		}
 	}
+	// The id lets the agent flag a fact it finds wrong via MemoryFlag (RFC-LD D2).
+	b.WriteString("\n(If any fact is wrong or outdated, call MemoryFlag with its id.)")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// writeRecallLine renders one recalled fact, including its id so the agent can
+// reference it in a later MemoryFlag call.
+func writeRecallLine(b *strings.Builder, r memory.Record) {
+	fmt.Fprintf(b, "- [%s] %s (id: %s)\n", r.Category, r.Text, r.ID)
 }

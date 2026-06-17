@@ -89,6 +89,11 @@ type Record struct {
 	Confidence      ConfidenceTier
 	ConfidenceScore float64
 
+	// ReviewNote, when non-empty, flags this fact for human review — typically because
+	// an agent contradicted it on recall (RFC-LD D2 reconsolidation). It records the
+	// reason and surfaces the fact in the confirm/review queue; cleared on confirm/edit.
+	ReviewNote string
+
 	// Embedding is an optional derived vector cache; never the source of truth.
 	Embedding []float32
 }

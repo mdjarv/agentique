@@ -228,6 +228,35 @@ func TestMCPAdapterScopeIsolation(t *testing.T) {
 	}
 }
 
+// MemoryFlag (RFC-LD D2) weakens a recalled fact for review, is scoped to the
+// session's own project + global, and never deletes.
+func TestMCPMemoryFlag(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	resolve := func(_ context.Context, sid string) memory.Scope { return ScopeForProject(sid) }
+	a := NewMCPAdapter(s, resolve)
+
+	own, _ := s.Add(ctx, ScopeForProject("p1"), "the API base path is /v1", memory.CategoryFact, memory.SourceAgent)
+	other, _ := s.Add(ctx, ScopeForProject("p2"), "p2 only fact", memory.CategoryFact, memory.SourceAgent)
+
+	// An agent in p1 can flag its own fact; it is weakened, not deleted.
+	if _, err := a.MemoryFlag(ctx, "p1", own.ID, "it's actually /v2 now"); err != nil {
+		t.Fatalf("flagging own fact should succeed: %v", err)
+	}
+	got, err := s.Get(ctx, own.ID)
+	if err != nil {
+		t.Fatalf("flagged fact must still exist (never deleted): %v", err)
+	}
+	if got.ConfidenceScore > memory.AmbiguousScoreThreshold || got.ReviewNote == "" {
+		t.Fatalf("flagged fact should be weakened with a note, got score=%.2f note=%q", got.ConfidenceScore, got.ReviewNote)
+	}
+
+	// An agent in p1 cannot flag a p2 fact.
+	if _, err := a.MemoryFlag(ctx, "p1", other.ID, "nope"); err == nil {
+		t.Fatal("flagging another project's fact must be rejected")
+	}
+}
+
 func TestHTTPCreateListPinDelete(t *testing.T) {
 	s := newSvc(t)
 	h := &Handler{Service: s}

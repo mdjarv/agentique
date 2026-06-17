@@ -38,6 +38,7 @@ const (
 	// safe (scoped to the session's own project + global) so they auto-allow.
 	AgentiqueMemoryAddTool    = "mcp__" + AgentiqueMCPServerName + "__MemoryAdd"
 	AgentiqueMemorySearchTool = "mcp__" + AgentiqueMCPServerName + "__MemorySearch"
+	AgentiqueMemoryFlagTool   = "mcp__" + AgentiqueMCPServerName + "__MemoryFlag"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

@@ -256,6 +256,7 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueSetSessionNameTool: allow,
 		AgentiqueMemoryAddTool:      allow,
 		AgentiqueMemorySearchTool:   allow,
+		AgentiqueMemoryFlagTool:     allow,
 	}
 }
 
