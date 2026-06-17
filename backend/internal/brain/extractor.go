@@ -199,27 +199,41 @@ func (e *ClaudeExtractor) Extract(ctx context.Context, episodes []string) ([]mem
 // the same chunk is a future optimization.
 var maxReorgBatch = 100
 
-// Reorganize asks the model to merge/clean a set of facts, chunking large sets.
-// On any parse failure a chunk returns its input unchanged (a safe no-op), so a
-// failed chunk never causes the consolidation core to delete its facts.
+// Reorganize asks the model to merge/clean a set of facts, chunking large sets and
+// running the chunks with bounded concurrency. On any parse failure a chunk returns
+// its input unchanged (a safe no-op), so a failed chunk never causes the
+// consolidation core to delete its facts.
 func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
 	if len(facts) <= maxReorgBatch {
 		return e.reorganizeBatch(ctx, facts)
 	}
-	out := make([]memory.Fact, 0, len(facts))
+	type span struct{ lo, hi int }
+	var spans []span
 	for i := 0; i < len(facts); i += maxReorgBatch {
 		end := i + maxReorgBatch
 		if end > len(facts) {
 			end = len(facts)
 		}
-		got, err := e.reorganizeBatch(ctx, facts[i:end])
-		if err != nil {
-			return nil, err
+		spans = append(spans, span{i, end})
+	}
+
+	results := make([][]memory.Fact, len(spans))
+	errsByIdx := make([]error, len(spans))
+	memory.RunBounded(ctx, len(spans), maxParallelReorg, func(idx int) {
+		results[idx], errsByIdx[idx] = e.reorganizeBatch(ctx, facts[spans[idx].lo:spans[idx].hi])
+	})
+	out := make([]memory.Fact, 0, len(facts))
+	for idx := range spans {
+		if errsByIdx[idx] != nil {
+			return nil, errsByIdx[idx] // a hard model error aborts (parse misses are no-ops)
 		}
-		out = append(out, got...)
+		out = append(out, results[idx]...)
 	}
 	return out, nil
 }
+
+// maxParallelReorg caps concurrent Reorganize chunk calls. See memory.maxParallelBatches.
+var maxParallelReorg = 4
 
 func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
 	if len(facts) == 0 {

@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 )
 
@@ -127,12 +128,11 @@ func TestApplyGlobalDropsUnknownAndProtectedSubsumes(t *testing.T) {
 
 type errOnNthPromoter struct {
 	n     int
-	calls int
+	calls atomic.Int64 // batches run concurrently
 }
 
 func (p *errOnNthPromoter) Promote(_ context.Context, c []ScopedFact) ([]Promotion, error) {
-	p.calls++
-	if p.calls == p.n {
+	if p.calls.Add(1) == int64(p.n) {
 		return nil, errors.New("boom")
 	}
 	return []Promotion{{Text: "g " + c[0].Text, Category: CategoryFact, Subsumes: []string{c[0].ID}}}, nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // ScopedFact is a fact tagged with its scope, handed to a Promoter so it can see
@@ -46,6 +47,36 @@ type GlobalPlan struct {
 // tests can shrink it.
 var maxPromoteBatch = 120
 
+// maxParallelBatches caps concurrent model calls during a chunked LLM pass. Each
+// batch is a separate subprocess, so this bounds real resource use (and provider
+// rate pressure), not just goroutines. A var for tuning/tests.
+var maxParallelBatches = 4
+
+// RunBounded runs fn(i) for i in [0,n) with at most `limit` concurrent goroutines,
+// stopping early when ctx is cancelled. fn must be safe for concurrent use and do
+// its own locking for shared state. Returns once all started goroutines finish.
+// Stdlib-only so it stays in the liftable core.
+func RunBounded(ctx context.Context, n, limit int, fn func(i int)) {
+	if limit < 1 {
+		limit = 1
+	}
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		if ctx.Err() != nil {
+			break
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fn(i)
+		}(i)
+	}
+	wg.Wait()
+}
+
 // PlanGlobalPromotion runs the LLM phase of cross-scope consolidation: it gathers
 // non-protected project facts, asks the Promoter which belong in global, and
 // returns a replayable plan. It writes nothing. Candidates are sorted to colocate
@@ -80,21 +111,34 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 		return candidates[i].ID < candidates[j].ID
 	})
 
-	total := (len(candidates) + maxPromoteBatch - 1) / maxPromoteBatch
-	for i, done := 0, 0; i < len(candidates); i += maxPromoteBatch {
+	// Split into batches and run them with bounded concurrency — each batch is an
+	// independent model call whose promotions just merge, so order doesn't matter.
+	type span struct{ lo, hi int }
+	var spans []span
+	for i := 0; i < len(candidates); i += maxPromoteBatch {
 		end := i + maxPromoteBatch
 		if end > len(candidates) {
 			end = len(candidates)
 		}
-		got, perr := pr.Promote(ctx, candidates[i:end])
+		spans = append(spans, span{i, end})
+	}
+	total := len(spans)
+
+	var mu sync.Mutex
+	var done int
+	var cancelErr error
+	RunBounded(ctx, total, maxParallelBatches, func(idx int) {
+		got, perr := pr.Promote(ctx, candidates[spans[idx].lo:spans[idx].hi])
+		mu.Lock()
+		defer mu.Unlock()
 		if perr != nil {
 			// A cancelled context aborts the whole pass; any other batch error is
-			// recoverable — skip this batch and keep going so one bad call can't sink
-			// a 15-batch run.
+			// recoverable — skip it so one bad call can't sink the run.
 			if ctx.Err() != nil || errors.Is(perr, context.Canceled) {
-				return plan, perr
-			}
-			if opts.OnError != nil {
+				if cancelErr == nil {
+					cancelErr = perr
+				}
+			} else if opts.OnError != nil {
 				opts.OnError(perr)
 			}
 		} else {
@@ -104,6 +148,9 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 		if opts.Progress != nil {
 			opts.Progress(done, total)
 		}
+	})
+	if cancelErr != nil {
+		return plan, cancelErr
 	}
 
 	for scope, rs := range byScope {

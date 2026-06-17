@@ -114,7 +114,12 @@ Auto-approved, scoped to the calling session's project (+ global):
 - `POST /consolidate {scope}` remains for a synchronous deterministic-only pass.
 
 Background consolidation runs off the request context so a request hiccup can't
-SIGTERM the model subprocess; see `brain/job.go`.
+SIGTERM the model subprocess; see `brain/job.go`. Job state is **in-memory** (one
+active job): a backend restart drops an in-flight preview — harmless, since preview
+is a dry-run — and the frontend re-hydrates on WS reconnect (`useBrainSubscriptions`
+→ `GET /consolidate/job`), clearing a stale "Analyzing…" spinner. A preview's model
+batches run with bounded concurrency (`memory.RunBounded`, `maxParallelBatches` /
+`maxParallelReorg` = 4) — independent calls whose results just merge.
 
 ## CLI commands (`agentique brain …`)
 

@@ -193,7 +193,18 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   dismissGlobalPreview: () => set({ globalPreview: null, globalPreviewing: false, progress: null }),
 
   setJob: (job) => {
-    if (!job) return;
+    if (!job) {
+      // The server has no active/recent job (e.g. it restarted mid-preview). Clear
+      // any local "running" spinner so it doesn't hang forever; a finished preview
+      // the client still holds stays applyable (apply re-checks staleness).
+      set((s) => ({
+        previewing: false,
+        globalPreviewing: false,
+        progress: null,
+        previewScope: s.preview ? s.previewScope : null,
+      }));
+      return;
+    }
     const progress =
       job.phase === "running" && job.total > 0 ? { current: job.current, total: job.total } : null;
     if (job.kind === "scope") {

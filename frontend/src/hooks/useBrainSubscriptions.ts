@@ -19,9 +19,16 @@ export function useBrainSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     const unsubUpdated = ws.subscribe("brain.updated", () => {
       useBrainStore.getState().onBrainUpdated();
     });
+    // On (re)connect, resync the consolidation job. If the backend restarted mid
+    // preview the job is gone, so this returns null and clears a stale "Analyzing…"
+    // spinner instead of leaving it hung forever.
+    const unsubConnect = ws.onConnect(() => {
+      useBrainStore.getState().hydrateJob();
+    });
     return () => {
       unsubJob();
       unsubUpdated();
+      unsubConnect();
     };
   }, [ws]);
 }
