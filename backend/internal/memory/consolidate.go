@@ -94,6 +94,16 @@ type ConsolidateOptions struct {
 	// one pass while still catching a model that nukes nearly everything. The value
 	// is captured into the Plan so preview and apply enforce an identical guard.
 	MinSurvivorRatio float64
+	// MinPromotionScopes is the cross-scope guardrail for global promotion (RFC P5):
+	// only facts in a topic community spanning at least this many distinct project
+	// scopes are offered to the Promoter. <=0 uses DefaultMinPromotionScopes (2).
+	// Global-only — single-scope passes ignore it.
+	MinPromotionScopes int
+	// PrevManifest is the per-scope content-hash manifest from the previous global
+	// pass (ScopeManifest). When it matches the current promotable state and Force is
+	// unset, PlanGlobalPromotion skips the model run — nothing has changed across any
+	// project, so there is nothing new to promote. Global-only.
+	PrevManifest map[string]string
 	// DryRun runs the full pass — including the LLM calls — and populates the
 	// Report with every change it WOULD make, but writes nothing to the Store. Used
 	// for safe previews on live, session-shared memory.

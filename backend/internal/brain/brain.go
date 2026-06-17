@@ -42,8 +42,9 @@ type Service struct {
 	dir      string
 	semantic bool
 
-	mu     sync.Mutex // guards the fingerprint file
+	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
+	gmPath string // per-scope content-hash manifest of the last global pass (RFC P5)
 }
 
 // New builds the service, creating the brain directory and (optionally) the
@@ -57,7 +58,12 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("brain: create dir: %w", err)
 	}
 	base := filestore.New(cfg.Dir)
-	svc := &Service{store: base, dir: cfg.Dir, fpPath: filepath.Join(cfg.Dir, ".fingerprints.json")}
+	svc := &Service{
+		store:  base,
+		dir:    cfg.Dir,
+		fpPath: filepath.Join(cfg.Dir, ".fingerprints.json"),
+		gmPath: filepath.Join(cfg.Dir, ".global-manifest.json"),
+	}
 
 	if cfg.ChromaURL != "" && cfg.EmbedURL != "" && cfg.EmbedModel != "" {
 		client := chroma.NewClient(cfg.ChromaURL)
@@ -431,8 +437,30 @@ func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory
 // PlanGlobal is read-only (see Plan); it takes opts so the host can thread live
 // progress and per-batch error callbacks through the chunked promotion pass. No
 // lock is held during the LLM run.
+//
+// It loads the persisted per-scope manifest as opts.PrevManifest so the pass can
+// skip the model when no project changed since the last global pass (RFC P5 — the
+// incremental rebuild). When the (non-skipped) pass yields nothing to promote it
+// records the current manifest, so repeated previews over an unchanged, already-
+// clean brain stay cheap. A pass that DOES propose promotions records nothing — the
+// manifest only advances once those promotions are actually applied (see ApplyGlobal),
+// so an unapplied preview can never be wrongly skipped.
 func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter, opts memory.ConsolidateOptions) (memory.GlobalPlan, error) {
-	return memory.PlanGlobalPromotion(ctx, s.store, pr, opts)
+	if opts.PrevManifest == nil {
+		s.mu.Lock()
+		opts.PrevManifest = s.loadGlobalManifest()
+		s.mu.Unlock()
+	}
+	plan, err := memory.PlanGlobalPromotion(ctx, s.store, pr, opts)
+	if err != nil {
+		return plan, err
+	}
+	if !plan.Skipped && len(plan.Promotions) == 0 {
+		s.mu.Lock()
+		s.saveGlobalManifest(plan.Fingerprints)
+		s.mu.Unlock()
+	}
+	return plan, nil
 }
 
 // ApplyGlobal applies (dryRun=false) or previews (dryRun=true) a global plan
@@ -446,13 +474,22 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 	if err != nil {
 		return rep, err
 	}
-	if !dryRun && (len(rep.Deleted) > 0 || len(rep.Promoted) > 0) {
+	if dryRun {
+		return rep, nil
+	}
+	if len(rep.Deleted) > 0 || len(rep.Promoted) > 0 {
 		fps := s.loadFingerprints()
 		for _, r := range rep.Deleted {
 			delete(fps, string(r.Scope))
 		}
 		delete(fps, string(memory.ScopeGlobal))
 		s.saveFingerprints(fps)
+	}
+	// Advance the global manifest to the post-apply state (recomputed from the live
+	// store, since apply may have deleted subsumed copies) so the next pass can skip
+	// while no project changes. RFC P5 incremental rebuild.
+	if m, merr := memory.ScopeManifest(ctx, s.store); merr == nil {
+		s.saveGlobalManifest(m)
 	}
 	return rep, nil
 }
@@ -466,16 +503,39 @@ func (s *Service) loadFingerprints() map[string]string {
 }
 
 func (s *Service) saveFingerprints(m map[string]string) {
-	data, err := json.MarshalIndent(m, "", "  ")
+	writeJSONAtomic(s.fpPath, m, "fingerprints")
+}
+
+// loadGlobalManifest / saveGlobalManifest persist the per-scope content-hash
+// manifest of the last global promotion pass (RFC P5). Separate from the per-scope
+// Tidy fingerprints: this tracks "the state all projects were in the last time we
+// looked for cross-scope patterns" so an incremental pass can skip the model when
+// nothing changed. Callers hold s.mu.
+func (s *Service) loadGlobalManifest() map[string]string {
+	m := map[string]string{}
+	if data, err := os.ReadFile(s.gmPath); err == nil {
+		_ = json.Unmarshal(data, &m)
+	}
+	return m
+}
+
+func (s *Service) saveGlobalManifest(m map[string]string) {
+	writeJSONAtomic(s.gmPath, m, "global manifest")
+}
+
+// writeJSONAtomic marshals v and writes it to path via a temp file + rename so a
+// crash mid-write can't leave a truncated index. label names the artifact in logs.
+func writeJSONAtomic(path string, v any, label string) {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return
 	}
-	tmp := s.fpPath + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		slog.Warn("brain: persist fingerprints", "error", err)
+		slog.Warn("brain: persist "+label, "error", err)
 		return
 	}
-	if err := os.Rename(tmp, s.fpPath); err != nil {
-		slog.Warn("brain: persist fingerprints", "error", err)
+	if err := os.Rename(tmp, path); err != nil {
+		slog.Warn("brain: persist "+label, "error", err)
 	}
 }

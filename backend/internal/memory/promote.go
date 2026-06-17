@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"errors"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -37,10 +36,15 @@ type Promoter interface {
 // GlobalPlan is the serializable proposal of a cross-scope promotion pass: the
 // global facts to create (each naming the project copies it subsumes) plus a
 // per-scope fingerprint so a stale plan is refused at apply time. Replaying it
-// needs no further model call.
+// needs no further model call. The Fingerprints map doubles as the content-hash
+// manifest the host persists for the next incremental pass (RFC P5).
 type GlobalPlan struct {
 	Promotions   []Promotion       `json:"promotions"`
 	Fingerprints map[string]string `json:"fingerprints"`
+	// Skipped is set when the incremental manifest was unchanged since the last
+	// global pass, so the model run was short-circuited (graphify's manifest skip).
+	// Applying a skipped plan is a no-op.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // maxPromoteBatch bounds how many candidates go to the Promoter per call. A var so
@@ -78,10 +82,20 @@ func RunBounded(ctx context.Context, n, limit int, fn func(i int)) {
 }
 
 // PlanGlobalPromotion runs the LLM phase of cross-scope consolidation: it gathers
-// non-protected project facts, asks the Promoter which belong in global, and
-// returns a replayable plan. It writes nothing. Candidates are sorted to colocate
-// similar facts so recurrences tend to land in the same batch; a recurrence split
-// across batches is caught on a subsequent pass.
+// non-protected project facts, narrows them to the transferable-pattern set with
+// the graph layer, asks the Promoter which belong in global, and returns a
+// replayable plan. It writes nothing.
+//
+// The graph sharpens the pass two ways (RFC P5):
+//   - Cross-scope guardrail. Only facts in a topic community spanning ≥ minScopes
+//     distinct project scopes (crossScopeCandidates) reach the Promoter. Codebase-
+//     specific facts live in a single scope and are filtered out before any model
+//     call, so the LLM only ever sees genuinely recurring conventions/preferences.
+//     Group members stay contiguous, so a topic's copies share a batch and the
+//     Promoter can collapse them into one global node ("dedup shared nodes by label").
+//   - Incremental rebuild. The per-scope content-hash manifest (Fingerprints) is
+//     compared against opts.PrevManifest; when nothing changed across any project
+//     (and Force is unset) the model run is skipped entirely.
 func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts ConsolidateOptions) (GlobalPlan, error) {
 	plan := GlobalPlan{Fingerprints: map[string]string{}}
 	all, err := store.List(ctx)
@@ -92,24 +106,43 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 	var candidates []ScopedFact
 	byScope := map[Scope][]Record{}
 	for _, r := range all {
-		if r.Scope == ScopeGlobal || r.Source == SourceCapture || isProtected(r) {
+		if !isPromotable(r) {
 			continue // global stays put; captures and protected facts are off-limits
 		}
 		candidates = append(candidates, ScopedFact{Scope: r.Scope, ID: r.ID, Text: r.Text, Category: r.Category})
 		byScope[r.Scope] = append(byScope[r.Scope], r)
 	}
+
+	// Per-scope content-hash manifest (graphify global_graph.py) — identical to the
+	// apply-time staleness guard. Stamp it up-front so even a skipped or empty pass
+	// carries the manifest the host persists for the next incremental run.
+	for scope, rs := range byScope {
+		plan.Fingerprints[string(scope)] = fingerprint(rs)
+	}
+
+	// Incremental rebuild: if no project scope changed since the last global pass
+	// there is nothing new to promote — skip the (expensive) model run entirely.
+	// Force overrides, mirroring the single-scope fingerprint short-circuit.
+	if !opts.Force && manifestsEqual(opts.PrevManifest, plan.Fingerprints) {
+		plan.Skipped = true
+		return plan, nil
+	}
+
 	if len(candidates) == 0 {
 		return plan, nil
 	}
 
-	// Colocate similar facts so cross-project recurrences tend to share a batch.
-	sort.SliceStable(candidates, func(i, j int) bool {
-		ki, kj := promoteSortKey(candidates[i].Text), promoteSortKey(candidates[j].Text)
-		if ki != kj {
-			return ki < kj
-		}
-		return candidates[i].ID < candidates[j].ID
-	})
+	// Transferable-pattern guardrail: keep only facts that recur across ≥ minScopes
+	// distinct project scopes (a cross-scope community). The result is already
+	// ordered so each community's members are contiguous.
+	minScopes := opts.MinPromotionScopes
+	if minScopes <= 0 {
+		minScopes = DefaultMinPromotionScopes
+	}
+	candidates = crossScopeCandidates(candidates, DefaultCommunityThreshold, minScopes)
+	if len(candidates) == 0 {
+		return plan, nil // nothing recurs across projects — nothing to promote
+	}
 
 	// Split into batches and run them with bounded concurrency — each batch is an
 	// independent model call whose promotions just merge, so order doesn't matter.
@@ -152,10 +185,6 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 	if cancelErr != nil {
 		return plan, cancelErr
 	}
-
-	for scope, rs := range byScope {
-		plan.Fingerprints[string(scope)] = fingerprint(rs)
-	}
 	return plan, nil
 }
 
@@ -165,6 +194,11 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 // safety net. With opts.DryRun it builds the full changelog (Promoted = global
 // facts created, Deleted = project copies removed) but writes nothing.
 func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opts ConsolidateOptions) (Report, error) {
+	if plan.Skipped {
+		// Incremental short-circuit: the planner found no project changed since the
+		// last pass, so there is deterministically nothing to apply.
+		return Report{Scope: ScopeGlobal, Skipped: true}, nil
+	}
 	dupThreshold := opts.DuplicateThreshold
 	if dupThreshold <= 0 {
 		dupThreshold = DefaultDuplicateThreshold
@@ -274,15 +308,4 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 		}
 	}
 	return rep, nil
-}
-
-// promoteSortKey returns a coarse key (first few sorted significant tokens) used to
-// colocate similar facts so cross-project recurrences tend to share a batch.
-func promoteSortKey(text string) string {
-	toks := uniqueTokens(text)
-	sort.Strings(toks)
-	if len(toks) > 3 {
-		toks = toks[:3]
-	}
-	return strings.Join(toks, " ")
 }

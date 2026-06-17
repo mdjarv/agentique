@@ -9,6 +9,7 @@ import (
 
 const scopeA Scope = "project:a"
 const scopeB Scope = "project:b"
+const scopeC Scope = "project:c"
 
 func projFact(id string, scope Scope, text string) Record {
 	return mk(id, scope, text, CategoryFact, SourceConsolidated)
@@ -145,10 +146,13 @@ func TestPlanGlobalResilientAndProgress(t *testing.T) {
 	maxPromoteBatch = 1
 	defer func() { maxPromoteBatch = orig }()
 
+	// Three copies of the same convention across three projects: one cross-scope
+	// community (3 scopes) so all three survive the transferable-pattern guardrail
+	// and become three single-fact batches at maxPromoteBatch=1.
 	store := newMemStore(
-		projFact("a1", scopeA, "one"),
-		projFact("a2", scopeA, "two"),
-		projFact("a3", scopeA, "three"),
+		projFact("a1", scopeA, "uses just as the task runner"),
+		projFact("b1", scopeB, "uses just as the task runner"),
+		projFact("c1", scopeC, "uses just as the task runner"),
 	)
 	var errs, lastDone, lastTotal int
 	plan, err := PlanGlobalPromotion(ctx, store, &errOnNthPromoter{n: 2}, ConsolidateOptions{
