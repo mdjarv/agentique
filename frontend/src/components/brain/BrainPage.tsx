@@ -563,22 +563,20 @@ function categoryColor(cat: string): string {
 
 // confidenceStyle maps a confidence tier to a muted dot + label. EXTRACTED (ground
 // truth) is not shown — there's nothing to second-guess.
-function confidenceStyle(tier: string | undefined): { dot: string; label: string } | null {
-  switch (tier) {
-    case "ambiguous":
-      return { dot: "bg-amber-500", label: "unsure" };
-    case "inferred":
-      return { dot: "bg-muted-foreground/50", label: "inferred" };
-    default:
-      return null;
-  }
+// confidenceChip is shown only for facts worth flagging — those in the confirm band
+// (cross-project generalizations and AMBIGUOUS facts). Ordinary inferred facts (the
+// 0.8 majority) get no chip, so the list stays quiet and the signal stays meaningful.
+function confidenceChip(memory: Memory): { dot: string; label: string } | null {
+  if (!needsConfirmation(memory)) return null;
+  if (memory.confidence === "ambiguous") return { dot: "bg-amber-500", label: "unsure" };
+  return { dot: "bg-muted-foreground/50", label: "unverified" };
 }
 
 function MemoryCard({ memory }: { memory: Memory }) {
   const { update, remove, pin, lock, confirm } = useBrainStore();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(memory.text);
-  const conf = confidenceStyle(memory.confidence);
+  const conf = confidenceChip(memory);
   const canConfirm = needsConfirmation(memory);
 
   const act = async (fn: () => Promise<unknown>, errMsg: string) => {
