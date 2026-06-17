@@ -260,6 +260,7 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Scope string `json:"scope"`
 		Model string `json:"model"`
+		Mode  string `json:"mode"` // "" (conservative) | "aggressive"
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -268,7 +269,7 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	job, err := h.startScopeJob(scope, body.Model)
+	job, err := h.startScopeJob(scope, body.Model, body.Mode)
 	if err != nil {
 		return err
 	}

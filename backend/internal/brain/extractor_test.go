@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	claudecli "github.com/allbin/claudecli-go"
@@ -174,6 +175,56 @@ func TestReorganizeChunkingPreservesAllOnNoOp(t *testing.T) {
 	}
 }
 
+// recordingRunner captures the last prompt it was asked to run.
+type recordingRunner struct {
+	structured string
+	lastPrompt string
+}
+
+func (r *recordingRunner) RunBlocking(_ context.Context, prompt string, _ ...claudecli.Option) (*claudecli.BlockingResult, error) {
+	r.lastPrompt = prompt
+	return &claudecli.BlockingResult{StructuredOutput: json.RawMessage(r.structured)}, nil
+}
+
+func TestReorganizeModeSelectsPrompt(t *testing.T) {
+	facts := []memory.Fact{{ID: "a", Text: "fact a", Category: memory.CategoryFact}}
+	structured := `{"facts":[{"id":"a","text":"fact a","category":"fact"}]}`
+
+	conservative := &recordingRunner{structured: structured}
+	if _, err := NewClaudeExtractor(conservative, claudecli.ModelHaiku).Reorganize(context.Background(), facts); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conservative.lastPrompt, "CONSERVATIVE memory curator") {
+		t.Fatalf("default mode should use the conservative prompt, got: %.60q", conservative.lastPrompt)
+	}
+
+	aggressive := &recordingRunner{structured: structured}
+	if _, err := NewClaudeExtractor(aggressive, claudecli.ModelHaiku, WithAggressiveReorganize()).Reorganize(context.Background(), facts); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(aggressive.lastPrompt, "AGGRESSIVE memory curator") {
+		t.Fatalf("aggressive mode should use the aggressive prompt, got: %.60q", aggressive.lastPrompt)
+	}
+}
+
+func TestReorganizeModePolicy(t *testing.T) {
+	opts, ratio := reorganizeModePolicy("aggressive")
+	if len(opts) != 1 || ratio != aggressiveMinSurvivorRatio {
+		t.Fatalf("aggressive => one option + %v ratio, got %d opts / %v", aggressiveMinSurvivorRatio, len(opts), ratio)
+	}
+	// Applying the option flips the extractor into aggressive mode.
+	e := NewClaudeExtractor(fakeRunner{}, claudecli.ModelHaiku, opts...)
+	if !e.aggressive {
+		t.Fatal("aggressive option should set the aggressive flag")
+	}
+	if o, r := reorganizeModePolicy(""); o != nil || r != 0 {
+		t.Fatalf("empty mode => conservative (nil, 0), got %d opts / %v", len(o), r)
+	}
+	if o, r := reorganizeModePolicy("bogus"); o != nil || r != 0 {
+		t.Fatalf("unknown mode => conservative (nil, 0), got %d opts / %v", len(o), r)
+	}
+}
+
 func TestChunkByCommunity(t *testing.T) {
 	f := func(id string, community int) memory.Fact {
 		return memory.Fact{ID: id, Text: id, Category: memory.CategoryFact, Community: community}
@@ -241,8 +292,8 @@ func assertNoSplitCommunity(t *testing.T, chunks [][]memory.Fact) {
 
 func TestParseJSONArray(t *testing.T) {
 	cases := map[string]string{
-		"```json\n[1,2]\n```":           "[1,2]",
-		"<think>x</think>[3]":           "[3]",
+		"```json\n[1,2]\n```":          "[1,2]",
+		"<think>x</think>[3]":          "[3]",
 		"prose before [4] prose after": "[4]",
 		"no array here":                "[]",
 		"[{\"a\":1}]":                  "[{\"a\":1}]",

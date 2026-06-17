@@ -356,6 +356,14 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 	return rep, nil
 }
 
+// TidyOptions are the per-scope consolidation knobs the brain layer adds on top of
+// the model (which the Extractor carries). MinSurvivorRatio relaxes the
+// over-deletion guard for an aggressive Tidy (0 = conservative default). The zero
+// value reproduces the original conservative behaviour.
+type TidyOptions struct {
+	MinSurvivorRatio float64
+}
+
 // Plan runs the LLM phase of consolidation for a scope and returns the proposal
 // without writing anything. The model runs only here; the caller previews the plan
 // (ApplyPlan with dryRun) and then applies it (ApplyPlan), so Opus is never invoked
@@ -364,11 +372,12 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 // hold s.mu: that lock guards writes/fingerprints and must not be held across a
 // multi-minute LLM run, which would block every other brain op (incl. live
 // MemorySearch). Staleness is caught by ApplyPlan's fingerprint check.
-func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy) (memory.Plan, error) {
+func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, opts TidyOptions) (memory.Plan, error) {
 	fps := s.loadFingerprints()
 	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
-		PrevFingerprint: fps[string(scope)],
-		Decay:           decay,
+		PrevFingerprint:  fps[string(scope)],
+		Decay:            decay,
+		MinSurvivorRatio: opts.MinSurvivorRatio,
 	})
 }
 

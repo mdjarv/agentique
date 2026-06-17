@@ -104,20 +104,22 @@ func (h *Handler) finishJob(job JobState, rep memory.Report, plan any) {
 }
 
 // startScopeJob kicks off a per-scope preview (Plan + dry-run apply) in the
-// background and returns the initial running state immediately.
-func (h *Handler) startScopeJob(scope memory.Scope, model string) (JobState, error) {
+// background and returns the initial running state immediately. mode selects the
+// reorganize strategy ("" = conservative, "aggressive" = collapse hard).
+func (h *Handler) startScopeJob(scope memory.Scope, model, mode string) (JobState, error) {
 	job, err := h.beginJob(JobState{
 		ID: uuid.NewString(), Kind: "scope", Scope: string(scope), Model: model, Phase: phaseRunning,
 	})
 	if err != nil {
 		return JobState{}, err
 	}
-	go h.runScopeJob(job, scope, model)
+	go h.runScopeJob(job, scope, model, mode)
 	return job, nil
 }
 
-func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model string) {
+func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model, mode string) {
 	ctx := context.Background()
+	exOpts, minSurvivorRatio := reorganizeModePolicy(mode)
 	var ex memory.Extractor
 	if model != "" && h.Runner != nil {
 		m, err := ParseModel(model)
@@ -125,9 +127,9 @@ func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model string) {
 			h.failJob(job, err)
 			return
 		}
-		ex = NewClaudeExtractor(h.Runner, m)
+		ex = NewClaudeExtractor(h.Runner, m, exOpts...)
 	}
-	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{})
+	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{}, TidyOptions{MinSurvivorRatio: minSurvivorRatio})
 	if err != nil {
 		h.failJob(job, err)
 		return

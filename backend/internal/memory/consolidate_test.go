@@ -267,6 +267,71 @@ func TestConsolidateOverDeletionSafetyNet(t *testing.T) {
 	}
 }
 
+// A lower MinSurvivorRatio (aggressive Tidy) permits a deeper cut that the default
+// 0.5 guard would refuse; the chosen ratio rides along in the Plan so a preview and
+// its later apply enforce the identical guard.
+func TestConsolidateAggressiveSurvivorRatio(t *testing.T) {
+	var recs []Record
+	for _, id := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} { // 8 facts
+		recs = append(recs, mk(id, ScopeGlobal, "fact "+id, CategoryFact, SourceAgent))
+	}
+	keep3 := fakeExtractor{reorganize: func(_ []Fact) []Fact {
+		return []Fact{{ID: "a", Text: "fact a"}, {ID: "b", Text: "fact b"}, {ID: "c", Text: "fact c"}}
+	}}
+
+	// Default guard (0.5) refuses keeping only 3/8.
+	store := newMemStore(recs...)
+	rep, _ := Consolidate(context.Background(), store, keep3, ScopeGlobal, ConsolidateOptions{})
+	if !rep.ReorgRefused {
+		t.Fatal("default guard should refuse a 3/8 survivor reorg")
+	}
+
+	// Aggressive guard (0.3) allows it: 3 >= 0.3*8 = 2.4.
+	store2 := newMemStore(recs...)
+	rep2, err := Consolidate(context.Background(), store2, keep3, ScopeGlobal, ConsolidateOptions{MinSurvivorRatio: 0.3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2.ReorgRefused {
+		t.Fatal("aggressive guard (0.3) should permit a 3/8 survivor reorg")
+	}
+	if len(rep2.Deleted) != 5 {
+		t.Fatalf("expected 5 deletions, got %d", len(rep2.Deleted))
+	}
+	all, _ := store2.List(context.Background())
+	if len(all) != 3 {
+		t.Fatalf("expected 3 surviving facts, got %d", len(all))
+	}
+}
+
+// The guard ratio captured at plan time governs apply, even if the caller passes a
+// different ConsolidateOptions to ApplyPlan — preview and apply must agree.
+func TestApplyPlanUsesPlanSurvivorRatio(t *testing.T) {
+	var recs []Record
+	for _, id := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		recs = append(recs, mk(id, ScopeGlobal, "fact "+id, CategoryFact, SourceAgent))
+	}
+	store := newMemStore(recs...)
+	keep3 := fakeExtractor{reorganize: func(_ []Fact) []Fact {
+		return []Fact{{ID: "a", Text: "fact a"}, {ID: "b", Text: "fact b"}, {ID: "c", Text: "fact c"}}
+	}}
+	// Plan with the aggressive ratio; apply with bare options.
+	plan, err := PlanConsolidation(context.Background(), store, keep3, ScopeGlobal, ConsolidateOptions{MinSurvivorRatio: 0.3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.MinSurvivorRatio != 0.3 {
+		t.Fatalf("plan should carry the 0.3 ratio, got %v", plan.MinSurvivorRatio)
+	}
+	rep, err := ApplyPlan(context.Background(), store, ScopeGlobal, plan, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ReorgRefused {
+		t.Fatal("apply must honour the plan's aggressive ratio, not the bare options' default")
+	}
+}
+
 func TestConsolidateKeepsCapturesOnEmptyExtraction(t *testing.T) {
 	store := newMemStore(capture("c1", "some episode"), capture("c2", "another episode"))
 	// Extractor has a weak turn and returns nothing (valid, no error).

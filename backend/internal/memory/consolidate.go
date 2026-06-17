@@ -62,6 +62,13 @@ type ConsolidateOptions struct {
 	Decay           DecayPolicy
 	// DuplicateThreshold for promoting captures; <=0 uses DefaultDuplicateThreshold.
 	DuplicateThreshold float64
+	// MinSurvivorRatio is the fraction of a non-trivial reorganizable set that must
+	// survive (retained + abstracted), below which the over-deletion safety net
+	// refuses the reorganization. <=0 (or >1) uses defaultMinSurvivorRatio (0.5). A
+	// lower value (e.g. an aggressive Tidy) lets a bloated scope collapse further in
+	// one pass while still catching a model that nukes nearly everything. The value
+	// is captured into the Plan so preview and apply enforce an identical guard.
+	MinSurvivorRatio float64
 	// DryRun runs the full pass — including the LLM calls — and populates the
 	// Report with every change it WOULD make, but writes nothing to the Store. Used
 	// for safe previews on live, session-shared memory.
@@ -96,9 +103,23 @@ type Report struct {
 	Fingerprint      string   // new fingerprint of the reorganizable set
 }
 
-// minFactsForDeletionGuard is the floor below which the >50% over-deletion safety
-// net does not apply (small sets can legitimately collapse a lot).
+// minFactsForDeletionGuard is the floor below which the over-deletion safety net
+// does not apply (small sets can legitimately collapse a lot).
 const minFactsForDeletionGuard = 8
+
+// defaultMinSurvivorRatio is the share of a non-trivial reorganizable set that
+// must survive a reorganization; below it the over-deletion safety net refuses.
+// 0.5 reproduces the original "never lose more than half" guard.
+const defaultMinSurvivorRatio = 0.5
+
+// normalizeMinSurvivorRatio clamps a configured survivor ratio into (0,1],
+// defaulting an unset/invalid value to the conservative 0.5.
+func normalizeMinSurvivorRatio(r float64) float64 {
+	if r <= 0 || r > 1 {
+		return defaultMinSurvivorRatio
+	}
+	return r
+}
 
 // isProtected reports whether a record is exempt from reorganization and decay:
 // pinned (core context), locked (hand-protected), or human-authored (ground truth).
@@ -120,6 +141,7 @@ type Plan struct {
 	ReorganizeSkipped bool        `json:"reorganizeSkipped"` // skipped because the set was unchanged since the last pass
 	Promoted          []Candidate `json:"promoted"`          // ex.Extract output distilled from captures
 	CaptureIDs        []string    `json:"captureIds"`        // captures considered; consumed on apply when promotion yields facts
+	MinSurvivorRatio  float64     `json:"minSurvivorRatio,omitempty"` // over-deletion guard floor in effect for this plan (apply mirrors preview)
 }
 
 // ErrStalePlan is returned by ApplyPlan when the scope's reorganizable set changed
@@ -133,7 +155,7 @@ var ErrStalePlan = errors.New("memory: consolidation plan is stale; re-plan")
 // are reorganized on the NEXT pass, not this one, so the plan stays a pure function
 // of the current durable set.
 func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Scope, opts ConsolidateOptions) (Plan, error) {
-	p := Plan{Scope: scope}
+	p := Plan{Scope: scope, MinSurvivorRatio: normalizeMinSurvivorRatio(opts.MinSurvivorRatio)}
 	all, err := store.List(ctx, scope)
 	if err != nil {
 		return p, err
@@ -235,7 +257,7 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	if p.ReorganizeSkipped {
 		rep.Skipped = true
 	} else if p.ReorganizeRan {
-		applied, refused, aerr := applyReorg(ctx, store, now, reorgInput, p.Reorganized, &rep, opts.DryRun)
+		applied, refused, aerr := applyReorg(ctx, store, now, reorgInput, p.Reorganized, normalizeMinSurvivorRatio(p.MinSurvivorRatio), &rep, opts.DryRun)
 		if aerr != nil {
 			return rep, aerr
 		}
@@ -337,7 +359,7 @@ func writePromoted(ctx context.Context, store Store, scope Scope, cands []Candid
 // applyReorg validates and applies an Extractor's reorganization. It drops
 // invented IDs, enforces the over-deletion safety net, then applies rewrites,
 // deletions and new abstractions. On refusal it leaves the input untouched.
-func applyReorg(ctx context.Context, store Store, now time.Time, input []Record, out []Fact, rep *Report, dryRun bool) (applied []Record, refused bool, err error) {
+func applyReorg(ctx context.Context, store Store, now time.Time, input []Record, out []Fact, minSurvivorRatio float64, rep *Report, dryRun bool) (applied []Record, refused bool, err error) {
 	inputByID := make(map[string]Record, len(input))
 	for _, r := range input {
 		inputByID[r.ID] = r
@@ -355,12 +377,13 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 		outByID[f.ID] = f
 	}
 
-	// Over-deletion safety net: refuse if a non-trivial set would lose >half of
-	// its facts. Survivors include both retained originals and newly abstracted
-	// facts, so a legitimate merge (drop N originals, add M abstractions) is not
-	// mistaken for mass deletion.
+	// Over-deletion safety net: refuse if a non-trivial set would shrink below the
+	// configured survivor ratio (default half). Survivors include both retained
+	// originals and newly abstracted facts, so a legitimate merge (drop N originals,
+	// add M abstractions) is not mistaken for mass deletion. An aggressive Tidy
+	// lowers the ratio so a bloated scope can collapse further in one pass.
 	survivors := len(outByID) + len(news)
-	if len(input) >= minFactsForDeletionGuard && survivors*2 < len(input) {
+	if len(input) >= minFactsForDeletionGuard && float64(survivors) < minSurvivorRatio*float64(len(input)) {
 		return input, true, nil
 	}
 

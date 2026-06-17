@@ -26,8 +26,9 @@ import (
 // faithfulness matter and the call is infrequent. Keeping the choice out of this
 // type lets the memory core lift to agentkit without carrying a model decision.
 type ClaudeExtractor struct {
-	runner msggen.Runner
-	model  claudecli.Model
+	runner     msggen.Runner
+	model      claudecli.Model
+	aggressive bool // aggressive Reorganize prompt (collapse granular facts into broad rules)
 }
 
 var (
@@ -35,11 +36,27 @@ var (
 	_ memory.Promoter  = (*ClaudeExtractor)(nil)
 )
 
+// ExtractorOption tunes a ClaudeExtractor at construction. Policy knobs live here
+// (in the glue), keeping the memory core's Extractor contract model-agnostic.
+type ExtractorOption func(*ClaudeExtractor)
+
+// WithAggressiveReorganize swaps the conservative reorganize prompt for one that
+// actively collapses families of granular facts into broader rules — the "shrink a
+// bloated scope" mode. Safe because reorganization is preview-gated (the user
+// reviews the plan before applying) and still bounded by the over-deletion guard.
+func WithAggressiveReorganize() ExtractorOption {
+	return func(e *ClaudeExtractor) { e.aggressive = true }
+}
+
 // NewClaudeExtractor returns an Extractor that calls the given model via runner.
 // See ClaudeExtractor for model-selection guidance; the caller must choose a
 // model (there is no library default).
-func NewClaudeExtractor(runner msggen.Runner, model claudecli.Model) *ClaudeExtractor {
-	return &ClaudeExtractor{runner: runner, model: model}
+func NewClaudeExtractor(runner msggen.Runner, model claudecli.Model, opts ...ExtractorOption) *ClaudeExtractor {
+	e := &ClaudeExtractor{runner: runner, model: model}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
 }
 
 // ParseModel maps a model name to a claudecli.Model, rejecting unknown names so a
@@ -159,6 +176,57 @@ Rules:
 - When in doubt, keep the fact unchanged.
 
 Return ONLY a JSON object {"facts": [{"id","text","category"}]}. No prose, no code fences.`
+
+// reorganizeAggressiveSystemPrompt is the "shrink a bloated scope" curator. It is
+// deliberately less conservative: it collapses families of overlapping, granular
+// facts into a few broad rules and drops low-signal trivia, trading some detail for
+// a high-signal scope. The id rules are IDENTICAL to the conservative prompt (the
+// apply step drops invented ids and the over-deletion guard still applies), so an
+// aggressive plan is just as safe to replay — it only proposes deeper merges.
+const reorganizeAggressiveSystemPrompt = `You are an AGGRESSIVE memory curator. Your goal is a SMALL, HIGH-SIGNAL set of durable facts. You are given facts as a JSON object {"facts": [{"id","text","category"}]}.
+
+This scope is bloated with overlapping, overly specific entries. Consolidate hard:
+- MERGE every group of facts about the same topic into ONE broader fact. Several narrow facts that share a subject should become a single general rule.
+- ABSTRACT families of specific examples ("X does A", "X does B", "X does C") into the underlying principle ("X does A/B/C…").
+- REWRITE verbose entries to be concise and self-contained.
+- DROP low-signal trivia that a future reader could rediscover from the code, UNLESS it is a surprising gotcha. To drop a fact, simply omit it from the output.
+- Prefer FEWER, broader facts. A good memory is a general rule someone wants to know BEFORE working here.
+
+Do NOT lose genuinely distinct knowledge — only collapse what overlaps. Keep the meaning; shed the redundancy.
+
+Rules:
+- Keep the "id" of any fact you retain (you may change its text/category).
+- Use an EMPTY id ("") for a NEW abstracted/merged fact.
+- NEVER invent ids that were not in the input.
+
+Return ONLY a JSON object {"facts": [{"id","text","category"}]}. No prose, no code fences.`
+
+// reorganizePrompt selects the curator prompt for the extractor's configured mode.
+func (e *ClaudeExtractor) reorganizePrompt() string {
+	if e.aggressive {
+		return reorganizeAggressiveSystemPrompt
+	}
+	return reorganizeSystemPrompt
+}
+
+// ReorganizeModeAggressive is the request/UI value selecting the aggressive curator.
+const ReorganizeModeAggressive = "aggressive"
+
+// aggressiveMinSurvivorRatio is the over-deletion guard floor for an aggressive
+// Tidy: a bloated scope may collapse to as little as 20% of its facts in one pass
+// (the guard then only catches a near-total wipe). Conservative Tidy keeps 0.5.
+const aggressiveMinSurvivorRatio = 0.2
+
+// reorganizeModePolicy maps an HTTP/UI mode string to the extractor options and the
+// matching over-deletion guard ratio. Unknown/empty resolves to conservative
+// (default prompt, 0 ⇒ the core's 0.5 guard). One place owns the conservative ↔
+// aggressive policy so the job runner and any future caller stay consistent.
+func reorganizeModePolicy(mode string) (opts []ExtractorOption, minSurvivorRatio float64) {
+	if strings.EqualFold(strings.TrimSpace(mode), ReorganizeModeAggressive) {
+		return []ExtractorOption{WithAggressiveReorganize()}, aggressiveMinSurvivorRatio
+	}
+	return nil, 0
+}
 
 // Extract distills the given episodes (a transcript or transcript chunk) into
 // durable candidate facts.
@@ -310,7 +378,7 @@ func (e *ClaudeExtractor) reorganizeBatch(ctx context.Context, facts []memory.Fa
 	if err != nil {
 		return facts, nil
 	}
-	prompt := reorganizeSystemPrompt + "\n\nFACTS:\n" + string(inJSON) + "\n\nReturn ONLY the JSON object."
+	prompt := e.reorganizePrompt() + "\n\nFACTS:\n" + string(inJSON) + "\n\nReturn ONLY the JSON object."
 	res, err := msggen.RunWithRetry(ctx, e.runner, prompt, e.opts(reorganizeSchema)...)
 	if err != nil {
 		return nil, err
