@@ -174,6 +174,71 @@ func TestReorganizeChunkingPreservesAllOnNoOp(t *testing.T) {
 	}
 }
 
+func TestChunkByCommunity(t *testing.T) {
+	f := func(id string, community int) memory.Fact {
+		return memory.Fact{ID: id, Text: id, Category: memory.CategoryFact, Community: community}
+	}
+
+	// Small communities pack together up to max; a whole community is never split
+	// across chunks while it fits.
+	t.Run("keeps communities whole", func(t *testing.T) {
+		facts := []memory.Fact{f("a", 0), f("b", 0), f("c", 1), f("d", 2), f("e", 2)}
+		chunks := chunkByCommunity(facts, 3)
+		// community 0 (a,b) + community 1 (c) = 3 in one chunk; community 2 (d,e) next.
+		if len(chunks) != 2 {
+			t.Fatalf("want 2 chunks, got %d: %v", len(chunks), chunks)
+		}
+		assertNoSplitCommunity(t, chunks)
+		if total := count(chunks); total != len(facts) {
+			t.Fatalf("chunking must preserve all facts: want %d got %d", len(facts), total)
+		}
+	})
+
+	// A community larger than max is the only case allowed to straddle chunks.
+	t.Run("splits an oversized community", func(t *testing.T) {
+		facts := []memory.Fact{f("a", 0), f("b", 0), f("c", 0), f("d", 0), f("e", 1)}
+		chunks := chunkByCommunity(facts, 2)
+		// community 0 has 4 -> two pieces of 2; community 1 alone -> one chunk.
+		if len(chunks) != 3 {
+			t.Fatalf("want 3 chunks, got %d: %v", len(chunks), chunks)
+		}
+		if count(chunks) != len(facts) {
+			t.Fatalf("chunking must preserve all facts, got %d", count(chunks))
+		}
+	})
+
+	// Unlabeled facts (all community 0) behave like the old fixed-size chunker.
+	t.Run("unlabeled falls back to size chunking", func(t *testing.T) {
+		facts := []memory.Fact{f("a", 0), f("b", 0), f("c", 0), f("d", 0), f("e", 0)}
+		chunks := chunkByCommunity(facts, 2)
+		if len(chunks) != 3 || count(chunks) != 5 {
+			t.Fatalf("want 3 chunks totaling 5, got %d chunks / %d facts", len(chunks), count(chunks))
+		}
+	})
+}
+
+func count(chunks [][]memory.Fact) int {
+	n := 0
+	for _, c := range chunks {
+		n += len(c)
+	}
+	return n
+}
+
+// assertNoSplitCommunity verifies each community id appears in at most one chunk.
+func assertNoSplitCommunity(t *testing.T, chunks [][]memory.Fact) {
+	t.Helper()
+	seen := map[int]int{}
+	for ci, c := range chunks {
+		for _, f := range c {
+			if prev, ok := seen[f.Community]; ok && prev != ci {
+				t.Fatalf("community %d split across chunks %d and %d", f.Community, prev, ci)
+			}
+			seen[f.Community] = ci
+		}
+	}
+}
+
 func TestParseJSONArray(t *testing.T) {
 	cases := map[string]string{
 		"```json\n[1,2]\n```":           "[1,2]",

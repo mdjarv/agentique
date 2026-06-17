@@ -24,6 +24,13 @@ type Fact struct {
 	ID       string   `json:"id"`
 	Text     string   `json:"text"`
 	Category Category `json:"category"`
+
+	// Community is a topic-cluster id (from DetectCommunities) used purely as a
+	// batching hint: a cluster-aware Extractor groups facts of the same community
+	// into one Reorganize call so related facts can merge even across a large
+	// scope. It is NEVER shown to the model and is omitted from the wire plan when
+	// zero — it carries no semantic meaning the apply step depends on.
+	Community int `json:"community,omitempty"`
 }
 
 // Extractor is the LLM-backed cognition behind consolidation. The host
@@ -167,7 +174,7 @@ func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Sco
 		if p.InputFingerprint == opts.PrevFingerprint {
 			p.ReorganizeSkipped = true
 		} else {
-			out, rerr := ex.Reorganize(ctx, toFacts(reorgInput))
+			out, rerr := ex.Reorganize(ctx, factsForReorg(reorgInput))
 			if rerr != nil {
 				return p, fmt.Errorf("memory: reorganize: %w", rerr)
 			}
@@ -408,6 +415,20 @@ func toFacts(rs []Record) []Fact {
 	out := make([]Fact, len(rs))
 	for i, r := range rs {
 		out[i] = Fact{ID: r.ID, Text: r.Text, Category: r.Category}
+	}
+	return out
+}
+
+// factsForReorg is toFacts plus a community label per fact (from the Related graph
+// + token-Jaccard), so a cluster-aware Extractor batches related facts into the
+// same Reorganize call and they can merge across a large scope, not just within an
+// arbitrary 100-fact slice. The labels never reach the model and don't affect the
+// fingerprint (which hashes only id/text/category), so plans stay reproducible.
+func factsForReorg(rs []Record) []Fact {
+	comm := DetectCommunities(rs, DefaultRelatedThreshold)
+	out := make([]Fact, len(rs))
+	for i, r := range rs {
+		out[i] = Fact{ID: r.ID, Text: r.Text, Category: r.Category, Community: comm[r.ID]}
 	}
 	return out
 }

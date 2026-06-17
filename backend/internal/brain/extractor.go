@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
@@ -199,43 +200,91 @@ func (e *ClaudeExtractor) Extract(ctx context.Context, episodes []string) ([]mem
 // maxReorgBatch bounds how many facts go to the model in one Reorganize call.
 // Large scopes are chunked so the model never has to re-emit the whole set in a
 // single generation (which risks hitting the output limit and silently dropping
-// facts). A var, not a const, so tests can shrink it. Trade-off: duplicates that
-// land in different chunks won't merge in one pass — but each pass that merges
-// changes the set, so re-running Tidy converges. Clustering related facts into
-// the same chunk is a future optimization.
+// facts). A var, not a const, so tests can shrink it.
+//
+// Chunking is community-aware (chunkByCommunity): facts carry a Community label
+// (memory.factsForReorg) and a whole community lands in one chunk whenever it fits,
+// so related facts merge across the scope rather than only within an arbitrary
+// 100-fact slice. A community larger than the batch is split, but that is rare.
 var maxReorgBatch = 100
 
-// Reorganize asks the model to merge/clean a set of facts, chunking large sets and
-// running the chunks with bounded concurrency. On any parse failure a chunk returns
-// its input unchanged (a safe no-op), so a failed chunk never causes the
-// consolidation core to delete its facts.
+// Reorganize asks the model to merge/clean a set of facts, chunking large sets by
+// topic community and running the chunks with bounded concurrency. On any parse
+// failure a chunk returns its input unchanged (a safe no-op), so a failed chunk
+// never causes the consolidation core to delete its facts.
 func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) ([]memory.Fact, error) {
-	if len(facts) <= maxReorgBatch {
+	chunks := chunkByCommunity(facts, maxReorgBatch)
+	if len(chunks) <= 1 {
 		return e.reorganizeBatch(ctx, facts)
 	}
-	type span struct{ lo, hi int }
-	var spans []span
-	for i := 0; i < len(facts); i += maxReorgBatch {
-		end := i + maxReorgBatch
-		if end > len(facts) {
-			end = len(facts)
-		}
-		spans = append(spans, span{i, end})
-	}
 
-	results := make([][]memory.Fact, len(spans))
-	errsByIdx := make([]error, len(spans))
-	memory.RunBounded(ctx, len(spans), maxParallelReorg, func(idx int) {
-		results[idx], errsByIdx[idx] = e.reorganizeBatch(ctx, facts[spans[idx].lo:spans[idx].hi])
+	results := make([][]memory.Fact, len(chunks))
+	errsByIdx := make([]error, len(chunks))
+	memory.RunBounded(ctx, len(chunks), maxParallelReorg, func(idx int) {
+		results[idx], errsByIdx[idx] = e.reorganizeBatch(ctx, chunks[idx])
 	})
 	out := make([]memory.Fact, 0, len(facts))
-	for idx := range spans {
+	for idx := range chunks {
 		if errsByIdx[idx] != nil {
 			return nil, errsByIdx[idx] // a hard model error aborts (parse misses are no-ops)
 		}
 		out = append(out, results[idx]...)
 	}
 	return out, nil
+}
+
+// chunkByCommunity packs facts into batches of at most max, keeping every topic
+// community whole within a single batch whenever it fits. Communities are visited
+// in ascending id order and accumulated greedily; small communities share a batch,
+// and a community that alone exceeds max is split into max-sized pieces (the only
+// case where related facts can still straddle a chunk). Deterministic given the
+// deterministic community labels, so the resulting plan is reproducible.
+func chunkByCommunity(facts []memory.Fact, max int) [][]memory.Fact {
+	if len(facts) == 0 {
+		return nil
+	}
+	if max < 1 {
+		max = 1
+	}
+	order := make([]int, 0)
+	groups := make(map[int][]memory.Fact)
+	for _, f := range facts {
+		if _, ok := groups[f.Community]; !ok {
+			order = append(order, f.Community)
+		}
+		groups[f.Community] = append(groups[f.Community], f)
+	}
+	sort.Ints(order)
+
+	var chunks [][]memory.Fact
+	var cur []memory.Fact
+	flush := func() {
+		if len(cur) > 0 {
+			chunks = append(chunks, cur)
+			cur = nil
+		}
+	}
+	for _, c := range order {
+		g := groups[c]
+		if len(g) > max {
+			// A single community too big to co-locate: emit it in max-sized pieces.
+			flush()
+			for i := 0; i < len(g); i += max {
+				end := i + max
+				if end > len(g) {
+					end = len(g)
+				}
+				chunks = append(chunks, g[i:end])
+			}
+			continue
+		}
+		if len(cur)+len(g) > max {
+			flush()
+		}
+		cur = append(cur, g...)
+	}
+	flush()
+	return chunks
 }
 
 // maxParallelReorg caps concurrent Reorganize chunk calls. See memory.maxParallelBatches.
