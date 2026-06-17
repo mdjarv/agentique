@@ -128,7 +128,10 @@ accumulating implementation details.
 Auto-approved, scoped to the calling session's project (+ global):
 
 - `MemoryAdd(text, category)` — save a durable fact.
-- `MemorySearch(query)` — recall pinned + relevant facts.
+- `MemorySearch(query)` — recall pinned + relevant facts (output includes each fact's id).
+- `MemoryFlag(id, reason)` — flag a recalled fact as wrong/outdated (RFC-LD D2
+  reconsolidation): weakens it into the review queue, never deletes. The id comes from
+  `MemorySearch` output.
 
 ## Brain tab REST API
 
@@ -248,6 +251,13 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
   `DecayPolicy.ConfidenceWeighted` and the confirm UX.
 - `centrality.go` — `ComputeCentrality` (degree + Brandes betweenness over the
   `Related`/`DerivedFrom` structural graph); request-time, never persisted. RFC P2.
+- `strength.go` — `StorageStrength` (durable) + `RetrievalStrength` (decays with disuse),
+  Bjork's two-factor model (RFC-LD D1); `DueForReview` (spaced review, D6). Drives recall
+  ranking + `DecayPolicy.StrengthWeighted`. Reads `Record.LastUsedAt` (stamped by `BumpUses`).
+- `reconsolidate.go` — `MarkContradicted` (RFC-LD D2): weaken a recalled fact found wrong into
+  the review band + record `Record.ReviewNote`; never deletes; protected facts keep their score.
+- `interference.go` — `DetectInterference` (RFC-LD D5): similar-but-not-duplicate pairs
+  (token-Jaccard in [related, duplicate)) for the "same, or distinct?" queue.
 - `dedup.go` `tokenize.go` `filestore/` `chroma/` `embedhttp/`.
 
 agentique glue — `backend/internal/brain/`:

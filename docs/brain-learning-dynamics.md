@@ -8,8 +8,15 @@ Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md) and
 > as metamemory. This RFC is about the *dynamics* that structure still lacks: the feedback
 > loops that make biological memory adaptive. The through-line of every proposal below is the
 > same — **retrieval and outcome should change memory.** Today the brain is write-once and
-> manually maintained; the structure is brain-like, the learning is not yet. **Nothing here is
-> implemented.**
+> manually maintained; the structure is brain-like, the learning is not yet.
+>
+> **Progress (2026-06-17):** **D1 (two-factor strength)**, **D2 (reconsolidating recall +
+> MemoryFlag agent tool)**, **D5 (interference detection)** and **D6 (spaced review)** are
+> implemented — see `memory/{strength,reconsolidate,interference}.go`, `Record.LastUsedAt` /
+> `Record.ReviewNote`, `BumpUses`, `DecayPolicy.StrengthWeighted`, the `MemoryFlag` MCP tool,
+> and the `dueForReview` / `interference` lists in `brain/graph.go`. **D3 (salience-gated
+> consolidation)** and **D4 (episodic staging + replay)** remain — both wait on the outcome
+> signal (open decision #2); D2's `MemoryFlag` is the first concrete instance of that signal.
 
 ## Motivation
 
@@ -53,7 +60,7 @@ New to this RFC:
 
 ## Proposals
 
-### D1 — Two-factor strength (storage vs. retrieval)
+### D1 — Two-factor strength (storage vs. retrieval) ✅ implemented
 
 - **Principle.** Bjork & Bjork's *New Theory of Disuse*: a memory has two strengths — **storage**
   (how deeply learned; ~permanent) and **retrieval** (how accessible right now; decays with disuse).
@@ -68,7 +75,7 @@ New to this RFC:
   helper). No new external signal required — both are computable from data we already persist.
 - **Safety.** Pure ranking/decay inputs; previewable like every consolidation change.
 
-### D2 — Reconsolidation: make recall a *write* (keystone)
+### D2 — Reconsolidation: make recall a *write* (keystone) ✅ implemented
 
 - **Principle.** The two most robust results in learning science: the **testing effect** (Roediger &
   Karpicke — retrieval strengthens more than re-reading) and **reconsolidation** (Nader et al. — a
@@ -113,7 +120,7 @@ New to this RFC:
   captures instead of facts).
 - **Safety.** Captures are never recalled; promotion is preview-gated like today.
 
-### D5 — Interference detection via the graph
+### D5 — Interference detection via the graph ✅ implemented
 
 - **Principle.** What humans actually confuse is *similar-but-distinct* memories (proactive /
   retroactive interference).
@@ -124,7 +131,7 @@ New to this RFC:
   prompt ("same fact, or genuinely distinct?"). Cheap; reuses the existing similarity graph.
 - **Lives in.** Core (a query over `RelinkScope` output) + glue (`brain/graph.go` insight report).
 
-### D6 — Spaced-review scheduling
+### D6 — Spaced-review scheduling ✅ implemented
 
 - **Principle.** Spaced retrieval beats massed (Ebbinghaus → SM-2 → FSRS). An important fact not
   retrieved in a while is *due for review*, not dead.
@@ -150,11 +157,13 @@ New to this RFC:
 
 ## Open decisions
 
-1. **Storage strength: derived vs. persisted field?** (Affects whether D1 needs a migration or is
-   computed at load like centrality.)
-2. **The outcome / contradiction signal — who emits it?** Session-end LLM judge over the transcript,
-   an explicit agent tool ("this memory was wrong"), or auto-encode analysis. D2/D3/calibration all
-   block on this; it is the central new dependency of this RFC.
+1. ~~**Storage strength: derived vs. persisted field?**~~ **Resolved: derived** (`StorageStrength`
+   in `strength.go`, computed from confidence + cumulative `Uses` + `DerivedFrom` depth). The one
+   new persisted field is `LastUsedAt` (recall timestamp), needed for retrieval-strength disuse.
+2. **The outcome / contradiction signal — who emits it?** **Partly resolved:** D2 shipped the
+   *explicit agent tool* (`MemoryFlag`) as the first emitter. Still open for D3/calibration: whether
+   to add a session-end LLM judge or transcript analysis for an *automatic* signal, vs. relying on
+   the agent volunteering one. D3/calibration still block on this.
 3. **Reconsolidation gating.** How much may recall change a fact without human review, and how is an
    auto-update marked in provenance?
 4. **Scheduler placement.** D6 as part of the sleep pass, or a separate lighter tick.
@@ -163,16 +172,18 @@ New to this RFC:
 
 ## Sequencing
 
-1. **D1 — two-factor strength.** Pure core, no new signals (derivable today). Foundational: D2/D6
-   build on it.
-2. **D2 — reconsolidating recall (keystone).** Ship the cheap half first (strengthen-on-recall +
-   decay reset, no new signal), then the contradiction half once the outcome signal (decision #2)
-   exists.
-3. **D5 — interference detection.** Cheap, reuses the graph; good standalone win.
-4. **D3 — salience-gated consolidation.** Lands with the outcome-signal work from D2.
-5. **D4 — episodic staging + replay.** Larger; activates the dormant `capture` path and attacks scope
-   bloat at the root.
-6. **D6 — spaced-review scheduling.** After D1.
+1. ~~**D1 — two-factor strength.**~~ ✅ done (`memory/strength.go`, `Record.LastUsedAt`,
+   `DecayPolicy.StrengthWeighted`). Foundational: D6 builds on it.
+2. ~~**D2 — reconsolidating recall (keystone).**~~ ✅ done. Both halves shipped: strengthen-on-recall
+   (`BumpUses` stamps `LastUsedAt`) and the contradiction half via the `MemoryFlag` agent tool +
+   `memory.MarkContradicted`.
+3. ~~**D5 — interference detection.**~~ ✅ done (`memory/interference.go`; surfaced in the graph report).
+4. ~~**D6 — spaced-review scheduling.**~~ ✅ done (`memory.DueForReview`; `dueForReview` in the report).
+   (Done out of original order — it only needed D1, and rode along with D5 in the report.)
+5. **D3 — salience-gated consolidation.** Remaining. Lands with the automatic-outcome-signal work
+   (decision #2); `MemoryFlag` is the manual precursor.
+6. **D4 — episodic staging + replay.** Remaining. Largest; activates the dormant `capture` path and
+   attacks scope bloat at the root.
 
 ## References
 
