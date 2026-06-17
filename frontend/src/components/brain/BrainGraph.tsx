@@ -177,6 +177,19 @@ export function BrainGraph({
   const wrapRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const fitted = useRef(false);
+  // Carries the live (simulation-mutated) node objects forward across refetches so
+  // positions survive a rebuild — keyed by memory id. See the nodes memo below.
+  const prevNodesRef = useRef<Map<string, GNode>>(new Map());
+  // The last emitted graphData plus its topology signature. We reuse this reference
+  // (and only refresh display fields in place) whenever the topology is unchanged, so
+  // react-force-graph doesn't reheat — it force-sets alpha(1) on every graphData ref
+  // change (force-graph internals), which is what makes the layout jump.
+  const graphDataRef = useRef<{ topo: string; data: { nodes: GNode[]; links: GLink[] } } | null>(
+    null,
+  );
+  // Custom forces are applied once and reheated once to take effect; later topology
+  // changes reheat via the graphData digest, with the forces already in place.
+  const forcesReady = useRef(false);
 
   // Measure the container so the canvas fills it (and resizes with the window).
   useEffect(() => {
@@ -190,22 +203,42 @@ export function BrainGraph({
     return () => ro.disconnect();
   }, []);
 
-  const { nodes, links } = useMemo<{ nodes: GNode[]; links: GLink[] }>(() => {
-    const nodes: GNode[] = memories.map((m) => ({
-      id: m.id,
-      label: m.text.length > 40 ? `${m.text.slice(0, 40)}…` : m.text,
-      scope: m.scope,
-      scopeLabel: labelForScope(m.scope),
-      category: m.category,
-      source: m.source,
-      uses: m.uses,
-      pinned: m.pinned,
-      community: m.community ?? 0,
-      degree: m.degree ?? 0,
-      // Size blends use-count, pinned, and structural degree so load-bearing "god
-      // nodes" read bigger — the graphify signal made visual.
-      val: 2 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
-    }));
+  const graphData = useMemo<{ nodes: GNode[]; links: GLink[] }>(() => {
+    const prevById = prevNodesRef.current;
+
+    // Carry the simulation state (x/y/vx/vy and any pinned fx/fy) forward by id so a
+    // refetch doesn't re-randomize the layout. react-force-graph stores positions on
+    // the node objects themselves; rebuilding fresh objects (as we must, to pick up
+    // new centrality/use counts) would otherwise drop them and the engine would
+    // re-place every node from scratch — the jump that a brain.updated burst causes.
+    // Only ids with no previous entry (genuinely new memories) get placed fresh.
+    const nodes: GNode[] = memories.map((m) => {
+      const node: GNode = {
+        id: m.id,
+        label: m.text.length > 40 ? `${m.text.slice(0, 40)}…` : m.text,
+        scope: m.scope,
+        scopeLabel: labelForScope(m.scope),
+        category: m.category,
+        source: m.source,
+        uses: m.uses,
+        pinned: m.pinned,
+        community: m.community ?? 0,
+        degree: m.degree ?? 0,
+        // Size blends use-count, pinned, and structural degree so load-bearing "god
+        // nodes" read bigger — the graphify signal made visual.
+        val: 2 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
+      };
+      const prev = prevById.get(m.id);
+      if (prev) {
+        node.x = prev.x;
+        node.y = prev.y;
+        node.vx = prev.vx;
+        node.vy = prev.vy;
+        if (prev.fx != null) node.fx = prev.fx;
+        if (prev.fy != null) node.fy = prev.fy;
+      }
+      return node;
+    });
 
     const idSet = new Set(memories.map((m) => m.id));
     const links: GLink[] = [];
@@ -256,9 +289,74 @@ export function BrainGraph({
       }
     }
 
-    fitted.current = false; // re-frame when the data changes
-    return { nodes, links };
+    // Seed each brand-new node at the centroid of its already-placed neighbours so it
+    // eases in from the right region rather than flying in from the origin during the
+    // reheat a topology change triggers. Falls back to the engine's default placement
+    // when it has no placed neighbour yet.
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!n || n.x != null) continue;
+      let sx = 0;
+      let sy = 0;
+      let cnt = 0;
+      for (const l of links) {
+        const s = endId(l.source);
+        const t = endId(l.target);
+        const other = s === n.id ? t : t === n.id ? s : null;
+        if (!other) continue;
+        const p = prevById.get(other);
+        if (p?.x != null && p?.y != null) {
+          sx += p.x;
+          sy += p.y;
+          cnt++;
+        }
+      }
+      if (cnt > 0) {
+        // Small index-derived jitter so several new nodes sharing a neighbour don't stack.
+        n.x = sx / cnt + ((i % 5) - 2);
+        n.y = sy / cnt + ((i % 3) - 1);
+      }
+    }
+
+    // Topology signature: the node-id set plus the (kind+pair) link set, deliberately
+    // excluding every display field. A refetch that only bumps uses/degree/centrality
+    // leaves this unchanged, letting us reuse the prior graphData reference below.
+    const topo = `${[...idSet].sort().join(",")}#${[...seen].sort().join(",")}`;
+
+    const prev = graphDataRef.current;
+    if (prev && prev.topo === topo) {
+      // Topology unchanged: refresh display fields on the live (settled) node objects
+      // in place and hand back the existing reference. react-force-graph then skips
+      // its graphData digest entirely, so the simulation is never reheated — no jump.
+      // The next render's nodeCanvasObject closure repaints with the updated values.
+      const live = new Map(prev.data.nodes.map((n) => [String(n.id), n]));
+      for (const n of nodes) {
+        const l = live.get(String(n.id));
+        if (!l) continue;
+        l.label = n.label;
+        l.scope = n.scope;
+        l.scopeLabel = n.scopeLabel;
+        l.category = n.category;
+        l.source = n.source;
+        l.uses = n.uses;
+        l.pinned = n.pinned;
+        l.community = n.community;
+        l.degree = n.degree;
+        l.val = n.val;
+      }
+      return prev.data;
+    }
+
+    // Topology changed: emit a fresh reference (surviving nodes keep their positions,
+    // so only added/removed nodes drive the reheat) and remember the live objects so
+    // the next rebuild can carry their positions forward.
+    const data = { nodes, links };
+    graphDataRef.current = { topo, data };
+    prevNodesRef.current = new Map(nodes.map((n) => [String(n.id), n]));
+    return data;
   }, [memories, labelForScope, showSimilar]);
+
+  const { nodes, links } = graphData;
 
   // Neighbour map for hover highlighting. Built off `links` before the graph
   // engine rewrites source/target into node refs, so endId handles both.
@@ -282,14 +380,21 @@ export function BrainGraph({
   }, [links]);
 
   // Tighten the layout: a stronger repulsion with a short link distance pulls
-  // connected memories into legible clusters instead of one diffuse cloud.
+  // connected memories into legible clusters instead of one diffuse cloud. Forces
+  // persist on the simulation across data changes, so we set them (idempotently) and
+  // reheat exactly once to apply them to the initial layout. Subsequent topology
+  // changes reheat via react-force-graph's own graphData digest (forces already set);
+  // data-only refetches keep the graphData reference stable and so never reheat.
   // (d3Force returns a ForceFn; cast through unknown to reach .strength/.distance.)
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
     (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
     (g.d3Force("link") as unknown as { distance(n: number): void } | undefined)?.distance(45);
-    g.d3ReheatSimulation();
+    if (!forcesReady.current) {
+      forcesReady.current = true;
+      g.d3ReheatSimulation();
+    }
   }, [nodes]);
 
   // Recoloring doesn't touch graphData, so the settled canvas won't repaint on its
@@ -335,7 +440,7 @@ export function BrainGraph({
             ref={fgRef}
             width={size.w}
             height={size.h}
-            graphData={{ nodes, links }}
+            graphData={graphData}
             backgroundColor="rgba(0,0,0,0)"
             nodeRelSize={NODE_REL_SIZE}
             nodeVal={(n) => n.val ?? 2}
@@ -394,6 +499,9 @@ export function BrainGraph({
               }
             }}
             onEngineStop={() => {
+              // Fit once, when the layout first settles after (re)mounting the graph
+              // view. We never re-frame afterwards, so a memory change or a Tidy can't
+              // yank a user who has zoomed/panned back out to the whole-graph view.
               if (!fitted.current) {
                 fgRef.current?.zoomToFit(400, 48);
                 fitted.current = true;

@@ -94,10 +94,15 @@ export function BrainPage() {
   }, [loaded, load, hydrateJob]);
 
   // Load (and keep fresh) the centrality graph only while the graph view is open.
+  // While a consolidation job is running it broadcasts a burst of brain.updated events
+  // (one per scope), each of which would otherwise refetch the graph and re-lay it out;
+  // we hold off until the job ends (jobActive flips false) and refresh once then, so the
+  // live graph stays stable through a Tidy instead of churning on every step.
+  const jobActive = previewing || globalPreviewing || tidyingAll;
   // biome-ignore lint/correctness/useExhaustiveDependencies: flareSeq is a trigger-only dep — it bumps on any memory change (here or another tab) to re-fetch the graph so the insights + confirm queue stay fresh after a tidy/confirm; its value isn't read in the body.
   useEffect(() => {
-    if (view === "graph") loadGraph();
-  }, [view, loadGraph, flareSeq]);
+    if (view === "graph" && !jobActive) loadGraph();
+  }, [view, loadGraph, flareSeq, jobActive]);
 
   const labelForScope = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
