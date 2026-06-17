@@ -1,5 +1,11 @@
 # Cross-Agent Chat: Persistent Teams Brainstorm
 
+> **Status: partially implemented (historical brainstorm).** Phases 0–2 (agent
+> profiles, personas, channels) have shipped behind `[experimental] teams = true`;
+> phases 3–5 (cross-project DMs, topology presets, autonomy tuning) remain future
+> work. See ROADMAP.md "Persistent Teams & Cross-Agent Chat" for the live phase
+> table. Kept for the full design rationale.
+
 ## The Idea
 
 "Discord for agents" — a persistent team of expert agents across projects that communicate autonomously. Each agent has a persistent identity (role, project, capabilities), can discover peers via lightweight personas, and messages them like developers on Slack/Discord. Coexists with current task-force swarms.

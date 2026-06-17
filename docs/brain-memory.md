@@ -131,11 +131,14 @@ map their own concepts (board, persona, …).
 
 ## Known limitations / remaining work
 
-- **No LLM `Extractor` is wired yet.** `MemoryAdd` (agent-curated) is the primary
-  write path and needs no LLM. Consolidation currently performs deterministic
-  decay/dedup; promotion and reorganization activate once an `Extractor` is
-  configured. (Anthropic has no embeddings API, so semantic recall needs an
-  external embeddings endpoint.)
+- **The LLM `Extractor` runs only in `brain backfill`, not live consolidation.**
+  `HaikuExtractor` (Claude Haiku via claudecli) is wired into the `agentique
+  brain backfill` command, which retroactively promotes durable facts from past
+  session transcripts. The REST `/consolidate` pass still runs with a `nil`
+  extractor — deterministic decay/dedup only; LLM promotion and reorganization
+  are not yet on the automatic path. `MemoryAdd` (agent-curated) remains the
+  primary live write path and needs no LLM. (Anthropic has no embeddings API, so
+  semantic recall still needs an external embeddings endpoint.)
 - **Auto-capture on turn-end is not wired.** Deliberately deferred until an
   `Extractor` exists, so raw captures don't accumulate undistilled.
 - **Preamble push-injection is deferred.** Recall today is pull-based via

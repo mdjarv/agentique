@@ -295,18 +295,18 @@ When merging a worktree branch, the project root must be clean (no uncommitted c
 - Provider CLI init takes ~30-40s on first connect; frontend needs long timeout for `session.create`.
 - Detect turn boundaries via `runtime.TurnCompletedEvent` (mapped from
   `claudecli.ResultEvent` / codex `turn/completed`).
-- Codex capabilities flags off resume, fork, mid-turn send, thinking,
-  subagent events, rate-limit / compaction events, MCP reconnect, tool
-  progress ticks. The UI must check `Capabilities()` rather than assume.
+- Codex supports resume and rate-limit events; mid-turn send is emulated
+  (queued + replayed at the next idle boundary). Codex does **not** support
+  natively: fork, plan mode, thinking, subagents, compaction events, MCP
+  reconnect, or tool-progress ticks. The UI must check `Capabilities()`
+  rather than assume; see `docs/2026-05-25-capabilities-wire-shape.md`.
 - Known gaps (tracked in `docs/tech-debt.md`):
-  - Claude partial-message streaming (`AssistantTextDeltaEvent` / `StreamEvent`
-    / `ContextSnapshot`) and `SendMessage` replay confirmation depend on
-    `WithIncludePartialMessages` / `WithReplayUserMessages` that the agentkit
-    claude adapter does not yet forward.
-  - `AgentResult` metadata (agent_id, total durations) does not flow through
-    the neutral event set; the wire shape `WireAgentResultEvent` is preserved
-    for a future upgrade.
+  - `reasoning_delta` and `turn_diff` events flow through the backend
+    pipeline but have no frontend renderers yet.
+  - Codex error classification is generic (every codex error maps to
+    `api_error`) because codexcli-go lacks the error sentinels claudecli
+    exposes.
 - Sources:
   - [github.com/allbin/agentkit](https://github.com/allbin/agentkit) — runtime + adapters
-  - [github.com/mdjarv/claudecli-go](https://github.com/mdjarv/claudecli-go) — claude provider
+  - [github.com/allbin/claudecli-go](https://github.com/allbin/claudecli-go) — claude provider
   - [github.com/allbin/codexcli-go](https://github.com/allbin/codexcli-go) — codex provider

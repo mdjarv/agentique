@@ -1,6 +1,6 @@
 # Agentique
 
-A GUI for managing concurrent coding agents across multiple projects. Go backend drives provider CLIs through [agentkit/runtime](https://github.com/allbin/agentkit) (Claude via [claudecli-go](https://github.com/mdjarv/claudecli-go), OpenAI Codex via [codexcli-go](https://github.com/allbin/codexcli-go)); React frontend connects via WebSocket; deploys as a single embedded binary.
+A GUI for managing concurrent coding agents across multiple projects. Go backend drives provider CLIs through [agentkit/runtime](https://github.com/allbin/agentkit) (Claude via [claudecli-go](https://github.com/allbin/claudecli-go), OpenAI Codex via [codexcli-go](https://github.com/allbin/codexcli-go)); React frontend connects via WebSocket; deploys as a single embedded binary.
 
 Each session runs in its own git worktree, so concurrent agents never clobber each other's working tree.
 
@@ -262,7 +262,7 @@ Session arguments accept a unique ID prefix.
 
 - **HTTP/WS server:** net/http + gorilla/websocket
 - **Provider runtime:** github.com/allbin/agentkit/runtime (neutral CLI surface; per-provider adapters)
-- **Claude integration:** github.com/mdjarv/claudecli-go
+- **Claude integration:** github.com/allbin/claudecli-go
 - **Codex integration:** github.com/allbin/codexcli-go
 - **Auth:** WebAuthn (passkeys)
 - **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)

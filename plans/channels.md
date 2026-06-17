@@ -1,5 +1,10 @@
 # Plan: Channels — First-Class Cross-Agent Communication
 
+> **Status: implemented (historical planning doc).** The channel coordination
+> and agent-hierarchy work described here shipped — see ROADMAP.md "M5: Channel
+> Coordination & Agent Hierarchy" and the "Channels, Hierarchy, and Coordination"
+> section of CLAUDE.md for as-built behavior. Kept for design rationale.
+
 > Source PRD: [mdjarv/agentique#6](https://github.com/mdjarv/agentique/issues/6)
 
 ## Architectural decisions
