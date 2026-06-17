@@ -3,7 +3,7 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-05-27.
+Last full audit: 2026-06-17.
 
 ## P0 — Will bite a user
 
@@ -27,14 +27,17 @@ Last full audit: 2026-05-27.
 
 - **Symptom:** all codex-originated errors get `errorType: "api_error"`
   in the frontend. No rate-limit retry-after, no auth-specific messaging.
-- **Cause:** `wireErrorEvent()` in `wire.go` falls back to claudecli
-  error sentinels when `runtime.ErrorKind` is unset. codexcli-go has no
-  comparable sentinel errors, so every codex error hits the `default`
-  branch. Now that codexcli-go emits `RateLimitsUpdatedEvent`, the runtime
-  `ErrorKind` enum should cover rate limits, but other error types
-  (auth, billing) still fall through.
-- **Fix path:** either add error sentinels to codexcli-go, or ensure
-  the agentkit codex adapter always sets `ErrorKind` on `ErrorEvent`.
+- **Cause:** `wireErrorEvent()` in `wire.go` now switches on
+  `runtime.ErrorKind` first (rate_limit, auth, billing, overloaded,
+  permission, invalid_request, max_turns) and only falls back to claudecli
+  sentinels when `Kind` is unset. The consumer side is ready — but the
+  agentkit codex adapter emits `ErrorEvent` with **no `Kind` set**
+  (`connector.go`), so codex errors still fall through to generic
+  `api_error`. Codex rate limits arrive via a separate
+  `RateLimitsUpdatedEvent`, not via `ErrorEvent`.
+- **Fix path:** the only remaining work is on the adapter — have the
+  agentkit codex adapter set `ErrorKind` on `ErrorEvent` (or add error
+  sentinels to codexcli-go). No agentique-side change needed.
 
 ### Codex attachments path is half-baked
 
@@ -66,21 +69,6 @@ The migration intentionally keeps a few `claudecli` imports under
 Each one is a small abstraction leak. None block correctness today, but
 they constrain future providers.
 
-### `capturingConnector.hintNext` is racy under concurrent Create
-
-The current routing scheme sets a per-Connect "next provider" hint right
-before calling `m.rt.Create` / `Resume` and resets it on the connector
-side. If two `Manager.Create` calls land at the same instant, the wrong
-adapter could be picked. In practice agentique's `Manager` mutex
-sequences these, but the contract is fragile.
-
-### ~~Frontend types: `agent_result` events are dead code~~
-
-- **Resolved (2026-05-27):** `runtime.AgentResultEvent` added to
-  agentkit; claude adapter emits it from `mapUserEvent`. Agentique's
-  `ToWireEvent` maps it to `WireAgentResultEvent`. The pipeline now
-  persists and broadcasts `agent_result` events.
-
 ### `WireResultEvent.Usage` typed as `any`
 
 `WireResultEvent.Usage` is typed `any` in `wire.go` — populated from
@@ -89,7 +77,7 @@ Should be a concrete struct.
 
 ### `context.Background()` in async session operations
 
-49 call-sites across `backend/internal/session/` use
+~50 call-sites across `backend/internal/session/` use
 `context.Background()` instead of deriving from a parent context. Most
 are fire-and-forget DB writes where cancellation semantics don't matter.
 But several are in `channel.go` goroutines (e.g. `injectChannelContext`,
@@ -123,11 +111,9 @@ the backup header, so correctness risk is low. If the schema changes
 
 ### All provider dependencies are pseudo-versioned
 
-- `github.com/allbin/agentkit v0.0.0-20260527065524-6104454df451`
-- `github.com/allbin/claudecli-go v0.0.0-20260526133153-078bd7705f3b`
-- `github.com/allbin/codexcli-go v0.0.0-20260526133513-9ffb447bd3d5`
-
-None are tagged. If we depend on a fix landing upstream, we'll need to
+`github.com/allbin/{agentkit, claudecli-go, codexcli-go}` are all pinned to
+untagged `v0.0.0-<timestamp>-<hash>` pseudo-versions (see `go.mod` for the
+current commits). If we depend on a fix landing upstream, we'll need to
 either tag releases or keep bumping pseudo-versions. codexcli-go README
 explicitly warns the SDK is "early"; expect breaking changes.
 
@@ -141,20 +127,13 @@ upstream schema at all (the Claude CLI wire format is undocumented).
 
 ### Skipped tests as silent debt
 
-Three tests are `t.Skip`-ed:
-
-- `handler_test.go:253` — skips Claude CLI integration test in `-short`
-  mode (expected).
-- `setup_test.go:539,576` — "no checks registered" — setup
-  self-tests that skip because no health checks are wired yet.
-
-All remaining skips are structural placeholders, not masked gaps.
-
-### ~~No CI guard for typegen freshness~~
-
-- **Resolved (2026-05-27):** `ci.yml` includes a `typegen-freshness`
-  job that regenerates types and checks for drift via `git diff
-  --exit-code`.
+A handful of tests are `t.Skip`-ed across `cmd/agentique/setup_test.go`,
+`internal/{ws,filebrowser,session}/*_test.go`, and
+`internal/memory/chroma/store_integration_test.go`. They split into two
+benign buckets: integration tests gated on `-short` mode or a live
+external service (Claude CLI, ChromaDB), and setup self-tests that skip
+when no health checks are registered. All are structural placeholders or
+environment gates, not masked gaps.
 
 ### Release workflow builds but does not test
 
@@ -164,14 +143,15 @@ GitHub release with downloadable artifacts. This is downstream of the
 missing CI pipeline — once a `ci.yml` exists, the release workflow
 should either depend on it or replicate its checks.
 
-### No `.env.example` or environment variable inventory
+### No `.env.example` file
 
-Environment variables are documented across the README, `justfile`,
-`vite.config.ts`, and `main.go` CLI flags — there's no single canonical
-list. Backend: `AGENTIQUE_DB`, `AGENTIQUE_TLS_HOST`, `AGENTIQUE_HOME`,
-`XDG_DATA_HOME`. Frontend dev: `VITE_TLS`, `VITE_MSW`,
-`VITE_BACKEND_PORT`, `VITE_PORT`, `VITE_PUBLIC_HOST`,
-`VITE_MSW_STRICT`. A `.env.example` would reduce onboarding friction.
+The README now carries a backend env-var table (`AGENTIQUE_HOME`,
+`AGENTIQUE_DB`, `XDG_*`, `LOG_LEVEL`/`JSON_LOG`, the `AGENTIQUE_BRAIN_*`
+set), but there's still no checked-in `.env.example`, and the frontend dev
+vars (`VITE_TLS`, `VITE_MSW`, `VITE_BACKEND_PORT`, `VITE_PORT`,
+`VITE_PUBLIC_HOST`, `VITE_MSW_STRICT`) remain documented only in
+`justfile` / `vite.config.ts`. A single `.env.example` would still reduce
+onboarding friction.
 
 ### `mcphttp.register` panics on programmer error
 
@@ -182,62 +162,23 @@ But it's an unrecovered panic in production code. If tool registration
 ever becomes dynamic (user-supplied MCP configs), this needs to become
 an error return.
 
-## Resolved (kept for audit trail)
+## Resolved
 
-### ~~Codex resume is a fresh-start, not a real resume~~
+Condensed log — `git log -- docs/tech-debt.md` and the referenced commits
+hold the full detail.
 
-- **Resolved (2026-05-27):** codexcli-go exposes `Conn.ResumeThread`,
-  agentkit codex adapter wires it via `ConnectParams.ProviderSessionID`,
-  `caps.Resume` is `true`, and the `service.go` codex workaround was
-  removed. Codex sessions resume with conversation history.
-
-### ~~Codex feature flags not surfaced in UI~~
-
-- **Resolved (2026-05-25):** `WireCapabilities` on `SessionInfo`, chat
-  UI gates features on capability flags, provider picker in New Session.
-
-### ~~Frontend has no provider picker~~
-
-- **Resolved (2026-05-25):** `MessageComposer` provider dropdown.
-
-### ~~Service.resumeSession codex workaround~~
-
-- **Resolved (2026-05-27):** removed the `dbSess.Provider == "codex"`
-  check that force-set `freshStart = true`. The `freshStart` flag now
-  only depends on whether a provider session ID exists, which is
-  provider-agnostic.
-
-### ~~Claude partial-message streaming is OFF~~
-
-- **Resolved (2026-05-27):** upstream `claude.NewConnector` now accepts
-  variadic `claudecli.Option` defaults. `server.go` passes
-  `WithIncludePartialMessages()` and `WithReplayUserMessages()`.
-  Assistant text streams in real time; `SendMessage` delivery
-  confirmation works.
-
-### ~~`SendMessage` delivery confirmation is OFF~~
-
-- **Resolved (2026-05-27):** same upstream change as partial-message
-  streaming — `WithReplayUserMessages()` is now plumbed through.
-
-### ~~Delta events have no frontend renderers~~
-
-- **Resolved (2026-05-27):** `tool_output_delta` and `tool_progress`
-  are wired through `streaming-store` and rendered on `InFlightToolContent`
-  (header) and `ToolUseBlock` (expanded detail). `reasoning_delta` and
-  `turn_diff` remain unrendered (tracked as P1).
-
-### ~~`AgentResult` metadata is dropped~~
-
-- **Resolved (2026-05-27):** added `runtime.AgentResultEvent` to
-  agentkit. The claude adapter's `mapUserEvent` emits it alongside
-  `UserEcho` when `UserEvent.AgentResult` is non-nil. Agentique's
-  `ToWireEvent` maps it to `WireAgentResultEvent`, which is persisted
-  and broadcast. `TestPipeline_AgentResultPersisted` un-skipped.
-
-### ~~No CI pipeline beyond release~~
-
-- **Resolved (2026-05-27):** `.github/workflows/ci.yml` runs on PRs
-  and pushes to master. Three parallel jobs: backend (`go vet` + `go
-  test`), frontend (`biome check` + `tsc` + `vitest`), and
-  typegen-freshness (`git diff --exit-code` after regeneration).
+- **2026-06-17** — `capturingConnector.hintNext` routing race closed by a
+  dedicated `routeMu` serializing the hint→Connect→pop handshake.
+- **2026-05-27** — Codex resume is a real resume (`Conn.ResumeThread`,
+  `caps.Resume = true`); `Service.resumeSession` codex workaround removed.
+- **2026-05-27** — Claude partial-message streaming + `SendMessage`
+  delivery confirmation ON (`server.go` plumbs `WithIncludePartialMessages`
+  / `WithReplayUserMessages`).
+- **2026-05-27** — `tool_output_delta` / `tool_progress` rendered via the
+  streaming store (`reasoning_delta` / `turn_diff` still open, see P1).
+- **2026-05-27** — `AgentResult` metadata flows end-to-end
+  (`runtime.AgentResultEvent` → `WireAgentResultEvent`, persisted).
+- **2026-05-27** — CI pipeline (`ci.yml`): backend, frontend, and
+  typegen-freshness jobs on PRs + pushes to master.
+- **2026-05-25** — Codex capability flags surfaced in UI
+  (`WireCapabilities`), provider picker in New Session composer.
