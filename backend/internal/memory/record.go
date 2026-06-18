@@ -86,6 +86,12 @@ type Record struct {
 	// the graph view and cluster-aware consolidation. Scope-local: cluster ids are
 	// only comparable among records of the same scope.
 	Community int
+	// Area is the derived cross-scope topic "area" this fact belongs to — a topic
+	// community that recurs across ≥ minScopes distinct scopes (AssignAreas over
+	// CrossScopeGroups). Empty when the fact is single-scope/isolated. Unlike
+	// Community (scope-local int), Area is a human-readable label comparable across the
+	// whole brain; like Community it is a rebuildable index, never the source of truth.
+	Area string
 
 	// Confidence is the coarse trust tier (EXTRACTED / INFERRED / AMBIGUOUS) and
 	// ConfidenceScore the finer 0..1 signal behind it (RFC P2). The score is

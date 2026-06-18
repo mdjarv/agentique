@@ -50,6 +50,7 @@ type frontmatter struct {
 	DerivedFrom []string     `yaml:"derived_from,omitempty"`
 	Related     []string     `yaml:"related,omitempty"`
 	Community   int          `yaml:"community,omitempty"`
+	Area        string       `yaml:"area,omitempty"`
 	Confidence  string       `yaml:"confidence,omitempty"`
 	ConfScore   float64      `yaml:"confidence_score,omitempty"`
 	ReviewNote  string       `yaml:"review_note,omitempty"`
@@ -77,6 +78,7 @@ func toFrontmatter(r memory.Record) frontmatter {
 		DerivedFrom: r.DerivedFrom,
 		Related:     r.Related,
 		Community:   r.Community,
+		Area:        r.Area,
 		Confidence:  string(r.Confidence),
 		ConfScore:   r.ConfidenceScore,
 		ReviewNote:  r.ReviewNote,
@@ -129,6 +131,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		DerivedFrom:     m.DerivedFrom,
 		Related:         m.Related,
 		Community:       m.Community,
+		Area:            m.Area,
 		Confidence:      memory.ConfidenceTier(m.Confidence),
 		ConfidenceScore: m.ConfScore,
 		ReviewNote:      m.ReviewNote,
