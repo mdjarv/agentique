@@ -51,7 +51,7 @@ const NODE_REL_SIZE = 4;
 const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
 const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
-const REGION_MAX_NODES = 1200; // skip the per-frame hull pass above this many nodes
+const REGION_MAX_NODES = 4000; // skip the per-frame hull pass above this many nodes (hull is ~n log n, cheap)
 const REGION_PAD = 12; // world-unit breathing room around a region's outermost nodes
 
 const STOPWORDS = new Set(
@@ -128,7 +128,14 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// INSIGHT_LIST_CAP bounds how many ids one section renders — some lists (notably
+// isolated, which can be most of the corpus on a sparse link graph) are unbounded
+// server-side. The full size is still shown in the header.
+const INSIGHT_LIST_CAP = 12;
+
 // InsightSection renders one click-to-focus list of node ids (god nodes / bridges).
+// The list is capped at INSIGHT_LIST_CAP; when more exist the header shows the total
+// and a trailing "+N more".
 function InsightSection({
   title,
   hint,
@@ -142,13 +149,18 @@ function InsightSection({
   labelFor: (id: string) => string;
   onPick: (id: string) => void;
 }) {
+  const shown = ids.slice(0, INSIGHT_LIST_CAP);
+  const overflow = ids.length - shown.length;
   return (
     <div>
       <div className="mb-1 font-medium text-muted-foreground" title={hint}>
         {title}
+        {ids.length > shown.length && (
+          <span className="text-muted-foreground/70"> ({ids.length})</span>
+        )}
       </div>
       <ul className="space-y-0.5">
-        {ids.map((id) => (
+        {shown.map((id) => (
           <li key={id}>
             <button
               type="button"
@@ -161,6 +173,7 @@ function InsightSection({
           </li>
         ))}
       </ul>
+      {overflow > 0 && <div className="text-muted-foreground/60">+{overflow} more</div>}
     </div>
   );
 }
@@ -496,7 +509,11 @@ export function BrainGraph({
                 let cy = 0;
                 let minY = Number.POSITIVE_INFINITY;
                 for (const n of g.nodes) {
-                  if (n.x == null || n.y == null) continue;
+                  // Only the connected core defines an area. Isolated facts (no structural
+                  // links) scatter to the layout's edge; including them would balloon every
+                  // hull to span the whole graph. They stay outside, floating — the honest
+                  // "knowledge gap" signal.
+                  if (n.x == null || n.y == null || (n.degree ?? 0) === 0) continue;
                   const r = Math.sqrt(n.val ?? 2) * NODE_REL_SIZE;
                   placed.push({ x: n.x, y: n.y, r });
                   cx += n.x;
