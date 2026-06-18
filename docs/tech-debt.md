@@ -3,13 +3,33 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-17.
+Last full audit: 2026-06-18 (RFC-LD D1/D2/D5/D6 + the review surface).
 
 ## P0 — Will bite a user
 
 (No open P0 items.)
 
 ## P1 — Surprising or limiting
+
+### Brain: promoted-fact merge inputs are forward-only
+The review surface's headline feature — showing a cross-scope promotion as *inputs →
+output* — depends on `Record.Subsumed`, snapshotted at apply time. It is **not
+backfilled**: every fact promoted before the snapshot landed (incl. the current live
+~25-fact confirm queue) has empty `Subsumed`, so it degrades to "originals not
+retained" and the reviewer judges the generated summary without seeing its sources —
+exactly the case the feature was built for. A one-time backfill from the export bundle
+(`brain-export-2026-06-17.json`, which still holds the deleted originals) was offered
+but not run. Fix: a `brain` CLI migration that fills `Subsumed` from `DerivedFrom` ids
+against a bundle. → `internal/memory/{record,promote}.go`, `cmd/agentique/brain.go`.
+
+### Brain: AI refine is a synchronous, uncancellable model call
+`HandleRefine` runs the model on `context.Background()` (so a client disconnect can't
+SIGTERM the subprocess) but **blocks the HTTP request** until it returns, with no
+server-side timeout and no cancel. A slow or hung model leaves the request — and the
+review dialog's spinner — hanging indefinitely. The big passes avoid this by being
+background jobs; refine traded that for inline UX. Add a bounded timeout (and ideally
+surface cancel), or move it to the job channel. → `internal/brain/http.go`
+(`HandleRefine`), `internal/brain/extractor.go` (`Refine`).
 
 ### Brain: consolidation apply is not transactional
 `ApplyPlan` / `ApplyGlobalPromotion` / `writePromoted` write facts one
@@ -69,6 +89,27 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
   becomes unnecessary.
 
 ## P2 — Smells / drift
+
+### Brain: new signals are inert / headless on the live corpus
+Several shipped features can't yet show value because their inputs don't exist in
+practice:
+- **Two-factor strength + strength-weighted decay (D1):** `RetrievalStrength` decays
+  from `LastUsedAt`, which is only stamped by `MemorySearch` (`BumpUses`) — and `uses`
+  is `0` across the entire live corpus (recall is pull-based and agents rarely call the
+  tool). So retrieval ≈ storage and `DecayPolicy.StrengthWeighted` is a no-op until real
+  query-relevant recall traffic exists. The mechanism is correct; it's starved of signal.
+- **Interference + due-for-review (D5/D6):** computed and served in `GET /graph`'s
+  report (`interference`, `dueForReview`) but **rendered nowhere** — no frontend
+  consumer. Backend-only features drift toward "we built it but no one sees it."
+→ `internal/memory/{strength,interference}.go`, `internal/brain/graph.go`,
+`frontend/src/components/brain/`.
+
+### Brain: refine/edit leave stale provenance
+Editing or AI-refining a promoted fact changes its `text` but leaves `Subsumed` /
+`DerivedFrom` untouched, so the displayed "merged from N facts" provenance can describe
+a statement the user has since rewritten. Harmless (provenance is informational) but
+mildly misleading. Decide whether an edited fact keeps or sheds its merge provenance.
+→ `internal/brain/brain.go` (`Update`), `MemoryReview` refine flow.
 
 ### Brain: scope leakage in existing memories
 ~9% of reviewbot's facts are about *other* projects it reviews (alltix/mobilix/
@@ -246,11 +287,28 @@ But it's an unrecovered panic in production code. If tool registration
 ever becomes dynamic (user-supplied MCP configs), this needs to become
 an error return.
 
+### Brain: refine + review-surface coverage gaps
+`unwrapRefineText` is unit-tested for the JSON shapes seen in the wild, but
+`HandleRefine` (model wiring, scope/model validation, the detached-context path) has
+no end-to-end test — it extends the existing "orchestration layer is untested" gap.
+`MemoryReview` has component tests for full-text display, the inputs→output framing,
+and refine-via-chip, but the error path, edit→save, delete, and skip aren't covered.
+→ `internal/brain/{http,extractor}.go`, `frontend/src/components/brain/__tests__/`.
+
+### Brain: scopeColor is a 10-entry hash (collisions possible)
+`~/lib/scope-color.ts` hashes a scope into a 10-colour palette, so two projects can
+share a colour in the graph and the review surface. Cosmetic, but the colour is sold as
+"which project" info-scent. Fine at current project counts; revisit if it misleads.
+
 ## Resolved
 
 Condensed log — `git log -- docs/tech-debt.md` and the referenced commits
 hold the full detail.
 
+- **2026-06-18** — Brain review surface: force-graph re-layout jump on every
+  `brain.updated` fixed (position carry-forward + reheat-on-topology-change +
+  fit-once); applied preview no longer re-hydrates (apply clears the held job);
+  AI-refine raw-JSON leak fixed (`unwrapRefineText` peels schema-echo).
 - **2026-06-17** — `capturingConnector.hintNext` routing race closed by a
   dedicated `routeMu` serializing the hint→Connect→pop handshake.
 - **2026-05-27** — Codex resume is a real resume (`Conn.ResumeThread`,

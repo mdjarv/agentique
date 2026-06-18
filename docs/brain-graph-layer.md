@@ -209,6 +209,11 @@ codebase-specific facts.
   pass finds nothing to promote; `ApplyGlobal` advances it to the post-apply state. The
   manifest only advances once promotions are actually applied (or a pass is genuinely clean),
   so an unapplied preview is never wrongly skipped.
+- **Subsumed-source snapshot.** Apply also snapshots each merged-away project fact's
+  `{scope, text}` onto the promoted record (`Record.Subsumed`), since the originals are
+  deleted — so the review surface can show the merge *inputs → output* rather than just a
+  count. Facts promoted before this existed degrade to "originals not retained". See the
+  review surface in [brain-memory.md](brain-memory.md).
 
 ## Non-goals
 

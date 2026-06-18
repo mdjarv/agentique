@@ -137,7 +137,11 @@ Auto-approved, scoped to the calling session's project (+ global):
 
 - `/api/brain/memories` (GET/POST), `/{id}` (GET/PUT/DELETE), `/{id}/pin`,
   `/{id}/lock`, `/{id}/confirm` (accept a low-confidence fact as ground truth),
-  `/search`, `/graph` (centrality + insight report), `/status`.
+  `/{id}/flag {reason}` (RFC-LD D2: weaken a contradicted fact into the review queue,
+  mirrors the agent `MemoryFlag` tool), `/{id}/refine {text,instruction,model}`
+  (RFC-LD: the model rewrites a fact per an instruction and returns a *draft* — no
+  write; the review UI's "Refine with AI"), `/search`, `/graph` (centrality + insight
+  report incl. `dueForReview`/`interference`), `/status`.
 - **Consolidation is preview → apply.** `POST /consolidate/preview
   {scope,model,mode,force}` (mode `conservative|aggressive`; force re-runs an
   unchanged scope) and `POST /consolidate/global/preview {model}` start a background
@@ -264,9 +268,12 @@ agentique glue — `backend/internal/brain/`:
 - `brain.go` — `Service`: composes the core, project↔scope mapping, fingerprints,
   `PinnedPreamble`, `ListScopes`, `LearnFromTranscript`, `ImportRecords`.
 - `extractor.go` — `ClaudeExtractor` (model is a required param; JSON-schema
-  constrained; chunked; `Extract`/`Reorganize`/`Promote`).
+  constrained; chunked; `Extract`/`Reorganize`/`Promote`/`Refine`). `Refine` rewrites
+  one fact per a user instruction; `unwrapRefineText` defends against the model
+  echoing the `{"text":…}` schema into its own output.
 - `graph.go` — `GET /api/brain/graph`: centrality-annotated nodes + a derived
-  insight report (god nodes, bridges, confirm queue, isolated gaps). RFC P2.
+  insight report (god nodes, bridges, confirm queue, isolated gaps, `dueForReview`,
+  `interference`). RFC P2/D5/D6.
 - `job.go` — async consolidation jobs + WS push types (`brain.consolidation`,
   `EventBrainUpdated`).
 - `automation.go` — the scheduled "sleep" loop.
@@ -281,7 +288,11 @@ Session/server wiring (the additive integration points):
 
 Frontend — `frontend/src/`: `lib/brain-api.ts`, `stores/brain-store.ts`,
 `hooks/useBrainSubscriptions.ts`, `components/brain/BrainPage.tsx`,
-`components/brain/BrainGraph.tsx` (force-graph view, RFC graph-view v1),
+`components/brain/BrainGraph.tsx` (force-graph view, RFC graph-view v1; gains a
+`compact`/`focusId` mode), `components/brain/MemoryReview.tsx` (the dedicated review
+surface — merge proposal *inputs → output*, confidence/state, Confirm/Edit/Delete +
+AI refine; launched from the Brain toolbar's "Review (N)" button),
+`lib/scope-color.ts` (per-scope colours shared by the graph and the review surface),
 nav flare in `components/layout/AppSidebar.tsx` (`brain-flare` in `index.css`).
 
 **To add a feature:** keep policy (model choice, scope mapping, env) in the glue or
