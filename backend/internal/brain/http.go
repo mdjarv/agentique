@@ -338,6 +338,7 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return err
 	}
+	h.clearJob() // the preview is consumed; don't let it re-hydrate on remount
 	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
@@ -397,6 +398,7 @@ func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	h.clearJob() // the preview is consumed; don't let it re-hydrate on remount
 	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil

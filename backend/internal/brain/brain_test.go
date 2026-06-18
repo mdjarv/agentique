@@ -257,6 +257,30 @@ func TestMCPMemoryFlag(t *testing.T) {
 	}
 }
 
+// Applying a plan must clear the held preview job, so GET /consolidate/job stops
+// serving it and the frontend can't re-hydrate an already-applied proposal on every
+// remount (the "same proposal shows up every time" bug).
+func TestApplyClearsHeldJob(t *testing.T) {
+	s := newSvc(t)
+	h := &Handler{Service: s}
+
+	// Simulate a completed global preview sitting in memory.
+	h.publishJob(JobState{ID: "j1", Kind: "global", Phase: phaseDone})
+	if h.currentJob() == nil {
+		t.Fatal("precondition: a finished job should be held")
+	}
+
+	// Apply an (empty) global plan — succeeds with no changes.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/brain/consolidate/global/apply", jsonBody(`{"plan":{}}`))
+	if err := h.HandleApplyGlobal(rec, req); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if h.currentJob() != nil {
+		t.Fatalf("apply must clear the held job so it doesn't re-hydrate, got %+v", h.currentJob())
+	}
+}
+
 func TestHTTPCreateListPinDelete(t *testing.T) {
 	s := newSvc(t)
 	h := &Handler{Service: s}

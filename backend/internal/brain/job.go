@@ -64,6 +64,19 @@ func (h *Handler) currentJob() *JobState {
 	return h.job
 }
 
+// clearJob drops a finished job snapshot so GET /consolidate/job stops serving an
+// already-consumed preview. Without this, applying a plan leaves the completed
+// preview job in memory and the frontend re-hydrates it on every remount/reconnect —
+// the same proposal reappears forever even though it was applied. A running job is
+// left untouched (defensive; apply only happens after a job is done).
+func (h *Handler) clearJob() {
+	h.jobMu.Lock()
+	if h.job != nil && h.job.Phase != phaseRunning {
+		h.job = nil
+	}
+	h.jobMu.Unlock()
+}
+
 // brainChanged notifies all tabs that the memory set changed (drives the nav
 // "flare" and a memory-list refresh). Best-effort and fire-and-forget.
 func (h *Handler) brainChanged() {
