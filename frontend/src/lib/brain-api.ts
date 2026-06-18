@@ -178,6 +178,12 @@ export interface GraphReport {
   bridges: string[];
   needsConfirmation: string[];
   isolated: string[];
+  // Well-established facts that have gone cold (high storage, low retrieval) — the
+  // spaced-review queue (RFC-LD D6): resurface before disuse decays them.
+  dueForReview: string[];
+  // Similar-but-not-duplicate fact pairs an agent could conflate (RFC-LD D5). Each
+  // references two node ids; the client resolves them against GraphData.nodes.
+  interference: { a: string; b: string; similarity: number }[];
 }
 
 export interface GraphData {

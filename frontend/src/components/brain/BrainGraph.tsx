@@ -525,7 +525,10 @@ export function BrainGraph({
       {report &&
         (report.godNodes.length > 0 ||
           report.bridges.length > 0 ||
-          report.needsConfirmation.length > 0) && (
+          report.needsConfirmation.length > 0 ||
+          report.dueForReview.length > 0 ||
+          report.isolated.length > 0 ||
+          report.interference.length > 0) && (
           <div className="absolute left-3 top-3 max-h-[calc(100%-1.5rem)] w-60 space-y-2 overflow-y-auto rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
             {report.godNodes.length > 0 && (
               <InsightSection
@@ -573,6 +576,52 @@ export function BrainGraph({
                       >
                         <Check className="size-3.5" />
                       </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {report.dueForReview.length > 0 && (
+              <InsightSection
+                title="Due for review"
+                hint="Well-established facts gone cold — resurface before disuse fades them"
+                ids={report.dueForReview}
+                labelFor={(id) => nodeById.get(id)?.label ?? id}
+                onPick={focusNode}
+              />
+            )}
+            {report.isolated.length > 0 && (
+              <InsightSection
+                title="Isolated"
+                hint="No links to anything else — stray facts or knowledge gaps"
+                ids={report.isolated}
+                labelFor={(id) => nodeById.get(id)?.label ?? id}
+                onPick={focusNode}
+              />
+            )}
+            {report.interference.length > 0 && (
+              <div>
+                <div
+                  className="mb-1 font-medium text-muted-foreground"
+                  title="Similar but distinct — an agent could conflate these on recall"
+                >
+                  Easily confused{" "}
+                  <span className="text-muted-foreground/70">({report.interference.length})</span>
+                </div>
+                <ul className="space-y-1">
+                  {report.interference.map((p) => (
+                    <li key={`${p.a}|${p.b}`} className="space-y-0.5">
+                      {[p.a, p.b].map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className="block w-full truncate text-left hover:text-foreground"
+                          onClick={() => focusNode(id)}
+                          title={nodeById.get(id)?.label ?? id}
+                        >
+                          ↔ {nodeById.get(id)?.label ?? id}
+                        </button>
+                      ))}
                     </li>
                   ))}
                 </ul>
