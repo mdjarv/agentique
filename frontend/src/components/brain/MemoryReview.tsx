@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import type { Memory } from "~/lib/brain-api";
+import { scopeColor } from "~/lib/scope-color";
 
 // Preset one-click refine instructions (the chips). Free-text covers the rest.
 const REFINE_PRESETS: { label: string; instruction: string }[] = [
@@ -134,13 +135,20 @@ export function MemoryReview({
                     {(inputs.length > 0 ? inputs.length : derivedCount) === 1 ? "" : "s"}
                   </div>
                   {inputs.length > 0 ? (
-                    <ul className="space-y-1 text-sm text-muted-foreground">
+                    <ul className="space-y-3">
                       {inputs.map((s) => (
-                        <li key={`${s.scope}::${s.text}`} className="flex gap-2">
-                          <span className="shrink-0 pt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                        <li
+                          key={`${s.scope}::${s.text}`}
+                          className="border-l-2 pl-3"
+                          style={{ borderColor: scopeColor(s.scope) }}
+                        >
+                          <div
+                            className="text-[10px] font-semibold uppercase tracking-wide"
+                            style={{ color: scopeColor(s.scope) }}
+                          >
                             {labelForScope(s.scope)}
-                          </span>
-                          <span>{s.text}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">{s.text}</div>
                         </li>
                       ))}
                     </ul>

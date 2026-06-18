@@ -6,6 +6,7 @@ import ForceGraph2D, {
   type NodeObject,
 } from "react-force-graph-2d";
 import type { GraphReport, Memory } from "~/lib/brain-api";
+import { communityColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
 // the graph endpoint has loaded, degree/betweenness are present and drive node
@@ -51,43 +52,11 @@ const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
 const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
 
-const GLOBAL_COLOR = "#a78bfa";
-const PALETTE = [
-  "#60a5fa",
-  "#34d399",
-  "#fbbf24",
-  "#f87171",
-  "#f472b6",
-  "#38bdf8",
-  "#a3e635",
-  "#fb923c",
-  "#22d3ee",
-  "#c084fc",
-];
-
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
     " ",
   ),
 );
-
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-function scopeColor(scope: string): string {
-  if (scope === "global") return GLOBAL_COLOR;
-  return PALETTE[hashStr(scope) % PALETTE.length] ?? GLOBAL_COLOR;
-}
-
-// communityColor colors a node by its topic cluster. Community ids are scope-local,
-// so the palette key mixes scope + community to keep clusters from different scopes
-// distinct (RFC P3 — "color = community after P3").
-function communityColor(scope: string, community: number): string {
-  return PALETTE[hashStr(`${scope}#${community}`) % PALETTE.length] ?? GLOBAL_COLOR;
-}
 
 function nodeColor(node: NodeData, colorBy: ColorBy): string {
   return colorBy === "community"
