@@ -21,6 +21,9 @@ export interface Memory {
   // Confidence tier (extracted | inferred | ambiguous) + its 0..1 score (RFC P2).
   confidence?: string;
   confidenceScore?: number;
+  // Set when a fact was flagged contradicted on recall (RFC-LD D2): the reason it
+  // needs review. Present → the fact belongs in the review queue regardless of score.
+  reviewNote?: string;
 }
 
 // NEEDS_CONFIRMATION_SCORE mirrors the backend's NeedsConfirmationScore: facts at or
@@ -36,6 +39,13 @@ export function needsConfirmation(m: Memory): boolean {
     m.source !== "human" &&
     (m.confidenceScore ?? 1) <= NEEDS_CONFIRMATION_SCORE
   );
+}
+
+// inReviewQueue is the predicate for the dedicated review surface: a low-confidence
+// fact, OR any fact explicitly flagged contradicted (reviewNote) — even a protected
+// one, since a flagged ground-truth fact still warrants a human look.
+export function inReviewQueue(m: Memory): boolean {
+  return needsConfirmation(m) || !!m.reviewNote;
 }
 
 export interface BrainStatus {

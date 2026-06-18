@@ -162,11 +162,18 @@ export function BrainGraph({
   report,
   labelForScope,
   onConfirm,
+  compact = false,
+  focusId,
 }: {
   memories: GraphMemory[];
   report: GraphReport | null;
   labelForScope: (scope: string) => string;
   onConfirm: (id: string) => void;
+  // compact hides the controls + legend overlays so the canvas can be embedded as a
+  // small focused subgraph (e.g. the isolated neighbourhood in the review surface).
+  compact?: boolean;
+  // focusId draws an emphasis ring on one node — the fact currently under review.
+  focusId?: string;
 }) {
   const [showSimilar, setShowSimilar] = useState(true);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
@@ -466,6 +473,14 @@ export function BrainGraph({
                 ctx.arc(x, y, r + 2 / scale, 0, 2 * Math.PI);
                 ctx.stroke();
               }
+              if (focusId != null && String(node.id) === focusId) {
+                // Emphasis ring on the fact under review (review surface).
+                ctx.strokeStyle = "#22d3ee";
+                ctx.lineWidth = 2.5 / scale;
+                ctx.beginPath();
+                ctx.arc(x, y, r + 4 / scale, 0, 2 * Math.PI);
+                ctx.stroke();
+              }
               if (scale > 1.1 || node.pinned || node.uses >= 3 || node.id === hoverId) {
                 const fontSize = 12 / scale;
                 ctx.font = `${fontSize}px sans-serif`;
@@ -512,28 +527,30 @@ export function BrainGraph({
       )}
 
       {/* Controls */}
-      <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
-        <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
-          <input
-            type="checkbox"
-            checked={showSimilar}
-            onChange={(e) => setShowSimilar(e.target.checked)}
-          />
-          Similarity links
-        </label>
-        <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
-          <span className="text-muted-foreground">Color</span>
-          <select
-            value={colorBy}
-            onChange={(e) => setColorBy(e.target.value as ColorBy)}
-            className="bg-transparent outline-none"
-            title="Color nodes by scope, or by topic cluster (community) detected during consolidation"
-          >
-            <option value="scope">by scope</option>
-            <option value="community">by cluster</option>
-          </select>
-        </label>
-      </div>
+      {!compact && (
+        <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
+          <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
+            <input
+              type="checkbox"
+              checked={showSimilar}
+              onChange={(e) => setShowSimilar(e.target.checked)}
+            />
+            Similarity links
+          </label>
+          <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
+            <span className="text-muted-foreground">Color</span>
+            <select
+              value={colorBy}
+              onChange={(e) => setColorBy(e.target.value as ColorBy)}
+              className="bg-transparent outline-none"
+              title="Color nodes by scope, or by topic cluster (community) detected during consolidation"
+            >
+              <option value="scope">by scope</option>
+              <option value="community">by cluster</option>
+            </select>
+          </label>
+        </div>
+      )}
 
       {/* Insights — graphify analyze.py analogs (RFC P2). */}
       {report &&
@@ -596,28 +613,30 @@ export function BrainGraph({
         )}
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 max-w-[14rem] space-y-1 rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
-        <div className="mb-1 flex items-center gap-2 text-muted-foreground">
-          <span className="inline-block h-0 w-5 border-t border-foreground/60" /> derived/related
-          <span className="ml-1 inline-block h-0 w-5 border-t border-dashed border-foreground/60" />
-          similar
-        </div>
-        {colorBy === "community" ? (
-          <div className="text-muted-foreground">
-            Colored by topic cluster — facts in the same cluster consolidate together.
+      {!compact && (
+        <div className="absolute bottom-3 left-3 max-w-[14rem] space-y-1 rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
+          <div className="mb-1 flex items-center gap-2 text-muted-foreground">
+            <span className="inline-block h-0 w-5 border-t border-foreground/60" /> derived/related
+            <span className="ml-1 inline-block h-0 w-5 border-t border-dashed border-foreground/60" />
+            similar
           </div>
-        ) : (
-          scopeLegend.map((s) => (
-            <div key={s.scope} className="flex items-center gap-1.5 truncate">
-              <span
-                className="inline-block size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: s.color }}
-              />
-              <span className="truncate">{s.label}</span>
+          {colorBy === "community" ? (
+            <div className="text-muted-foreground">
+              Colored by topic cluster — facts in the same cluster consolidate together.
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            scopeLegend.map((s) => (
+              <div key={s.scope} className="flex items-center gap-1.5 truncate">
+                <span
+                  className="inline-block size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: s.color }}
+                />
+                <span className="truncate">{s.label}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

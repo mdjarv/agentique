@@ -3,6 +3,7 @@ import {
   Brain,
   Check,
   ChevronRight,
+  ClipboardCheck,
   List,
   Loader2,
   Lock,
@@ -17,6 +18,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
+import { MemoryReview } from "~/components/brain/MemoryReview";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -24,6 +26,7 @@ import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import {
   type ConsolidateReport,
+  inReviewQueue,
   type Memory,
   needsConfirmation,
   type TidyMode,
@@ -49,6 +52,8 @@ export function BrainPage() {
     graph,
     loadGraph,
     confirm,
+    update,
+    remove,
     flareSeq,
     create,
     preview,
@@ -75,6 +80,9 @@ export function BrainPage() {
   const [model, setModel] = useState("opus");
   const [mode, setMode] = useState<TidyMode>("conservative");
   const [view, setView] = useState<"list" | "graph">("list");
+  const [reviewing, setReviewing] = useState(false);
+  // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
+  const reviewQueue = useMemo(() => memories.filter(inReviewQueue), [memories]);
   // Global is expanded by default; projects collapse to keep the (large) list
   // navigable. An active filter force-expands everything so matches are visible.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([GLOBAL_SCOPE]));
@@ -263,10 +271,57 @@ export function BrainPage() {
               : "Tidying…"
             : "Tidy all"}
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={reviewQueue.length === 0}
+          onClick={() => setReviewing(true)}
+          title="Review the brain's least-trusted facts: confirm, edit, or drop them"
+        >
+          <ClipboardCheck className="size-4" /> Review
+          {reviewQueue.length > 0 && (
+            <span className="ml-1 rounded bg-amber-500/20 px-1 text-amber-600 tabular-nums">
+              {reviewQueue.length}
+            </span>
+          )}
+        </Button>
         <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
           <Plus className="size-4" /> Add
         </Button>
       </PageHeader>
+
+      {reviewing && (
+        <MemoryReview
+          queue={reviewQueue}
+          allMemories={memories}
+          labelForScope={labelForScope}
+          onClose={() => setReviewing(false)}
+          onConfirm={async (id) => {
+            try {
+              await confirm(id);
+              toast.success("Confirmed — kept as ground truth");
+            } catch (err) {
+              toast.error(getErrorMessage(err, "Failed to confirm"));
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              await remove(id);
+              toast.success("Deleted");
+            } catch (err) {
+              toast.error(getErrorMessage(err, "Failed to delete"));
+            }
+          }}
+          onUpdate={async (id, input) => {
+            try {
+              await update(id, input);
+              toast.success("Updated — kept as ground truth");
+            } catch (err) {
+              toast.error(getErrorMessage(err, "Failed to update"));
+            }
+          }}
+        />
+      )}
 
       <div className="px-4 py-2 border-b">
         <Input
