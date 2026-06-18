@@ -29,6 +29,7 @@ import {
   inReviewQueue,
   type Memory,
   needsConfirmation,
+  refineMemory,
   type TidyMode,
 } from "~/lib/brain-api";
 import { getErrorMessage } from "~/lib/utils";
@@ -318,6 +319,14 @@ export function BrainPage() {
               toast.success("Updated — kept as ground truth");
             } catch (err) {
               toast.error(getErrorMessage(err, "Failed to update"));
+            }
+          }}
+          onRefine={async (id, text, instr) => {
+            try {
+              return await refineMemory(id, { text, instruction: instr, model });
+            } catch (err) {
+              toast.error(getErrorMessage(err, "Failed to refine"));
+              throw err;
             }
           }}
         />

@@ -1,9 +1,17 @@
-import { ArrowDown, Check, Pencil, Trash2, X } from "lucide-react";
+import { ArrowDown, Check, Loader2, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { type Memory, NEEDS_CONFIRMATION_SCORE } from "~/lib/brain-api";
+
+// Preset one-click refine instructions (the chips). Free-text covers the rest.
+const REFINE_PRESETS: { label: string; instruction: string }[] = [
+  { label: "Tighten", instruction: "Make it more concise without losing meaning." },
+  { label: "Generalize less", instruction: "Make it less broad — more specific and accurate." },
+  { label: "Rephrase", instruction: "Rephrase it more clearly." },
+];
 
 // MemoryReview is the dedicated review surface for the brain's least-trusted facts.
 // For a cross-scope promotion it frames the decision as a merge proposal — the input
@@ -17,6 +25,7 @@ export function MemoryReview({
   onConfirm,
   onDelete,
   onUpdate,
+  onRefine,
   onClose,
 }: {
   // Snapshot of the review-queue memories, frozen by the parent at open time (it only
@@ -27,12 +36,17 @@ export function MemoryReview({
   onConfirm: (id: string) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
   onUpdate: (id: string, input: { text?: string }) => Promise<void> | void;
+  // onRefine asks the model to rewrite `text` per `instruction` and resolves to the
+  // draft (no save). Errors are surfaced by the caller; reject to leave the draft.
+  onRefine: (id: string, text: string, instruction: string) => Promise<string>;
   onClose: () => void;
 }) {
   const [cursor, setCursor] = useState(0);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refining, setRefining] = useState(false);
+  const [instruction, setInstruction] = useState("");
 
   const byId = useMemo(() => new Map(allMemories.map((m) => [m.id, m])), [allMemories]);
   const total = queue.length;
@@ -47,7 +61,23 @@ export function MemoryReview({
 
   const advance = () => {
     setEditing(false);
+    setInstruction("");
     setCursor((c) => c + 1);
+  };
+
+  // runRefine asks the model to rewrite the current draft per an instruction and drops
+  // the result back into the editable draft (the user then Saves or refines again).
+  const runRefine = async (instr: string) => {
+    if (!current || refining || !instr.trim()) return;
+    setRefining(true);
+    try {
+      const next = await onRefine(current.id, draft || current.text, instr);
+      if (next?.trim()) setDraft(next.trim());
+    } catch {
+      // The caller surfaces the error (toast); leave the draft untouched.
+    } finally {
+      setRefining(false);
+    }
   };
 
   const act = async (fn: () => Promise<void> | void) => {
@@ -133,12 +163,55 @@ export function MemoryReview({
                   <ConfidenceBadge memory={current} />
                 </div>
                 {editing ? (
-                  <Textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={5}
-                    className="text-base"
-                  />
+                  <div className="space-y-2">
+                    <Textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={5}
+                      className="text-base"
+                    />
+                    <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-foreground/80">
+                        <Sparkles className="size-3.5" /> Refine with AI
+                        {refining && <Loader2 className="size-3.5 animate-spin" />}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REFINE_PRESETS.map((p) => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            disabled={refining}
+                            onClick={() => runRefine(p.instruction)}
+                            className="rounded-full border px-2 py-0.5 text-xs hover:bg-muted disabled:opacity-50"
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Input
+                          value={instruction}
+                          onChange={(e) => setInstruction(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              runRefine(instruction);
+                            }
+                          }}
+                          placeholder="or describe the change… (e.g. 'it's Go-only')"
+                          className="h-8 flex-1 text-sm"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={refining || !instruction.trim()}
+                          onClick={() => runRefine(instruction)}
+                        >
+                          Refine
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <p className="whitespace-pre-wrap rounded-md border border-primary/30 bg-primary/5 p-3 text-base font-medium leading-relaxed text-foreground">
                     {current.text}

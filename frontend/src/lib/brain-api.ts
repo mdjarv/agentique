@@ -147,6 +147,23 @@ export async function confirmMemory(id: string): Promise<Memory> {
   return res.json();
 }
 
+// refineMemory asks the model to rewrite a fact per an instruction (informed by the
+// sources it was merged from) and returns the DRAFT text. It writes nothing — the
+// caller shows the draft and the user decides whether to save it.
+export async function refineMemory(
+  id: string,
+  body: { text: string; instruction: string; model: string },
+): Promise<string> {
+  const res = await fetch(`${BASE}/memories/${id}/refine`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await throwIfNotOk(res, "Failed to refine memory");
+  const data = (await res.json()) as { text: string };
+  return data.text;
+}
+
 // GraphNode is a memory enriched with its structural-graph centrality (RFC P2):
 // degree (load-bearing "god nodes") and normalized betweenness (bridge facts).
 export interface GraphNode extends Memory {

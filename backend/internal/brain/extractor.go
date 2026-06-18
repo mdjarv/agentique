@@ -533,6 +533,56 @@ func (e *ClaudeExtractor) Promote(ctx context.Context, candidates []memory.Scope
 	return out, nil
 }
 
+// refineSchema constrains Refine output to {"text": "..."} — a single rewritten fact.
+const refineSchema = `{"type":"object","additionalProperties":false,"required":["text"],` +
+	`"properties":{"text":{"type":"string","minLength":1,"maxLength":240}}}`
+
+const refineSystemPrompt = `You refine a SINGLE durable memory fact for a cross-project "global" memory.
+
+You are given the CURRENT fact, optionally the SOURCE facts it was merged from, and an INSTRUCTION from the user. Rewrite the fact to satisfy the instruction while staying faithful to the current fact and sources. Keep it ONE concise, self-contained statement (under 25 words). Do NOT invent information not supported by the current fact or the sources.
+
+Return ONLY a JSON object {"text":"<the rewritten fact>"}. No prose, no code fences.`
+
+// Refine rewrites a single memory fact per a user instruction, optionally informed by
+// the project facts it was merged from, and returns the new text. It writes nothing —
+// the caller shows the draft and the user decides whether to save it. Unlike Promote
+// (best-effort, swallows errors), this is an interactive request, so a failure is
+// returned for the UI to surface.
+func (e *ClaudeExtractor) Refine(ctx context.Context, current string, sources []memory.SubsumedSource, instruction string) (string, error) {
+	type src struct {
+		Scope string `json:"scope"`
+		Text  string `json:"text"`
+	}
+	in := struct {
+		Current     string `json:"current"`
+		Sources     []src  `json:"sources,omitempty"`
+		Instruction string `json:"instruction"`
+	}{Current: current, Instruction: instruction}
+	for _, s := range sources {
+		in.Sources = append(in.Sources, src{Scope: string(s.Scope), Text: s.Text})
+	}
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return "", err
+	}
+	prompt := refineSystemPrompt + "\n\nINPUT:\n" + string(payload) + "\n\nReturn ONLY the JSON object."
+	res, err := msggen.RunWithRetry(ctx, e.runner, prompt, e.opts(refineSchema)...)
+	if err != nil {
+		return "", err
+	}
+	raw := []byte(res.Text)
+	if len(res.StructuredOutput) > 0 {
+		raw = res.StructuredOutput
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &out) != nil || strings.TrimSpace(out.Text) == "" {
+		return "", fmt.Errorf("brain: refine produced no usable text")
+	}
+	return strings.TrimSpace(out.Text), nil
+}
+
 // decodeWrapped unmarshals a {"<field>":[...]} payload into dst, preferring the
 // schema-validated structured_output and falling back to scraping the text
 // response. It tolerates a model that drops the object wrapper and returns a bare

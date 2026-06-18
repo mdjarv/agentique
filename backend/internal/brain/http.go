@@ -1,9 +1,11 @@
 package brain
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -237,6 +239,47 @@ func (h *Handler) HandleFlag(w http.ResponseWriter, r *http.Request) error {
 	}
 	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toDTO(rec))
+	return nil
+}
+
+// HandleRefine POST /api/brain/memories/{id}/refine {text?, instruction, model}
+// Runs the model to rewrite a fact per the user's instruction (informed by the
+// sources it was merged from) and returns the DRAFT text — it writes nothing; the
+// client decides whether to save it. The model runs on a detached context so a
+// client disconnect can't kill the subprocess (mirrors the job path).
+func (h *Handler) HandleRefine(w http.ResponseWriter, r *http.Request) error {
+	if h.Runner == nil {
+		return httperror.BadRequest("refine requires a model")
+	}
+	var body struct {
+		Text        string `json:"text"`
+		Instruction string `json:"instruction"`
+		Model       string `json:"model"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	if strings.TrimSpace(body.Instruction) == "" {
+		return httperror.BadRequest("instruction is required")
+	}
+	m, err := ParseModel(body.Model)
+	if err != nil {
+		return httperror.BadRequest(err.Error())
+	}
+	rec, err := h.Service.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return mapErr(err)
+	}
+	current := strings.TrimSpace(body.Text)
+	if current == "" {
+		current = rec.Text
+	}
+	ex := NewClaudeExtractor(h.Runner, m)
+	text, err := ex.Refine(context.Background(), current, rec.Subsumed, body.Instruction)
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusOK, map[string]string{"text": text})
 	return nil
 }
 

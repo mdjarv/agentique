@@ -56,6 +56,7 @@ describe("MemoryReview", () => {
         onConfirm={onConfirm}
         onDelete={vi.fn()}
         onUpdate={vi.fn()}
+        onRefine={vi.fn().mockResolvedValue("")}
         onClose={vi.fn()}
       />,
     );
@@ -92,6 +93,7 @@ describe("MemoryReview", () => {
         onConfirm={vi.fn()}
         onDelete={vi.fn()}
         onUpdate={vi.fn()}
+        onRefine={vi.fn().mockResolvedValue("")}
         onClose={vi.fn()}
       />,
     );
@@ -102,5 +104,32 @@ describe("MemoryReview", () => {
     expect(screen.getByText("task runner is just")).toBeTruthy();
     expect(screen.getByText("Uses `just` as the task runner across projects")).toBeTruthy();
     expect(screen.getByText(/agree with this merge/i)).toBeTruthy();
+  });
+
+  it("refines the draft with AI via a preset chip", async () => {
+    const queue = [mem("a", LONG)];
+    const onRefine = vi.fn().mockResolvedValue("Run go test -race on concurrent packages.");
+    render(
+      <MemoryReview
+        queue={queue}
+        allMemories={queue}
+        labelForScope={(s) => s}
+        onConfirm={vi.fn()}
+        onDelete={vi.fn()}
+        onUpdate={vi.fn()}
+        onRefine={onRefine}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit/i }));
+    expect(screen.getByDisplayValue(LONG)).toBeTruthy(); // draft starts as the current text
+
+    fireEvent.click(screen.getByRole("button", { name: "Tighten" }));
+    expect(onRefine).toHaveBeenCalledWith("a", LONG, expect.stringMatching(/concise/i));
+    // The model's draft replaces the editable text.
+    expect(
+      await screen.findByDisplayValue("Run go test -race on concurrent packages."),
+    ).toBeTruthy();
   });
 });
