@@ -73,11 +73,11 @@ export function MemoryReview({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[80vh] max-h-[80vh] w-[min(92vw,1100px)] max-w-none flex-col gap-0 p-0">
-        <DialogHeader className="border-b px-4 py-3">
-          <DialogTitle className="flex items-center gap-2 text-sm">
+      <DialogContent className="flex h-[85vh] max-h-[85vh] w-[min(96vw,1240px)] max-w-none flex-col gap-0 p-0 sm:max-w-none">
+        <DialogHeader className="border-b px-5 py-3">
+          <DialogTitle className="flex items-center gap-2 text-base">
             Review memories
-            <span className="text-muted-foreground">
+            <span className="text-sm font-normal text-muted-foreground">
               {atEnd ? `${total} reviewed` : `${cursor + 1} of ${total}`}
             </span>
           </DialogTitle>
@@ -92,9 +92,10 @@ export function MemoryReview({
             </Button>
           </div>
         ) : (
-          <div className="grid flex-1 grid-cols-2 overflow-hidden">
-            {/* Left: the isolated subgraph — the fact in its neighbourhood. */}
-            <div className="relative border-r bg-background">
+          <div className="grid flex-1 grid-cols-1 overflow-hidden md:grid-cols-[5fr_6fr]">
+            {/* Left: the isolated subgraph — the fact in its neighbourhood. Hidden on
+                narrow widths so the fact + actions get the full column. */}
+            <div className="relative hidden min-h-[16rem] border-r bg-background md:block">
               {subgraph.length >= 2 ? (
                 <BrainGraph
                   compact
@@ -112,8 +113,8 @@ export function MemoryReview({
             </div>
 
             {/* Right: the fact itself + why it's here + actions. */}
-            <div className="flex flex-col overflow-y-auto p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex flex-col overflow-y-auto p-6">
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span className="rounded bg-muted px-1.5 py-0.5">
                   {labelForScope(current.scope)}
                 </span>
@@ -126,10 +127,12 @@ export function MemoryReview({
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   rows={6}
-                  className="mb-3 text-sm"
+                  className="mb-4 text-base"
                 />
               ) : (
-                <p className="mb-3 whitespace-pre-wrap text-sm leading-relaxed">{current.text}</p>
+                <p className="mb-4 max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
+                  {current.text}
+                </p>
               )}
 
               <WhyQueued memory={current} />
