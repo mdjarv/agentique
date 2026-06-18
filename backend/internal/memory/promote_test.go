@@ -65,6 +65,18 @@ func TestPlanApplyGlobalPromotion(t *testing.T) {
 	if len(globals) != 1 || globals[0].DerivedFrom == nil {
 		t.Fatalf("expected one global fact with provenance, got %+v", globals)
 	}
+	// The merged-away sources are snapshotted on the promotion so the review surface
+	// can show inputs → output after the originals are deleted (RFC P5).
+	if len(globals[0].Subsumed) != 2 {
+		t.Fatalf("expected 2 subsumed sources captured, got %+v", globals[0].Subsumed)
+	}
+	subTexts := map[string]bool{}
+	for _, s := range globals[0].Subsumed {
+		subTexts[s.Text] = true
+	}
+	if !subTexts["uses just as the task runner"] || !subTexts["task runner is just"] {
+		t.Fatalf("subsumed snapshots should carry the source texts, got %+v", globals[0].Subsumed)
+	}
 	all, _ := store.List(ctx)
 	if len(all) != 2 { // a2 (untouched) + the new global
 		t.Fatalf("expected a2 + global to remain, got %d: %+v", len(all), all)

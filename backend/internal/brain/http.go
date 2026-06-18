@@ -47,6 +47,14 @@ type memoryDTO struct {
 	// ReviewNote, when set, flags the fact for review with the reason it was
 	// contradicted on recall (RFC-LD D2).
 	ReviewNote string `json:"reviewNote,omitempty"`
+	// Subsumed are the per-project facts this promotion merged in (RFC P5) — the
+	// merge inputs, snapshotted before the originals were deleted.
+	Subsumed []subsumedDTO `json:"subsumed,omitempty"`
+}
+
+type subsumedDTO struct {
+	Scope string `json:"scope"`
+	Text  string `json:"text"`
 }
 
 func toDTO(r memory.Record) memoryDTO {
@@ -58,7 +66,19 @@ func toDTO(r memory.Record) memoryDTO {
 		Confidence:      string(r.Confidence),
 		ConfidenceScore: r.ConfidenceScore,
 		ReviewNote:      r.ReviewNote,
+		Subsumed:        toSubsumedDTOs(r.Subsumed),
 	}
+}
+
+func toSubsumedDTOs(ss []memory.SubsumedSource) []subsumedDTO {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]subsumedDTO, len(ss))
+	for i, s := range ss {
+		out[i] = subsumedDTO{Scope: string(s.Scope), Text: s.Text}
+	}
+	return out
 }
 
 func toDTOs(rs []memory.Record) []memoryDTO {

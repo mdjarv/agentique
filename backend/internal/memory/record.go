@@ -73,6 +73,11 @@ type Record struct {
 	// DerivedFrom links a consolidated record back to the capture record IDs it
 	// was abstracted from, for provenance and reversibility.
 	DerivedFrom []string
+	// Subsumed snapshots the per-project facts a cross-scope promotion merged into
+	// this one (RFC P5). The originals are deleted on apply, so their text is captured
+	// here so the review surface can show the merge inputs → output. Rebuildable
+	// provenance, parallel to DerivedFrom (which holds their now-dangling ids).
+	Subsumed []SubsumedSource
 	// Related links to other record IDs (the [[link]] graph).
 	Related []string
 	// Community is a derived topic-cluster id within the record's scope (from
@@ -96,6 +101,14 @@ type Record struct {
 
 	// Embedding is an optional derived vector cache; never the source of truth.
 	Embedding []float32
+}
+
+// SubsumedSource is a snapshot of a project fact merged into a promoted global fact —
+// the "input" side of a cross-scope merge, retained for review after the original is
+// deleted.
+type SubsumedSource struct {
+	Scope Scope  `json:"scope"`
+	Text  string `json:"text"`
 }
 
 // New constructs a Record, stamping a fresh ID and timestamps and the confidence

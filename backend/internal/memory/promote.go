@@ -278,8 +278,11 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 		nr.ConfidenceScore = CrossProjectInferredScore
 		nr = NormalizeConfidence(nr)
 		for _, id := range p.Subsumes {
-			if _, ok := deletions[id]; ok {
+			if d, ok := deletions[id]; ok {
 				nr.DerivedFrom = append(nr.DerivedFrom, id)
+				// Snapshot the source being merged away so the review surface can show
+				// the merge inputs after the original is deleted below.
+				nr.Subsumed = append(nr.Subsumed, SubsumedSource{Scope: d.Scope, Text: d.Text})
 			}
 		}
 		if nr.Category == CategoryIdentity {

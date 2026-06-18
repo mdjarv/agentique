@@ -24,6 +24,9 @@ export interface Memory {
   // Set when a fact was flagged contradicted on recall (RFC-LD D2): the reason it
   // needs review. Present → the fact belongs in the review queue regardless of score.
   reviewNote?: string;
+  // The per-project facts a cross-scope promotion merged into this one (RFC P5),
+  // snapshotted before the originals were deleted — the merge inputs for review.
+  subsumed?: { scope: string; text: string }[];
 }
 
 // NEEDS_CONFIRMATION_SCORE mirrors the backend's NeedsConfirmationScore: facts at or

@@ -1,15 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { Memory } from "~/lib/brain-api";
-
-// The review surface embeds BrainGraph (for the isolated subgraph), which imports the
-// force-graph canvas component — inert it out for jsdom.
-vi.mock("react-force-graph-2d", async () => {
-  const React = await import("react");
-  return { default: React.forwardRef(() => null) };
-});
-
 import { MemoryReview } from "~/components/brain/MemoryReview";
+import type { Memory } from "~/lib/brain-api";
 
 beforeAll(() => {
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
@@ -81,5 +73,34 @@ describe("MemoryReview", () => {
     expect(await screen.findByText("2 of 2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
     expect(await screen.findByText(/Nothing left to review/i)).toBeTruthy();
+  });
+
+  it("frames a promotion as inputs → output with the merge question", () => {
+    const promoted: Memory = {
+      ...mem("g", "Uses `just` as the task runner across projects"),
+      derivedFrom: ["x", "y"],
+      subsumed: [
+        { scope: "project:a", text: "uses just as the task runner" },
+        { scope: "project:b", text: "task runner is just" },
+      ],
+    };
+    render(
+      <MemoryReview
+        queue={[promoted]}
+        allMemories={[promoted]}
+        labelForScope={(s) => s}
+        onConfirm={vi.fn()}
+        onDelete={vi.fn()}
+        onUpdate={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Inputs are shown with their real source text, plus the output and the question.
+    expect(screen.getByText(/Input memories \(2\)/i)).toBeTruthy();
+    expect(screen.getByText("uses just as the task runner")).toBeTruthy();
+    expect(screen.getByText("task runner is just")).toBeTruthy();
+    expect(screen.getByText("Uses `just` as the task runner across projects")).toBeTruthy();
+    expect(screen.getByText(/agree with this merge/i)).toBeTruthy();
   });
 });

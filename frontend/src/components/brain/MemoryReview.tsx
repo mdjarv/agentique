@@ -1,16 +1,15 @@
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { ArrowDown, Check, Pencil, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { BrainGraph } from "~/components/brain/BrainGraph";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Textarea } from "~/components/ui/textarea";
 import { type Memory, NEEDS_CONFIRMATION_SCORE } from "~/lib/brain-api";
 
-// MemoryReview is the dedicated review surface for the brain's least-trusted facts —
-// the confirm/review queue. It walks the queue one fact at a time: the full text (not
-// truncated), why it's queued, its provenance, its confidence, an isolated subgraph of
-// the fact in its neighbourhood, and Confirm / Edit / Delete actions. This replaces
-// trying to evaluate truncated one-liners in the graph sidebar.
+// MemoryReview is the dedicated review surface for the brain's least-trusted facts.
+// For a cross-scope promotion it frames the decision as a merge proposal — the input
+// per-project facts, the synthesized output, and an explicit "do you agree?" — so the
+// reviewer sees that the output is a generated join, not a copy. For a plain
+// low-confidence fact it just shows the fact. Confirm / Edit / Delete per item.
 export function MemoryReview({
   queue,
   allMemories,
@@ -40,27 +39,11 @@ export function MemoryReview({
   const atEnd = cursor >= total;
   const current = atEnd ? null : (byId.get(queue[cursor]?.id ?? "") ?? queue[cursor] ?? null);
 
-  // The isolated neighbourhood: the fact under review plus its 1-hop graph neighbours
-  // (related either direction, and any resolvable provenance), so it's reviewed in
-  // context rather than in a vacuum. Falls back to just the node when it stands alone.
-  const subgraph = useMemo<Memory[]>(() => {
-    if (!current) return [];
-    const keep = new Set<string>([current.id]);
-    const out = new Set(current.related ?? []);
-    for (const d of current.derivedFrom ?? []) out.add(d);
-    for (const m of allMemories) {
-      if (m.related?.includes(current.id) || m.derivedFrom?.includes(current.id)) keep.add(m.id);
-    }
-    for (const id of out) keep.add(id);
-    return allMemories.filter((m) => keep.has(m.id));
-  }, [current, allMemories]);
-
-  // The fact's resolvable neighbours, shown readably in the details pane (the subsumed
-  // copies a promotion generalized are deleted, so these are its surviving links).
-  const relatedFacts = useMemo(
-    () => (current ? subgraph.filter((m) => m.id !== current.id) : []),
-    [subgraph, current],
-  );
+  const inputs = current?.subsumed ?? [];
+  const derivedCount = current?.derivedFrom?.length ?? 0;
+  // A promotion is anything that merged project facts in (whether or not the source
+  // snapshots survived). Drives the inputs → output → "agree?" framing.
+  const isPromotion = inputs.length > 0 || derivedCount > 0;
 
   const advance = () => {
     setEditing(false);
@@ -80,7 +63,7 @@ export function MemoryReview({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[85vh] max-h-[85vh] w-[min(96vw,1240px)] max-w-none flex-col gap-0 p-0 sm:max-w-none">
+      <DialogContent className="flex h-[85vh] max-h-[85vh] w-[min(92vw,820px)] max-w-none flex-col gap-0 p-0 sm:max-w-none">
         <DialogHeader className="border-b px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             Review memories
@@ -99,63 +82,83 @@ export function MemoryReview({
             </Button>
           </div>
         ) : (
-          <div className="grid flex-1 grid-cols-1 overflow-hidden md:grid-cols-[5fr_6fr]">
-            {/* Left: the isolated subgraph — the fact in its neighbourhood. Hidden on
-                narrow widths so the fact + actions get the full column. */}
-            <div className="relative hidden min-h-[16rem] border-r bg-background md:block">
-              {subgraph.length >= 2 ? (
-                <BrainGraph
-                  compact
-                  focusId={current.id}
-                  memories={subgraph}
-                  report={null}
-                  labelForScope={labelForScope}
-                  onConfirm={() => {}}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                  This fact stands alone — no related memories yet (a knowledge gap).
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-6">
+              {/* INPUTS — the per-project facts this promotion merged together. */}
+              {isPromotion && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {inputs.length > 0
+                      ? `Input memories (${inputs.length}) — merged from these`
+                      : "Merged from per-project facts"}
+                  </div>
+                  {inputs.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {inputs.map((s) => (
+                        <li
+                          key={`${s.scope}::${s.text}`}
+                          className="rounded-md border bg-card/50 p-2 text-sm"
+                        >
+                          <span className="mr-1.5 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                            {labelForScope(s.scope)}
+                          </span>
+                          <span className="text-foreground/90">{s.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+                      Merged from {derivedCount} project fact{derivedCount === 1 ? "" : "s"}, but
+                      the originals weren't retained (they predate source capture). Review the
+                      generated statement below.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-center gap-1.5 py-0.5 text-[11px] text-muted-foreground">
+                    <ArrowDown className="size-3.5" />
+                    merged &amp; promoted into
+                  </div>
                 </div>
               )}
-            </div>
 
-            {/* Right: the fact + full context, with a pinned action bar. */}
-            <div className="flex min-h-0 flex-col">
-              <div className="flex-1 space-y-4 overflow-y-auto p-6">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {/* OUTPUT — the fact that will actually be saved. */}
+              <div>
+                <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {isPromotion ? "Proposed global memory" : "The fact, as it will be saved"}
+                </div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="rounded bg-muted px-1.5 py-0.5">
                     {labelForScope(current.scope)}
                   </span>
                   <span className="rounded bg-muted px-1.5 py-0.5">{current.category}</span>
                   <ConfidenceBadge memory={current} />
                 </div>
-
                 {editing ? (
                   <Textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    rows={6}
+                    rows={5}
                     className="text-base"
                   />
                 ) : (
-                  <div>
-                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      The fact, as it will be saved
-                    </div>
-                    <p className="max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
-                      {current.text}
-                    </p>
-                  </div>
+                  <p className="whitespace-pre-wrap rounded-md border border-primary/30 bg-primary/5 p-3 text-base font-medium leading-relaxed text-foreground">
+                    {current.text}
+                  </p>
                 )}
-
-                <StatusBanner memory={current} />
-                <WhyQueued memory={current} />
-                <RelatedFacts items={relatedFacts} labelForScope={labelForScope} />
-                <MetaRow memory={current} />
-                {!editing && <Outcomes />}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 border-t p-4">
+              <StatusBanner memory={current} />
+              <WhyQueued memory={current} />
+              <MetaRow memory={current} />
+              {!editing && <Outcomes />}
+            </div>
+
+            <div className="space-y-2 border-t p-4">
+              {!editing && isPromotion && (
+                <div className="text-sm font-medium">
+                  Do you agree with this merge &amp; promotion to global?
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
                 {editing ? (
                   <>
                     <Button
@@ -213,9 +216,7 @@ function ConfidenceBadge({ memory }: { memory: Memory }) {
   );
 }
 
-// StatusBanner makes the fact's CURRENT state — and what's at stake — obvious: an
-// unverified inferred fact is at risk of being auto-rewritten or decayed until a human
-// confirms it; a flagged one needs a decision now.
+// StatusBanner makes the fact's CURRENT state — and what's at stake — obvious.
 function StatusBanner({ memory }: { memory: Memory }) {
   const pct = Math.round((memory.confidenceScore ?? 0) * 100);
   if (memory.reviewNote) {
@@ -237,7 +238,7 @@ function StatusBanner({ memory }: { memory: Memory }) {
   );
 }
 
-// WhyQueued explains why this fact is in the review queue + its provenance.
+// WhyQueued explains why this fact is in the review queue.
 function WhyQueued({ memory }: { memory: Memory }) {
   const reasons: string[] = [];
   if (memory.confidence === "ambiguous") {
@@ -247,16 +248,10 @@ function WhyQueued({ memory }: { memory: Memory }) {
     (memory.confidenceScore ?? 1) <= NEEDS_CONFIRMATION_SCORE
   ) {
     reasons.push(
-      "A cross-project generalization promoted to global — the riskiest kind of inference.",
+      "A cross-project generalization promoted to global — a generated summary, not a copy, so it needs your check.",
     );
   } else if ((memory.confidenceScore ?? 1) <= NEEDS_CONFIRMATION_SCORE) {
     reasons.push("Low-confidence inferred fact.");
-  }
-  const subsumes = memory.derivedFrom?.length ?? 0;
-  if (subsumes > 0) {
-    reasons.push(
-      `Consolidation wrote this by merging ${subsumes} per-project fact${subsumes === 1 ? "" : "s"} into one statement — a generated summary, not a copy, and the originals were removed. That's why it needs your check.`,
-    );
   }
   if (reasons.length === 0) return null;
 
@@ -266,36 +261,6 @@ function WhyQueued({ memory }: { memory: Memory }) {
       {reasons.map((r) => (
         <div key={r}>{r}</div>
       ))}
-    </div>
-  );
-}
-
-// RelatedFacts lists the fact's surviving graph neighbours with their full text, so the
-// reviewer can judge it in context (the cramped sidebar only ever showed the node).
-function RelatedFacts({
-  items,
-  labelForScope,
-}: {
-  items: Memory[];
-  labelForScope: (scope: string) => string;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="text-xs">
-      <div className="font-medium text-foreground/80">Related facts ({items.length})</div>
-      <div className="mb-1.5 text-[11px] text-muted-foreground">
-        Other facts this links to — context, not its sources (the merged originals were removed).
-      </div>
-      <ul className="space-y-1.5">
-        {items.map((m) => (
-          <li key={m.id} className="rounded-md border bg-card/50 p-2">
-            <span className="mr-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-              {labelForScope(m.scope)}
-            </span>
-            <span className="text-foreground/90">{m.text}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -313,7 +278,7 @@ function MetaRow({ memory }: { memory: Memory }) {
 }
 
 // Outcomes spells out, per action, exactly what will happen — so Confirm/Edit/Delete
-// aren't a guess. Sits right above the action bar.
+// aren't a guess.
 function Outcomes() {
   return (
     <div className="space-y-1.5 rounded-md border bg-muted/30 p-3 text-xs">
@@ -323,8 +288,7 @@ function Outcomes() {
         <span>
           <b className="text-foreground/90">Confirm</b> — keeps the statement above{" "}
           <b className="text-foreground/90">exactly as written</b> and marks it ground truth (100%);
-          never auto-rewritten or decayed again. Use for facts that are correct and truly
-          cross-project.
+          never auto-rewritten or decayed again.
         </span>
       </div>
       <div className="flex gap-2">

@@ -37,22 +37,29 @@ func New(dir string) *FileStore { return &FileStore{root: dir} }
 // frontmatter is the YAML header serialized for each record. Field order here is
 // the order written to disk, chosen for human readability.
 type frontmatter struct {
-	ID          string    `yaml:"id"`
-	Scope       string    `yaml:"scope"`
-	Category    string    `yaml:"category"`
-	Source      string    `yaml:"source"`
-	Pinned      bool      `yaml:"pinned,omitempty"`
-	Locked      bool      `yaml:"locked,omitempty"`
-	Uses        int       `yaml:"uses"`
-	Created     time.Time `yaml:"created"`
-	Updated     time.Time `yaml:"updated"`
-	LastUsed    time.Time `yaml:"last_used,omitempty"`
-	DerivedFrom []string  `yaml:"derived_from,omitempty"`
-	Related     []string  `yaml:"related,omitempty"`
-	Community   int       `yaml:"community,omitempty"`
-	Confidence  string    `yaml:"confidence,omitempty"`
-	ConfScore   float64   `yaml:"confidence_score,omitempty"`
-	ReviewNote  string    `yaml:"review_note,omitempty"`
+	ID          string       `yaml:"id"`
+	Scope       string       `yaml:"scope"`
+	Category    string       `yaml:"category"`
+	Source      string       `yaml:"source"`
+	Pinned      bool         `yaml:"pinned,omitempty"`
+	Locked      bool         `yaml:"locked,omitempty"`
+	Uses        int          `yaml:"uses"`
+	Created     time.Time    `yaml:"created"`
+	Updated     time.Time    `yaml:"updated"`
+	LastUsed    time.Time    `yaml:"last_used,omitempty"`
+	DerivedFrom []string     `yaml:"derived_from,omitempty"`
+	Related     []string     `yaml:"related,omitempty"`
+	Community   int          `yaml:"community,omitempty"`
+	Confidence  string       `yaml:"confidence,omitempty"`
+	ConfScore   float64      `yaml:"confidence_score,omitempty"`
+	ReviewNote  string       `yaml:"review_note,omitempty"`
+	Subsumed    []subsumedFM `yaml:"subsumed,omitempty"`
+}
+
+// subsumedFM is the frontmatter form of memory.SubsumedSource (a merged-away source).
+type subsumedFM struct {
+	Scope string `yaml:"scope"`
+	Text  string `yaml:"text"`
 }
 
 func toFrontmatter(r memory.Record) frontmatter {
@@ -73,7 +80,30 @@ func toFrontmatter(r memory.Record) frontmatter {
 		Confidence:  string(r.Confidence),
 		ConfScore:   r.ConfidenceScore,
 		ReviewNote:  r.ReviewNote,
+		Subsumed:    toSubsumedFM(r.Subsumed),
 	}
+}
+
+func toSubsumedFM(ss []memory.SubsumedSource) []subsumedFM {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]subsumedFM, len(ss))
+	for i, s := range ss {
+		out[i] = subsumedFM{Scope: string(s.Scope), Text: s.Text}
+	}
+	return out
+}
+
+func fromSubsumedFM(ss []subsumedFM) []memory.SubsumedSource {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]memory.SubsumedSource, len(ss))
+	for i, s := range ss {
+		out[i] = memory.SubsumedSource{Scope: memory.Scope(s.Scope), Text: s.Text}
+	}
+	return out
 }
 
 func (m frontmatter) toRecord(body string) memory.Record {
@@ -102,6 +132,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		Confidence:      memory.ConfidenceTier(m.Confidence),
 		ConfidenceScore: m.ConfScore,
 		ReviewNote:      m.ReviewNote,
+		Subsumed:        fromSubsumedFM(m.Subsumed),
 	})
 }
 
