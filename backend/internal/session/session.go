@@ -576,7 +576,6 @@ func coalescePending(msgs []pendingMessage) (string, []QueryAttachment) {
 	return strings.Join(prompts, "\n\n"), atts
 }
 
-// Query sends a prompt (with optional images) to the Claude session and starts streaming events.
 // recallTimeout bounds the one-time recall lookup so a slow or hung vector backend
 // can never stall the first turn (reliability-first): on timeout we inject nothing.
 const recallTimeout = 3 * time.Second
@@ -612,6 +611,7 @@ func (s *Session) injectRecall(prompt string) string {
 	return block + "\n\n" + prompt
 }
 
+// Query sends a prompt (with optional images) to the Claude session and starts streaming events.
 func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAttachment) error {
 	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery()
 	if err != nil {
