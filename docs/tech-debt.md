@@ -11,16 +11,30 @@ Last full audit: 2026-06-18 (RFC-LD D1/D2/D5/D6 + the review surface).
 
 ## P1 — Surprising or limiting
 
-### Brain: promoted-fact merge inputs are forward-only
+### Brain: promoted-fact merge inputs are forward-only (backfill shipped, not yet run)
 The review surface's headline feature — showing a cross-scope promotion as *inputs →
 output* — depends on `Record.Subsumed`, snapshotted at apply time. It is **not
 backfilled**: every fact promoted before the snapshot landed (incl. the current live
 ~25-fact confirm queue) has empty `Subsumed`, so it degrades to "originals not
 retained" and the reviewer judges the generated summary without seeing its sources —
-exactly the case the feature was built for. A one-time backfill from the export bundle
-(`brain-export-2026-06-17.json`, which still holds the deleted originals) was offered
-but not run. Fix: a `brain` CLI migration that fills `Subsumed` from `DerivedFrom` ids
-against a bundle. → `internal/memory/{record,promote}.go`, `cmd/agentique/brain.go`.
+exactly the case the feature was built for.
+
+The one-time migration is now shipped — `brain backfill-subsumed` (deterministic core
+in `internal/memory/backfill.go`, CLI in `cmd/agentique/brain.go`) resolves each fact's
+`DerivedFrom` ids against a `--source` snapshot of the deleted originals and fills
+`Subsumed`; it is idempotent and global-only. **It has not been run against the live
+brain** (awaiting that — see below).
+
+**Source gotcha (verified 2026-06-18):** the obvious candidate
+`brain-export-2026-06-17.json` is **useless as a source** — `brain export` stripped
+record ids before this change, so it has no id to match `DerivedFrom` against (export
+now writes `id`, but that doesn't help a bundle taken earlier, and the originals are
+already deleted so it can't be re-exported). The originals survive id-keyed only in the
+`brain.pre-tidyall-2026-06-17` markdown backup: it resolves **61/141** `DerivedFrom`
+ids, making **25 facts fully recoverable** (matching the ~25-fact queue) plus some
+partial. Run against that dir, not the JSON bundle. The command refuses an id-less
+bundle with guidance. → `internal/memory/{record,promote,backfill}.go`,
+`cmd/agentique/brain.go`.
 
 ### Brain: AI refine is a synchronous model call ~~uncancellable~~ (timeout shipped)
 `HandleRefine` runs the model on a detached context (so a client disconnect can't

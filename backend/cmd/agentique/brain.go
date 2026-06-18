@@ -15,6 +15,7 @@ import (
 	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/brain"
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/memory/filestore"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -34,6 +35,11 @@ var (
 	consolidateRerun      bool
 	consolidateAggressive bool
 	consolidateDryRun     bool
+
+	backfillSubsumedSource string
+	backfillSubsumedDir    string
+	backfillSubsumedDryRun bool
+	backfillSubsumedForce  bool
 )
 
 func init() {
@@ -55,8 +61,15 @@ func init() {
 	brainImportCmd.Flags().StringArrayVar(&importMap, "map", nil, "pre-resolve a source project to a local one: --map source-slug=local-slug (repeatable)")
 	brainImportCmd.Flags().BoolVarP(&importSkipUnmatched, "skip-unmatched", "y", false, "skip source projects with no local match instead of prompting")
 
+	backfillSubsumedCmd.Flags().StringVar(&backfillSubsumedSource, "source", "", "snapshot still holding the deleted originals: a brain markdown dir (e.g. a backup) or an id-bearing `brain export` JSON bundle (required)")
+	backfillSubsumedCmd.Flags().StringVar(&backfillSubsumedDir, "brain-dir", "", "target brain directory to repair (default: the live brain next to the database)")
+	backfillSubsumedCmd.Flags().BoolVar(&backfillSubsumedDryRun, "dry-run", false, "report what would be filled without writing")
+	backfillSubsumedCmd.Flags().BoolVarP(&backfillSubsumedForce, "force", "f", false, "skip the confirmation prompt")
+	_ = backfillSubsumedCmd.MarkFlagRequired("source")
+
 	brainCmd.AddCommand(backfillCmd)
 	brainCmd.AddCommand(consolidateCmd)
+	brainCmd.AddCommand(backfillSubsumedCmd)
 	brainCmd.AddCommand(brainExportCmd)
 	brainCmd.AddCommand(brainImportCmd)
 	rootCmd.AddCommand(brainCmd)
@@ -301,6 +314,200 @@ func printConsolidateReport(rep memory.Report) {
 		len(rep.Promoted), len(rep.Rewritten), len(rep.Abstracted), len(rep.Deleted), len(rep.Decayed))
 }
 
+// --- Subsumed backfill ------------------------------------------------------
+
+var backfillSubsumedCmd = &cobra.Command{
+	Use:   "backfill-subsumed",
+	Short: "One-time: rebuild empty Subsumed provenance on promoted facts from a snapshot",
+	Long: `Repair facts promoted into global before Subsumed was snapshotted at apply time.
+
+Those facts carry DerivedFrom ids but an empty Subsumed, so the review surface
+degrades to "originals not retained": the reviewer judges a merged summary without
+seeing the per-project facts it was built from. This pass resolves each fact's
+DerivedFrom ids against a snapshot that still holds the (since-deleted) originals
+and fills Subsumed with their scope+text.
+
+--source is that snapshot. The originals live id-keyed only in a brain markdown
+directory, so point --source at one (a backup brain dir is ideal). A 'brain export'
+JSON bundle works too, but only if it was written after this change added ids — an
+older id-less bundle resolves nothing.
+
+Only global facts with DerivedFrom set and Subsumed empty are touched, so the pass
+is idempotent: re-running it after a successful fill is a no-op.
+
+Start with --dry-run to see what would be filled before writing anything.`,
+	RunE: runBrainBackfillSubsumed,
+}
+
+// subsumedBackfillStats summarizes a backfill pass for reporting.
+type subsumedBackfillStats struct {
+	SourceRecords  int // id-keyed records found in the snapshot
+	Eligible       int // global facts with DerivedFrom set and Subsumed empty
+	FullyMatched   int // eligible facts where every DerivedFrom id resolved
+	PartialMatched int // eligible facts where some (not all) ids resolved
+	Unrecoverable  int // eligible facts where no id resolved
+	MatchedIDs     int // DerivedFrom ids resolved against the snapshot
+	DanglingIDs    int // DerivedFrom ids absent from the snapshot
+}
+
+// Recoverable is the count of facts that gained at least one Subsumed source.
+func (s subsumedBackfillStats) Recoverable() int { return s.FullyMatched + s.PartialMatched }
+
+func runBrainBackfillSubsumed(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	brainDir := backfillSubsumedDir
+	if brainDir == "" {
+		brainDir = filepath.Join(filepath.Dir(resolveDBPath()), "brain")
+	}
+
+	target := filestore.New(brainDir)
+	stats, toWrite, err := computeSubsumedBackfill(ctx, target, backfillSubsumedSource)
+	if err != nil {
+		return err
+	}
+
+	if stats.SourceRecords == 0 {
+		return fmt.Errorf("source %q has no id-keyed records — an old `brain export` bundle predates record ids; point --source at a brain markdown directory (e.g. a backup) that still holds the deleted originals", backfillSubsumedSource)
+	}
+
+	fmt.Printf("target brain:    %s\n", brainDir)
+	fmt.Printf("source snapshot: %s (%d id-keyed records)\n", backfillSubsumedSource, stats.SourceRecords)
+	fmt.Printf("eligible promoted facts (DerivedFrom set, Subsumed empty): %d\n", stats.Eligible)
+	fmt.Printf("  recoverable: %d (%d fully, %d partial)\n", stats.Recoverable(), stats.FullyMatched, stats.PartialMatched)
+	fmt.Printf("  unrecoverable (no source matched): %d\n", stats.Unrecoverable)
+	fmt.Printf("DerivedFrom ids: %d matched, %d dangling\n", stats.MatchedIDs, stats.DanglingIDs)
+
+	if len(toWrite) == 0 {
+		fmt.Println("\nnothing to backfill (already filled, or no source matched)")
+		return nil
+	}
+
+	if backfillSubsumedDryRun {
+		fmt.Println("\nDRY RUN — nothing written. Facts that would gain Subsumed provenance:")
+		printSubsumedPreview(toWrite)
+		return nil
+	}
+
+	if !backfillSubsumedForce {
+		fmt.Printf("\nAbout to write Subsumed provenance to %d fact(s) in %s.\n", len(toWrite), brainDir)
+		fmt.Print("Proceed? [y/N] ")
+		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if a := strings.TrimSpace(strings.ToLower(answer)); a != "y" && a != "yes" {
+			fmt.Println("cancelled")
+			return nil
+		}
+	}
+
+	written, err := writeSubsumedBackfill(ctx, target, toWrite)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nbackfilled Subsumed on %d fact(s)\n", written)
+	return nil
+}
+
+// computeSubsumedBackfill is the read-only core of the backfill: it builds the id
+// index from the snapshot, lists the target's global facts, and resolves their
+// DerivedFrom ids. It writes nothing — the returned slice is the work to apply.
+func computeSubsumedBackfill(ctx context.Context, target memory.Store, sourcePath string) (subsumedBackfillStats, []memory.SubsumedBackfill, error) {
+	index, srcCount, err := loadSubsumedIndex(ctx, sourcePath)
+	if err != nil {
+		return subsumedBackfillStats{}, nil, fmt.Errorf("load source %q: %w", sourcePath, err)
+	}
+	// Only global facts are promotion outputs; restricting here keeps the pass aligned
+	// with the cross-scope-promotion semantics of Subsumed.
+	recs, err := target.List(ctx, memory.ScopeGlobal)
+	if err != nil {
+		return subsumedBackfillStats{}, nil, fmt.Errorf("list target brain: %w", err)
+	}
+
+	results := memory.BackfillSubsumed(recs, index)
+	stats := subsumedBackfillStats{SourceRecords: srcCount, Eligible: len(results)}
+	var toWrite []memory.SubsumedBackfill
+	for _, r := range results {
+		stats.MatchedIDs += len(r.MatchedIDs)
+		stats.DanglingIDs += len(r.UnmatchedIDs)
+		if len(r.MatchedIDs) == 0 {
+			stats.Unrecoverable++
+			continue
+		}
+		if len(r.UnmatchedIDs) > 0 {
+			stats.PartialMatched++
+		} else {
+			stats.FullyMatched++
+		}
+		toWrite = append(toWrite, r)
+	}
+	return stats, toWrite, nil
+}
+
+// writeSubsumedBackfill persists the filled records, returning the number written.
+func writeSubsumedBackfill(ctx context.Context, target memory.Store, work []memory.SubsumedBackfill) (int, error) {
+	written := 0
+	for _, w := range work {
+		if err := target.Put(ctx, w.Record); err != nil {
+			return written, fmt.Errorf("write %s: %w", w.Record.ID, err)
+		}
+		written++
+	}
+	return written, nil
+}
+
+// loadSubsumedIndex builds an id -> SubsumedSource index from a snapshot that still
+// holds the deleted originals. The snapshot is a brain markdown directory (the
+// id-keyed source of truth) or a `brain export` JSON bundle (only entries carrying
+// an id contribute). Returns the index and the number of id-keyed records seen.
+func loadSubsumedIndex(ctx context.Context, path string) (map[string]memory.SubsumedSource, int, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	idx := map[string]memory.SubsumedSource{}
+	if info.IsDir() {
+		recs, lerr := filestore.New(path).List(ctx)
+		if lerr != nil {
+			return nil, 0, lerr
+		}
+		for _, r := range recs {
+			idx[r.ID] = memory.SubsumedSource{Scope: r.Scope, Text: r.Text}
+		}
+		return idx, len(recs), nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	var bundle brainBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		return nil, 0, fmt.Errorf("parse bundle: %w", err)
+	}
+	n := 0
+	for _, m := range bundle.Memories {
+		if m.ID == "" {
+			continue
+		}
+		n++
+		idx[m.ID] = memory.SubsumedSource{Scope: memory.Scope(m.Scope), Text: m.Text}
+	}
+	return idx, n, nil
+}
+
+// printSubsumedPreview shows each fact and the sources that would be folded into it.
+func printSubsumedPreview(work []memory.SubsumedBackfill) {
+	for _, w := range work {
+		fmt.Printf("\n%s  %s\n", shortID(w.Record.ID), w.Record.Text)
+		for _, s := range w.Record.Subsumed {
+			fmt.Printf("    ← [%s] %s\n", s.Scope, s.Text)
+		}
+		if len(w.UnmatchedIDs) > 0 {
+			fmt.Printf("    (%d source id(s) still dangling)\n", len(w.UnmatchedIDs))
+		}
+	}
+}
+
 // --- Export / import --------------------------------------------------------
 
 const brainBundleVersion = 1
@@ -320,6 +527,10 @@ type bundleProject struct {
 }
 
 type bundleMemory struct {
+	// ID is the record's stable id. It is carried so a bundle exported before a
+	// cross-scope promotion deleted its source facts can serve as the snapshot for
+	// `brain backfill-subsumed`. omitempty keeps older id-less bundles round-trippable.
+	ID       string `json:"id,omitempty"`
 	Scope    string `json:"scope"`
 	Text     string `json:"text"`
 	Category string `json:"category"`
@@ -360,7 +571,7 @@ func runBrainExport(cmd *cobra.Command, args []string) error {
 	bundle := brainBundle{Version: brainBundleVersion, Projects: map[string]bundleProject{}}
 	for _, r := range recs {
 		bundle.Memories = append(bundle.Memories, bundleMemory{
-			Scope: string(r.Scope), Text: r.Text, Category: string(r.Category),
+			ID: r.ID, Scope: string(r.Scope), Text: r.Text, Category: string(r.Category),
 			Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked,
 		})
 		scope := string(r.Scope)
