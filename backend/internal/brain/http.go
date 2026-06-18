@@ -275,13 +275,28 @@ func (h *Handler) HandleRefine(w http.ResponseWriter, r *http.Request) error {
 		current = rec.Text
 	}
 	ex := NewClaudeExtractor(h.Runner, m)
-	text, err := ex.Refine(context.Background(), current, rec.Subsumed, body.Instruction)
+	// Detached from the request context so a client disconnect can't kill the
+	// subprocess (mirrors the job path), but bounded: a wedged or rate-limited
+	// model call must not hang this handler goroutine indefinitely. RunWithRetry
+	// honors ctx, so the deadline unblocks an in-flight call or a retry backoff.
+	ctx, cancel := context.WithTimeout(context.Background(), refineTimeout)
+	defer cancel()
+	text, err := ex.Refine(ctx, current, rec.Subsumed, body.Instruction)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return &httperror.Error{Status: http.StatusGatewayTimeout, Message: "refine timed out", Cause: err}
+		}
 		return err
 	}
 	httperror.JSON(w, http.StatusOK, map[string]string{"text": text})
 	return nil
 }
+
+// refineTimeout bounds the synchronous AI-refine model call. Generous enough for
+// the rewrite plus a short retry backoff, but an interactive user is never left
+// hanging on a wedged or long-rate-limited call (they can re-trigger). See the
+// 2026-06-18 tech-debt audit. A var (not const) so tests can shorten it.
+var refineTimeout = 2 * time.Minute
 
 // HandleSearch GET /api/brain/search?q=&scope=
 func (h *Handler) HandleSearch(w http.ResponseWriter, r *http.Request) error {

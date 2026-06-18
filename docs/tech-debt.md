@@ -22,14 +22,16 @@ exactly the case the feature was built for. A one-time backfill from the export 
 but not run. Fix: a `brain` CLI migration that fills `Subsumed` from `DerivedFrom` ids
 against a bundle. → `internal/memory/{record,promote}.go`, `cmd/agentique/brain.go`.
 
-### Brain: AI refine is a synchronous, uncancellable model call
-`HandleRefine` runs the model on `context.Background()` (so a client disconnect can't
-SIGTERM the subprocess) but **blocks the HTTP request** until it returns, with no
-server-side timeout and no cancel. A slow or hung model leaves the request — and the
-review dialog's spinner — hanging indefinitely. The big passes avoid this by being
-background jobs; refine traded that for inline UX. Add a bounded timeout (and ideally
-surface cancel), or move it to the job channel. → `internal/brain/http.go`
-(`HandleRefine`), `internal/brain/extractor.go` (`Refine`).
+### Brain: AI refine is a synchronous model call ~~uncancellable~~ (timeout shipped)
+`HandleRefine` runs the model on a detached context (so a client disconnect can't
+SIGTERM the subprocess) and **blocks the HTTP request** until it returns. It is now
+**bounded by a 2-minute timeout** (`refineTimeout`): a wedged or long-rate-limited
+call is cancelled and the handler returns `504 Gateway Timeout` instead of hanging the
+request and the review dialog's spinner indefinitely (`RunWithRetry` honors ctx, so
+the deadline unblocks an in-flight call or a retry backoff). Still synchronous and
+inline (not on the job channel) and there's no user-facing cancel button — acceptable
+for an interactive rewrite, but a remaining nicety. → `internal/brain/http.go`
+(`HandleRefine`, `refine_timeout_test.go`), `internal/brain/extractor.go` (`Refine`).
 
 ### Brain: consolidation apply is not transactional
 `ApplyPlan` / `ApplyGlobalPromotion` / `writePromoted` write facts one
