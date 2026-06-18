@@ -55,6 +55,13 @@ export function MemoryReview({
     return allMemories.filter((m) => keep.has(m.id));
   }, [current, allMemories]);
 
+  // The fact's resolvable neighbours, shown readably in the details pane (the subsumed
+  // copies a promotion generalized are deleted, so these are its surviving links).
+  const relatedFacts = useMemo(
+    () => (current ? subgraph.filter((m) => m.id !== current.id) : []),
+    [subgraph, current],
+  );
+
   const advance = () => {
     setEditing(false);
     setCursor((c) => c + 1);
@@ -112,56 +119,56 @@ export function MemoryReview({
               )}
             </div>
 
-            {/* Right: the fact itself + why it's here + actions. */}
-            <div className="flex flex-col overflow-y-auto p-6">
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="rounded bg-muted px-1.5 py-0.5">
-                  {labelForScope(current.scope)}
-                </span>
-                <span className="rounded bg-muted px-1.5 py-0.5">{current.category}</span>
-                <ConfidenceBadge memory={current} />
+            {/* Right: the fact + full context, with a pinned action bar. */}
+            <div className="flex min-h-0 flex-col">
+              <div className="flex-1 space-y-4 overflow-y-auto p-6">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="rounded bg-muted px-1.5 py-0.5">
+                    {labelForScope(current.scope)}
+                  </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5">{current.category}</span>
+                  <ConfidenceBadge memory={current} />
+                </div>
+
+                {editing ? (
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={6}
+                    className="text-base"
+                  />
+                ) : (
+                  <p className="max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
+                    {current.text}
+                  </p>
+                )}
+
+                <StatusBanner memory={current} />
+                <WhyQueued memory={current} />
+                <RelatedFacts items={relatedFacts} labelForScope={labelForScope} />
+                <MetaRow memory={current} />
+                {!editing && <Outcomes />}
               </div>
 
-              {editing ? (
-                <Textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  rows={6}
-                  className="mb-4 text-base"
-                />
-              ) : (
-                <p className="mb-4 max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
-                  {current.text}
-                </p>
-              )}
-
-              <WhyQueued memory={current} />
-
-              <div className="mt-auto flex flex-wrap gap-2 pt-4">
+              <div className="flex flex-wrap items-center gap-2 border-t p-4">
                 {editing ? (
                   <>
                     <Button
-                      size="sm"
                       disabled={busy || !draft.trim()}
                       onClick={() => act(() => onUpdate(current.id, { text: draft.trim() }))}
                     >
-                      Save & next
+                      Save as ground truth
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                    <Button variant="ghost" onClick={() => setEditing(false)}>
                       Cancel
                     </Button>
                   </>
                 ) : (
                   <>
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => act(() => onConfirm(current.id))}
-                    >
+                    <Button disabled={busy} onClick={() => act(() => onConfirm(current.id))}>
                       <Check className="mr-1 size-4" /> Confirm
                     </Button>
                     <Button
-                      size="sm"
                       variant="outline"
                       onClick={() => {
                         setDraft(current.text);
@@ -171,14 +178,13 @@ export function MemoryReview({
                       <Pencil className="mr-1 size-4" /> Edit
                     </Button>
                     <Button
-                      size="sm"
-                      variant="outline"
+                      variant="destructive"
                       disabled={busy}
                       onClick={() => act(() => onDelete(current.id))}
                     >
                       <Trash2 className="mr-1 size-4" /> Delete
                     </Button>
-                    <Button size="sm" variant="ghost" className="ml-auto" onClick={advance}>
+                    <Button variant="ghost" className="ml-auto" onClick={advance}>
                       Skip <X className="ml-1 size-4" />
                     </Button>
                   </>
@@ -202,11 +208,33 @@ function ConfidenceBadge({ memory }: { memory: Memory }) {
   );
 }
 
-// WhyQueued explains, in one line, why this fact is in the review queue — the thing the
-// truncated sidebar never told you.
+// StatusBanner makes the fact's CURRENT state — and what's at stake — obvious: an
+// unverified inferred fact is at risk of being auto-rewritten or decayed until a human
+// confirms it; a flagged one needs a decision now.
+function StatusBanner({ memory }: { memory: Memory }) {
+  const pct = Math.round((memory.confidenceScore ?? 0) * 100);
+  if (memory.reviewNote) {
+    return (
+      <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
+        <div className="font-medium">Flagged as wrong by an agent</div>
+        <div className="mt-0.5 text-xs">It needs your decision — keep, fix, or remove it.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+      <div className="font-medium">Unverified — the brain's own guess ({pct}%)</div>
+      <div className="mt-0.5 text-xs">
+        Not yet confirmed by you, so consolidation may rewrite or eventually forget it. Confirming
+        locks it in as fact.
+      </div>
+    </div>
+  );
+}
+
+// WhyQueued explains why this fact is in the review queue + its provenance.
 function WhyQueued({ memory }: { memory: Memory }) {
   const reasons: string[] = [];
-  if (memory.reviewNote) reasons.push(`Flagged as contradicted: "${memory.reviewNote}"`);
   if (memory.confidence === "ambiguous") {
     reasons.push("Marked ambiguous — confidence fell below the trusted band.");
   } else if (
@@ -220,21 +248,86 @@ function WhyQueued({ memory }: { memory: Memory }) {
     reasons.push("Low-confidence inferred fact.");
   }
   const subsumes = memory.derivedFrom?.length ?? 0;
+  if (subsumes > 0) {
+    reasons.push(`Generalizes ${subsumes} per-project memor${subsumes === 1 ? "y" : "ies"}.`);
+  }
+  if (reasons.length === 0) return null;
 
   return (
-    <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+    <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
       <div className="mb-1 font-medium text-foreground/80">Why you're seeing this</div>
       {reasons.map((r) => (
         <div key={r}>{r}</div>
       ))}
-      {subsumes > 0 && (
-        <div>
-          Generalizes {subsumes} per-project memor{subsumes === 1 ? "y" : "ies"}.
-        </div>
-      )}
-      <div className="mt-1">
-        Confirm keeps it as ground truth (exempt from decay/rewrite); Delete drops it; Edit refines
-        it.
+    </div>
+  );
+}
+
+// RelatedFacts lists the fact's surviving graph neighbours with their full text, so the
+// reviewer can judge it in context (the cramped sidebar only ever showed the node).
+function RelatedFacts({
+  items,
+  labelForScope,
+}: {
+  items: Memory[];
+  labelForScope: (scope: string) => string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="text-xs">
+      <div className="mb-1.5 font-medium text-foreground/80">Related facts ({items.length})</div>
+      <ul className="space-y-1.5">
+        {items.map((m) => (
+          <li key={m.id} className="rounded-md border bg-card/50 p-2">
+            <span className="mr-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              {labelForScope(m.scope)}
+            </span>
+            <span className="text-foreground/90">{m.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// MetaRow shows the provenance/usage facts a reviewer might want before deciding.
+function MetaRow({ memory }: { memory: Memory }) {
+  const updated = memory.updatedAt ? new Date(memory.updatedAt).toLocaleDateString() : null;
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+      <span>source: {memory.source}</span>
+      <span>used {memory.uses}×</span>
+      {updated && <span>updated {updated}</span>}
+    </div>
+  );
+}
+
+// Outcomes spells out, per action, exactly what will happen — so Confirm/Edit/Delete
+// aren't a guess. Sits right above the action bar.
+function Outcomes() {
+  return (
+    <div className="space-y-1.5 rounded-md border bg-muted/30 p-3 text-xs">
+      <div className="font-medium text-foreground/80">What each action does</div>
+      <div className="flex gap-2">
+        <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+        <span>
+          <b className="text-foreground/90">Confirm</b> — marks it ground truth (100%); never
+          auto-rewritten or decayed again. Use for facts that are correct and truly cross-project.
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <Pencil className="mt-0.5 size-3.5 shrink-0 text-sky-500" />
+        <span>
+          <b className="text-foreground/90">Edit</b> — rewrite it, then it's saved as your ground
+          truth. Use when it's close but imprecise.
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <Trash2 className="mt-0.5 size-3.5 shrink-0 text-red-500" />
+        <span>
+          <b className="text-foreground/90">Delete</b> — removes it permanently. Use for wrong or
+          over-generalized facts.
+        </span>
       </div>
     </div>
   );
