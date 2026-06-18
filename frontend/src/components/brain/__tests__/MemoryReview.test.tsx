@@ -65,7 +65,7 @@ describe("MemoryReview", () => {
     expect(screen.getByText(LONG)).toBeTruthy();
     expect(screen.getByText("1 of 2")).toBeTruthy();
     // It explains why the fact is queued.
-    expect(screen.getByText(/cross-project generalization/i)).toBeTruthy();
+    expect(screen.getByText(/cross-project summary/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
     expect(onConfirm).toHaveBeenCalledWith("a");
@@ -99,7 +99,7 @@ describe("MemoryReview", () => {
     );
 
     // Inputs are shown with their real source text, plus the output and the question.
-    expect(screen.getByText(/Input memories \(2\)/i)).toBeTruthy();
+    expect(screen.getByText(/Merged from 2 project facts/i)).toBeTruthy();
     expect(screen.getByText("uses just as the task runner")).toBeTruthy();
     expect(screen.getByText("task runner is just")).toBeTruthy();
     expect(screen.getByText("Uses `just` as the task runner across projects")).toBeTruthy();

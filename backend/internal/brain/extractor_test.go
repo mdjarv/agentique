@@ -304,3 +304,18 @@ func TestParseJSONArray(t *testing.T) {
 		}
 	}
 }
+
+func TestUnwrapRefineText(t *testing.T) {
+	cases := map[string]string{
+		`{"text":"keep it clean"}`:                  "keep it clean",
+		"keep it clean":                             "keep it clean",
+		"```json\n{\"text\":\"fenced\"}\n```":       "fenced",
+		`{"text":"{\"text\":\"double wrapped\"}"}`:  "double wrapped",
+		`  {"text":"  trimmed  "}  `:                "trimmed",
+	}
+	for in, want := range cases {
+		if got := unwrapRefineText(in); got != want {
+			t.Errorf("unwrapRefineText(%q)=%q want %q", in, got, want)
+		}
+	}
+}

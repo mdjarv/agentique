@@ -570,17 +570,39 @@ func (e *ClaudeExtractor) Refine(ctx context.Context, current string, sources []
 	if err != nil {
 		return "", err
 	}
-	raw := []byte(res.Text)
+	raw := res.Text
 	if len(res.StructuredOutput) > 0 {
-		raw = res.StructuredOutput
+		raw = string(res.StructuredOutput)
 	}
-	var out struct {
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(raw, &out) != nil || strings.TrimSpace(out.Text) == "" {
+	text := unwrapRefineText(raw)
+	if text == "" {
 		return "", fmt.Errorf("brain: refine produced no usable text")
 	}
-	return strings.TrimSpace(out.Text), nil
+	return text, nil
+}
+
+// unwrapRefineText extracts the rewritten fact from a model response, tolerating the
+// shapes seen in the wild: a bare string, a {"text":"…"} object, a fenced ```json
+// block, and even a double-wrapped {"text":"{\"text\":\"…\"}"} (a small model echoing
+// the schema into the field). It peels {"text":…} layers until a plain string remains
+// so the raw JSON never leaks into the UI.
+func unwrapRefineText(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	s = strings.TrimSpace(s)
+	for i := 0; i < 3; i++ {
+		var o struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal([]byte(s), &o) == nil && strings.TrimSpace(o.Text) != "" {
+			s = strings.TrimSpace(o.Text)
+			continue
+		}
+		break
+	}
+	return s
 }
 
 // decodeWrapped unmarshals a {"<field>":[...]} payload into dst, preferring the
