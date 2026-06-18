@@ -35,6 +35,9 @@ interface NodeData {
   community: number;
   degree: number;
   val: number;
+  // The per-project facts a cross-scope promotion merged into this one, shown on hover
+  // (the merge inputs the Subsumed backfill restored). Empty for non-promoted facts.
+  subsumed?: { scope: string; text: string }[];
 }
 
 type ColorBy = "scope" | "community";
@@ -256,6 +259,7 @@ export function BrainGraph({
         // Size blends use-count, pinned, and structural degree so load-bearing "god
         // nodes" read bigger — the graphify signal made visual.
         val: 2 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
+        subsumed: m.subsumed,
       };
       const prev = prevById.get(m.id);
       if (prev) {
@@ -372,6 +376,7 @@ export function BrainGraph({
         l.community = n.community;
         l.degree = n.degree;
         l.val = n.val;
+        l.subsumed = n.subsumed;
       }
       return prev.data;
     }
@@ -570,9 +575,25 @@ export function BrainGraph({
             nodeRelSize={NODE_REL_SIZE}
             nodeVal={(n) => n.val ?? 2}
             cooldownTicks={120}
-            nodeLabel={(n) =>
-              `<div style="font:12px sans-serif;max-width:260px">${esc(n.label)}<br/><span style="opacity:.6">${esc(n.scopeLabel)} · ${n.category} · used ${n.uses}×</span></div>`
-            }
+            nodeLabel={(n) => {
+              const head = `${esc(n.label)}<br/><span style="opacity:.6">${esc(n.scopeLabel)} · ${n.category} · used ${n.uses}×</span>`;
+              let prov = "";
+              if (n.subsumed?.length) {
+                const items = n.subsumed
+                  .slice(0, 6)
+                  .map(
+                    (s) =>
+                      `<div style="opacity:.75">← ${esc(s.text.length > 64 ? `${s.text.slice(0, 64)}…` : s.text)}</div>`,
+                  )
+                  .join("");
+                const more =
+                  n.subsumed.length > 6
+                    ? `<div style="opacity:.5">+${n.subsumed.length - 6} more</div>`
+                    : "";
+                prov = `<div style="margin-top:4px;opacity:.85">merged from ${n.subsumed.length} fact(s):</div>${items}${more}`;
+              }
+              return `<div style="font:12px sans-serif;max-width:300px">${head}${prov}</div>`;
+            }}
             nodeCanvasObject={(node, ctx, scale) => {
               const x = node.x ?? 0;
               const y = node.y ?? 0;
