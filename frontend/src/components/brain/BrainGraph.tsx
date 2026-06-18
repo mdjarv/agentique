@@ -51,6 +51,8 @@ const NODE_REL_SIZE = 4;
 const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
 const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
+const REGION_MAX_NODES = 1200; // skip the per-frame hull pass above this many nodes
+const REGION_PAD = 12; // world-unit breathing room around a region's outermost nodes
 
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
@@ -87,6 +89,43 @@ function endId(e: string | number | GNode | undefined): string {
 
 function esc(s: string): string {
   return s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+}
+
+type Pt = { x: number; y: number };
+
+function cross(o: Pt, a: Pt, b: Pt): number {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+// convexHull returns the hull of `points` in CCW order (Andrew's monotone chain).
+// Fewer than three points have no hull, so they are returned unchanged.
+function convexHull(points: Pt[]): Pt[] {
+  if (points.length < 3) return points;
+  const sorted = points.slice().sort((p, q) => p.x - q.x || p.y - q.y);
+  const build = (seq: Pt[]): Pt[] => {
+    const chain: Pt[] = [];
+    for (const p of seq) {
+      while (chain.length >= 2) {
+        const a = chain[chain.length - 2];
+        const b = chain[chain.length - 1];
+        if (!a || !b || cross(a, b, p) > 0) break;
+        chain.pop();
+      }
+      chain.push(p);
+    }
+    chain.pop(); // last point is the first of the other chain — drop to avoid a dupe
+    return chain;
+  };
+  return build(sorted).concat(build(sorted.slice().reverse()));
+}
+
+// withAlpha turns a "#rrggbb" hex into an rgba() string at the given opacity.
+function withAlpha(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // InsightSection renders one click-to-focus list of node ids (god nodes / bridges).
@@ -145,6 +184,7 @@ export function BrainGraph({
   focusId?: string;
 }) {
   const [showSimilar, setShowSimilar] = useState(true);
+  const [showRegions, setShowRegions] = useState(true);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -373,12 +413,12 @@ export function BrainGraph({
     }
   }, [nodes]);
 
-  // Recoloring doesn't touch graphData, so the settled canvas won't repaint on its
-  // own — nudge a redraw when the color dimension changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `colorBy` is a trigger-only dep — the new color is read by nodeCanvasObject on the next paint; this effect just forces that paint.
+  // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
+  // repaint on its own — nudge a redraw when either display dimension changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `colorBy`/`showRegions` are trigger-only deps — they're read by the paint callbacks on the next frame; this effect just forces that frame.
   useEffect(() => {
     (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
-  }, [colorBy]);
+  }, [colorBy, showRegions]);
 
   const neighbors = hoverId ? adjacency.get(hoverId) : null;
   const linkTouchesHover = (l: GLink) =>
@@ -389,6 +429,32 @@ export function BrainGraph({
     scopes.sort((a, b) => (a === "global" ? -1 : b === "global" ? 1 : a.localeCompare(b)));
     return scopes.map((s) => ({ scope: s, label: labelForScope(s), color: scopeColor(s) }));
   }, [nodes, labelForScope]);
+
+  // Region grouping for the shaded "areas" hulls. Membership tracks the active color
+  // dimension: by scope it's one area per project; by community it's one per topic
+  // cluster (keyed scope#community since cluster ids are scope-local). The live GNode
+  // objects are kept so the hull reads their current x/y each frame. Recomputed only on
+  // topology/color change, never per frame.
+  const regionGroups = useMemo(() => {
+    const groups = new Map<string, { color: string; label: string; nodes: GNode[] }>();
+    for (const n of nodes) {
+      const key = colorBy === "community" ? `${n.scope}#${n.community}` : n.scope;
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          color:
+            colorBy === "community" ? communityColor(n.scope, n.community) : scopeColor(n.scope),
+          // Only scope areas carry a text label (the project name). Cluster ids have no
+          // human name yet, so those areas read by colour alone.
+          label: colorBy === "community" ? "" : labelForScope(n.scope),
+          nodes: [],
+        };
+        groups.set(key, g);
+      }
+      g.nodes.push(n);
+    }
+    return groups;
+  }, [nodes, colorBy, labelForScope]);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [String(n.id), n])), [nodes]);
 
@@ -418,6 +484,72 @@ export function BrainGraph({
             height={size.h}
             graphData={graphData}
             backgroundColor="rgba(0,0,0,0)"
+            onRenderFramePre={(ctx, scale) => {
+              // Shaded "areas": a translucent hull behind each region's nodes, drawn
+              // pre-frame so it sits beneath the links and nodes. Padding/strokes are in
+              // world units so a region tracks its nodes through zoom.
+              if (!showRegions || compact || nodes.length > REGION_MAX_NODES) return;
+              ctx.lineJoin = "round";
+              for (const g of regionGroups.values()) {
+                const placed: { x: number; y: number; r: number }[] = [];
+                let cx = 0;
+                let cy = 0;
+                let minY = Number.POSITIVE_INFINITY;
+                for (const n of g.nodes) {
+                  if (n.x == null || n.y == null) continue;
+                  const r = Math.sqrt(n.val ?? 2) * NODE_REL_SIZE;
+                  placed.push({ x: n.x, y: n.y, r });
+                  cx += n.x;
+                  cy += n.y;
+                  minY = Math.min(minY, n.y);
+                }
+                if (placed.length === 0) continue;
+                cx /= placed.length;
+                cy /= placed.length;
+                const expand = Math.max(...placed.map((p) => p.r)) + REGION_PAD;
+
+                ctx.fillStyle = withAlpha(g.color, 0.07);
+                ctx.strokeStyle = withAlpha(g.color, 0.3);
+                ctx.lineWidth = 1.5 / scale;
+                ctx.beginPath();
+                if (placed.length < 3) {
+                  // A point or a pair has no polygon — enclose it in a circle instead.
+                  let rad = 0;
+                  for (const p of placed) rad = Math.max(rad, Math.hypot(p.x - cx, p.y - cy));
+                  ctx.arc(cx, cy, rad + expand, 0, 2 * Math.PI);
+                } else {
+                  // Push each hull vertex outward from the centroid so the polygon clears
+                  // the node circles it wraps.
+                  const hull = convexHull(placed).map((v) => {
+                    const dx = v.x - cx;
+                    const dy = v.y - cy;
+                    const d = Math.hypot(dx, dy) || 1;
+                    return { x: v.x + (dx / d) * expand, y: v.y + (dy / d) * expand };
+                  });
+                  let first = true;
+                  for (const p of hull) {
+                    if (first) {
+                      ctx.moveTo(p.x, p.y);
+                      first = false;
+                    } else {
+                      ctx.lineTo(p.x, p.y);
+                    }
+                  }
+                  ctx.closePath();
+                }
+                ctx.fill();
+                ctx.stroke();
+
+                if (g.label && minY !== Number.POSITIVE_INFINITY) {
+                  const fontSize = 12 / scale;
+                  ctx.font = `600 ${fontSize}px sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.fillStyle = withAlpha(g.color, 0.85);
+                  ctx.fillText(g.label, cx, minY - expand - fontSize * 0.4);
+                }
+              }
+            }}
             nodeRelSize={NODE_REL_SIZE}
             nodeVal={(n) => n.val ?? 2}
             cooldownTicks={120}
@@ -505,6 +637,17 @@ export function BrainGraph({
               onChange={(e) => setShowSimilar(e.target.checked)}
             />
             Similarity links
+          </label>
+          <label
+            className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur"
+            title="Shade an area behind each project (or topic cluster, in cluster colouring)"
+          >
+            <input
+              type="checkbox"
+              checked={showRegions}
+              onChange={(e) => setShowRegions(e.target.checked)}
+            />
+            Regions
           </label>
           <label className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur">
             <span className="text-muted-foreground">Color</span>
