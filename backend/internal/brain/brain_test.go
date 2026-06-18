@@ -62,6 +62,67 @@ func TestPinnedPreambleAndListScopes(t *testing.T) {
 	}
 }
 
+func TestRecallBlock(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	p1 := ScopeForProject("p1")
+
+	// A pinned identity fact (must NOT appear in the recall block — it's already in
+	// the pinned preamble), a relevant non-pinned fact, an irrelevant one, and a
+	// fact in another project (must not leak across scopes even if its words match).
+	if _, err := s.Add(ctx, p1, "User's name is Mathias.", memory.CategoryIdentity, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := s.Add(ctx, p1, "Database migrations use goose numbering.", memory.CategoryProject, memory.SourceAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add(ctx, p1, "Frontend uses tailwind classes.", memory.CategoryProject, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add(ctx, ScopeForProject("p2"), "secret p2 database thing", memory.CategoryFact, memory.SourceAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	block := s.RecallBlock(ctx, "p1", "how do database migrations work with goose")
+	if !strings.Contains(block, "goose numbering") {
+		t.Fatalf("recall block should surface the relevant fact, got:\n%s", block)
+	}
+	if strings.Contains(block, "Mathias") {
+		t.Fatalf("pinned facts belong in the preamble, not the recall block, got:\n%s", block)
+	}
+	if strings.Contains(block, "tailwind") {
+		t.Fatalf("irrelevant facts must not be recalled, got:\n%s", block)
+	}
+	if strings.Contains(block, "secret") {
+		t.Fatalf("another project's fact must not leak into p1's recall, got:\n%s", block)
+	}
+
+	// Injecting a fact is a retrieval-practice event: BumpUses/LastUsedAt stamped so
+	// two-factor strength starts accruing real read signal (the whole point).
+	got, err := s.Get(ctx, rel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Uses != 1 {
+		t.Fatalf("recalled fact Uses should be bumped to 1, got %d", got.Uses)
+	}
+	if got.LastUsedAt.IsZero() {
+		t.Fatal("recalled fact LastUsedAt should be stamped")
+	}
+
+	// An empty prompt and a no-match query both yield no injection (and no bump).
+	if b := s.RecallBlock(ctx, "p1", ""); b != "" {
+		t.Fatalf("empty prompt should yield no recall block, got:\n%s", b)
+	}
+	if b := s.RecallBlock(ctx, "p1", "xyzzy plugh unrelated nonsense"); b != "" {
+		t.Fatalf("a query that matches nothing should yield no recall block, got:\n%s", b)
+	}
+	if got2, _ := s.Get(ctx, rel.ID); got2.Uses != 1 {
+		t.Fatalf("Uses must not advance on empty/no-match recalls, got %d", got2.Uses)
+	}
+}
+
 func TestImportRecordsDedupAndFlags(t *testing.T) {
 	s := newSvc(t)
 	ctx := context.Background()

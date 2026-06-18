@@ -145,6 +145,13 @@ type Session struct {
 
 	// Browser support: port allocated for Chrome's remote debugging.
 	browserPort int
+
+	// recallFn, when wired by the Manager, returns a one-time task-relevant memory
+	// recall block to prepend to this session's first turn (query-relevant recall).
+	// recallInjected gates it to a single lookup per live session instance — create
+	// or resume — so cost stays bounded. Both guarded by mu.
+	recallFn       func(ctx context.Context, prompt string) string
+	recallInjected bool
 }
 
 // PersonaQuerier runs persona queries. Decoupled from persona.Service to avoid
@@ -570,11 +577,52 @@ func coalescePending(msgs []pendingMessage) (string, []QueryAttachment) {
 }
 
 // Query sends a prompt (with optional images) to the Claude session and starts streaming events.
+// recallTimeout bounds the one-time recall lookup so a slow or hung vector backend
+// can never stall the first turn (reliability-first): on timeout we inject nothing.
+const recallTimeout = 3 * time.Second
+
+// SetRecallFn wires the one-time task-relevant memory recall callback. The Manager
+// binds the project; the Session fires it once, on its first turn. nil disables it.
+func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string) string) {
+	s.mu.Lock()
+	s.recallFn = fn
+	s.mu.Unlock()
+}
+
+// injectRecall prepends a one-time, task-relevant memory recall block to the first
+// turn's prompt. It fires at most once per live session instance (create or resume),
+// bounding cost to a single lookup. Best-effort: a disabled brain, a slow/failed
+// recall, or zero relevant facts returns the prompt unchanged.
+func (s *Session) injectRecall(prompt string) string {
+	s.mu.Lock()
+	fn := s.recallFn
+	if fn == nil || s.recallInjected {
+		s.mu.Unlock()
+		return prompt
+	}
+	s.recallInjected = true // bound cost: one lookup per instance, even on miss/failure
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), recallTimeout)
+	defer cancel()
+	block := fn(ctx, prompt)
+	if strings.TrimSpace(block) == "" {
+		return prompt
+	}
+	return block + "\n\n" + prompt
+}
+
 func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAttachment) error {
 	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery()
 	if err != nil {
 		return err
 	}
+
+	// Inject task-relevant recall only after validation passes, so a rejected
+	// query doesn't consume the one-shot. The augmented prompt is persisted, sent
+	// to the model, and broadcast — so the recalled facts are visible in the
+	// transcript and seen by the agent.
+	prompt = s.injectRecall(prompt)
 
 	turnIndex := s.pipeline.AdvanceTurn()
 	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments)

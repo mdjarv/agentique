@@ -204,11 +204,24 @@ keyword recall.
 
 The cognitive loop runs automatically, not just via the CLI/UI:
 
-- **Auto-recall (on by default).** The project's pinned facts are injected into
-  every session's system preamble at create/resume (`Service.PinnedPreamble` →
-  `Manager.MemoryPreambleFn`), so the brain shapes behaviour without the agent
-  having to call `MemorySearch` (query-relevant recall stays pull-based via that
-  tool). Disable with `AGENTIQUE_BRAIN_RECALL=off`.
+- **Auto-recall (on by default).** Two complementary pushes, both gated by
+  `AGENTIQUE_BRAIN_RECALL` (disable with `=off`):
+  - **Pinned facts → system preamble** at create/resume (`Service.PinnedPreamble`
+    → `Manager.MemoryPreambleFn`). Always-on facts, injected before any prompt
+    exists.
+  - **Task-relevant recall → first turn** (`Service.RecallBlock` →
+    `Manager.MemoryRecallFn`, installed per session via `wireRecall`). The system
+    preamble is fixed at connect, *before* the task prompt is known (session
+    create carries no prompt — it arrives on a separate `session.query`), so
+    query-dependent recall can't go there. Instead, the first turn of each live
+    session instance (create **or** resume) runs one `memory.Recall` against the
+    actual prompt and prepends the top-K non-pinned hits as a blockquote — visible
+    in the transcript and seen by the model. Bounded to one lookup per instance
+    (`Session.injectRecall`, fire-once + a 3s timeout); degrades to no injection
+    when the brain is off, recall is slow/fails, or nothing matches. Injected
+    facts get `BumpUses`/`LastUsedAt` stamped, so this is the read signal that
+    feeds two-factor strength (D1), strength-weighted decay, and spaced review —
+    previously starved because recall was pull-only.
 - **Auto-encode (opt-in).** When a session is deleted, its transcript is distilled
   into durable facts and added to the project scope (async, deduped) — set
   `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips trivial sessions.
@@ -266,7 +279,8 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
 
 agentique glue — `backend/internal/brain/`:
 - `brain.go` — `Service`: composes the core, project↔scope mapping, fingerprints,
-  `PinnedPreamble`, `ListScopes`, `LearnFromTranscript`, `ImportRecords`.
+  `PinnedPreamble` (pinned → preamble), `RecallBlock` (task-relevant → first turn,
+  stamps `BumpUses`), `ListScopes`, `LearnFromTranscript`, `ImportRecords`.
 - `extractor.go` — `ClaudeExtractor` (model is a required param; JSON-schema
   constrained; chunked; `Extract`/`Reorganize`/`Promote`/`Refine`). `Refine` rewrites
   one fact per a user instruction; `unwrapRefineText` defends against the model
@@ -312,13 +326,18 @@ dynamics — what the brain borrows next from human-memory research).
   `brain backfill`, the preview/apply consolidation (per-scope Tidy + cross-scope
   global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
   API, so semantic recall still needs an external embeddings endpoint.)
-- **Query-relevant recall is still pull-based, and recall is read-only.** Auto-recall
-  injects *pinned* facts into the preamble; relevance-ranked top-K recall (now
-  graph-augmented via associative recall) for a specific task is still the agent's
-  `MemorySearch` call (no per-turn push). And recall only bumps a flat `Uses` counter
-  — it never strengthens, updates, or weakens a fact based on whether it helped. The
-  fix (recall as a write — testing effect + reconsolidation) is RFC-LD **D2**, the
-  keystone of [brain-learning-dynamics.md](brain-learning-dynamics.md).
+- **Query-relevant recall is now pushed (shipped), but "did it help?" is still
+  open.** Auto-recall pushes both *pinned* facts (preamble) and *task-relevant*
+  top-K recall (first turn, `Service.RecallBlock` → `Manager.MemoryRecallFn` →
+  `Session.injectRecall`) — the agent no longer has to call `MemorySearch` to get
+  relevance-ranked context, and injected facts get `BumpUses`/`LastUsedAt` stamped,
+  so two-factor strength finally sees real read signal. What's *still* read-only is
+  the outcome: a bump records that a fact was injected, not whether it actually
+  helped — recall doesn't yet strengthen, update, or weaken a fact based on its
+  usefulness in the turn. That closing of the loop (recall as a graded write —
+  testing effect + reconsolidation) is RFC-LD **D2**, the keystone of
+  [brain-learning-dynamics.md](brain-learning-dynamics.md). (Injection is one
+  lookup per live session instance — bounded, not per-turn.)
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3

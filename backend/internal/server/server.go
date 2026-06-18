@@ -279,7 +279,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			// to call MemorySearch. Disable with AGENTIQUE_BRAIN_RECALL=off.
 			if v := os.Getenv("AGENTIQUE_BRAIN_RECALL"); v != "off" && v != "false" && v != "0" {
 				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
-				slog.Info("brain: auto-recall enabled (pinned facts injected into session preamble)")
+				mgr.MemoryRecallFn = brainSvc.RecallBlock
+				slog.Info("brain: auto-recall enabled (pinned facts in preamble + task-relevant recall on the first turn)")
 			}
 
 			// Auto-encode (opt-in): distill durable memories from a finished session's

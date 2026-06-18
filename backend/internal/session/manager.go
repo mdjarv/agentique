@@ -76,6 +76,14 @@ type Manager struct {
 	// nil disables it. Wired to the brain Service by the server.
 	MemoryPreambleFn func(ctx context.Context, projectID string) string
 
+	// MemoryRecallFn, when set, returns a one-time, task-relevant memory recall
+	// block to prepend to a session's FIRST turn (create or resume). Unlike the
+	// always-on pinned MemoryPreambleFn — baked into the system preamble at connect,
+	// before any prompt exists — this fires against the actual task prompt, so the
+	// brain's query-relevant ranking reaches the agent. Read-only; nil disables it.
+	// Wired to the brain Service by the server; installed per session via wireRecall.
+	MemoryRecallFn func(ctx context.Context, projectID, prompt string) string
+
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
 	mcpTokens      *mcphttp.TokenStore
@@ -206,6 +214,18 @@ func (m *Manager) memoryPreamble(ctx context.Context, projectID string) string {
 	return "\n\n" + block
 }
 
+// wireRecall installs the one-time task-relevant recall callback on a freshly
+// constructed session, binding its project, so the session's first turn prepends
+// query-relevant memories. No-op when recall is disabled or the project is empty.
+func (m *Manager) wireRecall(sess *Session, projectID string) {
+	if m.MemoryRecallFn == nil || projectID == "" {
+		return
+	}
+	sess.SetRecallFn(func(ctx context.Context, prompt string) string {
+		return m.MemoryRecallFn(ctx, projectID, prompt)
+	})
+}
+
 // devURLsPreamble returns a system-prompt section documenting the dev URL
 // capability when at least one slot is configured. Empty string otherwise.
 func (m *Manager) devURLsPreamble(ctx context.Context) string {
@@ -248,6 +268,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		workDir:   params.WorkDir,
 		gitStatus: m.gitStatus,
 	})
+	m.wireRecall(sess, params.ProjectID)
 
 	permMode := "default"
 	if params.PlanMode {
@@ -399,6 +420,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		initialGitVersion: p.InitialGitVersion,
 		gitStatus:         m.gitStatus,
 	})
+	m.wireRecall(sess, p.ProjectID)
 
 	permMode := p.PermissionMode
 	if permMode == "" {
@@ -490,6 +512,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		initialGitVersion: p.InitialGitVersion,
 		gitStatus:         m.gitStatus,
 	})
+	m.wireRecall(sess, p.ProjectID)
 
 	permMode := p.PermissionMode
 	if permMode == "" {
