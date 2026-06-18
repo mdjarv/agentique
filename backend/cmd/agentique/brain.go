@@ -40,6 +40,10 @@ var (
 	backfillSubsumedDir    string
 	backfillSubsumedDryRun bool
 	backfillSubsumedForce  bool
+
+	assignAreasDir    string
+	assignAreasDryRun bool
+	assignAreasForce  bool
 )
 
 func init() {
@@ -67,9 +71,14 @@ func init() {
 	backfillSubsumedCmd.Flags().BoolVarP(&backfillSubsumedForce, "force", "f", false, "skip the confirmation prompt")
 	_ = backfillSubsumedCmd.MarkFlagRequired("source")
 
+	assignAreasCmd.Flags().StringVar(&assignAreasDir, "brain-dir", "", "target brain directory (default: the live brain next to the database)")
+	assignAreasCmd.Flags().BoolVar(&assignAreasDryRun, "dry-run", false, "preview the cross-scope areas without writing")
+	assignAreasCmd.Flags().BoolVarP(&assignAreasForce, "force", "f", false, "skip the confirmation prompt")
+
 	brainCmd.AddCommand(backfillCmd)
 	brainCmd.AddCommand(consolidateCmd)
 	brainCmd.AddCommand(backfillSubsumedCmd)
+	brainCmd.AddCommand(assignAreasCmd)
 	brainCmd.AddCommand(brainExportCmd)
 	brainCmd.AddCommand(brainImportCmd)
 	rootCmd.AddCommand(brainCmd)
@@ -506,6 +515,75 @@ func printSubsumedPreview(work []memory.SubsumedBackfill) {
 			fmt.Printf("    (%d source id(s) still dangling)\n", len(w.UnmatchedIDs))
 		}
 	}
+}
+
+// --- Cross-scope areas ------------------------------------------------------
+
+var assignAreasCmd = &cobra.Command{
+	Use:   "assign-areas",
+	Short: "Recompute cross-scope topic areas and stamp them onto each fact (Record.Area)",
+	Long: `Group facts into cross-scope topic "areas" — topics that recur across two or more
+scopes — and persist each fact's area onto Record.Area. Areas power the graph's
+"by area" colouring/regions and (soon) cross-area recall.
+
+Normally this runs automatically on the sleep pass, tidy-all, and global promotion.
+This one-shot command populates areas on demand (e.g. right after upgrading) so they
+show up without waiting for a pass. It only writes the rebuildable Area index — facts'
+text and provenance are untouched. Start with --dry-run to preview.`,
+	RunE: runBrainAssignAreas,
+}
+
+func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	brainDir := assignAreasDir
+	if brainDir == "" {
+		brainDir = filepath.Join(filepath.Dir(resolveDBPath()), "brain")
+	}
+	store := filestore.New(brainDir)
+
+	infos, err := memory.PreviewAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
+	if err != nil {
+		return fmt.Errorf("preview areas: %w", err)
+	}
+	facts := 0
+	for _, a := range infos {
+		facts += a.Size
+	}
+	fmt.Printf("brain: %s\n", brainDir)
+	fmt.Printf("%d cross-scope areas covering %d facts\n", len(infos), facts)
+	for i, a := range infos {
+		if i >= 20 {
+			fmt.Printf("  … and %d more\n", len(infos)-20)
+			break
+		}
+		fmt.Printf("  • %3d facts / %d scopes — %s\n", a.Size, len(a.Scopes), a.Label)
+	}
+
+	if assignAreasDryRun {
+		fmt.Println("\ndry run — nothing written")
+		return nil
+	}
+	if len(infos) == 0 {
+		fmt.Println("\nno cross-scope areas to assign")
+		return nil
+	}
+	if !assignAreasForce {
+		fmt.Printf("\nAbout to stamp Record.Area on the facts above in %s.\n", brainDir)
+		fmt.Print("Proceed? [y/N] ")
+		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if a := strings.TrimSpace(strings.ToLower(answer)); a != "y" && a != "yes" {
+			fmt.Println("cancelled")
+			return nil
+		}
+	}
+
+	n, err := memory.AssignAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
+	if err != nil {
+		return fmt.Errorf("assign areas: %w", err)
+	}
+	fmt.Printf("\nassigned areas to %d fact(s)\n", n)
+	return nil
 }
 
 // --- Export / import --------------------------------------------------------
