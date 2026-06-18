@@ -96,4 +96,13 @@ func (a *Automation) runOnce(ctx context.Context) {
 			a.bus.Broadcast(EventBrainUpdated, map[string]string{})
 		}
 	}
+	// After every scope is consolidated, recompute cross-scope topic areas once (B).
+	if n, err := a.svc.AssignAreas(ctx); err != nil {
+		slog.Warn("brain: sleep pass: assign areas failed", "error", err)
+	} else if n > 0 {
+		slog.Info("brain: sleep pass refreshed cross-scope areas", "changed", n)
+		if a.bus != nil {
+			a.bus.Broadcast(EventBrainUpdated, map[string]string{})
+		}
+	}
 }

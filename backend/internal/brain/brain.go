@@ -547,7 +547,20 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 	if m, merr := memory.ScopeManifest(ctx, s.store); merr == nil {
 		s.saveGlobalManifest(m)
 	}
+	// A promotion changed cross-scope structure — refresh topic areas (B).
+	if _, aerr := memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes); aerr != nil {
+		slog.Warn("brain: assign areas after global apply failed", "error", aerr)
+	}
 	return rep, nil
+}
+
+// AssignAreas recomputes the cross-scope topic areas across the whole brain and persists
+// Record.Area (B). Run after a pass that can change cross-scope structure — the sleep
+// pass, tidy-all, or a global promotion. Cheap, deterministic and idempotent; the area
+// index is rebuildable, never the source of truth. Returns the number of records whose
+// area changed.
+func (s *Service) AssignAreas(ctx context.Context) (int, error) {
+	return memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
 }
 
 func (s *Service) loadFingerprints() map[string]string {

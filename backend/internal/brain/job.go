@@ -243,6 +243,12 @@ func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
 		job.Current = i + 1
 		h.publishJob(job)
 	}
+	// Recompute cross-scope topic areas once after the whole bulk pass (B).
+	if n, aerr := h.Service.AssignAreas(ctx); aerr != nil {
+		slog.Warn("brain: tidy all: assign areas failed", "error", aerr)
+	} else if n > 0 {
+		h.brainChanged()
+	}
 	job.Phase = phaseDone
 	h.publishJob(job)
 }
