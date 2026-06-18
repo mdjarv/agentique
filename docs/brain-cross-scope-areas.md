@@ -87,18 +87,43 @@ link. The four call sites switch from calling `jaccardSets` directly to the inje
 similarity.
 
 **Vector access:** batch-`Embed` all texts at the (infrequent) sleep pass and compute
-pairwise cosine (O(n²) over ~1500 × ~768-dim ≈ a few M dot products — trivial offline).
-Cache vectors on `Record.Embedding` (persist it, or a sidecar) keyed by text hash so
-unchanged facts aren't re-embedded.
+pairwise cosine (O(n²) over ~1500 × dim — trivial offline). Cache vectors on
+`Record.Embedding` (persist it, or a sidecar) keyed by text hash so unchanged facts
+aren't re-embedded.
+
+**Degree cap is mandatory (measure-first finding).** Embedding cosine is far denser than
+Jaccard, and generic "hub" facts (e.g. quality-gate preferences) connect to everything.
+`DetectCommunities` currently unions *all* edges above the threshold (uncapped — fine for
+sparse Jaccard). With cosine that chains into one mega-area. Fix: cap each node's
+similarity edges to its top-K strongest (mirror `RelinkScope`'s `maxRelatedDegree`, K≈8),
+and keep **label propagation** (it partitions and resists chaining — connected-components
+does NOT; do not switch). With those, semantic clusters cleanly (see results below).
 
 **Gating:** only active in semantic mode (Chroma+embeddings configured). Pure keyword
 deployments keep today's behaviour.
 
-**Calibration:** cosine thresholds differ from Jaccard's 0.3/0.15 and must be tuned on
-the real corpus before defaults are set (open decision D5 — pairs well with a measure-first
-prototype).
+**Calibration:** cosine thresholds are **model-specific** and sit in a compressed band
+(≈0.50 for quantized all-MiniLM-L6-v2; p99 of all pairs was only 0.44). Must be tuned per
+embedding model, not hardcoded globally (D5).
 
 ---
+
+## Measure-first results (2026-06-18, live-brain copy, 1510 durable facts, 1417 isolated)
+
+Ran the real clustering offline (lexical now; semantic via a local quantized
+all-MiniLM-L6-v2 embedder + label propagation, the production algorithm):
+
+| recipe | areas | facts in an area | biggest | isolated facts joined |
+|---|---|---|---|---|
+| Lexical (Jaccard 0.15) | 62 | 678 | 105 | **611** (43% of 1417) |
+| Semantic (cosine 0.50, top-8 cap) | 65 | 990 | 133 | **910** (64%) |
+
+Findings: (1) **B is worth it** — lexical areas alone connect 43% of the dead graph with
+coherent topics (e.g. `just check`/golangci-lint across 13 scopes). (2) **C adds real
+value** — ~50% more densification (910 vs 611) and ~2,500 cross-scope links Jaccard never
+sees (different-words/same-meaning). (3) **C's recipe matters**: a naive flat cosine
+threshold or connected-components collapses into one ~1,300-fact blob; label propagation +
+top-K degree cap + a model-calibrated threshold (~0.50 here) is what produces clean areas.
 
 ## Sequencing
 
@@ -118,8 +143,9 @@ verifiable on the live-brain copy (phase-A verify recipe).
   (recommended, provider-agnostic) vs add a Chroma bulk-vector fetch.
 - **D4 — Combine vs replace:** `max(jaccard, cosine)` blend (recommended) vs cosine
   replaces Jaccard outright.
-- **D5 — Thresholds:** calibrate cosine thresholds on the real corpus before committing
-  (recommended — a measure-first prototype).
+- **D5 — Thresholds (measured):** lexical 0.15 and semantic ~0.50 + top-8 cap work on the
+  current corpus; bake these as defaults but keep them tunable and recalibrate per embedding
+  model (the cosine band shifts with the model).
 
 ## Confidence / risk
 
