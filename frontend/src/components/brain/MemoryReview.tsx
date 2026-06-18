@@ -138,9 +138,14 @@ export function MemoryReview({
                     className="text-base"
                   />
                 ) : (
-                  <p className="max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
-                    {current.text}
-                  </p>
+                  <div>
+                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      The fact, as it will be saved
+                    </div>
+                    <p className="max-w-prose whitespace-pre-wrap text-base font-medium leading-relaxed text-foreground">
+                      {current.text}
+                    </p>
+                  </div>
                 )}
 
                 <StatusBanner memory={current} />
@@ -249,7 +254,9 @@ function WhyQueued({ memory }: { memory: Memory }) {
   }
   const subsumes = memory.derivedFrom?.length ?? 0;
   if (subsumes > 0) {
-    reasons.push(`Generalizes ${subsumes} per-project memor${subsumes === 1 ? "y" : "ies"}.`);
+    reasons.push(
+      `Consolidation wrote this by merging ${subsumes} per-project fact${subsumes === 1 ? "" : "s"} into one statement — a generated summary, not a copy, and the originals were removed. That's why it needs your check.`,
+    );
   }
   if (reasons.length === 0) return null;
 
@@ -275,7 +282,10 @@ function RelatedFacts({
   if (items.length === 0) return null;
   return (
     <div className="text-xs">
-      <div className="mb-1.5 font-medium text-foreground/80">Related facts ({items.length})</div>
+      <div className="font-medium text-foreground/80">Related facts ({items.length})</div>
+      <div className="mb-1.5 text-[11px] text-muted-foreground">
+        Other facts this links to — context, not its sources (the merged originals were removed).
+      </div>
       <ul className="space-y-1.5">
         {items.map((m) => (
           <li key={m.id} className="rounded-md border bg-card/50 p-2">
@@ -311,8 +321,10 @@ function Outcomes() {
       <div className="flex gap-2">
         <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
         <span>
-          <b className="text-foreground/90">Confirm</b> — marks it ground truth (100%); never
-          auto-rewritten or decayed again. Use for facts that are correct and truly cross-project.
+          <b className="text-foreground/90">Confirm</b> — keeps the statement above{" "}
+          <b className="text-foreground/90">exactly as written</b> and marks it ground truth (100%);
+          never auto-rewritten or decayed again. Use for facts that are correct and truly
+          cross-project.
         </span>
       </div>
       <div className="flex gap-2">
