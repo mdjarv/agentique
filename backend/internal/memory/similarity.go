@@ -1,7 +1,5 @@
 package memory
 
-import "math"
-
 // DefaultSemanticThreshold is the cosine similarity at or above which two facts are
 // linked when embeddings are available. It sits far higher than the lexical Jaccard
 // thresholds because embedding cosine is compressed and dense — a measure-first sweep on
@@ -90,7 +88,7 @@ func (s *Similarity) Linked(i, j int, lexThresh float64) bool {
 	if jaccardSets(s.toks[i], s.toks[j]) >= lexThresh {
 		return true
 	}
-	return s.embs != nil && cosine(s.embs[i], s.embs[j]) >= s.cosThresh
+	return s.embs != nil && CosineSimilarity(s.embs[i], s.embs[j]) >= s.cosThresh
 }
 
 // Score returns max(jaccard, cosine) — a single strength used to rank a node's neighbours
@@ -100,7 +98,7 @@ func (s *Similarity) Score(i, j int) float64 {
 	if s.embs == nil {
 		return lex
 	}
-	if cos := cosine(s.embs[i], s.embs[j]); cos > lex {
+	if cos := CosineSimilarity(s.embs[i], s.embs[j]); cos > lex {
 		return cos
 	}
 	return lex
@@ -109,22 +107,3 @@ func (s *Similarity) Score(i, j int) float64 {
 // semantic reports whether any embedding signal is active (the degree cap only matters
 // when the denser cosine graph is in play).
 func (s *Similarity) semantic() bool { return s.embs != nil }
-
-// cosine is the cosine similarity of two equal-length vectors, or 0 when either is empty
-// or the lengths differ (a missing vector contributes no signal). Normalisation is
-// computed here so it works whether or not the embedder returns unit vectors.
-func cosine(a, b []float32) float64 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
-	}
-	var dot, na, nb float64
-	for i := range a {
-		dot += float64(a[i]) * float64(b[i])
-		na += float64(a[i]) * float64(a[i])
-		nb += float64(b[i]) * float64(b[i])
-	}
-	if na == 0 || nb == 0 {
-		return 0
-	}
-	return dot / (math.Sqrt(na) * math.Sqrt(nb))
-}

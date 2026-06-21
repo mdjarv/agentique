@@ -5,25 +5,6 @@ import (
 	"testing"
 )
 
-func TestCosine(t *testing.T) {
-	cases := []struct {
-		a, b []float32
-		want float64
-	}{
-		{[]float32{1, 0}, []float32{1, 0}, 1},
-		{[]float32{1, 0}, []float32{0, 1}, 0},
-		{[]float32{1, 1}, []float32{1, 1}, 1},
-		{[]float32{2, 0}, []float32{3, 0}, 1}, // non-unit, same direction
-		{[]float32{1, 0}, nil, 0},             // missing vector
-		{[]float32{1, 0}, []float32{1}, 0},    // mismatched length
-	}
-	for _, c := range cases {
-		if got := cosine(c.a, c.b); math.Abs(got-c.want) > 1e-6 {
-			t.Errorf("cosine(%v,%v) = %v, want %v", c.a, c.b, got, c.want)
-		}
-	}
-}
-
 func TestSimilarityJaccardOnly(t *testing.T) {
 	recs := []Record{
 		{ID: "a", Text: "go test race detector"},

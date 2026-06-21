@@ -35,6 +35,10 @@ type Config struct {
 	EmbedModel  string
 	EmbedAPIKey string
 	Collection  string
+	// SemanticThreshold overrides the cosine link threshold for semantic similarity
+	// clustering (RFC phase C). 0 uses memory.DefaultSemanticThreshold. Calibrate per
+	// embedding model.
+	SemanticThreshold float64
 }
 
 // Service is the agentique brain.
@@ -42,6 +46,12 @@ type Service struct {
 	store    memory.Store
 	dir      string
 	semantic bool
+
+	// embedder, when set (semantic mode), drives semantic similarity for clustering —
+	// link/community/area edges blend Jaccard with embedding cosine (RFC phase C). nil =
+	// lexical-only. cosThresh is the cosine link threshold (model-specific).
+	embedder  memory.Embedder
+	cosThresh float64
 
 	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
@@ -87,7 +97,12 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 			} else {
 				svc.store = cs
 				svc.semantic = true
-				slog.Info("brain: semantic recall enabled", "collection", coll)
+				svc.embedder = emb
+				svc.cosThresh = cfg.SemanticThreshold
+				if svc.cosThresh <= 0 {
+					svc.cosThresh = memory.DefaultSemanticThreshold
+				}
+				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh)
 			}
 		}
 	}
@@ -578,11 +593,77 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 
 // AssignAreas recomputes the cross-scope topic areas across the whole brain and persists
 // Record.Area (B). Run after a pass that can change cross-scope structure — the sleep
-// pass, tidy-all, or a global promotion. Cheap, deterministic and idempotent; the area
-// index is rebuildable, never the source of truth. Returns the number of records whose
-// area changed.
+// pass, tidy-all, or a global promotion. In semantic mode it embeds the corpus and blends
+// cosine into the area clustering (C); otherwise it is lexical. Deterministic and
+// idempotent; the area index is rebuildable, never the source of truth. Returns the
+// number of records whose area changed.
 func (s *Service) AssignAreas(ctx context.Context) (int, error) {
-	return memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
+	all, err := s.store.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	opts := s.semanticSimOptions(ctx, durableRecords(all))
+	return memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, opts...)
+}
+
+// durableRecords returns the non-capture records (the set areas/links cluster over).
+func durableRecords(all []memory.Record) []memory.Record {
+	out := make([]memory.Record, 0, len(all))
+	for _, r := range all {
+		if r.Source != memory.SourceCapture {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// semanticSimOptions returns the SimOptions that turn on embedding-blended similarity for
+// a clustering pass: a lookup over freshly-computed vectors for `records` plus the
+// configured cosine threshold. Returns nil (lexical-only) when no embedder is configured
+// or embedding fails, so clustering always degrades cleanly to Jaccard.
+func (s *Service) semanticSimOptions(ctx context.Context, records []memory.Record) []memory.SimOption {
+	if s.embedder == nil || len(records) == 0 {
+		return nil
+	}
+	vecs, err := s.embedRecords(ctx, records)
+	if err != nil {
+		slog.Warn("brain: embed for similarity failed; clustering lexically", "error", err)
+		return nil
+	}
+	return []memory.SimOption{
+		memory.WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
+		memory.WithCosineThreshold(s.cosThresh),
+	}
+}
+
+// embedRecords batch-embeds record texts, returning id → vector. Chunked to bound request
+// size. A whole-corpus embed per pass is acceptable for the infrequent sleep/tidy passes;
+// caching by text-hash to skip unchanged facts is a future optimization.
+func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (map[string][]float32, error) {
+	const batch = 64
+	out := make(map[string][]float32, len(records))
+	for i := 0; i < len(records); i += batch {
+		end := i + batch
+		if end > len(records) {
+			end = len(records)
+		}
+		chunk := records[i:end]
+		texts := make([]string, len(chunk))
+		for k, r := range chunk {
+			texts[k] = r.Text
+		}
+		vecs, err := s.embedder.Embed(ctx, texts)
+		if err != nil {
+			return nil, err
+		}
+		if len(vecs) != len(chunk) {
+			return nil, fmt.Errorf("brain: embedder returned %d vectors for %d texts", len(vecs), len(chunk))
+		}
+		for k, r := range chunk {
+			out[r.ID] = vecs[k]
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) loadFingerprints() map[string]string {
