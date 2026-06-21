@@ -3,7 +3,8 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-18 (RFC-LD D1/D2/D5/D6 + the review surface).
+Last full audit: 2026-06-21 (cross-scope areas, pluggable semantic similarity, fluid
+per-turn recall + corpus cache, recall precision). Prior: 2026-06-18 (RFC-LD + review surface).
 
 ## P0 — Will bite a user
 
@@ -179,6 +180,63 @@ One type owns memory CRUD + search + status + consolidation preview/apply + glob
 + tidy-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
 help. → `internal/brain/{http,job}.go`.
 
+### Brain: semantic similarity is activated only for areas (C is partial)
+The pluggable `memory.Similarity` (Jaccard + embedding cosine, two thresholds, degree cap)
+is threaded through `DetectCommunities`, `RelinkScope` and `CrossScopeGroups`, but the
+Service only *passes* embeddings to `AssignAreas`. So in semantic mode **areas are
+semantic while per-scope links/communities and request-time interference stay lexical** —
+`RelinkScope`/`AssignCommunities` run inside `memory.ApplyPlan` which the Service doesn't
+thread the `SimOption` through, and `DetectInterference` (graph endpoint) is lexical by
+design (avoid embedding latency on a request). `ApplyGlobal` also refreshes areas
+*lexically inline* (to dodge an embed network call under `s.mu`), so a global promotion's
+area refresh isn't semantic until the next sleep/tidy pass. Inconsistent; close by
+threading the option through `ApplyPlan` and doing a non-blocking post-`ApplyGlobal`
+refresh. → `internal/memory/{community,link,similarity}.go`,
+`internal/brain/{brain,consolidate,promote}.go`.
+
+### Brain: embeddings re-embed the whole corpus every pass (no cache)
+`Service.embedRecords` batch-embeds **all** durable facts on every `AssignAreas` (sleep,
+tidy-all, global apply). No `(id, text-hash)` cache, so unchanged facts are re-embedded
+each pass; Chroma already holds the vectors but exposes no bulk fetch. Inert while
+semantic is dormant (no embedder live), but a real per-pass cost once one is configured.
+Cache by text-hash, or add a Chroma bulk-vector read. → `internal/brain/brain.go`.
+
+### Brain: cross-scope area labels are frequency-based (noisy)
+`areaLabel` names an area from its most *frequent* shared tokens, yielding labels like
+"before commit detector" or "meta repos repo". Frequency over-weights generic glue;
+idf/TF-IDF (down-weight corpus-common tokens) or an LLM naming pass would give meaningful
+names — the label is sold as info-scent in the "by area" graph. → `internal/memory/areas.go`.
+
+### Brain: cosine threshold is model-specific and hand-tuned
+`DefaultSemanticThreshold = 0.45` was measured on quantized all-MiniLM-L6-v2 (pair-cosine
+p99 ≈ 0.44). It's now env-tunable (`AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`) but must be
+recalibrated by hand per embedding model; there's no auto-calibration from the corpus's
+own cosine distribution (e.g. pick a high percentile). → `internal/memory/similarity.go`,
+`internal/brain/brain.go`.
+
+### Brain: persisted cross-scope edges deferred (the "B4" decision)
+The planned `RelinkScope` curated-edge tagging + persisted cross-scope `Related` edges was
+**deferred**: areas-as-a-field (`Record.Area`) delivered the cross-scope value (grouping,
+viz, sibling-scope recall) without them. Cost: cross-scope centrality (god-nodes/bridges
+*spanning* projects) isn't computed, and the future curated-`[[link]]` UI still needs the
+auto-vs-curated tagging the P1 "`RelinkScope` overwrites `Related`" item flags. → data/UX
+gap, not a bug. → `internal/memory/link.go`.
+
+### Brain: read-through cache staleness + shared-slice contract
+`memory/cachestore` invalidates only on its own `Put`/`Delete`. A `brain` CLI run against
+the same dir while the server is up won't invalidate the server's in-memory cache (rare;
+clears on the next server write) — no TTL backstop. Also `List`/`Get` return records that
+share slice backing with the cache: safe under the current replace-field-then-`Put` write
+pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt the cache
+(documented in-code, not enforced). → `internal/memory/cachestore/cachestore.go`.
+
+### Brain: per-turn recall injection is cumulatively unbounded
+Fluid recall bounds each turn (≤K, delta-deduped against a per-session seen-set), but the
+seen-set only suppresses repeats — across a long, topic-drifting session the *total*
+injected (and the `BumpUses` churn) grows unbounded. Low risk (K small, low-content gate),
+but a per-session injection budget would cap it. → `internal/session/session.go`
+(`injectRecall`), `internal/brain/brain.go` (`RecallBlock`).
+
 ### `claudecli` still imported in session-package files for narrow reasons
 
 The migration intentionally keeps a few `claudecli` imports under
@@ -310,6 +368,15 @@ no end-to-end test — it extends the existing "orchestration layer is untested"
 `MemoryReview` has component tests for full-text display, the inputs→output framing,
 and refine-via-chip, but the error path, edit→save, delete, and skip aren't covered.
 → `internal/brain/{http,extractor}.go`, `frontend/src/components/brain/__tests__/`.
+
+### Brain: areas / semantic / fluid-recall not verified on a live server
+Covered by unit + end-to-end tests and an *offline* measure (lexical clustering over a
+copy of the live brain; semantic via a throwaway transformers.js embedder — see the
+cross-scope-areas RFC). **Not** verified on a running server: fluid recall firing
+mid-conversation on real topic drift; semantic clustering with a real embedder (live is
+keyword-only, `semantic=false`); `brain assign-areas` applied to the live brain (only run
+on a copy; `backfill-subsumed` was only `--dry-run` against live). Needs a configured
+embedder + a multi-turn live session to close. → verification gap, not a known bug.
 
 ### Brain: scopeColor is a 10-entry hash (collisions possible)
 `~/lib/scope-color.ts` hashes a scope into a 10-colour palette, so two projects can
