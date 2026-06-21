@@ -11,13 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
 	akmcp "github.com/allbin/agentkit/mcphttp"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 )
 
 // Tool name constants. The full names (mcp__<server>__<tool>) drive the
@@ -331,23 +331,19 @@ func killDevPortImpl(ctx context.Context, dev *devurls.Store, slotName string) a
 		return akmcp.TextResultf("Port %d is already free. Cleared any stale lease on slot %q.", slot.Port, slot.Slot)
 	}
 
-	proc, err := os.FindProcess(owner.PID)
-	if err != nil {
-		return akmcp.ErrorResultf("find process %d: %v", owner.PID, err)
-	}
-	_ = terminateProcess(proc)
+	_ = procctl.Terminate(owner.PID)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if !pidAlive(owner.PID) {
+		if !procctl.Alive(owner.PID) {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	killed := false
-	if pidAlive(owner.PID) {
-		_ = forceKillProcess(proc)
+	if procctl.Alive(owner.PID) {
+		_ = procctl.Kill(owner.PID)
 		time.Sleep(200 * time.Millisecond)
-		killed = pidAlive(owner.PID) // true means the kill also failed
+		killed = procctl.Alive(owner.PID) // true means the kill also failed
 	}
 
 	// Clear any lease tracking this slot — whoever held it is gone now.
