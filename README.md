@@ -90,6 +90,12 @@ agentique service uninstall
 
 Install the binary to a stable location (`~/.local/bin`, `/usr/local/bin`) before installing the service — the unit file references the binary's current path.
 
+### System tray
+
+On a desktop, `agentique tray` runs a notification-area icon to watch and control the server: status (●/○), **Open**, **Start**, **Stop**, **Restart**, **Quit**. It's a thin, decoupled controller — it does **not** host the server. When a service is installed it drives that (so it never fights restart-on-failure); otherwise it launches a detached `serve` that keeps running after the tray quits. Quitting the tray leaves the server up.
+
+Add it to login autostart alongside the service with `agentique service install --tray` (an XDG autostart entry on Linux, a second logon Scheduled Task on Windows). On a headless Linux session (no display) there's no tray — use `serve` or the service. The tray is pure-Go on Windows and Linux; on macOS it needs a `CGO_ENABLED=1` build.
+
 ## Authentication & security
 
 Authentication is **on by default** and uses **WebAuthn passkeys** (Touch ID, security keys, platform authenticators) — there are no passwords.
