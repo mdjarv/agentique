@@ -28,7 +28,7 @@ const taskDisplayPath = `\agentique`
 var taskTemplate = template.Must(template.New("task").Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Agentique — Claude Code Agent Manager</Description>
+    <Description>{{.Description}}</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -61,7 +61,7 @@ var taskTemplate = template.Must(template.New("task").Parse(`<?xml version="1.0"
   <Actions Context="Author">
     <Exec>
       <Command>{{.BinaryPath}}</Command>
-      <Arguments>serve</Arguments>
+      <Arguments>{{.Arguments}}</Arguments>
     </Exec>
   </Actions>
 </Task>
@@ -80,14 +80,20 @@ func currentUserID() string {
 	return user
 }
 
-func installWindows(binaryPath string) error {
+// createTask registers (or replaces) a logon-triggered Scheduled Task running
+// "<binaryPath> <arguments>" as the current interactive user.
+func createTask(taskName, binaryPath, arguments, description string) error {
 	var buf strings.Builder
 	data := struct {
-		BinaryPath string
-		UserID     string
+		BinaryPath  string
+		Arguments   string
+		UserID      string
+		Description string
 	}{
-		BinaryPath: xmlEscape(binaryPath),
-		UserID:     xmlEscape(currentUserID()),
+		BinaryPath:  xmlEscape(binaryPath),
+		Arguments:   xmlEscape(arguments),
+		UserID:      xmlEscape(currentUserID()),
+		Description: xmlEscape(description),
 	}
 	if err := taskTemplate.Execute(&buf, data); err != nil {
 		return fmt.Errorf("render task definition: %w", err)
@@ -105,7 +111,14 @@ func installWindows(binaryPath string) error {
 	tmp.Close()
 
 	if out, err := exec.Command("schtasks", "/Create", "/TN", taskName, "/XML", tmp.Name(), "/F").CombinedOutput(); err != nil {
-		return fmt.Errorf("schtasks /Create: %w\n%s", err, out)
+		return fmt.Errorf("schtasks /Create %s: %w\n%s", taskName, err, out)
+	}
+	return nil
+}
+
+func installWindows(binaryPath string) error {
+	if err := createTask(taskName, binaryPath, "serve", "Agentique — Claude Code Agent Manager"); err != nil {
+		return err
 	}
 
 	// Start only if not already running — never restart behind the user's back.

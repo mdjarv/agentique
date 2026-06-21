@@ -19,8 +19,11 @@ func init() {
 	serviceCmd.AddCommand(serviceRestartCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
 	serviceCmd.AddCommand(serviceLogsCmd)
+	serviceInstallCmd.Flags().BoolVar(&serviceInstallTray, "tray", false, "also autostart the system-tray controller on login")
 	rootCmd.AddCommand(serviceCmd)
 }
+
+var serviceInstallTray bool
 
 var serviceCmd = &cobra.Command{
 	Use:   "service",
@@ -114,6 +117,14 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println("  agentique service logs      — stream logs")
 		fmt.Println("  agentique service uninstall — remove service")
 	}
+
+	if serviceInstallTray {
+		if err := service.InstallTray(exe); err != nil {
+			fmt.Printf("  Tray autostart: failed (%v)\n", err)
+		} else {
+			fmt.Println("  Tray autostart: enabled ('agentique tray' on login)")
+		}
+	}
 	return nil
 }
 
@@ -205,6 +216,7 @@ func runServiceUninstall(cmd *cobra.Command, args []string) error {
 	if err := service.Uninstall(); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
 	}
+	_ = service.UninstallTray() // best effort; tray autostart may not exist
 
 	fmt.Println("Service removed")
 	return nil
