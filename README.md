@@ -14,9 +14,11 @@ Each session runs in its own git worktree, so concurrent agents never clobber ea
 
 Run `agentique doctor` at any time to check all of the above (versions, PATH, auth, data dir, free disk).
 
-> **Platform:** prebuilt binaries are published for **Linux x86_64** only. macOS and Windows are supported by the code (see [Data & locations](#data--locations)) but must be [built from source](#development).
+> **Platform:** prebuilt binaries are published for **Linux x86_64** and **Windows x86_64**. macOS is supported by the code but must be [built from source](#development).
 
 ## Install
+
+### Linux / macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
@@ -29,6 +31,16 @@ INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/mdjarv/a
 ```
 
 The installer verifies the release checksum, installs shell completions (fish/zsh/bash, detected from `$SHELL`), re-installs the systemd service unit if one is already enabled, and finishes by running `agentique doctor`. If `~/.local/bin` is not on your `PATH`, it prints the line to add.
+
+### Windows
+
+In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/mdjarv/agentique/master/install.ps1 | iex
+```
+
+Installs `agentique.exe` to `%LOCALAPPDATA%\Programs\agentique` (override with `$env:INSTALL_DIR`), verifies the checksum, adds the install dir to your user `PATH`, re-installs the scheduled-task service if one already exists, and runs `agentique doctor`. PowerShell tab-completions and the background service are set up via `agentique setup` / `agentique service install` (the latter registers a per-user **Scheduled Task** — no admin elevation required).
 
 Upgrade later by re-running the same command, or run `agentique upgrade` to see the instructions. If you run as a service, restart it afterward: `agentique service restart`.
 
@@ -65,13 +77,13 @@ Open the printed URL (default <http://localhost:9201>) and add projects via the 
 
 ### As a background service
 
-Installs a systemd user unit (Linux) or launchd agent (macOS) that starts on login and restarts on crash:
+Installs a systemd user unit (Linux), a launchd agent (macOS), or a per-user Scheduled Task (Windows) that starts on login and restarts on crash:
 
 ```bash
 agentique service install     # install + start
 agentique service status      # running? PID? unit path
 agentique service restart     # after an upgrade
-agentique service logs        # stream logs (journald/launchd)
+agentique service logs        # stream logs (journald / launchd / JSON log file on Windows)
 agentique service stop
 agentique service uninstall
 ```

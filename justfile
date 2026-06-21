@@ -130,8 +130,10 @@ release: frontend-build
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
     echo "Building dist/agentique-linux-amd64..."
-    cd backend && GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique && cd ..
-    echo "Release binary in dist/:"
+    cd backend && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique && cd ..
+    echo "Building dist/agentique-windows-amd64.exe..."
+    cd backend && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-windows-amd64.exe" ./cmd/agentique && cd ..
+    echo "Release binaries in dist/:"
     ls -lh dist/
 
 # Install locally from source (mirrors install.sh but uses local build)
