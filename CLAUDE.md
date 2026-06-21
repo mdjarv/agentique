@@ -84,3 +84,29 @@ Provider routing lives in `session.Manager` via `capturingConnector.hintNext`: e
 **Don't reach for `claudecli` types in `internal/session/`.** The single legitimate import is the `claudecli.Session` type-assertion in `session.go` (`claudeSession()`) and the error-sentinel switch in `wire.go`'s `errorDetail` / `wireErrorEvent` — both gated on provider == claude. New consumer code switches on `runtime.CLIEvent` variants and uses `runtime.Capabilities()` to gate provider-specific features.
 
 **Known gaps vs. pre-migration claude behavior** (see `docs/tech-debt.md`): `AgentResult` metadata doesn't surface today because the neutral event set omits it. `ToolOutputDeltaEvent` and `ToolProgressEvent` are rendered on in-flight tool blocks via the streaming store. `ReasoningDeltaEvent` and `TurnDiffEvent` are wired through the backend pipeline but still classified as transient/skip with no frontend renderers.
+
+## Brain / Memory
+
+The persistent agent memory ("brain") is a major subsystem. Design docs:
+`docs/brain-memory.md` (core), `docs/brain-graph-layer.md` (graph/links),
+`docs/brain-learning-dynamics.md` (feedback loops), `docs/brain-cross-scope-areas.md`
+(areas + semantic similarity). Liftable core in `internal/memory` (stdlib + yaml/uuid
+only); agentique policy in `internal/brain`; markdown source-of-truth in
+`internal/memory/filestore`, fronted by a read-through cache (`internal/memory/cachestore`).
+
+Operational facts a change here must respect:
+- **Recall is fluid + per-turn.** `Session.injectRecall` runs `Service.RecallBlock` on
+  *every* turn against the prompt, passing a session seen-set so only newly-relevant facts
+  inject (delta). A low-content gate (`memory.TokenCount`) skips trivial turns. Don't
+  reintroduce first-turn-only behavior.
+- **Areas vs communities.** `Record.Community` is scope-local; `Record.Area` is the
+  cross-scope topic sibling (`memory/areas.go`, `AssignAreas`), recomputed on the
+  sleep/tidy/global pass. Both are rebuildable indexes, never source of truth.
+- **Similarity is pluggable** (`memory/similarity.go`): Jaccard + optional embedding
+  cosine via two thresholds (`jaccard≥lexThresh OR cosine≥cosThresh`), threaded as a
+  variadic `SimOption`. Semantic clustering is **dormant without an embedder**
+  (`AGENTIQUE_BRAIN_*` + Chroma); everything degrades cleanly to keyword/Jaccard.
+- **Stopwords matter for precision** (`memory/tokenize.go`): drop conversational filler,
+  but never domain terms (e.g. `just` is the build tool, not filler).
+- After changing the brain, populate/refresh on demand with `agentique brain assign-areas`
+  / `consolidate`; `uses` only accrues via recall injection or `MemorySearch`.

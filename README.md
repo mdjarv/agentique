@@ -162,8 +162,9 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `XDG_DATA_HOME` / `XDG_CONFIG_HOME` | Override the data / config directory (Linux). |
 | `AGENTIQUE_DB` | Database file path (overridden by `--db`). |
 | `LOG_LEVEL` / `JSON_LOG` | Log level / path of the JSONL log file. |
-| `AGENTIQUE_BRAIN_CHROMA_URL`, `AGENTIQUE_BRAIN_EMBED_URL`, `AGENTIQUE_BRAIN_EMBED_MODEL`, `AGENTIQUE_BRAIN_EMBED_KEY` | Opt into semantic recall for the persistent agent memory ("brain"). Without them, recall falls back to keyword search over markdown files. |
-| `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts → session preamble) is on by default; set to `off` to disable. |
+| `AGENTIQUE_BRAIN_CHROMA_URL`, `AGENTIQUE_BRAIN_EMBED_URL`, `AGENTIQUE_BRAIN_EMBED_MODEL`, `AGENTIQUE_BRAIN_EMBED_KEY` | Opt into semantic recall **and** semantic cross-scope clustering ("areas") for the persistent agent memory ("brain"). Without them, recall and clustering fall back to keyword/Jaccard over markdown files. |
+| `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD` | Cosine link threshold for semantic area clustering (default `0.45`; model-specific — recalibrate per embedding model). Inert without an embedder. |
+| `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts in the preamble + task-relevant facts injected per turn, delta-deduped) is on by default; set to `off` to disable. |
 | `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). |
 | `AGENTIQUE_BRAIN_SLEEP_INTERVAL`, `AGENTIQUE_BRAIN_SLEEP_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). |
 
@@ -207,6 +208,8 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 | `agentique restore [name|index]` | List or restore database backups. |
 | `agentique brain backfill` | Extract durable memories from past transcripts. |
 | `agentique brain consolidate` | Run the consolidation "sleep" pass over one scope (`--project`/`--scope`, optional `--model`). |
+| `agentique brain assign-areas` | Recompute cross-scope topic "areas" and stamp them onto facts (`--dry-run` to preview). Normally automatic on the sleep/tidy/global pass. |
+| `agentique brain backfill-subsumed` | One-time: rebuild empty `Subsumed` merge-provenance on promoted facts from a snapshot (`--source` a brain dir or id-bearing export). |
 | `agentique brain export <file>` | Export the brain to a portable JSON bundle. |
 | `agentique brain import <file>` | Import a bundle, mapping projects to local ones (interactive, or `--map`/`-y`). |
 

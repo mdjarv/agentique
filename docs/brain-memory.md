@@ -209,19 +209,22 @@ The cognitive loop runs automatically, not just via the CLI/UI:
   - **Pinned facts → system preamble** at create/resume (`Service.PinnedPreamble`
     → `Manager.MemoryPreambleFn`). Always-on facts, injected before any prompt
     exists.
-  - **Task-relevant recall → first turn** (`Service.RecallBlock` →
+  - **Task-relevant recall → every turn (fluid, delta)** (`Service.RecallBlock` →
     `Manager.MemoryRecallFn`, installed per session via `wireRecall`). The system
-    preamble is fixed at connect, *before* the task prompt is known (session
-    create carries no prompt — it arrives on a separate `session.query`), so
-    query-dependent recall can't go there. Instead, the first turn of each live
-    session instance (create **or** resume) runs one `memory.Recall` against the
-    actual prompt and prepends the top-K non-pinned hits as a blockquote — visible
-    in the transcript and seen by the model. Bounded to one lookup per instance
-    (`Session.injectRecall`, fire-once + a 3s timeout); degrades to no injection
-    when the brain is off, recall is slow/fails, or nothing matches. Injected
-    facts get `BumpUses`/`LastUsedAt` stamped, so this is the read signal that
-    feeds two-factor strength (D1), strength-weighted decay, and spaced review —
-    previously starved because recall was pull-only.
+    preamble is fixed at connect, *before* the task prompt is known, so
+    query-dependent recall can't go there. Instead `Session.injectRecall` runs
+    `memory.Recall` against the actual prompt on **every** turn — recall follows the
+    conversation as it drifts, not just the first message. A session-level seen-set is
+    passed as `exclude` so each turn injects only the facts that are *newly* relevant
+    (delta — no re-dumping), and a low-content gate (`memory.TokenCount < 2`) skips
+    trivial turns ("ok", "go for it"). The top-K non-pinned hits are prepended as a
+    blockquote — visible in the transcript and seen by the model. A 3s timeout bounds
+    each lookup; degrades to no injection when the brain is off, recall is slow/fails,
+    or nothing new matches. A read-through corpus cache (`memory/cachestore`) keeps the
+    per-turn `List` cheap. Each newly-surfaced fact gets `BumpUses`/`LastUsedAt`
+    stamped, so per-turn recall is also the read signal that feeds two-factor strength
+    (D1), strength-weighted decay, and spaced review — previously starved because
+    recall was pull-only and fired once.
 - **Auto-encode (opt-in).** When a session is deleted, its transcript is distilled
   into durable facts and added to the project scope (async, deduped) — set
   `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips trivial sessions.

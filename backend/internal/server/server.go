@@ -73,6 +73,9 @@ type Config struct {
 	BrainEmbedURL   string
 	BrainEmbedModel string
 	BrainEmbedKey   string
+	// BrainSemanticThreshold overrides the cosine link threshold for semantic area
+	// clustering (model-specific; 0 = default). Inert without an embedder.
+	BrainSemanticThreshold float64
 }
 
 func devModePreamble(dbPath string) string {
@@ -229,11 +232,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var brainAuto *brain.Automation
 	if cfg.BrainDir != "" {
 		brainSvc, err := brain.New(context.Background(), brain.Config{
-			Dir:         cfg.BrainDir,
-			ChromaURL:   cfg.BrainChromaURL,
-			EmbedURL:    cfg.BrainEmbedURL,
-			EmbedModel:  cfg.BrainEmbedModel,
-			EmbedAPIKey: cfg.BrainEmbedKey,
+			Dir:               cfg.BrainDir,
+			ChromaURL:         cfg.BrainChromaURL,
+			EmbedURL:          cfg.BrainEmbedURL,
+			EmbedModel:        cfg.BrainEmbedModel,
+			EmbedAPIKey:       cfg.BrainEmbedKey,
+			SemanticThreshold: cfg.BrainSemanticThreshold,
 		})
 		if err != nil {
 			slog.Error("brain: disabled (init failed)", "error", err)

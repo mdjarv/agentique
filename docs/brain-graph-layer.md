@@ -9,7 +9,14 @@ Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 > `memory/{link,community,confidence,centrality,global_graph}.go`, `recall.go`'s
 > `expandAssociative`, the cluster-aware chunker in `brain/extractor.go`, the
 > `brain/graph.go` insight endpoint, and the relink/cluster/confidence hooks in
-> `consolidate.go`. **All RFC proposals are now shipped.** Decisions resolved:
+> `consolidate.go`. **All RFC proposals are now shipped.**
+>
+> **Built on top since (2026-06-21, see [brain-cross-scope-areas.md](brain-cross-scope-areas.md)):**
+> cross-scope topic *areas* (`Record.Area`, `memory/areas.go`) — a cross-project sibling
+> of `Community`, surfaced as `colorBy: "area"` hulls and feeding sibling-scope associative
+> recall; **fluid per-turn delta recall** (was first-turn-only); a **pluggable similarity**
+> primitive (`memory/similarity.go`) blending Jaccard with embedding cosine, wired into
+> RelinkScope/DetectCommunities/areas and activated for areas. Decisions resolved:
 > - **#1** (edge persistence): *persist* similarity edges in `Related` (rebuilt each
 >   apply); the graph view still recomputes Jaccard for dashed edges.
 > - **#2** (community algorithm): **label propagation**, made deterministic by

@@ -1,7 +1,28 @@
 # RFC: Cross-scope topic areas (B) + semantic links (C)
 
-Status: **draft for review** — no code yet. Follows the shipped phase-A graph viz
-(regions, headless-report surfacing, subsumed-on-hover).
+Status: **B shipped; C shipped (core)** — 2026-06-21. Follows the shipped phase-A graph
+viz (regions, headless-report surfacing, subsumed-on-hover).
+
+**What shipped:**
+- **B** — `Record.Area` + `AssignAreas` (`memory/areas.go`); recompute on sleep/tidy/global
+  apply; `brain assign-areas` CLI + `PreviewAreas`; `colorBy: "area"` + labelled
+  cross-project region hulls in `BrainGraph.tsx`; cross-area associative recall
+  (`expandAssociative`, sibling-scope fan-out). Areas stored as a **field** (not `Related`
+  edges), which delivered the cross-scope value without touching the RelinkScope-overwrite
+  debt — so persisted cross-scope edges (the original "fix curated-edge tagging" plan) were
+  **deferred as largely redundant**.
+- **C (core)** — pluggable `memory.Similarity` (Jaccard + cosine, two thresholds: link if
+  `jaccard≥lexThresh OR cosine≥cosThresh`), degree cap in `DetectCommunities` (anti-
+  chaining, measure-first), threaded as a variadic `SimOption` through DetectCommunities/
+  RelinkScope/CrossScopeGroups/areas (backward-compatible). **Activated for areas** (Service
+  embeds the corpus, blends cosine); tunable via `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`.
+
+**Not done (see `docs/tech-debt.md` → Brain):** per-scope RelinkScope/AssignCommunities
+accept the option but the Service doesn't thread it through `ApplyPlan` (per-scope links/
+clusters stay lexical); interference stays lexical; embeddings re-embed every pass (no
+text-hash cache); semantic is **dormant on a keyword-only deployment** (no embedder).
+Also shipped this arc but outside B/C: fluid per-turn delta recall, a recall precision fix
+(filler stopwords), and a read-through corpus cache (`memory/cachestore`).
 
 ## Problem
 

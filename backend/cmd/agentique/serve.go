@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -27,11 +28,11 @@ import (
 )
 
 var (
-	dbPath      string
-	disableAuth bool
-	logLevel    string
-	rpID        string
-	rpOrigin    string
+	dbPath         string
+	disableAuth    bool
+	logLevel       string
+	rpID           string
+	rpOrigin       string
 	tlsCert        string
 	tlsKey         string
 	logOutput      string
@@ -80,6 +81,20 @@ func preflight() error {
 // isRelease reports whether this is a release build (version set via ldflags).
 func isRelease() bool {
 	return version != "" && version != "dev"
+}
+
+// envFloat parses a float from an env var, returning 0 when unset or unparseable.
+func envFloat(name string) float64 {
+	v := os.Getenv(name)
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		slog.Warn("ignoring unparseable float env var", "name", name, "value", v)
+		return 0
+	}
+	return f
 }
 
 func resolveDBPath() string {
@@ -215,22 +230,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 	mcpInternalURL := fmt.Sprintf("http://127.0.0.1:%s/mcp", mcpPort)
 
 	cfg := server.Config{
-		AuthEnabled:       !disableAuth,
-		TestMode:          testMode,
-		DevMode:           !isRelease(),
-		DBPath:            dbFile,
-		DB:                db,
+		AuthEnabled:         !disableAuth,
+		TestMode:            testMode,
+		DevMode:             !isRelease(),
+		DBPath:              dbFile,
+		DB:                  db,
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		DevURLSlots:         fileCfg.DevURLs,
 		MCPInternalURL:      mcpInternalURL,
 		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic
 		// recall is opt-in via env (otherwise keyword recall over markdown files).
-		BrainDir:        filepath.Join(filepath.Dir(dbFile), "brain"),
-		BrainChromaURL:  os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"),
-		BrainEmbedURL:   os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"),
-		BrainEmbedModel: os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
-		BrainEmbedKey:   os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
+		BrainDir:               filepath.Join(filepath.Dir(dbFile), "brain"),
+		BrainChromaURL:         os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"),
+		BrainEmbedURL:          os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"),
+		BrainEmbedModel:        os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
+		BrainEmbedKey:          os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
+		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID
