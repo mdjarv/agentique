@@ -23,7 +23,7 @@ const maxRelatedDegree = 6
 // It currently REBUILDS Related (overwrites) — correct while nothing else writes
 // that field. When curated/human links are introduced, this must preserve them
 // (tag auto vs. curated edges) rather than overwrite.
-func RelinkScope(ctx context.Context, store Store, scope Scope) (int, error) {
+func RelinkScope(ctx context.Context, store Store, scope Scope, opts ...SimOption) (int, error) {
 	all, err := store.List(ctx, scope)
 	if err != nil {
 		return 0, err
@@ -38,10 +38,7 @@ func RelinkScope(ctx context.Context, store Store, scope Scope) (int, error) {
 		return 0, nil
 	}
 
-	toks := make([]map[string]struct{}, len(facts))
-	for i, f := range facts {
-		toks[i] = tokenSet(f.Text)
-	}
+	sim := newSimilarity(facts, opts...)
 
 	type edge struct {
 		j   int
@@ -50,9 +47,10 @@ func RelinkScope(ctx context.Context, store Store, scope Scope) (int, error) {
 	neighbors := make([][]edge, len(facts))
 	for i := 0; i < len(facts); i++ {
 		for j := i + 1; j < len(facts); j++ {
-			if sim := jaccardSets(toks[i], toks[j]); sim >= DefaultRelatedThreshold {
-				neighbors[i] = append(neighbors[i], edge{j, sim})
-				neighbors[j] = append(neighbors[j], edge{i, sim})
+			if sim.Linked(i, j, DefaultRelatedThreshold) {
+				sc := sim.Score(i, j)
+				neighbors[i] = append(neighbors[i], edge{j, sc})
+				neighbors[j] = append(neighbors[j], edge{i, sc})
 			}
 		}
 	}

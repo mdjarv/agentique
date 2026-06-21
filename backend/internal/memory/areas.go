@@ -39,7 +39,7 @@ func durableFacts(all []Record) []Record {
 // computeAreas partitions durable facts into cross-scope topic areas and returns both the
 // per-record area assignment (id "" for facts in no area) and the per-area metadata. Pure
 // and deterministic — the shared core of AssignAreas (persist) and PreviewAreas (inspect).
-func computeAreas(durable []Record, threshold float64, minScopes int) (map[string]string, []AreaInfo) {
+func computeAreas(durable []Record, threshold float64, minScopes int, opts ...SimOption) (map[string]string, []AreaInfo) {
 	if threshold <= 0 {
 		threshold = DefaultAreaThreshold
 	}
@@ -47,7 +47,7 @@ func computeAreas(durable []Record, threshold float64, minScopes int) (map[strin
 	for _, r := range durable {
 		cands = append(cands, ScopedFact{Scope: r.Scope, ID: r.ID, Text: r.Text, Category: r.Category})
 	}
-	groups := CrossScopeGroups(cands, threshold, minScopes)
+	groups := CrossScopeGroups(cands, threshold, minScopes, opts...)
 
 	areaByID := make(map[string]string)
 	usedLabels := make(map[string]int)
@@ -82,13 +82,13 @@ func computeAreas(durable []Record, threshold float64, minScopes int) (map[strin
 // it ignores captures. The Area value is a readable label derived from the group's most
 // frequent shared tokens, so it is comparable across the whole brain and needs no sidecar
 // to display. Returns the number of records whose Area changed.
-func AssignAreas(ctx context.Context, store Store, threshold float64, minScopes int) (int, error) {
+func AssignAreas(ctx context.Context, store Store, threshold float64, minScopes int, opts ...SimOption) (int, error) {
 	all, err := store.List(ctx)
 	if err != nil {
 		return 0, err
 	}
 	durable := durableFacts(all)
-	areaByID, _ := computeAreas(durable, threshold, minScopes)
+	areaByID, _ := computeAreas(durable, threshold, minScopes, opts...)
 
 	changed := 0
 	for _, r := range durable {
@@ -107,12 +107,12 @@ func AssignAreas(ctx context.Context, store Store, threshold float64, minScopes 
 
 // PreviewAreas computes the cross-scope areas without persisting anything — for a
 // read-only inspection (e.g. a CLI dry run before writing). Sorted largest-first.
-func PreviewAreas(ctx context.Context, store Store, threshold float64, minScopes int) ([]AreaInfo, error) {
+func PreviewAreas(ctx context.Context, store Store, threshold float64, minScopes int, opts ...SimOption) ([]AreaInfo, error) {
 	all, err := store.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	_, infos := computeAreas(durableFacts(all), threshold, minScopes)
+	_, infos := computeAreas(durableFacts(all), threshold, minScopes, opts...)
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].Size != infos[j].Size {
 			return infos[i].Size > infos[j].Size

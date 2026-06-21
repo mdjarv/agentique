@@ -54,7 +54,7 @@ type CrossScopeGroup struct {
 //
 // Deterministic: the partition (DetectCommunities) and every sort here are
 // order-independent, so the same candidate set always yields the same groups.
-func CrossScopeGroups(candidates []ScopedFact, threshold float64, minScopes int) []CrossScopeGroup {
+func CrossScopeGroups(candidates []ScopedFact, threshold float64, minScopes int, opts ...SimOption) []CrossScopeGroup {
 	if minScopes < 2 {
 		minScopes = 2
 	}
@@ -70,7 +70,7 @@ func CrossScopeGroups(candidates []ScopedFact, threshold float64, minScopes int)
 		scopeByID[c.ID] = c.Scope
 		factByID[c.ID] = c
 	}
-	comm := DetectCommunities(recs, threshold)
+	comm := DetectCommunities(recs, threshold, opts...)
 
 	byComm := map[int][]string{}
 	for id, c := range comm {
@@ -112,8 +112,8 @@ func CrossScopeGroups(candidates []ScopedFact, threshold float64, minScopes int)
 // communities, flattened with each group's members kept contiguous so a topic that
 // fits in a single batch is never split across two model calls (a split recurrence
 // is only caught on a later pass).
-func crossScopeCandidates(candidates []ScopedFact, threshold float64, minScopes int) []ScopedFact {
-	groups := CrossScopeGroups(candidates, threshold, minScopes)
+func crossScopeCandidates(candidates []ScopedFact, threshold float64, minScopes int, opts ...SimOption) []ScopedFact {
+	groups := CrossScopeGroups(candidates, threshold, minScopes, opts...)
 	if len(groups) == 0 {
 		return nil
 	}

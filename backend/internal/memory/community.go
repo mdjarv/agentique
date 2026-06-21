@@ -22,7 +22,7 @@ const DefaultCommunityThreshold = 0.15
 // doesn't churn files or timestamps — and it ignores captures. Returns the number
 // of records whose community changed. Run it AFTER RelinkScope so it sees the
 // freshly rebuilt edges.
-func AssignCommunities(ctx context.Context, store Store, scope Scope) (int, error) {
+func AssignCommunities(ctx context.Context, store Store, scope Scope, opts ...SimOption) (int, error) {
 	all, err := store.List(ctx, scope)
 	if err != nil {
 		return 0, err
@@ -36,7 +36,7 @@ func AssignCommunities(ctx context.Context, store Store, scope Scope) (int, erro
 	if len(facts) == 0 {
 		return 0, nil
 	}
-	comm := DetectCommunities(facts, DefaultCommunityThreshold)
+	comm := DetectCommunities(facts, DefaultCommunityThreshold, opts...)
 	changed := 0
 	for _, r := range facts {
 		c := comm[r.ID]
@@ -68,7 +68,7 @@ func AssignCommunities(ctx context.Context, store Store, scope Scope) (int, erro
 // input always yields the same labels (RFC open-decision #2 — label propagation with
 // a deterministic seed and tie-break). Isolated records (no edges) each form their
 // own singleton community. Capture records should be filtered out by the caller.
-func DetectCommunities(records []Record, threshold float64) map[string]int {
+func DetectCommunities(records []Record, threshold float64, opts ...SimOption) map[string]int {
 	result := make(map[string]int, len(records))
 	n := len(records)
 	if n == 0 {
@@ -87,12 +87,9 @@ func DetectCommunities(records []Record, threshold float64) map[string]int {
 		idx[r.ID] = i
 	}
 
-	toks := make([]map[string]struct{}, n)
-	for i, r := range nodes {
-		toks[i] = tokenSet(r.Text)
-	}
+	sim := newSimilarity(nodes, opts...)
 
-	// Build an undirected adjacency list, deduping Related and Jaccard edges so a
+	// Build an undirected adjacency list, deduping Related and similarity edges so a
 	// pair counts once. Self-edges and edges to records outside this set are dropped.
 	adj := make([][]int, n)
 	seen := make(map[[2]int]struct{})
@@ -121,10 +118,47 @@ func DetectCommunities(records []Record, threshold float64) map[string]int {
 			}
 		}
 	}
-	for i := 0; i < n; i++ {
-		for j := i + 1; j < n; j++ {
-			if jaccardSets(toks[i], toks[j]) >= threshold {
-				connect(i, j)
+	// Similarity edges. The lexical (Jaccard) graph is sparse, so connect every pair over
+	// the threshold. With embeddings the cosine graph is dense and hub facts chain the
+	// whole corpus into one cluster, so cap each node to its strongest maxSemanticDegree
+	// neighbours first (measure-first finding) — keeping label propagation, which
+	// resists chaining, as the partitioner.
+	if sim.semantic() {
+		type nb struct {
+			j int
+			s float64
+		}
+		cand := make([][]nb, n)
+		for i := 0; i < n; i++ {
+			for j := i + 1; j < n; j++ {
+				if sim.Linked(i, j, threshold) {
+					sc := sim.Score(i, j)
+					cand[i] = append(cand[i], nb{j, sc})
+					cand[j] = append(cand[j], nb{i, sc})
+				}
+			}
+		}
+		for i := 0; i < n; i++ {
+			es := cand[i]
+			sort.Slice(es, func(a, b int) bool {
+				if es[a].s != es[b].s {
+					return es[a].s > es[b].s
+				}
+				return es[a].j < es[b].j
+			})
+			if len(es) > maxSemanticDegree {
+				es = es[:maxSemanticDegree]
+			}
+			for _, x := range es {
+				connect(i, x.j)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			for j := i + 1; j < n; j++ {
+				if sim.Linked(i, j, threshold) {
+					connect(i, j)
+				}
 			}
 		}
 	}
