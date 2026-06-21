@@ -162,6 +162,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Refuse to start a second server against the same address — prevents two
+	// servers fighting over the port/data dir (e.g. a tray-launched one plus a
+	// manual start) and protects the DB from concurrent migrations below.
+	if !testMode && isServerRunning() {
+		return fmt.Errorf("agentique already running at %s — stop it first or use a different --addr", baseURL())
+	}
+
 	db, err := store.Open(dbFile)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
@@ -283,6 +290,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Handler: srv,
 	}
 
+	// Record our PID so the tray (or `agentique stop`) can find and stop us.
+	if !testMode {
+		if err := writePIDFile(); err != nil {
+			slog.Warn("could not write pid file", "error", err)
+		} else {
+			defer removePIDFile()
+		}
+	}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
@@ -307,6 +323,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	select {
 	case err := <-listenErr:
 		slog.Error("server error", "error", err)
+		removePIDFile() // os.Exit skips deferred cleanup
 		os.Exit(1)
 	case <-done:
 	}
