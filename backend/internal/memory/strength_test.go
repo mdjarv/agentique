@@ -111,3 +111,18 @@ func TestStrengthWeightedDecay(t *testing.T) {
 		t.Fatal("a strong, recently-recalled fact must survive (disuse-measured age is ~0)")
 	}
 }
+
+// A confirmed-useful outcome (Helped) builds more storage strength than the same number
+// of bare injections (Uses): corroboration counts for more than merely being shown.
+func TestStorageStrengthHelpedBeatsBareInjection(t *testing.T) {
+	shown := mk("shown", scopeA, "a fact only ever shown", CategoryFact, SourceConsolidated)
+	shown.Uses = 1
+
+	helped := mk("helped", scopeA, "a fact confirmed useful", CategoryFact, SourceConsolidated)
+	helped.Helped = 1
+
+	if StorageStrength(helped) <= StorageStrength(shown) {
+		t.Fatalf("a confirmed-useful fact should be more established than a merely-shown one: helped=%.4f shown=%.4f",
+			StorageStrength(helped), StorageStrength(shown))
+	}
+}

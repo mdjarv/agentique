@@ -50,20 +50,8 @@ func (a *MCPAdapter) MemoryAdd(ctx context.Context, sessionID, text, category st
 // deletes it outright. The agent passes the id shown in MemorySearch output. Scoped:
 // an agent may only flag facts in its own project or the global scope.
 func (a *MCPAdapter) MemoryFlag(ctx context.Context, sessionID, id, reason string) (string, error) {
-	scope := a.resolve(ctx, sessionID)
-	r, err := a.svc.Get(ctx, id)
-	if err != nil {
-		return "", fmt.Errorf("no memory with id %q", id)
-	}
-	allowed := false
-	for _, s := range recallScopes(scope) {
-		if r.Scope == s {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return "", fmt.Errorf("memory %q is not in your project or global scope", id)
+	if _, err := a.scopedGet(ctx, sessionID, id); err != nil {
+		return "", err
 	}
 	flagged, err := a.svc.Flag(ctx, id, reason)
 	if err != nil {
@@ -73,6 +61,42 @@ func (a *MCPAdapter) MemoryFlag(ctx context.Context, sessionID, id, reason strin
 		a.bus.Broadcast(EventBrainUpdated, map[string]string{})
 	}
 	return fmt.Sprintf("Flagged for review [%s]: %s", flagged.Category, flagged.Text), nil
+}
+
+// MemoryUsed records the POSITIVE outcome (RFC-LD D2 positive half, brain-outcome-signal.md):
+// an agent confirms a recalled fact was used/correct this session. It strengthens the fact and
+// raises its confidence toward the corroboration ceiling — earned trust that can graduate a
+// preference into the operating contract. Scoped like MemoryFlag: an agent may only mark facts
+// in its own project or the global scope.
+func (a *MCPAdapter) MemoryUsed(ctx context.Context, sessionID, id string) (string, error) {
+	if _, err := a.scopedGet(ctx, sessionID, id); err != nil {
+		return "", err
+	}
+	helped, err := a.svc.MarkHelped(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if a.bus != nil {
+		a.bus.Broadcast(EventBrainUpdated, map[string]string{})
+	}
+	return fmt.Sprintf("Noted as useful [%s]: %s", helped.Category, helped.Text), nil
+}
+
+// scopedGet fetches a memory by id, enforcing that it belongs to the calling session's
+// project or the global scope — the shared authorization for the agent-facing outcome tools
+// (MemoryFlag, MemoryUsed) so an agent can never touch another project's facts.
+func (a *MCPAdapter) scopedGet(ctx context.Context, sessionID, id string) (memory.Record, error) {
+	scope := a.resolve(ctx, sessionID)
+	r, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return memory.Record{}, fmt.Errorf("no memory with id %q", id)
+	}
+	for _, s := range recallScopes(scope) {
+		if r.Scope == s {
+			return r, nil
+		}
+	}
+	return memory.Record{}, fmt.Errorf("memory %q is not in your project or global scope", id)
 }
 
 // MemorySearch returns pinned plus query-relevant facts for the session's scope.
@@ -115,8 +139,9 @@ func formatRecall(res memory.Result) string {
 			writeRecallLine(&b, r)
 		}
 	}
-	// The id lets the agent flag a fact it finds wrong via MemoryFlag (RFC-LD D2).
-	b.WriteString("\n(If any fact is wrong or outdated, call MemoryFlag with its id.)")
+	// The id lets the agent feed the outcome loop (RFC-LD D2): MemoryUsed when a fact
+	// helped, MemoryFlag when it's wrong. Both take the id shown above.
+	b.WriteString("\n(If a fact helped you, call MemoryUsed with its id; if any fact is wrong or outdated, call MemoryFlag with its id.)")
 	return strings.TrimRight(b.String(), "\n")
 }
 

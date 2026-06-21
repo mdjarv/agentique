@@ -38,6 +38,9 @@ type memoryDTO struct {
 	Pinned      bool      `json:"pinned"`
 	Locked      bool      `json:"locked"`
 	Uses        int       `json:"uses"`
+	// Helped counts confirmed-useful outcomes (MemoryUsed) — a stronger signal than a
+	// bare injection (Uses); it raises strength and confidence (RFC-LD D2 positive half).
+	Helped      int       `json:"helped"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	DerivedFrom []string  `json:"derivedFrom,omitempty"`
@@ -65,7 +68,7 @@ type subsumedDTO struct {
 func toDTO(r memory.Record) memoryDTO {
 	return memoryDTO{
 		ID: r.ID, Scope: string(r.Scope), Text: r.Text, Category: string(r.Category),
-		Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked, Uses: r.Uses,
+		Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked, Uses: r.Uses, Helped: r.Helped,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DerivedFrom: r.DerivedFrom, Related: r.Related,
 		Community:       r.Community,
 		Area:            r.Area,

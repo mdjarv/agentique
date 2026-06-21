@@ -35,6 +35,7 @@ const (
 	ToolMemoryAdd      = "MemoryAdd"
 	ToolMemorySearch   = "MemorySearch"
 	ToolMemoryFlag     = "MemoryFlag"
+	ToolMemoryUsed     = "MemoryUsed"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -75,6 +76,7 @@ type MemoryStore interface {
 	MemoryAdd(ctx context.Context, sessionID, text, category string) (string, error)
 	MemorySearch(ctx context.Context, sessionID, query string) (string, error)
 	MemoryFlag(ctx context.Context, sessionID, id, reason string) (string, error)
+	MemoryUsed(ctx context.Context, sessionID, id string) (string, error)
 }
 
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
@@ -244,6 +246,27 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 			msg, err := mem.MemoryFlag(ctx, sid, args.ID, args.Reason)
 			if err != nil {
 				return akmcp.ErrorResultf("memory flag failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
+
+	type usedArgs struct {
+		ID string `json:"id"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolMemoryUsed,
+		Description: "Confirm that a recalled memory from your 'brain' was actually useful — it was correct and you acted on it this session. Pass the fact's id (shown by MemorySearch and in recalled-memory blocks). This is the positive counterpart to MemoryFlag: it strengthens the fact and raises its confidence, so well-proven preferences graduate into standing instructions. Call it whenever a recalled fact genuinely helped, so the brain learns what to trust.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"id": akmcp.StringProp{Description: "The id of the memory that helped (from MemorySearch or a recalled-memory block)."},
+			},
+			Required: []string{"id"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args usedArgs) akmcp.Result {
+			msg, err := mem.MemoryUsed(ctx, sid, args.ID)
+			if err != nil {
+				return akmcp.ErrorResultf("memory used failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),

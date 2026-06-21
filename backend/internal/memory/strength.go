@@ -25,6 +25,10 @@ const (
 	storageProvWeight = 0.15
 	// storageProvCap caps how much provenance depth (DerivedFrom) can contribute.
 	storageProvCap = 4
+	// helpedUseWeight is how many bare injections (Uses) a single confirmed-useful
+	// outcome (Helped) is worth in the saturating use term: corroborated-useful builds
+	// storage faster than merely-shown (brain-outcome-signal.md).
+	helpedUseWeight = 2
 )
 
 // StorageStrength is the durable "how well established" score in [0,1]: a blend of
@@ -39,7 +43,9 @@ func StorageStrength(r Record) float64 {
 	if conf <= 0 || conf > 1 {
 		conf = DefaultInferredScore
 	}
-	use := 1 - 1/float64(1+r.Uses) // 0 at Uses=0, asymptotically →1
+	// Confirmed-useful outcomes (Helped) count for more than bare injections (Uses):
+	// corroboration builds storage faster than merely being shown.
+	use := 1 - 1/float64(1+r.Uses+helpedUseWeight*r.Helped) // 0 when never used, asymptotically →1
 	prov := float64(min(len(r.DerivedFrom), storageProvCap)) / float64(storageProvCap)
 	return clamp01(storageConfWeight*conf + storageUseWeight*use + storageProvWeight*prov)
 }

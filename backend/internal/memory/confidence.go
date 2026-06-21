@@ -48,6 +48,13 @@ const (
 	// generalized global facts are surfaced, while ordinary inferred facts (0.8) are
 	// not nagged about.
 	NeedsConfirmationScore = CrossProjectInferredScore
+	// ActOnConfidence is the confidence at or above which a preference graduates from
+	// soft "background context" into an acted-on operating contract (brain-outcome-signal.md).
+	// It sits ABOVE DefaultInferredScore (0.8) deliberately: a freshly inferred preference
+	// must EARN the authority to drive behavior — by human Confirm (→1.0) or by outcome
+	// corroboration (MemoryUsed raising it past this gate) — before it becomes a standing
+	// instruction. Below it, a preference stays advisory and in the confirm queue.
+	ActOnConfidence = 0.85
 )
 
 // ConfidenceForSource returns the tier and score a freshly created record should

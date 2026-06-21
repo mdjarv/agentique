@@ -39,6 +39,7 @@ const (
 	AgentiqueMemoryAddTool    = "mcp__" + AgentiqueMCPServerName + "__MemoryAdd"
 	AgentiqueMemorySearchTool = "mcp__" + AgentiqueMCPServerName + "__MemorySearch"
 	AgentiqueMemoryFlagTool   = "mcp__" + AgentiqueMCPServerName + "__MemoryFlag"
+	AgentiqueMemoryUsedTool   = "mcp__" + AgentiqueMCPServerName + "__MemoryUsed"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

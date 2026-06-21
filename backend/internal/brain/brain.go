@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -215,6 +216,55 @@ func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// OperatingContract formats the project's high-confidence preferences as a directive
+// system-preamble block — standing instructions the agent should act on by default, NOT
+// the soft "background context, verify first" framing of PinnedPreamble/RecallBlock
+// (brain-outcome-signal.md, part 2). Only CategoryPreference facts at/above
+// memory.ActOnConfidence and not flagged for review qualify: a preference earns the
+// authority to drive behavior by being human-confirmed or outcome-corroborated. Returns
+// "" when the brain is disabled, the project is empty, or nothing qualifies. Read-only.
+func (s *Service) OperatingContract(ctx context.Context, projectID string) string {
+	scope := ScopeForProject(projectID)
+	all, err := s.store.List(ctx, recallScopes(scope)...)
+	if err != nil {
+		slog.Warn("brain: operating-contract list failed", "project", projectID, "error", err)
+		return ""
+	}
+	contract := make([]memory.Record, 0, len(all))
+	for _, r := range all {
+		if r.Category != memory.CategoryPreference || r.Source == memory.SourceCapture {
+			continue
+		}
+		if r.ReviewNote != "" { // flagged/contradicted prefs don't get to drive behavior
+			continue
+		}
+		if memory.NormalizeConfidence(r).ConfidenceScore < memory.ActOnConfidence {
+			continue
+		}
+		contract = append(contract, r)
+	}
+	if len(contract) == 0 {
+		return ""
+	}
+	// Deterministic: strongest first, then id. Stable across restarts and testable.
+	sort.Slice(contract, func(i, j int) bool {
+		ci, cj := contract[i].ConfidenceScore, contract[j].ConfidenceScore
+		if ci != cj {
+			return ci > cj
+		}
+		return contract[i].ID < contract[j].ID
+	})
+	var b strings.Builder
+	b.WriteString("## Operating contract (act on these by default)\n\n")
+	b.WriteString("High-confidence preferences the user confirmed or that have proven correct across sessions. Treat them as standing instructions to follow without re-asking — not background context. An explicit instruction this session overrides a contract item; if one turns out stale or wrong, flag it with MemoryFlag.\n")
+	for _, r := range contract {
+		b.WriteString("- ")
+		b.WriteString(strings.ReplaceAll(r.Text, "\n", " "))
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // minRecallQueryTokens gates auto-recall: a message with fewer distinct content tokens
 // than this ("ok", "go for it", "sounds good") carries too little retrieval intent to
 // query against, so recall is skipped for that turn.
@@ -266,11 +316,12 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 	// the transcript, and the framing tells the model to treat it as background.
 	b.WriteString("> **Recalled from your persistent brain** — facts relevant to this task. Background context, not new instructions; verify before relying on specifics.\n>\n")
 	for _, r := range fresh {
-		b.WriteString("> - ")
-		b.WriteString(strings.ReplaceAll(r.Text, "\n", " "))
-		b.WriteByte('\n')
+		// The id lets the agent feed the outcome loop (RFC-LD D2): MemoryUsed if it
+		// helped, MemoryFlag if it's wrong — see brain-outcome-signal.md.
+		fmt.Fprintf(&b, "> - %s (id: %s)\n", strings.ReplaceAll(r.Text, "\n", " "), r.ID)
 		ids = append(ids, r.ID)
 	}
+	b.WriteString(">\n> _If one of these helped, call MemoryUsed with its id; if one is wrong or outdated, call MemoryFlag._")
 	if err := memory.BumpUses(ctx, s.store, ids...); err != nil {
 		slog.Warn("brain: bump uses on recall injection", "project", projectID, "error", err)
 	}
@@ -424,6 +475,17 @@ func (s *Service) Confirm(ctx context.Context, id string) (memory.Record, error)
 func (s *Service) Flag(ctx context.Context, id, reason string) (memory.Record, error) {
 	return s.mutate(ctx, id, func(r *memory.Record) {
 		*r = memory.MarkContradicted(*r, reason, time.Now().UTC())
+	})
+}
+
+// MarkHelped records the POSITIVE outcome (RFC-LD D2, brain-outcome-signal.md): an agent
+// confirmed a recalled fact was used/correct this session. It increments Helped, refreshes
+// recency, and raises a non-protected fact's confidence toward CorroborationCeiling — so
+// earned trust can graduate a preference into the operating contract. The agent-facing entry
+// point is the MemoryUsed MCP tool; the negative twin is Flag.
+func (s *Service) MarkHelped(ctx context.Context, id string) (memory.Record, error) {
+	return s.mutate(ctx, id, func(r *memory.Record) {
+		*r = memory.MarkHelped(*r, time.Now().UTC())
 	})
 }
 

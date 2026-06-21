@@ -19,6 +19,7 @@ func sampleRecord() memory.Record {
 	r.Pinned = true
 	r.Locked = true
 	r.Uses = 3
+	r.Helped = 2
 	r.CreatedAt = time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
 	r.UpdatedAt = time.Date(2026, 6, 16, 12, 30, 0, 0, time.UTC)
 	r.LastUsedAt = time.Date(2026, 6, 17, 9, 0, 0, 0, time.UTC)
@@ -41,7 +42,7 @@ func TestPutGetRoundTrip(t *testing.T) {
 	if got.Text != want.Text || got.Category != want.Category || got.Source != want.Source {
 		t.Fatalf("core fields mismatch: %+v", got)
 	}
-	if got.Scope != want.Scope || !got.Pinned || !got.Locked || got.Uses != 3 {
+	if got.Scope != want.Scope || !got.Pinned || !got.Locked || got.Uses != 3 || got.Helped != 2 {
 		t.Fatalf("metadata mismatch: %+v", got)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {

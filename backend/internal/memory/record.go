@@ -59,8 +59,14 @@ type Record struct {
 	// Locked records are exempt from consolidation rewrite/merge/decay — set this
 	// on hand-edited records so the brain does not overwrite a human's correction.
 	Locked bool
-	// Uses counts how many times this record was injected into a prompt.
+	// Uses counts how many times this record was injected into a prompt — the
+	// weakest signal ("shown"). Distinct from Helped ("confirmed useful").
 	Uses int
+	// Helped counts confirmed-useful outcomes: times an agent that saw this fact
+	// explicitly acknowledged it was used/correct via the MemoryUsed tool (RFC-LD
+	// D2 positive half — see brain-outcome-signal.md). A stronger signal than a bare
+	// injection; it raises both StorageStrength and (via MarkHelped) ConfidenceScore.
+	Helped int
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

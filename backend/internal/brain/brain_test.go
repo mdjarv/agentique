@@ -324,6 +324,83 @@ func TestMCPMemoryFlag(t *testing.T) {
 	}
 }
 
+// MemoryUsed (RFC-LD D2 positive half) strengthens a recalled fact an agent confirmed
+// useful: it raises confidence and Helped, is scoped to the session's own project +
+// global, and never touches another project's facts.
+func TestMCPMemoryUsed(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	resolve := func(_ context.Context, sid string) memory.Scope { return ScopeForProject(sid) }
+	a := NewMCPAdapter(s, resolve)
+
+	own, _ := s.Add(ctx, ScopeForProject("p1"), "deploys run via just release", memory.CategoryFact, memory.SourceAgent)
+	other, _ := s.Add(ctx, ScopeForProject("p2"), "p2 only fact", memory.CategoryFact, memory.SourceAgent)
+	before, _ := s.Get(ctx, own.ID)
+
+	if _, err := a.MemoryUsed(ctx, "p1", own.ID); err != nil {
+		t.Fatalf("marking own fact useful should succeed: %v", err)
+	}
+	got, _ := s.Get(ctx, own.ID)
+	if got.Helped != 1 {
+		t.Fatalf("MemoryUsed should increment Helped, got %d", got.Helped)
+	}
+	if got.ConfidenceScore <= before.ConfidenceScore {
+		t.Fatalf("a positive outcome should raise confidence: %.4f !> %.4f", got.ConfidenceScore, before.ConfidenceScore)
+	}
+
+	// An agent in p1 cannot mark a p2 fact.
+	if _, err := a.MemoryUsed(ctx, "p1", other.ID); err == nil {
+		t.Fatal("marking another project's fact must be rejected")
+	}
+}
+
+// OperatingContract elevates only high-confidence, non-flagged preferences to standing
+// instructions; a fresh inferred preference must EARN its place (human confirm or outcome
+// corroboration), and non-preferences / flagged prefs never appear.
+func TestOperatingContract(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	p1 := ScopeForProject("p1")
+
+	// A fresh agent-inferred preference (0.8) is below the act-on gate → not yet in the contract.
+	pref, _ := s.Add(ctx, p1, "Never push without being asked.", memory.CategoryPreference, memory.SourceAgent)
+	// A human-authored preference (ground truth) → in the contract immediately.
+	if _, err := s.Add(ctx, p1, "Commit on the current branch; do not branch unprompted.", memory.CategoryPreference, memory.SourceHuman); err != nil {
+		t.Fatal(err)
+	}
+	// A high-confidence non-preference fact → never in the contract.
+	if _, err := s.Add(ctx, p1, "The build tool is just.", memory.CategoryProject, memory.SourceHuman); err != nil {
+		t.Fatal(err)
+	}
+
+	contract := s.OperatingContract(ctx, "p1")
+	if strings.Contains(contract, "Never push") {
+		t.Fatalf("a fresh inferred pref should NOT yet drive behavior:\n%s", contract)
+	}
+	if !strings.Contains(contract, "Commit on the current branch") {
+		t.Fatalf("a human-authored pref should be in the contract:\n%s", contract)
+	}
+	if strings.Contains(contract, "build tool is just") {
+		t.Fatalf("a non-preference fact must not appear in the contract:\n%s", contract)
+	}
+
+	// One positive outcome graduates the inferred pref past the gate → now in the contract.
+	if _, err := s.MarkHelped(ctx, pref.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.OperatingContract(ctx, "p1"); !strings.Contains(got, "Never push") {
+		t.Fatalf("a corroborated pref should graduate into the contract:\n%s", got)
+	}
+
+	// A contradiction demotes it back out (flagged → excluded even though score may matter).
+	if _, err := s.Flag(ctx, pref.ID, "user pushed manually this session"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.OperatingContract(ctx, "p1"); strings.Contains(got, "Never push") {
+		t.Fatalf("a flagged pref must drop out of the contract:\n%s", got)
+	}
+}
+
 // Applying a plan must clear the held preview job, so GET /consolidate/job stops
 // serving it and the frontend can't re-hydrate an already-applied proposal on every
 // remount (the "same proposal shows up every time" bug).

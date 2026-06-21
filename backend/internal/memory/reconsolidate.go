@@ -16,6 +16,39 @@ import (
 // never auto-deleted.
 const ContradictedScore = 0.4
 
+const (
+	// CorroborationCeiling is the highest ConfidenceScore a fact can reach by outcome
+	// corroboration alone (positive MemoryUsed acknowledgements). It sits BELOW
+	// ScoreGroundTruth (1.0) on purpose: ground truth is asserted by a human (Confirm),
+	// not earned by agent corroboration (see brain-outcome-signal.md, RFC-LD #5).
+	CorroborationCeiling = 0.95
+	// corroborationGapClose is the fraction of the remaining gap to CorroborationCeiling
+	// that a single positive outcome closes (0.8 → 0.875 → 0.9125 → …). Asymptotic, so
+	// no single MemoryUsed call can jump a fact more than halfway to the ceiling — a
+	// guardrail against an agent self-certifying a wrong fact (RFC Non-goals: false memories).
+	corroborationGapClose = 0.5
+)
+
+// MarkHelped applies the POSITIVE half of reconsolidation (RFC-LD D2): an agent that
+// recalled this fact explicitly confirmed it was used/correct (the MemoryUsed tool).
+// Unlike a bare injection (BumpUses, "shown"), a confirmed-useful outcome is corroboration:
+// it increments Helped, stamps LastUsedAt (it was just used — retrieval recency), and for a
+// non-protected fact raises ConfidenceScore toward CorroborationCeiling, closing half the gap
+// each time. Protected facts (pinned / locked / human ground truth) keep their score — we never
+// let an agent re-rate what a human asserted — but still accrue the Helped count.
+//
+// Like BumpUses (and unlike MarkContradicted, which surfaces a fact for review), it leaves
+// UpdatedAt untouched: a positive outcome is retrieval practice, not a content edit. now stamps
+// LastUsedAt.
+func MarkHelped(r Record, now time.Time) Record {
+	r.Helped++
+	r.LastUsedAt = now
+	if !isProtected(r) && r.ConfidenceScore < CorroborationCeiling {
+		r.ConfidenceScore += corroborationGapClose * (CorroborationCeiling - r.ConfidenceScore)
+	}
+	return NormalizeConfidence(r)
+}
+
 // maxReviewNote bounds the stored reason so an over-eager agent can't write an essay
 // into a fact's frontmatter.
 const maxReviewNote = 280

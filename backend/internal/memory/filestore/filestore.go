@@ -44,6 +44,7 @@ type frontmatter struct {
 	Pinned      bool         `yaml:"pinned,omitempty"`
 	Locked      bool         `yaml:"locked,omitempty"`
 	Uses        int          `yaml:"uses"`
+	Helped      int          `yaml:"helped,omitempty"`
 	Created     time.Time    `yaml:"created"`
 	Updated     time.Time    `yaml:"updated"`
 	LastUsed    time.Time    `yaml:"last_used,omitempty"`
@@ -72,6 +73,7 @@ func toFrontmatter(r memory.Record) frontmatter {
 		Pinned:      r.Pinned,
 		Locked:      r.Locked,
 		Uses:        r.Uses,
+		Helped:      r.Helped,
 		Created:     r.CreatedAt.UTC(),
 		Updated:     r.UpdatedAt.UTC(),
 		LastUsed:    r.LastUsedAt.UTC(),
@@ -125,6 +127,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		Pinned:          m.Pinned,
 		Locked:          m.Locked,
 		Uses:            m.Uses,
+		Helped:          m.Helped,
 		LastUsedAt:      m.LastUsed,
 		CreatedAt:       m.Created,
 		UpdatedAt:       m.Updated,

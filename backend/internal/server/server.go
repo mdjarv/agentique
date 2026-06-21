@@ -284,7 +284,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			if v := os.Getenv("AGENTIQUE_BRAIN_RECALL"); v != "off" && v != "false" && v != "0" {
 				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
 				mgr.MemoryRecallFn = brainSvc.RecallBlock
-				slog.Info("brain: auto-recall enabled (pinned facts in preamble + task-relevant recall on the first turn)")
+				// Operating contract: high-confidence preferences become acted-on standing
+				// instructions in the preamble, not just soft context (brain-outcome-signal.md).
+				mgr.MemoryContractFn = brainSvc.OperatingContract
+				slog.Info("brain: auto-recall enabled (pinned facts + operating contract in preamble + task-relevant recall on the first turn)")
 			}
 
 			// Auto-encode (opt-in): distill durable memories from a finished session's
