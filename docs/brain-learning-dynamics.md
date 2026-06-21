@@ -17,6 +17,16 @@ Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md) and
 > and the `dueForReview` / `interference` lists in `brain/graph.go`. **D3 (salience-gated
 > consolidation)** and **D4 (episodic staging + replay)** remain — both wait on the outcome
 > signal (open decision #2); D2's `MemoryFlag` is the first concrete instance of that signal.
+>
+> **Progress (2026-06-21):** the **positive outcome signal** shipped — `MemoryUsed`
+> (positive twin of `MemoryFlag`), `memory.MarkHelped`, `Record.Helped`, and confidence
+> **calibration** (a confirmed-useful recall raises `ConfidenceScore` toward a 0.95
+> corroboration ceiling). This **resolves the positive half of decision #2** and **decision
+> #5 (calibration)**, and feeds part 2: high-confidence preferences now drive behavior via
+> `Service.OperatingContract`. The remaining open part of decision #2 is the *automatic*
+> emitter (session-end judge / transcript analysis). See
+> [brain-outcome-signal.md](brain-outcome-signal.md). D3/D4 can now build on `Helped` /
+> outcome-derived salience.
 
 ## Motivation
 
@@ -160,28 +170,39 @@ New to this RFC:
 1. ~~**Storage strength: derived vs. persisted field?**~~ **Resolved: derived** (`StorageStrength`
    in `strength.go`, computed from confidence + cumulative `Uses` + `DerivedFrom` depth). The one
    new persisted field is `LastUsedAt` (recall timestamp), needed for retrieval-strength disuse.
-2. **The outcome / contradiction signal — who emits it?** **Partly resolved:** D2 shipped the
-   *explicit agent tool* (`MemoryFlag`) as the first emitter. Still open for D3/calibration: whether
-   to add a session-end LLM judge or transcript analysis for an *automatic* signal, vs. relying on
-   the agent volunteering one. D3/calibration still block on this.
+2. **The outcome / contradiction signal — who emits it?** **Mostly resolved:** both explicit
+   agent emitters now exist — `MemoryFlag` (negative/contradiction) and `MemoryUsed`
+   (positive/confirmed-useful, 2026-06-21; see [brain-outcome-signal.md](brain-outcome-signal.md)).
+   Still open: whether to add a session-end LLM judge or transcript analysis for an *automatic*
+   signal, vs. relying on the agent volunteering one. The cheap explicit precursors shipped first
+   (mirroring how D2 shipped `MemoryFlag` before any auto-detector); the automatic emitter remains
+   future work, and is the bigger lever for making the signal non-inert on the live corpus.
 3. **Reconsolidation gating.** How much may recall change a fact without human review, and how is an
    auto-update marked in provenance?
 4. **Scheduler placement.** D6 as part of the sleep pass, or a separate lighter tick.
-5. **Confidence calibration.** Track high-confidence-correct vs. high-confidence-wrong to recalibrate
-   the score bands — needs the D2 outcome signal.
+5. ~~**Confidence calibration.**~~ **Resolved (2026-06-21):** a confirmed-useful outcome
+   (`MarkHelped`) raises `ConfidenceScore` toward a 0.95 corroboration ceiling (gap-closing,
+   below human ground truth); a contradiction (`MarkContradicted`) knocks it down. Trust is now
+   calibrated by outcome, not frozen at encode time, and gates behaviour at `ActOnConfidence`
+   (the operating contract). Tracking *aggregate* high-confidence-correct vs. high-confidence-wrong
+   rates for band re-tuning remains a future refinement. See
+   [brain-outcome-signal.md](brain-outcome-signal.md).
 
 ## Sequencing
 
 1. ~~**D1 — two-factor strength.**~~ ✅ done (`memory/strength.go`, `Record.LastUsedAt`,
    `DecayPolicy.StrengthWeighted`). Foundational: D6 builds on it.
-2. ~~**D2 — reconsolidating recall (keystone).**~~ ✅ done. Both halves shipped: strengthen-on-recall
-   (`BumpUses` stamps `LastUsedAt`) and the contradiction half via the `MemoryFlag` agent tool +
-   `memory.MarkContradicted`.
+2. ~~**D2 — reconsolidating recall (keystone).**~~ ✅ done. All three signals shipped:
+   inject/"shown" (`BumpUses` stamps `LastUsedAt`), the contradiction half (`MemoryFlag` +
+   `memory.MarkContradicted`), and — 2026-06-21 — the true positive "confirmed-useful" half
+   (`MemoryUsed` + `memory.MarkHelped` + `Record.Helped`, with confidence calibration). See
+   [brain-outcome-signal.md](brain-outcome-signal.md).
 3. ~~**D5 — interference detection.**~~ ✅ done (`memory/interference.go`; surfaced in the graph report).
 4. ~~**D6 — spaced-review scheduling.**~~ ✅ done (`memory.DueForReview`; `dueForReview` in the report).
    (Done out of original order — it only needed D1, and rode along with D5 in the report.)
-5. **D3 — salience-gated consolidation.** Remaining. Lands with the automatic-outcome-signal work
-   (decision #2); `MemoryFlag` is the manual precursor.
+5. **D3 — salience-gated consolidation.** Remaining. Now unblocked on the *signal* side:
+   `Record.Helped` (and contradiction flags) are outcome-derived salience inputs encode/decay
+   can weight. Pairs with the automatic-outcome-signal work (decision #2).
 6. **D4 — episodic staging + replay.** Remaining. Largest; activates the dormant `capture` path and
    attacks scope bloat at the root.
 

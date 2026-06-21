@@ -3,8 +3,9 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-21 (cross-scope areas, pluggable semantic similarity, fluid
-per-turn recall + corpus cache, recall precision). Prior: 2026-06-18 (RFC-LD + review surface).
+Last full audit: 2026-06-21 (outcome signal v1: MemoryUsed + confidence calibration +
+operating contract; cross-scope areas, pluggable semantic similarity, fluid per-turn recall
++ corpus cache, recall precision). Prior: 2026-06-18 (RFC-LD + review surface).
 
 ## P0 — Will bite a user
 
@@ -111,14 +112,26 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
 Several shipped features can't yet show value because their inputs don't exist in
 practice:
 - **Two-factor strength + strength-weighted decay (D1):** `RetrievalStrength` decays
-  from `LastUsedAt`, which is only stamped by `MemorySearch` (`BumpUses`) — and `uses`
-  is `0` across the entire live corpus (recall is pull-based and agents rarely call the
-  tool). So retrieval ≈ storage and `DecayPolicy.StrengthWeighted` is a no-op until real
-  query-relevant recall traffic exists. The mechanism is correct; it's starved of signal.
+  from `LastUsedAt`, which is only stamped by `MemorySearch`/per-turn recall injection
+  (`BumpUses`) and the new `MemoryUsed` outcome tool — and `uses`/`helped` are `0` across
+  the entire live corpus (recall injection is recent; agents rarely call the explicit
+  tools). So retrieval ≈ storage and `DecayPolicy.StrengthWeighted` is a near-no-op until
+  real recall/outcome traffic accrues. The mechanism is correct; it's starved of signal.
+- **Outcome signal v1 (D2 positive half, 2026-06-21):** `MemoryUsed` / `MarkHelped` /
+  `Record.Helped` + confidence calibration shipped (`brain-outcome-signal.md`), but like
+  `MemoryFlag` the signal is **agent-volunteered** — its value depends on agents actually
+  calling the tool. The recall framing now prompts for it, but on the live corpus `helped`
+  is `0` everywhere until agents adopt it. The durable fix is the *automatic* emitter
+  (session-end judge / transcript analysis — RFC decision #2's open branch). Until then,
+  the **operating contract** is the one piece that is **already non-inert**: 8 human-
+  confirmed global preferences surface as acted-on directives today (verified on an isolated
+  copy), since human `Confirm` (→1.0) clears the `ActOnConfidence` gate without needing the
+  outcome loop.
 - **Interference + due-for-review (D5/D6):** computed and served in `GET /graph`'s
   report (`interference`, `dueForReview`) but **rendered nowhere** — no frontend
-  consumer. Backend-only features drift toward "we built it but no one sees it."
-→ `internal/memory/{strength,interference}.go`, `internal/brain/graph.go`,
+  consumer. Backend-only features drift toward "we built it but no one sees it." The new
+  `Helped` count is likewise served in the `memoryDTO` but has no brain-UI badge yet.
+→ `internal/memory/{strength,interference,reconsolidate}.go`, `internal/brain/{graph,brain}.go`,
 `frontend/src/components/brain/`.
 
 ### Brain: refine/edit leave stale provenance
@@ -377,6 +390,17 @@ mid-conversation on real topic drift; semantic clustering with a real embedder (
 keyword-only, `semantic=false`); `brain assign-areas` applied to the live brain (only run
 on a copy; `backfill-subsumed` was only `--dry-run` against live). Needs a configured
 embedder + a multi-turn live session to close. → verification gap, not a known bug.
+
+**Outcome signal v1 (2026-06-21) — partially closed.** Verified on an isolated copy of the
+live brain (server boot with `AGENTIQUE_HOME`/`AGENTIQUE_DB` redirected to temp copies):
+`OperatingContract` produces a correct, non-empty contract for 16/16 scopes; `MarkHelped`
+calibration follows the gap-closing curve (0.875→0.9125→0.9312) under the 0.95 ceiling; the
+`helped` field serializes over `GET /api/brain/memories`; the server logs the operating-
+contract preamble wiring as active. **Still not exercised:** the `MemoryUsed` tool over the
+real `/mcp` HTTP transport by a model-backed agent (the token is minted per-session at
+session creation, which needs a live `claude` run), and whether agents actually *call*
+`MemoryUsed`/`MemoryFlag` mid-task often enough to move the corpus. Needs a live multi-turn
+session to close. → verification gap, not a known bug.
 
 ### Brain: scopeColor is a 10-entry hash (collisions possible)
 `~/lib/scope-color.ts` hashes a scope into a 10-colour palette, so two projects can
