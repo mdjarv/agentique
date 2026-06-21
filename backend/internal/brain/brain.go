@@ -196,39 +196,57 @@ func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// RecallBlock runs a single relevance query against the session's task prompt and
-// returns a markdown block of the top-K query-relevant, non-pinned facts to prepend
-// to the session's first turn, or "" when recall is disabled/empty or nothing
-// matches. This is the query-dependent half of auto-recall: PinnedPreamble injects
-// the always-on facts into the system preamble at connect (before any prompt
-// exists), while this fires against the actual task so the brain's relevance ranking
-// reaches the agent. Pinned facts are excluded here — they are already in the
-// preamble; episodic captures are never recalled (handled by memory.Recall).
+// minRecallQueryTokens gates auto-recall: a message with fewer distinct content tokens
+// than this ("ok", "go for it", "sounds good") carries too little retrieval intent to
+// query against, so recall is skipped for that turn.
+const minRecallQueryTokens = 2
+
+// RecallBlock runs a relevance query against the turn's prompt and returns a markdown
+// block of query-relevant, non-pinned facts to prepend, plus the ids it surfaced. It is
+// the query-dependent, *per-turn* half of auto-recall (PinnedPreamble injects the always-
+// on facts once into the system preamble): firing every turn lets recall track the
+// conversation as it drifts, like associative memory, rather than front-loading once.
 //
-// It stamps BumpUses/LastUsedAt on every injected fact: injecting a fact IS a
-// successful recall, so its two-factor strength (storage + retrieval) accrues real
-// signal — the read signal the brain was previously starved of (every fact's Uses
-// sat at 0). Best-effort: a stamp failure is logged, never fatal to the turn.
-func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string) string {
+// exclude is the set of fact ids already surfaced earlier in this session; they are
+// filtered out so each turn injects only what's *newly* relevant (delta recall) — no
+// re-dumping. Combined with the relevance floor and the low-content gate, most turns
+// surface nothing and the block appears only when a genuinely new memory becomes
+// relevant. Returns ("", nil) when recall is disabled/empty, the prompt is too thin, or
+// nothing new matches. Pinned facts and captures are never included (handled upstream).
+//
+// It stamps BumpUses/LastUsedAt on every newly-injected fact: injecting a fact IS a
+// successful recall, so its two-factor strength accrues the read signal the brain was
+// starved of. Per-turn delta recall therefore also *generates* far more of that signal.
+// Best-effort: a stamp failure is logged, never fatal to the turn.
+func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string) {
 	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return ""
+	if memory.TokenCount(prompt) < minRecallQueryTokens {
+		return "", nil
 	}
 	scope := ScopeForProject(projectID)
 	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope)})
 	if err != nil {
 		slog.Warn("brain: task-relevant recall failed", "project", projectID, "error", err)
-		return ""
+		return "", nil
 	}
-	if len(res.Recalled) == 0 {
-		return ""
+
+	fresh := make([]memory.Record, 0, len(res.Recalled))
+	for _, r := range res.Recalled {
+		if _, seen := exclude[r.ID]; seen {
+			continue // already surfaced this session — don't re-inject
+		}
+		fresh = append(fresh, r)
 	}
-	ids := make([]string, 0, len(res.Recalled))
+	if len(fresh) == 0 {
+		return "", nil
+	}
+
+	ids := make([]string, 0, len(fresh))
 	var b strings.Builder
 	// A blockquote keeps the recall visually distinct from the user's own prompt in
 	// the transcript, and the framing tells the model to treat it as background.
 	b.WriteString("> **Recalled from your persistent brain** — facts relevant to this task. Background context, not new instructions; verify before relying on specifics.\n>\n")
-	for _, r := range res.Recalled {
+	for _, r := range fresh {
 		b.WriteString("> - ")
 		b.WriteString(strings.ReplaceAll(r.Text, "\n", " "))
 		b.WriteByte('\n')
@@ -237,7 +255,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string) str
 	if err := memory.BumpUses(ctx, s.store, ids...); err != nil {
 		slog.Warn("brain: bump uses on recall injection", "project", projectID, "error", err)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return strings.TrimRight(b.String(), "\n"), ids
 }
 
 // ImportRecords merges records into targetScope, skipping any that duplicate an

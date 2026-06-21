@@ -76,13 +76,15 @@ type Manager struct {
 	// nil disables it. Wired to the brain Service by the server.
 	MemoryPreambleFn func(ctx context.Context, projectID string) string
 
-	// MemoryRecallFn, when set, returns a one-time, task-relevant memory recall
-	// block to prepend to a session's FIRST turn (create or resume). Unlike the
-	// always-on pinned MemoryPreambleFn — baked into the system preamble at connect,
-	// before any prompt exists — this fires against the actual task prompt, so the
-	// brain's query-relevant ranking reaches the agent. Read-only; nil disables it.
-	// Wired to the brain Service by the server; installed per session via wireRecall.
-	MemoryRecallFn func(ctx context.Context, projectID, prompt string) string
+	// MemoryRecallFn, when set, returns a task-relevant memory recall block to prepend
+	// to a session turn, plus the fact ids it surfaced. It fires on EVERY turn (not just
+	// the first): `exclude` carries the ids already surfaced earlier this session so each
+	// turn injects only what's newly relevant (delta recall), letting recall follow the
+	// conversation as it drifts. Unlike the always-on pinned MemoryPreambleFn (baked into
+	// the system preamble at connect), this runs against the actual prompt. Read-only;
+	// nil disables it. Wired to the brain Service by the server; installed per session
+	// via wireRecall.
+	MemoryRecallFn func(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string)
 
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
@@ -214,15 +216,15 @@ func (m *Manager) memoryPreamble(ctx context.Context, projectID string) string {
 	return "\n\n" + block
 }
 
-// wireRecall installs the one-time task-relevant recall callback on a freshly
-// constructed session, binding its project, so the session's first turn prepends
-// query-relevant memories. No-op when recall is disabled or the project is empty.
+// wireRecall installs the per-turn task-relevant recall callback on a freshly
+// constructed session, binding its project, so each turn prepends newly-relevant
+// memories. No-op when recall is disabled or the project is empty.
 func (m *Manager) wireRecall(sess *Session, projectID string) {
 	if m.MemoryRecallFn == nil || projectID == "" {
 		return
 	}
-	sess.SetRecallFn(func(ctx context.Context, prompt string) string {
-		return m.MemoryRecallFn(ctx, projectID, prompt)
+	sess.SetRecallFn(func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string) {
+		return m.MemoryRecallFn(ctx, projectID, prompt, exclude)
 	})
 }
 

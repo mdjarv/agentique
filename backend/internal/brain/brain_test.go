@@ -84,7 +84,7 @@ func TestRecallBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	block := s.RecallBlock(ctx, "p1", "how do database migrations work with goose")
+	block, _ := s.RecallBlock(ctx, "p1", "how do database migrations work with goose", nil)
 	if !strings.Contains(block, "goose numbering") {
 		t.Fatalf("recall block should surface the relevant fact, got:\n%s", block)
 	}
@@ -111,15 +111,21 @@ func TestRecallBlock(t *testing.T) {
 		t.Fatal("recalled fact LastUsedAt should be stamped")
 	}
 
-	// An empty prompt and a no-match query both yield no injection (and no bump).
-	if b := s.RecallBlock(ctx, "p1", ""); b != "" {
-		t.Fatalf("empty prompt should yield no recall block, got:\n%s", b)
+	// Delta recall: a fact already surfaced this session (passed in exclude) is not
+	// re-injected, even though it still matches the query.
+	if b, _ := s.RecallBlock(ctx, "p1", "how do database migrations work with goose", map[string]struct{}{rel.ID: {}}); b != "" {
+		t.Fatalf("an already-seen fact must not be re-injected, got:\n%s", b)
 	}
-	if b := s.RecallBlock(ctx, "p1", "xyzzy plugh unrelated nonsense"); b != "" {
+
+	// A too-thin prompt and a no-match query both yield no injection (and no bump).
+	if b, _ := s.RecallBlock(ctx, "p1", "ok", nil); b != "" {
+		t.Fatalf("a low-content prompt should yield no recall block, got:\n%s", b)
+	}
+	if b, _ := s.RecallBlock(ctx, "p1", "xyzzy plugh unrelated nonsense", nil); b != "" {
 		t.Fatalf("a query that matches nothing should yield no recall block, got:\n%s", b)
 	}
 	if got2, _ := s.Get(ctx, rel.ID); got2.Uses != 1 {
-		t.Fatalf("Uses must not advance on empty/no-match recalls, got %d", got2.Uses)
+		t.Fatalf("Uses must not advance on excluded/thin/no-match recalls, got %d", got2.Uses)
 	}
 }
 

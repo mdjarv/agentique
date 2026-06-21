@@ -57,6 +57,11 @@ func tokenize(s string) []string {
 	return out
 }
 
+// TokenCount returns how many distinct significant tokens a string yields after
+// stopword/length filtering — a cheap proxy for whether a message carries enough
+// retrieval intent to recall against (vs. "ok" or "go for it").
+func TokenCount(s string) int { return len(tokenSet(s)) }
+
 // tokenSet returns the unique tokens of s.
 func tokenSet(s string) map[string]struct{} {
 	toks := tokenize(s)

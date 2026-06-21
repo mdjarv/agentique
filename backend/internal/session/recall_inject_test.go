@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// injectRecall fires at most once per live session instance, prepends the recall
-// block to the prompt, and degrades cleanly when recall is disabled or empty.
+// injectRecall fires every turn, prepends the recall block, passes the already-seen
+// ids for delta dedup, and degrades cleanly when recall is disabled or returns nothing.
 func TestInjectRecall(t *testing.T) {
 	t.Run("no recall fn leaves the prompt unchanged", func(t *testing.T) {
 		sess := &Session{ID: "s1"}
@@ -16,49 +16,56 @@ func TestInjectRecall(t *testing.T) {
 		}
 	})
 
-	t.Run("prepends the block on the first turn, then never again", func(t *testing.T) {
+	t.Run("fires every turn and dedups via the exclude set", func(t *testing.T) {
 		var calls int
+		var lastExclude map[string]struct{}
 		sess := &Session{ID: "s1"}
-		sess.SetRecallFn(func(_ context.Context, prompt string) string {
+		// First call surfaces id "a"; later calls must see "a" in the exclude set and
+		// return nothing new.
+		sess.SetRecallFn(func(_ context.Context, prompt string, exclude map[string]struct{}) (string, []string) {
 			calls++
-			return "> recalled: " + prompt
+			lastExclude = exclude
+			if _, seen := exclude["a"]; seen {
+				return "", nil
+			}
+			return "> recalled: " + prompt, []string{"a"}
 		})
 
-		got := sess.injectRecall("build the thing")
-		if !strings.HasPrefix(got, "> recalled: build the thing") || !strings.HasSuffix(got, "build the thing") {
+		got := sess.injectRecall("first task")
+		if !strings.HasPrefix(got, "> recalled: first task") || !strings.HasSuffix(got, "first task") {
 			t.Fatalf("first turn should prepend the block, got %q", got)
 		}
 		if !strings.Contains(got, "\n\n") {
 			t.Fatalf("block and prompt should be separated by a blank line, got %q", got)
 		}
 
-		// Second turn: fire-once gate — the prompt passes through untouched and the
-		// recall fn is not called again (cost stays bounded to one lookup).
-		if got2 := sess.injectRecall("next message"); got2 != "next message" {
-			t.Fatalf("second turn should not inject, got %q", got2)
+		// Second turn: the fn fires again (per-turn), but "a" is now excluded → no inject.
+		if got2 := sess.injectRecall("second task"); got2 != "second task" {
+			t.Fatalf("second turn should pass through (a already seen), got %q", got2)
 		}
-		if calls != 1 {
-			t.Fatalf("recall fn should fire exactly once, fired %d times", calls)
+		if calls != 2 {
+			t.Fatalf("recall fn should fire every turn, fired %d", calls)
+		}
+		if _, ok := lastExclude["a"]; !ok {
+			t.Fatalf("second turn should pass the already-seen id in the exclude set")
 		}
 	})
 
-	t.Run("empty block leaves the prompt unchanged but still consumes the one-shot", func(t *testing.T) {
+	t.Run("empty block leaves the prompt unchanged and records nothing", func(t *testing.T) {
 		var calls int
 		sess := &Session{ID: "s1"}
-		sess.SetRecallFn(func(_ context.Context, _ string) string {
+		sess.SetRecallFn(func(_ context.Context, _ string, _ map[string]struct{}) (string, []string) {
 			calls++
-			return "   " // nothing relevant recalled
+			return "", nil
 		})
-
 		if got := sess.injectRecall("build the thing"); got != "build the thing" {
 			t.Fatalf("empty block should leave prompt unchanged, got %q", got)
 		}
-		// The lookup happened; a second turn must not pay for another one.
 		if got := sess.injectRecall("again"); got != "again" {
 			t.Fatalf("second turn should pass through, got %q", got)
 		}
-		if calls != 1 {
-			t.Fatalf("recall fn should fire exactly once even on a miss, fired %d times", calls)
+		if calls != 2 {
+			t.Fatalf("recall fn should fire every turn even on misses, fired %d", calls)
 		}
 	})
 }

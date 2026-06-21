@@ -120,7 +120,7 @@ type Session struct {
 	pipeline       *EventPipeline
 	queries        sessionQueries
 	broadcast      func(pushType string, payload any)
-	completedAt    string // ISO8601 timestamp or "" if not completed
+	completedAt    string        // ISO8601 timestamp or "" if not completed
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
 
 	// pendingMessages buffers user messages sent while a turn is running on a
@@ -146,12 +146,13 @@ type Session struct {
 	// Browser support: port allocated for Chrome's remote debugging.
 	browserPort int
 
-	// recallFn, when wired by the Manager, returns a one-time task-relevant memory
-	// recall block to prepend to this session's first turn (query-relevant recall).
-	// recallInjected gates it to a single lookup per live session instance — create
-	// or resume — so cost stays bounded. Both guarded by mu.
-	recallFn       func(ctx context.Context, prompt string) string
-	recallInjected bool
+	// recallFn, when wired by the Manager, returns a task-relevant memory recall block
+	// to prepend to a turn plus the fact ids it surfaced. It fires every turn (not just
+	// the first), passing recalledIDs so each turn injects only newly-relevant facts —
+	// delta recall that follows the conversation. recalledIDs accumulates every id ever
+	// surfaced this session. Both guarded by mu.
+	recallFn    func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)
+	recalledIDs map[string]struct{}
 }
 
 // PersonaQuerier runs persona queries. Decoupled from persona.Service to avoid
@@ -582,32 +583,46 @@ const recallTimeout = 3 * time.Second
 
 // SetRecallFn wires the one-time task-relevant memory recall callback. The Manager
 // binds the project; the Session fires it once, on its first turn. nil disables it.
-func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string) string) {
+func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)) {
 	s.mu.Lock()
 	s.recallFn = fn
 	s.mu.Unlock()
 }
 
-// injectRecall prepends a one-time, task-relevant memory recall block to the first
-// turn's prompt. It fires at most once per live session instance (create or resume),
-// bounding cost to a single lookup. Best-effort: a disabled brain, a slow/failed
-// recall, or zero relevant facts returns the prompt unchanged.
+// injectRecall prepends a task-relevant memory recall block to the turn's prompt. It
+// fires on every turn, passing the ids already surfaced this session so recall returns
+// only what's newly relevant (delta) — the recall follows the conversation rather than
+// being front-loaded once. Best-effort: a disabled brain, a slow/failed recall, a
+// too-thin prompt, or nothing new returns the prompt unchanged.
 func (s *Session) injectRecall(prompt string) string {
 	s.mu.Lock()
 	fn := s.recallFn
-	if fn == nil || s.recallInjected {
+	if fn == nil {
 		s.mu.Unlock()
 		return prompt
 	}
-	s.recallInjected = true // bound cost: one lookup per instance, even on miss/failure
+	if s.recalledIDs == nil {
+		s.recalledIDs = make(map[string]struct{})
+	}
+	// Snapshot the seen-set so the recall call (which does I/O) doesn't read it under
+	// lock or race a concurrent merge.
+	exclude := make(map[string]struct{}, len(s.recalledIDs))
+	for id := range s.recalledIDs {
+		exclude[id] = struct{}{}
+	}
 	s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), recallTimeout)
 	defer cancel()
-	block := fn(ctx, prompt)
+	block, ids := fn(ctx, prompt, exclude)
 	if strings.TrimSpace(block) == "" {
 		return prompt
 	}
+	s.mu.Lock()
+	for _, id := range ids {
+		s.recalledIDs[id] = struct{}{}
+	}
+	s.mu.Unlock()
 	return block + "\n\n" + prompt
 }
 
