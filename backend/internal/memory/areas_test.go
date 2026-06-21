@@ -78,6 +78,34 @@ func TestAssignAreasClearsStaleArea(t *testing.T) {
 	}
 }
 
+func TestExpandAssociativePullsCrossScopeAreaSiblings(t *testing.T) {
+	// A ranked hit in project:one carries area "X". The fan-out should pull the same-area
+	// facts from sibling scopes (the cross-project win) but not a different area, a
+	// capture, or an already-included fact.
+	seed := Record{ID: "seed", Scope: "project:one", Text: "seed", Area: "X", Source: SourceConsolidated}
+	sibTwo := Record{ID: "sibTwo", Scope: "project:two", Text: "sibling two", Area: "X", Source: SourceConsolidated}
+	sibThree := Record{ID: "sibThree", Scope: "project:three", Text: "sibling three", Area: "X", Source: SourceConsolidated}
+	otherArea := Record{ID: "other", Scope: "project:two", Text: "different topic", Area: "Y", Source: SourceConsolidated}
+	captureSameArea := Record{ID: "cap", Scope: "project:two", Text: "capture", Area: "X", Source: SourceCapture}
+
+	all := []Record{seed, sibTwo, sibThree, otherArea, captureSameArea}
+	got := expandAssociative([]Record{seed}, nil, all, 5)
+
+	ids := map[string]bool{}
+	for _, r := range got {
+		ids[r.ID] = true
+	}
+	if !ids["sibTwo"] || !ids["sibThree"] {
+		t.Errorf("expected cross-scope area siblings pulled in, got %v", ids)
+	}
+	if ids["other"] {
+		t.Errorf("a different area must not be pulled in")
+	}
+	if ids["cap"] {
+		t.Errorf("a capture must never be recalled")
+	}
+}
+
 func TestAssignAreasIgnoresCaptures(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore(

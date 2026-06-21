@@ -88,18 +88,27 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	return res, nil
 }
 
-// expandAssociative folds in a bounded set of `Related` neighbors of the top
-// query matches — mirroring human associative recall — appended after the ranked
-// hits at lower priority. Bounded fan-out (≤ assocPerSeed per seed, ≤ k total
-// extra) keeps the hot path cheap; it reads persisted Related, no recompute.
+// expandAssociative folds in a bounded set of associative neighbours of the top query
+// matches — mirroring human associative recall — appended after the ranked hits at lower
+// priority. Two passes, each bounded (≤ assocPerSeed per seed, ≤ k total extra across
+// both) so the hot path stays cheap; both read persisted indexes, no recompute:
+//
+//   - Related: each seed's scope-local `[[link]]` neighbours.
+//   - Area: facts sharing a seed's cross-scope topic Area — including ones in *sibling*
+//     scopes (B). This is what lets recalling in project X surface a convention proven in
+//     project Y: the area is the shared topic, the sibling fact the transferable answer.
 func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 	if len(recalled) == 0 {
 		return recalled
 	}
 	const assocPerSeed = 3
 	byID := make(map[string]Record, len(all))
+	byArea := make(map[string][]Record)
 	for _, r := range all {
 		byID[r.ID] = r
+		if r.Area != "" && r.Source != SourceCapture {
+			byArea[r.Area] = append(byArea[r.Area], r)
+		}
 	}
 	included := make(map[string]struct{}, len(recalled)+len(pinned))
 	for _, r := range pinned {
@@ -109,6 +118,16 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 		included[r.ID] = struct{}{}
 	}
 	seeds := recalled // snapshot: iterate the ranked hits, not the growing result
+	add := func(nr Record) bool {
+		if _, dup := included[nr.ID]; dup {
+			return false
+		}
+		included[nr.ID] = struct{}{}
+		recalled = append(recalled, nr)
+		return true
+	}
+
+	// Pass 1: scope-local Related neighbours.
 	for _, seed := range seeds {
 		added := 0
 		for _, nid := range seed.Related {
@@ -119,12 +138,25 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 			if !ok || nr.Source == SourceCapture {
 				continue
 			}
-			if _, dup := included[nid]; dup {
-				continue
+			if add(nr) {
+				added++
 			}
-			included[nid] = struct{}{}
-			recalled = append(recalled, nr)
-			added++
+		}
+	}
+
+	// Pass 2: cross-scope area siblings.
+	for _, seed := range seeds {
+		if seed.Area == "" {
+			continue
+		}
+		added := 0
+		for _, nr := range byArea[seed.Area] {
+			if len(recalled)-len(seeds) >= k || added >= assocPerSeed {
+				break
+			}
+			if add(nr) {
+				added++
+			}
 		}
 	}
 	return recalled
