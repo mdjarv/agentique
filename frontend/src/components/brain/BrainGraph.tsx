@@ -6,7 +6,7 @@ import ForceGraph2D, {
   type NodeObject,
 } from "react-force-graph-2d";
 import type { GraphReport, Memory } from "~/lib/brain-api";
-import { communityColor, scopeColor } from "~/lib/scope-color";
+import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
 // the graph endpoint has loaded, degree/betweenness are present and drive node
@@ -33,6 +33,7 @@ interface NodeData {
   uses: number;
   pinned: boolean;
   community: number;
+  area: string;
   degree: number;
   val: number;
   // The per-project facts a cross-scope promotion merged into this one, shown on hover
@@ -40,9 +41,9 @@ interface NodeData {
   subsumed?: { scope: string; text: string }[];
 }
 
-type ColorBy = "scope" | "community";
+type ColorBy = "scope" | "community" | "area";
 
-type EdgeKind = "provenance" | "related" | "similar";
+type EdgeKind = "provenance" | "related" | "similar" | "area";
 interface LinkData {
   kind: EdgeKind;
 }
@@ -64,9 +65,9 @@ const STOPWORDS = new Set(
 );
 
 function nodeColor(node: NodeData, colorBy: ColorBy): string {
-  return colorBy === "community"
-    ? communityColor(node.scope, node.community)
-    : scopeColor(node.scope);
+  if (colorBy === "area") return areaColor(node.area);
+  if (colorBy === "community") return communityColor(node.scope, node.community);
+  return scopeColor(node.scope);
 }
 
 function tokenize(text: string): Set<string> {
@@ -255,6 +256,7 @@ export function BrainGraph({
         uses: m.uses,
         pinned: m.pinned,
         community: m.community ?? 0,
+        area: m.area ?? "",
         degree: m.degree ?? 0,
         // Size blends use-count, pinned, and structural degree so load-bearing "god
         // nodes" read bigger — the graphify signal made visual.
@@ -291,6 +293,24 @@ export function BrainGraph({
     for (const m of memories) {
       for (const d of m.derivedFrom ?? []) addLink(m.id, d, "provenance");
       for (const r of m.related ?? []) addLink(m.id, r, "related");
+    }
+
+    // Cross-scope area edges — only in "by area" colouring: star-link each area's members
+    // to a representative so the force layout pulls a topic spanning projects into one
+    // blob (areas come from text similarity, not structural edges, so without this their
+    // members scatter). Bounded (size-1 per area). Rendered transparent — the labelled
+    // hull + colour carry the area; the edges exist only to cluster the layout.
+    if (colorBy === "area") {
+      const areaHub = new Map<string, string>();
+      for (const m of memories) {
+        if (!m.area) continue;
+        const hub = areaHub.get(m.area);
+        if (hub === undefined) {
+          areaHub.set(m.area, m.id);
+          continue;
+        }
+        addLink(m.id, hub, "area");
+      }
     }
 
     if (showSimilar && memories.length <= SIM_MAX_NODES) {
@@ -374,6 +394,7 @@ export function BrainGraph({
         l.uses = n.uses;
         l.pinned = n.pinned;
         l.community = n.community;
+        l.area = n.area;
         l.degree = n.degree;
         l.val = n.val;
         l.subsumed = n.subsumed;
@@ -388,7 +409,7 @@ export function BrainGraph({
     graphDataRef.current = { topo, data };
     prevNodesRef.current = new Map(nodes.map((n) => [String(n.id), n]));
     return data;
-  }, [memories, labelForScope, showSimilar]);
+  }, [memories, labelForScope, showSimilar, colorBy]);
 
   const { nodes, links } = graphData;
 
@@ -448,25 +469,35 @@ export function BrainGraph({
     return scopes.map((s) => ({ scope: s, label: labelForScope(s), color: scopeColor(s) }));
   }, [nodes, labelForScope]);
 
-  // Region grouping for the shaded "areas" hulls. Membership tracks the active color
-  // dimension: by scope it's one area per project; by community it's one per topic
-  // cluster (keyed scope#community since cluster ids are scope-local). The live GNode
+  // Region grouping for the shaded hulls. Membership tracks the active colour dimension:
+  // by scope → one region per project (labelled with the project name); by community →
+  // one per scope-local topic cluster (colour only); by area → one per cross-scope topic
+  // area (labelled with the area's readable name, spanning projects). The live GNode
   // objects are kept so the hull reads their current x/y each frame. Recomputed only on
-  // topology/color change, never per frame.
+  // topology/colour change, never per frame.
   const regionGroups = useMemo(() => {
     const groups = new Map<string, { color: string; label: string; nodes: GNode[] }>();
     for (const n of nodes) {
-      const key = colorBy === "community" ? `${n.scope}#${n.community}` : n.scope;
+      let key: string;
+      let color: string;
+      let label: string;
+      if (colorBy === "area") {
+        if (!n.area) continue; // facts in no cross-scope area form no region
+        key = n.area;
+        color = areaColor(n.area);
+        label = n.area;
+      } else if (colorBy === "community") {
+        key = `${n.scope}#${n.community}`;
+        color = communityColor(n.scope, n.community);
+        label = "";
+      } else {
+        key = n.scope;
+        color = scopeColor(n.scope);
+        label = labelForScope(n.scope);
+      }
       let g = groups.get(key);
       if (!g) {
-        g = {
-          color:
-            colorBy === "community" ? communityColor(n.scope, n.community) : scopeColor(n.scope),
-          // Only scope areas carry a text label (the project name). Cluster ids have no
-          // human name yet, so those areas read by colour alone.
-          label: colorBy === "community" ? "" : labelForScope(n.scope),
-          nodes: [],
-        };
+        g = { color, label, nodes: [] };
         groups.set(key, g);
       }
       g.nodes.push(n);
@@ -507,6 +538,10 @@ export function BrainGraph({
               // pre-frame so it sits beneath the links and nodes. Padding/strokes are in
               // world units so a region tracks its nodes through zoom.
               if (!showRegions || compact || nodes.length > REGION_MAX_NODES) return;
+              // In "by area" mode the region IS the membership (area edges cluster the
+              // members), so wrap every member. In scope/community mode the region wraps
+              // only the connected core — isolated facts scatter and would balloon the hull.
+              const coreOnly = colorBy !== "area";
               ctx.lineJoin = "round";
               for (const g of regionGroups.values()) {
                 const placed: { x: number; y: number; r: number }[] = [];
@@ -514,11 +549,11 @@ export function BrainGraph({
                 let cy = 0;
                 let minY = Number.POSITIVE_INFINITY;
                 for (const n of g.nodes) {
-                  // Only the connected core defines an area. Isolated facts (no structural
-                  // links) scatter to the layout's edge; including them would balloon every
-                  // hull to span the whole graph. They stay outside, floating — the honest
-                  // "knowledge gap" signal.
-                  if (n.x == null || n.y == null || (n.degree ?? 0) === 0) continue;
+                  // Isolated facts (no structural links) scatter to the layout's edge;
+                  // including them would balloon every hull to span the graph. They stay
+                  // outside, floating — the honest "knowledge gap" signal.
+                  if (n.x == null || n.y == null) continue;
+                  if (coreOnly && (n.degree ?? 0) === 0) continue;
                   const r = Math.sqrt(n.val ?? 2) * NODE_REL_SIZE;
                   placed.push({ x: n.x, y: n.y, r });
                   cx += n.x;
@@ -638,13 +673,22 @@ export function BrainGraph({
               ctx.fill();
             }}
             linkColor={(l) => {
+              // Area edges exist only to cluster the layout — invisible unless the hovered
+              // node touches one (then they reveal the area's connections).
+              if (l.kind === "area") {
+                return hoverId != null && linkTouchesHover(l)
+                  ? "rgba(250,204,21,0.7)"
+                  : "rgba(0,0,0,0)";
+              }
               if (hoverId != null) {
                 return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.06)";
               }
               return l.kind === "similar" ? "rgba(150,180,235,0.5)" : "rgba(190,195,210,0.8)";
             }}
             linkWidth={(l) => (linkTouchesHover(l) ? 3.2 : l.kind === "similar" ? 1.4 : 2)}
-            linkLineDash={(l) => (l.kind === "similar" ? [4, 3] : null)}
+            linkLineDash={(l) =>
+              l.kind === "similar" ? [4, 3] : l.kind === "area" ? [2, 4] : null
+            }
             onNodeHover={(n) => setHoverId(n ? String(n.id) : null)}
             onNodeClick={(n) => {
               if (n.x != null && n.y != null) {
@@ -693,10 +737,11 @@ export function BrainGraph({
               value={colorBy}
               onChange={(e) => setColorBy(e.target.value as ColorBy)}
               className="bg-transparent outline-none"
-              title="Color nodes by scope, or by topic cluster (community) detected during consolidation"
+              title="Colour by scope (project), by scope-local cluster, or by cross-scope topic area"
             >
               <option value="scope">by scope</option>
               <option value="community">by cluster</option>
+              <option value="area">by area</option>
             </select>
           </label>
         </div>
@@ -819,7 +864,12 @@ export function BrainGraph({
             <span className="ml-1 inline-block h-0 w-5 border-t border-dashed border-foreground/60" />
             similar
           </div>
-          {colorBy === "community" ? (
+          {colorBy === "area" ? (
+            <div className="text-muted-foreground">
+              Coloured by cross-scope area — each shaded, labelled region is a topic that recurs
+              across projects. Grey nodes belong to no area.
+            </div>
+          ) : colorBy === "community" ? (
             <div className="text-muted-foreground">
               Colored by topic cluster — facts in the same cluster consolidate together.
             </div>

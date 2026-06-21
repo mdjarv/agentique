@@ -34,3 +34,13 @@ export function scopeColor(scope: string): string {
 export function communityColor(scope: string, community: number): string {
   return PALETTE[hashStr(`${scope}#${community}`) % PALETTE.length] ?? GLOBAL_COLOR;
 }
+
+// AREA_NONE_COLOR is the muted colour for facts in no cross-scope area.
+const AREA_NONE_COLOR = "#6b7280";
+
+// areaColor colours a node by its cross-scope topic area (the area label). Empty area
+// (single-scope fact) reads muted so the real areas stand out.
+export function areaColor(area: string): string {
+  if (!area) return AREA_NONE_COLOR;
+  return PALETTE[hashStr(area) % PALETTE.length] ?? GLOBAL_COLOR;
+}

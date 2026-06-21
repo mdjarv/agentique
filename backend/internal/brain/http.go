@@ -43,6 +43,9 @@ type memoryDTO struct {
 	DerivedFrom []string  `json:"derivedFrom,omitempty"`
 	Related     []string  `json:"related,omitempty"`
 	Community   int       `json:"community"`
+	// Area is the cross-scope topic area this fact belongs to (AssignAreas); empty when
+	// the fact is single-scope. Powers the graph's "by area" colouring/regions.
+	Area string `json:"area,omitempty"`
 	// Confidence tier (extracted/inferred/ambiguous) + its 0..1 score (RFC P2).
 	Confidence      string  `json:"confidence"`
 	ConfidenceScore float64 `json:"confidenceScore"`
@@ -65,6 +68,7 @@ func toDTO(r memory.Record) memoryDTO {
 		Source: string(r.Source), Pinned: r.Pinned, Locked: r.Locked, Uses: r.Uses,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DerivedFrom: r.DerivedFrom, Related: r.Related,
 		Community:       r.Community,
+		Area:            r.Area,
 		Confidence:      string(r.Confidence),
 		ConfidenceScore: r.ConfidenceScore,
 		ReviewNote:      r.ReviewNote,

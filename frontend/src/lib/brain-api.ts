@@ -18,6 +18,9 @@ export interface Memory {
   // Derived topic-cluster id within the scope (set by consolidation). Scope-local:
   // only comparable among memories of the same scope.
   community?: number;
+  // Cross-scope topic "area" this fact belongs to (AssignAreas) — a readable label
+  // comparable across the whole brain; empty when the fact is single-scope.
+  area?: string;
   // Confidence tier (extracted | inferred | ambiguous) + its 0..1 score (RFC P2).
   confidence?: string;
   confidenceScore?: number;
