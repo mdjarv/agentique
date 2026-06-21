@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/memory/cachestore"
 	"github.com/mdjarv/agentique/backend/internal/memory/chroma"
 	"github.com/mdjarv/agentique/backend/internal/memory/embedhttp"
 	"github.com/mdjarv/agentique/backend/internal/memory/filestore"
@@ -57,7 +58,10 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("brain: create dir: %w", err)
 	}
-	base := filestore.New(cfg.Dir)
+	// Wrap the filestore in a read-through cache: per-turn auto-recall (fluid recall)
+	// calls List every turn, and the cache avoids re-reading every markdown file each
+	// time. All writes funnel through this Service's store, so the cache stays consistent.
+	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
 		store:  base,
 		dir:    cfg.Dir,
