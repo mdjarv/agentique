@@ -14,7 +14,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
@@ -336,7 +335,7 @@ func killDevPortImpl(ctx context.Context, dev *devurls.Store, slotName string) a
 	if err != nil {
 		return akmcp.ErrorResultf("find process %d: %v", owner.PID, err)
 	}
-	_ = proc.Signal(syscall.SIGTERM)
+	_ = terminateProcess(proc)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if !pidAlive(owner.PID) {
@@ -346,9 +345,9 @@ func killDevPortImpl(ctx context.Context, dev *devurls.Store, slotName string) a
 	}
 	killed := false
 	if pidAlive(owner.PID) {
-		_ = proc.Signal(syscall.SIGKILL)
+		_ = forceKillProcess(proc)
 		time.Sleep(200 * time.Millisecond)
-		killed = pidAlive(owner.PID) // true means KILL also failed
+		killed = pidAlive(owner.PID) // true means the kill also failed
 	}
 
 	// Clear any lease tracking this slot — whoever held it is gone now.
@@ -376,15 +375,6 @@ func setSessionNameImpl(ctx context.Context, renamer SessionRenamer, sessionID, 
 		return akmcp.ErrorResultf("rename failed: %v", err)
 	}
 	return akmcp.TextResultf("Session renamed to %q.", name)
-}
-
-func pidAlive(pid int) bool {
-	// On Linux, signal 0 probes existence without affecting the process.
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 func summarizeSlotState(infos []devurls.SlotInfo) string {

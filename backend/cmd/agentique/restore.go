@@ -191,7 +191,9 @@ func restoreMode(entries []backupEntry, arg string, dbFile string, backupDir str
 	}
 	if err := os.Rename(tmpPath, dbFile); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("rename: %w", err)
+		// On Windows a rename over an open file fails; the server is already
+		// verified down, so this means another process holds the DB open.
+		return fmt.Errorf("rename %s into place: %w (is another process holding the database open?)", dbFile, err)
 	}
 
 	// Remove stale WAL/SHM files from the old database.

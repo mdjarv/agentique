@@ -267,7 +267,8 @@ func (h *Handler) HandleExportSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scrubber := NewScrubber(dbSess.WorkDir, os.Getenv("HOME"))
+	home, _ := os.UserHomeDir()
+	scrubber := NewScrubber(dbSess.WorkDir, home)
 
 	// Group events by turn, extracting prompts and computing relative timing.
 	type turnData struct {

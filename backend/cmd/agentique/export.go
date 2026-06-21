@@ -66,7 +66,8 @@ func runExport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("session %s has no events", shortID(dbSess.ID))
 	}
 
-	scrubber := testmode.NewScrubber(dbSess.WorkDir, os.Getenv("HOME"))
+	home, _ := os.UserHomeDir()
+	scrubber := testmode.NewScrubber(dbSess.WorkDir, home)
 
 	// Group events by turn.
 	type turnData struct {

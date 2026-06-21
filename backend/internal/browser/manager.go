@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -49,23 +51,9 @@ func NewManager() *Manager {
 	}
 }
 
-// chromeBinaries is the search order for Chrome/Chromium binaries.
-var chromeBinaries = []string{
-	"google-chrome-stable",
-	"google-chrome",
-	"chromium-browser",
-	"chromium",
-}
-
-func findChromeBinary() (string, error) {
-	for _, name := range chromeBinaries {
-		path, err := exec.LookPath(name)
-		if err == nil {
-			return path, nil
-		}
-	}
-	return "", fmt.Errorf("no Chrome/Chromium binary found (tried: %v)", chromeBinaries)
-}
+// findChromeBinary locates a Chrome/Chromium binary. The candidate list and
+// well-known install locations are platform-specific — see chrome_unix.go and
+// chrome_windows.go.
 
 // allocatePort finds a free TCP port by binding to :0 and releasing it.
 func allocatePort() (int, error) {
@@ -141,7 +129,7 @@ func (m *Manager) launchOnPort(sessionID string, port int) (*Instance, error) {
 		"--disable-gpu",
 		"--disable-extensions",
 		"--no-sandbox",
-		fmt.Sprintf("--user-data-dir=/tmp/agentique-chrome-%s", sessionID),
+		fmt.Sprintf("--user-data-dir=%s", filepath.Join(os.TempDir(), "agentique-chrome-"+sessionID)),
 	}
 
 	cmd := m.execCommand(ctx, m.chromePath, args...)
