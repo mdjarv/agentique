@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -95,13 +96,18 @@ func TestDetectShell(t *testing.T) {
 			t.Errorf("SHELL=%s want=%s got=%s", sh, sh, got)
 		}
 	}
+	// On Windows an unrecognized/empty SHELL falls back to PowerShell.
+	fallback := ""
+	if runtime.GOOS == "windows" {
+		fallback = "powershell"
+	}
 	os.Setenv("SHELL", "/usr/bin/ksh")
-	if got := detectShell(); got != "" {
-		t.Errorf("ksh should yield empty, got %q", got)
+	if got := detectShell(); got != fallback {
+		t.Errorf("ksh should yield %q, got %q", fallback, got)
 	}
 	os.Setenv("SHELL", "")
-	if got := detectShell(); got != "" {
-		t.Errorf("empty SHELL should yield empty, got %q", got)
+	if got := detectShell(); got != fallback {
+		t.Errorf("empty SHELL should yield %q, got %q", fallback, got)
 	}
 }
 
