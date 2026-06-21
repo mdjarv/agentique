@@ -5,9 +5,16 @@ import (
 	"unicode"
 )
 
-// stopwords are dropped before scoring so common glue words don't dominate
-// keyword overlap. Kept deliberately small — domain terms must survive.
+// stopwords are dropped before scoring so common glue words don't dominate keyword
+// overlap. Domain terms must survive, so the list stays tight — but it MUST cover
+// conversational/instructional filler ("like", "want", "please"…), not just grammatical
+// glue. Reason: stored facts are terse and distilled, so a filler word is *rare across
+// the corpus* and idf therefore scores it as a strong signal. A natural query like "I'd
+// **like** you to investigate…" then spuriously matches any fact that happens to contain
+// "like" (e.g. "…'like a Japanese garden'"). Filler words carry no retrieval intent, so
+// they are dropped here rather than left for idf to over-reward.
 var stopwords = map[string]struct{}{
+	// Grammatical glue.
 	"the": {}, "a": {}, "an": {}, "and": {}, "or": {}, "but": {}, "if": {}, "then": {},
 	"is": {}, "are": {}, "was": {}, "were": {}, "be": {}, "been": {}, "being": {},
 	"to": {}, "of": {}, "in": {}, "on": {}, "at": {}, "for": {}, "with": {}, "by": {},
@@ -16,6 +23,19 @@ var stopwords = map[string]struct{}{
 	"he": {}, "she": {}, "they": {}, "them": {}, "do": {}, "does": {}, "did": {},
 	"have": {}, "has": {}, "had": {}, "will": {}, "would": {}, "can": {}, "could": {},
 	"should": {}, "about": {}, "into": {}, "over": {}, "not": {}, "no": {}, "yes": {},
+	// Question/relativizer words (non-domain). "where"/"while" omitted — they double as
+	// SQL/loop constructs.
+	"what": {}, "when": {}, "which": {}, "who": {}, "whom": {},
+	"how": {}, "why": {}, "than": {}, "there": {}, "their": {}, "whether": {},
+	// Conversational/instructional filler — the class that idf over-rewards in a terse
+	// fact corpus. These never carry retrieval intent.
+	"like": {}, "want": {}, "wants": {}, "wanted": {}, "need": {}, "needs": {},
+	"needed": {}, "please": {}, "lets": {}, "help": {},
+	"really": {}, "very": {}, "also": {}, "too": {}, "able": {}, "trying": {},
+	"maybe": {}, "perhaps": {},
+	// NB: "just" is deliberately NOT here — it's the `just` build tool / justfile, a
+	// domain term in these projects. "let"/"try"/"where"/"while" are likewise omitted as
+	// they double as code constructs. Filler only when unambiguous.
 }
 
 // tokenize lowercases, splits on non-alphanumeric runes, and drops stopwords and
