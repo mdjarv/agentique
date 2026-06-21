@@ -29,6 +29,8 @@ func Install() error {
 		return installSystemd(bin)
 	case "darwin":
 		return installLaunchd(bin)
+	case "windows":
+		return installWindows(bin)
 	default:
 		return unsupportedError()
 	}
@@ -41,6 +43,8 @@ func Uninstall() error {
 		return uninstallSystemd()
 	case "darwin":
 		return uninstallLaunchd()
+	case "windows":
+		return uninstallWindows()
 	default:
 		return unsupportedError()
 	}
@@ -53,6 +57,8 @@ func GetStatus() (Status, error) {
 		return statusSystemd()
 	case "darwin":
 		return statusLaunchd()
+	case "windows":
+		return statusWindows()
 	default:
 		return Status{}, unsupportedError()
 	}
@@ -65,6 +71,8 @@ func Restart() error {
 		return restartSystemd()
 	case "darwin":
 		return restartLaunchd()
+	case "windows":
+		return restartWindows()
 	default:
 		return unsupportedError()
 	}
@@ -77,6 +85,8 @@ func Start() error {
 		return startSystemd()
 	case "darwin":
 		return startLaunchd()
+	case "windows":
+		return startWindows()
 	default:
 		return unsupportedError()
 	}
@@ -89,6 +99,8 @@ func Stop() error {
 		return stopSystemd()
 	case "darwin":
 		return stopLaunchd()
+	case "windows":
+		return stopWindows()
 	default:
 		return unsupportedError()
 	}
@@ -102,13 +114,15 @@ func LogsCmd() (*exec.Cmd, error) {
 		return logsSystemd(), nil
 	case "darwin":
 		return logsLaunchd(), nil
+	case "windows":
+		return logsWindows(), nil
 	default:
 		return nil, unsupportedError()
 	}
 }
 
 func unsupportedError() error {
-	return fmt.Errorf("service management not supported on %s — use NSSM or Task Scheduler", runtime.GOOS)
+	return fmt.Errorf("service management not supported on %s (supported: linux, macOS, windows)", runtime.GOOS)
 }
 
 func binaryPath() (string, error) {
