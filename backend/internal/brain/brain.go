@@ -7,6 +7,8 @@ package brain
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -62,6 +64,16 @@ type Service struct {
 	// every relevance Query; 0 lets memory.Recall apply its default. Inert without an embedder.
 	vetoScore float64
 
+	// embedCache memoizes embeddings by text-hash so the per-pass corpus/scope re-embed
+	// (embedRecords, now hit on every ApplyPlan/Consolidate/AssignAreas/graph load) only
+	// calls the embedder for texts it hasn't seen. An embedding is a pure function of
+	// (text, model) and the model is fixed for a Service's lifetime, so text-hash is a
+	// sufficient key (id-independent: two facts with identical text share a vector). A
+	// changed text yields a new key (the stale entry simply lingers — bounded by distinct
+	// texts seen; pruning is future work). Guarded by embedMu, separate from mu.
+	embedMu    sync.Mutex
+	embedCache map[string][]float32
+
 	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
 	gmPath string // per-scope content-hash manifest of the last global pass (RFC P5)
@@ -82,10 +94,11 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// time. All writes funnel through this Service's store, so the cache stays consistent.
 	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
-		store:  base,
-		dir:    cfg.Dir,
-		fpPath: filepath.Join(cfg.Dir, ".fingerprints.json"),
-		gmPath: filepath.Join(cfg.Dir, ".global-manifest.json"),
+		store:      base,
+		dir:        cfg.Dir,
+		embedCache: make(map[string][]float32),
+		fpPath:     filepath.Join(cfg.Dir, ".fingerprints.json"),
+		gmPath:     filepath.Join(cfg.Dir, ".global-manifest.json"),
 	}
 
 	if cfg.ChromaURL != "" && cfg.EmbedURL != "" && cfg.EmbedModel != "" {
@@ -744,34 +757,78 @@ func (s *Service) semanticSimOptions(ctx context.Context, records []memory.Recor
 	}
 }
 
-// embedRecords batch-embeds record texts, returning id → vector. Chunked to bound request
-// size. A whole-corpus embed per pass is acceptable for the infrequent sleep/tidy passes;
-// caching by text-hash to skip unchanged facts is a future optimization.
+// embedRecords returns id → vector for the records, embedding only texts not already in
+// embedCache (keyed by text-hash) and memoizing the misses. Distinct miss TEXTS are
+// embedded once each (deduped) and chunked to bound request size. The embedder is the only
+// thing that touches the network, so this is what makes the now-frequent per-pass re-embed
+// cheap after the first pass.
 func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (map[string][]float32, error) {
-	const batch = 64
 	out := make(map[string][]float32, len(records))
-	for i := 0; i < len(records); i += batch {
-		end := i + batch
-		if end > len(records) {
-			end = len(records)
+
+	// Resolve cache hits and collect the distinct miss texts.
+	s.embedMu.Lock()
+	missByKey := make(map[string]string) // key -> text, deduped
+	keyByID := make(map[string]string, len(records))
+	for _, r := range records {
+		key := embedKey(r.Text)
+		keyByID[r.ID] = key
+		if v, ok := s.embedCache[key]; ok {
+			out[r.ID] = v
+			continue
 		}
-		chunk := records[i:end]
-		texts := make([]string, len(chunk))
-		for k, r := range chunk {
-			texts[k] = r.Text
+		missByKey[key] = r.Text
+	}
+	s.embedMu.Unlock()
+
+	if len(missByKey) > 0 {
+		keys := make([]string, 0, len(missByKey))
+		texts := make([]string, 0, len(missByKey))
+		for k, t := range missByKey {
+			keys = append(keys, k)
+			texts = append(texts, t)
 		}
-		vecs, err := s.embedder.Embed(ctx, texts)
-		if err != nil {
-			return nil, err
+		const batch = 64
+		fresh := make(map[string][]float32, len(keys))
+		for i := 0; i < len(texts); i += batch {
+			end := i + batch
+			if end > len(texts) {
+				end = len(texts)
+			}
+			vecs, err := s.embedder.Embed(ctx, texts[i:end])
+			if err != nil {
+				return nil, err
+			}
+			if len(vecs) != end-i {
+				return nil, fmt.Errorf("brain: embedder returned %d vectors for %d texts", len(vecs), end-i)
+			}
+			for j, v := range vecs {
+				fresh[keys[i+j]] = v
+			}
 		}
-		if len(vecs) != len(chunk) {
-			return nil, fmt.Errorf("brain: embedder returned %d vectors for %d texts", len(vecs), len(chunk))
+		s.embedMu.Lock()
+		for k, v := range fresh {
+			s.embedCache[k] = v
 		}
-		for k, r := range chunk {
-			out[r.ID] = vecs[k]
+		s.embedMu.Unlock()
+		// Fill the misses into the output by id.
+		for _, r := range records {
+			if _, ok := out[r.ID]; ok {
+				continue
+			}
+			if v, ok := fresh[keyByID[r.ID]]; ok {
+				out[r.ID] = v
+			}
 		}
 	}
 	return out, nil
+}
+
+// embedKey is the cache key for a text: a content hash. The embedding depends only on the
+// text (the model is fixed per Service), so identical texts share a vector and an edited
+// text gets a fresh key.
+func embedKey(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:16])
 }
 
 func (s *Service) loadFingerprints() map[string]string {
