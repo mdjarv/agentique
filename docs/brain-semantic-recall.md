@@ -1,7 +1,18 @@
 # Brain: semantic recall — why lexical is blunt, and the embedder path
 
-Status: Planned · 2026-06-22 · Sibling to [brain-memory.md](brain-memory.md),
-[brain-cross-scope-areas.md](brain-cross-scope-areas.md)
+Status: **Shipped (veto + vouch bar + semantic threading; verified live)** · 2026-06-22 ·
+Sibling to [brain-memory.md](brain-memory.md), [brain-cross-scope-areas.md](brain-cross-scope-areas.md)
+
+> **TL;DR of what shipped (2026-06-22).** The hybrid blend now lets semantics *exclude*, not
+> just re-rank, an off-topic keyword survivor — via two complementary levers: a **vector veto**
+> (drop a candidate the embedder scores as actively unrelated, regardless of keyword) for the
+> multi-token case, and a **vouch bar** (the lexical lone-token guard is overridden only when
+> the vector score clears the cosine *related* line, not the much lower `minVectorScore`) for
+> the lone-token case. Semantic similarity is also threaded through `ApplyPlan`
+> (links/communities), `DetectInterference`, and `ApplyGlobal`'s area refresh. Verified end-to-end
+> against a **local all-MiniLM-L6-v2 (Ollama) + Chroma**: recall of "secrets and vars on github"
+> returns only the on-topic fact, the GOPRIVATE fact is excluded via the vector path under
+> shipped defaults. See **"What actually shipped"** and the **runbook** at the bottom.
 
 > **Motivation (a real mis-recall).** In a `meta-spec` session wiring up Sentry for a TS/Vite
 > sub-repo, the brain injected *"Private allbin Go modules require GOPRIVATE=github.com/allbin/\*
@@ -13,9 +24,12 @@ Status: Planned · 2026-06-22 · Sibling to [brain-memory.md](brain-memory.md),
 > know `github` is uninformative glue here; an embedder would never put "github secrets/vars" near
 > "GOPRIVATE Go modules git SSH".
 
-## Two parts: the shipped blunt fix, and the real cure
+## Two parts: the blunt fix, and the real cure
 
-### Shipped now — lexical precision guard (the blunt fix)
+> Both parts have now shipped (2026-06-22). This section is the original framing; see
+> **"What actually shipped"** below for the as-built result and the vouch-bar refinement.
+
+### Part 1 — lexical precision guard (the blunt fix, the `semantic=false` safeguard)
 
 `recall.go` now applies a **lone-token guard**: when a multi-token query overlaps a candidate on a
 *single* distinct token and there's no strong vector signal, that token must carry
@@ -86,23 +100,120 @@ To make semantics genuinely decisive, pair the embedder rollout with one of:
 Option 1 is cleaner and directly targets this failure class. Either way, the lexical guard above
 stays as the keyword-only-mode (`semantic=false`) safeguard — they are complementary, not redundant.
 
+> **Update (2026-06-22): option 1 shipped, but measurement showed it isn't sufficient alone —
+> and revealed the *real* leak.** See "What actually shipped" below: for all-MiniLM the github
+> fact scores ~0.36 (not near-zero), so a safe veto floor doesn't catch it; the actual fix is
+> the **vouch bar**.
+
+## What actually shipped
+
+**The measurement (live, all-MiniLM-L6-v2 via Ollama).** Query `"secrets and vars on github"`
+over a corpus mirroring the real scope:
+
+| fact | cosine |
+|---|---|
+| Sentry DSN reads env **secrets and vars** (on-topic) | **0.4425** |
+| release workflow → **github** actions | 0.4229 |
+| GOPRIVATE=**github**.com/allbin Go modules (the mis-recall) | **0.3585** |
+| nginx proxy manager TLS | 0.1335 |
+| modernc.org/sqlite preference | 0.0453 |
+
+Two facts: (a) the embedder *does* rank on-topic above off-topic (margin 0.084) — the hypothesis
+holds; (b) MiniLM's distribution is **compressed** — the off-topic fact sits at 0.36, not
+near-zero, and "related" is only ~0.44. So an absolute veto floor high enough to drop 0.36 (~0.40)
+is fragile (it brushes the 0.42–0.44 real matches), and one safe enough to keep them (~0.15)
+doesn't drop it. The veto-as-specified catches *clearly-unrelated* facts (nginx/sqlite level), not
+this one.
+
+**The real leak — and the fix (the "vouch bar").** The hybrid path leaked the github fact because
+the lexical lone-token guard was **skipped whenever `vs ≥ minVectorScore` (0.20)**. For a
+compressed model 0.20 is below even the unrelated baseline, so *any* vector score "vouched" and
+disabled the guard. The fix: the guard is now overridden only when the vector **genuinely vouches**
+— `vs ≥ VectorVouchScore`, where the brain passes its cosine *related* line (`cosThresh`, default
+`DefaultSemanticThreshold` 0.45). The github fact (0.36 < 0.45) no longer vouches, so its lone
+`github` match is dropped by the lexical guard. No fragile hand-set floor needed.
+
+The two levers cover **disjoint** classes and both ship:
+- **Vector veto** (`Query.VectorVetoScore` / `DefaultVectorVetoScore` 0.15): drops a candidate the
+  embedder scores as actively unrelated, regardless of keyword — handles the **multi-token**
+  off-topic survivor the lexical guard can't (`kwMatches>1`). Only fires for candidates the vector
+  actually *scored* (present in results); an unindexed/out-of-window one falls back to keyword.
+  Recall also widens the vector search to cover the keyword candidate pool (`maxRecallVectorK` 200)
+  so the veto can see survivors, not just top-k.
+- **Vouch bar** (`Query.VectorVouchScore` = `cosThresh`): gates the lexical lone-token guard —
+  handles the **lone-token** survivor (the github case).
+
+Both default to the constants above (`VectorVetoScore`/`VectorVouchScore` left 0 → defaults);
+`AGENTIQUE_BRAIN_VECTOR_VETO` overrides the veto floor. Result under shipped defaults: recall of
+the github query returns **only the Sentry fact**.
+
+**Semantic threading (#2).** `ConsolidateOptions.SimOptions` threads embedding-blended similarity
+through `memory.ApplyPlan` → `RelinkScope` + `AssignCommunities` (per-scope links/communities now
+semantic); `DetectInterference` blends cosine into its related-lower bound (dup-exclusion stays
+lexical); `ApplyGlobal` refreshes areas via the semantic `s.AssignAreas`. The brain computes the
+SimOptions *before* taking `s.mu` so the embed never blocks under the lock.
+
 ## Sequencing
 
-1. ✅ **Lexical lone-token guard** — shipped (`recall.go`, `singleTokenMinShare`). Works in both
-   modes; the only precision lever while `semantic=false`.
-2. **Stand up a local embedder** (Ollama/MiniLM + Chroma), set the `AGENTIQUE_BRAIN_EMBED_*` env.
-   This also revives semantic *clustering/areas* (today lexical even in semantic mode — tech-debt
-   "semantic activated only for areas").
-3. **Tighten the hybrid blend** (option 1 above) in the same change, so the vector signal can veto
-   an off-topic keyword survivor.
-4. **Add the `(id, text-hash)` embedding cache** (tech-debt) before the corpus grows, so passes
-   stop re-embedding unchanged facts.
+1. ✅ **Lexical lone-token guard** — shipped (`recall.go`, `singleTokenMinShare`). The
+   `semantic=false` safeguard; still in place.
+2. ✅ **Local embedder** — Ollama + all-MiniLM-L6-v2 (`/v1/embeddings`) + Chroma v2, wired via the
+   `AGENTIQUE_BRAIN_*` env. Revived semantic clustering/areas through `ApplyPlan` (#2).
+3. ✅ **Tighten the hybrid blend** — vector veto (option 1) **plus** the vouch bar (the measured
+   real fix). Verified live.
+4. ⏳ **`(id, text-hash)` embedding cache** — still open, now more pressing: #2 widened the embed
+   call sites (per-`ApplyPlan` scope embed + per-graph-load embed). See tech-debt. The per-turn
+   *recall* path is unaffected (single query-embed + search, not a corpus re-embed).
+5. ⏳ **Auto-calibration** — the veto/vouch/cosine floors are model-specific + hand-tuned. A
+   measure-first sweep over the corpus's own cosine distribution (pick a percentile per model)
+   would remove the manual step. See tech-debt "cosine threshold is model-specific".
+
+## Runbook — stand up the local embedder + Chroma and verify
+
+```bash
+# 1. Ollama (CPU is fine for embeddings). Download the static binary, serve, pull the model.
+#    (the install script needs root; the tarball does not)
+curl -fSL https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst \
+  | tar --use-compress-program=unzstd -xf - -C /tmp/ollama       # extracts bin/ + lib/
+OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=/tmp/ollama/models \
+  LD_LIBRARY_PATH=/tmp/ollama/lib /tmp/ollama/bin/ollama serve &
+/tmp/ollama/bin/ollama pull all-minilm                            # 45 MB, 384-dim
+
+# 2. Chroma v2 (the client uses /api/v2). Docker is simplest (no pip needed):
+docker run -d --name chroma -p 127.0.0.1:8000:8000 chromadb/chroma:latest
+
+# 3. Point the brain at them (the server reads these in serve.go):
+export AGENTIQUE_BRAIN_CHROMA_URL=http://127.0.0.1:8000
+export AGENTIQUE_BRAIN_EMBED_URL=http://127.0.0.1:11434/v1/embeddings
+export AGENTIQUE_BRAIN_EMBED_MODEL=all-minilm
+# optional: AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD, AGENTIQUE_BRAIN_VECTOR_VETO
+# On boot, look for: "brain: semantic recall enabled ... cosineThreshold=0.45 vectorVeto=0.15"
+
+# 4. Verify (env-gated integration tests — they re-measure + assert the github case):
+CHROMA_TEST_URL=http://127.0.0.1:8000 \
+EMBED_TEST_URL=http://127.0.0.1:11434/v1/embeddings \
+EMBED_TEST_MODEL=all-minilm \
+  go test ./internal/memory/chroma/ -run TestSemanticRecallVetoesGithubMisRecall -v
+# and the production-wiring test:
+#   go test ./internal/brain/ -run TestBrainSemanticWiring -v
+```
+
+Calibration note: the cosine/veto floors above are all-MiniLM-specific. For another model, run
+the chroma integration test first — it logs the per-fact cosine distribution — then set the
+thresholds from the observed "related" vs "unrelated" bands.
 
 ## References
 
-- `internal/memory/recall.go` (`rank`, `keywordScores`, `singleTokenMinShare`, the hybrid blend).
-- `internal/memory/similarity.go` (`DefaultSemanticThreshold`).
-- `internal/brain/brain.go` (`New` semantic wiring, `embedRecords`), `internal/memory/chroma`,
-  `internal/memory/embedhttp`.
-- tech-debt: "semantic similarity is activated only for areas", "embeddings re-embed the whole
-  corpus every pass", "cosine threshold is model-specific and hand-tuned".
+- `internal/memory/recall.go` (`rank`, the veto `DefaultVectorVetoScore`/`Query.VectorVetoScore`,
+  the vouch bar `Query.VectorVouchScore`, `singleTokenMinShare`, `maxRecallVectorK`, the hybrid blend).
+- `internal/memory/store.go` (`Query.VectorVetoScore`, `Query.VectorVouchScore`).
+- `internal/memory/similarity.go` (`DefaultSemanticThreshold`, `Similarity.interference`),
+  `internal/memory/{consolidate,interference}.go` (`ConsolidateOptions.SimOptions` threading).
+- `internal/brain/brain.go` (`New` semantic wiring incl. `vetoScore`; `scopeSimOptions`;
+  veto+vouch threaded into `Recall`/`RecallBlock`; `ApplyPlan`/`Consolidate`/`ApplyGlobal`),
+  `internal/brain/graph.go` (semantic interference), `internal/memory/chroma`, `internal/memory/embedhttp`.
+- Live integration tests (env-gated): `internal/memory/chroma/semantic_recall_integration_test.go`,
+  `internal/brain/semantic_integration_test.go`.
+- tech-debt: "semantic similarity is activated only for areas" (now CLOSED), "embeddings re-embed the
+  whole corpus every pass" (open, more pressing), "cosine threshold is model-specific and hand-tuned"
+  (3 coupled knobs now), "lexical recall precision … → semantic cure SHIPPED".

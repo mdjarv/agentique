@@ -198,26 +198,33 @@ One type owns memory CRUD + search + status + consolidation preview/apply + glob
 + tidy-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
 help. → `internal/brain/{http,job}.go`.
 
-### Brain: semantic similarity is activated only for areas (C is partial)
-The pluggable `memory.Similarity` (Jaccard + embedding cosine, two thresholds, degree cap)
-is threaded through `DetectCommunities`, `RelinkScope` and `CrossScopeGroups`, but the
-Service only *passes* embeddings to `AssignAreas`. So in semantic mode **areas are
-semantic while per-scope links/communities and request-time interference stay lexical** —
-`RelinkScope`/`AssignCommunities` run inside `memory.ApplyPlan` which the Service doesn't
-thread the `SimOption` through, and `DetectInterference` (graph endpoint) is lexical by
-design (avoid embedding latency on a request). `ApplyGlobal` also refreshes areas
-*lexically inline* (to dodge an embed network call under `s.mu`), so a global promotion's
-area refresh isn't semantic until the next sleep/tidy pass. Inconsistent; close by
-threading the option through `ApplyPlan` and doing a non-blocking post-`ApplyGlobal`
-refresh. → `internal/memory/{community,link,similarity}.go`,
-`internal/brain/{brain,consolidate,promote}.go`.
+### Brain: semantic similarity is activated only for areas (C) ~~partial~~ → CLOSED 2026-06-22
+**Resolved** (`docs/brain-semantic-recall.md` #2). `ConsolidateOptions.SimOptions` now
+threads the embedding-blended `memory.Similarity` through `memory.ApplyPlan` into the
+post-apply `RelinkScope` + `AssignCommunities`, so per-scope **links and communities are
+semantic** in semantic mode (`brain.ApplyPlan`/`Consolidate` compute the SimOptions —
+`scopeSimOptions`, embed the scope — *before* taking `s.mu`, so the network embed never
+blocks under the lock; skipped on dry run). `DetectInterference` takes `SimOptions` and
+blends cosine into its related-lower bound (duplicate-exclusion stays lexical — consolidation
+owns dups), threaded from the graph endpoint (request-time, not the per-turn hot path).
+`ApplyGlobal` now refreshes areas via the semantic `s.AssignAreas` instead of the bare
+lexical `memory.AssignAreas`. Remaining nuance: the graph-endpoint and `ApplyGlobal` embeds
+run inline (acceptable — neither is the hot path), and the per-pass re-embed has no cache
+(separate item below). → `internal/memory/{consolidate,similarity,interference}.go`,
+`internal/brain/{brain,graph}.go`. Tests: `TestApplyPlanThreadsSemanticSimOptionsToRelink`,
+`TestDetectInterferenceUsesEmbeddings`.
 
-### Brain: embeddings re-embed the whole corpus every pass (no cache)
-`Service.embedRecords` batch-embeds **all** durable facts on every `AssignAreas` (sleep,
-tidy-all, global apply). No `(id, text-hash)` cache, so unchanged facts are re-embedded
-each pass; Chroma already holds the vectors but exposes no bulk fetch. Inert while
-semantic is dormant (no embedder live), but a real per-pass cost once one is configured.
-Cache by text-hash, or add a Chroma bulk-vector read. → `internal/brain/brain.go`.
+### Brain: embeddings re-embed the whole corpus every pass (no cache) — now more pressing
+`Service.embedRecords` batch-embeds **all** durable facts with no `(id, text-hash)` cache,
+so unchanged facts are re-embedded each pass; Chroma already holds the vectors but exposes
+no bulk fetch. **Closing "semantic only for areas" (above) widened the call sites**: beyond
+`AssignAreas` (sleep/tidy-all/global apply), the per-scope embed now also runs on every
+`ApplyPlan`/`Consolidate` (scope-sized) and the graph endpoint embeds the durable set per
+load. Still bounded (scope/corpus-sized, infrequent passes) and the per-turn *recall* hot
+path is unaffected (that query-embed + Chroma search is a single call, not a corpus
+re-embed), but the cost is now real with a live embedder — this is the next thing to do
+(`docs/brain-semantic-recall.md` sequencing #4). Cache by `id+text-hash`, or add a Chroma
+bulk-vector read. → `internal/brain/brain.go`.
 
 ### Brain: cross-scope area labels are frequency-based (noisy)
 `areaLabel` names an area from its most *frequent* shared tokens, yielding labels like
@@ -225,11 +232,18 @@ Cache by text-hash, or add a Chroma bulk-vector read. → `internal/brain/brain.
 idf/TF-IDF (down-weight corpus-common tokens) or an LLM naming pass would give meaningful
 names — the label is sold as info-scent in the "by area" graph. → `internal/memory/areas.go`.
 
-### Brain: cosine threshold is model-specific and hand-tuned
+### Brain: cosine threshold is model-specific and hand-tuned (now 3 coupled knobs)
 `DefaultSemanticThreshold = 0.45` was measured on quantized all-MiniLM-L6-v2 (pair-cosine
-p99 ≈ 0.44). It's now env-tunable (`AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`) but must be
-recalibrated by hand per embedding model; there's no auto-calibration from the corpus's
-own cosine distribution (e.g. pick a high percentile). → `internal/memory/similarity.go`,
+p99 ≈ 0.44); env-tunable via `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`. Semantic recall added two
+more model-specific floors that must be calibrated *together* with it: the vector **veto**
+floor (`AGENTIQUE_BRAIN_VECTOR_VETO`, default `DefaultVectorVetoScore` 0.15 — "actively
+unrelated") and the **vouch** bar (= the cosine threshold; the bar above which a vector
+score overrides the lexical lone-token guard). Live measurement on all-MiniLM (see
+`docs/brain-semantic-recall.md`) grounded these: clearly-unrelated facts ~0.05–0.13,
+weakly-related ~0.35, related ~0.44 — a *compressed* distribution, which is exactly why a
+single absolute veto floor is blunt and the vouch bar (relative to the related line) is the
+robust lever. Still no auto-calibration from the corpus's own cosine distribution (e.g.
+pick a high percentile per model). → `internal/memory/{similarity,recall}.go`,
 `internal/brain/brain.go`.
 
 ### Brain: persisted cross-scope edges deferred (the "B4" decision)
@@ -248,19 +262,24 @@ share slice backing with the cache: safe under the current replace-field-then-`P
 pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt the cache
 (documented in-code, not enforced). → `internal/memory/cachestore/cachestore.go`.
 
-### Brain: lexical recall precision is a blunt mitigation, not the cure
-Per-turn recall ran keyword-only on the live corpus and surfaced an off-topic fact on a
-single incidental glue token (`github` in a URL) — see the worked example in
-[brain-semantic-recall.md](brain-semantic-recall.md). Shipped a **lone-token guard**
-(`recall.go`, `singleTokenMinShare`): a multi-token query matching on one distinct token
-must have that token dominate the query's idf mass. It kills the observed false positive
-but is inherently blunt — lexical scoring can't tell a *good* lone-token match (`just` ↔
-"build tool just") from a *bad* one (`github` ↔ "secrets and vars"); they differ only
-semantically, and in sparse scopes the guard can drop a legitimate weak match. The cure is
-**semantic recall** (the dormant embedder path), plus a hybrid-blend tightening so a
-near-zero vector score can veto a keyword-only survivor (today the blend would still leak
-the github fact even with vectors on). Sequenced in
-[brain-semantic-recall.md](brain-semantic-recall.md). → `internal/memory/recall.go`.
+### Brain: lexical recall precision ~~is a blunt mitigation~~ → semantic cure SHIPPED 2026-06-22
+The keyword-only lone-token guard (`singleTokenMinShare`) remains as the `semantic=false`
+safeguard, but the **semantic cure** is now built and verified end-to-end against a live
+all-MiniLM + Chroma (`docs/brain-semantic-recall.md` #1+#3):
+- **Vector veto** (`Query.VectorVetoScore`/`DefaultVectorVetoScore`): a candidate the
+  embedder scores as actively unrelated is dropped regardless of keyword — kills the
+  MULTI-token off-topic survivor the lexical guard can't (`kwMatches>1`).
+- **Vouch bar** (`Query.VectorVouchScore` = cosThresh): the lexical lone-token guard is now
+  overridden *only* when the vector genuinely vouches (vs ≥ the cosine related line), not at
+  the old `minVectorScore` 0.20 — which was far too low for a compressed-distribution model
+  and was the actual reason the github fact leaked the hybrid path (it scored ~0.36, cleared
+  0.20, skipped the guard). This is the lever that excludes the real mis-recall.
+Live proof: recall of "secrets and vars on github" over {GOPRIVATE, github-actions, Sentry,
+…} returns **only the Sentry fact** under shipped defaults (veto 0.15 / vouch 0.45).
+Residual: thresholds are model-specific + hand-calibrated (item above); the per-pass embed
+has no cache (item above). → `internal/memory/recall.go`,
+tests `TestRecallVectorVetoes…`, `TestRecallVouchBarDropsMidScoreLoneToken`,
+`internal/memory/chroma/semantic_recall_integration_test.go`.
 
 ### Brain: per-turn recall injection is cumulatively unbounded
 Fluid recall bounds each turn (≤K, delta-deduped against a per-session seen-set), but the
