@@ -93,6 +93,15 @@ type Config struct {
 	// reorganization; empty = deterministic dedup/decay only. From
 	// AGENTIQUE_BRAIN_CONSOLIDATE_MODEL or [brain] consolidate-model.
 	BrainConsolidateModel string
+	// BrainLearnModel enables session-end auto-encode (distill durable facts from a
+	// finished transcript) when set to haiku|sonnet|opus; empty disables it. From
+	// AGENTIQUE_BRAIN_LEARN_MODEL or [brain] learn-model.
+	BrainLearnModel string
+	// BrainOutcomeModel enables the session-end automatic outcome emitter — judge from the
+	// transcript whether recalled facts helped or were contradicted, feeding
+	// MarkAutoHelped/Flag — when set to haiku|sonnet|opus; empty disables it. From
+	// AGENTIQUE_BRAIN_OUTCOME_MODEL or [brain] outcome-model.
+	BrainOutcomeModel string
 }
 
 func devModePreamble(dbPath string) string {
@@ -312,30 +321,57 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				slog.Info("brain: auto-recall enabled (pinned facts + operating contract in preamble + task-relevant recall on the first turn)")
 			}
 
-			// Auto-encode (opt-in): distill durable memories from a finished session's
-			// transcript when it's deleted. AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus.
-			if lm := os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"); lm != "" {
+			// Session-end learning (opt-in): when a session is deleted, run up to two
+			// best-effort transcript passes — auto-encode (distill durable facts) and the
+			// automatic outcome emitter (judge whether the facts recall surfaced this session
+			// actually helped or were contradicted, feeding MarkAutoHelped/Flag). Each is gated
+			// by its own model (env wins over the [brain] config value, resolved in serve.go);
+			// the two share the single captured transcript through one onSessionEnd hook.
+			var encodeEx *brain.ClaudeExtractor
+			if lm := cfg.BrainLearnModel; lm != "" {
 				if m, perr := brain.ParseModel(lm); perr != nil {
 					slog.Warn("brain: auto-encode disabled (bad model)", "model", lm, "error", perr)
 				} else {
-					ex := brain.NewClaudeExtractor(runner, m)
-					svc.SetOnSessionEnd(func(projectID string, events []store.SessionEvent) {
-						tevents := make([]brain.TranscriptEvent, len(events))
-						for i, e := range events {
-							tevents[i] = brain.TranscriptEvent{Type: e.Type, Data: e.Data}
-						}
-						n, lerr := brainSvc.LearnFromTranscript(context.Background(), brain.ScopeForProject(projectID), tevents, ex)
+					encodeEx = brain.NewClaudeExtractor(runner, m)
+					slog.Info("brain: auto-encode enabled", "model", lm)
+				}
+			}
+			var outcomeJudge *brain.ClaudeOutcomeJudge
+			if om := cfg.BrainOutcomeModel; om != "" {
+				if m, perr := brain.ParseModel(om); perr != nil {
+					slog.Warn("brain: auto-outcome emitter disabled (bad model)", "model", om, "error", perr)
+				} else {
+					outcomeJudge = brain.NewClaudeOutcomeJudge(runner, m)
+					slog.Info("brain: auto-outcome emitter enabled", "model", om)
+				}
+			}
+			if encodeEx != nil || outcomeJudge != nil {
+				svc.SetOnSessionEnd(func(projectID string, events []store.SessionEvent) {
+					tevents := make([]brain.TranscriptEvent, len(events))
+					for i, e := range events {
+						tevents[i] = brain.TranscriptEvent{Type: e.Type, Data: e.Data}
+					}
+					scope := brain.ScopeForProject(projectID)
+					if encodeEx != nil {
+						n, lerr := brainSvc.LearnFromTranscript(context.Background(), scope, tevents, encodeEx)
 						if lerr != nil {
 							slog.Warn("brain: auto-encode failed", "project", projectID, "error", lerr)
-							return
-						}
-						if n > 0 {
+						} else if n > 0 {
 							slog.Info("brain: learned from ended session", "project", projectID, "facts", n)
 							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
 						}
-					})
-					slog.Info("brain: auto-encode enabled", "model", lm)
-				}
+					}
+					if outcomeJudge != nil {
+						rep, oerr := brainSvc.ApplyOutcomesFromTranscript(context.Background(), scope, tevents, outcomeJudge)
+						if oerr != nil {
+							slog.Warn("brain: auto-outcome emitter failed", "project", projectID, "error", oerr)
+						} else if rep.Helped > 0 || rep.Flagged > 0 {
+							slog.Info("brain: outcomes from ended session", "project", projectID,
+								"judged", rep.Judged, "helped", rep.Helped, "flagged", rep.Flagged)
+							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
+						}
+					}
+				})
 			}
 
 			// Scheduled consolidation (opt-in): automatic consolidation across all scopes on

@@ -133,6 +133,16 @@ type BrainConfig struct {
 	// reorganization (haiku|sonnet|opus). Empty = deterministic dedup/decay only.
 	// Env: AGENTIQUE_BRAIN_CONSOLIDATE_MODEL.
 	ConsolidateModel string `toml:"consolidate-model"`
+	// LearnModel enables session-end auto-encode — distilling durable facts from a
+	// finished session's transcript when it is deleted (haiku|sonnet|opus). Empty = off.
+	// Env: AGENTIQUE_BRAIN_LEARN_MODEL.
+	LearnModel string `toml:"learn-model"`
+	// OutcomeModel enables the session-end automatic outcome emitter — an LLM judge over
+	// the finished transcript that decides whether the facts recall surfaced during the
+	// session helped (→ strengthen) or were contradicted (→ flag for review), feeding the
+	// outcome signal automatically instead of relying on agents to call MemoryUsed/MemoryFlag
+	// (haiku|sonnet|opus). Empty = off. Env: AGENTIQUE_BRAIN_OUTCOME_MODEL.
+	OutcomeModel string `toml:"outcome-model"`
 }
 
 // Default returns a config with all default values.

@@ -282,6 +282,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Scheduled consolidation: env var wins, else the [brain] config-file value, else off.
 		BrainConsolidateInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL"), fileCfg.Brain.ConsolidateInterval),
 		BrainConsolidateModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_MODEL"), fileCfg.Brain.ConsolidateModel),
+		// Session-end learning: env wins over the [brain] config-file value, else off.
+		BrainLearnModel:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"), fileCfg.Brain.LearnModel),
+		BrainOutcomeModel: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL"), fileCfg.Brain.OutcomeModel),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

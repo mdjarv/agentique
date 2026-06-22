@@ -635,6 +635,18 @@ func (s *Service) MarkHelped(ctx context.Context, id string) (memory.Record, err
 	})
 }
 
+// MarkAutoHelped records the same positive outcome as MarkHelped but with the gentler
+// AutoCorroborationGapClose weight: it is the automatic session-end emitter's entry point
+// (brain-outcome-signal.md "Automatic outcome emitter"), where a transcript judge — not a
+// firsthand agent acknowledgement — inferred the fact helped. The Helped count and recency
+// stamp are identical; only the confidence step is softer, so a machine inference can never
+// move trust as fast as an explicit MemoryUsed or a human Confirm.
+func (s *Service) MarkAutoHelped(ctx context.Context, id string) (memory.Record, error) {
+	return s.mutate(ctx, id, func(r *memory.Record) {
+		*r = memory.MarkHelpedWith(*r, time.Now().UTC(), memory.AutoCorroborationGapClose)
+	})
+}
+
 func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)) (memory.Record, error) {
 	r, err := s.store.Get(ctx, id)
 	if err != nil {

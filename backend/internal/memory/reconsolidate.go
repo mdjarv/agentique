@@ -27,6 +27,14 @@ const (
 	// no single MemoryUsed call can jump a fact more than halfway to the ceiling — a
 	// guardrail against an agent self-certifying a wrong fact (RFC Non-goals: false memories).
 	corroborationGapClose = 0.5
+	// AutoCorroborationGapClose is the gentler gap-close for an AUTOMATICALLY-inferred
+	// positive outcome (the session-end transcript judge, brain-outcome-signal.md "Automatic
+	// outcome emitter"). It is deliberately HALF the explicit weight: an agent that calls
+	// MemoryUsed, or a human Confirm, is firsthand testimony ("I was there, it helped"); a
+	// judge reading a finished transcript is a weaker, secondhand inference. A machine
+	// inference therefore moves trust less per outcome (0.8 → 0.8375 → 0.866 → …), so it
+	// takes more corroborations to graduate a preference into the operating contract.
+	AutoCorroborationGapClose = 0.25
 )
 
 // MarkHelped applies the POSITIVE half of reconsolidation (RFC-LD D2): an agent that
@@ -41,10 +49,26 @@ const (
 // UpdatedAt untouched: a positive outcome is retrieval practice, not a content edit. now stamps
 // LastUsedAt.
 func MarkHelped(r Record, now time.Time) Record {
+	return MarkHelpedWith(r, now, corroborationGapClose)
+}
+
+// MarkHelpedWith is MarkHelped parameterized by the gap-close fraction, so a weaker,
+// automatically-inferred outcome can move confidence less than an explicit one. It
+// always increments Helped and stamps LastUsedAt (the fact WAS surfaced and judged
+// useful — retrieval recency) regardless of weight; only the confidence step scales
+// with gapClose. The ceiling, protected-fact exemption, and "never rewrite text"
+// guarantees of MarkHelped are unchanged. Callers: MarkHelped (explicit, 0.5) and the
+// auto emitter (AutoCorroborationGapClose, 0.25). gapClose is clamped to [0,1].
+func MarkHelpedWith(r Record, now time.Time, gapClose float64) Record {
+	if gapClose < 0 {
+		gapClose = 0
+	} else if gapClose > 1 {
+		gapClose = 1
+	}
 	r.Helped++
 	r.LastUsedAt = now
 	if !isProtected(r) && r.ConfidenceScore < CorroborationCeiling {
-		r.ConfidenceScore += corroborationGapClose * (CorroborationCeiling - r.ConfidenceScore)
+		r.ConfidenceScore += gapClose * (CorroborationCeiling - r.ConfidenceScore)
 	}
 	return NormalizeConfidence(r)
 }
