@@ -11,7 +11,7 @@ The design follows a three-phase cognitive loop:
   facts are surfaced) and gets back what's already known.
 - **encode** — the agent saves durable facts; raw turn material can be staged as
   episodic *captures*.
-- **consolidate ("sleep")** — a periodic pass distills captures into durable
+- **consolidate** — a periodic pass distills captures into durable
   facts, merges duplicates, abstracts repeated episodes into general rules, and
   decays stale unused facts.
 
@@ -29,7 +29,7 @@ backend/internal/memory/            # LIFTABLE CORE (no agentique imports)
   embed.go       Embedder interface, CosineSimilarity
   recall.go      hybrid keyword+vector ranking (Searcher optional)
   dedup.go       exact + token-Jaccard duplicate detection
-  consolidate.go Extractor interface + Consolidate() "sleep" pass
+  consolidate.go Extractor interface + Consolidate() pass
   tokenize.go    tokenizer/stopwords (internal)
   filestore/     markdown+frontmatter Store — source of truth, hand-editable
   chroma/        ChromaDB decorator Store (semantic index) + minimal HTTP client
@@ -81,7 +81,7 @@ lower priority — reading the persisted link graph, no recompute on the hot pat
 The graph is built by `RelinkScope` (see below), so it's only active on scopes
 that have been consolidated.
 
-## Consolidation ("sleep")
+## Consolidation
 
 `memory.Consolidate(store, extractor, scope, opts)` is conservative by
 construction:
@@ -92,7 +92,7 @@ construction:
 - **reorganize** the non-protected durable set: merge duplicates, rewrite vague
   entries, abstract repeated episodes into general rules. Invented IDs are
   dropped; an over-deletion safety net refuses a reorganization that shrinks a set
-  of ≥8 facts below a survivor ratio (default 0.5; an aggressive Tidy lowers it to
+  of ≥8 facts below a survivor ratio (default 0.5; an aggressive consolidation lowers it to
   0.2). The ratio is captured into the `Plan` so preview and apply enforce the same
   guard. Chunking is **cluster-aware** (RFC P3): facts are tagged with a topic
   community (`DetectCommunities`) and whole communities are packed into one
@@ -155,10 +155,10 @@ Auto-approved, scoped to the calling session's project (+ global):
   {plan}` and `/consolidate/global/apply {plan}` replay the held plan
   deterministically — no model call — returning `409` on a stale plan.
 - `POST /consolidate {scope}` remains for a synchronous deterministic-only pass.
-- `POST /consolidate/all {model}` — the "Tidy all" button: a background job that
-  consolidates **every scope and auto-applies each** (an on-demand sleep pass,
+- `POST /consolidate/all {model}` — the "Consolidate all" button: a background job that
+  consolidates **every scope and auto-applies each** (an on-demand consolidation,
   kind `"all"`), relying on the guards; progress is per-scope. One job at a time, so
-  it can't overlap a single-scope/global tidy.
+  it can't overlap a single-scope/global consolidation.
 
 Background consolidation runs off the request context so a request hiccup can't
 SIGTERM the model subprocess; see `brain/job.go`. Job state is **in-memory** (one
@@ -177,7 +177,7 @@ the real data dir: `AGENTIQUE_DB=~/.local/share/agentique/agentique.db`.
 - `backfill [--project --limit --min-events --model --dry-run -f]` — retroactively
   distill memories from past session transcripts.
 - `consolidate (--project|--scope) [--model --aggressive --rerun --dry-run -f]` — run
-  the sleep pass over one scope (no `--model` = deterministic). `--aggressive`
+  scheduled consolidation over one scope (no `--model` = deterministic). `--aggressive`
   collapses granular facts into broad rules (relaxes the over-deletion guard);
   `--rerun` reorganizes even an unchanged scope (ignores the saved fingerprint).
 - `export <file>` — write all memories to a portable JSON bundle (project scopes
@@ -232,12 +232,13 @@ The cognitive loop runs automatically, not just via the CLI/UI:
 - **Auto-encode (opt-in).** When a session is deleted, its transcript is distilled
   into durable facts and added to the project scope (async, deduped) — set
   `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips trivial sessions.
-- **Scheduled "sleep" (opt-in).** `AGENTIQUE_BRAIN_SLEEP_INTERVAL` (e.g. `6h`)
-  starts a background pass that consolidates every scope on each tick; add
-  `AGENTIQUE_BRAIN_SLEEP_MODEL` for LLM reorganization (else deterministic
-  dedup/decay). Auto-apply is safe by the consolidation guards.
+- **Scheduled consolidation (opt-in).** `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL` (e.g. `6h`),
+  or `[brain] consolidate-interval` in `config.toml` (env wins), starts a background pass
+  that consolidates every scope on each tick; add `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` /
+  `consolidate-model` for LLM reorganization (else deterministic dedup/decay). Auto-apply
+  is safe by the consolidation guards. (Inspired by sleep-based memory consolidation.)
 
-Memory changes (HTTP, agent `MemoryAdd`, auto-encode, sleep) broadcast a
+Memory changes (HTTP, agent `MemoryAdd`, auto-encode, scheduled consolidation) broadcast a
 `brain.updated` WebSocket event that flares the nav button and refreshes open tabs.
 
 ## Scope model
@@ -297,7 +298,7 @@ agentique glue — `backend/internal/brain/`:
   `interference`). RFC P2/D5/D6.
 - `job.go` — async consolidation jobs + WS push types (`brain.consolidation`,
   `EventBrainUpdated`).
-- `automation.go` — the scheduled "sleep" loop.
+- `automation.go` — the scheduled consolidation loop.
 - `mcp.go` `http.go` — agent tools and the REST handlers.
 - `transcript.go` — transcript reconstruction for extraction.
 
@@ -330,8 +331,8 @@ dynamics — what the brain borrows next from human-memory research).
 
 - **The `Extractor` is the caller's, with a caller-chosen model.** `ClaudeExtractor`
   takes the model as a required parameter (no library default). It drives
-  `brain backfill`, the preview/apply consolidation (per-scope Tidy + cross-scope
-  global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
+  `brain backfill`, the preview/apply consolidation (per-scope consolidation + cross-scope
+  global), auto-encode, and scheduled consolidation. (Anthropic has no embeddings
   API, so semantic recall still needs an external embeddings endpoint.)
 - **Recall is pushed per-turn, and the outcome loop is closed (shipped).**
   Auto-recall pushes *pinned* facts + the *operating contract* (preamble) and
@@ -349,15 +350,15 @@ dynamics — what the brain borrows next from human-memory research).
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
-  (community detection → cluster-aware consolidation + aggressive Tidy), P2
+  (community detection → cluster-aware consolidation + aggressive consolidation), P2
   (confidence tiers + degree/betweenness centrality + the confirm UX) and P5
   (cross-scope-community guardrail + content-hash manifest for global promotion)
   are **done** — all RFC proposals are now shipped (neo4j export remains a parked
   non-goal).
 - **Episodic `capture` staging is unused.** Auto-encode distills a finished
   session's transcript directly into durable facts rather than staging raw
-  captures for a later sleep pass; the `SourceCapture` path exists but nothing
-  writes to it. Activating it (stage episodes → replay-and-abstract during sleep,
+  captures for a later scheduled consolidation; the `SourceCapture` path exists but nothing
+  writes to it. Activating it (stage episodes → replay-and-abstract during consolidation,
   per Complementary Learning Systems) is RFC-LD **D4**.
 - **Chroma collection space.** The collection is created with cosine distance;
   changing the embedding model/space requires a fresh collection name (a stale

@@ -4,7 +4,7 @@ Status: **B shipped; C shipped (core)** — 2026-06-21. Follows the shipped phas
 viz (regions, headless-report surfacing, subsumed-on-hover).
 
 **What shipped:**
-- **B** — `Record.Area` + `AssignAreas` (`memory/areas.go`); recompute on sleep/tidy/global
+- **B** — `Record.Area` + `AssignAreas` (`memory/areas.go`); recompute on scheduled-consolidation/consolidate/global
   apply; `brain assign-areas` CLI + `PreviewAreas`; `colorBy: "area"` + labelled
   cross-project region hulls in `BrainGraph.tsx`; cross-area associative recall
   (`expandAssociative`, sibling-scope fan-out). Areas stored as a **field** (not `Related`
@@ -57,7 +57,7 @@ Verified empirically on a copy of the live brain (2026-06-18): **1417 of 1510 fa
   exists but is never persisted by the filestore today.
 - Apply hooks: `ApplyPlan` calls `RelinkScope`+`AssignCommunities` per scope
   (`consolidate.go:356`); `ApplyGlobalPromotion` calls `RelinkScope(global)`
-  (`promote.go:309`). B/C extend exactly these (infrequent "sleep"-pass) points — never
+  (`promote.go:309`). B/C extend exactly these (infrequent consolidation-pass) points — never
   the hot recall path.
 
 ---
@@ -72,7 +72,7 @@ projects" — feeding the viz, recall, and promotion.
 rebuildable derived index, never source of truth). *Not* new `Related` edges — see
 Risk.
 
-**Compute** (new `AssignAreas(ctx, store)` run once at the global/sleep pass): run
+**Compute** (new `AssignAreas(ctx, store)` run once at the global/scheduled-consolidation pass): run
 `CrossScopeGroups` over the whole promotable+global set, assign each member an area id,
 deterministic-label it from the group's top TF-IDF tokens (LLM naming deferred to a
 later D). Idempotent, like `AssignCommunities`. Isolated/single-scope facts get no area.
@@ -108,7 +108,7 @@ consumer (RelinkScope, communities, areas, interference) at once.
 link. The four call sites switch from calling `jaccardSets` directly to the injected
 similarity.
 
-**Vector access:** batch-`Embed` all texts at the (infrequent) sleep pass and compute
+**Vector access:** batch-`Embed` all texts during (infrequent) scheduled consolidation and compute
 pairwise cosine (O(n²) over ~1500 × dim — trivial offline). Cache vectors on
 `Record.Embedding` (persist it, or a sidecar) keyed by text hash so unchanged facts
 aren't re-embedded.
@@ -161,7 +161,7 @@ verifiable on the live-brain copy (phase-A verify recipe).
 - **D2 — RelinkScope/curated edges:** keep B areas as a *field only* (sidesteps the P1
   overwrite debt, recommended) vs fix auto-vs-curated `Related` tagging now and store
   cross-scope edges.
-- **D3 — Embedding access:** re-embed at the sleep pass + cache on `Record.Embedding`
+- **D3 — Embedding access:** re-embed at scheduled consolidation + cache on `Record.Embedding`
   (recommended, provider-agnostic) vs add a Chroma bulk-vector fetch.
 - **D4 — Combine vs replace:** `max(jaccard, cosine)` blend (recommended) vs cosine
   replaces Jaccard outright.
@@ -174,5 +174,5 @@ verifiable on the live-brain copy (phase-A verify recipe).
 High confidence the primitives exist and the hooks are correct (read the code). Main
 unknowns are empirical: cluster/threshold quality (D5) and whether cross-area recall
 helps vs adds noise — both want a measure-first check on the real corpus before the
-defaults are locked. Blast radius is contained to the infrequent sleep/global pass and
+defaults are locked. Blast radius is contained to the infrequent scheduled-consolidation/global pass and
 the graph view; the hot recall path only gains one bounded fan-out.

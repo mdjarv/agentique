@@ -3,7 +3,7 @@
 Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md)
 
 > **Progress:** graph-view v1, **P1 (link graph + associative recall)**, **P3
-> (community detection → cluster-aware consolidation + aggressive Tidy)**, **P2
+> (community detection → cluster-aware consolidation + aggressive consolidation)**, **P2
 > (confidence tiers + centrality + confirm UX)** and **P5 (ConsolidateGlobal via the
 > graph)** are implemented — see
 > `memory/{link,community,confidence,centrality,global_graph}.go`, `recall.go`'s
@@ -53,7 +53,7 @@ proposes activating the latent graph and rendering it.
 - **Pure Go, `uuid` + `yaml` only**, so the core stays liftable into `agentkit/memory`. No CGo, no
   JVM, no Python. Centrality and community detection are a few hundred lines of Go.
 - **Cognition is offline.** The hot path (recall) stays cheap; LLM work happens in the
-  "sleep" consolidation pass.
+  scheduled consolidation pass.
 
 ### Architecture framing
 
@@ -140,7 +140,7 @@ betweenness (→ bridge facts) straight off the adjacency list.
   community; `brain/extractor.go`'s `chunkByCommunity` packs whole communities into
   `≤ maxReorgBatch` chunks so related facts merge across a large scope, not just
   within an arbitrary 100-fact slice.
-- **Aggressive Tidy** — a less-conservative reorganize prompt that collapses families
+- **Aggressive consolidation** — a less-conservative reorganize prompt that collapses families
   of granular facts into broad rules, exposed as a conservative/aggressive toggle in
   the Brain tab (and `brain consolidate --aggressive`). Safe because it's
   preview-gated. The over-deletion guard is now a configurable `MinSurvivorRatio`
@@ -148,7 +148,7 @@ betweenness (→ bridge facts) straight off the adjacency list.
   apply enforce the identical guard.
 - **Force-rerun** — `ConsolidateOptions.Force` skips the unchanged-fingerprint
   short-circuit; surfaced as a "Force re-run" button on an already-tidied scope and a
-  `brain consolidate --rerun` flag (needed to re-tidy after prompt/algorithm changes).
+  `brain consolidate --rerun` flag (needed to re-consolidate after prompt/algorithm changes).
 - **Cluster coloring** — the graph view's "Color by scope/cluster" toggle paints
   nodes by `community`.
 - **Centrality** (shipped with P2) — `memory/centrality.go`'s `ComputeCentrality`:
@@ -212,7 +212,7 @@ codebase-specific facts.
   short-circuits on an unchanged manifest; `ApplyGlobalPromotion` treats a skipped plan as a
   deterministic no-op (`Report.Skipped`). Confidence/over-deletion/staleness guards unchanged.
 - `brain.Service` persists the manifest (`.global-manifest.json`, separate from the per-scope
-  Tidy `.fingerprints.json`): `PlanGlobal` loads it as `PrevManifest` and records it when a
+  consolidation `.fingerprints.json`): `PlanGlobal` loads it as `PrevManifest` and records it when a
   pass finds nothing to promote; `ApplyGlobal` advances it to the post-apply state. The
   manifest only advances once promotions are actually applied (or a pass is genuinely clean),
   so an unapplied preview is never wrongly skipped.
@@ -262,7 +262,7 @@ codebase-specific facts.
 
 1. ~~**Graph-view v1** — force-graph over `derivedFrom` + computed similarity. No backend change.~~ ✅ done.
 2. ~~**P1** — populate `Related` in consolidation; associative recall.~~ ✅ done (`memory/link.go`).
-3. ~~**P3** — community detection → cluster coloring + within-community (cluster-aware) consolidation + aggressive Tidy.~~ ✅ done (`memory/community.go`, `brain/extractor.go`).
+3. ~~**P3** — community detection → cluster coloring + within-community (cluster-aware) consolidation + aggressive consolidation.~~ ✅ done (`memory/community.go`, `brain/extractor.go`).
 4. ~~**P2** — confidence tiers + centrality + the "confirm" UX.~~ ✅ done (`memory/{confidence,centrality}.go`, `brain/graph.go`).
 5. ~~**P5** — ConsolidateGlobal via the graph: cross-scope community guardrail + content-hash manifest.~~ ✅ done (`memory/global_graph.go`). neo4j remains parked as a documented optional export — the only unimplemented item, and a non-goal at current scale.
 

@@ -103,7 +103,7 @@ Operational facts a change here must respect:
   reintroduce first-turn-only behavior.
 - **Areas vs communities.** `Record.Community` is scope-local; `Record.Area` is the
   cross-scope topic sibling (`memory/areas.go`, `AssignAreas`), recomputed on the
-  sleep/tidy/global pass. Both are rebuildable indexes, never source of truth.
+  scheduled-consolidation/consolidate/global pass. Both are rebuildable indexes, never source of truth.
 - **Similarity is pluggable** (`memory/similarity.go`): Jaccard + optional embedding
   cosine via two thresholds (`jaccard≥lexThresh OR cosine≥cosThresh`), threaded as a
   variadic `SimOption`. Now threaded through `ApplyPlan` (per-scope links/communities),

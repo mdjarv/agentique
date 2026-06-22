@@ -184,7 +184,7 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD` | Cosine link threshold for semantic area clustering (default `0.45`; model-specific — recalibrate per embedding model). Inert without an embedder. |
 | `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts in the preamble + task-relevant facts injected per turn, delta-deduped) is on by default; set to `off` to disable. |
 | `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). |
-| `AGENTIQUE_BRAIN_SLEEP_INTERVAL`, `AGENTIQUE_BRAIN_SLEEP_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). |
+| `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL`, `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). Also settable persistently in `config.toml` under `[brain] consolidate-interval` / `consolidate-model` (env wins when both are set). |
 
 ## Data & locations
 
@@ -225,8 +225,8 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 | `agentique cleanup` | Delete merged, terminal sessions. |
 | `agentique restore [name|index]` | List or restore database backups. |
 | `agentique brain backfill` | Extract durable memories from past transcripts. |
-| `agentique brain consolidate` | Run the consolidation "sleep" pass over one scope (`--project`/`--scope`, optional `--model`). |
-| `agentique brain assign-areas` | Recompute cross-scope topic "areas" and stamp them onto facts (`--dry-run` to preview). Normally automatic on the sleep/tidy/global pass. |
+| `agentique brain consolidate` | Run consolidation over one scope (`--project`/`--scope`, optional `--model`). |
+| `agentique brain assign-areas` | Recompute cross-scope topic "areas" and stamp them onto facts (`--dry-run` to preview). Normally automatic on scheduled consolidation, consolidate-all, or global promotion. |
 | `agentique brain backfill-subsumed` | One-time: rebuild empty `Subsumed` merge-provenance on promoted facts from a snapshot (`--source` a brain dir or id-bearing export). |
 | `agentique brain export <file>` | Export the brain to a portable JSON bundle. |
 | `agentique brain import <file>` | Import a bundle, mapping projects to local ones (interactive, or `--map`/`-y`). |

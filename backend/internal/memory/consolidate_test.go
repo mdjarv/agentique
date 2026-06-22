@@ -267,7 +267,7 @@ func TestConsolidateOverDeletionSafetyNet(t *testing.T) {
 	}
 }
 
-// A lower MinSurvivorRatio (aggressive Tidy) permits a deeper cut that the default
+// A lower MinSurvivorRatio (aggressive consolidation) permits a deeper cut that the default
 // 0.5 guard would refuse; the chosen ratio rides along in the Plan so a preview and
 // its later apply enforce the identical guard.
 func TestConsolidateAggressiveSurvivorRatio(t *testing.T) {
@@ -397,7 +397,7 @@ func TestConsolidateFingerprintSkip(t *testing.T) {
 }
 
 // Force overrides the fingerprint short-circuit: an unchanged scope is reorganized
-// anyway, so a re-tidy after a prompt/algorithm change isn't blocked.
+// anyway, so a re-consolidate after a prompt/algorithm change isn't blocked.
 func TestConsolidateForceRerunsUnchanged(t *testing.T) {
 	store := newMemStore(
 		mk("a", ScopeGlobal, "user prefers dark mode in the editor", CategoryPreference, SourceAgent),

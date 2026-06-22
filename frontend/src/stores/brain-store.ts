@@ -291,7 +291,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
 
   onBrainUpdated: () => {
     set((s) => ({ flareSeq: s.flareSeq + 1 }));
-    // Coalesce bursts (e.g. the sleep pass broadcasts once per scope) into a single
+    // Coalesce bursts (e.g. scheduled consolidation broadcasts once per scope) into a single
     // list refresh so we don't fire N fetches back-to-back.
     scheduleRefresh();
   },

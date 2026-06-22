@@ -35,7 +35,7 @@ The brain already embodies the *architecture* of several real theories of human 
 - **Complementary Learning Systems** (McClelland, McNaughton & O'Reilly 1995) — a fast episodic
   store + a slow abstracting store, which is how brains resolve stability-vs-plasticity. Our
   `capture` → `consolidate` → durable-fact pipeline is exactly this shape.
-- **Systems consolidation** — the "sleep" pass abstracts rules and decays specifics, mirroring
+- **Systems consolidation** — the consolidation pass abstracts rules and decays specifics, mirroring
   hippocampus→neocortex transfer.
 - **Spreading activation** (Collins & Loftus 1975) — associative recall (graph-layer P1) folds in
   one-hop `Related` neighbours, almost literally.
@@ -58,7 +58,7 @@ Carried from [brain-memory.md](brain-memory.md):
   have to lose the verbatim trace. We abstract for recall *and* keep provenance for audit. The
   dynamics below must never overwrite the source signal they derive from.
 - **Pure Go, liftable core; cognition is offline.** The hot path (recall) stays cheap. Strengthening
-  is a cheap post-recall write; replay/abstraction happens in the sleep pass.
+  is a cheap post-recall write; replay/abstraction happens in scheduled consolidation.
 
 New to this RFC:
 
@@ -123,7 +123,7 @@ New to this RFC:
 - **Today.** `SourceCapture` exists but nothing writes it; auto-encode (`LearnFromTranscript`)
   shortcuts directly to `SourceConsolidated` durable facts. This is why scopes bloat with granular,
   code-discoverable trivia (the live corpus: 896 `category:fact` entries, scopes up to 427 facts).
-- **Proposal.** Stage raw episodic captures, and have the sleep pass replay-and-abstract them
+- **Proposal.** Stage raw episodic captures, and have scheduled consolidation replay-and-abstract them
   (salience-weighted, D3) into durable facts — so abstraction sees a *batch* of related episodes,
   not one transcript at a time.
 - **Lives in.** Core (`consolidate.go` promote phase already has the seam) + glue (auto-encode writes
@@ -149,7 +149,7 @@ New to this RFC:
   step.
 - **Proposal.** A scheduler over (storage, retrieval, last-seen) that proactively resurfaces or
   re-verifies high-storage / low-recent-retrieval facts instead of decaying them away.
-- **Lives in.** The sleep pass (`automation.go`) over D1's two-factor signal.
+- **Lives in.** Scheduled consolidation (`automation.go`) over D1's two-factor signal.
 - **Depends on.** D1.
 
 ## Non-goals (where the brain metaphor misleads)
@@ -179,7 +179,7 @@ New to this RFC:
    future work, and is the bigger lever for making the signal non-inert on the live corpus.
 3. **Reconsolidation gating.** How much may recall change a fact without human review, and how is an
    auto-update marked in provenance?
-4. **Scheduler placement.** D6 as part of the sleep pass, or a separate lighter tick.
+4. **Scheduler placement.** D6 as part of scheduled consolidation, or a separate lighter tick.
 5. ~~**Confidence calibration.**~~ **Resolved (2026-06-21):** a confirmed-useful outcome
    (`MarkHelped`) raises `ConfidenceScore` toward a 0.95 corroboration ceiling (gap-closing,
    below human ground truth); a contradiction (`MarkContradicted`) knocks it down. Trust is now

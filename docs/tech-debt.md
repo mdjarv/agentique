@@ -188,14 +188,14 @@ sample (one real mis-recall, the live pref distribution) and want revisiting onc
 is real `MemoryUsed`/recall traffic to measure against.
 
 ### Brain: single consolidation job slot
-Only one consolidation runs at a time (`beginJob` 409s a second); "Tidy all" is
-sequential and two scopes can't tidy concurrently. Parallel-across-scopes was
+Only one consolidation runs at a time (`beginJob` 409s a second); "Consolidate all" is
+sequential and two scopes can't consolidate concurrently. Parallel-across-scopes was
 deferred — needs a multi-job map + frontend tracking multiple previews.
 → `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
 
 ### Brain: `brain.Handler` is a grab-bag
 One type owns memory CRUD + search + status + consolidation preview/apply + global
-+ tidy-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
++ consolidate-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
 help. → `internal/brain/{http,job}.go`.
 
 ### Brain: semantic similarity is activated only for areas (C) ~~partial~~ → CLOSED 2026-06-22
@@ -367,8 +367,8 @@ the backup header, so correctness risk is low. If the schema changes
 The deterministic cores are well covered (Plan/Apply, promote, relink, associative
 recall, extractor parsing, and — new — `MarkHelped`/`OperatingContract`/the recall
 lone-token guard, plus the `MemoryUsed` adapter scope check). Untested: the async job
-runners (`runScopeJob`/`runGlobalJob`/`runTidyAllJob`), the `server.go` automation wiring
-(auto-recall preamble, auto-encode on delete, scheduled sleep), and the CLI
+runners (`runScopeJob`/`runGlobalJob`/`runConsolidateAllJob`), the `server.go` automation wiring
+(auto-recall preamble, auto-encode on delete, scheduled consolidation), and the CLI
 `export`/`import` interactive resolution — they need a live runner / DB / stdin. **New
 gaps from the outcome-signal work:** `MemoryUsed` over the real `/mcp` HTTP transport
 (token minted per-session → needs a model-backed session) and the operating-contract
