@@ -303,6 +303,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			if v := os.Getenv("AGENTIQUE_BRAIN_RECALL"); v != "off" && v != "false" && v != "0" {
 				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
 				mgr.MemoryRecallFn = brainSvc.RecallBlock
+				// Explain the <brain> recall envelope once in the system preamble so the
+				// per-turn recall block stays a compact tagged block (see RecallBlock).
+				mgr.MemoryRecallPreamble = brain.RecallPreamble
 				// Operating contract: high-confidence preferences become acted-on standing
 				// instructions in the preamble, not just soft context (brain-outcome-signal.md).
 				mgr.MemoryContractFn = brainSvc.OperatingContract

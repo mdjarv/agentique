@@ -88,6 +88,14 @@ func TestRecallBlock(t *testing.T) {
 	if !strings.Contains(block, "goose numbering") {
 		t.Fatalf("recall block should surface the relevant fact, got:\n%s", block)
 	}
+	// The block is a <brain> envelope (parsed by the frontend into a card), with the
+	// fact id carried as an attribute rather than leaking into the prose.
+	if !strings.HasPrefix(block, "<brain>") || !strings.HasSuffix(block, "</brain>") {
+		t.Fatalf("recall block should be wrapped in a <brain> envelope, got:\n%s", block)
+	}
+	if !strings.Contains(block, "<fact id=\""+rel.ID+"\">") {
+		t.Fatalf("recall block should carry the fact id as an attribute, got:\n%s", block)
+	}
 	if strings.Contains(block, "Mathias") {
 		t.Fatalf("pinned facts belong in the preamble, not the recall block, got:\n%s", block)
 	}

@@ -93,6 +93,13 @@ type Manager struct {
 	// via wireRecall.
 	MemoryRecallFn func(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string)
 
+	// MemoryRecallPreamble, when set alongside MemoryRecallFn, is a static system-
+	// preamble section explaining the <brain> recall envelope to the agent (its shape
+	// and the MemoryUsed/MemoryFlag outcome hooks) so the per-turn recall block stays
+	// compact. Injected at create/resume/reconnect only when per-turn recall is active.
+	// Wired to brain.RecallPreamble by the server.
+	MemoryRecallPreamble string
+
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
 	mcpTokens      *mcphttp.TokenStore
@@ -237,6 +244,17 @@ func (m *Manager) memoryContract(ctx context.Context, projectID string) string {
 	return "\n\n" + block
 }
 
+// memoryRecallPreamble returns the static <brain>-envelope explainer for the system
+// preamble, prefixed with blank lines for section separation. Only emitted when per-
+// turn recall is actually wired (MemoryRecallFn set) and the text is configured, so a
+// session never gets told about a recall format it won't receive.
+func (m *Manager) memoryRecallPreamble() string {
+	if m.MemoryRecallFn == nil || m.MemoryRecallPreamble == "" {
+		return ""
+	}
+	return "\n\n" + m.MemoryRecallPreamble
+}
+
 // wireRecall installs the per-turn task-relevant recall callback on a freshly
 // constructed session, binding its project, so each turn prepends newly-relevant
 // memories. No-op when recall is disabled or the project is empty.
@@ -303,7 +321,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID) + m.memoryContract(context.Background(), params.ProjectID)
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID) + m.memoryContract(context.Background(), params.ProjectID) + m.memoryRecallPreamble()
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
@@ -458,7 +476,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
@@ -548,7 +566,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
