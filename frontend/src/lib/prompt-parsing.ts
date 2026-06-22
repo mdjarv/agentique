@@ -648,10 +648,57 @@ export function preprocessAgentiqueTags(markdown: string, isFinal = false): stri
 // prompt blocks never pass through the markdown parser.
 // ---------------------------------------------------------------------------
 
+/** A single recalled memory parsed out of a `<brain>` envelope. */
+export interface BrainFact {
+  id: string;
+  text: string;
+}
+
 export type ContentSegment =
   | { type: "markdown"; content: string }
   | { type: "prompt"; block: PromptBlock }
-  | { type: "pending_prompt"; content: string; title?: string };
+  | { type: "pending_prompt"; content: string; title?: string }
+  | { type: "brain"; facts: BrainFact[] };
+
+// ---------------------------------------------------------------------------
+// <brain> recall envelope
+//
+// The backend prepends a `<brain><fact id="…">…</fact>…</brain>` block to a turn's
+// prompt when persistent memory surfaces task-relevant facts (see RecallBlock). It is
+// always well-formed (system-generated) and always leads the prompt, so extraction is
+// a simple anchored match — none of the prompt-block state machine is needed. Peeling
+// it before markdown rendering keeps the raw tags out of the (rehype-less) markdown
+// renderer and lets the UI render a dedicated "Recalled from memory" card.
+// ---------------------------------------------------------------------------
+
+const RE_BRAIN_BLOCK = /^\s*<brain>([\s\S]*?)<\/brain>\s*/;
+const RE_FACT = /<fact\s+id="([^"]*)">([\s\S]*?)<\/fact>/g;
+
+/** Reverse escapeFactText (backend): &amp; must run last so it doesn't double-decode. */
+function unescapeFactText(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** Peel a leading `<brain>` envelope off the prompt. Returns the parsed facts and the
+ *  remaining markdown (the user's actual prompt), or null when there is no block or it
+ *  contains no usable facts. */
+export function extractBrainBlock(markdown: string): { facts: BrainFact[]; rest: string } | null {
+  const m = RE_BRAIN_BLOCK.exec(markdown);
+  if (!m) return null;
+  const facts: BrainFact[] = [];
+  for (const fm of (m[1] ?? "").matchAll(RE_FACT)) {
+    const id = fm[1] ?? "";
+    const text = unescapeFactText((fm[2] ?? "").trim());
+    if (text) facts.push({ id, text });
+  }
+  if (facts.length === 0) return null;
+  return { facts, rest: markdown.slice(m[0].length) };
+}
 
 /** Find a trailing unclosed ```prompt opener not captured by findRawPromptBlocks. */
 function findPendingPromptBlock(
@@ -685,6 +732,16 @@ export function splitByPromptBlocks(
   rawMarkdown: string,
   opts: SplitOptions = {},
 ): ContentSegment[] {
+  // A leading <brain> recall envelope is peeled first and rendered as its own card;
+  // the remainder (the user's actual prompt) flows through the prompt-block pipeline.
+  const brain = extractBrainBlock(rawMarkdown);
+  if (brain) {
+    return [{ type: "brain", facts: brain.facts }, ...splitPromptSegments(brain.rest, opts)];
+  }
+  return splitPromptSegments(rawMarkdown, opts);
+}
+
+function splitPromptSegments(rawMarkdown: string, opts: SplitOptions = {}): ContentSegment[] {
   const markdown = preprocessAgentiqueTags(rawMarkdown, opts.isFinal ?? false);
   const rawBlocks = findRawPromptBlocks(markdown);
   const lines = markdown.split("\n");

@@ -61,9 +61,20 @@ function AgentActivity({ children }: { children: ReactNode }) {
 
 const i3 = "h-3 w-3";
 
+const BRAIN_SAMPLE_PROMPT = [
+  "<brain>",
+  '  <fact id="44965621-ad2e-4da9-ab0e-6e5034286005">In git worktrees, rebase onto the local main / project HEAD, not `origin/main`.</fact>',
+  '  <fact id="a1f03b9c-2d7e-4c61-9f0a-7b2c5e8d4419">Prefer `modernc.org/sqlite` (pure Go, no CGo) for SQLite needs.</fact>',
+  "</brain>",
+  "",
+  "This is a git worktree. Rebase onto the local project HEAD (not origin).",
+].join("\n");
+
 function ChatSample() {
   return (
     <div className="space-y-6 p-4">
+      <UserMessage prompt={BRAIN_SAMPLE_PROMPT} deliveryStatus="delivered" />
+
       <UserMessage
         prompt="Can you refactor the auth middleware to use the new token validation?"
         deliveryStatus="delivered"

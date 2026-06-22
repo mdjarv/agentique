@@ -32,7 +32,9 @@ import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 export {
+  type BrainFact,
   type ContentSegment,
+  extractBrainBlock,
   findRawPromptBlocks,
   type PromptBlock,
   parsePromptBlocks,

@@ -150,6 +150,19 @@ export async function confirmMemory(id: string): Promise<Memory> {
   return res.json();
 }
 
+// flagMemory marks a fact as contradicted (RFC-LD D2): weakens it into the review
+// band and records an optional reason. Mirrors the agent MemoryFlag tool — used by the
+// "Outdated" action on a recalled-memory card.
+export async function flagMemory(id: string, reason?: string): Promise<Memory> {
+  const res = await fetch(`${BASE}/memories/${id}/flag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+  await throwIfNotOk(res, "Failed to flag memory");
+  return res.json();
+}
+
 // refineMemory asks the model to rewrite a fact per an instruction (informed by the
 // sources it was merged from) and returns the DRAFT text. It writes nothing — the
 // caller shows the draft and the user decides whether to save it.

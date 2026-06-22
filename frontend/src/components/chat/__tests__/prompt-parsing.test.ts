@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractBrainBlock,
   findRawPromptBlocks,
   parsePromptBlocks,
   parsePromptFromCode,
@@ -1144,5 +1145,63 @@ describe("parsePromptBlocks", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0]?.title).toBe("First");
     expect(blocks[1]?.title).toBe("Second");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// <brain> recall envelope
+// ---------------------------------------------------------------------------
+
+describe("extractBrainBlock", () => {
+  it("parses facts and returns the remaining prompt", () => {
+    const md =
+      '<brain>\n  <fact id="abc123">In git worktrees, rebase onto local HEAD.</fact>\n' +
+      '  <fact id="def456">Prefer modernc.org/sqlite.</fact>\n</brain>\n\nDo the thing.';
+    const result = extractBrainBlock(md);
+    expect(result).not.toBeNull();
+    expect(result?.facts).toEqual([
+      { id: "abc123", text: "In git worktrees, rebase onto local HEAD." },
+      { id: "def456", text: "Prefer modernc.org/sqlite." },
+    ]);
+    expect(result?.rest).toBe("Do the thing.");
+  });
+
+  it("unescapes &amp;/&lt;/&gt; in fact text", () => {
+    const md =
+      '<brain>\n  <fact id="x">wrap with %w &amp; compare a &lt; b &gt; c</fact>\n</brain>';
+    expect(extractBrainBlock(md)?.facts[0]?.text).toBe("wrap with %w & compare a < b > c");
+  });
+
+  it("returns null when there is no brain block", () => {
+    expect(extractBrainBlock("Just a normal prompt.")).toBeNull();
+  });
+
+  it("only matches a leading block, not one buried mid-prompt", () => {
+    expect(extractBrainBlock('hello <brain><fact id="x">y</fact></brain>')).toBeNull();
+  });
+});
+
+describe("splitByPromptBlocks with a brain envelope", () => {
+  it("emits a brain segment first, then the prompt markdown", () => {
+    const md = '<brain>\n  <fact id="abc">A recalled fact.</fact>\n</brain>\n\nNow do the work.';
+    const segs = splitByPromptBlocks(md, { isFinal: true });
+    expect(segs[0]).toEqual({ type: "brain", facts: [{ id: "abc", text: "A recalled fact." }] });
+    expect(segs.some((s) => s.type === "markdown" && s.content.includes("Now do the work."))).toBe(
+      true,
+    );
+  });
+
+  it("still parses a prompt card that follows a brain block", () => {
+    const md = [
+      '<brain>\n  <fact id="abc">A fact.</fact>\n</brain>',
+      "",
+      "```prompt",
+      "# Task",
+      "Do B.",
+      "```",
+    ].join("\n");
+    const segs = splitByPromptBlocks(md, { isFinal: true });
+    expect(segs[0]?.type).toBe("brain");
+    expect(segs.some((s) => s.type === "prompt" && s.block.title === "Task")).toBe(true);
   });
 });

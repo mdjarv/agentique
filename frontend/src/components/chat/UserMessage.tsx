@@ -1,7 +1,9 @@
 import { Check, Clock, Copy, FileText, Loader2, User } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { BrainCard } from "~/components/chat/BrainCard";
 import { Markdown } from "~/components/chat/Markdown";
+import { extractBrainBlock } from "~/components/chat/PromptCard";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { formatTurnTime } from "~/lib/format";
@@ -24,6 +26,16 @@ export const UserMessage = memo(function UserMessage({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const isPending = deliveryStatus === "sending" || deliveryStatus === "queued";
 
+  // A leading <brain> recall envelope is system-injected, not the user's words: peel it
+  // and render it as a standalone card above the bubble, so the message bubble (and the
+  // copy action) hold only what the user actually wrote.
+  const { brainFacts, bodyPrompt } = useMemo(() => {
+    const brain = extractBrainBlock(prompt);
+    return brain
+      ? { brainFacts: brain.facts, bodyPrompt: brain.rest.trimStart() }
+      : { brainFacts: null, bodyPrompt: prompt };
+  }, [prompt]);
+
   useEffect(() => {
     if (!lightboxSrc) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -36,6 +48,7 @@ export const UserMessage = memo(function UserMessage({
   return (
     <>
       <div className="group/usermsg">
+        {brainFacts && <BrainCard facts={brainFacts} />}
         <div className="flex gap-3 flex-row-reverse items-start max-md:gap-2">
           <Avatar className="h-8 w-8 shrink-0 max-md:h-6 max-md:w-6">
             <AvatarFallback className="bg-primary/20 text-primary">
@@ -77,7 +90,9 @@ export const UserMessage = memo(function UserMessage({
                 )}
               </div>
             )}
-            {prompt && <Markdown content={prompt} className="prose-user" preserveNewlines />}
+            {bodyPrompt && (
+              <Markdown content={bodyPrompt} className="prose-user" preserveNewlines />
+            )}
             {deliveryStatus && (
               <div className="flex items-center gap-1 justify-end mt-1 -mb-0.5">
                 {deliveryStatus === "sending" ? (
@@ -93,10 +108,10 @@ export const UserMessage = memo(function UserMessage({
               </div>
             )}
           </div>
-          {prompt && (
+          {bodyPrompt && (
             <button
               type="button"
-              onClick={() => handleCopy(prompt)}
+              onClick={() => handleCopy(bodyPrompt)}
               className="mt-1 p-1 rounded opacity-0 group-hover/usermsg:opacity-100 hover:bg-muted text-muted-foreground transition-opacity max-md:opacity-60"
               aria-label="Copy message"
             >

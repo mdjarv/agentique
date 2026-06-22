@@ -14,6 +14,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { BrainCard } from "~/components/chat/BrainCard";
 import { MarkdownFileLink } from "~/components/chat/MarkdownFileLink";
 import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
@@ -222,6 +223,9 @@ export const Markdown = memo(function Markdown({
         }
         if (seg.type === "pending_prompt") {
           return <PendingPromptCard key="pending-prompt" title={seg.title} content={seg.content} />;
+        }
+        if (seg.type === "brain") {
+          return <BrainCard key="brain-recall" facts={seg.facts} />;
         }
         return (
           <ReactMarkdown
