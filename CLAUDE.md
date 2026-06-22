@@ -90,7 +90,9 @@ Provider routing lives in `session.Manager` via `capturingConnector.hintNext`: e
 The persistent agent memory ("brain") is a major subsystem. Design docs:
 `docs/brain-memory.md` (core), `docs/brain-graph-layer.md` (graph/links),
 `docs/brain-learning-dynamics.md` (feedback loops), `docs/brain-cross-scope-areas.md`
-(areas + semantic similarity). Liftable core in `internal/memory` (stdlib + yaml/uuid
+(areas + semantic similarity), `docs/brain-outcome-signal.md` (the outcome/feedback loop:
+MemoryUsed + calibration + operating contract), `docs/brain-semantic-recall.md` (recall
+precision + the embedder path). Liftable core in `internal/memory` (stdlib + yaml/uuid
 only); agentique policy in `internal/brain`; markdown source-of-truth in
 `internal/memory/filestore`, fronted by a read-through cache (`internal/memory/cachestore`).
 
@@ -108,5 +110,20 @@ Operational facts a change here must respect:
   (`AGENTIQUE_BRAIN_*` + Chroma); everything degrades cleanly to keyword/Jaccard.
 - **Stopwords matter for precision** (`memory/tokenize.go`): drop conversational filler,
   but never domain terms (e.g. `just` is the build tool, not filler).
+- **Recall precision: lone-token guard** (`memory/recall.go`, `singleTokenMinShare`): a
+  multi-token query matching a fact on a *single* distinct token must have that token
+  dominate the query's idf mass, else it's dropped (stops a glue token like `github`
+  surfacing an off-topic fact). Skipped when a strong vector signal vouches for relevance.
+  It's a blunt lexical mitigation; the cure is semantic recall (`docs/brain-semantic-recall.md`).
+- **Outcome signal closes the loop** (`docs/brain-outcome-signal.md`, RFC-LD D2): strength
+  changes on *outcome*, not just injection. `MemoryUsed` (positive, `memory.MarkHelped`,
+  `Record.Helped`) raises confidence toward a 0.95 corroboration ceiling (< human ground
+  truth); `MemoryFlag` (negative, `MarkContradicted`) weakens into the review band. Both are
+  agent-volunteered MCP tools, scope-checked, auto-allowed. `uses` accrues on injection/
+  `MemorySearch`; `helped` only via `MemoryUsed`.
+- **Operating contract** (`Service.OperatingContract`): preferences at confidence
+  ≥ `ActOnConfidence` (0.85) inject into the system preamble as *acted-on directives*, not
+  soft context. A fresh inferred pref (0.8) must earn it via human `Confirm` (→1.0) or
+  outcome corroboration; low-confidence prefs stay advisory / in the confirm queue.
 - After changing the brain, populate/refresh on demand with `agentique brain assign-areas`
-  / `consolidate`; `uses` only accrues via recall injection or `MemorySearch`.
+  / `consolidate`.

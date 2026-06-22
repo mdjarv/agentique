@@ -132,6 +132,10 @@ Auto-approved, scoped to the calling session's project (+ global):
 - `MemoryFlag(id, reason)` — flag a recalled fact as wrong/outdated (RFC-LD D2
   reconsolidation): weakens it into the review queue, never deletes. The id comes from
   `MemorySearch` output.
+- `MemoryUsed(id)` — confirm a recalled fact was useful/correct (RFC-LD D2 positive half,
+  `docs/brain-outcome-signal.md`): strengthens it and raises confidence toward a 0.95
+  corroboration ceiling, so well-proven preferences graduate into the operating contract.
+  The positive twin of `MemoryFlag`; id likewise from `MemorySearch` (or a recalled-memory block).
 
 ## Brain tab REST API
 
@@ -329,18 +333,19 @@ dynamics — what the brain borrows next from human-memory research).
   `brain backfill`, the preview/apply consolidation (per-scope Tidy + cross-scope
   global), auto-encode, and the scheduled sleep pass. (Anthropic has no embeddings
   API, so semantic recall still needs an external embeddings endpoint.)
-- **Query-relevant recall is now pushed (shipped), but "did it help?" is still
-  open.** Auto-recall pushes both *pinned* facts (preamble) and *task-relevant*
-  top-K recall (first turn, `Service.RecallBlock` → `Manager.MemoryRecallFn` →
-  `Session.injectRecall`) — the agent no longer has to call `MemorySearch` to get
-  relevance-ranked context, and injected facts get `BumpUses`/`LastUsedAt` stamped,
-  so two-factor strength finally sees real read signal. What's *still* read-only is
-  the outcome: a bump records that a fact was injected, not whether it actually
-  helped — recall doesn't yet strengthen, update, or weaken a fact based on its
-  usefulness in the turn. That closing of the loop (recall as a graded write —
-  testing effect + reconsolidation) is RFC-LD **D2**, the keystone of
-  [brain-learning-dynamics.md](brain-learning-dynamics.md). (Injection is one
-  lookup per live session instance — bounded, not per-turn.)
+- **Recall is pushed per-turn, and the outcome loop is closed (shipped).**
+  Auto-recall pushes *pinned* facts + the *operating contract* (preamble) and
+  *task-relevant* top-K recall **every turn** (`Service.RecallBlock` →
+  `Manager.MemoryRecallFn` → `Session.injectRecall`, delta-deduped against a session
+  seen-set), so the agent gets relevance-ranked context without calling `MemorySearch`.
+  Injected facts get `BumpUses`/`LastUsedAt` ("shown"). The loop's *outcome* half now
+  exists too (RFC-LD **D2**, [brain-outcome-signal.md](brain-outcome-signal.md)):
+  `MemoryUsed`/`MarkHelped` strengthen a *confirmed-useful* fact (raising confidence
+  toward a 0.95 corroboration ceiling) and `MemoryFlag`/`MarkContradicted` weaken a
+  contradicted one — so strength now changes on outcome, not just injection. **Still
+  open:** the signal is agent-volunteered (no *automatic* session-end judge yet), so on
+  a fresh corpus `helped` is 0 until agents adopt the tool — the durable fix is the
+  automatic emitter (RFC-LD decision #2).
 - **Link graph is recompute-on-consolidate, not curated.** `RelinkScope` rebuilds
   similarity edges each apply; there's no curated/human `[[link]]` UI yet, and the
   graph view still draws client-side Jaccard for dashed edges on top. RFC P3
