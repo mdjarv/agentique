@@ -33,6 +33,13 @@ type Query struct {
 	// It is MODEL-SPECIFIC (cosine distributions differ per embedder) — calibrate it
 	// alongside the cosine link threshold. Only consulted when a Searcher is present.
 	VectorVetoScore float64
+	// VectorVouchScore is the vector score at/above which the embedder is trusted to
+	// OVERRIDE the lexical lone-token guard (singleTokenMinShare) — i.e. the cosine
+	// "related" line (the brain passes its cosThresh here). A merely-meaningful cosine is
+	// not enough: a compressed-distribution model (all-MiniLM scores ~0.35 even for
+	// unrelated pairs) would otherwise vouch for everything. <= 0 uses
+	// DefaultSemanticThreshold. Only consulted when a Searcher is present.
+	VectorVouchScore float64
 }
 
 // Result splits recall output the way it is injected: pinned facts are always

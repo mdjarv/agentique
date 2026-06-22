@@ -285,6 +285,43 @@ func TestRecallVectorVetoesUnrelatedKeywordSurvivor(t *testing.T) {
 	}
 }
 
+// The vouch bar (brain-semantic-recall.md priority #1, the github fix): in hybrid mode a
+// LONE-token keyword survivor whose vector score is only MID-RANGE (above minVectorScore
+// but below the cosine "related" line) must still be dropped by the lexical lone-token
+// guard — a mediocre cosine does not vouch for it. This is the real github mis-recall: the
+// GOPRIVATE fact matched only "github" and scored ~0.36 (live, all-MiniLM), enough to clear
+// minVectorScore (0.20) and skip the guard under the old rule, so it leaked the hybrid path.
+func TestRecallVouchBarDropsMidScoreLoneToken(t *testing.T) {
+	// "go" matches the query only on the lone glue token "github" (secrets/vars match
+	// nothing), exactly like the real mis-recall. "ci" gives github df=2 so its idf is glue.
+	goRec := rec("go", "Private allbin Go modules require GOPRIVATE github plus git SSH config", CategoryFact)
+	ci := rec("ci", "the release workflow pushes artifacts to github actions", CategoryFact)
+	base := newMemStore(goRec, ci)
+	q := Query{Text: "secrets and vars on github", K: 3}
+
+	// Mid-range vector score (0.36): clears minVectorScore but below the default vouch
+	// (DefaultSemanticThreshold 0.45). Old rule skipped the guard here → leak.
+	mid := &searchStore{memStore: base, hits: []Hit{{ID: "go", Score: 0.36}, {ID: "ci", Score: 0.42}}}
+	res, err := Recall(context.Background(), mid, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(res.Recalled, "go") {
+		t.Fatalf("a mid-cosine lone-token match must be dropped by the vouch-gated guard, got %+v", res.Recalled)
+	}
+
+	// Control: a vector score that genuinely vouches (>= vouch line) keeps it — the
+	// embedder is now confident it IS related, so the lexical guard yields.
+	strong := &searchStore{memStore: base, hits: []Hit{{ID: "go", Score: 0.6}, {ID: "ci", Score: 0.42}}}
+	res2, err := Recall(context.Background(), strong, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(res2.Recalled, "go") {
+		t.Fatalf("a genuinely-vouched (high cosine) lone-token match should survive, got %+v", res2.Recalled)
+	}
+}
+
 // A candidate the vector search did NOT score (absent from results — unindexed or beyond
 // the search cap) is "unknown to the vector", not "vetoed by it": it must fall back to the
 // keyword path (+ lexical guard), never be dropped just because some OTHER candidate drew

@@ -42,11 +42,13 @@ const (
 	// even if keyword overlap is strong, so semantics — not an incidental keyword match —
 	// has the final say. It sits BELOW minVectorScore on purpose: minVectorScore is "a
 	// meaningful hit"; the veto is the stronger claim "actively unrelated", so it only
-	// fires on near-zero cosine, leaving the lukewarm-vector / strong-keyword zone (e.g.
-	// exact code-identifier matches the embedder undervalues) untouched. It is MODEL-
-	// SPECIFIC: 0.15 is a conservative default for a well-centred model; embedders with a
-	// high baseline cosine (all-MiniLM-L6-v2's random-pair p99 ≈ 0.44) want this RAISED
-	// after a measure-first sweep — see docs/brain-semantic-recall.md.
+	// fires on near-zero cosine, leaving the lukewarm-vector zone untouched. The veto
+	// alone targets MULTI-token keyword survivors (kwMatches>1); LONE-token survivors are
+	// handled by the vouch bar (the lexical guard, gated on VectorVouchScore), so the two
+	// cover disjoint classes. It is MODEL-SPECIFIC: 0.15 is calibrated for all-MiniLM-L6-v2
+	// (measured live — clearly-unrelated facts score ~0.05–0.13; weakly-related ~0.35;
+	// related ~0.44; see docs/brain-semantic-recall.md). A better-centred model can use a
+	// higher floor.
 	DefaultVectorVetoScore = 0.15
 
 	// maxRecallVectorK caps how many candidates the per-turn vector search scores. The
@@ -132,7 +134,11 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	if vetoFloor <= 0 {
 		vetoFloor = DefaultVectorVetoScore
 	}
-	res.Recalled = rank(q.Text, candidates, vec, vetoFloor, k)
+	vouchScore := q.VectorVouchScore
+	if vouchScore <= 0 {
+		vouchScore = DefaultSemanticThreshold
+	}
+	res.Recalled = rank(q.Text, candidates, vec, vetoFloor, vouchScore, k)
 	res.Recalled = expandAssociative(res.Recalled, res.Pinned, all, k)
 	return res, nil
 }
@@ -211,7 +217,7 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 	return recalled
 }
 
-func rank(query string, candidates []Record, vec map[string]float64, vetoFloor float64, k int) []Record {
+func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, vouchScore float64, k int) []Record {
 	kwNorm, kwMatches := keywordScores(query, candidates)
 	multiToken := len(uniqueTokens(query)) > 1
 	qcats := queryCategories(query)
@@ -238,7 +244,6 @@ func rank(query string, candidates []Record, vec map[string]float64, vetoFloor f
 		if haveVec {
 			vs, vScored = vec[c.ID]
 		}
-		weakVector := vs < minVectorScore
 
 		// Vector veto (brain-semantic-recall.md priority #1, the cure half): when the
 		// embedder SCORED this candidate (present in the vector results) as semantically
@@ -255,16 +260,21 @@ func rank(query string, candidates []Record, vec map[string]float64, vetoFloor f
 		}
 
 		// A candidate with neither a meaningful vector nor keyword signal is dropped.
-		if weakVector && kw < minKeywordNorm {
+		if vs < minVectorScore && kw < minKeywordNorm {
 			continue
 		}
-		// Lone-token precision guard: when nothing but a single shared token (and no
-		// strong vector signal) supports the match against a multi-token query, require
-		// that token to dominate the query's intent (>= singleTokenMinShare of its idf
-		// mass). Otherwise an incidental glue token surfaces an off-topic fact while the
-		// query's real terms go unmatched. A strong vector signal already vouches for
-		// relevance, so the guard is skipped there.
-		if weakVector && multiToken && kwMatches[i] <= 1 && kw < singleTokenMinShare {
+		// Lone-token precision guard: when nothing but a single shared token supports the
+		// match against a multi-token query, require that token to dominate the query's
+		// intent (>= singleTokenMinShare of its idf mass), else an incidental glue token
+		// surfaces an off-topic fact while the query's real terms go unmatched. The guard
+		// is skipped ONLY when the vector GENUINELY vouches for relevance — vs >=
+		// vouchScore, the cosine "related" line (cosThresh). A merely-meaningful cosine is
+		// NOT enough: a compressed-distribution embedder (e.g. all-MiniLM, where even
+		// unrelated pairs score ~0.35) would otherwise vouch for everything and let the
+		// github mis-recall survive the hybrid path — measured live, see
+		// docs/brain-semantic-recall.md. With no vector signal the guard always applies.
+		vouched := haveVec && vScored && vs >= vouchScore
+		if !vouched && multiToken && kwMatches[i] <= 1 && kw < singleTokenMinShare {
 			continue
 		}
 

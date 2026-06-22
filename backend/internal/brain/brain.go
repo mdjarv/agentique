@@ -197,7 +197,7 @@ func (s *Service) Capture(ctx context.Context, scope memory.Scope, text string) 
 
 // Recall returns pinned plus query-relevant memories across the given scopes.
 func (s *Service) Recall(ctx context.Context, scopes []memory.Scope, query string, k int) (memory.Result, error) {
-	return memory.Recall(ctx, s.store, memory.Query{Text: query, Scopes: scopes, K: k, VectorVetoScore: s.vetoScore})
+	return memory.Recall(ctx, s.store, memory.Query{Text: query, Scopes: scopes, K: k, VectorVetoScore: s.vetoScore, VectorVouchScore: s.cosThresh})
 }
 
 // List returns memories in the given scopes (all scopes when none given).
@@ -305,7 +305,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 		return "", nil
 	}
 	scope := ScopeForProject(projectID)
-	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore})
+	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore, VectorVouchScore: s.cosThresh})
 	if err != nil {
 		slog.Warn("brain: task-relevant recall failed", "project", projectID, "error", err)
 		return "", nil
