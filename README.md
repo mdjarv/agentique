@@ -184,7 +184,8 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`, `AGENTIQUE_BRAIN_VECTOR_VETO` | Cosine "related" link/vouch threshold (default `0.45`) and the vector veto floor (default `0.15`) for hybrid recall. Both model-specific — recalibrate per embedding model. Inert without an embedder. |
 | `AGENTIQUE_BRAIN_AUTOCAL` | Set to `1` to derive the two thresholds above from the live corpus's own cosine distribution at boot (model-specific auto-calibration), instead of the hand-set defaults. An explicitly-set threshold still wins. Inert without an embedder. |
 | `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts in the preamble + task-relevant facts injected per turn, delta-deduped) is on by default; set to `off` to disable. |
-| `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). |
+| `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] learn-model` (env wins). |
+| `AGENTIQUE_BRAIN_OUTCOME_MODEL` | Automatic outcome emitter: a session-end LLM judge that reads the transcript and decides whether the facts recall surfaced this session helped (→ strengthen) or were contradicted (→ flag for review), feeding the outcome signal without relying on agents calling `MemoryUsed`/`MemoryFlag` (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] outcome-model` (env wins). |
 | `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL`, `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). Also settable persistently in `config.toml` under `[brain] consolidate-interval` / `consolidate-model` (env wins when both are set). |
 
 ## Data & locations

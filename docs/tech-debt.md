@@ -3,11 +3,13 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-22 (brain semantic recall — vector veto + vouch bar, model-specific
-auto-calibration, warmed + pruned embed cache; scheduled-consolidation config-file support;
-consolidation vocabulary unification — retired "Tidy"/"sleep"). Prior: 2026-06-21 (outcome
-signal v1: MemoryUsed + confidence calibration + operating contract; cross-scope areas,
-pluggable semantic similarity, fluid per-turn recall + corpus cache, recall precision).
+Last full audit: 2026-06-22 (brain **automatic outcome emitter** — session-end transcript judge
+that auto-feeds MarkAutoHelped/Flag, gentler 0.25 auto weight, session-end model knobs in
+config.toml; semantic recall — vector veto + vouch bar, model-specific auto-calibration, warmed +
+pruned embed cache; scheduled-consolidation config-file support; consolidation vocabulary
+unification — retired "Tidy"/"sleep"). Prior: 2026-06-21 (outcome signal v1: MemoryUsed +
+confidence calibration + operating contract; cross-scope areas, pluggable semantic similarity,
+fluid per-turn recall + corpus cache, recall precision).
 
 ## P0 — Will bite a user
 
@@ -119,16 +121,19 @@ practice:
   the entire live corpus (recall injection is recent; agents rarely call the explicit
   tools). So retrieval ≈ storage and `DecayPolicy.StrengthWeighted` is a near-no-op until
   real recall/outcome traffic accrues. The mechanism is correct; it's starved of signal.
-- **Outcome signal v1 (D2 positive half, 2026-06-21):** `MemoryUsed` / `MarkHelped` /
-  `Record.Helped` + confidence calibration shipped (`brain-outcome-signal.md`), but like
-  `MemoryFlag` the signal is **agent-volunteered** — its value depends on agents actually
-  calling the tool. The recall framing now prompts for it, but on the live corpus `helped`
-  is `0` everywhere until agents adopt it. The durable fix is the *automatic* emitter
-  (session-end judge / transcript analysis — RFC decision #2's open branch). Until then,
-  the **operating contract** is the one piece that is **already non-inert**: 8 human-
-  confirmed global preferences surface as acted-on directives today (verified on an isolated
-  copy), since human `Confirm` (→1.0) clears the `ActOnConfidence` gate without needing the
-  outcome loop.
+- **Outcome signal v1 (D2 positive half, 2026-06-21) — automatic emitter SHIPPED 2026-06-22.**
+  `MemoryUsed` / `MarkHelped` / `Record.Helped` + confidence calibration shipped, but the explicit
+  signal is **agent-volunteered** (`helped` was `0` everywhere on the live corpus). The durable fix —
+  the **automatic emitter** (session-end LLM judge over the transcript) — is now built
+  (`brain-outcome-signal.md` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
+  the facts recall injected (from the persisted `<brain>` envelopes), judges helped/contradicted/neutral
+  conservatively, and applies `MarkAutoHelped` (gentler `0.25` gap-close — a machine inference weighs
+  half an explicit acknowledgement) / `Flag`. Opt-in via `AGENTIQUE_BRAIN_OUTCOME_MODEL` / `[brain]
+  outcome-model`, off by default. Verified end-to-end with a live Haiku judge and against an isolated
+  copy of the live brain. **Remaining (now narrower):** the emitter is dormant on the live server until
+  the model is configured, and its precision/recall over *organic* (not authored) sessions — plus the
+  `0.25` weight — want a live multi-turn soak to calibrate. The **operating contract** remains the
+  already-non-inert piece (8 human-confirmed global prefs act today via `Confirm`→1.0).
 - **Interference + due-for-review (D5/D6):** computed and served in `GET /graph`'s
   report (`interference`, `dueForReview`) but **rendered nowhere** — no frontend
   consumer. Backend-only features drift toward "we built it but no one sees it." The new
@@ -196,13 +201,13 @@ deferred — needs a multi-job map + frontend tracking multiple previews.
 → `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
 
 ### Brain: config-file coverage is partial; one env hard-rename, one naming seam
-The scheduled-consolidation knobs are now settable in `config.toml` (`[brain]
-consolidate-interval`/`consolidate-model`, env wins via `firstNonEmpty`), but the rest of the
-brain stays **env-only**: `chroma-url`/`embed-*`/`recall`/`learn-model`/`semantic-threshold`/
-`vector-veto`/`autocal` have no config-file equivalent. The user prefers config-over-env (it's
-a persistent service — see the `feedback_config_over_env` memory), so the same
-`firstNonEmpty(env, fileCfg.Brain.X)` layering should extend to them (the bool `recall` toggle
-needs default-true handling). Two smaller residues from the 2026-06-22 vocabulary unification:
+The scheduled-consolidation knobs (`[brain] consolidate-interval`/`consolidate-model`) and — since
+2026-06-22 — the two **session-end model** knobs (`[brain] learn-model`/`outcome-model`) are now
+settable in `config.toml` (env wins via `firstNonEmpty`). The rest of the brain stays **env-only**:
+`chroma-url`/`embed-*`/`recall`/`semantic-threshold`/`vector-veto`/`autocal` have no config-file
+equivalent. The user prefers config-over-env (it's a persistent service — see the
+`feedback_config_over_env` memory), so the same `firstNonEmpty(env, fileCfg.Brain.X)` layering should
+extend to them (the bool `recall` toggle needs default-true handling). Two smaller residues from the 2026-06-22 vocabulary unification:
 (a) the env rename `AGENTIQUE_BRAIN_SLEEP_*` → `AGENTIQUE_BRAIN_CONSOLIDATE_*` is a **hard
 rename with no alias** — an operator with the old var set silently loses scheduled
 consolidation (acceptable: opt-in, barely deployed); (b) the cross-scope op is named three ways
@@ -383,10 +388,13 @@ the backup header, so correctness risk is low. If the schema changes
 
 ### Brain: the orchestration layer is untested
 The deterministic cores are well covered (Plan/Apply, promote, relink, associative
-recall, extractor parsing, and — new — `MarkHelped`/`OperatingContract`/the recall
-lone-token guard, plus the `MemoryUsed` adapter scope check). Untested: the async job
+recall, extractor parsing, and — new — `MarkHelped`/`MarkHelpedWith`/`OperatingContract`/the recall
+lone-token guard, the `MemoryUsed` adapter scope check, and — 2026-06-22 — the automatic outcome
+emitter: `ApplyOutcomesFromTranscript` with a fake judge, `<brain>`-envelope id extraction, the
+scope guard, anti-hallucination, the gentler auto weight, and judge parsing, plus a live env-gated
+`TestOutcomeEmitterLive`). Untested: the async job
 runners (`runScopeJob`/`runGlobalJob`/`runConsolidateAllJob`), the `server.go` automation wiring
-(auto-recall preamble, auto-encode on delete, scheduled consolidation), and the CLI
+(auto-recall preamble, auto-encode + auto-outcome on delete, scheduled consolidation), and the CLI
 `export`/`import` interactive resolution — they need a live runner / DB / stdin. **New
 gaps from the outcome-signal work:** `MemoryUsed` over the real `/mcp` HTTP transport
 (token minted per-session → needs a model-backed session) and the operating-contract

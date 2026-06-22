@@ -23,10 +23,13 @@ Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md) and
 > **calibration** (a confirmed-useful recall raises `ConfidenceScore` toward a 0.95
 > corroboration ceiling). This **resolves the positive half of decision #2** and **decision
 > #5 (calibration)**, and feeds part 2: high-confidence preferences now drive behavior via
-> `Service.OperatingContract`. The remaining open part of decision #2 is the *automatic*
-> emitter (session-end judge / transcript analysis). See
-> [brain-outcome-signal.md](brain-outcome-signal.md). D3/D4 can now build on `Helped` /
-> outcome-derived salience.
+> `Service.OperatingContract`. See [brain-outcome-signal.md](brain-outcome-signal.md). D3/D4
+> can now build on `Helped` / outcome-derived salience.
+>
+> **Progress (2026-06-22):** decision #2's remaining *automatic* branch shipped — a session-end
+> **transcript judge** (`internal/brain/outcome.go`) emits the outcome signal without the agent,
+> so the loop self-feeds on the live corpus. See the ADR addendum in
+> [brain-outcome-signal.md](brain-outcome-signal.md).
 
 ## Motivation
 
@@ -170,13 +173,15 @@ New to this RFC:
 1. ~~**Storage strength: derived vs. persisted field?**~~ **Resolved: derived** (`StorageStrength`
    in `strength.go`, computed from confidence + cumulative `Uses` + `DerivedFrom` depth). The one
    new persisted field is `LastUsedAt` (recall timestamp), needed for retrieval-strength disuse.
-2. **The outcome / contradiction signal — who emits it?** **Mostly resolved:** both explicit
-   agent emitters now exist — `MemoryFlag` (negative/contradiction) and `MemoryUsed`
-   (positive/confirmed-useful, 2026-06-21; see [brain-outcome-signal.md](brain-outcome-signal.md)).
-   Still open: whether to add a session-end LLM judge or transcript analysis for an *automatic*
-   signal, vs. relying on the agent volunteering one. The cheap explicit precursors shipped first
-   (mirroring how D2 shipped `MemoryFlag` before any auto-detector); the automatic emitter remains
-   future work, and is the bigger lever for making the signal non-inert on the live corpus.
+2. **The outcome / contradiction signal — who emits it?** **Resolved (2026-06-22).** Both explicit
+   agent emitters exist — `MemoryFlag` (negative) and `MemoryUsed` (positive, 2026-06-21) — and the
+   remaining *automatic* branch now ships: a **session-end LLM judge** over the transcript
+   (`brain-outcome-signal.md` ADR addendum; `internal/brain/outcome.go`) recovers the facts recall
+   injected and emits the same signal itself (`MarkAutoHelped`, gentler 0.25 weight, / `Flag`),
+   conservatively, without depending on the agent. The cheap explicit precursors shipped first
+   (mirroring how D2 shipped `MemoryFlag` before any auto-detector); the automatic emitter is the
+   bigger lever for making the signal non-inert on the live corpus. Open only on the margins: the
+   judge's precision/recall over organic sessions and the auto weight want a live soak to tune.
 3. **Reconsolidation gating.** How much may recall change a fact without human review, and how is an
    auto-update marked in provenance?
 4. **Scheduler placement.** D6 as part of scheduled consolidation, or a separate lighter tick.

@@ -37,9 +37,9 @@ func TestLoadBrainConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	// A [brain] section round-trips the scheduled-consolidation settings.
+	// A [brain] section round-trips the scheduled-consolidation + session-end settings.
 	cfg := Default()
-	cfg.Brain = BrainConfig{ConsolidateInterval: "6h", ConsolidateModel: "opus"}
+	cfg.Brain = BrainConfig{ConsolidateInterval: "6h", ConsolidateModel: "opus", LearnModel: "sonnet", OutcomeModel: "haiku"}
 	if err := Save(cfg, path); err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +49,9 @@ func TestLoadBrainConfig(t *testing.T) {
 	}
 	if got.Brain.ConsolidateInterval != "6h" || got.Brain.ConsolidateModel != "opus" {
 		t.Fatalf("brain config did not round-trip: %+v", got.Brain)
+	}
+	if got.Brain.LearnModel != "sonnet" || got.Brain.OutcomeModel != "haiku" {
+		t.Fatalf("brain session-end models did not round-trip: %+v", got.Brain)
 	}
 
 	// A config with no [brain] section leaves the fields empty (= scheduled consolidation
@@ -61,7 +64,8 @@ func TestLoadBrainConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got2.Brain.ConsolidateInterval != "" || got2.Brain.ConsolidateModel != "" {
+	if got2.Brain.ConsolidateInterval != "" || got2.Brain.ConsolidateModel != "" ||
+		got2.Brain.LearnModel != "" || got2.Brain.OutcomeModel != "" {
 		t.Fatalf("missing [brain] section should yield empty fields, got %+v", got2.Brain)
 	}
 }
