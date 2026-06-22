@@ -33,6 +33,39 @@ func TestLoadDevURLs(t *testing.T) {
 	}
 }
 
+func TestLoadBrainConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	// A [brain] section round-trips the sleep schedule.
+	cfg := Default()
+	cfg.Brain = BrainConfig{SleepInterval: "6h", SleepModel: "sonnet"}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Brain.SleepInterval != "6h" || got.Brain.SleepModel != "sonnet" {
+		t.Fatalf("brain config did not round-trip: %+v", got.Brain)
+	}
+
+	// A config with no [brain] section leaves the fields empty (= sleep disabled),
+	// matching the pre-existing env-only behaviour.
+	plain := filepath.Join(dir, "plain.toml")
+	if err := Save(Default(), plain); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := Load(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.Brain.SleepInterval != "" || got2.Brain.SleepModel != "" {
+		t.Fatalf("missing [brain] section should yield empty fields, got %+v", got2.Brain)
+	}
+}
+
 func TestValidateDevURLs(t *testing.T) {
 	cases := []struct {
 		name    string

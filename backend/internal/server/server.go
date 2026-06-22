@@ -84,6 +84,13 @@ type Config struct {
 	// calibration). An explicit BrainSemanticThreshold/BrainVectorVeto still wins.
 	// Inert without an embedder.
 	BrainCalibrate bool
+	// BrainSleepInterval enables the periodic "sleep"/consolidation pass when set to a
+	// positive duration (e.g. "6h"); empty disables it. Resolved from the AGENTIQUE_BRAIN_
+	// SLEEP_INTERVAL env var (preferred) or the [brain] sleep-interval config-file value.
+	BrainSleepInterval string
+	// BrainSleepModel is the model the sleep pass uses for LLM reorganization; empty =
+	// deterministic dedup/decay only. From AGENTIQUE_BRAIN_SLEEP_MODEL or [brain] sleep-model.
+	BrainSleepModel string
 }
 
 func devModePreamble(dbPath string) string {
@@ -326,14 +333,15 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				}
 			}
 
-			// Scheduled sleep (opt-in): periodic consolidation across all scopes.
-			// AGENTIQUE_BRAIN_SLEEP_INTERVAL=6h (+ optional AGENTIQUE_BRAIN_SLEEP_MODEL).
-			if iv := os.Getenv("AGENTIQUE_BRAIN_SLEEP_INTERVAL"); iv != "" {
+			// Scheduled sleep (opt-in): periodic consolidation across all scopes. Resolved
+			// from AGENTIQUE_BRAIN_SLEEP_INTERVAL (env, preferred) or [brain] sleep-interval
+			// (config file); empty = off. Same for the sleep model.
+			if iv := cfg.BrainSleepInterval; iv != "" {
 				if d, derr := time.ParseDuration(iv); derr != nil || d <= 0 {
 					slog.Warn("brain: sleep scheduler off (bad interval)", "value", iv, "error", derr)
 				} else {
 					var sm claudecli.Model
-					if smName := os.Getenv("AGENTIQUE_BRAIN_SLEEP_MODEL"); smName != "" {
+					if smName := cfg.BrainSleepModel; smName != "" {
 						if m, merr := brain.ParseModel(smName); merr == nil {
 							sm = m
 						} else {

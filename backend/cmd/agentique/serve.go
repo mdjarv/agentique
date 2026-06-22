@@ -109,6 +109,17 @@ func envBool(name string) bool {
 	}
 }
 
+// firstNonEmpty returns the first non-empty string, used to layer an env var (preferred)
+// over a config-file value: firstNonEmpty(os.Getenv(...), fileCfg....).
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
@@ -268,6 +279,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
 		BrainVectorVeto:        envFloat("AGENTIQUE_BRAIN_VECTOR_VETO"),
 		BrainCalibrate:         envBool("AGENTIQUE_BRAIN_AUTOCAL"),
+		// Sleep schedule: env var wins, else the [brain] config-file value, else off.
+		BrainSleepInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_SLEEP_INTERVAL"), fileCfg.Brain.SleepInterval),
+		BrainSleepModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_SLEEP_MODEL"), fileCfg.Brain.SleepModel),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

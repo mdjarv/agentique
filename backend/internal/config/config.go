@@ -22,6 +22,7 @@ type Config struct {
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
 	Experimental ExperimentalConfig `toml:"experimental"`
+	Brain        BrainConfig        `toml:"brain"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
 }
 
@@ -116,6 +117,21 @@ type BackupConfig struct {
 	Interval string `toml:"interval"`
 	Retain   int    `toml:"retain"`
 	Disabled bool   `toml:"disabled"`
+}
+
+// BrainConfig configures the persistent agent memory ("brain"). Each field has an
+// equivalent AGENTIQUE_BRAIN_* env var which, when set, takes precedence over the file
+// value (env is the runtime override; the file is the persistent default). An empty value
+// means "unset" — the corresponding feature stays off / uses its built-in default, exactly
+// as when no env var is set.
+type BrainConfig struct {
+	// SleepInterval enables the periodic "sleep"/consolidation pass when set to a positive
+	// duration (e.g. "6h"); empty disables it. Env: AGENTIQUE_BRAIN_SLEEP_INTERVAL.
+	SleepInterval string `toml:"sleep-interval"`
+	// SleepModel is the model the sleep pass uses for LLM reorganization
+	// (haiku|sonnet|opus). Empty = deterministic dedup/decay only.
+	// Env: AGENTIQUE_BRAIN_SLEEP_MODEL.
+	SleepModel string `toml:"sleep-model"`
 }
 
 // Default returns a config with all default values.
