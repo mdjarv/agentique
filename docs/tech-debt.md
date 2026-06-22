@@ -243,6 +243,20 @@ share slice backing with the cache: safe under the current replace-field-then-`P
 pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt the cache
 (documented in-code, not enforced). → `internal/memory/cachestore/cachestore.go`.
 
+### Brain: lexical recall precision is a blunt mitigation, not the cure
+Per-turn recall ran keyword-only on the live corpus and surfaced an off-topic fact on a
+single incidental glue token (`github` in a URL) — see the worked example in
+[brain-semantic-recall.md](brain-semantic-recall.md). Shipped a **lone-token guard**
+(`recall.go`, `singleTokenMinShare`): a multi-token query matching on one distinct token
+must have that token dominate the query's idf mass. It kills the observed false positive
+but is inherently blunt — lexical scoring can't tell a *good* lone-token match (`just` ↔
+"build tool just") from a *bad* one (`github` ↔ "secrets and vars"); they differ only
+semantically, and in sparse scopes the guard can drop a legitimate weak match. The cure is
+**semantic recall** (the dormant embedder path), plus a hybrid-blend tightening so a
+near-zero vector score can veto a keyword-only survivor (today the blend would still leak
+the github fact even with vectors on). Sequenced in
+[brain-semantic-recall.md](brain-semantic-recall.md). → `internal/memory/recall.go`.
+
 ### Brain: per-turn recall injection is cumulatively unbounded
 Fluid recall bounds each turn (≤K, delta-deduped against a per-session seen-set), but the
 seen-set only suppresses repeats — across a long, topic-drifting session the *total*
