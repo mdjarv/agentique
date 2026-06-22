@@ -179,8 +179,13 @@ shrink the batch by token estimate, not fact count) or a CLI bug (→ upstream).
 `AggressiveMinSurvivorRatio=0.2` / `defaultMinSurvivorRatio=0.5`, the P2 confidence
 scores (`DefaultInferredScore=0.8`, `CrossProjectInferredScore=0.65`,
 `AmbiguousScoreThreshold=0.55`) and report caps (`maxGodNodes`/`maxBridges=8`,
-`maxNeedsConfirmation=25`), recall fan-out (`assocPerSeed=3`, total ≤K) — no
-flags/config to tune per deployment or scope size.
+`maxNeedsConfirmation=25`), recall fan-out (`assocPerSeed=3`, total ≤K), the recall
+precision guard (`singleTokenMinShare=0.40`), and the outcome-signal constants
+(`CorroborationCeiling=0.95`, `corroborationGapClose=0.5`, `helpedUseWeight=2`,
+`ActOnConfidence=0.85`) — no flags/config to tune per deployment or scope size. The
+recall + outcome constants in particular are calibration choices made on a small data
+sample (one real mis-recall, the live pref distribution) and want revisiting once there
+is real `MemoryUsed`/recall traffic to measure against.
 
 ### Brain: single consolidation job slot
 Only one consolidation runs at a time (`beginJob` 409s a second); "Tidy all" is
@@ -323,11 +328,17 @@ the backup header, so correctness risk is low. If the schema changes
 
 ### Brain: the orchestration layer is untested
 The deterministic cores are well covered (Plan/Apply, promote, relink, associative
-recall, extractor parsing). Untested: the async job runners
-(`runScopeJob`/`runGlobalJob`/`runTidyAllJob`), the `server.go` automation wiring
+recall, extractor parsing, and — new — `MarkHelped`/`OperatingContract`/the recall
+lone-token guard, plus the `MemoryUsed` adapter scope check). Untested: the async job
+runners (`runScopeJob`/`runGlobalJob`/`runTidyAllJob`), the `server.go` automation wiring
 (auto-recall preamble, auto-encode on delete, scheduled sleep), and the CLI
-`export`/`import` interactive resolution — they need a live runner / DB / stdin.
-→ `internal/brain/job.go`, `internal/server/server.go`, `cmd/agentique/brain.go`.
+`export`/`import` interactive resolution — they need a live runner / DB / stdin. **New
+gaps from the outcome-signal work:** `MemoryUsed` over the real `/mcp` HTTP transport
+(token minted per-session → needs a model-backed session) and the operating-contract
+preamble wiring (`MemoryContractFn` → `Manager.memoryContract` → the three
+create/resume/reconnect assembly sites) have no end-to-end test — same "needs a live
+runner" shape. → `internal/brain/job.go`, `internal/session/manager.go`,
+`internal/server/server.go`, `cmd/agentique/brain.go`.
 
 ### Brain: `react-force-graph-2d` added, loosely typed
 The graph view pulled in `react-force-graph-2d` (canvas force-graph). It wasn't
