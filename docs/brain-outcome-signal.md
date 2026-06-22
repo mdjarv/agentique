@@ -45,8 +45,11 @@ We deliberately choose the **explicit agent acknowledgement** over an automatic 
   signal — not an inference about intent, and not the near-tautology of "nothing contradicted it".
 
 The known cost — like `MemoryFlag`, it depends on the agent *choosing* to call the tool — is
-mitigated by **actively prompting for it** in the recall framing (`MemorySearch` output and the
-per-turn recall block both tell the agent to call `MemoryUsed`/`MemoryFlag`). An automatic
+mitigated by **actively prompting for it** in the recall framing (`MemorySearch` output, and the
+`RecallPreamble` system block that explains the per-turn `<brain>` envelope, both tell the agent
+to call `MemoryUsed`/`MemoryFlag`). The `<brain>` card additionally exposes per-fact
+**Helpful / Outdated** buttons, so a human can drive the same `Confirm`/`Flag` signal from the
+transcript. An automatic
 turn-end judge (RFC decision #2's other branch) remains a future option; this ADR does not
 foreclose it, it ships the cheap precursor first, exactly as D2 shipped `MemoryFlag` before any
 automatic contradiction detector.

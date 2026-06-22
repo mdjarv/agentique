@@ -222,7 +222,11 @@ The cognitive loop runs automatically, not just via the CLI/UI:
     passed as `exclude` so each turn injects only the facts that are *newly* relevant
     (delta — no re-dumping), and a low-content gate (`memory.TokenCount < 2`) skips
     trivial turns ("ok", "go for it"). The top-K non-pinned hits are prepended as a
-    blockquote — visible in the transcript and seen by the model. A 3s timeout bounds
+    `<brain><fact id="…">…</fact></brain>` envelope — an unambiguous memory-vs-user
+    boundary for the model, parsed by the frontend into a "Recalled from memory" card.
+    The framing (background context, verify first) and the `MemoryUsed`/`MemoryFlag`
+    hooks are explained once in the system preamble (`RecallPreamble`), so the per-turn
+    block stays compact. A 3s timeout bounds
     each lookup; degrades to no injection when the brain is off, recall is slow/fails,
     or nothing new matches. A read-through corpus cache (`memory/cachestore`) keeps the
     per-turn `List` cheap. Each newly-surfaced fact gets `BumpUses`/`LastUsedAt`
