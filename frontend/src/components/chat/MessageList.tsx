@@ -224,6 +224,8 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pendingRestoreRef = useRef<number | null>(null);
+  // Tracks the previous scrollTop so handleScroll can derive scroll direction.
+  const lastScrollTopRef = useRef(0);
   const [contentNode, setContentNode] = useState<HTMLDivElement | null>(null);
   const [animateRef, setAnimateEnabled] = useAutoAnimate<HTMLDivElement>(ANIMATE_CHAT);
   // animateRef is stable but calls setState internally; an inline ref callback
@@ -271,6 +273,9 @@ export function MessageList({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = pending;
+    // Seed the delta tracker so the restore's own scroll event isn't read as a
+    // user gesture by handleScroll.
+    lastScrollTopRef.current = pending;
   });
   const isAnyStreaming = useStreamingStore((s) => sessionId in s.texts);
   const hasIncompleteTurn = turns.length > 0 && !turns[turns.length - 1]?.complete;
@@ -329,29 +334,60 @@ export function MessageList({
 
   const scrollRafRef = useRef<number | null>(null);
   const handleScroll = useCallback(() => {
-    if (scrollRafRef.current != null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      const el = scrollRef.current;
-      if (!el) return;
-      const atBottom = isNearBottom(el);
-      // Re-engage follow when scrollTop reaches the bottom (any cause). Don't
-      // flip OFF here — owned by user-gesture handlers below — so transient
-      // scrollTop changes (DOM reshuffles, browser clamping during force
-      // reloads) can't accidentally unstick us. Use the strict isAtBottom for
-      // re-engagement so a tiny wheel-up within the loose near-bottom zone
-      // doesn't immediately cancel the user's unfollow gesture.
-      if (isAtBottom(el) && !followingRef.current) {
+    const el = scrollRef.current;
+    if (!el) return;
+    const prevTop = lastScrollTopRef.current;
+    const currTop = el.scrollTop;
+    lastScrollTopRef.current = currTop;
+
+    // Direction-aware follow toggling, run synchronously so the auto-scroll
+    // snap (ScrollAnchor's streaming interval / the ResizeObserver, both gated
+    // on followingRef) yields on the SAME frame the user moves — before it can
+    // yank the viewport back. Keying off the scroll *delta* rather than a
+    // device-specific event means every input works: wheel, trackpad,
+    // scrollbar drag, keyboard (PageUp/Home/arrows), momentum.
+    //
+    // Re-engage ONLY when the user scrolls down and lands at the bottom. Never
+    // re-engage merely because scrollTop *is* at the bottom: an auto-scroll
+    // snap puts us there every tick, and position-only re-engagement instantly
+    // undoes a small scroll-up — the lock that made the chat un-scrollable
+    // while a question was pending (streaming stays "live" mid-turn, so the
+    // 100ms snap interval runs the whole time). Disengage when the user
+    // scrolls up away from the bottom. A programmatic snap only ever scrolls
+    // DOWN, and a content-shrink clamp leaves us AT the bottom, so neither can
+    // forge the scrolled-up-and-away signal.
+    const scrolledUp = currTop < prevTop - 1;
+    const scrolledDown = currTop > prevTop + 1;
+    if (scrolledDown && isAtBottom(el)) {
+      if (!followingRef.current) {
         followingRef.current = true;
         setFollowing(true);
       }
-      scrollMemory.set(sessionId, { scrollTop: el.scrollTop, atBottom });
+    } else if (scrolledUp && !isAtBottom(el)) {
+      if (followingRef.current) {
+        followingRef.current = false;
+        setFollowing(false);
+      }
+    }
+
+    // Persist scroll position (throttled) for cross-tab restore.
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const e = scrollRef.current;
+      if (!e) return;
+      scrollMemory.set(sessionId, { scrollTop: e.scrollTop, atBottom: isNearBottom(e) });
     });
   }, [sessionId]);
 
-  // User-gesture handlers: only an explicit upward gesture takes us out of
-  // follow mode. Programmatic scrolls (history reload, content reshuffle) do
-  // not.
+  // Eager unfollow fast-path. handleScroll already disengages on any
+  // user-driven scroll-up (it reads the scrollTop delta, so it covers wheel,
+  // scrollbar, and keyboard), but the resulting `scroll` event can be
+  // dispatched a frame after the gesture — long enough for one snap tick to
+  // fire first. Wheel/touch flip the ref *during the gesture itself*, closing
+  // that gap so streaming growth never yanks the viewport back. Touch is also
+  // covered here because a touch drag that hasn't moved scrollTop yet emits no
+  // scroll event for handleScroll to read.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
