@@ -214,17 +214,17 @@ run inline (acceptable — neither is the hot path), and the per-pass re-embed h
 `internal/brain/{brain,graph}.go`. Tests: `TestApplyPlanThreadsSemanticSimOptionsToRelink`,
 `TestDetectInterferenceUsesEmbeddings`.
 
-### Brain: embeddings re-embed the whole corpus every pass (no cache) — now more pressing
-`Service.embedRecords` batch-embeds **all** durable facts with no `(id, text-hash)` cache,
-so unchanged facts are re-embedded each pass; Chroma already holds the vectors but exposes
-no bulk fetch. **Closing "semantic only for areas" (above) widened the call sites**: beyond
-`AssignAreas` (sleep/tidy-all/global apply), the per-scope embed now also runs on every
-`ApplyPlan`/`Consolidate` (scope-sized) and the graph endpoint embeds the durable set per
-load. Still bounded (scope/corpus-sized, infrequent passes) and the per-turn *recall* hot
-path is unaffected (that query-embed + Chroma search is a single call, not a corpus
-re-embed), but the cost is now real with a live embedder — this is the next thing to do
-(`docs/brain-semantic-recall.md` sequencing #4). Cache by `id+text-hash`, or add a Chroma
-bulk-vector read. → `internal/brain/brain.go`.
+### Brain: embeddings re-embed the whole corpus every pass ~~(no cache)~~ → in-process cache SHIPPED 2026-06-22
+`Service.embedRecords` now memoizes vectors in an in-process **text-hash cache**
+(`embedCache`, sha256 of text; embedding is pure in (text, per-Service-fixed model), so
+text-hash is a sufficient id-independent key) and embeds only DISTINCT miss texts. After the
+first pass an unchanged corpus costs zero embed calls — which matters now that #2 widened the
+call sites (per-`ApplyPlan`/`Consolidate` scope embed + per-graph-load embed, on top of
+`AssignAreas`). The per-turn *recall* path was never affected (single query-embed + search).
+**Residual:** the cache is per-process (cold on restart) and stale entries linger (bounded by
+distinct texts seen — no pruning); Chroma still holds the vectors but exposes no bulk fetch, so
+a restart re-embeds. A Chroma bulk-vector read (or a persisted cache) would close the cold-start
+gap. → `internal/brain/brain.go`. Test: `TestEmbedRecordsCachesByTextHash`.
 
 ### Brain: cross-scope area labels are frequency-based (noisy)
 `areaLabel` names an area from its most *frequent* shared tokens, yielding labels like

@@ -161,9 +161,9 @@ SimOptions *before* taking `s.mu` so the embed never blocks under the lock.
    `AGENTIQUE_BRAIN_*` env. Revived semantic clustering/areas through `ApplyPlan` (#2).
 3. ✅ **Tighten the hybrid blend** — vector veto (option 1) **plus** the vouch bar (the measured
    real fix). Verified live.
-4. ⏳ **`(id, text-hash)` embedding cache** — still open, now more pressing: #2 widened the embed
-   call sites (per-`ApplyPlan` scope embed + per-graph-load embed). See tech-debt. The per-turn
-   *recall* path is unaffected (single query-embed + search, not a corpus re-embed).
+4. ✅ **Embedding cache** — shipped an in-process text-hash cache (`Service.embedCache`): after the
+   first pass an unchanged corpus costs zero embed calls. Residual: per-process (cold on restart),
+   no pruning — a Chroma bulk-vector read would close the cold-start gap (see tech-debt).
 5. ⏳ **Auto-calibration** — the veto/vouch/cosine floors are model-specific + hand-tuned. A
    measure-first sweep over the corpus's own cosine distribution (pick a percentile per model)
    would remove the manual step. See tech-debt "cosine threshold is model-specific".
