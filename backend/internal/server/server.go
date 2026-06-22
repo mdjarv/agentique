@@ -76,6 +76,9 @@ type Config struct {
 	// BrainSemanticThreshold overrides the cosine link threshold for semantic area
 	// clustering (model-specific; 0 = default). Inert without an embedder.
 	BrainSemanticThreshold float64
+	// BrainVectorVeto overrides the hybrid-recall vector veto floor (model-specific;
+	// 0 = default). Inert without an embedder.
+	BrainVectorVeto float64
 }
 
 func devModePreamble(dbPath string) string {
@@ -238,6 +241,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			EmbedModel:        cfg.BrainEmbedModel,
 			EmbedAPIKey:       cfg.BrainEmbedKey,
 			SemanticThreshold: cfg.BrainSemanticThreshold,
+			VectorVetoScore:   cfg.BrainVectorVeto,
 		})
 		if err != nil {
 			slog.Error("brain: disabled (init failed)", "error", err)

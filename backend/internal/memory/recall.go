@@ -35,6 +35,26 @@ const (
 	keywordOnlyWeight = 0.95
 	// A candidate with neither a meaningful vector nor keyword signal is dropped.
 	minVectorScore = 0.20
+
+	// DefaultVectorVetoScore is the hybrid-mode veto floor (Query.VectorVetoScore, the
+	// cure half of brain-semantic-recall.md). When a Searcher scored a candidate at or
+	// below this, the embedder is asserting "this is unrelated to the query"; we drop it
+	// even if keyword overlap is strong, so semantics — not an incidental keyword match —
+	// has the final say. It sits BELOW minVectorScore on purpose: minVectorScore is "a
+	// meaningful hit"; the veto is the stronger claim "actively unrelated", so it only
+	// fires on near-zero cosine, leaving the lukewarm-vector / strong-keyword zone (e.g.
+	// exact code-identifier matches the embedder undervalues) untouched. It is MODEL-
+	// SPECIFIC: 0.15 is a conservative default for a well-centred model; embedders with a
+	// high baseline cosine (all-MiniLM-L6-v2's random-pair p99 ≈ 0.44) want this RAISED
+	// after a measure-first sweep — see docs/brain-semantic-recall.md.
+	DefaultVectorVetoScore = 0.15
+
+	// maxRecallVectorK caps how many candidates the per-turn vector search scores. The
+	// veto can only drop a candidate the vector actually scored, so recall asks the index
+	// to cover the whole keyword candidate pool (not just top-k) — bounded here so a large
+	// global scope can't blow up the per-turn query. Documented latency tradeoff in
+	// docs/brain-semantic-recall.md ("per-turn recall latency").
+	maxRecallVectorK = 200
 )
 
 // Hit is a semantic search result: a record ID and a similarity in [0,1].
@@ -84,9 +104,23 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	// keyword-only: recall must never break, nor silently down-weight keyword
 	// matches, because the vector index is down OR simply returned nothing (e.g.
 	// a freshly enabled, not-yet-reindexed collection).
+	//
+	// The vector search covers the whole keyword candidate pool (bounded by
+	// maxRecallVectorK), not just top-k: the veto in rank() can only drop a candidate
+	// the embedder actually scored, so to veto an off-topic keyword survivor the index
+	// must have scored it. A candidate the search did NOT return (absent from vec —
+	// unindexed or beyond the cap) is "unknown to the vector", not "vetoed by it", and
+	// falls back to the keyword path + lexical lone-token guard.
 	var vec map[string]float64
 	if s, ok := store.(Searcher); ok {
-		if hits, serr := s.Search(ctx, q.Text, q.Scopes, k*3); serr == nil && len(hits) > 0 {
+		searchK := k * 3
+		if n := len(candidates); n > searchK {
+			searchK = n
+		}
+		if searchK > maxRecallVectorK {
+			searchK = maxRecallVectorK
+		}
+		if hits, serr := s.Search(ctx, q.Text, q.Scopes, searchK); serr == nil && len(hits) > 0 {
 			vec = make(map[string]float64, len(hits))
 			for _, h := range hits {
 				vec[h.ID] = h.Score
@@ -94,7 +128,11 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 		}
 	}
 
-	res.Recalled = rank(q.Text, candidates, vec, k)
+	vetoFloor := q.VectorVetoScore
+	if vetoFloor <= 0 {
+		vetoFloor = DefaultVectorVetoScore
+	}
+	res.Recalled = rank(q.Text, candidates, vec, vetoFloor, k)
 	res.Recalled = expandAssociative(res.Recalled, res.Pinned, all, k)
 	return res, nil
 }
@@ -173,7 +211,7 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 	return recalled
 }
 
-func rank(query string, candidates []Record, vec map[string]float64, k int) []Record {
+func rank(query string, candidates []Record, vec map[string]float64, vetoFloor float64, k int) []Record {
 	kwNorm, kwMatches := keywordScores(query, candidates)
 	multiToken := len(uniqueTokens(query)) > 1
 	qcats := queryCategories(query)
@@ -196,11 +234,25 @@ func rank(query string, candidates []Record, vec map[string]float64, k int) []Re
 		// has gone cold. Same weight as before, so it stays a tiebreaker (predictable).
 		rec := RetrievalStrength(c, now)
 
-		vs := 0.0
+		vs, vScored := 0.0, false
 		if haveVec {
-			vs = vec[c.ID]
+			vs, vScored = vec[c.ID]
 		}
 		weakVector := vs < minVectorScore
+
+		// Vector veto (brain-semantic-recall.md priority #1, the cure half): when the
+		// embedder SCORED this candidate (present in the vector results) as semantically
+		// unrelated to the query — at/below vetoFloor — drop it regardless of keyword
+		// overlap. The semantic "not related" verdict outranks an incidental keyword
+		// match, so the off-topic keyword survivor the lexical guard can't catch (a
+		// multi-token match: kwMatches > 1) is excluded here. Only fires for scored
+		// candidates: one the vector didn't return (vScored=false) is unknown to it, not
+		// vetoed, and falls through to the keyword path + lone-token guard below. This is
+		// complementary to singleTokenMinShare (the keyword-only-mode safeguard), not a
+		// replacement — both stay.
+		if haveVec && vScored && vs <= vetoFloor {
+			continue
+		}
 
 		// A candidate with neither a meaningful vector nor keyword signal is dropped.
 		if weakVector && kw < minKeywordNorm {

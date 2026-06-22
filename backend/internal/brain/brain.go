@@ -40,6 +40,11 @@ type Config struct {
 	// clustering (RFC phase C). 0 uses memory.DefaultSemanticThreshold. Calibrate per
 	// embedding model.
 	SemanticThreshold float64
+	// VectorVetoScore overrides the hybrid-recall veto floor: a candidate the embedder
+	// scores at/below this (semantically unrelated) is dropped regardless of keyword
+	// overlap (brain-semantic-recall.md priority #1). 0 uses memory.DefaultVectorVetoScore.
+	// Inert without an embedder; MODEL-SPECIFIC — calibrate with SemanticThreshold.
+	VectorVetoScore float64
 }
 
 // Service is the agentique brain.
@@ -53,6 +58,9 @@ type Service struct {
 	// lexical-only. cosThresh is the cosine link threshold (model-specific).
 	embedder  memory.Embedder
 	cosThresh float64
+	// vetoScore is the hybrid-recall vector veto floor (model-specific) threaded into
+	// every relevance Query; 0 lets memory.Recall apply its default. Inert without an embedder.
+	vetoScore float64
 
 	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
@@ -103,7 +111,11 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 				if svc.cosThresh <= 0 {
 					svc.cosThresh = memory.DefaultSemanticThreshold
 				}
-				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh)
+				svc.vetoScore = cfg.VectorVetoScore
+				if svc.vetoScore <= 0 {
+					svc.vetoScore = memory.DefaultVectorVetoScore
+				}
+				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh, "vectorVeto", svc.vetoScore)
 			}
 		}
 	}
@@ -185,7 +197,7 @@ func (s *Service) Capture(ctx context.Context, scope memory.Scope, text string) 
 
 // Recall returns pinned plus query-relevant memories across the given scopes.
 func (s *Service) Recall(ctx context.Context, scopes []memory.Scope, query string, k int) (memory.Result, error) {
-	return memory.Recall(ctx, s.store, memory.Query{Text: query, Scopes: scopes, K: k})
+	return memory.Recall(ctx, s.store, memory.Query{Text: query, Scopes: scopes, K: k, VectorVetoScore: s.vetoScore})
 }
 
 // List returns memories in the given scopes (all scopes when none given).
@@ -293,7 +305,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 		return "", nil
 	}
 	scope := ScopeForProject(projectID)
-	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope)})
+	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore})
 	if err != nil {
 		slog.Warn("brain: task-relevant recall failed", "project", projectID, "error", err)
 		return "", nil

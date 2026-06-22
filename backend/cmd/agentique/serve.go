@@ -254,6 +254,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainEmbedModel:        os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
 		BrainEmbedKey:          os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
 		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
+		BrainVectorVeto:        envFloat("AGENTIQUE_BRAIN_VECTOR_VETO"),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

@@ -241,6 +241,71 @@ func TestRecallKeepsDominantSingleToken(t *testing.T) {
 	}
 }
 
+// The vector veto (brain-semantic-recall.md priority #1): when the embedder scores a
+// candidate as semantically unrelated, that verdict drops it even though keyword overlap
+// is strong enough to survive on its own. This is the failure class the lexical lone-token
+// guard CANNOT catch — the keyword match here is MULTI-token (kwMatches > 1), so the guard
+// (which only targets single-token matches) never fires. The two are complementary.
+func TestRecallVectorVetoesUnrelatedKeywordSurvivor(t *testing.T) {
+	// "off" shares two distinct query tokens (alpha, bravo) → a multi-token keyword match,
+	// so the lone-token guard does not apply and it survives on keyword alone.
+	off := rec("off", "alpha bravo zulu yankee whiskey", CategoryFact)
+	pad := rec("pad", "tango foxtrot lima", CategoryFact) // df padding, no query overlap
+	base := newMemStore(off, pad)
+	q := Query{Text: "alpha bravo charlie delta", K: 3}
+
+	// 1) Keyword-only (no Searcher): "off" clears the cutoff and surfaces.
+	kw, err := Recall(context.Background(), base, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(kw.Recalled, "off") {
+		t.Fatalf("keyword-only baseline should surface 'off' (multi-token match), got %+v", kw.Recalled)
+	}
+
+	// 2) Hybrid, embedder scored "off" as unrelated (<= veto floor): vetoed despite keyword.
+	vetoed := &searchStore{memStore: base, hits: []Hit{{ID: "off", Score: 0.05}}}
+	resV, err := Recall(context.Background(), vetoed, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(resV.Recalled, "off") {
+		t.Fatalf("a vector-unrelated keyword survivor must be vetoed, got %+v", resV.Recalled)
+	}
+
+	// 3) Positive control: same fact, embedder scores it related → survives. Proves it is
+	// the veto (not the score floor or an unrelated drop) doing the work in (2).
+	kept := &searchStore{memStore: base, hits: []Hit{{ID: "off", Score: 0.6}}}
+	resK, err := Recall(context.Background(), kept, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(resK.Recalled, "off") {
+		t.Fatalf("a vector-related candidate must survive, got %+v", resK.Recalled)
+	}
+}
+
+// A candidate the vector search did NOT score (absent from results — unindexed or beyond
+// the search cap) is "unknown to the vector", not "vetoed by it": it must fall back to the
+// keyword path (+ lexical guard), never be dropped just because some OTHER candidate drew
+// the vector signal. Guards the freshly-enabled / partially-indexed collection case.
+func TestRecallUnscoredCandidateNotVetoed(t *testing.T) {
+	hit := rec("hit", "kubernetes orchestration via helm", CategoryFact)
+	kwOnly := rec("kw", "alpha bravo charlie facts", CategoryFact) // strong keyword, never embedded
+	base := newMemStore(hit, kwOnly)
+	q := Query{Text: "alpha bravo charlie delta", K: 3}
+
+	// Searcher returns a hit for "hit" only; "kw" is absent (unindexed).
+	ss := &searchStore{memStore: base, hits: []Hit{{ID: "hit", Score: 0.7}}}
+	res, err := Recall(context.Background(), ss, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(res.Recalled, "kw") {
+		t.Fatalf("an unscored (absent) candidate must fall back to keyword recall, got %+v", res.Recalled)
+	}
+}
+
 func TestBumpUses(t *testing.T) {
 	r := rec("a", "fact", CategoryFact)
 	store := newMemStore(r)

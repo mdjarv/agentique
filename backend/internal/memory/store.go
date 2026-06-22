@@ -26,6 +26,13 @@ type Query struct {
 	Text   string
 	Scopes []Scope // scopes to search; empty = all scopes
 	K      int     // max non-pinned results; <= 0 uses DefaultRecallK
+	// VectorVetoScore is the hybrid-mode floor below which a vector-scored candidate is
+	// dropped regardless of keyword overlap: when the embedder scores a candidate as
+	// semantically unrelated to the query, that verdict vetoes an incidental keyword
+	// match (brain-semantic-recall.md, priority #1). <= 0 uses DefaultVectorVetoScore.
+	// It is MODEL-SPECIFIC (cosine distributions differ per embedder) — calibrate it
+	// alongside the cosine link threshold. Only consulted when a Searcher is present.
+	VectorVetoScore float64
 }
 
 // Result splits recall output the way it is injected: pinned facts are always
