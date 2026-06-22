@@ -224,6 +224,60 @@ describe("chat-store", () => {
     });
   });
 
+  // --- adoptTurnPrompt ---
+
+  describe("adoptTurnPrompt", () => {
+    it("replaces the optimistic turn's prompt with the augmented one", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "Fetch upstream");
+
+      const augmented = '<brain><fact id="1">recalled</fact></brain>\n\nFetch upstream';
+      useChatStore.getState().adoptTurnPrompt("sess-1", augmented);
+
+      const turns = useChatStore.getState().sessions["sess-1"]?.turns;
+      expect(turns).toHaveLength(1);
+      expect(turns?.[0]?.prompt).toBe(augmented);
+    });
+
+    it("does not adopt onto a turn that already has committed events", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "Fetch upstream");
+      // Force a committed (but still-incomplete) event onto the turn — guards the
+      // dedup against adopting a prompt onto a turn that has already started.
+      useChatStore.setState((s) => {
+        const session = s.sessions["sess-1"];
+        if (!session) return s;
+        const turns = [...session.turns];
+        const last = turns[turns.length - 1];
+        if (last) turns[turns.length - 1] = { ...last, events: [makeTextEvent("hi")] };
+        return { sessions: { ...s.sessions, "sess-1": { ...session, turns } } };
+      });
+
+      useChatStore.getState().adoptTurnPrompt("sess-1", "different");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns[0]?.prompt).toBe("Fetch upstream");
+    });
+
+    it("does not adopt onto a completed turn", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "Fetch upstream");
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
+
+      useChatStore.getState().adoptTurnPrompt("sess-1", "different");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns[0]?.prompt).toBe("Fetch upstream");
+    });
+
+    it("is a no-op when the prompt is unchanged (keeps the same turn reference)", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.getState().submitQuery("sess-1", "Fetch upstream");
+      const before = useChatStore.getState().sessions["sess-1"];
+
+      useChatStore.getState().adoptTurnPrompt("sess-1", "Fetch upstream");
+      expect(useChatStore.getState().sessions["sess-1"]).toBe(before);
+    });
+  });
+
   // --- handleServerEvent ---
 
   describe("handleServerEvent", () => {

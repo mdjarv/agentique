@@ -3,6 +3,7 @@ import type { useWebSocket } from "~/hooks/useWebSocket";
 import { fromWireAttachment } from "~/lib/attachment-utils";
 import type { ChannelMessage } from "~/lib/channel-actions";
 import { parseServerEvent } from "~/lib/events";
+import { extractBrainBlock } from "~/lib/prompt-parsing";
 import { loadSessionHistory } from "~/lib/session/history";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -62,12 +63,19 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
       useStreamingStore.getState().clearText(sid);
       const session = useChatStore.getState().sessions[sid];
       const lastTurn = session?.turns[session.turns.length - 1];
+      // The broadcast prompt may carry a system-injected <brain> recall envelope
+      // the optimistic turn (built from the user's raw input) doesn't have. Peel
+      // it before matching, otherwise recall defeats the dedup and a duplicate
+      // turn is created. On a match, adopt the augmented prompt so the recalled-
+      // memory card renders live.
+      const core = extractBrainBlock(payload.prompt)?.rest ?? payload.prompt;
       if (
         lastTurn &&
         !lastTurn.complete &&
         lastTurn.events.length === 0 &&
-        lastTurn.prompt === payload.prompt
+        lastTurn.prompt === core
       ) {
+        useChatStore.getState().adoptTurnPrompt(sid, payload.prompt);
         return;
       }
       const attachments = payload.attachments?.map(fromWireAttachment);

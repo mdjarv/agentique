@@ -186,7 +186,8 @@ export async function enqueueMessage(
   attachments?: Attachment[],
 ): Promise<void> {
   // For non-running sessions, create an optimistic turn for immediate feedback.
-  // The session.turn-started handler in useGlobalSubscriptions deduplicates with this.
+  // The session.turn-started handler in useSessionEventSubscription deduplicates
+  // with this (peeling any <brain> recall envelope before matching).
   const sessionState = useChatStore.getState().sessions[sessionId]?.meta.state;
   const isOptimistic = sessionState !== "running";
   if (isOptimistic) {

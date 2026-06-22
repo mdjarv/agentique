@@ -186,6 +186,7 @@ export interface ChatState {
     attachments?: import("~/stores/chat-types").Attachment[],
   ) => void;
   rollbackOptimisticTurn: (sessionId: string, prompt: string) => void;
+  adoptTurnPrompt: (sessionId: string, prompt: string) => void;
   handleServerEvent: (sessionId: string, event: ChatEvent) => void;
 }
 
@@ -536,6 +537,26 @@ export const useChatStore = create<ChatState>((set) => ({
         return updateSession(s, sessionId, { turns: turns.slice(0, -1) });
       }
       return s;
+    }),
+
+  // Replace the optimistic turn's prompt with the authoritative one from the
+  // server's turn-started broadcast. The broadcast prompt may carry a system-
+  // injected <brain> recall envelope the optimistic turn (built from the user's
+  // raw input) lacks; adopting it lets the recalled-memory card render live
+  // instead of only after a history reload. No-op unless the last turn is still
+  // an unstarted optimistic turn (incomplete, no events) with a different prompt.
+  adoptTurnPrompt: (sessionId, prompt) =>
+    set((s) => {
+      const session = s.sessions[sessionId];
+      if (!session) return s;
+      const turns = session.turns;
+      const last = turns[turns.length - 1];
+      if (!last || last.complete || last.events.length !== 0 || last.prompt === prompt) {
+        return s;
+      }
+      const next = [...turns];
+      next[next.length - 1] = { ...last, prompt };
+      return updateSession(s, sessionId, { turns: next });
     }),
 
   handleServerEvent: (sessionId, event) =>
