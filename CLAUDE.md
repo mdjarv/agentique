@@ -106,15 +106,24 @@ Operational facts a change here must respect:
   sleep/tidy/global pass. Both are rebuildable indexes, never source of truth.
 - **Similarity is pluggable** (`memory/similarity.go`): Jaccard + optional embedding
   cosine via two thresholds (`jaccard≥lexThresh OR cosine≥cosThresh`), threaded as a
-  variadic `SimOption`. Semantic clustering is **dormant without an embedder**
-  (`AGENTIQUE_BRAIN_*` + Chroma); everything degrades cleanly to keyword/Jaccard.
+  variadic `SimOption`. Now threaded through `ApplyPlan` (per-scope links/communities),
+  `DetectInterference`, and `ApplyGlobal`'s area refresh too — not just `AssignAreas`
+  (`docs/brain-semantic-recall.md` #2). Still **dormant without an embedder**
+  (`AGENTIQUE_BRAIN_*` + Chroma); everything degrades cleanly to keyword/Jaccard. Live
+  runs `semantic=false` until that env is set.
 - **Stopwords matter for precision** (`memory/tokenize.go`): drop conversational filler,
   but never domain terms (e.g. `just` is the build tool, not filler).
-- **Recall precision: lone-token guard** (`memory/recall.go`, `singleTokenMinShare`): a
-  multi-token query matching a fact on a *single* distinct token must have that token
-  dominate the query's idf mass, else it's dropped (stops a glue token like `github`
-  surfacing an off-topic fact). Skipped when a strong vector signal vouches for relevance.
-  It's a blunt lexical mitigation; the cure is semantic recall (`docs/brain-semantic-recall.md`).
+- **Recall precision: lone-token guard + the semantic cure** (`memory/recall.go`). The
+  lexical guard (`singleTokenMinShare`) is the `semantic=false` safeguard: a multi-token
+  query matching on a *single* distinct token must have that token dominate the query's
+  idf mass, else it's dropped. In hybrid mode the **semantic cure** now ships
+  (`docs/brain-semantic-recall.md`): the **vector veto** (`Query.VectorVetoScore`/
+  `DefaultVectorVetoScore` 0.15) drops a candidate the embedder scores as actively
+  unrelated regardless of keyword (the multi-token survivor); the **vouch bar**
+  (`Query.VectorVouchScore` = `cosThresh`) overrides the lone-token guard only when the
+  vector clears the *related* line, not the much lower `minVectorScore` — which is what
+  let the github fact (cosine ~0.36, all-MiniLM) leak the hybrid path. Veto + vouch cover
+  disjoint classes; both are model-specific (calibrated for all-MiniLM, verified live).
 - **Outcome signal closes the loop** (`docs/brain-outcome-signal.md`, RFC-LD D2): strength
   changes on *outcome*, not just injection. `MemoryUsed` (positive, `memory.MarkHelped`,
   `Record.Helped`) raises confidence toward a 0.95 corroboration ceiling (< human ground
