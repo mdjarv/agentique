@@ -16,6 +16,17 @@ const (
 	minFinalScore  = 0.12 // final score cutoff for inclusion
 	recencyWeight  = 0.05 // recency is a tiebreaker only
 
+	// singleTokenMinShare is the precision guard for lone-token keyword matches: when a
+	// candidate's keyword overlap with a multi-token query rests on a SINGLE distinct
+	// token, that token must carry at least this share of the query's idf mass (the kw
+	// score, which for one match equals the token's share). It stops one incidental
+	// infrastructure-glue token (e.g. "github" in a URL) from surfacing an off-topic fact
+	// when the query's actually-discriminating terms went unmatched, while still admitting
+	// a genuinely dominant single-keyword match (the one word IS most of what was asked).
+	// Skipped when a strong vector signal already vouches for relevance. See
+	// docs/brain-semantic-recall.md for why lexical recall needs this and the embedder doesn't.
+	singleTokenMinShare = 0.40
+
 	// Hybrid blend weights when semantic scores are available (Odysseus-derived):
 	// the vector signal dominates, keyword overlap refines.
 	vectorWeight  = 0.55
@@ -163,7 +174,8 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 }
 
 func rank(query string, candidates []Record, vec map[string]float64, k int) []Record {
-	kwNorm := keywordScores(query, candidates)
+	kwNorm, kwMatches := keywordScores(query, candidates)
+	multiToken := len(uniqueTokens(query)) > 1
 	qcats := queryCategories(query)
 	now := time.Now().UTC()
 	haveVec := vec != nil
@@ -184,17 +196,30 @@ func rank(query string, candidates []Record, vec map[string]float64, k int) []Re
 		// has gone cold. Same weight as before, so it stays a tiebreaker (predictable).
 		rec := RetrievalStrength(c, now)
 
+		vs := 0.0
+		if haveVec {
+			vs = vec[c.ID]
+		}
+		weakVector := vs < minVectorScore
+
+		// A candidate with neither a meaningful vector nor keyword signal is dropped.
+		if weakVector && kw < minKeywordNorm {
+			continue
+		}
+		// Lone-token precision guard: when nothing but a single shared token (and no
+		// strong vector signal) supports the match against a multi-token query, require
+		// that token to dominate the query's intent (>= singleTokenMinShare of its idf
+		// mass). Otherwise an incidental glue token surfaces an off-topic fact while the
+		// query's real terms go unmatched. A strong vector signal already vouches for
+		// relevance, so the guard is skipped there.
+		if weakVector && multiToken && kwMatches[i] <= 1 && kw < singleTokenMinShare {
+			continue
+		}
+
 		var final float64
 		if haveVec {
-			vs := vec[c.ID]
-			if vs < minVectorScore && kw < minKeywordNorm {
-				continue
-			}
 			final = vectorWeight*vs + keywordWeight*kw + recencyWeight*rec
 		} else {
-			if kw < minKeywordNorm {
-				continue
-			}
 			final = keywordOnlyWeight*kw + recencyWeight*rec
 		}
 		if final < minFinalScore {
@@ -213,15 +238,18 @@ func rank(query string, candidates []Record, vec map[string]float64, k int) []Re
 	return res
 }
 
-// keywordScores returns an idf-weighted overlap score in [0,1] per candidate,
-// aligned by index. A query token contributes its idf (computed over the
-// candidate set) when present in the record; the sum is normalized by the total
-// query-token weight so longer queries don't inflate scores.
-func keywordScores(query string, candidates []Record) []float64 {
-	scores := make([]float64, len(candidates))
+// keywordScores returns, per candidate (aligned by index), an idf-weighted overlap
+// score in [0,1] and the number of distinct query tokens that matched. A query token
+// contributes its idf (computed over the candidate set) when present in the record; the
+// sum is normalized by the total query-token weight so longer queries don't inflate
+// scores. The match count lets the ranker apply the lone-token precision guard
+// (singleTokenMinShare) without recomputing the overlap.
+func keywordScores(query string, candidates []Record) (scores []float64, matches []int) {
+	scores = make([]float64, len(candidates))
+	matches = make([]int, len(candidates))
 	qtokens := uniqueTokens(query)
 	if len(qtokens) == 0 {
-		return scores
+		return scores, matches
 	}
 	df := make(map[string]int)
 	docSets := make([]map[string]struct{}, len(candidates))
@@ -241,18 +269,21 @@ func keywordScores(query string, candidates []Record) []float64 {
 		total += w
 	}
 	if total == 0 {
-		return scores
+		return scores, matches
 	}
 	for i := range candidates {
 		var sum float64
+		var nmatch int
 		for t, w := range weights {
 			if _, ok := docSets[i][t]; ok {
 				sum += w
+				nmatch++
 			}
 		}
 		scores[i] = sum / total
+		matches[i] = nmatch
 	}
-	return scores
+	return scores, matches
 }
 
 func uniqueTokens(s string) []string {

@@ -274,7 +274,7 @@ func TestMCPAdapterScopeIsolation(t *testing.T) {
 	}
 	a := NewMCPAdapter(s, resolve)
 
-	if _, err := a.MemoryAdd(ctx, "p1", "use just in p1", "preference"); err != nil {
+	if _, err := a.MemoryAdd(ctx, "p1", "the build tool in p1 is just", "preference"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.MemoryAdd(ctx, "p2", "use make in p2", "preference"); err != nil {
@@ -287,7 +287,7 @@ func TestMCPAdapterScopeIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "just in p1") {
+	if !strings.Contains(out, "build tool in p1 is just") {
 		t.Fatalf("p1 search should find p1 memory: %q", out)
 	}
 	if strings.Contains(out, "make in p2") {
