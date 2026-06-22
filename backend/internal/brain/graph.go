@@ -196,7 +196,7 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now ti
 	}
 
 	// Due-for-review (RFC-LD D6): well-established facts gone cold — resurface before
-	// disuse decays them. Empty right after a tidy (everything is freshly touched);
+	// disuse decays them. Empty right after a consolidation (everything is freshly touched);
 	// fills in as facts age without recall.
 	for _, r := range memory.DueForReview(recs, now, maxDueForReview) {
 		rep.DueForReview = append(rep.DueForReview, r.ID)

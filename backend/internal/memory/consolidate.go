@@ -106,7 +106,7 @@ type ConsolidateOptions struct {
 	// reorganizable set is byte-for-byte unchanged since the last pass.
 	PrevFingerprint string
 	// Force runs Reorganize even when the fingerprint is unchanged. Needed to
-	// re-tidy a scope after the prompt or chunking algorithm changes (the set is
+	// re-consolidate a scope after the prompt or chunking algorithm changes (the set is
 	// the same but the model would now produce a different, better result).
 	Force bool
 	Decay DecayPolicy
@@ -115,7 +115,7 @@ type ConsolidateOptions struct {
 	// MinSurvivorRatio is the fraction of a non-trivial reorganizable set that must
 	// survive (retained + abstracted), below which the over-deletion safety net
 	// refuses the reorganization. <=0 (or >1) uses defaultMinSurvivorRatio (0.5). A
-	// lower value (e.g. an aggressive Tidy) lets a bloated scope collapse further in
+	// lower value (e.g. an aggressive consolidation) lets a bloated scope collapse further in
 	// one pass while still catching a model that nukes nearly everything. The value
 	// is captured into the Plan so preview and apply enforce an identical guard.
 	MinSurvivorRatio float64
@@ -370,7 +370,7 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	return rep, nil
 }
 
-// Consolidate runs the full "sleep" pass in one shot: plan (LLM) then apply. It is
+// Consolidate runs the full consolidation in one shot: plan (LLM) then apply. It is
 // conservative by construction — it never mutates pinned, locked or human-authored
 // facts, never deletes more than half of a non-trivial set, and skips the LLM
 // reorganization when nothing has changed. A nil Extractor restricts the pass to
@@ -453,7 +453,7 @@ func applyReorg(ctx context.Context, store Store, now time.Time, input []Record,
 	// Over-deletion safety net: refuse if a non-trivial set would shrink below the
 	// configured survivor ratio (default half). Survivors include both retained
 	// originals and newly abstracted facts, so a legitimate merge (drop N originals,
-	// add M abstractions) is not mistaken for mass deletion. An aggressive Tidy
+	// add M abstractions) is not mistaken for mass deletion. An aggressive consolidation
 	// lowers the ratio so a bloated scope can collapse further in one pass.
 	survivors := len(outByID) + len(news)
 	if len(input) >= minFactsForDeletionGuard && float64(survivors) < minSurvivorRatio*float64(len(input)) {

@@ -225,7 +225,7 @@ func runBrainBackfill(cmd *cobra.Command, args []string) error {
 
 var consolidateCmd = &cobra.Command{
 	Use:   "consolidate",
-	Short: "Run the consolidation 'sleep' pass over one scope",
+	Short: "Run consolidation over one scope",
 	Long: `Run the consolidation pass for a scope: distill captures, merge duplicates,
 abstract repeated specifics into general rules, and decay stale facts.
 
@@ -261,7 +261,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 	}
 
 	var ex memory.Extractor
-	tidy := brain.TidyOptions{Force: consolidateRerun}
+	opts := brain.ConsolidateOpts{Force: consolidateRerun}
 	mode := "deterministic dedup/decay only"
 	if consolidateModel != "" {
 		model, err := brain.ParseModel(consolidateModel)
@@ -272,7 +272,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 		strategy := "conservative"
 		if consolidateAggressive {
 			exOpts = append(exOpts, brain.WithAggressiveReorganize())
-			tidy.MinSurvivorRatio = brain.AggressiveMinSurvivorRatio
+			opts.MinSurvivorRatio = brain.AggressiveMinSurvivorRatio
 			strategy = "aggressive"
 		}
 		ex = brain.NewClaudeExtractor(session.RealBlockingRunner(), model, exOpts...)
@@ -293,7 +293,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("DRY RUN — scope %s (%s); nothing will be written.\n", scope, mode)
 	}
 
-	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, tidy)
+	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, opts)
 	if err != nil {
 		return fmt.Errorf("consolidate: %w", err)
 	}
@@ -527,7 +527,7 @@ var assignAreasCmd = &cobra.Command{
 scopes — and persist each fact's area onto Record.Area. Areas power the graph's
 "by area" colouring/regions and (soon) cross-area recall.
 
-Normally this runs automatically on the sleep pass, tidy-all, and global promotion.
+Normally this runs automatically on scheduled consolidation, consolidate-all, and global promotion.
 This one-shot command populates areas on demand (e.g. right after upgrading) so they
 show up without waiting for a pass. It only writes the rebuildable Area index — facts'
 text and provenance are untouched. Start with --dry-run to preview.`,

@@ -84,13 +84,15 @@ type Config struct {
 	// calibration). An explicit BrainSemanticThreshold/BrainVectorVeto still wins.
 	// Inert without an embedder.
 	BrainCalibrate bool
-	// BrainSleepInterval enables the periodic "sleep"/consolidation pass when set to a
-	// positive duration (e.g. "6h"); empty disables it. Resolved from the AGENTIQUE_BRAIN_
-	// SLEEP_INTERVAL env var (preferred) or the [brain] sleep-interval config-file value.
-	BrainSleepInterval string
-	// BrainSleepModel is the model the sleep pass uses for LLM reorganization; empty =
-	// deterministic dedup/decay only. From AGENTIQUE_BRAIN_SLEEP_MODEL or [brain] sleep-model.
-	BrainSleepModel string
+	// BrainConsolidateInterval enables scheduled (automatic) consolidation across all
+	// scopes when set to a positive duration (e.g. "6h"); empty disables it. Resolved from
+	// the AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL env var (preferred) or the [brain]
+	// consolidate-interval config-file value.
+	BrainConsolidateInterval string
+	// BrainConsolidateModel is the model scheduled consolidation uses for LLM
+	// reorganization; empty = deterministic dedup/decay only. From
+	// AGENTIQUE_BRAIN_CONSOLIDATE_MODEL or [brain] consolidate-model.
+	BrainConsolidateModel string
 }
 
 func devModePreamble(dbPath string) string {
@@ -288,7 +290,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("POST /api/brain/consolidate/apply", httperror.HandlerFunc(bh.HandleApplyConsolidate))
 			mux.Handle("POST /api/brain/consolidate/global/preview", httperror.HandlerFunc(bh.HandlePreviewGlobal))
 			mux.Handle("POST /api/brain/consolidate/global/apply", httperror.HandlerFunc(bh.HandleApplyGlobal))
-			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleTidyAll))
+			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleConsolidateAll))
 			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
 			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
 			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
@@ -333,19 +335,19 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				}
 			}
 
-			// Scheduled sleep (opt-in): periodic consolidation across all scopes. Resolved
-			// from AGENTIQUE_BRAIN_SLEEP_INTERVAL (env, preferred) or [brain] sleep-interval
-			// (config file); empty = off. Same for the sleep model.
-			if iv := cfg.BrainSleepInterval; iv != "" {
+			// Scheduled consolidation (opt-in): automatic consolidation across all scopes on
+			// a timer. Resolved from AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL (env, preferred) or
+			// [brain] consolidate-interval (config file); empty = off. Same for the model.
+			if iv := cfg.BrainConsolidateInterval; iv != "" {
 				if d, derr := time.ParseDuration(iv); derr != nil || d <= 0 {
-					slog.Warn("brain: sleep scheduler off (bad interval)", "value", iv, "error", derr)
+					slog.Warn("brain: scheduled consolidation off (bad interval)", "value", iv, "error", derr)
 				} else {
 					var sm claudecli.Model
-					if smName := cfg.BrainSleepModel; smName != "" {
+					if smName := cfg.BrainConsolidateModel; smName != "" {
 						if m, merr := brain.ParseModel(smName); merr == nil {
 							sm = m
 						} else {
-							slog.Warn("brain: sleep model invalid; deterministic dedup only", "model", smName, "error", merr)
+							slog.Warn("brain: consolidation model invalid; deterministic dedup only", "model", smName, "error", merr)
 						}
 					}
 					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm)

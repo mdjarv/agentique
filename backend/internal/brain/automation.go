@@ -12,12 +12,14 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 )
 
-// Automation runs the periodic "sleep" pass: on each tick it consolidates every
+// Automation runs scheduled consolidation: on each tick it consolidates every
 // scope (merge duplicates, abstract repeated specifics, decay if configured).
 // Opt-in — the server starts it only when an interval is set. With a model it runs
 // the LLM reorganization; without, it's deterministic dedup only. Auto-apply is
 // safe by construction: the consolidation guards refuse >half-deletions and never
 // touch pinned/locked/human facts. A changed scope broadcasts EventBrainUpdated.
+// (Conceptually this is the "sleep" of sleep-based memory consolidation — the brain
+// consolidating itself while idle — but the feature is named "scheduled consolidation".)
 type Automation struct {
 	svc      *Service
 	runner   msggen.Runner
@@ -36,7 +38,7 @@ func (a *Automation) Start() {
 	if a == nil || a.interval <= 0 {
 		return
 	}
-	slog.Info("brain: sleep scheduler enabled", "interval", a.interval, "model", string(a.model))
+	slog.Info("brain: scheduled consolidation enabled", "interval", a.interval, "model", string(a.model))
 	go a.loop()
 }
 
@@ -67,7 +69,7 @@ func (a *Automation) loop() {
 func (a *Automation) runOnce(ctx context.Context) {
 	scopes, err := a.svc.ListScopes(ctx)
 	if err != nil {
-		slog.Warn("brain: sleep pass: list scopes failed", "error", err)
+		slog.Warn("brain: scheduled consolidation: list scopes failed", "error", err)
 		return
 	}
 	var ex memory.Extractor
@@ -80,16 +82,16 @@ func (a *Automation) runOnce(ctx context.Context) {
 			return
 		default:
 		}
-		rep, err := a.svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, TidyOptions{})
+		rep, err := a.svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, ConsolidateOpts{})
 		if err != nil {
-			slog.Warn("brain: sleep pass: consolidate failed", "scope", scope, "error", err)
+			slog.Warn("brain: scheduled consolidation: consolidate failed", "scope", scope, "error", err)
 			continue
 		}
 		changed := len(rep.Promoted) + len(rep.Rewritten) + len(rep.Abstracted) + len(rep.Deleted) + len(rep.Decayed)
 		if changed == 0 {
 			continue
 		}
-		slog.Info("brain: sleep pass consolidated scope", "scope", scope,
+		slog.Info("brain: scheduled consolidation: consolidated scope", "scope", scope,
 			"rewritten", len(rep.Rewritten), "abstracted", len(rep.Abstracted),
 			"deleted", len(rep.Deleted), "decayed", len(rep.Decayed))
 		if a.bus != nil {
@@ -98,9 +100,9 @@ func (a *Automation) runOnce(ctx context.Context) {
 	}
 	// After every scope is consolidated, recompute cross-scope topic areas once (B).
 	if n, err := a.svc.AssignAreas(ctx); err != nil {
-		slog.Warn("brain: sleep pass: assign areas failed", "error", err)
+		slog.Warn("brain: scheduled consolidation: assign areas failed", "error", err)
 	} else if n > 0 {
-		slog.Info("brain: sleep pass refreshed cross-scope areas", "changed", n)
+		slog.Info("brain: scheduled consolidation: refreshed cross-scope areas", "changed", n)
 		if a.bus != nil {
 			a.bus.Broadcast(EventBrainUpdated, map[string]string{})
 		}

@@ -24,7 +24,7 @@ import (
 // The model is a constructor parameter: the CALLER owns model policy, there is
 // deliberately no default. Suggested choices — a cheap model (claudecli.ModelHaiku)
 // for high-volume Extract during capture/backfill; a strong model
-// (claudecli.ModelOpus) for the Reorganize "sleep" pass, where judgment and
+// (claudecli.ModelOpus) for the Reorganize step of consolidation, where judgment and
 // faithfulness matter and the call is infrequent. Keeping the choice out of this
 // type lets the memory core lift to agentkit without carrying a model decision.
 type ClaudeExtractor struct {
@@ -215,8 +215,8 @@ func (e *ClaudeExtractor) reorganizePrompt() string {
 const ReorganizeModeAggressive = "aggressive"
 
 // AggressiveMinSurvivorRatio is the over-deletion guard floor for an aggressive
-// Tidy: a bloated scope may collapse to as little as 20% of its facts in one pass
-// (the guard then only catches a near-total wipe). Conservative Tidy keeps 0.5.
+// Consolidation: a bloated scope may collapse to as little as 20% of its facts in one pass
+// (the guard then only catches a near-total wipe). Conservative consolidation keeps 0.5.
 const AggressiveMinSurvivorRatio = 0.2
 
 // reorganizeModePolicy maps an HTTP/UI mode string to the extractor options and the
@@ -284,7 +284,7 @@ func (e *ClaudeExtractor) Extract(ctx context.Context, episodes []string) ([]mem
 // can shrink it further.
 var maxReorgBatch = 50
 
-// aggressiveMaxReorgBatch is a smaller batch for the aggressive Tidy. Aggressive
+// aggressiveMaxReorgBatch is a smaller batch for the aggressive consolidation. Aggressive
 // runs precisely on bloated scopes — longer, denser facts whose structured-output
 // generation is the most likely to hit the silent `claudecli: exit 1` wall (see the
 // maxReorgBatch note and docs/tech-debt.md). A tighter batch trades a few more model
@@ -322,7 +322,7 @@ func (e *ClaudeExtractor) Reorganize(ctx context.Context, facts []memory.Fact) (
 				return nil, errsByIdx[idx] // cancellation aborts the whole pass
 			}
 			// One chunk failing (after retries) must not sink the others — a large
-			// scope where 8/9 chunks tidy and one transiently crashed is a useful
+			// scope where 8/9 chunks consolidate and one transiently crashed is a useful
 			// partial pass; keep the failed chunk's facts unchanged and let a re-run
 			// pick it up. The over-deletion guard still applies to the merged result.
 			slog.Warn("brain: reorganize chunk failed after retries; keeping it unchanged",
@@ -395,7 +395,7 @@ var maxParallelReorg = 4
 // reorgMaxAttempts is how many times a single reorganize chunk is tried before it
 // gives up — covers the intermittent `claudecli: exit 1` crash on large structured
 // generations, which msggen.RunWithRetry doesn't treat as retriable. Bumped to 4
-// (from 3): on the live reviewbot aggressive Tidy, chunks that crashed often
+// (from 3): on the live reviewbot aggressive consolidation, chunks that crashed often
 // succeeded on a later try, so one more cheap, idempotent attempt converges more
 // scopes without a re-run.
 const reorgMaxAttempts = 4

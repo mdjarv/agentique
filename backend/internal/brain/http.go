@@ -368,7 +368,7 @@ func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) erro
 	if scope == "" {
 		scope = memory.ScopeGlobal
 	}
-	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false, TidyOptions{})
+	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false, ConsolidateOpts{})
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func (h *Handler) HandlePreviewConsolidate(w http.ResponseWriter, r *http.Reques
 		Scope string `json:"scope"`
 		Model string `json:"model"`
 		Mode  string `json:"mode"`  // "" (conservative) | "aggressive"
-		Force bool   `json:"force"` // re-tidy even if the scope is unchanged since last pass
+		Force bool   `json:"force"` // re-consolidate even if the scope is unchanged since last pass
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -429,17 +429,17 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
-// HandleTidyAll POST /api/brain/consolidate/all  {model}
+// HandleConsolidateAll POST /api/brain/consolidate/all  {model}
 // Starts a background job that consolidates every scope and auto-applies each
-// (an on-demand sleep pass). Returns the initial job; progress arrives over WS.
-func (h *Handler) HandleTidyAll(w http.ResponseWriter, r *http.Request) error {
+// (an on-demand consolidation of all scopes). Returns the initial job; progress arrives over WS.
+func (h *Handler) HandleConsolidateAll(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Model string `json:"model"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	job, err := h.startTidyAllJob(body.Model)
+	job, err := h.startConsolidateAllJob(body.Model)
 	if err != nil {
 		return err
 	}

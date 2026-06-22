@@ -698,7 +698,7 @@ export function BrainGraph({
             }}
             onEngineStop={() => {
               // Fit once, when the layout first settles after (re)mounting the graph
-              // view. We never re-frame afterwards, so a memory change or a Tidy can't
+              // view. We never re-frame afterwards, so a memory change or a consolidation can't
               // yank a user who has zoomed/panned back out to the whole-graph view.
               if (!fitted.current) {
                 fgRef.current?.zoomToFit(400, 48);

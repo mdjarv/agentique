@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   applyConsolidate,
   applyGlobalConsolidate,
+  type ConsolidateMode,
   type ConsolidateReport,
   type ConsolidationJob,
   type ConsolidationPlan,
@@ -18,10 +19,9 @@ import {
   type Memory,
   setLocked,
   setPinned,
+  startConsolidateAll,
   startGlobalPreview,
   startScopePreview,
-  startTidyAll,
-  type TidyMode,
   updateMemory,
 } from "~/lib/brain-api";
 
@@ -56,8 +56,8 @@ interface BrainState {
   globalPreview: GlobalPreview | null;
   globalPreviewing: boolean;
   globalApplying: boolean;
-  // Bulk "Tidy all": one job consolidates every scope and auto-applies each.
-  tidyingAll: boolean;
+  // Bulk "Consolidate all": one job consolidates every scope and auto-applies each.
+  consolidatingAll: boolean;
   progress: { current: number; total: number } | null;
 
   // Bumped on any memory change (local or from another tab) to drive the nav
@@ -73,9 +73,14 @@ interface BrainState {
   lock: (id: string, locked: boolean) => Promise<void>;
   confirm: (id: string) => Promise<void>;
 
-  startPreview: (scope: string, model: string, mode?: TidyMode, force?: boolean) => Promise<void>;
+  startPreview: (
+    scope: string,
+    model: string,
+    mode?: ConsolidateMode,
+    force?: boolean,
+  ) => Promise<void>;
   startGlobalConsolidate: (model: string) => Promise<void>;
-  startTidyAll: (model: string) => Promise<void>;
+  startConsolidateAll: (model: string) => Promise<void>;
   applyPreview: () => Promise<number>;
   applyGlobalPreview: () => Promise<number>;
   dismissPreview: () => void;
@@ -111,7 +116,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   globalPreview: null,
   globalPreviewing: false,
   globalApplying: false,
-  tidyingAll: false,
+  consolidatingAll: false,
   progress: null,
   flareSeq: 0,
 
@@ -185,9 +190,9 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     get().setJob(job);
   },
 
-  startTidyAll: async (model) => {
-    set({ tidyingAll: true, progress: null });
-    const job = await startTidyAll(model);
+  startConsolidateAll: async (model) => {
+    set({ consolidatingAll: true, progress: null });
+    const job = await startConsolidateAll(model);
     get().setJob(job);
   },
 
@@ -242,7 +247,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
       set((s) => ({
         previewing: false,
         globalPreviewing: false,
-        tidyingAll: false,
+        consolidatingAll: false,
         progress: null,
         previewScope: s.preview ? s.previewScope : null,
       }));
@@ -251,7 +256,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     const progress =
       job.phase === "running" && job.total > 0 ? { current: job.current, total: job.total } : null;
     if (job.kind === "all") {
-      set({ tidyingAll: job.phase === "running", progress });
+      set({ consolidatingAll: job.phase === "running", progress });
       return;
     }
     if (job.kind === "scope") {

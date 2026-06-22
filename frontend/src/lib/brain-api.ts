@@ -260,9 +260,9 @@ export interface ConsolidationJob {
   error?: string;
 }
 
-// TidyMode selects the reorganize strategy: "conservative" merges only true
+// ConsolidateMode selects the reorganize strategy: "conservative" merges only true
 // duplicates; "aggressive" collapses families of granular facts into broad rules.
-export type TidyMode = "conservative" | "aggressive";
+export type ConsolidateMode = "conservative" | "aggressive";
 
 // startScopePreview kicks off a per-scope preview job and returns its initial
 // (running) state. The result arrives over the WS bus. Empty model = deterministic.
@@ -271,7 +271,7 @@ export type TidyMode = "conservative" | "aggressive";
 export async function startScopePreview(
   scope: string,
   model: string,
-  mode: TidyMode = "conservative",
+  mode: ConsolidateMode = "conservative",
   force = false,
 ): Promise<ConsolidationJob> {
   const res = await fetch(`${BASE}/consolidate/preview`, {
@@ -283,15 +283,15 @@ export async function startScopePreview(
   return (await res.json()).job;
 }
 
-// startTidyAll kicks off a bulk consolidation of every scope (auto-applied). The
+// startConsolidateAll kicks off a bulk consolidation of every scope (auto-applied). The
 // model runs in the background; progress arrives over the WS bus.
-export async function startTidyAll(model: string): Promise<ConsolidationJob> {
+export async function startConsolidateAll(model: string): Promise<ConsolidationJob> {
   const res = await fetch(`${BASE}/consolidate/all`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model }),
   });
-  await throwIfNotOk(res, "Failed to start tidy all");
+  await throwIfNotOk(res, "Failed to start consolidate all");
   return (await res.json()).job;
 }
 

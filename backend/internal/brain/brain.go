@@ -495,7 +495,7 @@ func (s *Service) ImportRecords(ctx context.Context, targetScope memory.Scope, r
 }
 
 // ListScopes returns the distinct scopes that currently hold memories — used by
-// the periodic "sleep" pass to know what to consolidate.
+// scheduled consolidation to know what to consolidate.
 func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {
 	all, err := s.store.List(ctx)
 	if err != nil {
@@ -633,10 +633,10 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 // Extractor restricts the pass to deterministic decay. When dryRun is set the
 // pass writes nothing — it returns the changelog it WOULD apply and leaves the
 // persisted fingerprint untouched so a later real run still proceeds. opts carries
-// Force (reorganize even when the scope is unchanged — re-tidy after a
+// Force (reorganize even when the scope is unchanged — re-consolidate after a
 // prompt/algorithm change) and MinSurvivorRatio (relax the over-deletion guard for
 // an aggressive pass); its zero value reproduces the conservative behaviour.
-func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool, opts TidyOptions) (memory.Report, error) {
+func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool, opts ConsolidateOpts) (memory.Report, error) {
 	// Semantic SimOptions for the post-apply graph rebuild (embeds the scope) — computed
 	// before the lock and skipped on dry run, as in ApplyPlan.
 	var simOpts []memory.SimOption
@@ -664,12 +664,12 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 	return rep, nil
 }
 
-// TidyOptions are the per-scope consolidation knobs the brain layer adds on top of
+// ConsolidateOpts are the per-scope consolidation knobs the brain layer adds on top of
 // the model (which the Extractor carries). Force re-runs the reorganization even
-// when the scope is unchanged since the last pass (re-tidy after a prompt/algorithm
-// change). MinSurvivorRatio relaxes the over-deletion guard for an aggressive Tidy
+// when the scope is unchanged since the last pass (re-consolidate after a prompt/algorithm
+// change). MinSurvivorRatio relaxes the over-deletion guard for an aggressive consolidation
 // (0 = conservative default). The zero value reproduces the original behaviour.
-type TidyOptions struct {
+type ConsolidateOpts struct {
 	Force            bool
 	MinSurvivorRatio float64
 }
@@ -682,7 +682,7 @@ type TidyOptions struct {
 // hold s.mu: that lock guards writes/fingerprints and must not be held across a
 // multi-minute LLM run, which would block every other brain op (incl. live
 // MemorySearch). Staleness is caught by ApplyPlan's fingerprint check.
-func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, opts TidyOptions) (memory.Plan, error) {
+func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, opts ConsolidateOpts) (memory.Plan, error) {
 	fps := s.loadFingerprints()
 	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint:  fps[string(scope)],
@@ -758,7 +758,7 @@ func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter, opts memor
 // ApplyGlobal applies (dryRun=false) or previews (dryRun=true) a global plan
 // deterministically — no model calls. Returns memory.ErrStalePlan if any affected
 // scope changed since the plan was made. A real apply invalidates the persisted
-// per-scope fingerprints of the scopes it touched so a later Tidy re-evaluates them.
+// per-scope fingerprints of the scopes it touched so a later consolidation re-evaluates them.
 func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRun bool) (memory.Report, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -794,8 +794,8 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 }
 
 // AssignAreas recomputes the cross-scope topic areas across the whole brain and persists
-// Record.Area (B). Run after a pass that can change cross-scope structure — the sleep
-// pass, tidy-all, or a global promotion. In semantic mode it embeds the corpus and blends
+// Record.Area (B). Run after a pass that can change cross-scope structure — scheduled
+// consolidation, consolidate-all, or a global promotion. In semantic mode it embeds the corpus and blends
 // cosine into the area clustering (C); otherwise it is lexical. Deterministic and
 // idempotent; the area index is rebuildable, never the source of truth. Returns the
 // number of records whose area changed.
@@ -1009,7 +1009,7 @@ func (s *Service) saveFingerprints(m map[string]string) {
 
 // loadGlobalManifest / saveGlobalManifest persist the per-scope content-hash
 // manifest of the last global promotion pass (RFC P5). Separate from the per-scope
-// Tidy fingerprints: this tracks "the state all projects were in the last time we
+// Consolidation fingerprints: this tracks "the state all projects were in the last time we
 // looked for cross-scope patterns" so an incremental pass can skip the model when
 // nothing changed. Callers hold s.mu.
 func (s *Service) loadGlobalManifest() map[string]string {

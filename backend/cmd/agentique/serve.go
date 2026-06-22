@@ -279,9 +279,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
 		BrainVectorVeto:        envFloat("AGENTIQUE_BRAIN_VECTOR_VETO"),
 		BrainCalibrate:         envBool("AGENTIQUE_BRAIN_AUTOCAL"),
-		// Sleep schedule: env var wins, else the [brain] config-file value, else off.
-		BrainSleepInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_SLEEP_INTERVAL"), fileCfg.Brain.SleepInterval),
-		BrainSleepModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_SLEEP_MODEL"), fileCfg.Brain.SleepModel),
+		// Scheduled consolidation: env var wins, else the [brain] config-file value, else off.
+		BrainConsolidateInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL"), fileCfg.Brain.ConsolidateInterval),
+		BrainConsolidateModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_MODEL"), fileCfg.Brain.ConsolidateModel),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

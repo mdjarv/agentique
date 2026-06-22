@@ -125,13 +125,14 @@ type BackupConfig struct {
 // means "unset" — the corresponding feature stays off / uses its built-in default, exactly
 // as when no env var is set.
 type BrainConfig struct {
-	// SleepInterval enables the periodic "sleep"/consolidation pass when set to a positive
-	// duration (e.g. "6h"); empty disables it. Env: AGENTIQUE_BRAIN_SLEEP_INTERVAL.
-	SleepInterval string `toml:"sleep-interval"`
-	// SleepModel is the model the sleep pass uses for LLM reorganization
-	// (haiku|sonnet|opus). Empty = deterministic dedup/decay only.
-	// Env: AGENTIQUE_BRAIN_SLEEP_MODEL.
-	SleepModel string `toml:"sleep-model"`
+	// ConsolidateInterval enables scheduled (automatic) consolidation across all scopes
+	// when set to a positive duration (e.g. "6h"); empty disables it. Env:
+	// AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL.
+	ConsolidateInterval string `toml:"consolidate-interval"`
+	// ConsolidateModel is the model the scheduled consolidation uses for LLM
+	// reorganization (haiku|sonnet|opus). Empty = deterministic dedup/decay only.
+	// Env: AGENTIQUE_BRAIN_CONSOLIDATE_MODEL.
+	ConsolidateModel string `toml:"consolidate-model"`
 }
 
 // Default returns a config with all default values.

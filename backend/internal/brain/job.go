@@ -143,7 +143,7 @@ func (h *Handler) runScopeJob(job JobState, scope memory.Scope, model, mode stri
 		}
 		ex = NewClaudeExtractor(h.Runner, m, exOpts...)
 	}
-	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{}, TidyOptions{Force: force, MinSurvivorRatio: minSurvivorRatio})
+	plan, err := h.Service.Plan(ctx, scope, ex, memory.DecayPolicy{}, ConsolidateOpts{Force: force, MinSurvivorRatio: minSurvivorRatio})
 	if err != nil {
 		h.failJob(job, err)
 		return
@@ -199,12 +199,12 @@ func (h *Handler) runGlobalJob(job JobState, m claudecli.Model) {
 	h.finishJob(job, rep, plan)
 }
 
-// startTidyAllJob kicks off a bulk consolidation of every scope in the background.
-// Unlike preview jobs it AUTO-APPLIES each scope (an on-demand sleep pass), relying
+// startConsolidateAllJob kicks off a bulk consolidation of every scope in the background.
+// Unlike preview jobs it AUTO-APPLIES each scope (an on-demand consolidation of all scopes), relying
 // on the consolidation guards; progress is per-scope.
-func (h *Handler) startTidyAllJob(model string) (JobState, error) {
+func (h *Handler) startConsolidateAllJob(model string) (JobState, error) {
 	if h.Runner == nil {
-		return JobState{}, httperror.BadRequest("tidy all requires a model")
+		return JobState{}, httperror.BadRequest("consolidate all requires a model")
 	}
 	m, err := ParseModel(model)
 	if err != nil {
@@ -214,11 +214,11 @@ func (h *Handler) startTidyAllJob(model string) (JobState, error) {
 	if err != nil {
 		return JobState{}, err
 	}
-	go h.runTidyAllJob(job, m)
+	go h.runConsolidateAllJob(job, m)
 	return job, nil
 }
 
-func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
+func (h *Handler) runConsolidateAllJob(job JobState, m claudecli.Model) {
 	ctx := context.Background()
 	ex := NewClaudeExtractor(h.Runner, m)
 	scopes, err := h.Service.ListScopes(ctx)
@@ -229,10 +229,10 @@ func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
 	job.Total = len(scopes)
 	h.publishJob(job)
 	for i, scope := range scopes {
-		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, TidyOptions{})
+		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, ConsolidateOpts{})
 		if cerr != nil {
 			// One bad scope shouldn't sink the bulk pass — log and continue.
-			slog.Warn("brain: tidy all: scope failed", "scope", scope, "error", cerr)
+			slog.Warn("brain: consolidate all: scope failed", "scope", scope, "error", cerr)
 		} else {
 			changes := len(rep.Promoted) + len(rep.Rewritten) + len(rep.Abstracted) + len(rep.Deleted) + len(rep.Decayed)
 			job.Changes += changes
@@ -245,7 +245,7 @@ func (h *Handler) runTidyAllJob(job JobState, m claudecli.Model) {
 	}
 	// Recompute cross-scope topic areas once after the whole bulk pass (B).
 	if n, aerr := h.Service.AssignAreas(ctx); aerr != nil {
-		slog.Warn("brain: tidy all: assign areas failed", "error", aerr)
+		slog.Warn("brain: consolidate all: assign areas failed", "error", aerr)
 	} else if n > 0 {
 		h.brainChanged()
 	}

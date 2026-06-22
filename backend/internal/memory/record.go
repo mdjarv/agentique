@@ -39,7 +39,7 @@ const (
 	SourceHuman Source = "human"
 	// SourceAgent was explicitly remembered by an agent (e.g. a memory_add tool).
 	SourceAgent Source = "agent"
-	// SourceConsolidated was produced by the consolidation ("sleep") pass.
+	// SourceConsolidated was produced by consolidation.
 	SourceConsolidated Source = "consolidated"
 	// SourceCapture is raw episodic material staged at turn end; not injected.
 	SourceCapture Source = "capture"

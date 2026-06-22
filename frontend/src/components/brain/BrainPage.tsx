@@ -25,12 +25,12 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import {
+  type ConsolidateMode,
   type ConsolidateReport,
   inReviewQueue,
   type Memory,
   needsConfirmation,
   refineMemory,
-  type TidyMode,
 } from "~/lib/brain-api";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -39,7 +39,7 @@ import { useBrainStore } from "~/stores/brain-store";
 const CATEGORIES = ["fact", "identity", "preference", "contact", "project", "goal", "task"];
 const GLOBAL_SCOPE = "global";
 const MODELS = ["opus", "sonnet", "haiku"];
-const TIDY_MODES: { value: TidyMode; label: string }[] = [
+const CONSOLIDATE_MODES: { value: ConsolidateMode; label: string }[] = [
   { value: "conservative", label: "Conservative" },
   { value: "aggressive", label: "Aggressive" },
 ];
@@ -71,15 +71,15 @@ export function BrainPage() {
     startGlobalConsolidate,
     applyGlobalPreview,
     dismissGlobalPreview,
-    tidyingAll,
-    startTidyAll,
+    consolidatingAll,
+    startConsolidateAll,
     hydrateJob,
   } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
-  const [mode, setMode] = useState<TidyMode>("conservative");
+  const [mode, setMode] = useState<ConsolidateMode>("conservative");
   const [view, setView] = useState<"list" | "graph">("list");
   const [reviewing, setReviewing] = useState(false);
   // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
@@ -106,9 +106,9 @@ export function BrainPage() {
   // While a consolidation job is running it broadcasts a burst of brain.updated events
   // (one per scope), each of which would otherwise refetch the graph and re-lay it out;
   // we hold off until the job ends (jobActive flips false) and refresh once then, so the
-  // live graph stays stable through a Tidy instead of churning on every step.
-  const jobActive = previewing || globalPreviewing || tidyingAll;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: flareSeq is a trigger-only dep — it bumps on any memory change (here or another tab) to re-fetch the graph so the insights + confirm queue stay fresh after a tidy/confirm; its value isn't read in the body.
+  // live graph stays stable through a consolidation instead of churning on every step.
+  const jobActive = previewing || globalPreviewing || consolidatingAll;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: flareSeq is a trigger-only dep — it bumps on any memory change (here or another tab) to re-fetch the graph so the insights + confirm queue stay fresh after a consolidation/confirm; its value isn't read in the body.
   useEffect(() => {
     if (view === "graph" && !jobActive) loadGraph();
   }, [view, loadGraph, flareSeq, jobActive]);
@@ -159,7 +159,7 @@ export function BrainPage() {
     return f ? base.filter((m) => m.text.toLowerCase().includes(f)) : base;
   }, [graph, memories, filter]);
 
-  const handleTidy = async (scope: string, force = false) => {
+  const handleConsolidate = async (scope: string, force = false) => {
     try {
       await startPreview(scope, model, mode, force);
     } catch (err) {
@@ -193,11 +193,11 @@ export function BrainPage() {
     }
   };
 
-  const handleTidyAll = async () => {
+  const handleConsolidateAll = async () => {
     try {
-      await startTidyAll(model);
+      await startConsolidateAll(model);
     } catch (err) {
-      toast.error(getErrorMessage(err, "Tidy all failed"));
+      toast.error(getErrorMessage(err, "Consolidate all failed"));
     }
   };
 
@@ -234,7 +234,7 @@ export function BrainPage() {
           value={model}
           onChange={(e) => setModel(e.target.value)}
           className="h-8 rounded-md border bg-background px-2 text-xs capitalize"
-          title="Model used to reorganize when you Tidy a scope"
+          title="Model used to reorganize when you Consolidate a scope"
         >
           {MODELS.map((m) => (
             <option key={m} value={m} className="capitalize">
@@ -244,11 +244,11 @@ export function BrainPage() {
         </select>
         <select
           value={mode}
-          onChange={(e) => setMode(e.target.value as TidyMode)}
+          onChange={(e) => setMode(e.target.value as ConsolidateMode)}
           className="h-8 rounded-md border bg-background px-2 text-xs"
-          title="Per-scope Tidy strategy. Conservative merges only true duplicates; Aggressive collapses families of granular facts into broad rules to shrink a bloated scope (preview before applying)."
+          title="Per-scope consolidation strategy. Conservative merges only true duplicates; Aggressive collapses families of granular facts into broad rules to shrink a bloated scope (preview before applying)."
         >
-          {TIDY_MODES.map((m) => (
+          {CONSOLIDATE_MODES.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
             </option>
@@ -257,20 +257,20 @@ export function BrainPage() {
         <Button
           size="sm"
           variant="outline"
-          disabled={tidyingAll}
-          onClick={handleTidyAll}
+          disabled={consolidatingAll}
+          onClick={handleConsolidateAll}
           title={`Consolidate every scope with ${model} and apply automatically`}
         >
-          {tidyingAll ? (
+          {consolidatingAll ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Sparkles className="size-4" />
           )}
-          {tidyingAll
+          {consolidatingAll
             ? progress
-              ? `Tidying… ${progress.current}/${progress.total}`
-              : "Tidying…"
-            : "Tidy all"}
+              ? `Consolidating… ${progress.current}/${progress.total}`
+              : "Consolidating…"
+            : "Consolidate all"}
         </Button>
         <Button
           size="sm"
@@ -412,7 +412,7 @@ export function BrainPage() {
                       title={`Scan all projects with ${model} and promote cross-cutting facts (recurring conventions, your preferences) to global`}
                     >
                       <ArrowUpToLine className="size-3.5" />
-                      {globalPreviewing ? "Scanning…" : "Consolidate"}
+                      {globalPreviewing ? "Scanning…" : "Lift to global"}
                     </Button>
                   )}
                   <Button
@@ -420,11 +420,11 @@ export function BrainPage() {
                     variant="ghost"
                     className="text-xs"
                     disabled={previewing && isPreviewScope}
-                    onClick={() => handleTidy(g.scope)}
-                    title={`Preview a tidy with ${model}: merge duplicates, distill captures, decay stale facts`}
+                    onClick={() => handleConsolidate(g.scope)}
+                    title={`Preview a consolidation with ${model}: merge duplicates, distill captures, decay stale facts`}
                   >
                     <Sparkles className="size-3.5" />
-                    {previewing && isPreviewScope ? "Previewing…" : "Tidy"}
+                    {previewing && isPreviewScope ? "Previewing…" : "Consolidate"}
                   </Button>
                 </div>
               </div>
@@ -447,7 +447,7 @@ export function BrainPage() {
                   report={preview?.report ?? null}
                   onApply={handleApply}
                   onDismiss={dismissPreview}
-                  onForceRerun={() => handleTidy(g.scope, true)}
+                  onForceRerun={() => handleConsolidate(g.scope, true)}
                 />
               )}
               {open &&
@@ -482,7 +482,7 @@ function ConsolidatePreview({
   onApply,
   onDismiss,
   onForceRerun,
-  emptyLabel = "Already tidy — nothing to change.",
+  emptyLabel = "Already consolidated — nothing to change.",
 }: {
   previewing: boolean;
   applying: boolean;
@@ -518,7 +518,7 @@ function ConsolidatePreview({
     return (
       <PreviewShell onDismiss={onDismiss}>
         <span className="text-xs text-amber-600">
-          Skipped — this tidy would remove more than half of the scope (safety limit).
+          Skipped — this consolidation would remove more than half of the scope (safety limit).
         </span>
       </PreviewShell>
     );
@@ -534,7 +534,7 @@ function ConsolidatePreview({
               variant="ghost"
               className="text-xs"
               onClick={onForceRerun}
-              title="Re-run the tidy on this unchanged scope (e.g. with a different strategy or a newer algorithm)"
+              title="Re-run the consolidation on this unchanged scope (e.g. with a different strategy or a newer algorithm)"
             >
               Force re-run
             </Button>
