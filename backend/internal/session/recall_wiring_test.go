@@ -23,7 +23,7 @@ func (s *LifecycleSuite) TestPerTurnDeltaRecall() {
 		if _, dup := exclude["deploy-fact"]; dup {
 			return "", nil // already surfaced — nothing new
 		}
-		return "> **Recalled** — deploys run on Tuesdays.", []string{"deploy-fact"}
+		return "<brain>\n<fact id=\"deploy-fact\">deploys run on Tuesdays</fact>\n</brain>", []string{"deploy-fact"}
 	}
 
 	sess := s.createSession()
@@ -35,7 +35,7 @@ func (s *LifecycleSuite) TestPerTurnDeltaRecall() {
 	s.Require().Len(q, 1)
 	s.Contains(q[0], "deploys run on Tuesdays")
 	s.Contains(q[0], "when do we deploy?")
-	s.Less(strings.Index(q[0], "Recalled"), strings.Index(q[0], "when do we deploy?"),
+	s.Less(strings.Index(q[0], "<brain>"), strings.Index(q[0], "when do we deploy?"),
 		"recall block should precede the user's prompt")
 	s.Equal([]string{"when do we deploy?"}, seen)
 	s.Empty(excludes[0], "turn 1 exclude set should be empty")
