@@ -527,6 +527,12 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 // prompt/algorithm change) and MinSurvivorRatio (relax the over-deletion guard for
 // an aggressive pass); its zero value reproduces the conservative behaviour.
 func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool, opts TidyOptions) (memory.Report, error) {
+	// Semantic SimOptions for the post-apply graph rebuild (embeds the scope) — computed
+	// before the lock and skipped on dry run, as in ApplyPlan.
+	var simOpts []memory.SimOption
+	if !dryRun {
+		simOpts = s.scopeSimOptions(ctx, scope)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
@@ -536,6 +542,7 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 		Decay:            decay,
 		DryRun:           dryRun,
 		MinSurvivorRatio: opts.MinSurvivorRatio,
+		SimOptions:       simOpts,
 	})
 	if err != nil {
 		return rep, err
@@ -580,11 +587,19 @@ func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extrac
 // plan was made. A real apply persists the new fingerprint so the next pass can skip
 // an unchanged set.
 func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory.Plan, decay memory.DecayPolicy, dryRun bool) (memory.Report, error) {
+	// Compute semantic SimOptions (embeds the scope) BEFORE taking the lock: s.mu guards
+	// writes/fingerprints and must not be held across a network embed. Skipped on dry run
+	// (the post-apply graph rebuild that consumes them doesn't run for a preview).
+	var simOpts []memory.SimOption
+	if !dryRun {
+		simOpts = s.scopeSimOptions(ctx, scope)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rep, err := memory.ApplyPlan(ctx, s.store, scope, plan, memory.ConsolidateOptions{
-		Decay:  decay,
-		DryRun: dryRun,
+		Decay:      decay,
+		DryRun:     dryRun,
+		SimOptions: simOpts,
 	})
 	if err != nil {
 		return rep, err
@@ -658,8 +673,11 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 	if m, merr := memory.ScopeManifest(ctx, s.store); merr == nil {
 		s.saveGlobalManifest(m)
 	}
-	// A promotion changed cross-scope structure — refresh topic areas (B).
-	if _, aerr := memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes); aerr != nil {
+	// A promotion changed cross-scope structure — refresh topic areas (B). Use the
+	// Service method (s.AssignAreas), not memory.AssignAreas directly, so the rebuild is
+	// embedding-aware in semantic mode (C); the bare memory call was lexical-only even
+	// with an embedder configured. s.AssignAreas does not take s.mu, so no re-entrancy.
+	if _, aerr := s.AssignAreas(ctx); aerr != nil {
 		slog.Warn("brain: assign areas after global apply failed", "error", aerr)
 	}
 	return rep, nil
@@ -689,6 +707,22 @@ func durableRecords(all []memory.Record) []memory.Record {
 		}
 	}
 	return out
+}
+
+// scopeSimOptions builds the semantic SimOptions for a single-scope clustering pass
+// (ApplyPlan/Consolidate's post-apply RelinkScope + AssignCommunities). It lists the
+// scope's durable records and embeds them; nil (lexical-only) when no embedder is set,
+// the scope is empty, or listing/embedding fails — clustering then degrades to Jaccard.
+func (s *Service) scopeSimOptions(ctx context.Context, scope memory.Scope) []memory.SimOption {
+	if s.embedder == nil {
+		return nil
+	}
+	all, err := s.store.List(ctx, scope)
+	if err != nil {
+		slog.Warn("brain: list scope for semantic clustering failed; clustering lexically", "scope", scope, "error", err)
+		return nil
+	}
+	return s.semanticSimOptions(ctx, durableRecords(all))
 }
 
 // semanticSimOptions returns the SimOptions that turn on embedding-blended similarity for

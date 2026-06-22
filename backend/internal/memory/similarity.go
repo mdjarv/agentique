@@ -107,3 +107,29 @@ func (s *Similarity) Score(i, j int) float64 {
 // semantic reports whether any embedding signal is active (the degree cap only matters
 // when the denser cosine graph is in play).
 func (s *Similarity) semantic() bool { return s.embs != nil }
+
+// interference reports whether pair (i,j) sits in the "related but not a lexical
+// duplicate" band (DetectInterference), and a representative similarity for ranking.
+// Related uses the same two-threshold OR as Linked — jaccard ≥ lexLower OR cosine ≥
+// cosThresh — so a semantic-only near-match (low Jaccard, high cosine) counts, which is
+// exactly the pair an agent confuses. Duplicate-exclusion stays LEXICAL (jaccard ≥
+// lexUpper): consolidation merges lexical dups, so a high-cosine / low-jaccard pair is a
+// surviving semantic near-duplicate that SHOULD surface as interference, not be excluded
+// as a "duplicate". Degrades to pure Jaccard with no embeddings (band unchanged).
+func (s *Similarity) interference(i, j int, lexLower, lexUpper float64) (score float64, inBand bool) {
+	lex := jaccardSets(s.toks[i], s.toks[j])
+	if lex >= lexUpper {
+		return lex, false // lexical duplicate — consolidation's job, not interference
+	}
+	score, related := lex, lex >= lexLower
+	if s.embs != nil {
+		cos := CosineSimilarity(s.embs[i], s.embs[j]) // negative cos can't trip either test below
+		if cos > score {
+			score = cos
+		}
+		if cos >= s.cosThresh {
+			related = true
+		}
+	}
+	return score, related
+}

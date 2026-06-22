@@ -140,6 +140,13 @@ type ConsolidateOptions struct {
 	// logs it via the host and continues with the remaining batches instead of
 	// aborting. A context cancellation always aborts regardless.
 	OnError func(error)
+	// SimOptions, when set, make the post-apply graph rebuild (RelinkScope +
+	// AssignCommunities) embedding-aware instead of lexical-only — the same SimOptions
+	// AssignAreas already takes. The host (brain) supplies a per-corpus embedding lookup
+	// + cosine threshold so per-scope links and communities cluster semantically in
+	// semantic mode (tech-debt: "semantic similarity is activated only for areas"). Nil
+	// = pure Jaccard, unchanged. Inert on a dry run (the rebuild is skipped there).
+	SimOptions []SimOption
 }
 
 // Change records a rewritten fact.
@@ -353,10 +360,10 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	// communities over those fresh edges (associative-recall + graph-view signal +
 	// cluster-aware future passes). Both are derived metadata, so previews skip them.
 	if !opts.DryRun {
-		if _, err := RelinkScope(ctx, store, scope); err != nil {
+		if _, err := RelinkScope(ctx, store, scope, opts.SimOptions...); err != nil {
 			return rep, err
 		}
-		if _, err := AssignCommunities(ctx, store, scope); err != nil {
+		if _, err := AssignCommunities(ctx, store, scope, opts.SimOptions...); err != nil {
 			return rep, err
 		}
 	}

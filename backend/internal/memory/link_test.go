@@ -14,6 +14,54 @@ func hasID(ids []string, id string) bool {
 	return false
 }
 
+// #2: ApplyPlan must thread its SimOptions into the post-apply graph rebuild, so per-scope
+// Related links become embedding-aware in semantic mode (not just AssignAreas). Two
+// lexically-disjoint but semantically-identical facts are unlinked lexically and linked
+// only when ApplyPlan carries an embedding lookup — proving cosine reaches RelinkScope.
+func TestApplyPlanThreadsSemanticSimOptionsToRelink(t *testing.T) {
+	ctx := context.Background()
+	mkStore := func() *memStore {
+		return newMemStore(
+			mk("a", scopeA, "always run with the race detector", CategoryFact, SourceConsolidated),
+			mk("b", scopeA, "verify concurrent safety under load", CategoryFact, SourceConsolidated),
+		)
+	}
+	vecs := map[string][]float32{"a": {1, 0}, "b": {1, 0}} // cosine 1, jaccard 0
+
+	// Lexical apply (no SimOptions): disjoint words → no link.
+	lex := mkStore()
+	lexPlan, err := PlanConsolidation(ctx, lex, nil, scopeA, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyPlan(ctx, lex, scopeA, lexPlan, ConsolidateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := lex.Get(ctx, "a"); hasID(a.Related, "b") {
+		t.Fatalf("lexical ApplyPlan should not link disjoint facts, got Related=%v", a.Related)
+	}
+
+	// Semantic apply: SimOptions carry the cosine signal → RelinkScope links a<->b.
+	sem := mkStore()
+	semPlan, err := PlanConsolidation(ctx, sem, nil, scopeA, ConsolidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyPlan(ctx, sem, scopeA, semPlan, ConsolidateOptions{
+		SimOptions: []SimOption{
+			WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
+			WithCosineThreshold(0.5),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := sem.Get(ctx, "a")
+	b, _ := sem.Get(ctx, "b")
+	if !hasID(a.Related, "b") || !hasID(b.Related, "a") {
+		t.Fatalf("semantic ApplyPlan should link a<->b via cosine: a=%v b=%v", a.Related, b.Related)
+	}
+}
+
 func TestRelinkScope(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore(

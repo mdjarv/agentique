@@ -69,3 +69,45 @@ func TestDetectInterferenceExcludesDuplicates(t *testing.T) {
 		t.Fatalf("identical facts are duplicates, not interference, got %+v", pairs)
 	}
 }
+
+// #2: with SimOptions the related-lower bound blends cosine, so a semantic near-match
+// (lexically disjoint, high cosine) is surfaced as interference — the pair an agent
+// confuses that lexical-only detection misses. Mirrors TestDetectCommunitiesUsesEmbeddings.
+func TestDetectInterferenceUsesEmbeddings(t *testing.T) {
+	recs := []Record{
+		mk("a", scopeA, "always run with the race detector", CategoryFact, SourceConsolidated),
+		mk("b", scopeA, "verify concurrent safety under load", CategoryFact, SourceConsolidated), // disjoint words
+	}
+	vecs := map[string][]float32{"a": {1, 0}, "b": {1, 0}} // same direction → cosine 1, jaccard 0
+
+	// Lexical-only: disjoint words → below the related-lower bound → no interference.
+	if pairs := DetectInterference(recs, DefaultRelatedThreshold, DefaultDuplicateThreshold, 0); len(pairs) != 0 {
+		t.Fatalf("lexical-only: disjoint facts should not be interference, got %+v", pairs)
+	}
+
+	// Semantic: cosine clears the link threshold → the pair surfaces (and is not excluded
+	// as a duplicate, since duplicate-exclusion stays lexical).
+	pairs := DetectInterference(recs, DefaultRelatedThreshold, DefaultDuplicateThreshold, 0,
+		WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
+		WithCosineThreshold(0.5))
+	if len(pairs) != 1 || pairs[0].A != "a" || pairs[0].B != "b" {
+		t.Fatalf("semantic: expected the a~b near-match as interference, got %+v", pairs)
+	}
+}
+
+// A high-cosine pair that is also a LEXICAL duplicate stays excluded — duplicate-exclusion
+// is lexical, so consolidation (not interference) still owns exact/near-exact dups even in
+// semantic mode.
+func TestDetectInterferenceSemanticStillExcludesLexicalDuplicates(t *testing.T) {
+	recs := []Record{
+		mk("a", scopeA, "uses just as the task runner", CategoryFact, SourceConsolidated),
+		mk("b", scopeA, "uses just as the task runner", CategoryFact, SourceConsolidated),
+	}
+	vecs := map[string][]float32{"a": {1, 0}, "b": {1, 0}}
+	pairs := DetectInterference(recs, DefaultRelatedThreshold, DefaultDuplicateThreshold, 0,
+		WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
+		WithCosineThreshold(0.5))
+	if len(pairs) != 0 {
+		t.Fatalf("lexical duplicates must stay excluded even with high cosine, got %+v", pairs)
+	}
+}

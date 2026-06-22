@@ -16,13 +16,17 @@ type InterferencePair struct {
 	Similarity float64 `json:"similarity"`
 }
 
-// DetectInterference finds fact pairs whose token-Jaccard sits in [lower, upper):
-// linked-but-not-duplicate. Pairs at/above upper are duplicates (consolidation's job);
-// pairs below lower aren't a confusion risk. Captures are excluded. Each fact is
-// reported in at most maxPerFact pairs (its strongest), so one hub fact can't flood
-// the list. Deterministic: sorted by similarity desc, then ids. O(n^2) — fine at the
-// dozens-to-low-thousands scale the brain targets (see RFC non-goals).
-func DetectInterference(records []Record, lower, upper float64, limit int) []InterferencePair {
+// DetectInterference finds fact pairs in the "related but not a lexical duplicate" band:
+// pairs at/above upper (token-Jaccard) are duplicates (consolidation's job); pairs related
+// by neither signal aren't a confusion risk. With SimOptions (semantic mode) the
+// related-lower bound blends embedding cosine, so a semantic near-match (low Jaccard, high
+// cosine) — exactly what an agent confuses — is surfaced too; duplicate-exclusion stays
+// lexical (see Similarity.interference). Without SimOptions it is pure token-Jaccard, so
+// existing behaviour is unchanged. Captures are excluded. Each fact is reported in at most
+// maxPerFact pairs (its strongest), so one hub fact can't flood the list. Deterministic:
+// sorted by similarity desc, then ids. O(n^2) — fine at the dozens-to-low-thousands scale
+// the brain targets (see RFC non-goals).
+func DetectInterference(records []Record, lower, upper float64, limit int, opts ...SimOption) []InterferencePair {
 	facts := make([]Record, 0, len(records))
 	for _, r := range records {
 		if r.Source != SourceCapture {
@@ -32,16 +36,13 @@ func DetectInterference(records []Record, lower, upper float64, limit int) []Int
 	if len(facts) < 2 {
 		return nil
 	}
-	toks := make([]map[string]struct{}, len(facts))
-	for i, f := range facts {
-		toks[i] = tokenSet(f.Text)
-	}
+	sim := newSimilarity(facts, opts...)
 
 	var pairs []InterferencePair
 	for i := 0; i < len(facts); i++ {
 		for j := i + 1; j < len(facts); j++ {
-			s := jaccardSets(toks[i], toks[j])
-			if s < lower || s >= upper {
+			s, inBand := sim.interference(i, j, lower, upper)
+			if !inBand {
 				continue
 			}
 			a, b := facts[i].ID, facts[j].ID

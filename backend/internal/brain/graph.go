@@ -90,13 +90,18 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
 	}
 
-	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent, time.Now().UTC())})
+	// In semantic mode, make interference detection embedding-aware (else it stays
+	// lexical) — the graph view is a request-time endpoint, not the per-turn hot path,
+	// so a one-shot embed of the durable set is acceptable. Nil in lexical mode.
+	simOpts := h.Service.semanticSimOptions(r.Context(), durable)
+	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent, time.Now().UTC(), simOpts...)})
 	return nil
 }
 
 // buildReport derives the insight lists from the records + their centrality. Pure
-// data shaping, factored out so it is unit-testable without an HTTP round-trip.
-func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now time.Time) graphReportDTO {
+// data shaping, factored out so it is unit-testable without an HTTP round-trip. simOpts,
+// when present (semantic mode), make interference detection embedding-aware.
+func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now time.Time, simOpts ...memory.SimOption) graphReportDTO {
 	rep := graphReportDTO{
 		GodNodes:          []string{},
 		Bridges:           []string{},
@@ -197,8 +202,9 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now ti
 		rep.DueForReview = append(rep.DueForReview, r.ID)
 	}
 
-	// Interference (RFC-LD D5): similar-but-not-duplicate pairs to disambiguate.
-	rep.Interference = memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference)
+	// Interference (RFC-LD D5): similar-but-not-duplicate pairs to disambiguate. simOpts
+	// (semantic mode) also surface semantic near-duplicates, not just lexical ones.
+	rep.Interference = memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference, simOpts...)
 
 	return rep
 }
