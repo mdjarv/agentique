@@ -47,6 +47,13 @@ type Config struct {
 	// overlap (brain-semantic-recall.md priority #1). 0 uses memory.DefaultVectorVetoScore.
 	// Inert without an embedder; MODEL-SPECIFIC — calibrate with SemanticThreshold.
 	VectorVetoScore float64
+	// Calibrate, when set and semantic mode is enabled, derives the cosine link/vouch
+	// threshold and the vector veto floor from the live corpus's OWN pairwise cosine
+	// distribution (model-specific auto-calibration, brain-semantic-recall.md #5) instead
+	// of the hand-set defaults. Precedence: an explicit SemanticThreshold/VectorVetoScore
+	// still wins per-knob; auto-calibration only fills the ones left 0. A too-thin corpus
+	// or an embed failure falls back to the defaults. Inert without an embedder.
+	Calibrate bool
 }
 
 // Service is the agentique brain.
@@ -149,10 +156,80 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 					svc.vetoScore = memory.DefaultVectorVetoScore
 				}
 				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh, "vectorVeto", svc.vetoScore)
+				if cfg.Calibrate {
+					svc.applyCalibration(ctx, cfg.SemanticThreshold > 0, cfg.VectorVetoScore > 0)
+				}
 			}
 		}
 	}
 	return svc, nil
+}
+
+// calibrationTimeout bounds the boot-time corpus embed so an auto-calibration pass
+// can't hang server startup if the embedder is slow or wedged.
+const calibrationTimeout = 2 * time.Minute
+
+// applyCalibration derives the model-specific cosine/veto thresholds from the live
+// corpus and overrides the ones the operator did NOT pin explicitly (explicitCos /
+// explicitVeto). Best-effort: any failure (no corpus, thin corpus, embed error) keeps
+// the thresholds already set and logs why — calibration must never break boot.
+func (s *Service) applyCalibration(ctx context.Context, explicitCos, explicitVeto bool) {
+	cctx, cancel := context.WithTimeout(ctx, calibrationTimeout)
+	defer cancel()
+	res, err := s.Calibrate(cctx)
+	if err != nil {
+		slog.Warn("brain: auto-calibration failed; keeping thresholds",
+			"error", err, "cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
+		return
+	}
+	if !res.OK {
+		slog.Warn("brain: auto-calibration skipped (corpus too thin); keeping thresholds",
+			"pairs", res.Sample.Len(), "cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
+		return
+	}
+	if !explicitCos {
+		s.cosThresh = res.Thresholds.CosineThreshold
+	}
+	if !explicitVeto {
+		s.vetoScore = res.Thresholds.VectorVeto
+	}
+	slog.Info("brain: semantic thresholds auto-calibrated",
+		"pairs", res.Sample.Len(),
+		"p25", res.Sample.Percentile(0.25), "p50", res.Sample.Percentile(0.50),
+		"p99", res.Sample.Percentile(0.99),
+		"cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
+}
+
+// Calibrate embeds the whole durable corpus and derives model-specific cosine/veto
+// thresholds from its pairwise cosine distribution (memory.Calibrate). It is the
+// reusable measure-first helper behind both New's opt-in auto-calibration and the
+// `brain calibrate` CLI. The embed funnels through the text-hash cache, so it also
+// warms that cache for the next consolidation pass. Returns an error only on an
+// operational failure (no embedder, list, or embed); a corpus too thin to trust is a
+// successful call with Result.OK=false.
+func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, error) {
+	if s.embedder == nil {
+		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate requires semantic mode (no embedder configured)")
+	}
+	all, err := s.store.List(ctx)
+	if err != nil {
+		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate list corpus: %w", err)
+	}
+	recs := durableRecords(all)
+	if len(recs) < 2 {
+		return memory.CalibrationResult{}, nil // not an error — just nothing to calibrate over
+	}
+	vecs, err := s.embedRecords(ctx, recs)
+	if err != nil {
+		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate embed corpus: %w", err)
+	}
+	ordered := make([][]float32, 0, len(recs))
+	for _, r := range recs {
+		if v := vecs[r.ID]; len(v) > 0 {
+			ordered = append(ordered, v)
+		}
+	}
+	return memory.Calibrate(ordered, memory.CalibrationOptions{}), nil
 }
 
 // SemanticEnabled reports whether vector recall is active.

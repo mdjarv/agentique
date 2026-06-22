@@ -242,19 +242,27 @@ is bounded by the live fact set, not by every text ever seen. → `internal/brai
 idf/TF-IDF (down-weight corpus-common tokens) or an LLM naming pass would give meaningful
 names — the label is sold as info-scent in the "by area" graph. → `internal/memory/areas.go`.
 
-### Brain: cosine threshold is model-specific and hand-tuned (now 3 coupled knobs)
-`DefaultSemanticThreshold = 0.45` was measured on quantized all-MiniLM-L6-v2 (pair-cosine
-p99 ≈ 0.44); env-tunable via `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`. Semantic recall added two
-more model-specific floors that must be calibrated *together* with it: the vector **veto**
-floor (`AGENTIQUE_BRAIN_VECTOR_VETO`, default `DefaultVectorVetoScore` 0.15 — "actively
-unrelated") and the **vouch** bar (= the cosine threshold; the bar above which a vector
-score overrides the lexical lone-token guard). Live measurement on all-MiniLM (see
-`docs/brain-semantic-recall.md`) grounded these: clearly-unrelated facts ~0.05–0.13,
-weakly-related ~0.35, related ~0.44 — a *compressed* distribution, which is exactly why a
-single absolute veto floor is blunt and the vouch bar (relative to the related line) is the
-robust lever. Still no auto-calibration from the corpus's own cosine distribution (e.g.
-pick a high percentile per model). → `internal/memory/{similarity,recall}.go`,
-`internal/brain/brain.go`.
+### Brain: cosine threshold is model-specific and hand-tuned ~~(no auto-calibration)~~ → auto-calibration SHIPPED 2026-06-22
+The 3 coupled knobs are still model-specific, but no longer have to be hand-tuned: an opt-in
+**auto-calibration** pass derives them from the corpus's OWN pairwise cosine distribution
+(`docs/brain-semantic-recall.md` #5). `memory.Calibrate` (`internal/memory/calibrate.go`, pure)
+samples the pairwise cosines and reads the cosine **related line off a high percentile (p99) and
+the veto floor off a low one (p25)**; `brain.New` opts in via `AGENTIQUE_BRAIN_AUTOCAL=1`, embeds
+the live corpus (through the text-hash cache) and overrides only the knobs the operator didn't pin
+(explicit `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` still win). `agentique brain calibrate`
+prints the distribution + derived thresholds without booting.
+
+Measured live on the real 1509-fact brain (all-MiniLM, 227k pairs): p99 = 0.4187 → cosineThreshold,
+p25 = 0.0455 → veto. The auto-derived related line (0.42) stays above the off-topic survivor (~0.36)
+so the github mis-recall stays excluded (`TestBrainAutoCalibrateExcludesGithub`). Notably the hand
+veto 0.15 sits at ~p63 of the real corpus — tuned on the 5-fact example, over-aggressive on a broad
+brain; auto-cal corrects it downward, safe because the vouch bar (not the veto) carries the github
+exclusion. The hand defaults remain the fallback (thin corpus / no embedder / embed failure).
+**Residual:** percentile picks (p99/p25) and `MaxPairs` are themselves constants (sensible, grounded
+in the live measurement, but not yet per-deployment configurable); calibration is a boot-time
+snapshot, not refreshed as the corpus grows. → `internal/memory/{calibrate,similarity,recall}.go`,
+`internal/brain/brain.go`, `cmd/agentique/brain.go`. Tests: `internal/memory/calibrate_test.go`,
+`TestBrainAutoCalibrateExcludesGithub`.
 
 ### Brain: persisted cross-scope edges deferred (the "B4" decision)
 The planned `RelinkScope` curated-edge tagging + persisted cross-scope `Related` edges was

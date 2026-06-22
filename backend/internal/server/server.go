@@ -79,6 +79,11 @@ type Config struct {
 	// BrainVectorVeto overrides the hybrid-recall vector veto floor (model-specific;
 	// 0 = default). Inert without an embedder.
 	BrainVectorVeto float64
+	// BrainCalibrate derives the semantic thresholds from the live corpus's own cosine
+	// distribution at boot instead of the hand-set defaults (model-specific auto-
+	// calibration). An explicit BrainSemanticThreshold/BrainVectorVeto still wins.
+	// Inert without an embedder.
+	BrainCalibrate bool
 }
 
 func devModePreamble(dbPath string) string {
@@ -242,6 +247,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			EmbedAPIKey:       cfg.BrainEmbedKey,
 			SemanticThreshold: cfg.BrainSemanticThreshold,
 			VectorVetoScore:   cfg.BrainVectorVeto,
+			Calibrate:         cfg.BrainCalibrate,
 		})
 		if err != nil {
 			slog.Error("brain: disabled (init failed)", "error", err)

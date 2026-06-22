@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -95,6 +96,17 @@ func envFloat(name string) float64 {
 		return 0
 	}
 	return f
+}
+
+// envBool reads a boolean env var, treating the common truthy spellings as true and
+// everything else (incl. unset) as false.
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveDBPath() string {
@@ -255,6 +267,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainEmbedKey:          os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
 		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
 		BrainVectorVeto:        envFloat("AGENTIQUE_BRAIN_VECTOR_VETO"),
+		BrainCalibrate:         envBool("AGENTIQUE_BRAIN_AUTOCAL"),
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

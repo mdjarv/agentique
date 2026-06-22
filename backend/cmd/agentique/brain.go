@@ -79,6 +79,7 @@ func init() {
 	brainCmd.AddCommand(consolidateCmd)
 	brainCmd.AddCommand(backfillSubsumedCmd)
 	brainCmd.AddCommand(assignAreasCmd)
+	brainCmd.AddCommand(calibrateCmd)
 	brainCmd.AddCommand(brainExportCmd)
 	brainCmd.AddCommand(brainImportCmd)
 	rootCmd.AddCommand(brainCmd)
@@ -583,6 +584,63 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("assign areas: %w", err)
 	}
 	fmt.Printf("\nassigned areas to %d fact(s)\n", n)
+	return nil
+}
+
+// --- Calibrate --------------------------------------------------------------
+
+var calibrateCmd = &cobra.Command{
+	Use:   "calibrate",
+	Short: "Measure the corpus's cosine distribution and derive model-specific semantic thresholds",
+	Long: `Embed every durable fact, measure the pairwise cosine distribution of the whole
+brain, and derive the model-specific semantic thresholds from its percentiles: the
+cosine "related" line (the link threshold + recall vouch bar) from a high percentile,
+the vector veto floor from a low one. This replaces hand-tuning a constant per
+embedding model (docs/brain-semantic-recall.md).
+
+It prints the distribution and the derived thresholds next to today's defaults; it
+writes nothing. To make the server use derived thresholds at boot, set
+AGENTIQUE_BRAIN_AUTOCAL=1 (an explicit AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD /
+AGENTIQUE_BRAIN_VECTOR_VETO still wins per-knob).
+
+Requires a configured embedder + Chroma (AGENTIQUE_BRAIN_CHROMA_URL /
+AGENTIQUE_BRAIN_EMBED_URL / AGENTIQUE_BRAIN_EMBED_MODEL).`,
+	RunE: runBrainCalibrate,
+}
+
+func runBrainCalibrate(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	svc, err := newBrainService(ctx, resolveDBPath())
+	if err != nil {
+		return err
+	}
+	if !svc.SemanticEnabled() {
+		return fmt.Errorf("calibrate needs a configured embedder + Chroma — set AGENTIQUE_BRAIN_CHROMA_URL, AGENTIQUE_BRAIN_EMBED_URL and AGENTIQUE_BRAIN_EMBED_MODEL")
+	}
+
+	fmt.Println("embedding the corpus and measuring its pairwise cosine distribution…")
+	res, err := svc.Calibrate(ctx)
+	if err != nil {
+		return fmt.Errorf("calibrate: %w", err)
+	}
+	s := res.Sample
+	fmt.Printf("\npairs measured: %d   (min %.4f, mean %.4f, max %.4f)\n", s.Len(), s.Min(), s.Mean(), s.Max())
+	fmt.Println("cosine distribution:")
+	for _, p := range []float64{0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 0.995} {
+		fmt.Printf("  p%-5.1f = %.4f\n", p*100, s.Percentile(p))
+	}
+
+	if !res.OK {
+		fmt.Printf("\ncorpus too thin to calibrate (%d pairs) — the server would keep the defaults\n", s.Len())
+		fmt.Printf("defaults: cosineThreshold=%.4f  vectorVeto=%.4f\n", memory.DefaultSemanticThreshold, memory.DefaultVectorVetoScore)
+		return nil
+	}
+
+	fmt.Printf("\nderived thresholds (related p%.1f / veto p%.1f):\n", memory.DefaultRelatedPercentile*100, memory.DefaultVetoPercentile*100)
+	fmt.Printf("  cosineThreshold (link + vouch) = %.4f   (default %.4f)\n", res.Thresholds.CosineThreshold, memory.DefaultSemanticThreshold)
+	fmt.Printf("  vectorVeto (actively unrelated) = %.4f   (default %.4f)\n", res.Thresholds.VectorVeto, memory.DefaultVectorVetoScore)
+	fmt.Println("\nset AGENTIQUE_BRAIN_AUTOCAL=1 to have the server derive these at boot.")
 	return nil
 }
 

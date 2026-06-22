@@ -154,3 +154,120 @@ func TestBrainSemanticWiring(t *testing.T) {
 	}
 	t.Logf("brain recall (semantic, shipped defaults) -> %v", texts)
 }
+
+// TestBrainAutoCalibrateExcludesGithub proves the auto-calibration path end-to-end
+// against a live Chroma + embedder: New(Calibrate:true) derives the cosine/veto
+// thresholds from the seeded corpus's OWN pairwise distribution (not the hand-set
+// defaults) and recall of the github query still excludes the off-topic GOPRIVATE
+// fact through those derived thresholds. This is the session's deliverable —
+// docs/brain-semantic-recall.md sequencing #5.
+//
+//	CHROMA_TEST_URL=http://127.0.0.1:8000 \
+//	EMBED_TEST_URL=http://127.0.0.1:11434/v1/embeddings \
+//	EMBED_TEST_MODEL=all-minilm \
+//	go test ./internal/brain/ -run TestBrainAutoCalibrateExcludesGithub -v
+func TestBrainAutoCalibrateExcludesGithub(t *testing.T) {
+	chromaURL := os.Getenv("CHROMA_TEST_URL")
+	embedURL := os.Getenv("EMBED_TEST_URL")
+	embedModel := os.Getenv("EMBED_TEST_MODEL")
+	if chromaURL == "" || embedURL == "" || embedModel == "" {
+		t.Skip("set CHROMA_TEST_URL, EMBED_TEST_URL and EMBED_TEST_MODEL to run the live auto-calibration test")
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	coll := "test_autocal_" + strings.ReplaceAll(t.Name(), "/", "_")
+	base := Config{Dir: dir, ChromaURL: chromaURL, EmbedURL: embedURL, EmbedModel: embedModel, Collection: coll}
+
+	// 1. Seed the corpus with a non-calibrating service: the 3 github-scenario facts in
+	// meta-spec (the recall candidates) plus enough thematically-clustered facts in OTHER
+	// scopes that the corpus has real related pairs to calibrate against. The cluster facts
+	// live outside meta-spec/global so they enrich calibration without entering the recall
+	// candidate set.
+	seed, err := New(ctx, base)
+	if err != nil {
+		t.Fatalf("seed brain.New: %v", err)
+	}
+	scope := ScopeForProject("meta-spec")
+	add := func(sc memory.Scope, text string, cat memory.Category) {
+		if _, err := seed.Add(ctx, sc, text, cat, memory.SourceConsolidated); err != nil {
+			t.Fatalf("add %q: %v", text, err)
+		}
+	}
+	add(scope, "Private allbin Go modules require GOPRIVATE=github.com/allbin/* plus git SSH config", memory.CategoryFact)
+	add(scope, "the release workflow pushes build artifacts to github actions", memory.CategoryFact)
+	add(scope, "Sentry for the Vite TS sub-repo reads its DSN from environment secrets and vars", memory.CategoryProject)
+	// Clustered paraphrase families (intra-cluster cosine is high on all-MiniLM) so the
+	// corpus has a genuine "related" tail above the off-topic survivor's ~0.36.
+	clusters := [][]string{
+		{
+			"run Go tests with the race detector enabled to catch data races",
+			"always pass -race to go test so concurrent bugs surface",
+			"the race detector flags goroutine data races during testing",
+			"enable Go's race detector when running the test suite",
+		},
+		{
+			"prefer modernc.org/sqlite, the pure Go SQLite driver with no CGo",
+			"use the pure-Go sqlite driver to avoid a C compiler dependency",
+			"modernc.org/sqlite needs no CGo so cross-compilation stays simple",
+			"the CGo-free SQLite driver keeps the build pure Go",
+		},
+		{
+			"nginx proxy manager terminates TLS with Let's Encrypt certificates",
+			"TLS is terminated at the nginx reverse proxy via Let's Encrypt",
+			"Let's Encrypt issues the certs nginx uses to terminate HTTPS",
+			"the nginx proxy handles HTTPS termination with automatic certificates",
+		},
+		{
+			"memoize React components to avoid unnecessary re-renders",
+			"wrap expensive React components in memo to cut re-render churn",
+			"stable references prevent React from re-rendering on every update",
+			"avoid recreating arrays in selectors to stop React render loops",
+		},
+	}
+	for ci, fam := range clusters {
+		cs := memory.Scope("project:calib-" + string(rune('a'+ci)))
+		for _, text := range fam {
+			add(cs, text, memory.CategoryFact)
+		}
+	}
+
+	// 2. New WITH Calibrate over the same dir+collection: it derives the thresholds from
+	// the now-populated corpus and threads them into recall.
+	svc, err := New(ctx, Config{Dir: base.Dir, ChromaURL: chromaURL, EmbedURL: embedURL, EmbedModel: embedModel, Collection: coll, Calibrate: true})
+	if err != nil {
+		t.Fatalf("calibrating brain.New: %v", err)
+	}
+
+	// The derived thresholds must (a) come from the corpus (OK) and (b) put the cosine
+	// related line above the off-topic survivor (~0.36) so its lone "github" match can't
+	// vouch. Calibrate is deterministic, so re-running it exposes the same numbers the
+	// service is using.
+	cal, err := svc.Calibrate(ctx)
+	if err != nil || !cal.OK {
+		t.Fatalf("expected calibration to derive thresholds: ok=%v err=%v (pairs=%d)", cal.OK, err, cal.Sample.Len())
+	}
+	t.Logf("auto-calibrated over %d pairs: cosineThreshold=%.4f vectorVeto=%.4f (defaults %.2f/%.2f)",
+		cal.Sample.Len(), cal.Thresholds.CosineThreshold, cal.Thresholds.VectorVeto,
+		memory.DefaultSemanticThreshold, memory.DefaultVectorVetoScore)
+	if cal.Thresholds.CosineThreshold <= 0.36 {
+		t.Fatalf("derived cosineThreshold %.4f must exceed the off-topic survivor score ~0.36 to keep the github fact from vouching", cal.Thresholds.CosineThreshold)
+	}
+
+	// 3. Recall the github query through the calibrated service → the GOPRIVATE fact stays
+	// excluded via the auto-derived thresholds.
+	res, err := svc.Recall(ctx, recallScopes(scope), "secrets and vars on github", 5)
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	var texts []string
+	for _, r := range res.Recalled {
+		texts = append(texts, r.Text)
+		if strings.Contains(r.Text, "GOPRIVATE") {
+			t.Fatalf("auto-calibrated recall leaked the off-topic Go/GOPRIVATE fact: %v", texts)
+		}
+	}
+	if len(texts) == 0 {
+		t.Fatalf("auto-calibrated recall returned nothing — the on-topic Sentry fact should survive")
+	}
+	t.Logf("auto-calibrated recall -> %v", texts)
+}

@@ -169,9 +169,53 @@ SimOptions *before* taking `s.mu` so the embed never blocks under the lock.
    process, retries on a transient Chroma error. **Pruning closed** (`pruneEmbedCache`, at the
    `AssignAreas` whole-brain checkpoint): stale entries from edited/deleted texts are dropped so the
    cache is bounded by the live corpus. Verified live (`TestWarmEmbedCacheLiveZeroReembedAfterRestart`).
-5. ⏳ **Auto-calibration** — the veto/vouch/cosine floors are model-specific + hand-tuned. A
-   measure-first sweep over the corpus's own cosine distribution (pick a percentile per model)
-   would remove the manual step. See tech-debt "cosine threshold is model-specific".
+5. ✅ **Auto-calibration** — the veto/vouch/cosine floors are derivable from the corpus's OWN
+   pairwise cosine distribution instead of hand-tuned per model. Shipped: a pure
+   `memory.Calibrate` (`internal/memory/calibrate.go`) samples the pairwise cosines and reads
+   the **cosine "related" line from a high percentile (p99) and the veto floor from a low one
+   (p25)**; `brain.New` opts in via `AGENTIQUE_BRAIN_AUTOCAL=1`, embeds the live corpus (through
+   the text-hash cache) and overrides the hand defaults for the knobs the operator didn't pin.
+   See "Auto-calibration" below.
+
+## Auto-calibration (sequencing #5)
+
+The three thresholds are model-specific because cosine distributions differ per embedder — and
+even on one model the hand value can be wrong for a corpus whose breadth differs from the sample
+it was tuned on. Rather than hand-pick a constant, **measure the corpus's own pairwise cosine
+distribution and read thresholds off its percentiles.** The shape is the lever: most fact pairs
+are unrelated (different topics), so the bulk sits low and only a thin tail is genuinely related —
+hence the related line is a *high* percentile and the veto floor a *low* one.
+
+**Measured live (all-MiniLM, the real 1509-fact brain, 227k sampled pairs, via `brain calibrate`):**
+
+| percentile | cosine | role |
+|---|---|---|
+| p25 | **0.0455** | → vector veto floor (clearly-unrelated band; cf. sqlite 0.05 / nginx 0.13) |
+| p50 | 0.108 | (median pair — the unrelated bulk) |
+| p99 | **0.4187** | → cosine "related" line = link threshold + vouch bar |
+| p99.5 | 0.470 | |
+
+Derived: **cosineThreshold 0.4187 (vs hand 0.45), vectorVeto 0.0455 (vs hand 0.15)**. The related
+line stays above the off-topic-keyword survivor (~0.36) so the github fact still can't vouch —
+**verified: recall of "secrets and vars on github" returns only the Sentry fact under the
+auto-derived thresholds** (`TestBrainAutoCalibrateExcludesGithub`). A finding worth noting: the
+hand veto 0.15 sits at ~p63 of the real corpus — it was tuned on the 5-fact example and is
+over-aggressive on a broad brain; auto-cal corrects it *downward*, and because the github
+exclusion rides on the **vouch bar** (not the veto) this is safe.
+
+- **Helper** (`internal/memory/calibrate.go`, pure/liftable): `SampleCosineDistribution` (sorted,
+  deterministic stride sampling, empty-vector drop, `MaxPairs` cap 200k), `DeriveThresholds`
+  (percentile→threshold, veto clamped into `[0, cosThresh)`, thin-sample `OK=false` fallback),
+  and the one-call `Calibrate`. `DefaultRelatedPercentile` 0.99, `DefaultVetoPercentile` 0.25.
+- **Wiring**: `brain.Config.Calibrate` / `Service.Calibrate` embed the durable corpus (through the
+  text-hash embed cache — calibration also *warms* it for the next pass) and call `memory.Calibrate`.
+  `brain.New` runs it at boot when `AGENTIQUE_BRAIN_AUTOCAL=1`, bounded by a 2-minute timeout, and
+  overrides only the knobs left unset. **Precedence: explicit
+  `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` > auto-cal > hand default.** Any failure
+  (no embedder, thin corpus, embed error) keeps the defaults and logs why — boot never breaks.
+- **Inspect without booting**: `agentique brain calibrate` prints the distribution + derived
+  thresholds next to today's defaults (writes nothing) — the measure-first tool the runbook used
+  to fake by running the integration test.
 
 ## Runbook — stand up the local embedder + Chroma and verify
 
@@ -191,8 +235,10 @@ docker run -d --name chroma -p 127.0.0.1:8000:8000 chromadb/chroma:latest
 export AGENTIQUE_BRAIN_CHROMA_URL=http://127.0.0.1:8000
 export AGENTIQUE_BRAIN_EMBED_URL=http://127.0.0.1:11434/v1/embeddings
 export AGENTIQUE_BRAIN_EMBED_MODEL=all-minilm
-# optional: AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD, AGENTIQUE_BRAIN_VECTOR_VETO
+# optional: AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD, AGENTIQUE_BRAIN_VECTOR_VETO (pin a knob)
+# optional: AGENTIQUE_BRAIN_AUTOCAL=1 to derive both from the live corpus at boot (#5)
 # On boot, look for: "brain: semantic recall enabled ... cosineThreshold=0.45 vectorVeto=0.15"
+# and, with AUTOCAL: "brain: semantic thresholds auto-calibrated ... cosineThreshold=0.42 ..."
 
 # 4. Verify (env-gated integration tests — they re-measure + assert the github case):
 CHROMA_TEST_URL=http://127.0.0.1:8000 \
@@ -203,9 +249,11 @@ EMBED_TEST_MODEL=all-minilm \
 #   go test ./internal/brain/ -run TestBrainSemanticWiring -v
 ```
 
-Calibration note: the cosine/veto floors above are all-MiniLM-specific. For another model, run
-the chroma integration test first — it logs the per-fact cosine distribution — then set the
-thresholds from the observed "related" vs "unrelated" bands.
+Calibration note: the cosine/veto floors above are all-MiniLM-specific. For another model you no
+longer have to read them off by hand — run `agentique brain calibrate` (prints the corpus's own
+cosine distribution + the percentile-derived thresholds) or set `AGENTIQUE_BRAIN_AUTOCAL=1` to have
+the server derive them at boot (#5). The hand defaults remain the fallback; an explicit
+`AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` still wins per-knob.
 
 ## References
 
@@ -214,11 +262,16 @@ thresholds from the observed "related" vs "unrelated" bands.
 - `internal/memory/store.go` (`Query.VectorVetoScore`, `Query.VectorVouchScore`).
 - `internal/memory/similarity.go` (`DefaultSemanticThreshold`, `Similarity.interference`),
   `internal/memory/{consolidate,interference}.go` (`ConsolidateOptions.SimOptions` threading).
+- `internal/memory/calibrate.go` (auto-calibration #5: `Calibrate`, `SampleCosineDistribution`,
+  `DeriveThresholds`, `CalibrationSample`/`Result`, the `Default*Percentile` constants),
+  `internal/brain/brain.go` (`Config.Calibrate`, `Service.Calibrate`, `New` opt-in via
+  `AGENTIQUE_BRAIN_AUTOCAL`), `cmd/agentique/brain.go` (`brain calibrate`).
 - `internal/brain/brain.go` (`New` semantic wiring incl. `vetoScore`; `scopeSimOptions`;
   veto+vouch threaded into `Recall`/`RecallBlock`; `ApplyPlan`/`Consolidate`/`ApplyGlobal`),
   `internal/brain/graph.go` (semantic interference), `internal/memory/chroma`, `internal/memory/embedhttp`.
 - Live integration tests (env-gated): `internal/memory/chroma/semantic_recall_integration_test.go`,
-  `internal/brain/semantic_integration_test.go`.
+  `internal/brain/semantic_integration_test.go` (`TestBrainSemanticWiring`,
+  `TestBrainAutoCalibrateExcludesGithub`). Unit: `internal/memory/calibrate_test.go`.
 - tech-debt: "semantic similarity is activated only for areas" (now CLOSED), "embeddings re-embed the
   whole corpus every pass" (open, more pressing), "cosine threshold is model-specific and hand-tuned"
   (3 coupled knobs now), "lexical recall precision … → semantic cure SHIPPED".
