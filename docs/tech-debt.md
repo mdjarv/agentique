@@ -200,14 +200,17 @@ sequential and two scopes can't consolidate concurrently. Parallel-across-scopes
 deferred — needs a multi-job map + frontend tracking multiple previews.
 → `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
 
-### Brain: config-file coverage is partial; one env hard-rename, one naming seam
-The scheduled-consolidation knobs (`[brain] consolidate-interval`/`consolidate-model`) and — since
-2026-06-22 — the two **session-end model** knobs (`[brain] learn-model`/`outcome-model`) are now
-settable in `config.toml` (env wins via `firstNonEmpty`). The rest of the brain stays **env-only**:
-`chroma-url`/`embed-*`/`recall`/`semantic-threshold`/`vector-veto`/`autocal` have no config-file
-equivalent. The user prefers config-over-env (it's a persistent service — see the
-`feedback_config_over_env` memory), so the same `firstNonEmpty(env, fileCfg.Brain.X)` layering should
-extend to them (the bool `recall` toggle needs default-true handling). Two smaller residues from the 2026-06-22 vocabulary unification:
+### Brain: config-file coverage ~~is partial~~ → COMPLETE 2026-06-22; one env hard-rename, one naming seam
+**Resolved (2026-06-22).** Every brain knob is now settable in `config.toml` under `[brain]`, with
+the matching `AGENTIQUE_BRAIN_*` env var still winning when set: `chroma-url`, `embed-url`,
+`embed-model`, `embed-key`, `semantic-threshold`, `vector-veto`, `autocal`, and `recall` joined the
+already-covered `consolidate-interval`/`consolidate-model`/`learn-model`/`outcome-model`. Strings
+layer via `firstNonEmpty`, floats via `envFloatOr`, bools via `envBoolOr`; the default-ON `recall`
+toggle uses `resolveRecall` (env → file → on). Matches the user's config-over-env preference
+(`feedback_config_over_env`) for a persistent service. → `internal/config/config.go`,
+`cmd/agentique/serve.go`, `internal/server/server.go`.
+
+Two smaller residues remain from the 2026-06-22 vocabulary unification:
 (a) the env rename `AGENTIQUE_BRAIN_SLEEP_*` → `AGENTIQUE_BRAIN_CONSOLIDATE_*` is a **hard
 rename with no alias** — an operator with the old var set silently loses scheduled
 consolidation (acceptable: opt-in, barely deployed); (b) the cross-scope op is named three ways

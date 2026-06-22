@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
@@ -84,6 +83,10 @@ type Config struct {
 	// calibration). An explicit BrainSemanticThreshold/BrainVectorVeto still wins.
 	// Inert without an embedder.
 	BrainCalibrate bool
+	// BrainRecall toggles auto-recall (pinned facts + per-turn task-relevant facts in the
+	// preamble). Default on; resolved from AGENTIQUE_BRAIN_RECALL (env, wins) or [brain]
+	// recall (config file), off only when explicitly disabled.
+	BrainRecall bool
 	// BrainConsolidateInterval enables scheduled (automatic) consolidation across all
 	// scopes when set to a positive duration (e.g. "6h"); empty disables it. Resolved from
 	// the AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL env var (preferred) or the [brain]
@@ -308,8 +311,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 			// Auto-recall (default on): inject pinned facts into every session's
 			// system preamble so the brain shapes behaviour without the agent having
-			// to call MemorySearch. Disable with AGENTIQUE_BRAIN_RECALL=off.
-			if v := os.Getenv("AGENTIQUE_BRAIN_RECALL"); v != "off" && v != "false" && v != "0" {
+			// to call MemorySearch. Resolved from AGENTIQUE_BRAIN_RECALL (env) or
+			// [brain] recall (config); disable with either set to off/false/0/no.
+			if cfg.BrainRecall {
 				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
 				mgr.MemoryRecallFn = brainSvc.RecallBlock
 				// Explain the <brain> recall envelope once in the system preamble so the

@@ -109,6 +109,58 @@ func envBool(name string) bool {
 	}
 }
 
+// envFloatOr layers an env var (preferred) over a config-file float: the env value wins
+// when set and parseable, otherwise the file value is used. Mirrors firstNonEmpty for floats.
+func envFloatOr(name string, fileVal float64) float64 {
+	v := os.Getenv(name)
+	if v == "" {
+		return fileVal
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		slog.Warn("ignoring unparseable float env var; using config-file value", "name", name, "value", v)
+		return fileVal
+	}
+	return f
+}
+
+// envBoolOr layers a boolean env var (preferred) over a config-file bool: when the env var
+// is set its value wins, otherwise the file value is used (so an absent env doesn't force false).
+func envBoolOr(name string, fileVal bool) bool {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return fileVal
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveRecall resolves the default-ON auto-recall toggle: the AGENTIQUE_BRAIN_RECALL env
+// wins when set, else the [brain] recall config value, else on. A value of off/false/0/no
+// disables it; anything else (incl. empty/unset at both layers) leaves it on.
+func resolveRecall(fileVal string) bool {
+	if v := strings.TrimSpace(os.Getenv("AGENTIQUE_BRAIN_RECALL")); v != "" {
+		return !brainToggleOff(v)
+	}
+	if v := strings.TrimSpace(fileVal); v != "" {
+		return !brainToggleOff(v)
+	}
+	return true
+}
+
+func brainToggleOff(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "off", "false", "0", "no":
+		return true
+	default:
+		return false
+	}
+}
+
 // firstNonEmpty returns the first non-empty string, used to layer an env var (preferred)
 // over a config-file value: firstNonEmpty(os.Getenv(...), fileCfg....).
 func firstNonEmpty(vals ...string) string {
@@ -271,14 +323,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		MCPInternalURL:      mcpInternalURL,
 		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic
 		// recall is opt-in via env (otherwise keyword recall over markdown files).
-		BrainDir:               filepath.Join(filepath.Dir(dbFile), "brain"),
-		BrainChromaURL:         os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"),
-		BrainEmbedURL:          os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"),
-		BrainEmbedModel:        os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
-		BrainEmbedKey:          os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
-		BrainSemanticThreshold: envFloat("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD"),
-		BrainVectorVeto:        envFloat("AGENTIQUE_BRAIN_VECTOR_VETO"),
-		BrainCalibrate:         envBool("AGENTIQUE_BRAIN_AUTOCAL"),
+		BrainDir: filepath.Join(filepath.Dir(dbFile), "brain"),
+		// Semantic recall: env var wins, else the [brain] config-file value, else off/default.
+		BrainChromaURL:         firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"), fileCfg.Brain.ChromaURL),
+		BrainEmbedURL:          firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"), fileCfg.Brain.EmbedURL),
+		BrainEmbedModel:        firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"), fileCfg.Brain.EmbedModel),
+		BrainEmbedKey:          firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"), fileCfg.Brain.EmbedKey),
+		BrainSemanticThreshold: envFloatOr("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD", fileCfg.Brain.SemanticThreshold),
+		BrainVectorVeto:        envFloatOr("AGENTIQUE_BRAIN_VECTOR_VETO", fileCfg.Brain.VectorVeto),
+		BrainCalibrate:         envBoolOr("AGENTIQUE_BRAIN_AUTOCAL", fileCfg.Brain.Autocal),
+		BrainRecall:            resolveRecall(fileCfg.Brain.Recall),
 		// Scheduled consolidation: env var wins, else the [brain] config-file value, else off.
 		BrainConsolidateInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL"), fileCfg.Brain.ConsolidateInterval),
 		BrainConsolidateModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_MODEL"), fileCfg.Brain.ConsolidateModel),

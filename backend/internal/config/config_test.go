@@ -37,9 +37,16 @@ func TestLoadBrainConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	// A [brain] section round-trips the scheduled-consolidation + session-end settings.
+	// A [brain] section round-trips every brain setting: scheduled consolidation,
+	// session-end models, and the full semantic-recall block.
 	cfg := Default()
-	cfg.Brain = BrainConfig{ConsolidateInterval: "6h", ConsolidateModel: "opus", LearnModel: "sonnet", OutcomeModel: "haiku"}
+	cfg.Brain = BrainConfig{
+		ConsolidateInterval: "6h", ConsolidateModel: "opus",
+		LearnModel: "sonnet", OutcomeModel: "haiku",
+		ChromaURL: "http://127.0.0.1:8000", EmbedURL: "http://127.0.0.1:11434/v1/embeddings",
+		EmbedModel: "all-minilm", EmbedKey: "secret",
+		SemanticThreshold: 0.42, VectorVeto: 0.05, Autocal: true, Recall: "off",
+	}
 	if err := Save(cfg, path); err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +59,9 @@ func TestLoadBrainConfig(t *testing.T) {
 	}
 	if got.Brain.LearnModel != "sonnet" || got.Brain.OutcomeModel != "haiku" {
 		t.Fatalf("brain session-end models did not round-trip: %+v", got.Brain)
+	}
+	if got.Brain != cfg.Brain {
+		t.Fatalf("brain semantic settings did not round-trip:\n got %+v\nwant %+v", got.Brain, cfg.Brain)
 	}
 
 	// A config with no [brain] section leaves the fields empty (= scheduled consolidation

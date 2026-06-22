@@ -143,6 +143,39 @@ type BrainConfig struct {
 	// outcome signal automatically instead of relying on agents to call MemoryUsed/MemoryFlag
 	// (haiku|sonnet|opus). Empty = off. Env: AGENTIQUE_BRAIN_OUTCOME_MODEL.
 	OutcomeModel string `toml:"outcome-model"`
+
+	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
+	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
+	// hybrid (keyword + embedding cosine). Each has an AGENTIQUE_BRAIN_* env override that
+	// wins when set. See docs/brain-semantic-recall.md.
+
+	// ChromaURL is the Chroma (vector DB) base URL, e.g. http://127.0.0.1:8000.
+	// Env: AGENTIQUE_BRAIN_CHROMA_URL.
+	ChromaURL string `toml:"chroma-url"`
+	// EmbedURL is the OpenAI-compatible embeddings endpoint, e.g.
+	// http://127.0.0.1:11434/v1/embeddings (Ollama). Env: AGENTIQUE_BRAIN_EMBED_URL.
+	EmbedURL string `toml:"embed-url"`
+	// EmbedModel is the embedding model id, e.g. all-minilm. Env: AGENTIQUE_BRAIN_EMBED_MODEL.
+	EmbedModel string `toml:"embed-model"`
+	// EmbedKey is an optional API key for the embeddings endpoint (unset for a local
+	// Ollama). Env: AGENTIQUE_BRAIN_EMBED_KEY.
+	EmbedKey string `toml:"embed-key"`
+	// SemanticThreshold overrides the cosine "related" link/vouch threshold (model-specific;
+	// 0 = built-in default 0.45). Inert without an embedder. Env: AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD.
+	SemanticThreshold float64 `toml:"semantic-threshold"`
+	// VectorVeto overrides the hybrid-recall vector veto floor (model-specific; 0 = built-in
+	// default 0.15). Inert without an embedder. Env: AGENTIQUE_BRAIN_VECTOR_VETO.
+	VectorVeto float64 `toml:"vector-veto"`
+	// Autocal derives the semantic thresholds from the live corpus's own cosine distribution
+	// at boot instead of the hand-set defaults (model-specific). An explicitly-set
+	// SemanticThreshold/VectorVeto still wins. Inert without an embedder.
+	// Env: AGENTIQUE_BRAIN_AUTOCAL.
+	Autocal bool `toml:"autocal"`
+
+	// Recall toggles auto-recall (pinned facts + per-turn task-relevant facts injected into
+	// the preamble). It is ON by default; set to "off" (or false/0/no) to disable. Empty =
+	// default on. Env: AGENTIQUE_BRAIN_RECALL (wins when set).
+	Recall string `toml:"recall"`
 }
 
 // Default returns a config with all default values.
