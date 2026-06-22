@@ -181,7 +181,8 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `AGENTIQUE_DB` | Database file path (overridden by `--db`). |
 | `LOG_LEVEL` / `JSON_LOG` | Log level / path of the JSONL log file. |
 | `AGENTIQUE_BRAIN_CHROMA_URL`, `AGENTIQUE_BRAIN_EMBED_URL`, `AGENTIQUE_BRAIN_EMBED_MODEL`, `AGENTIQUE_BRAIN_EMBED_KEY` | Opt into semantic recall **and** semantic cross-scope clustering ("areas") for the persistent agent memory ("brain"). Without them, recall and clustering fall back to keyword/Jaccard over markdown files. |
-| `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD` | Cosine link threshold for semantic area clustering (default `0.45`; model-specific — recalibrate per embedding model). Inert without an embedder. |
+| `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`, `AGENTIQUE_BRAIN_VECTOR_VETO` | Cosine "related" link/vouch threshold (default `0.45`) and the vector veto floor (default `0.15`) for hybrid recall. Both model-specific — recalibrate per embedding model. Inert without an embedder. |
+| `AGENTIQUE_BRAIN_AUTOCAL` | Set to `1` to derive the two thresholds above from the live corpus's own cosine distribution at boot (model-specific auto-calibration), instead of the hand-set defaults. An explicitly-set threshold still wins. Inert without an embedder. |
 | `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts in the preamble + task-relevant facts injected per turn, delta-deduped) is on by default; set to `off` to disable. |
 | `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). |
 | `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL`, `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). Also settable persistently in `config.toml` under `[brain] consolidate-interval` / `consolidate-model` (env wins when both are set). |

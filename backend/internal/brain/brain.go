@@ -1000,7 +1000,7 @@ func (s *Service) warmEmbedCache(ctx context.Context) {
 // pruneEmbedCache drops cache entries whose text-hash is absent from live (the current durable
 // corpus), bounding the cache by the live fact set rather than by every text ever embedded —
 // edited/deleted facts' stale vectors don't accumulate. Called from the whole-brain checkpoint
-// (AssignAreas, run after every sleep/tidy-all/global pass) where the full live set is known;
+// (AssignAreas, run after every scheduled-consolidation/consolidate-all/global pass) where the full live set is known;
 // pruning on a per-scope embed would wrongly evict other scopes' entries. No-op in keyword mode.
 func (s *Service) pruneEmbedCache(live []memory.Record) {
 	if s.embedder == nil {

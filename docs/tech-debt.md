@@ -3,9 +3,11 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-21 (outcome signal v1: MemoryUsed + confidence calibration +
-operating contract; cross-scope areas, pluggable semantic similarity, fluid per-turn recall
-+ corpus cache, recall precision). Prior: 2026-06-18 (RFC-LD + review surface).
+Last full audit: 2026-06-22 (brain semantic recall — vector veto + vouch bar, model-specific
+auto-calibration, warmed + pruned embed cache; scheduled-consolidation config-file support;
+consolidation vocabulary unification — retired "Tidy"/"sleep"). Prior: 2026-06-21 (outcome
+signal v1: MemoryUsed + confidence calibration + operating contract; cross-scope areas,
+pluggable semantic similarity, fluid per-turn recall + corpus cache, recall precision).
 
 ## P0 — Will bite a user
 
@@ -193,6 +195,22 @@ sequential and two scopes can't consolidate concurrently. Parallel-across-scopes
 deferred — needs a multi-job map + frontend tracking multiple previews.
 → `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
 
+### Brain: config-file coverage is partial; one env hard-rename, one naming seam
+The scheduled-consolidation knobs are now settable in `config.toml` (`[brain]
+consolidate-interval`/`consolidate-model`, env wins via `firstNonEmpty`), but the rest of the
+brain stays **env-only**: `chroma-url`/`embed-*`/`recall`/`learn-model`/`semantic-threshold`/
+`vector-veto`/`autocal` have no config-file equivalent. The user prefers config-over-env (it's
+a persistent service — see the `feedback_config_over_env` memory), so the same
+`firstNonEmpty(env, fileCfg.Brain.X)` layering should extend to them (the bool `recall` toggle
+needs default-true handling). Two smaller residues from the 2026-06-22 vocabulary unification:
+(a) the env rename `AGENTIQUE_BRAIN_SLEEP_*` → `AGENTIQUE_BRAIN_CONSOLIDATE_*` is a **hard
+rename with no alias** — an operator with the old var set silently loses scheduled
+consolidation (acceptable: opt-in, barely deployed); (b) the cross-scope op is named three ways
+across layers — UI "Lift to global", API path `/api/brain/consolidate/global`, backend
+"promotion" (`promote.go`/`PlanGlobal`). Per-scope consolidation was unified; this seam wasn't.
+→ `internal/config/config.go`, `cmd/agentique/serve.go`, `internal/server/server.go`,
+`frontend/src/components/brain/BrainPage.tsx`.
+
 ### Brain: `brain.Handler` is a grab-bag
 One type owns memory CRUD + search + status + consolidation preview/apply + global
 + consolidate-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
@@ -228,7 +246,7 @@ restart, `warmEmbedCache` seeds the cache from the vectors Chroma already holds 
 re-embedding. It runs at most once per process (`warmed`/`warmMu`), serializes concurrent first
 passes, and retries on a transient failure (best-effort; a cold cache just falls back to
 embedding). **Pruning closed:** `pruneEmbedCache` runs at the whole-brain checkpoint
-(`AssignAreas`, after every sleep/tidy-all/global pass) and drops entries whose text-hash is no
+(`AssignAreas`, after every scheduled-consolidation/consolidate-all/global pass) and drops entries whose text-hash is no
 longer in the live corpus, so edited/deleted facts' stale vectors don't accumulate — the cache
 is bounded by the live fact set, not by every text ever seen. → `internal/brain/brain.go`,
 `internal/memory/chroma/{client,store}.go`. Tests: `TestEmbedRecordsCachesByTextHash`,
