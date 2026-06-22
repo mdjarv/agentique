@@ -71,7 +71,7 @@ When all three of ChromaURL/EmbedURL/EmbedModel are set and Chroma answers a hea
 | **recall hot path** (every turn) | `List` (cached) + O(n) idf scoring; ~1 ms; no network | + 1 query-embed call + 1 Chroma vector search **per turn** |
 | **per-turn latency added** | — | ~10–50 ms with a local model; ~100–500 ms via a cloud API |
 | **infra to operate** | none | a running Chroma + an embedding endpoint |
-| **consolidation passes** | CPU only | re-embeds the **whole corpus each pass** — no `(id, text-hash)` cache yet (tech-debt) |
+| **consolidation passes** | CPU only | first pass embeds the corpus; thereafter a text-hash cache (warmed from Chroma on restart) makes an unchanged corpus cost ~zero embeds |
 | **tuning** | none | cosine threshold is model-specific, hand-calibrated |
 | **failure mode** | n/a | degrades gracefully: a slow/down backend → keyword fallback within `recallTimeout` (3 s) |
 
@@ -162,8 +162,13 @@ SimOptions *before* taking `s.mu` so the embed never blocks under the lock.
 3. ✅ **Tighten the hybrid blend** — vector veto (option 1) **plus** the vouch bar (the measured
    real fix). Verified live.
 4. ✅ **Embedding cache** — shipped an in-process text-hash cache (`Service.embedCache`): after the
-   first pass an unchanged corpus costs zero embed calls. Residual: per-process (cold on restart),
-   no pruning — a Chroma bulk-vector read would close the cold-start gap (see tech-debt).
+   first pass an unchanged corpus costs zero embed calls. **Cold start closed** (`warmEmbedCache`):
+   the first clustering embed after a restart seeds the cache from the vectors Chroma already holds
+   via a bulk-vector read (`chroma.Client.GetEmbeddings` → `chroma.Store.LoadVectors`, keyed by
+   `embedKey(document)`), so a restart re-embeds nothing for an unchanged corpus — runs once per
+   process, retries on a transient Chroma error. **Pruning closed** (`pruneEmbedCache`, at the
+   `AssignAreas` whole-brain checkpoint): stale entries from edited/deleted texts are dropped so the
+   cache is bounded by the live corpus. Verified live (`TestWarmEmbedCacheLiveZeroReembedAfterRestart`).
 5. ⏳ **Auto-calibration** — the veto/vouch/cosine floors are model-specific + hand-tuned. A
    measure-first sweep over the corpus's own cosine distribution (pick a percentile per model)
    would remove the manual step. See tech-debt "cosine threshold is model-specific".

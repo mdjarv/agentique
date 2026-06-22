@@ -214,17 +214,27 @@ run inline (acceptable — neither is the hot path), and the per-pass re-embed h
 `internal/brain/{brain,graph}.go`. Tests: `TestApplyPlanThreadsSemanticSimOptionsToRelink`,
 `TestDetectInterferenceUsesEmbeddings`.
 
-### Brain: embeddings re-embed the whole corpus every pass ~~(no cache)~~ → in-process cache SHIPPED 2026-06-22
-`Service.embedRecords` now memoizes vectors in an in-process **text-hash cache**
+### Brain: embeddings re-embed the whole corpus every pass ~~(no cache)~~ → cache + cold-start warm + pruning SHIPPED 2026-06-22 → CLOSED
+`Service.embedRecords` memoizes vectors in an in-process **text-hash cache**
 (`embedCache`, sha256 of text; embedding is pure in (text, per-Service-fixed model), so
 text-hash is a sufficient id-independent key) and embeds only DISTINCT miss texts. After the
 first pass an unchanged corpus costs zero embed calls — which matters now that #2 widened the
 call sites (per-`ApplyPlan`/`Consolidate` scope embed + per-graph-load embed, on top of
 `AssignAreas`). The per-turn *recall* path was never affected (single query-embed + search).
-**Residual:** the cache is per-process (cold on restart) and stale entries linger (bounded by
-distinct texts seen — no pruning); Chroma still holds the vectors but exposes no bulk fetch, so
-a restart re-embeds. A Chroma bulk-vector read (or a persisted cache) would close the cold-start
-gap. → `internal/brain/brain.go`. Test: `TestEmbedRecordsCachesByTextHash`.
+**Cold start closed (the Chroma bulk-vector read):** on the first clustering embed after a
+restart, `warmEmbedCache` seeds the cache from the vectors Chroma already holds —
+`chroma.Client.GetEmbeddings` (a `/get` with `include:["embeddings","documents"]`) →
+`chroma.Store.LoadVectors`, keyed by `embedKey(document)` so an unchanged fact resolves without
+re-embedding. It runs at most once per process (`warmed`/`warmMu`), serializes concurrent first
+passes, and retries on a transient failure (best-effort; a cold cache just falls back to
+embedding). **Pruning closed:** `pruneEmbedCache` runs at the whole-brain checkpoint
+(`AssignAreas`, after every sleep/tidy-all/global pass) and drops entries whose text-hash is no
+longer in the live corpus, so edited/deleted facts' stale vectors don't accumulate — the cache
+is bounded by the live fact set, not by every text ever seen. → `internal/brain/brain.go`,
+`internal/memory/chroma/{client,store}.go`. Tests: `TestEmbedRecordsCachesByTextHash`,
+`TestWarmEmbedCacheZeroReembedAfterRestart`, `TestWarmEmbedCacheEmbedsOnlyNewFacts`,
+`TestWarmEmbedCacheRetriesAfterFailure`, `TestPruneEmbedCacheDropsStaleTexts`, and the live
+`TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
 
 ### Brain: cross-scope area labels are frequency-based (noisy)
 `areaLabel` names an area from its most *frequent* shared tokens, yielding labels like

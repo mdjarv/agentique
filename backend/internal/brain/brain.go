@@ -69,14 +69,33 @@ type Service struct {
 	// calls the embedder for texts it hasn't seen. An embedding is a pure function of
 	// (text, model) and the model is fixed for a Service's lifetime, so text-hash is a
 	// sufficient key (id-independent: two facts with identical text share a vector). A
-	// changed text yields a new key (the stale entry simply lingers — bounded by distinct
-	// texts seen; pruning is future work). Guarded by embedMu, separate from mu.
+	// changed text yields a new key; stale entries are pruned to the live corpus on the
+	// global checkpoint (pruneEmbedCache from AssignAreas), so the cache is bounded by the
+	// live fact set, not by every text ever seen. Guarded by embedMu, separate from mu.
+	//
+	// The cache is also warmed from the vector store on first use (warmEmbedCache via
+	// warmSrc), so a process restart does not re-embed an unchanged corpus — Chroma already
+	// holds those vectors keyed by the same text.
 	embedMu    sync.Mutex
 	embedCache map[string][]float32
+
+	// warmSrc loads existing vectors from the semantic index to seed embedCache after a
+	// restart; nil in keyword mode. warmEmbedCache runs it at most once (guarded by warmMu /
+	// warmed), retrying on a transient failure.
+	warmSrc vectorWarmSource
+	warmMu  sync.Mutex
+	warmed  bool
 
 	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
 	gmPath string // per-scope content-hash manifest of the last global pass (RFC P5)
+}
+
+// vectorWarmSource returns the (document, embedding) pairs already held by the vector index,
+// so the brain can warm its text-hash embedding cache after a restart instead of re-embedding
+// an unchanged corpus. *chroma.Store satisfies it; tests use a fake.
+type vectorWarmSource interface {
+	LoadVectors(ctx context.Context) ([]chroma.VectorRecord, error)
 }
 
 // New builds the service, creating the brain directory and (optionally) the
@@ -120,6 +139,7 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 				svc.store = cs
 				svc.semantic = true
 				svc.embedder = emb
+				svc.warmSrc = cs // warm embedCache from Chroma on first use (no cold-start re-embed)
 				svc.cosThresh = cfg.SemanticThreshold
 				if svc.cosThresh <= 0 {
 					svc.cosThresh = memory.DefaultSemanticThreshold
@@ -707,7 +727,11 @@ func (s *Service) AssignAreas(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	opts := s.semanticSimOptions(ctx, durableRecords(all))
+	durable := durableRecords(all)
+	opts := s.semanticSimOptions(ctx, durable)
+	// Whole-brain checkpoint: trim cache entries for texts no longer present (edits/deletes
+	// since the last pass) so the cache stays bounded by the live corpus.
+	s.pruneEmbedCache(durable)
 	return memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, opts...)
 }
 
@@ -764,6 +788,10 @@ func (s *Service) semanticSimOptions(ctx context.Context, records []memory.Recor
 // cheap after the first pass.
 func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (map[string][]float32, error) {
 	out := make(map[string][]float32, len(records))
+
+	// Seed the cache from the vector store once per process so a restart over an unchanged
+	// corpus re-embeds nothing (the misses below then resolve from the warmed cache).
+	s.warmEmbedCache(ctx)
 
 	// Resolve cache hits and collect the distinct miss texts.
 	s.embedMu.Lock()
@@ -829,6 +857,65 @@ func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (ma
 func embedKey(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:16])
+}
+
+// warmEmbedCache seeds embedCache with the vectors already held by the semantic index, so the
+// first clustering pass after a process restart does not re-embed an unchanged corpus. It runs
+// at most once per process; a Chroma/network failure leaves the cache cold and is retried on
+// the next pass (warmed stays false), never failing the caller. Keyed by text-hash, matching
+// the live embed path — a fact whose text is unchanged since it was indexed resolves from the
+// warmed entry. No-op in keyword mode (warmSrc nil). warmMu serializes concurrent first passes
+// so only one bulk fetch runs.
+func (s *Service) warmEmbedCache(ctx context.Context) {
+	if s.warmSrc == nil {
+		return
+	}
+	s.warmMu.Lock()
+	defer s.warmMu.Unlock()
+	if s.warmed {
+		return
+	}
+	vecs, err := s.warmSrc.LoadVectors(ctx)
+	if err != nil {
+		slog.Warn("brain: warm embed cache from vector store failed; will retry next pass", "error", err)
+		return // leave warmed=false so a transient failure doesn't permanently disable warming
+	}
+	s.embedMu.Lock()
+	for _, v := range vecs {
+		if len(v.Embedding) == 0 || v.Document == "" {
+			continue
+		}
+		key := embedKey(v.Document)
+		if _, ok := s.embedCache[key]; !ok {
+			s.embedCache[key] = v.Embedding
+		}
+	}
+	cached := len(s.embedCache)
+	s.embedMu.Unlock()
+	s.warmed = true
+	slog.Info("brain: warmed embed cache from vector store", "vectors", len(vecs), "cached", cached)
+}
+
+// pruneEmbedCache drops cache entries whose text-hash is absent from live (the current durable
+// corpus), bounding the cache by the live fact set rather than by every text ever embedded —
+// edited/deleted facts' stale vectors don't accumulate. Called from the whole-brain checkpoint
+// (AssignAreas, run after every sleep/tidy-all/global pass) where the full live set is known;
+// pruning on a per-scope embed would wrongly evict other scopes' entries. No-op in keyword mode.
+func (s *Service) pruneEmbedCache(live []memory.Record) {
+	if s.embedder == nil {
+		return
+	}
+	keep := make(map[string]struct{}, len(live))
+	for _, r := range live {
+		keep[embedKey(r.Text)] = struct{}{}
+	}
+	s.embedMu.Lock()
+	for k := range s.embedCache {
+		if _, ok := keep[k]; !ok {
+			delete(s.embedCache, k)
+		}
+	}
+	s.embedMu.Unlock()
 }
 
 func (s *Service) loadFingerprints() map[string]string {

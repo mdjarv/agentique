@@ -138,6 +138,15 @@ func (s *Store) Search(ctx context.Context, text string, scopes []memory.Scope, 
 	return out, nil
 }
 
+// LoadVectors returns every indexed (document, embedding) pair so a caller can warm a
+// text-keyed embedding cache after a restart instead of re-embedding the corpus. It reads only
+// the derived vectors Chroma already holds — the base store stays the source of truth. The
+// vectors carry whatever embedder produced them; the caller assumes a fixed model (as the
+// text-hash cache does) and should Reindex after a model change.
+func (s *Store) LoadVectors(ctx context.Context) ([]VectorRecord, error) {
+	return s.client.GetEmbeddings(ctx, s.coll, nil)
+}
+
 // Reindex rebuilds the entire collection from the base store. Use after bulk
 // hand-edits, an embedder change, or to recover from index drift.
 func (s *Store) Reindex(ctx context.Context) error {

@@ -147,6 +147,46 @@ func (c *Client) Delete(ctx context.Context, collID string, ids []string) error 
 	return c.do(ctx, http.MethodPost, c.dbPath("/collections/"+collID+"/delete"), body, nil)
 }
 
+// VectorRecord is one stored document and its embedding, returned by GetEmbeddings.
+type VectorRecord struct {
+	ID        string
+	Document  string
+	Embedding []float32
+}
+
+// GetEmbeddings fetches stored documents and their embeddings, returning all rows when ids is
+// empty. It exists to warm an in-process embedding cache after a restart: Chroma already holds
+// every fact's vector, so unchanged facts need never be re-embedded. Embeddings are NOT
+// returned by default, so they are requested explicitly via include. Rows missing a document
+// or embedding are still returned; the caller filters. At current corpus sizes (dozens–low
+// thousands) a single unpaginated get is fine.
+func (c *Client) GetEmbeddings(ctx context.Context, collID string, ids []string) ([]VectorRecord, error) {
+	body := map[string]any{"include": []string{"embeddings", "documents"}}
+	if len(ids) > 0 {
+		body["ids"] = ids
+	}
+	var out struct {
+		IDs        []string    `json:"ids"`
+		Documents  []string    `json:"documents"`
+		Embeddings [][]float32 `json:"embeddings"`
+	}
+	if err := c.do(ctx, http.MethodPost, c.dbPath("/collections/"+collID+"/get"), body, &out); err != nil {
+		return nil, err
+	}
+	recs := make([]VectorRecord, 0, len(out.IDs))
+	for i, id := range out.IDs {
+		r := VectorRecord{ID: id}
+		if i < len(out.Documents) {
+			r.Document = out.Documents[i]
+		}
+		if i < len(out.Embeddings) {
+			r.Embedding = out.Embeddings[i]
+		}
+		recs = append(recs, r)
+	}
+	return recs, nil
+}
+
 // QueryHit is one semantic search result.
 type QueryHit struct {
 	ID       string

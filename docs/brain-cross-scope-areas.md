@@ -17,10 +17,11 @@ viz (regions, headless-report surfacing, subsumed-on-hover).
   RelinkScope/CrossScopeGroups/areas (backward-compatible). **Activated for areas** (Service
   embeds the corpus, blends cosine); tunable via `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`.
 
-**Not done (see `docs/tech-debt.md` → Brain):** per-scope RelinkScope/AssignCommunities
-accept the option but the Service doesn't thread it through `ApplyPlan` (per-scope links/
-clusters stay lexical); interference stays lexical; embeddings re-embed every pass (no
-text-hash cache); semantic is **dormant on a keyword-only deployment** (no embedder).
+**Not done (see `docs/tech-debt.md` → Brain):** semantic is **dormant on a keyword-only
+deployment** (no embedder). _(Closed since this RFC: per-scope `ApplyPlan` link/community
+threading and interference are now semantic — tech-debt #2; embeddings are cached by text-hash
+with a Chroma cold-start warm + pruning, so an unchanged corpus re-embeds ~nothing across
+passes and restarts.)_
 Also shipped this arc but outside B/C: fluid per-turn delta recall, a recall precision fix
 (filler stopwords), and a read-through corpus cache (`memory/cachestore`).
 
