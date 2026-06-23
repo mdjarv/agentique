@@ -1,5 +1,5 @@
 import { forceCollide, forceX, forceY } from "d3-force";
-import { Check } from "lucide-react";
+import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -220,6 +220,10 @@ export function BrainGraph({
   // polygons read as visual noise more than structure. Opt in from the controls when wanted.
   const [showRegions, setShowRegions] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
+  // Insights + legend default COLLAPSED: they're a dense wall of truncated text otherwise. The
+  // collapsed insights panel shows a scannable row of count chips; expand for the lists.
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -273,7 +277,7 @@ export function BrainGraph({
         degree: m.degree ?? 0,
         // Size blends use-count, pinned, and structural degree so load-bearing "god
         // nodes" read bigger — the graphify signal made visual.
-        val: 2 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
+        val: 3 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
         subsumed: m.subsumed,
       };
       const prev = prevById.get(m.id);
@@ -693,7 +697,14 @@ export function BrainGraph({
               const r = Math.sqrt(node.val ?? 2) * NODE_REL_SIZE;
               const dim =
                 hoverId != null && node.id !== hoverId && !neighbors?.has(String(node.id));
-              ctx.globalAlpha = dim ? 0.15 : 1;
+              ctx.globalAlpha = dim ? 0.12 : 1;
+              // Dark "halo" moat: a slightly larger disc in the canvas background colour punched
+              // under each node, so edges are cut away from the node's rim and the coloured nodes
+              // read crisply on top of the link web instead of dissolving into it.
+              ctx.beginPath();
+              ctx.arc(x, y, r + 1.6 / scale, 0, 2 * Math.PI);
+              ctx.fillStyle = "rgb(9,11,17)";
+              ctx.fill();
               ctx.beginPath();
               ctx.arc(x, y, r, 0, 2 * Math.PI);
               ctx.fillStyle = nodeColor(node, colorBy);
@@ -761,21 +772,22 @@ export function BrainGraph({
               if (hoverId != null) {
                 return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
               }
-              // Subtle by default so the coloured node clusters carry the picture and links
-              // are a faint hint of relationship rather than a dominating grey web. A semantic
-              // edge's opacity scales with its association strength (weight), so the strongest
-              // memory relations read brightest. They sharpen on hover to reveal connections.
+              // Coloured node clusters carry the picture; edges are a faint backbone. A semantic
+              // edge's opacity rises STEEPLY with its association strength (weight²), so only the
+              // strong relations read while the weak majority fade out of the web entirely — they
+              // still shape the layout, just don't clutter it. Edges sharpen on hover.
               if (l.kind === "similar") {
-                const a = 0.05 + 0.3 * (l.weight ?? 0.5);
-                return `rgba(150,180,235,${a.toFixed(3)})`;
+                const w = l.weight ?? 0.5;
+                const a = 0.42 * w * w;
+                return a < 0.012 ? "rgba(0,0,0,0)" : `rgba(150,180,235,${a.toFixed(3)})`;
               }
-              return "rgba(190,195,210,0.3)";
+              return "rgba(190,195,210,0.28)";
             }}
             linkWidth={(l) =>
               linkTouchesHover(l)
                 ? 3.2
                 : l.kind === "similar"
-                  ? 0.5 + 1.6 * (l.weight ?? 0.5) // thicker = stronger association
+                  ? 0.3 + 1.7 * (l.weight ?? 0.5) ** 1.5 // thicker = stronger association
                   : 2
             }
             linkLineDash={(l) =>
@@ -839,7 +851,7 @@ export function BrainGraph({
         </div>
       )}
 
-      {/* Insights — graphify analyze.py analogs (RFC P2). */}
+      {/* Insights — graphify analyze.py analogs (RFC P2). Collapsed by default to a chip summary. */}
       {report &&
         (report.godNodes.length > 0 ||
           report.bridges.length > 0 ||
@@ -847,134 +859,194 @@ export function BrainGraph({
           report.dueForReview.length > 0 ||
           report.isolated.length > 0 ||
           report.interference.length > 0) && (
-          <div className="absolute left-3 top-3 max-h-[calc(100%-1.5rem)] w-60 space-y-2 overflow-y-auto rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
-            {report.godNodes.length > 0 && (
-              <InsightSection
-                title="Load-bearing"
-                hint="Most-connected facts — much hangs off these"
-                ids={report.godNodes}
-                labelFor={(id) => nodeById.get(id)?.label ?? id}
-                onPick={focusNode}
-              />
-            )}
-            {report.bridges.length > 0 && (
-              <InsightSection
-                title="Bridges"
-                hint="Connect otherwise-separate topics — riskiest to lose"
-                ids={report.bridges}
-                labelFor={(id) => nodeById.get(id)?.label ?? id}
-                onPick={focusNode}
-              />
-            )}
-            {report.needsConfirmation.length > 0 && (
-              <div>
-                <div
-                  className="mb-1 font-medium text-amber-600"
-                  title="The brain's least-trusted facts — confirm to keep as ground truth, or delete"
-                >
-                  Confirm?{" "}
-                  <span className="text-muted-foreground">({report.needsConfirmation.length})</span>
-                </div>
-                <ul className="space-y-1">
-                  {report.needsConfirmation.map((id) => (
-                    <li key={id} className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 truncate text-left hover:text-foreground"
-                        onClick={() => focusNode(id)}
-                        title={nodeById.get(id)?.label ?? id}
-                      >
-                        {nodeById.get(id)?.label ?? id}
-                      </button>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={() => onConfirm(id)}
-                        title="Confirm — keep as ground truth"
-                      >
-                        <Check className="size-3.5" />
-                      </button>
-                    </li>
+          <div className="absolute left-3 top-3 w-64 overflow-hidden rounded-lg border bg-card/85 text-xs shadow-sm backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setInsightsOpen((o) => !o)}
+              className="flex w-full items-center gap-1.5 px-2.5 py-1.5 hover:bg-muted/40"
+              title="What the brain knows: load-bearing facts, topic bridges, gaps, and the confirm queue"
+            >
+              {insightsOpen ? (
+                <ChevronDown className="size-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="size-3.5 text-muted-foreground" />
+              )}
+              <span className="font-medium">Insights</span>
+            </button>
+            {!insightsOpen && (
+              <div className="flex flex-wrap gap-1 px-2.5 pb-2">
+                {[
+                  { label: "Load-bearing", n: report.godNodes.length, cls: "" },
+                  { label: "Bridges", n: report.bridges.length, cls: "" },
+                  { label: "Confirm", n: report.needsConfirmation.length, cls: "text-amber-500" },
+                  { label: "Due", n: report.dueForReview.length, cls: "" },
+                  { label: "Isolated", n: report.isolated.length, cls: "" },
+                  { label: "Confusable", n: report.interference.length, cls: "" },
+                ]
+                  .filter((c) => c.n > 0)
+                  .map((c) => (
+                    <span
+                      key={c.label}
+                      className={`rounded bg-muted/60 px-1.5 py-0.5 text-muted-foreground ${c.cls}`}
+                    >
+                      {c.label} <span className="font-medium text-foreground/80">{c.n}</span>
+                    </span>
                   ))}
-                </ul>
               </div>
             )}
-            {report.dueForReview.length > 0 && (
-              <InsightSection
-                title="Due for review"
-                hint="Well-established facts gone cold — resurface before disuse fades them"
-                ids={report.dueForReview}
-                labelFor={(id) => nodeById.get(id)?.label ?? id}
-                onPick={focusNode}
-              />
-            )}
-            {report.isolated.length > 0 && (
-              <InsightSection
-                title="Isolated"
-                hint="No links to anything else — stray facts or knowledge gaps"
-                ids={report.isolated}
-                labelFor={(id) => nodeById.get(id)?.label ?? id}
-                onPick={focusNode}
-              />
-            )}
-            {report.interference.length > 0 && (
-              <div>
-                <div
-                  className="mb-1 font-medium text-muted-foreground"
-                  title="Similar but distinct — an agent could conflate these on recall"
-                >
-                  Easily confused{" "}
-                  <span className="text-muted-foreground/70">({report.interference.length})</span>
-                </div>
-                <ul className="space-y-1">
-                  {report.interference.map((p) => (
-                    <li key={`${p.a}|${p.b}`} className="space-y-0.5">
-                      {[p.a, p.b].map((id) => (
-                        <button
-                          key={id}
-                          type="button"
-                          className="block w-full truncate text-left hover:text-foreground"
-                          onClick={() => focusNode(id)}
-                          title={nodeById.get(id)?.label ?? id}
-                        >
-                          ↔ {nodeById.get(id)?.label ?? id}
-                        </button>
+            {insightsOpen && (
+              <div className="max-h-[calc(100vh-13rem)] space-y-2 overflow-y-auto border-t px-2.5 py-2">
+                {report.godNodes.length > 0 && (
+                  <InsightSection
+                    title="Load-bearing"
+                    hint="Most-connected facts — much hangs off these"
+                    ids={report.godNodes}
+                    labelFor={(id) => nodeById.get(id)?.label ?? id}
+                    onPick={focusNode}
+                  />
+                )}
+                {report.bridges.length > 0 && (
+                  <InsightSection
+                    title="Bridges"
+                    hint="Connect otherwise-separate topics — riskiest to lose"
+                    ids={report.bridges}
+                    labelFor={(id) => nodeById.get(id)?.label ?? id}
+                    onPick={focusNode}
+                  />
+                )}
+                {report.needsConfirmation.length > 0 && (
+                  <div>
+                    <div
+                      className="mb-1 font-medium text-amber-600"
+                      title="The brain's least-trusted facts — confirm to keep as ground truth, or delete"
+                    >
+                      Confirm?{" "}
+                      <span className="text-muted-foreground">
+                        ({report.needsConfirmation.length})
+                      </span>
+                    </div>
+                    <ul className="space-y-1">
+                      {report.needsConfirmation.map((id) => (
+                        <li key={id} className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate text-left hover:text-foreground"
+                            onClick={() => focusNode(id)}
+                            title={nodeById.get(id)?.label ?? id}
+                          >
+                            {nodeById.get(id)?.label ?? id}
+                          </button>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            onClick={() => onConfirm(id)}
+                            title="Confirm — keep as ground truth"
+                          >
+                            <Check className="size-3.5" />
+                          </button>
+                        </li>
                       ))}
-                    </li>
-                  ))}
-                </ul>
+                    </ul>
+                  </div>
+                )}
+                {report.dueForReview.length > 0 && (
+                  <InsightSection
+                    title="Due for review"
+                    hint="Well-established facts gone cold — resurface before disuse fades them"
+                    ids={report.dueForReview}
+                    labelFor={(id) => nodeById.get(id)?.label ?? id}
+                    onPick={focusNode}
+                  />
+                )}
+                {report.isolated.length > 0 && (
+                  <InsightSection
+                    title="Isolated"
+                    hint="No links to anything else — stray facts or knowledge gaps"
+                    ids={report.isolated}
+                    labelFor={(id) => nodeById.get(id)?.label ?? id}
+                    onPick={focusNode}
+                  />
+                )}
+                {report.interference.length > 0 && (
+                  <div>
+                    <div
+                      className="mb-1 font-medium text-muted-foreground"
+                      title="Similar but distinct — an agent could conflate these on recall"
+                    >
+                      Easily confused{" "}
+                      <span className="text-muted-foreground/70">
+                        ({report.interference.length})
+                      </span>
+                    </div>
+                    <ul className="space-y-1">
+                      {report.interference.map((p) => (
+                        <li key={`${p.a}|${p.b}`} className="space-y-0.5">
+                          {[p.a, p.b].map((id) => (
+                            <button
+                              key={id}
+                              type="button"
+                              className="block w-full truncate text-left hover:text-foreground"
+                              onClick={() => focusNode(id)}
+                              title={nodeById.get(id)?.label ?? id}
+                            >
+                              ↔ {nodeById.get(id)?.label ?? id}
+                            </button>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-      {/* Legend */}
+      {/* Legend — compact; the per-project colour key is collapsed behind a toggle. */}
       {!compact && (
-        <div className="absolute bottom-3 left-3 max-w-[14rem] space-y-1 rounded-md border bg-card/80 p-2 text-xs backdrop-blur">
-          <div className="mb-1 flex items-center gap-2 text-muted-foreground">
-            <span className="inline-block h-0 w-5 border-t border-foreground/60" /> derived/related
-            <span className="ml-1 inline-block h-0 w-5 border-t border-dashed border-foreground/60" />
+        <div className="absolute bottom-3 left-3 max-w-[14rem] rounded-lg border bg-card/85 p-2 text-xs shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className="inline-block h-0 w-4 border-t border-foreground/50" /> related
+            <span className="ml-1 inline-block h-0 w-4 border-t border-dashed border-foreground/50" />
             similar
           </div>
           {colorBy === "area" ? (
-            <div className="text-muted-foreground">
+            <div className="mt-1 text-muted-foreground">
               Coloured by cross-scope area — each shaded, labelled region is a topic that recurs
               across projects. Grey nodes belong to no area.
             </div>
           ) : colorBy === "community" ? (
-            <div className="text-muted-foreground">
-              Colored by topic cluster — facts in the same cluster consolidate together.
+            <div className="mt-1 text-muted-foreground">
+              Coloured by topic cluster — facts in the same cluster consolidate together.
             </div>
           ) : (
-            scopeLegend.map((s) => (
-              <div key={s.scope} className="flex items-center gap-1.5 truncate">
-                <span
-                  className="inline-block size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: s.color }}
-                />
-                <span className="truncate">{s.label}</span>
-              </div>
-            ))
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => setLegendOpen((o) => !o)}
+                className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              >
+                {legendOpen ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                Colours by project ({scopeLegend.length})
+              </button>
+              {legendOpen && (
+                <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
+                  {scopeLegend.map((s) => (
+                    <div key={s.scope} className="flex items-center gap-1.5 truncate">
+                      <span
+                        className="inline-block size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span className="truncate">{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
