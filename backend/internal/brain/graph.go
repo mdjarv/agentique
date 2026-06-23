@@ -54,10 +54,27 @@ type graphReportDTO struct {
 	Interference []memory.InterferencePair `json:"interference"`
 }
 
+// graphTuningDTO carries the force-layout curve parameters (deployment-configurable via
+// [brain.graph]) the frontend applies to the d3 simulation, so the layout geometry is tunable
+// without a frontend rebuild. The frontend falls back to its own defaults if this is absent.
+type graphTuningDTO struct {
+	// LinkStrengthBase/Span: a similar edge's link force is Base + Span·weight (weight ∈ [0,1]),
+	// so a stronger association pulls harder.
+	LinkStrengthBase float64 `json:"linkStrengthBase"`
+	LinkStrengthSpan float64 `json:"linkStrengthSpan"`
+	// LinkDistanceBase/Span: a similar edge's rest length is Base − Span·weight, so a stronger
+	// association sits closer.
+	LinkDistanceBase float64 `json:"linkDistanceBase"`
+	LinkDistanceSpan float64 `json:"linkDistanceSpan"`
+	// Gravity is the radial pull toward the origin that keeps isolated facts from flinging out.
+	Gravity float64 `json:"gravity"`
+}
+
 type graphDTO struct {
 	Nodes  []graphNodeDTO `json:"nodes"`
 	Links  []graphLinkDTO `json:"links"`
 	Report graphReportDTO `json:"report"`
+	Tuning graphTuningDTO `json:"tuning"`
 }
 
 const (
@@ -128,7 +145,16 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 	// lexical) — the graph view is a request-time endpoint, not the per-turn hot path,
 	// so a one-shot embed of the durable set is acceptable. Nil in lexical mode.
 	simOpts := h.Service.semanticSimOptions(r.Context(), durable)
-	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Links: links, Report: buildReport(durable, cent, time.Now().UTC(), simOpts...)})
+	// Force-layout tuning (deployment-configurable) so the frontend simulation geometry is
+	// driven by config, not frontend constants. Always populated (defaults filled in New).
+	tuning := graphTuningDTO{
+		LinkStrengthBase: h.Service.graph.LinkStrengthBase,
+		LinkStrengthSpan: h.Service.graph.LinkStrengthSpan,
+		LinkDistanceBase: h.Service.graph.LinkDistanceBase,
+		LinkDistanceSpan: h.Service.graph.LinkDistanceSpan,
+		Gravity:          h.Service.graph.Gravity,
+	}
+	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Links: links, Report: buildReport(durable, cent, time.Now().UTC(), simOpts...), Tuning: tuning})
 	return nil
 }
 

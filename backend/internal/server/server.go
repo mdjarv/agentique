@@ -105,6 +105,10 @@ type Config struct {
 	// MarkAutoHelped/Flag — when set to haiku|sonnet|opus; empty disables it. From
 	// AGENTIQUE_BRAIN_OUTCOME_MODEL or [brain] outcome-model.
 	BrainOutcomeModel string
+	// BrainGraph tunes the knowledge-graph view: semantic kNN edge density (backend) and the
+	// force-layout curves (frontend). Resolved from [brain.graph] with AGENTIQUE_BRAIN_GRAPH_*
+	// env overrides; zero fields take brain's built-in defaults.
+	BrainGraph config.BrainGraphConfig
 }
 
 func devModePreamble(dbPath string) string {
@@ -269,6 +273,15 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			SemanticThreshold: cfg.BrainSemanticThreshold,
 			VectorVetoScore:   cfg.BrainVectorVeto,
 			Calibrate:         cfg.BrainCalibrate,
+			Graph: brain.GraphConfig{
+				EdgeCap:          cfg.BrainGraph.EdgeCap,
+				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,
+				LinkStrengthBase: cfg.BrainGraph.LinkStrengthBase,
+				LinkStrengthSpan: cfg.BrainGraph.LinkStrengthSpan,
+				LinkDistanceBase: cfg.BrainGraph.LinkDistanceBase,
+				LinkDistanceSpan: cfg.BrainGraph.LinkDistanceSpan,
+				Gravity:          cfg.BrainGraph.Gravity,
+			},
 		})
 		if err != nil {
 			slog.Error("brain: disabled (init failed)", "error", err)

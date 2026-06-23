@@ -54,6 +54,62 @@ type Config struct {
 	// still wins per-knob; auto-calibration only fills the ones left 0. A too-thin corpus
 	// or an embed failure falls back to the defaults. Inert without an embedder.
 	Calibrate bool
+
+	// Graph tunes the knowledge-graph view (semantic kNN edge density + force-layout
+	// curves). Zero-valued fields take the built-in defaults via GraphConfig.withDefaults.
+	Graph GraphConfig
+}
+
+// Graph-view tuning defaults. The backend uses EdgeCap/EdgeThreshold to build the semantic
+// kNN; the rest are passed to the frontend force layout on the graph payload. EdgeThreshold
+// has no constant here — when unset it falls back to the recall cosThresh (resolved in New),
+// so a single "related" line drives both recall and the graph by default.
+const (
+	DefaultGraphEdgeCap          = 6
+	DefaultGraphLinkStrengthBase = 0.04
+	DefaultGraphLinkStrengthSpan = 0.32
+	DefaultGraphLinkDistanceBase = 90.0
+	DefaultGraphLinkDistanceSpan = 55.0
+	DefaultGraphGravity          = 0.045
+)
+
+// GraphConfig is the resolved knowledge-graph tuning the Service holds. The two edge fields
+// shape the backend semantic kNN; the force-layout fields are echoed to the frontend on the
+// graph payload so the layout geometry is tunable per deployment. A 0 field means "default";
+// withDefaults fills them. EdgeThreshold is special — 0 means "fall back to the recall
+// cosThresh" and is resolved in New, not here, because cosThresh isn't known until then.
+type GraphConfig struct {
+	EdgeCap          int
+	EdgeThreshold    float64
+	LinkStrengthBase float64
+	LinkStrengthSpan float64
+	LinkDistanceBase float64
+	LinkDistanceSpan float64
+	Gravity          float64
+}
+
+// withDefaults returns g with every unset (0) force-layout field replaced by its built-in
+// default. EdgeThreshold is left as-is (0 = "use cosThresh", handled by the caller).
+func (g GraphConfig) withDefaults() GraphConfig {
+	if g.EdgeCap <= 0 {
+		g.EdgeCap = DefaultGraphEdgeCap
+	}
+	if g.LinkStrengthBase <= 0 {
+		g.LinkStrengthBase = DefaultGraphLinkStrengthBase
+	}
+	if g.LinkStrengthSpan <= 0 {
+		g.LinkStrengthSpan = DefaultGraphLinkStrengthSpan
+	}
+	if g.LinkDistanceBase <= 0 {
+		g.LinkDistanceBase = DefaultGraphLinkDistanceBase
+	}
+	if g.LinkDistanceSpan <= 0 {
+		g.LinkDistanceSpan = DefaultGraphLinkDistanceSpan
+	}
+	if g.Gravity <= 0 {
+		g.Gravity = DefaultGraphGravity
+	}
+	return g
 }
 
 // Service is the agentique brain.
@@ -70,6 +126,20 @@ type Service struct {
 	// vetoScore is the hybrid-recall vector veto floor (model-specific) threaded into
 	// every relevance Query; 0 lets memory.Recall apply its default. Inert without an embedder.
 	vetoScore float64
+
+	// graph is the resolved knowledge-graph tuning (deployment-configurable, defaults filled).
+	// Its EdgeCap/EdgeThreshold drive SemanticEdges; the force-layout fields are echoed to the
+	// frontend on the graph payload. Set once in New; read-only after, so no lock needed.
+	graph GraphConfig
+
+	// semEdgeCache memoizes the last few SemanticEdges results keyed by a corpus fingerprint
+	// (the input records' ids+text-hashes plus the resolved threshold/cap), so a repeated graph
+	// load over an unchanged corpus skips the O(n²·d) kNN entirely. A fingerprint changes the
+	// instant any input fact's text or id changes, so a stale entry can never be served; the map
+	// is bounded by clearing it when it exceeds semEdgeCacheMax (corpus churn invalidates every
+	// entry anyway). Guarded by semEdgeMu, separate from the other locks.
+	semEdgeMu    sync.Mutex
+	semEdgeCache map[string][]memory.Edge
 
 	// embedCache memoizes embeddings by text-hash so the per-pass corpus/scope re-embed
 	// (embedRecords, now hit on every ApplyPlan/Consolidate/AssignAreas/graph load) only
@@ -120,11 +190,13 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// time. All writes funnel through this Service's store, so the cache stays consistent.
 	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
-		store:      base,
-		dir:        cfg.Dir,
-		embedCache: make(map[string][]float32),
-		fpPath:     filepath.Join(cfg.Dir, ".fingerprints.json"),
-		gmPath:     filepath.Join(cfg.Dir, ".global-manifest.json"),
+		store:        base,
+		dir:          cfg.Dir,
+		embedCache:   make(map[string][]float32),
+		semEdgeCache: make(map[string][]memory.Edge),
+		graph:        cfg.Graph.withDefaults(),
+		fpPath:       filepath.Join(cfg.Dir, ".fingerprints.json"),
+		gmPath:       filepath.Join(cfg.Dir, ".global-manifest.json"),
 	}
 
 	if cfg.ChromaURL != "" && cfg.EmbedURL != "" && cfg.EmbedModel != "" {
@@ -158,6 +230,11 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh, "vectorVeto", svc.vetoScore)
 				if cfg.Calibrate {
 					svc.applyCalibration(ctx, cfg.SemanticThreshold > 0, cfg.VectorVetoScore > 0)
+				}
+				// An unset graph edge threshold falls back to the (possibly calibrated)
+				// recall "related" line, so the graph and recall share one cosine floor.
+				if svc.graph.EdgeThreshold <= 0 {
+					svc.graph.EdgeThreshold = svc.cosThresh
 				}
 			}
 		}
@@ -254,22 +331,37 @@ func (s *Service) Reindex(ctx context.Context) error {
 	return rx.Reindex(ctx)
 }
 
-// semanticEdgePerNodeCap bounds how many nearest-neighbour edges each fact contributes to the
-// graph, so a densely-related cluster doesn't become a hairball. The union of asymmetric kNN can
-// still push a popular node a little over this.
-const semanticEdgePerNodeCap = 6
+// semEdgeCacheMax bounds the per-corpus SemanticEdges cache. The graph view is queried for at
+// most a handful of scope filters; past that the corpus has almost certainly changed, so we drop
+// the whole map rather than maintain an LRU — a stale corpus invalidates every entry anyway.
+const semEdgeCacheMax = 8
 
 // SemanticEdges returns the embedding-derived *relationship* set for the brain graph: for each
-// record, edges to its nearest neighbours in embedding space (cosine ≥ the configured related
+// record, edges to its nearest neighbours in embedding space (cosine ≥ the configured edge
 // threshold, capped per node). The frontend force simulation self-balances these into clusters,
 // so similar memories pull together organically — the backend supplies nodes and relationships,
 // never positions. Returns nil when semantic mode is off (no embedder), so the graph degrades to
-// the structural (provenance/related/lexical) edges. Records embed through the shared text-hash
-// cache, so the graph endpoint's one-shot pass is ~free once the corpus is warmed.
+// the structural (provenance/related/lexical) edges.
+//
+// The result is memoized by a corpus fingerprint: a repeated load over an unchanged corpus skips
+// both the re-embed and the O(n²·d) kNN and returns the cached edges. Threshold and per-node cap
+// come from the resolved graph config, so a deployment can tune the graph's density.
 func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([]memory.Edge, error) {
 	if !s.semantic || len(records) < 2 {
 		return nil, nil
 	}
+
+	// Fingerprint the request (corpus content + the resolved knobs). A hit skips everything
+	// below; a miss recomputes and caches under the new key. The fingerprint changes the
+	// instant any input fact's text or id changes, so a cached result can never go stale.
+	fp := semanticEdgeFingerprint(records, s.graph.EdgeThreshold, s.graph.EdgeCap)
+	s.semEdgeMu.Lock()
+	if edges, ok := s.semEdgeCache[fp]; ok {
+		s.semEdgeMu.Unlock()
+		return edges, nil
+	}
+	s.semEdgeMu.Unlock()
+
 	vecs, err := s.embedRecords(ctx, records)
 	if err != nil {
 		return nil, err
@@ -282,7 +374,38 @@ func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([
 			mat = append(mat, v)
 		}
 	}
-	return memory.SemanticEdges(ids, mat, s.cosThresh, semanticEdgePerNodeCap), nil
+	edges := memory.SemanticEdges(ids, mat, s.graph.EdgeThreshold, s.graph.EdgeCap)
+
+	s.semEdgeMu.Lock()
+	if len(s.semEdgeCache) >= semEdgeCacheMax {
+		s.semEdgeCache = make(map[string][]memory.Edge)
+	}
+	s.semEdgeCache[fp] = edges
+	s.semEdgeMu.Unlock()
+	return edges, nil
+}
+
+// semanticEdgeFingerprint is a content hash of a SemanticEdges request: every input record's id
+// and text (text drives the embedding, id labels the edge) plus the threshold and per-node cap
+// that shape the output. Records are hashed in id order, so the same corpus fingerprints
+// identically regardless of List order; ids and texts are length-prefixed so no id/text content
+// can forge a collision across the field boundary. Any fact added, removed, or edited — or a knob
+// change — yields a new fingerprint.
+func semanticEdgeFingerprint(records []memory.Record, threshold float64, perNodeCap int) string {
+	byID := make(map[string]string, len(records))
+	ids := make([]string, 0, len(records))
+	for _, r := range records {
+		byID[r.ID] = r.Text
+		ids = append(ids, r.ID)
+	}
+	sort.Strings(ids)
+	h := sha256.New()
+	fmt.Fprintf(h, "t=%v;cap=%d;", threshold, perNodeCap)
+	for _, id := range ids {
+		text := byID[id]
+		fmt.Fprintf(h, "%d:%s%d:%s", len(id), id, len(text), text)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // ScopeForProject maps an agentique project ID to a memory scope. An empty

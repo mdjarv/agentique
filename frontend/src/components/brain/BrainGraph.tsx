@@ -6,7 +6,7 @@ import ForceGraph2D, {
   type LinkObject,
   type NodeObject,
 } from "react-force-graph-2d";
-import type { GraphLink, GraphReport, Memory } from "~/lib/brain-api";
+import type { GraphLink, GraphReport, GraphTuning, Memory } from "~/lib/brain-api";
 import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
@@ -68,6 +68,18 @@ const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
 const REGION_MAX_NODES = 4000; // skip the per-frame hull pass above this many nodes (hull is ~n log n, cheap)
 const REGION_PAD = 12; // world-unit breathing room around a region's outermost nodes
+
+// Force-layout curve defaults — used when the backend graph payload carries no `tuning` (older
+// backend, lexical mode, or a partial response). The backend's [brain.graph] config can override
+// each of these; keep these in sync with brain's DefaultGraph* constants. A similar edge's link
+// strength is base + span·weight and its distance is base − span·weight (weight ∈ [0,1]).
+const LAYOUT_DEFAULTS: GraphTuning = {
+  linkStrengthBase: 0.04,
+  linkStrengthSpan: 0.32,
+  linkDistanceBase: 90,
+  linkDistanceSpan: 55,
+  gravity: 0.045,
+};
 
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
@@ -197,6 +209,7 @@ export function BrainGraph({
   memories,
   links: semanticLinks,
   report,
+  tuning,
   labelForScope,
   onConfirm,
   compact = false,
@@ -207,6 +220,8 @@ export function BrainGraph({
   // where the component falls back to computing lexical Jaccard similarity edges itself.
   links?: GraphLink[] | null;
   report: GraphReport | null;
+  // Deployment-configurable force-layout curves; null falls back to LAYOUT_DEFAULTS.
+  tuning?: GraphTuning | null;
   labelForScope: (scope: string) => string;
   onConfirm: (id: string) => void;
   // compact hides the controls + legend overlays so the canvas can be embedded as a
@@ -485,17 +500,22 @@ export function BrainGraph({
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
+    // Force-layout curves come from the backend [brain.graph] config (deployment-tunable),
+    // falling back to LAYOUT_DEFAULTS when the payload omits them.
+    const t = tuning ?? LAYOUT_DEFAULTS;
     (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
     const link = g.d3Force("link") as unknown as
       | { distance(fn: (l: GLink) => number): void; strength(fn: (l: GLink) => number): void }
       | undefined;
     link?.distance((l) => {
-      if (l.kind === "similar") return 90 - 55 * (l.weight ?? 0.5); // stronger → closer
+      // stronger → closer
+      if (l.kind === "similar") return t.linkDistanceBase - t.linkDistanceSpan * (l.weight ?? 0.5);
       if (l.kind === "area") return 80;
       return 40; // provenance / related: tight structural ties
     });
     link?.strength((l) => {
-      if (l.kind === "similar") return 0.04 + 0.32 * (l.weight ?? 0.5); // stronger → tighter pull
+      // stronger → tighter pull
+      if (l.kind === "similar") return t.linkStrengthBase + t.linkStrengthSpan * (l.weight ?? 0.5);
       if (l.kind === "area") return 0.03;
       return 0.4; // provenance / related: firm
     });
@@ -508,11 +528,11 @@ export function BrainGraph({
     // Weak radial gravity toward the origin: without it, charge repulsion flings the isolated
     // facts (no edge to hold them) far out, which makes zoomToFit shrink the connected core to
     // an unreadable speck. Gravity keeps the whole graph compact so the clusters fill the frame.
-    g.d3Force("x", forceX<GNode>(0).strength(0.045));
-    g.d3Force("y", forceY<GNode>(0).strength(0.045));
+    g.d3Force("x", forceX<GNode>(0).strength(t.gravity));
+    g.d3Force("y", forceY<GNode>(0).strength(t.gravity));
     fitted.current = false; // re-frame after the new topology settles
     g.d3ReheatSimulation();
-  }, [nodes]);
+  }, [nodes, tuning]);
 
   // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
   // repaint on its own — nudge a redraw when either display dimension changes.

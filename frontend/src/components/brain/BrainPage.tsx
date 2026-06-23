@@ -364,6 +364,7 @@ export function BrainPage() {
             memories={graphMemories}
             links={graph?.links ?? null}
             report={graph?.report ?? null}
+            tuning={graph?.tuning ?? null}
             labelForScope={labelForScope}
             onConfirm={async (id) => {
               try {

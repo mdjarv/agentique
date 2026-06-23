@@ -124,6 +124,21 @@ func envFloatOr(name string, fileVal float64) float64 {
 	return f
 }
 
+// envIntOr layers an int env var (preferred) over a config-file int: the env value wins when
+// set and parseable, otherwise the file value is used. Mirrors envFloatOr for ints.
+func envIntOr(name string, fileVal int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return fileVal
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		slog.Warn("ignoring unparseable int env var; using config-file value", "name", name, "value", v)
+		return fileVal
+	}
+	return n
+}
+
 // envBoolOr layers a boolean env var (preferred) over a config-file bool: when the env var
 // is set its value wins, otherwise the file value is used (so an absent env doesn't force false).
 func envBoolOr(name string, fileVal bool) bool {
@@ -339,6 +354,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Session-end learning: env wins over the [brain] config-file value, else off.
 		BrainLearnModel:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"), fileCfg.Brain.LearnModel),
 		BrainOutcomeModel: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL"), fileCfg.Brain.OutcomeModel),
+		// Graph-view tuning: env wins over the [brain.graph] file value; 0 → brain's default.
+		BrainGraph: config.BrainGraphConfig{
+			EdgeCap:          envIntOr("AGENTIQUE_BRAIN_GRAPH_EDGE_CAP", fileCfg.Brain.Graph.EdgeCap),
+			EdgeThreshold:    envFloatOr("AGENTIQUE_BRAIN_GRAPH_EDGE_THRESHOLD", fileCfg.Brain.Graph.EdgeThreshold),
+			LinkStrengthBase: envFloatOr("AGENTIQUE_BRAIN_GRAPH_LINK_STRENGTH_BASE", fileCfg.Brain.Graph.LinkStrengthBase),
+			LinkStrengthSpan: envFloatOr("AGENTIQUE_BRAIN_GRAPH_LINK_STRENGTH_SPAN", fileCfg.Brain.Graph.LinkStrengthSpan),
+			LinkDistanceBase: envFloatOr("AGENTIQUE_BRAIN_GRAPH_LINK_DISTANCE_BASE", fileCfg.Brain.Graph.LinkDistanceBase),
+			LinkDistanceSpan: envFloatOr("AGENTIQUE_BRAIN_GRAPH_LINK_DISTANCE_SPAN", fileCfg.Brain.Graph.LinkDistanceSpan),
+			Gravity:          envFloatOr("AGENTIQUE_BRAIN_GRAPH_GRAVITY", fileCfg.Brain.Graph.Gravity),
+		},
 	}
 	if cfg.AuthEnabled {
 		cfg.RPID = rpID

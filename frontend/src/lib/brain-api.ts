@@ -214,12 +214,28 @@ export interface GraphLink {
   score?: number;
 }
 
+// GraphTuning carries the force-layout curve parameters (deployment-configurable via the
+// backend's [brain.graph] config) the graph applies to its d3 simulation. Absent fields fall
+// back to the component's built-in defaults, so an old backend or a partial payload still works.
+export interface GraphTuning {
+  // A similar edge's link force is linkStrengthBase + linkStrengthSpan·weight (weight ∈ [0,1]).
+  linkStrengthBase: number;
+  linkStrengthSpan: number;
+  // A similar edge's rest length is linkDistanceBase − linkDistanceSpan·weight.
+  linkDistanceBase: number;
+  linkDistanceSpan: number;
+  // Radial pull toward the origin that keeps isolated facts from flinging out.
+  gravity: number;
+}
+
 export interface GraphData {
   nodes: GraphNode[];
   // Backend relationships (semantic-similarity edges); empty/omitted in lexical mode, where the
   // client falls back to computing lexical similarity edges itself.
   links?: GraphLink[];
   report: GraphReport;
+  // Force-layout tuning (deployment-configurable); omitted by older backends.
+  tuning?: GraphTuning;
 }
 
 // getGraph fetches the force-graph payload: every durable memory annotated with

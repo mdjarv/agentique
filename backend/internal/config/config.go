@@ -176,6 +176,44 @@ type BrainConfig struct {
 	// the preamble). It is ON by default; set to "off" (or false/0/no) to disable. Empty =
 	// default on. Env: AGENTIQUE_BRAIN_RECALL (wins when set).
 	Recall string `toml:"recall"`
+
+	// Graph tunes the brain knowledge-graph view: the semantic kNN edge density computed on
+	// the backend and the force-layout curves sent to the frontend. All optional; any field
+	// left 0 keeps the built-in default. See [brain.graph] in config.toml. Each field has an
+	// AGENTIQUE_BRAIN_GRAPH_* env override that wins when set.
+	Graph BrainGraphConfig `toml:"graph"`
+}
+
+// BrainGraphConfig tunes the brain knowledge-graph view. The two edge fields shape the
+// backend semantic kNN (how dense the graph is); the force-layout fields are passed through
+// to the frontend on the graph payload so the layout's geometry is tunable per deployment
+// without a rebuild. Every field is optional — a 0 value means "use the built-in default"
+// (the brain package owns those defaults, so they live in exactly one place).
+type BrainGraphConfig struct {
+	// EdgeCap bounds how many nearest-neighbour edges each fact contributes to the graph, so
+	// a densely-related cluster doesn't become a hairball (0 = default 6). The union of
+	// asymmetric kNN can still push a popular node a little over this.
+	// Env: AGENTIQUE_BRAIN_GRAPH_EDGE_CAP.
+	EdgeCap int `toml:"edge-cap"`
+	// EdgeThreshold is the cosine floor a pair must clear to become a graph edge — raise it
+	// for a sparser graph, lower it for a denser one (0 = the recall semantic-threshold).
+	// Env: AGENTIQUE_BRAIN_GRAPH_EDGE_THRESHOLD.
+	EdgeThreshold float64 `toml:"edge-threshold"`
+	// LinkStrengthBase is the force-layout link strength at association weight 0 (the weakest
+	// drawn edge); 0 = default 0.04. Env: AGENTIQUE_BRAIN_GRAPH_LINK_STRENGTH_BASE.
+	LinkStrengthBase float64 `toml:"link-strength-base"`
+	// LinkStrengthSpan is added to LinkStrengthBase at weight 1 (strongest edge), so a strong
+	// association pulls harder; 0 = default 0.32. Env: AGENTIQUE_BRAIN_GRAPH_LINK_STRENGTH_SPAN.
+	LinkStrengthSpan float64 `toml:"link-strength-span"`
+	// LinkDistanceBase is the force-layout link distance at weight 0; 0 = default 90.
+	// Env: AGENTIQUE_BRAIN_GRAPH_LINK_DISTANCE_BASE.
+	LinkDistanceBase float64 `toml:"link-distance-base"`
+	// LinkDistanceSpan is subtracted from LinkDistanceBase at weight 1, so a strong
+	// association sits closer; 0 = default 55. Env: AGENTIQUE_BRAIN_GRAPH_LINK_DISTANCE_SPAN.
+	LinkDistanceSpan float64 `toml:"link-distance-span"`
+	// Gravity is the radial pull toward the origin that keeps isolated facts from flinging
+	// out under charge repulsion; 0 = default 0.045. Env: AGENTIQUE_BRAIN_GRAPH_GRAVITY.
+	Gravity float64 `toml:"gravity"`
 }
 
 // Default returns a config with all default values.
