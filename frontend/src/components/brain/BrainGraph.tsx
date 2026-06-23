@@ -327,6 +327,10 @@ export function BrainGraph({
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // A clicked node *locks* the hover view in: its neighbourhood stays highlighted (and the rest
+  // dimmed) after the pointer leaves, until you click it again or click the background. Hover still
+  // previews other nodes transiently — see `activeId` (hover wins while hovering, else the lock holds).
+  const [lockedId, setLockedId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -686,16 +690,20 @@ export function BrainGraph({
     layout.gravity,
   ]);
 
-  // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
-  // repaint on its own — nudge a redraw when either display dimension changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `colorBy`/`showRegions` are trigger-only deps — they're read by the paint callbacks on the next frame; this effect just forces that frame.
+  // Recoloring, toggling regions, or changing the locked node doesn't touch graphData, so the
+  // settled canvas won't repaint on its own — nudge a redraw. (Hover repaints come for free from
+  // pointer movement; a lock set from the insights list or released by toggle has no such event.)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps — read by the paint callbacks on the next frame; this effect just forces that frame.
   useEffect(() => {
     (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
-  }, [colorBy, showRegions]);
+  }, [colorBy, showRegions, lockedId]);
 
-  const neighbors = hoverId ? adjacency.get(hoverId) : null;
-  const linkTouchesHover = (l: GLink) =>
-    hoverId != null && (endId(l.source) === hoverId || endId(l.target) === hoverId);
+  // The node whose neighbourhood is highlighted: a live hover takes precedence (transient preview),
+  // and when nothing is hovered we fall back to the locked node so a click-locked view persists.
+  const activeId = hoverId ?? lockedId;
+  const neighbors = activeId ? adjacency.get(activeId) : null;
+  const linkTouchesActive = (l: GLink) =>
+    activeId != null && (endId(l.source) === activeId || endId(l.target) === activeId);
 
   const scopeLegend = useMemo(() => {
     const scopes = [...new Set(nodes.map((n) => n.scope))];
@@ -748,7 +756,8 @@ export function BrainGraph({
     if (n?.x != null && n?.y != null) {
       fgRef.current?.centerAt(n.x, n.y, 500);
       fgRef.current?.zoom(4, 500);
-      setHoverId(id);
+      // Lock (not just hover) so the highlight persists after the jump, like a click.
+      setLockedId(id);
     }
   };
 
@@ -896,7 +905,7 @@ export function BrainGraph({
               const y = node.y ?? 0;
               const r = Math.sqrt(node.val ?? 2) * NODE_REL_SIZE;
               const dim =
-                hoverId != null && node.id !== hoverId && !neighbors?.has(String(node.id));
+                activeId != null && node.id !== activeId && !neighbors?.has(String(node.id));
               ctx.globalAlpha = dim ? 0.12 : 1;
               // Ember: a soft scope-coloured halo (additive, so neighbours' glows blend into a
               // cluster bloom) + a hot core whose colour encodes trust. No flat disc, no dark moat.
@@ -934,17 +943,26 @@ export function BrainGraph({
                 ctx.arc(x, y, r + 4 / scale, 0, 2 * Math.PI);
                 ctx.stroke();
               }
+              if (lockedId != null && String(node.id) === lockedId) {
+                // Lock ring: marks the click-locked node so it's distinguishable from a transient
+                // hover. A bright thin ring just outside the halo's reading edge.
+                ctx.strokeStyle = "rgba(248,250,252,0.95)";
+                ctx.lineWidth = 1.5 / scale;
+                ctx.beginPath();
+                ctx.arc(x, y, r + 3 / scale, 0, 2 * Math.PI);
+                ctx.stroke();
+              }
               // Labels are the main source of clutter at 1400+ nodes, so they are
               // deliberately staged by zoom: the hovered node and its neighbours are always
               // labelled (that's where attention is); past LABEL_ZOOM every node shows its short
               // caption; past FULLTEXT_ZOOM the caption expands to the FULL memory text, wrapped,
               // so a fact is readable in place (no hover needed). A dark pill behind the text gives
               // it contrast over nodes and edges instead of vanishing into them.
-              const isHover = node.id === hoverId;
+              const isActive = node.id === activeId;
               const isNeighbor = neighbors?.has(String(node.id)) ?? false;
-              if (!dim && (isHover || isNeighbor || scale > LABEL_ZOOM)) {
-                const fontSize = (isHover ? 16 : 14) / scale;
-                ctx.font = `${isHover ? 600 : 400} ${fontSize}px sans-serif`;
+              if (!dim && (isActive || isNeighbor || scale > LABEL_ZOOM)) {
+                const fontSize = (isActive ? 16 : 14) / scale;
+                ctx.font = `${isActive ? 600 : 400} ${fontSize}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
                 // Full text (wrapped) once zoomed in; the short caption otherwise.
@@ -967,7 +985,7 @@ export function BrainGraph({
                 if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 3 / scale);
                 else ctx.rect(bx, by, bw, bh);
                 ctx.fill();
-                ctx.fillStyle = isHover ? "#f8fafc" : "rgba(226,232,240,0.9)";
+                ctx.fillStyle = isActive ? "#f8fafc" : "rgba(226,232,240,0.9)";
                 for (let i = 0; i < lines.length; i++)
                   ctx.fillText(lines[i] ?? "", x, ty + i * lineH);
               }
@@ -984,12 +1002,12 @@ export function BrainGraph({
               // Area edges exist only to cluster the layout — invisible unless the hovered
               // node touches one (then they reveal the area's connections).
               if (l.kind === "area") {
-                return hoverId != null && linkTouchesHover(l)
+                return activeId != null && linkTouchesActive(l)
                   ? "rgba(250,204,21,0.7)"
                   : "rgba(0,0,0,0)";
               }
-              if (hoverId != null) {
-                return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
+              if (activeId != null) {
+                return linkTouchesActive(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
               }
               // Edges are colour-coded by the cluster they live in: an edge inside a coloured group
               // takes that group's colour (so the web reinforces the clustering), while a
@@ -1007,7 +1025,7 @@ export function BrainGraph({
               return group ? withAlpha(group, 0.5) : "rgba(190,195,210,0.3)";
             }}
             linkWidth={(l) =>
-              linkTouchesHover(l)
+              linkTouchesActive(l)
                 ? 3
                 : l.kind === "similar"
                   ? 0.12 + 0.9 * (l.weight ?? 0.5) ** 1.5 // thinner; thicker = stronger association
@@ -1018,11 +1036,20 @@ export function BrainGraph({
             }
             onNodeHover={(n) => setHoverId(n ? String(n.id) : null)}
             onNodeClick={(n) => {
+              const id = String(n.id);
+              // Click toggles the lock: clicking the locked node releases it (no re-zoom); clicking
+              // any other node locks its hover view in and frames it.
+              if (lockedId === id) {
+                setLockedId(null);
+                return;
+              }
+              setLockedId(id);
               if (n.x != null && n.y != null) {
                 fgRef.current?.centerAt(n.x, n.y, 500);
                 fgRef.current?.zoom(4, 500);
               }
             }}
+            onBackgroundClick={() => setLockedId(null)}
             onEngineStop={() => {
               // Fit once, when the layout first settles after (re)mounting the graph
               // view. We never re-frame afterwards, so a memory change or a consolidation can't
