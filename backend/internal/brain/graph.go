@@ -17,11 +17,19 @@ type graphNodeDTO struct {
 	memoryDTO
 	Degree      int     `json:"degree"`
 	Betweenness float64 `json:"betweenness"`
-	// X, Y are the fact's position in the 2D semantic projection of its embedding
-	// (PCA, normalized to [-1,1]) — present only in semantic mode, so the frontend can
-	// offer a vector layout and otherwise fall back to the structural force layout.
-	X *float64 `json:"x,omitempty"`
-	Y *float64 `json:"y,omitempty"`
+}
+
+// graphLinkDTO is one undirected relationship between two nodes (by id). Currently only
+// semantic-similarity edges (embedding kNN) are emitted here; the frontend builds provenance/
+// related edges from the node fields. The backend supplies relationships, not positions — the
+// client force layout self-balances them.
+type graphLinkDTO struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Kind   string `json:"kind"`
+	// Score is the cosine similarity that produced a semantic edge — the frontend weights the
+	// layout force and the edge's visual strength by it.
+	Score float64 `json:"score,omitempty"`
 }
 
 // graphReportDTO is the derived "what the brain knows" panel (graphify analyze.py
@@ -48,6 +56,7 @@ type graphReportDTO struct {
 
 type graphDTO struct {
 	Nodes  []graphNodeDTO `json:"nodes"`
+	Links  []graphLinkDTO `json:"links"`
 	Report graphReportDTO `json:"report"`
 }
 
@@ -90,32 +99,30 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	cent := memory.ComputeCentrality(durable)
-
-	// Semantic layout: project every durable fact's embedding to 2D so the frontend can
-	// lay the graph out by meaning (clusters → spatial clusters). Best-effort and
-	// semantic-only — nil coords in lexical mode (or on an embed failure) leave the
-	// frontend on its structural force layout.
-	coords, perr := h.Service.ProjectRecords(r.Context(), durable)
-	if perr != nil {
-		slog.Warn("brain: graph semantic projection failed; using structural layout only", "error", perr)
-	}
-
 	nodes := make([]graphNodeDTO, 0, len(durable))
 	for _, rec := range durable {
 		c := cent[rec.ID]
-		node := graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness}
-		if p, ok := coords[rec.ID]; ok {
-			x, y := p.X, p.Y
-			node.X, node.Y = &x, &y
+		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
+	}
+
+	// Semantic edges: each fact's nearest neighbours in embedding space become relationships
+	// the client force layout self-balances into clusters (the backend supplies relationships,
+	// not positions). Best-effort and semantic-only — nil in lexical mode (or on an embed
+	// failure), in which case the frontend falls back to its lexical similarity edges.
+	links := []graphLinkDTO{}
+	if edges, lerr := h.Service.SemanticEdges(r.Context(), durable); lerr != nil {
+		slog.Warn("brain: graph semantic edges failed; using structural/lexical edges only", "error", lerr)
+	} else {
+		for _, e := range edges {
+			links = append(links, graphLinkDTO{Source: e.A, Target: e.B, Kind: "similar", Score: e.Score})
 		}
-		nodes = append(nodes, node)
 	}
 
 	// In semantic mode, make interference detection embedding-aware (else it stays
 	// lexical) — the graph view is a request-time endpoint, not the per-turn hot path,
 	// so a one-shot embed of the durable set is acceptable. Nil in lexical mode.
 	simOpts := h.Service.semanticSimOptions(r.Context(), durable)
-	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Report: buildReport(durable, cent, time.Now().UTC(), simOpts...)})
+	httperror.JSON(w, http.StatusOK, graphDTO{Nodes: nodes, Links: links, Report: buildReport(durable, cent, time.Now().UTC(), simOpts...)})
 	return nil
 }
 

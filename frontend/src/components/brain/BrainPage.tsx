@@ -362,6 +362,7 @@ export function BrainPage() {
         <div className="min-h-0 flex-1">
           <BrainGraph
             memories={graphMemories}
+            links={graph?.links ?? null}
             report={graph?.report ?? null}
             labelForScope={labelForScope}
             onConfirm={async (id) => {

@@ -235,23 +235,26 @@ func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, erro
 // SemanticEnabled reports whether vector recall is active.
 func (s *Service) SemanticEnabled() bool { return s.semantic }
 
-// ProjectRecords lays the given records out in 2D by projecting their embeddings onto
-// their top-2 principal components (memory.ProjectPCA2D) — the "semantic layout" behind the
-// brain graph, where spatial proximity reflects embedding similarity so clusters show up as
-// spatial clusters. It returns id → coordinate (normalized to [-1,1]) for every record that
-// has a vector. Returns nil when semantic mode is off (no embedder), so callers degrade to
-// the structural force layout. Records embed through the shared text-hash cache, so the
-// graph endpoint's one-shot projection is ~free after the corpus is warmed.
-func (s *Service) ProjectRecords(ctx context.Context, records []memory.Record) (map[string]memory.Point2D, error) {
-	if !s.semantic || len(records) == 0 {
+// semanticEdgePerNodeCap bounds how many nearest-neighbour edges each fact contributes to the
+// graph, so a densely-related cluster doesn't become a hairball. The union of asymmetric kNN can
+// still push a popular node a little over this.
+const semanticEdgePerNodeCap = 6
+
+// SemanticEdges returns the embedding-derived *relationship* set for the brain graph: for each
+// record, edges to its nearest neighbours in embedding space (cosine ≥ the configured related
+// threshold, capped per node). The frontend force simulation self-balances these into clusters,
+// so similar memories pull together organically — the backend supplies nodes and relationships,
+// never positions. Returns nil when semantic mode is off (no embedder), so the graph degrades to
+// the structural (provenance/related/lexical) edges. Records embed through the shared text-hash
+// cache, so the graph endpoint's one-shot pass is ~free once the corpus is warmed.
+func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([]memory.Edge, error) {
+	if !s.semantic || len(records) < 2 {
 		return nil, nil
 	}
 	vecs, err := s.embedRecords(ctx, records)
 	if err != nil {
 		return nil, err
 	}
-	// Project only the records that actually have a vector, keeping a stable order so the
-	// projection is deterministic (PCA itself is deterministic given a fixed input order).
 	ids := make([]string, 0, len(records))
 	mat := make([][]float32, 0, len(records))
 	for _, r := range records {
@@ -260,12 +263,7 @@ func (s *Service) ProjectRecords(ctx context.Context, records []memory.Record) (
 			mat = append(mat, v)
 		}
 	}
-	pts := memory.ProjectPCA2D(mat)
-	out := make(map[string]memory.Point2D, len(ids))
-	for i, id := range ids {
-		out[id] = pts[i]
-	}
-	return out, nil
+	return memory.SemanticEdges(ids, mat, s.cosThresh, semanticEdgePerNodeCap), nil
 }
 
 // ScopeForProject maps an agentique project ID to a memory scope. An empty

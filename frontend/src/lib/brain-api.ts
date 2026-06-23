@@ -202,8 +202,23 @@ export interface GraphReport {
   interference: { a: string; b: string; similarity: number }[];
 }
 
+// GraphLink is a backend-supplied relationship between two nodes (by id). Currently semantic-
+// similarity edges (each fact's nearest neighbours in embedding space); present only in semantic
+// mode. The client force layout self-balances them — the backend sends relationships, not positions.
+export interface GraphLink {
+  source: string;
+  target: string;
+  kind: string;
+  // Cosine similarity that produced a semantic edge (omitted/0 for non-semantic edges). The
+  // graph weights both the layout force and the edge's visual strength by it.
+  score?: number;
+}
+
 export interface GraphData {
   nodes: GraphNode[];
+  // Backend relationships (semantic-similarity edges); empty/omitted in lexical mode, where the
+  // client falls back to computing lexical similarity edges itself.
+  links?: GraphLink[];
   report: GraphReport;
 }
 

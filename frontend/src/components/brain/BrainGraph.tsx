@@ -6,7 +6,7 @@ import ForceGraph2D, {
   type LinkObject,
   type NodeObject,
 } from "react-force-graph-2d";
-import type { GraphReport, Memory } from "~/lib/brain-api";
+import type { GraphLink, GraphReport, Memory } from "~/lib/brain-api";
 import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
@@ -15,22 +15,17 @@ import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 type GraphMemory = Memory & {
   degree?: number;
   betweenness?: number;
-  // x/y are the fact's 2D semantic-projection coordinates (PCA of its embedding,
-  // normalized to [-1,1]) — present only when the brain runs in semantic mode. They drive
-  // the optional "semantic" layout; absent, the graph stays on its structural force layout.
-  x?: number;
-  y?: number;
 };
 
-// BrainGraph renders the brain as an Obsidian-style force-directed graph.
-// Nodes are memories; edges come from three sources (cheapest first):
+// BrainGraph renders the brain as an Obsidian-style force-directed graph that *self-balances*:
+// the backend supplies nodes and relationships (never positions) and the force simulation lays
+// them out. Edges come from:
 //   - provenance: `derivedFrom` links written by consolidation (solid).
 //   - related:    curated `[[link]]` graph (solid) — empty until P1 of the RFC.
-//   - similar:    Jaccard token overlap computed here (dashed), the stand-in
-//                 for a structural link until `related` is populated.
-// This is graph-view v1 from docs/brain-graph-layer.md: it reads only the
-// existing API, no backend change. It also makes the "dead link graph" visible
-// — isolated memories literally float free.
+//   - similar:    semantic-similarity edges from the backend (each fact's nearest neighbours in
+//                 embedding space) when in semantic mode; otherwise a lexical Jaccard fallback
+//                 computed here. These are what pull related memories into organic clusters.
+// Isolated memories (no edge) literally float free — the "dead link graph" made visible.
 
 interface NodeData {
   id: string;
@@ -48,11 +43,6 @@ interface NodeData {
   area: string;
   degree: number;
   val: number;
-  // sx/sy are the node's semantic-layout target (its projection scaled to graph units).
-  // In semantic layout a positional force pulls the node toward (sx,sy) while collision
-  // keeps it from overlapping neighbours; undefined in force layout.
-  sx?: number;
-  sy?: number;
   // The per-project facts a cross-scope promotion merged into this one, shown on hover
   // (the merge inputs the Subsumed backfill restored). Empty for non-promoted facts.
   subsumed?: { scope: string; text: string }[];
@@ -60,19 +50,13 @@ interface NodeData {
 
 type ColorBy = "scope" | "community" | "area";
 
-// LayoutMode selects how nodes are positioned: "force" runs the structural force
-// simulation (links + repulsion); "semantic" pins each node at its embedding's 2D
-// projection so semantically-similar facts sit together (only offered when coords exist).
-type LayoutMode = "force" | "semantic";
-
-// SEMANTIC_SPREAD scales the [-1,1] projection coords into force-graph units. The absolute
-// value is cosmetic (zoomToFit reframes); it only needs to be large enough that nodes don't
-// overlap at their drawn radii.
-const SEMANTIC_SPREAD = 820;
-
 type EdgeKind = "provenance" | "related" | "similar" | "area";
 interface LinkData {
   kind: EdgeKind;
+  // weight ∈ [0,1] is the normalized association strength for a semantic edge (from cosine
+  // similarity, min-max scaled across the current edge set); undefined for structural edges,
+  // which are treated as firm (weight 1). Drives both force strength and visual emphasis.
+  weight?: number;
 }
 
 type GNode = NodeObject<NodeData>;
@@ -211,6 +195,7 @@ function InsightSection({
 
 export function BrainGraph({
   memories,
+  links: semanticLinks,
   report,
   labelForScope,
   onConfirm,
@@ -218,6 +203,9 @@ export function BrainGraph({
   focusId,
 }: {
   memories: GraphMemory[];
+  // Backend-supplied relationships (semantic-similarity edges); null/empty in lexical mode,
+  // where the component falls back to computing lexical Jaccard similarity edges itself.
+  links?: GraphLink[] | null;
   report: GraphReport | null;
   labelForScope: (scope: string) => string;
   onConfirm: (id: string) => void;
@@ -232,13 +220,6 @@ export function BrainGraph({
   // polygons read as visual noise more than structure. Opt in from the controls when wanted.
   const [showRegions, setShowRegions] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
-  // Default to the semantic layout: when the brain runs in semantic mode it's the more
-  // legible and meaningful entry point (memories grouped by what they're about). It only
-  // takes effect once coords arrive (hasCoords); until then, or with no embedder, the
-  // structural force layout is used and the Layout toggle is hidden.
-  const [layout, setLayout] = useState<LayoutMode>("semantic");
-  const hasCoords = useMemo(() => memories.some((m) => m.x != null), [memories]);
-  const effectiveLayout: LayoutMode = layout === "semantic" && hasCoords ? "semantic" : "force";
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -304,27 +285,6 @@ export function BrainGraph({
         if (prev.fx != null) node.fx = prev.fx;
         if (prev.fy != null) node.fy = prev.fy;
       }
-      // Semantic layout: stamp the projection target (sx,sy) and seed the node there; a
-      // positional force then pulls it toward that target while collision spreads overlaps,
-      // so the embedding's clusters stay legible instead of collapsing to a dense blob.
-      // Force layout clears the target so the structural simulation places the node. Done
-      // after the carry-forward so toggling layouts always re-derives the target from the mode.
-      if (effectiveLayout === "semantic" && m.x != null && m.y != null) {
-        node.sx = m.x * SEMANTIC_SPREAD;
-        node.sy = m.y * SEMANTIC_SPREAD;
-        node.fx = undefined;
-        node.fy = undefined;
-        if (prev == null) {
-          // Seed fresh nodes at their target so the layout converges fast and doesn't fly in.
-          node.x = node.sx;
-          node.y = node.sy;
-        }
-      } else {
-        node.sx = undefined;
-        node.sy = undefined;
-        node.fx = undefined;
-        node.fy = undefined;
-      }
       return node;
     });
 
@@ -334,12 +294,12 @@ export function BrainGraph({
     const structural = new Set<string>(); // pairs with a real edge, suppresses `similar`
     const pk = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
-    const addLink = (a: string, b: string, kind: EdgeKind) => {
+    const addLink = (a: string, b: string, kind: EdgeKind, weight?: number) => {
       if (a === b || !idSet.has(a) || !idSet.has(b)) return;
       const key = `${kind}#${pk(a, b)}`;
       if (seen.has(key)) return;
       seen.add(key);
-      links.push({ source: a, target: b, kind });
+      links.push({ source: a, target: b, kind, weight });
       if (kind !== "similar") structural.add(pk(a, b));
     };
 
@@ -366,32 +326,55 @@ export function BrainGraph({
       }
     }
 
-    if (showSimilar && memories.length <= SIM_MAX_NODES) {
-      const toks = memories.map((m) => tokenize(m.text));
-      const cands: { a: string; b: string; s: number }[] = [];
-      for (let i = 0; i < memories.length; i++) {
-        const mi = memories[i];
-        const ti = toks[i];
-        if (!mi || !ti) continue;
-        for (let j = i + 1; j < memories.length; j++) {
-          const mj = memories[j];
-          const tj = toks[j];
-          if (!mj || !tj) continue;
-          const s = jaccard(ti, tj);
-          if (s >= SIM_THRESHOLD && !structural.has(pk(mi.id, mj.id))) {
-            cands.push({ a: mi.id, b: mj.id, s });
+    // Similarity edges — what pull related memories into clusters. Prefer the backend's
+    // SEMANTIC edges (embedding kNN): they encode meaning the lexical pass can't and have no
+    // node-count cap. Only when the backend supplied none (lexical mode) do we fall back to the
+    // local Jaccard pass (itself skipped above SIM_MAX_NODES, where O(n²) is too costly).
+    if (showSimilar) {
+      if (semanticLinks && semanticLinks.length > 0) {
+        // Min-max normalize the cosine scores across this edge set so the strongest relation
+        // reads as weight 1 and the weakest (at the backend threshold) as ~0 — independent of
+        // the model's absolute cosine scale. Both force pull and visual emphasis scale with it.
+        let lo = Number.POSITIVE_INFINITY;
+        let hi = Number.NEGATIVE_INFINITY;
+        for (const l of semanticLinks) {
+          const s = l.score ?? 0;
+          if (s < lo) lo = s;
+          if (s > hi) hi = s;
+        }
+        const range = hi - lo;
+        for (const l of semanticLinks) {
+          if (structural.has(pk(l.source, l.target))) continue;
+          const w = range > 0 ? ((l.score ?? lo) - lo) / range : 0.5;
+          addLink(l.source, l.target, "similar", w);
+        }
+      } else if (memories.length <= SIM_MAX_NODES) {
+        const toks = memories.map((m) => tokenize(m.text));
+        const cands: { a: string; b: string; s: number }[] = [];
+        for (let i = 0; i < memories.length; i++) {
+          const mi = memories[i];
+          const ti = toks[i];
+          if (!mi || !ti) continue;
+          for (let j = i + 1; j < memories.length; j++) {
+            const mj = memories[j];
+            const tj = toks[j];
+            if (!mj || !tj) continue;
+            const s = jaccard(ti, tj);
+            if (s >= SIM_THRESHOLD && !structural.has(pk(mi.id, mj.id))) {
+              cands.push({ a: mi.id, b: mj.id, s });
+            }
           }
         }
-      }
-      cands.sort((x, y) => y.s - x.s);
-      const deg = new Map<string, number>();
-      for (const c of cands) {
-        const da = deg.get(c.a) ?? 0;
-        const db = deg.get(c.b) ?? 0;
-        if (da >= SIM_DEGREE_CAP || db >= SIM_DEGREE_CAP) continue;
-        addLink(c.a, c.b, "similar");
-        deg.set(c.a, da + 1);
-        deg.set(c.b, db + 1);
+        cands.sort((x, y) => y.s - x.s);
+        const deg = new Map<string, number>();
+        for (const c of cands) {
+          const da = deg.get(c.a) ?? 0;
+          const db = deg.get(c.b) ?? 0;
+          if (da >= SIM_DEGREE_CAP || db >= SIM_DEGREE_CAP) continue;
+          addLink(c.a, c.b, "similar");
+          deg.set(c.a, da + 1);
+          deg.set(c.b, db + 1);
+        }
       }
     }
 
@@ -427,7 +410,7 @@ export function BrainGraph({
     // Topology signature: the node-id set plus the (kind+pair) link set, deliberately
     // excluding every display field. A refetch that only bumps uses/degree/centrality
     // leaves this unchanged, letting us reuse the prior graphData reference below.
-    const topo = `${effectiveLayout}#${[...idSet].sort().join(",")}#${[...seen].sort().join(",")}`;
+    const topo = `${[...idSet].sort().join(",")}#${[...seen].sort().join(",")}`;
 
     const prev = graphDataRef.current;
     if (prev && prev.topo === topo) {
@@ -463,7 +446,7 @@ export function BrainGraph({
     graphDataRef.current = { topo, data };
     prevNodesRef.current = new Map(nodes.map((n) => [String(n.id), n]));
     return data;
-  }, [memories, labelForScope, showSimilar, colorBy, effectiveLayout]);
+  }, [memories, semanticLinks, labelForScope, showSimilar, colorBy]);
 
   const { nodes, links } = graphData;
 
@@ -488,41 +471,44 @@ export function BrainGraph({
     return m;
   }, [links]);
 
-  // Configure the simulation forces for the active layout, then reheat so they apply.
-  // Force layout: strong repulsion + short links pull connected memories into legible
-  // clusters. Semantic layout: a positional force pulls each node toward its embedding
-  // projection (sx,sy) while structural forces are softened, so position encodes meaning.
-  // Collision (radius = drawn size + gap) runs in both so nodes never overlap — the fix for
-  // the dense blobs the bare charge+link layout produced. Re-runs on a layout flip (and on
-  // topology change) and reheats; a flip also clears `fitted` so onEngineStop re-frames.
-  // (d3Force returns a ForceFn; cast through unknown to reach .strength/.distance.)
+  // Tune the self-balancing force layout, weighted by the embeddings: each semantic edge's
+  // cosine-derived weight makes a strong association pull HARDER (higher link strength) and sit
+  // CLOSER (shorter link distance), so the layout's geometry mirrors how related the memories
+  // actually are — a closer model of associative memory than uniform edges. Strong repulsion +
+  // collision keep the clusters legible. Structural edges (provenance/related) are firm; area
+  // edges are a faint clustering hint. Re-runs/reheats on topology change; `fitted` is cleared
+  // so the next settle re-frames. (d3Force → ForceFn; cast through unknown for the setters.)
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
-    const charge = g.d3Force("charge") as unknown as { strength(n: number): void } | undefined;
-    const link = g.d3Force("link") as unknown as { distance(n: number): void } | undefined;
+    (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
+    const link = g.d3Force("link") as unknown as
+      | { distance(fn: (l: GLink) => number): void; strength(fn: (l: GLink) => number): void }
+      | undefined;
+    link?.distance((l) => {
+      if (l.kind === "similar") return 90 - 55 * (l.weight ?? 0.5); // stronger → closer
+      if (l.kind === "area") return 80;
+      return 40; // provenance / related: tight structural ties
+    });
+    link?.strength((l) => {
+      if (l.kind === "similar") return 0.04 + 0.32 * (l.weight ?? 0.5); // stronger → tighter pull
+      if (l.kind === "area") return 0.03;
+      return 0.4; // provenance / related: firm
+    });
     g.d3Force(
       "collide",
       forceCollide<GNode>()
         .radius((n) => Math.sqrt(n.val ?? 2) * NODE_REL_SIZE + 1.5)
         .iterations(2),
     );
-    if (effectiveLayout === "semantic") {
-      // Meaning dominates position: a firm pull to the projection target, weak repulsion,
-      // short links. Nodes without a target (no embedding) drift to the origin harmlessly.
-      charge?.strength(-10);
-      link?.distance(24);
-      g.d3Force("x", forceX<GNode>((n) => n.sx ?? 0).strength(0.9));
-      g.d3Force("y", forceY<GNode>((n) => n.sy ?? 0).strength(0.9));
-    } else {
-      charge?.strength(-160);
-      link?.distance(45);
-      g.d3Force("x", null);
-      g.d3Force("y", null);
-    }
-    fitted.current = false; // re-frame to the (possibly very different) new arrangement
+    // Weak radial gravity toward the origin: without it, charge repulsion flings the isolated
+    // facts (no edge to hold them) far out, which makes zoomToFit shrink the connected core to
+    // an unreadable speck. Gravity keeps the whole graph compact so the clusters fill the frame.
+    g.d3Force("x", forceX<GNode>(0).strength(0.045));
+    g.d3Force("y", forceY<GNode>(0).strength(0.045));
+    fitted.current = false; // re-frame after the new topology settles
     g.d3ReheatSimulation();
-  }, [nodes, effectiveLayout]);
+  }, [nodes]);
 
   // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
   // repaint on its own — nudge a redraw when either display dimension changes.
@@ -776,11 +762,22 @@ export function BrainGraph({
                 return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
               }
               // Subtle by default so the coloured node clusters carry the picture and links
-              // are a faint hint of relationship rather than a dominating grey web. They
-              // sharpen on hover (above) to reveal a specific fact's connections.
-              return l.kind === "similar" ? "rgba(150,180,235,0.16)" : "rgba(190,195,210,0.3)";
+              // are a faint hint of relationship rather than a dominating grey web. A semantic
+              // edge's opacity scales with its association strength (weight), so the strongest
+              // memory relations read brightest. They sharpen on hover to reveal connections.
+              if (l.kind === "similar") {
+                const a = 0.05 + 0.3 * (l.weight ?? 0.5);
+                return `rgba(150,180,235,${a.toFixed(3)})`;
+              }
+              return "rgba(190,195,210,0.3)";
             }}
-            linkWidth={(l) => (linkTouchesHover(l) ? 3.2 : l.kind === "similar" ? 1.4 : 2)}
+            linkWidth={(l) =>
+              linkTouchesHover(l)
+                ? 3.2
+                : l.kind === "similar"
+                  ? 0.5 + 1.6 * (l.weight ?? 0.5) // thicker = stronger association
+                  : 2
+            }
             linkLineDash={(l) =>
               l.kind === "similar" ? [4, 3] : l.kind === "area" ? [2, 4] : null
             }
@@ -839,22 +836,6 @@ export function BrainGraph({
               <option value="area">by area</option>
             </select>
           </label>
-          {hasCoords && (
-            <label
-              className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur"
-              title="Force: structural layout (links + repulsion). Semantic: place each fact at its embedding's 2D projection, so similar memories sit together."
-            >
-              <span className="text-muted-foreground">Layout</span>
-              <select
-                value={layout}
-                onChange={(e) => setLayout(e.target.value as LayoutMode)}
-                className="bg-transparent outline-none"
-              >
-                <option value="force">force</option>
-                <option value="semantic">semantic</option>
-              </select>
-            </label>
-          )}
         </div>
       )}
 
