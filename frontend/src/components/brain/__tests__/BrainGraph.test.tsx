@@ -115,7 +115,7 @@ describe("BrainGraph layout stability", () => {
       n.y = (i + 1) * 200;
     }
     const m1Node0 = gd0.nodes.find((n) => n.id === "m1");
-    expect(m1Node0?.val).toBe(3); // 2 + min(uses=1) + 0 + 0
+    expect(m1Node0?.val).toBe(4); // 3 + min(uses=1) + 0 + 0
 
     // --- Data-only refetch: same ids + same links, only `uses` bumped. ---
     const bumped = [mem("m1", { uses: 5 }), mem("m2", { derivedFrom: ["m1"] }), mem("m3")];
@@ -133,7 +133,7 @@ describe("BrainGraph layout stability", () => {
     expect(gd1).toBe(gd0);
     const m1Node1 = gd1.nodes.find((n) => n.id === "m1");
     expect(m1Node1).toBe(m1Node0); // same live object
-    expect(m1Node1?.val).toBe(7); // display field refreshed in place: 2 + min(uses=5)
+    expect(m1Node1?.val).toBe(8); // display field refreshed in place: 3 + min(uses=5)
     expect(m1Node1?.x).toBe(100); // position untouched
     expect(m1Node1?.y).toBe(200);
 
