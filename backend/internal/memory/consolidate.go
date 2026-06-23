@@ -66,12 +66,23 @@ type DecayPolicy struct {
 	// recently is protected even if old. Off by default, like decay. Composes with
 	// ConfidenceWeighted (both factors multiply).
 	StrengthWeighted bool
+	// SalienceWeighted sharpens decay by outcome-derived salience (RFC-LD D3,
+	// brain-salience-gating.md): a contradicted fact (ReviewNote set) decays far sooner —
+	// a decay candidate — while a corroborated one (Helped) resists. The factor is 1.0 at
+	// the neutral baseline, so this is a no-op for any fact the outcome loop hasn't touched
+	// (it refines outcome-judged facts, it does not accelerate decay across the board). It
+	// also lets a contradicted fact decay even when use-protected (Uses ≥ MinUses) — being
+	// shown a lot doesn't redeem a fact later found wrong. Off by default; composes
+	// multiplicatively with ConfidenceWeighted and StrengthWeighted.
+	SalienceWeighted bool
 }
 
 // effectiveMaxAge returns the staleness threshold for a record under this policy:
-// the configured MaxAge, scaled down by the record's confidence score
-// (ConfidenceWeighted) and/or storage strength (StrengthWeighted) so the brain
-// forgets what it holds least firmly first. The factors compose multiplicatively.
+// the configured MaxAge, scaled by the record's confidence score (ConfidenceWeighted),
+// storage strength (StrengthWeighted) and/or outcome salience (SalienceWeighted) so the
+// brain forgets what it holds least firmly — and what outcome judged worst — first. The
+// factors compose multiplicatively. A factor above 1 (a corroborated fact under
+// SalienceWeighted) *extends* the threshold: outcome-proven facts resist decay.
 func (d DecayPolicy) effectiveMaxAge(r Record) time.Duration {
 	factor := 1.0
 	if d.ConfidenceWeighted {
@@ -84,10 +95,31 @@ func (d DecayPolicy) effectiveMaxAge(r Record) time.Duration {
 	if d.StrengthWeighted {
 		factor *= StorageStrength(r)
 	}
+	if d.SalienceWeighted {
+		factor *= salienceDecayFactor(r)
+	}
 	if factor == 1.0 {
 		return d.MaxAge
 	}
 	return time.Duration(float64(d.MaxAge) * factor)
+}
+
+// shouldDecay is the single decay-eligibility predicate: a record is pruned when it has gone
+// stale past its effectiveMaxAge AND is low-value. "Low-value" is normally "injected fewer
+// than MinUses times", but under SalienceWeighted a currently-contradicted fact is a decay
+// candidate however often it was shown — injection count cannot redeem a fact later found
+// wrong. Disabled (returns false) when decay is off (MaxAge <= 0).
+func (d DecayPolicy) shouldDecay(r Record, now time.Time) bool {
+	if d.MaxAge <= 0 {
+		return false
+	}
+	if d.staleAge(r, now) <= d.effectiveMaxAge(r) {
+		return false
+	}
+	if r.Uses >= d.MinUses && !(d.SalienceWeighted && isContradicted(r)) {
+		return false // use-protected, and not a contradicted fact the salience gate overrides
+	}
+	return true
 }
 
 // staleAge returns how long a record has gone without being touched, for decay. With
@@ -190,6 +222,9 @@ func normalizeMinSurvivorRatio(r float64) float64 {
 
 // isProtected reports whether a record is exempt from reorganization and decay:
 // pinned (core context), locked (hand-protected), or human-authored (ground truth).
+// reorgRetained (salience.go) widens this for the reorganizer alone, adding
+// outcome-proven facts (RFC-LD D3); the other call sites (promotion eligibility,
+// reconsolidation score guards) stay on isProtected.
 func isProtected(r Record) bool {
 	return r.Pinned || r.Locked || r.Source == SourceHuman
 }
@@ -251,10 +286,12 @@ func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Sco
 		p.Promoted = cands
 	}
 
-	// LLM: reorganize the non-protected durable set (no write).
+	// LLM: reorganize the durable set the model is allowed to touch (no write) — the
+	// non-protected facts MINUS strongly-corroborated ones, which outcome has proven and
+	// reorgRetained holds back from churn (RFC-LD D3).
 	var reorgInput []Record
 	for _, r := range durable {
-		if !isProtected(r) {
+		if !reorgRetained(r) {
 			reorgInput = append(reorgInput, r)
 		}
 	}
@@ -300,12 +337,13 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	}
 	var reorgInput []Record
 	for _, r := range durable {
-		if !isProtected(r) {
+		if !reorgRetained(r) {
 			reorgInput = append(reorgInput, r)
 		}
 	}
 	// Staleness guard: the plan was computed against a specific set; if it changed
-	// (manual edits, another pass) applying could clobber newer state.
+	// (manual edits, another pass, or an outcome crossing the retention bar) applying could
+	// clobber newer state.
 	if fingerprint(reorgInput) != p.InputFingerprint {
 		return rep, ErrStalePlan
 	}
@@ -334,13 +372,14 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 		}
 	}
 
-	// 3) Decay stale, low-value facts (deterministic; runs regardless of skip). With
-	// a confidence-weighted policy the staleness threshold shrinks for low-confidence
-	// facts, so the brain forgets what it is least sure about first.
+	// 3) Decay stale, low-value facts (deterministic; runs regardless of skip). The
+	// per-fact decision lives in DecayPolicy.shouldDecay: a confidence-weighted policy
+	// forgets what it is least sure about first, a salience-weighted one targets
+	// contradicted facts and spares corroborated ones.
 	if opts.Decay.MaxAge > 0 {
 		kept := reorgInput[:0]
 		for _, r := range reorgInput {
-			if opts.Decay.staleAge(r, now) > opts.Decay.effectiveMaxAge(r) && r.Uses < opts.Decay.MinUses {
+			if opts.Decay.shouldDecay(r, now) {
 				if !opts.DryRun {
 					if err := store.Delete(ctx, r.ID); err != nil {
 						return rep, err

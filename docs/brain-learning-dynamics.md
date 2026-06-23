@@ -30,6 +30,13 @@ Status: Draft · 2026-06-17 · Sibling to [brain-memory.md](brain-memory.md) and
 > **transcript judge** (`internal/brain/outcome.go`) emits the outcome signal without the agent,
 > so the loop self-feeds on the live corpus. See the ADR addendum in
 > [brain-outcome-signal.md](brain-outcome-signal.md).
+>
+> **Progress (2026-06-23):** **D3 (salience-gated consolidation)** shipped — an outcome-derived
+> `memory.Salience` now gates what consolidation keeps vs. forgets: a strongly-corroborated fact
+> (`Helped ≥ 2`) is retained from the reorganizer (always on, gives D3 live impact even with decay
+> off), and `DecayPolicy.SalienceWeighted` makes a contradicted fact a decay candidate while
+> corroboration resists decay. See [brain-salience-gating.md](brain-salience-gating.md). **D4
+> (episodic staging + replay)** is now the only remaining proposal.
 
 ## Motivation
 
@@ -107,7 +114,7 @@ New to this RFC:
 > This is the smallest mechanism with the largest behavioural change, and it **subsumes** the
 > open "dynamic confidence" and "capture corrections" gaps noted in brain-memory.md.
 
-### D3 — Salience-gated encoding & consolidation
+### D3 — Salience-gated encoding & consolidation ✅ implemented
 
 - **Principle.** Brains preferentially consolidate **rewarded, surprising, or aversive** experiences
   (dopamine-gated consolidation; amygdala emotional tagging) — not everything uniformly.
@@ -115,9 +122,15 @@ New to this RFC:
   gotcha", a crude salience proxy, but it's per-chunk and unweighted afterward).
 - **Proposal.** Tag facts with an outcome-derived salience (a gotcha that *caused a costly bug* >> a
   routine convention) and let it drive encode priority and decay resistance.
-- **Lives in.** Glue (salience comes from session outcome — same signal D2 needs); core consumes it
-  as a decay/ranking weight.
-- **Depends on.** The outcome signal (Open decisions). Pairs naturally with D2.
+- **Shipped.** `memory.Salience(r)` (`salience.go`) derives a [0,1] outcome score from `Helped` /
+  `ReviewNote`, orthogonal to `StorageStrength`. It gates consolidation two ways: a
+  strongly-corroborated fact (`Helped ≥ 2`) is held back from the reorganizer (`reorgRetained`,
+  always on — the live-impact lever), and `DecayPolicy.SalienceWeighted` folds salience into
+  `effectiveMaxAge` (contradicted → decay candidate, with a `MinUses` bypass; corroborated →
+  resists). Deliberately *not* exposed to the model — gating is deterministic in core. See
+  [brain-salience-gating.md](brain-salience-gating.md).
+- **Lives in.** Core (`salience.go` + `consolidate.go` — decay/retention weight); the signal it
+  consumes comes from the outcome loop (`brain-outcome-signal.md`).
 
 ### D4 — Episodic staging + replay (activate the unused `capture` path)
 
@@ -205,11 +218,13 @@ New to this RFC:
 3. ~~**D5 — interference detection.**~~ ✅ done (`memory/interference.go`; surfaced in the graph report).
 4. ~~**D6 — spaced-review scheduling.**~~ ✅ done (`memory.DueForReview`; `dueForReview` in the report).
    (Done out of original order — it only needed D1, and rode along with D5 in the report.)
-5. **D3 — salience-gated consolidation.** Remaining. Now unblocked on the *signal* side:
-   `Record.Helped` (and contradiction flags) are outcome-derived salience inputs encode/decay
-   can weight. Pairs with the automatic-outcome-signal work (decision #2).
+5. ~~**D3 — salience-gated consolidation.**~~ ✅ done (`memory/salience.go`; `reorgRetained`,
+   `DecayPolicy.SalienceWeighted`, `Salience`). `Record.Helped` and the `ReviewNote` contradiction
+   flag drive what consolidation keeps (reorg-retention) and forgets (salience-weighted decay). See
+   [brain-salience-gating.md](brain-salience-gating.md).
 6. **D4 — episodic staging + replay.** Remaining. Largest; activates the dormant `capture` path and
-   attacks scope bloat at the root.
+   attacks scope bloat at the root — and is the natural consumer of D3's salience (replay prioritises
+   the salient episodes).
 
 ## References
 
@@ -219,6 +234,7 @@ New to this RFC:
 - McClelland, McNaughton & O'Reilly (1995) — Complementary Learning Systems; Tse et al. (2007) — schemas.
 - Collins & Loftus (1975) — spreading activation; Tulving — episodic / semantic / procedural memory.
 - FSRS / SuperMemo SM-2 — spaced-repetition scheduling.
-- brain: `internal/memory/{record,recall,consolidate,confidence,link,community,centrality}.go`,
-  `internal/brain/{brain,automation,graph,mcp}.go`; [brain-memory.md](brain-memory.md);
-  [brain-graph-layer.md](brain-graph-layer.md).
+- brain: `internal/memory/{record,recall,consolidate,confidence,strength,salience,reconsolidate,link,community,centrality}.go`,
+  `internal/brain/{brain,automation,graph,mcp,outcome}.go`; [brain-memory.md](brain-memory.md);
+  [brain-graph-layer.md](brain-graph-layer.md); [brain-outcome-signal.md](brain-outcome-signal.md);
+  [brain-salience-gating.md](brain-salience-gating.md).
