@@ -84,13 +84,25 @@ const LAYOUT_DEFAULTS: GraphTuning = {
   linkStrengthSpan: 0.13,
   linkDistanceBase: 130,
   linkDistanceSpan: 70,
-  gravity: 0.035,
+  gravity: 0.05,
 };
 
 // Charge (node-node repulsion). Strong enough that the weakened similarity springs spread into
-// legible clusters instead of collapsing to a central mass; gravity (above) keeps the whole
+// legible clusters instead of collapsing to a central mass; gravity (below) keeps the whole
 // graph framed so isolated facts don't fling off-screen.
-const CHARGE_STRENGTH = -240;
+const CHARGE_STRENGTH = -190;
+
+// Cluster-separation knobs (pure force — no imposed positions). A similarity edge inside one scope
+// pulls harder (tightens that project into its own sub-blob); a cross-scope edge barely tugs and
+// rests long (a faint bridge, so projects drift apart instead of fusing into one central mass).
+const INTRA_SCOPE_SIM_MULT = 2.4; // intra-scope similar edges cohere
+const CROSS_SCOPE_SIM_MULT = 0.08; // cross-scope similar edges barely pull
+const CROSS_SCOPE_SIM_DISTANCE = 260; // …and rest far apart
+// Gravity is applied per-node by connectivity: light on the connected web (let charge inflate it so
+// the clusters spread and separate) but firmer on isolated facts (no edge holds them, so without
+// this they fling off-screen and shrink the core). Multiplies the deployment `gravity` tuning.
+const GRAVITY_CONNECTED_MULT = 0.35;
+const GRAVITY_ISOLATED_MULT = 1.8;
 
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
@@ -564,17 +576,34 @@ export function BrainGraph({
     const link = g.d3Force("link") as unknown as
       | { distance(fn: (l: GLink) => number): void; strength(fn: (l: GLink) => number): void }
       | undefined;
+    // Is this a cross-scope edge? By the time these force accessors run, forceLink has resolved
+    // source/target from ids to node objects, so we can read each end's scope directly (ids before
+    // then → treated as intra, a harmless default). Cross-scope SIMILARITY edges are the 3k+ links
+    // that otherwise fuse every project into one central blob; we keep them (full web, drawn as
+    // faint neutral bridges) but make them pull far weaker and rest much longer, so each scope's
+    // own edges hold it together while charge repulsion spreads the scopes into legible clusters.
+    const scopeOf = (e: GLink["source"]): string | undefined =>
+      typeof e === "object" && e ? (e as GNode).scope : undefined;
+    const isCrossScope = (l: GLink): boolean => {
+      const a = scopeOf(l.source);
+      const b = scopeOf(l.target);
+      return a != null && b != null && a !== b;
+    };
     link?.distance((l) => {
       // stronger → closer
-      if (l.kind === "similar")
+      if (l.kind === "similar") {
+        if (isCrossScope(l)) return CROSS_SCOPE_SIM_DISTANCE; // a faint bridge, not a tether
         return layout.linkDistanceBase - layout.linkDistanceSpan * (l.weight ?? 0.5);
+      }
       if (l.kind === "area") return 80;
       return 40; // provenance / related: tight structural ties
     });
     link?.strength((l) => {
       // stronger → tighter pull
-      if (l.kind === "similar")
-        return layout.linkStrengthBase + layout.linkStrengthSpan * (l.weight ?? 0.5);
+      if (l.kind === "similar") {
+        const s = layout.linkStrengthBase + layout.linkStrengthSpan * (l.weight ?? 0.5);
+        return s * (isCrossScope(l) ? CROSS_SCOPE_SIM_MULT : INTRA_SCOPE_SIM_MULT);
+      }
       if (l.kind === "area") return 0.03;
       return 0.4; // provenance / related: firm
     });
@@ -584,11 +613,15 @@ export function BrainGraph({
         .radius((n) => Math.sqrt(n.val ?? 2) * NODE_REL_SIZE + 1.5)
         .iterations(2),
     );
-    // Weak radial gravity toward the origin: without it, charge repulsion flings the isolated
-    // facts (no edge to hold them) far out, which makes zoomToFit shrink the connected core to
-    // an unreadable speck. Gravity keeps the whole graph compact so the clusters fill the frame.
-    g.d3Force("x", forceX<GNode>(0).strength(layout.gravity));
-    g.d3Force("y", forceY<GNode>(0).strength(layout.gravity));
+    // Radial gravity toward the origin, applied per node by connectivity: light on the connected
+    // web (let charge inflate it so clusters spread + separate) and firmer on isolated facts (no
+    // edge holds them, so without this charge flings them off-screen and zoomToFit shrinks the core
+    // to a speck). The connected core still floats free relative to the origin — only the lone facts
+    // are reined in.
+    const gravityFor = (n: GNode) =>
+      layout.gravity * ((n.degree ?? 0) > 0 ? GRAVITY_CONNECTED_MULT : GRAVITY_ISOLATED_MULT);
+    g.d3Force("x", forceX<GNode>(0).strength(gravityFor));
+    g.d3Force("y", forceY<GNode>(0).strength(gravityFor));
     fitted.current = false; // re-frame after the new topology settles
     g.d3ReheatSimulation();
   }, [
@@ -904,7 +937,10 @@ export function BrainGraph({
               // view. We never re-frame afterwards, so a memory change or a consolidation can't
               // yank a user who has zoomed/panned back out to the whole-graph view.
               if (!fitted.current) {
-                fgRef.current?.zoomToFit(400, 48);
+                // Frame the CONNECTED core, not the lone facts that float far out (they'd shrink
+                // the readable cluster web to a speck). Falls back to all nodes if nothing connects.
+                const hasCore = nodes.some((n) => (n.degree ?? 0) > 0);
+                fgRef.current?.zoomToFit(600, 60, hasCore ? (n) => (n.degree ?? 0) > 0 : undefined);
                 fitted.current = true;
               }
             }}

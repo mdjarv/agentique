@@ -75,7 +75,7 @@ const (
 	DefaultGraphLinkStrengthSpan = 0.13
 	DefaultGraphLinkDistanceBase = 130.0
 	DefaultGraphLinkDistanceSpan = 70.0
-	DefaultGraphGravity          = 0.035
+	DefaultGraphGravity          = 0.05
 )
 
 // GraphConfig is the resolved knowledge-graph tuning the Service holds. The two edge fields
