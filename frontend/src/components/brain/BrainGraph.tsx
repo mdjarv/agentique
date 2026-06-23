@@ -6,7 +6,13 @@ import ForceGraph2D, {
   type LinkObject,
   type NodeObject,
 } from "react-force-graph-2d";
-import type { GraphLink, GraphReport, GraphTuning, Memory } from "~/lib/brain-api";
+import {
+  type GraphLink,
+  type GraphReport,
+  type GraphTuning,
+  inReviewQueue,
+  type Memory,
+} from "~/lib/brain-api";
 import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
@@ -43,6 +49,10 @@ interface NodeData {
   area: string;
   degree: number;
   val: number;
+  // Trust tier driving the node's core "heat": human = ground truth (white-hot), review = flagged /
+  // low-confidence (amber), normal = inferred (a scope-hue brightened by `conf`). See coreColor.
+  trust: "human" | "review" | "normal";
+  conf: number; // confidenceScore 0..1 — grades the core brightness within the "normal" tier
   // The per-project facts a cross-scope promotion merged into this one, shown on hover
   // (the merge inputs the Subsumed backfill restored). Empty for non-promoted facts.
   subsumed?: { scope: string; text: string }[];
@@ -103,6 +113,27 @@ const CROSS_SCOPE_SIM_DISTANCE = 260; // …and rest far apart
 // this they fling off-screen and shrink the core). Multiplies the deployment `gravity` tuning.
 const GRAVITY_CONNECTED_MULT = 0.35;
 const GRAVITY_ISOLATED_MULT = 1.8;
+
+// Ember node ("trust by heat"): a soft scope-coloured halo (size = importance) + a hot core whose
+// COLOUR encodes trust — white-hot = human ground truth, amber = needs-review, else the scope hue
+// brightened by confidence (a 0.65 fact sits dim, a ~1.0 fact glows). The halo is additive so
+// neighbours' glows blend; no flat disc, no dark moat.
+const EMBER_HALO_REACH = 2.6; // halo radius = nodeRadius × this
+const EMBER_CORE = 0.34; // core radius = nodeRadius × this (with a screen-space floor)
+// Nebula underlay: faint additive cluster clouds drawn BEHIND links + nodes, so a dense project
+// blooms into a glowing region. Fades out as you zoom in (reading mode); skipped above a budget.
+const NEBULA_MIN_ZOOM = 0.2;
+const NEBULA_MAX_ZOOM = 1.3; // fully faded by this zoom
+const NEBULA_REACH = 11; // cloud radius = nodeRadius × this (large, so neighbours' clouds overlap + bloom)
+const NEBULA_MAX_NODES = 3000;
+
+// coreColor maps a node's trust tier (+ confidence) to its core colour. `base` is the scope/area hue.
+function coreColor(trust: "human" | "review" | "normal", base: string, conf: number): string {
+  if (trust === "human") return "#fbfdff"; // white-hot ground truth
+  if (trust === "review") return "#fbbf24"; // amber — flagged / low confidence
+  const norm = Math.max(0, Math.min(1, (conf - 0.6) / 0.4));
+  return shade(base, 0.12 + 0.5 * norm); // inferred: dim → bright with confidence
+}
 
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
@@ -349,6 +380,13 @@ export function BrainGraph({
         // Size blends use-count, pinned, and structural degree so load-bearing "god
         // nodes" read bigger — the graphify signal made visual.
         val: 3 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
+        trust:
+          m.source === "human" || m.confidence === "extracted"
+            ? "human"
+            : inReviewQueue(m)
+              ? "review"
+              : "normal",
+        conf: m.confidenceScore ?? 0.8,
         subsumed: m.subsumed,
       };
       const prev = prevById.get(m.id);
@@ -509,6 +547,8 @@ export function BrainGraph({
         l.area = n.area;
         l.degree = n.degree;
         l.val = n.val;
+        l.trust = n.trust;
+        l.conf = n.conf;
         l.subsumed = n.subsumed;
       }
       return prev.data;
@@ -728,6 +768,34 @@ export function BrainGraph({
             graphData={graphData}
             backgroundColor="rgba(0,0,0,0)"
             onRenderFramePre={(ctx, scale) => {
+              // Nebula underlay: faint additive cluster clouds, drawn first so they sit BEHIND the
+              // links and nodes. Each connected fact contributes a soft cloud; where a project's
+              // facts pack together the clouds bloom into a glowing region (lone facts stay faint).
+              // It fades out as you zoom in — clouds are an overview cue, not reading-mode clutter.
+              if (!compact && nodes.length <= NEBULA_MAX_NODES) {
+                const neb = Math.max(
+                  0,
+                  Math.min(1, (NEBULA_MAX_ZOOM - scale) / (NEBULA_MAX_ZOOM - NEBULA_MIN_ZOOM)),
+                );
+                if (neb > 0.02) {
+                  ctx.save();
+                  ctx.globalCompositeOperation = "lighter";
+                  for (const n of nodes) {
+                    if ((n.degree ?? 0) === 0 || n.x == null || n.y == null) continue;
+                    const rr = Math.sqrt(n.val ?? 2) * NODE_REL_SIZE * NEBULA_REACH;
+                    const col = nodeColor(n, colorBy);
+                    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, rr);
+                    g.addColorStop(0, withAlpha(col, 0.13 * neb));
+                    g.addColorStop(0.4, withAlpha(col, 0.05 * neb));
+                    g.addColorStop(1, withAlpha(col, 0));
+                    ctx.fillStyle = g;
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, rr, 0, 2 * Math.PI);
+                    ctx.fill();
+                  }
+                  ctx.restore();
+                }
+              }
               // Shaded "areas": a translucent hull behind each region's nodes, drawn
               // pre-frame so it sits beneath the links and nodes. Padding/strokes are in
               // world units so a region tracks its nodes through zoom.
@@ -830,30 +898,26 @@ export function BrainGraph({
               const dim =
                 hoverId != null && node.id !== hoverId && !neighbors?.has(String(node.id));
               ctx.globalAlpha = dim ? 0.12 : 1;
-              // Dark "halo" moat: a slightly larger disc in the canvas background colour punched
-              // under each node, so edges are cut away from the node's rim and the coloured nodes
-              // read crisply on top of the link web instead of dissolving into it.
-              ctx.beginPath();
-              ctx.arc(x, y, r + 1.6 / scale, 0, 2 * Math.PI);
-              ctx.fillStyle = "rgb(9,11,17)";
-              ctx.fill();
-              ctx.beginPath();
-              ctx.arc(x, y, r, 0, 2 * Math.PI);
-              // Radial gradient lit from the top-left: a light highlight → base colour → darker rim,
-              // so each node reads as a 3D bead instead of a flat disc.
+              // Ember: a soft scope-coloured halo (additive, so neighbours' glows blend into a
+              // cluster bloom) + a hot core whose colour encodes trust. No flat disc, no dark moat.
               const base = nodeColor(node, colorBy);
-              const grad = ctx.createRadialGradient(
-                x - r * 0.35,
-                y - r * 0.35,
-                r * 0.1,
-                x,
-                y,
-                r * 1.05,
-              );
-              grad.addColorStop(0, shade(base, 0.45));
-              grad.addColorStop(0.5, base);
-              grad.addColorStop(1, shade(base, -0.3));
-              ctx.fillStyle = grad;
+              ctx.save();
+              ctx.globalCompositeOperation = "lighter";
+              const halo = r * EMBER_HALO_REACH;
+              const hg = ctx.createRadialGradient(x, y, 0, x, y, halo);
+              hg.addColorStop(0, withAlpha(base, 0.42));
+              hg.addColorStop(0.32, withAlpha(base, 0.13));
+              hg.addColorStop(1, withAlpha(base, 0));
+              ctx.fillStyle = hg;
+              ctx.beginPath();
+              ctx.arc(x, y, halo, 0, 2 * Math.PI);
+              ctx.fill();
+              ctx.restore();
+              // Hot core (trust by heat) — keep a screen-space floor so a fact stays a visible pinprick.
+              const cr = Math.max(1.5 / scale, r * EMBER_CORE);
+              ctx.beginPath();
+              ctx.arc(x, y, cr, 0, 2 * Math.PI);
+              ctx.fillStyle = coreColor(node.trust, base, node.conf);
               ctx.fill();
               if (node.pinned) {
                 ctx.strokeStyle = "#facc15";
