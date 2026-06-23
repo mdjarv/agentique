@@ -3,7 +3,10 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-22 (brain **automatic outcome emitter** — session-end transcript judge
+Last full audit: 2026-06-23 (brain **semantic graph layout** — PCA-projected embedding view +
+legibility pass, graph is the default brain view; **semantic recall enabled in production** —
+ChromaDB + Ollama all-minilm as durable docker containers; **all brain config now config.toml-
+settable**). Prior: 2026-06-22 (brain **automatic outcome emitter** — session-end transcript judge
 that auto-feeds MarkAutoHelped/Flag, gentler 0.25 auto weight, session-end model knobs in
 config.toml; semantic recall — vector veto + vouch bar, model-specific auto-calibration, warmed +
 pruned embed cache; scheduled-consolidation config-file support; consolidation vocabulary
@@ -262,6 +265,28 @@ is bounded by the live fact set, not by every text ever seen. → `internal/brai
 `TestWarmEmbedCacheRetriesAfterFailure`, `TestPruneEmbedCacheDropsStaleTexts`, and the live
 `TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
 
+### Brain: semantic graph layout is PCA (mushy); t-SNE/UMAP would separate topics
+The semantic graph layout (P6, `docs/brain-graph-layer.md`) projects embeddings to 2D with pure-Go
+**PCA** (`memory.ProjectPCA2D`) — cheap, deterministic, no dependency, but top-2 variance axes don't
+separate 384-dim semantic topics into crisp islands, so the layout reads as a spread, mildly-clustered
+cloud rather than distinct topic clusters. A non-linear projection (**t-SNE** — ~200 LOC, O(n²) but
+fine at ~1.5k facts, needs a deterministic seed — or **UMAP**, no good pure-Go port) is the
+highest-leverage next step for cluster separation. Projection is computed server-side per graph load
+(through the warmed embed cache, so ~free after warm); a t-SNE pass would want caching by corpus
+fingerprint. → `internal/memory/project.go`, `internal/brain/graph.go`, `frontend/src/components/brain/BrainGraph.tsx`.
+
+### Brain: semantic infra is operator-run docker, not managed by agentique
+Semantic recall is now **live in production** (ChromaDB + Ollama all-minilm), but the two services are
+**hand-run docker containers** (`chroma`, `ollama`), not provisioned or health-managed by agentique.
+Both now carry `--restart unless-stopped` (a gap found 2026-06-23: the pre-existing `chroma` container
+had `--restart no`, so after it exited agentique silently fell back to keyword recall until manually
+restarted — recall.go degrades cleanly, so no breakage, just lost semantics). Remaining: no
+agentique-side health surfacing (an operator can't see "semantic is configured but Chroma is down"
+except in logs), the Ollama model lives in a docker volume (durable) but the stack is a manual
+`docker run`, and there's no compose/systemd unit checked in. → ops/runbook gap; see
+`docs/brain-semantic-recall.md` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
+reachability + a docker-compose in the repo.
+
 ### Brain: cross-scope area labels are frequency-based (noisy)
 `areaLabel` names an area from its most *frequent* shared tokens, yielding labels like
 "before commit detector" or "meta repos repo". Frequency over-weights generic glue;
@@ -473,14 +498,16 @@ no end-to-end test — it extends the existing "orchestration layer is untested"
 and refine-via-chip, but the error path, edit→save, delete, and skip aren't covered.
 → `internal/brain/{http,extractor}.go`, `frontend/src/components/brain/__tests__/`.
 
-### Brain: areas / semantic / fluid-recall not verified on a live server
-Covered by unit + end-to-end tests and an *offline* measure (lexical clustering over a
-copy of the live brain; semantic via a throwaway transformers.js embedder — see the
-cross-scope-areas RFC). **Not** verified on a running server: fluid recall firing
-mid-conversation on real topic drift; semantic clustering with a real embedder (live is
-keyword-only, `semantic=false`); `brain assign-areas` applied to the live brain (only run
-on a copy; `backfill-subsumed` was only `--dry-run` against live). Needs a configured
-embedder + a multi-turn live session to close. → verification gap, not a known bug.
+### Brain: areas / semantic / fluid-recall on a live server ~~not verified~~ → semantic NOW LIVE 2026-06-23
+**Semantic recall is enabled in production** (2026-06-23): ChromaDB + Ollama all-minilm wired via
+`[brain] chroma-url`/`embed-url`/`embed-model`, boot logs `semantic=true cosineThreshold=0.45
+vectorVeto=0.15`, and the graph endpoint projects the live ~1450-fact corpus's embeddings. So the
+"live is keyword-only/`semantic=false`" caveat is closed, and semantic clustering with a real
+embedder is exercised on the real brain. **Still open**: a multi-turn live *soak* measuring fluid
+recall on real topic drift and semantic recall *quality* on the live corpus (the thresholds were
+calibrated offline; autocal is available but not enabled — the hand defaults are running);
+`brain assign-areas` applied to the live brain (only run on a copy; `backfill-subsumed` was only
+`--dry-run` against live). → verification gap narrowed, not a known bug.
 
 **Outcome signal v1 (2026-06-21) — partially closed.** Verified on an isolated copy of the
 live brain (server boot with `AGENTIQUE_HOME`/`AGENTIQUE_DB` redirected to temp copies):
