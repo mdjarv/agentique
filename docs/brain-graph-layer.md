@@ -247,10 +247,17 @@ emergent map of meaning.
   sits **closer** (shorter link distance), and renders **brighter + thicker**. So the layout geometry
   and the visual emphasis both mirror how related the memories actually are. Weak radial gravity keeps
   isolated facts from flinging out (which otherwise shrinks the connected core under zoomToFit).
-- **Legibility pass.** Collision force (nodes never overlap); regions default **off** (the overlapping
-  hulls were the main clutter); labels **sparse** — hovered node + neighbours, or everything once
-  zoomed past ~1.6× — each with a dark contrast pill; hover shows the **full** memory text and the
-  weighted neighbour edges; the brain page **defaults to the graph**.
+- **Legibility pass.** Collision force (nodes never overlap); edge opacity/width rise **steeply** with
+  weight (w²) so only strong associations render and the weak majority fade out (still shaping the
+  layout); a dark node "halo" cuts the web away from each node's rim; regions default **off**; labels
+  **sparse** (hovered node + neighbours, or zoomed past ~1.6×) with a dark contrast pill; hover shows
+  the **full** memory text; the insights panel collapses to a chip summary and the legend's per-project
+  key collapses; the brain page **defaults to the graph**.
+- **Insights reflect the drawn graph.** The centrality-derived insights (load-bearing / bridges /
+  isolated) now run over the **combined** structural + semantic edge set (`ComputeCentralityWithEdges`),
+  not the often-empty curated link graph — so "isolated" means *semantically singular* (live: 328 → 144),
+  "bridges" are cross-topic connectors, and load-bearing facts are real hubs. The Confirm / Due-for-review
+  / Confusable queues are unchanged (confidence / recency / similarity, not graph-structural).
 - **Live result.** 1442 facts → **3639 semantic edges**, **1298/1442 connected** (was ~0 similarity
   edges, 328 isolated). Cosine scores span 0.45–0.90.
 - **Code.** `internal/memory/semantic_edges.go` (+ test), `internal/brain/{brain.go (SemanticEdges),
