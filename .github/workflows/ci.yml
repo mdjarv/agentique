@@ -42,33 +42,10 @@ jobs:
         env:
           GOPRIVATE: github.com/allbin/*
 
-  # Runtime verification on real Windows. Non-blocking for now: some existing
-  # tests assume a unix environment (symlinks needing Developer Mode, POSIX
-  # paths/permissions). Surfaces Windows-specific regressions without gating
-  # master until those are hardened.
-  backend-windows:
-    runs-on: windows-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-
-      - name: Configure private Go modules
-        run: git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
-
-      - name: Go build
-        run: cd backend && go build ./...
-        env:
-          GOPRIVATE: github.com/allbin/*
-
-      - name: Go test
-        run: cd backend && go test ./... -count=1 -short
-        env:
-          GOPRIVATE: github.com/allbin/*
+  # Windows build coverage is provided cheaply by the `backend` job's
+  # cross-compile step (GOOS=windows) on the Linux runner. A dedicated
+  # windows-latest runtime-test job was dropped to save Actions minutes
+  # (Windows runners bill at 2× and several tests assume a unix environment).
 
   frontend:
     runs-on: ubuntu-latest
