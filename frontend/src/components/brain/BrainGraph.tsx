@@ -497,25 +497,29 @@ export function BrainGraph({
   // collision keep the clusters legible. Structural edges (provenance/related) are firm; area
   // edges are a faint clustering hint. Re-runs/reheats on topology change; `fitted` is cleared
   // so the next settle re-frames. (d3Force → ForceFn; cast through unknown for the setters.)
+  // Force-layout curves come from the backend [brain.graph] config (deployment-tunable),
+  // falling back to LAYOUT_DEFAULTS when the payload omits them. Resolved in render scope so the
+  // effect can depend on the VALUES, not the per-refetch `tuning` object reference — a display-only
+  // refetch is a fresh object with identical numbers and must not reheat the settled layout.
+  const layout = tuning ?? LAYOUT_DEFAULTS;
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
-    // Force-layout curves come from the backend [brain.graph] config (deployment-tunable),
-    // falling back to LAYOUT_DEFAULTS when the payload omits them.
-    const t = tuning ?? LAYOUT_DEFAULTS;
     (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
     const link = g.d3Force("link") as unknown as
       | { distance(fn: (l: GLink) => number): void; strength(fn: (l: GLink) => number): void }
       | undefined;
     link?.distance((l) => {
       // stronger → closer
-      if (l.kind === "similar") return t.linkDistanceBase - t.linkDistanceSpan * (l.weight ?? 0.5);
+      if (l.kind === "similar")
+        return layout.linkDistanceBase - layout.linkDistanceSpan * (l.weight ?? 0.5);
       if (l.kind === "area") return 80;
       return 40; // provenance / related: tight structural ties
     });
     link?.strength((l) => {
       // stronger → tighter pull
-      if (l.kind === "similar") return t.linkStrengthBase + t.linkStrengthSpan * (l.weight ?? 0.5);
+      if (l.kind === "similar")
+        return layout.linkStrengthBase + layout.linkStrengthSpan * (l.weight ?? 0.5);
       if (l.kind === "area") return 0.03;
       return 0.4; // provenance / related: firm
     });
@@ -528,11 +532,18 @@ export function BrainGraph({
     // Weak radial gravity toward the origin: without it, charge repulsion flings the isolated
     // facts (no edge to hold them) far out, which makes zoomToFit shrink the connected core to
     // an unreadable speck. Gravity keeps the whole graph compact so the clusters fill the frame.
-    g.d3Force("x", forceX<GNode>(0).strength(t.gravity));
-    g.d3Force("y", forceY<GNode>(0).strength(t.gravity));
+    g.d3Force("x", forceX<GNode>(0).strength(layout.gravity));
+    g.d3Force("y", forceY<GNode>(0).strength(layout.gravity));
     fitted.current = false; // re-frame after the new topology settles
     g.d3ReheatSimulation();
-  }, [nodes, tuning]);
+  }, [
+    nodes,
+    layout.linkStrengthBase,
+    layout.linkStrengthSpan,
+    layout.linkDistanceBase,
+    layout.linkDistanceSpan,
+    layout.gravity,
+  ]);
 
   // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
   // repaint on its own — nudge a redraw when either display dimension changes.
