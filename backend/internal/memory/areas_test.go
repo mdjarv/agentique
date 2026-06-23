@@ -44,6 +44,42 @@ func TestAssignAreasGroupsCrossScope(t *testing.T) {
 	}
 }
 
+func TestAssignAreasLabelDownweightsCorpusCommonTokens(t *testing.T) {
+	ctx := context.Background()
+	// "go" is in every fact (corpus-ubiquitous → idf bottoms out at 1.0); the area's other
+	// tokens appear only in the cross-scope area (rare → idf > 1). Both have the same in-area
+	// frequency (2), so raw frequency would tie them and surface "go" alphabetically; TF-IDF
+	// must rank the distinguishing tokens above "go" and drop it from the 3-token label. The
+	// area facts are long enough that they don't lexically link to the short "go ..." noise
+	// facts (Jaccard < 0.15), so the area stays {a,b} instead of collapsing on the shared "go".
+	store := newMemStore(
+		fact("a", "project:one", "go sqlite database persistence layer"),
+		fact("b", "project:two", "go sqlite database persistence layer"),
+		// Single-scope noise facts that only share "go" — they push df(go) to the corpus size
+		// without forming an area (lexically distinct, one scope each).
+		fact("g1", "project:g1", "go routine scheduling concurrency primitives"),
+		fact("g2", "project:g2", "go build caching artifact pipeline"),
+		fact("g3", "project:g3", "go vet linting static analysis"),
+		fact("g4", "project:g4", "go modules vendoring dependency graph"),
+	)
+
+	if _, err := AssignAreas(ctx, store, DefaultAreaThreshold, 2); err != nil {
+		t.Fatalf("AssignAreas: %v", err)
+	}
+
+	a, _ := store.Get(ctx, "a")
+	b, _ := store.Get(ctx, "b")
+	if a.Area == "" || a.Area != b.Area {
+		t.Fatalf("cross-scope facts should share one non-empty area: a=%q b=%q", a.Area, b.Area)
+	}
+	if strings.Contains(a.Area, "go") {
+		t.Errorf("corpus-ubiquitous token 'go' should be down-weighted out of the label, got %q", a.Area)
+	}
+	if !strings.Contains(a.Area, "database") {
+		t.Errorf("distinguishing token 'database' should appear in the label, got %q", a.Area)
+	}
+}
+
 func TestAssignAreasIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore(
