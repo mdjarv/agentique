@@ -98,24 +98,30 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	cent := memory.ComputeCentrality(durable)
-	nodes := make([]graphNodeDTO, 0, len(durable))
-	for _, rec := range durable {
-		c := cent[rec.ID]
-		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
-	}
-
 	// Semantic edges: each fact's nearest neighbours in embedding space become relationships
 	// the client force layout self-balances into clusters (the backend supplies relationships,
 	// not positions). Best-effort and semantic-only — nil in lexical mode (or on an embed
 	// failure), in which case the frontend falls back to its lexical similarity edges.
 	links := []graphLinkDTO{}
+	var semEdges []memory.Edge
 	if edges, lerr := h.Service.SemanticEdges(r.Context(), durable); lerr != nil {
 		slog.Warn("brain: graph semantic edges failed; using structural/lexical edges only", "error", lerr)
 	} else {
+		semEdges = edges
 		for _, e := range edges {
 			links = append(links, graphLinkDTO{Source: e.A, Target: e.B, Kind: "similar", Score: e.Score})
 		}
+	}
+
+	// Centrality (and the insights derived from it) runs over the COMBINED graph — structural
+	// edges plus the semantic edges drawn above — so "isolated" means semantically singular,
+	// "bridges" are cross-topic connectors, and load-bearing facts reflect what the user sees,
+	// not the often-empty curated link graph. In lexical mode semEdges is nil → structural only.
+	cent := memory.ComputeCentralityWithEdges(durable, semEdges)
+	nodes := make([]graphNodeDTO, 0, len(durable))
+	for _, rec := range durable {
+		c := cent[rec.ID]
+		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
 	}
 
 	// In semantic mode, make interference detection embedding-aware (else it stays

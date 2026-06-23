@@ -102,3 +102,25 @@ func TestComputeCentralityEmptyAndSingleton(t *testing.T) {
 		t.Errorf("singleton = %+v, want zero", one["solo"])
 	}
 }
+
+// TestComputeCentralityWithEdges folds extra (semantic) edges into the graph: two facts
+// with no structural link become connected, so they're no longer isolated and gain degree.
+func TestComputeCentralityWithEdges(t *testing.T) {
+	recs := []Record{rel("a"), rel("b"), rel("c")} // no structural edges → all isolated
+
+	base := ComputeCentrality(recs)
+	for _, id := range []string{"a", "b", "c"} {
+		if base[id].Degree != 0 {
+			t.Fatalf("%s should be isolated structurally, got degree %d", id, base[id].Degree)
+		}
+	}
+
+	// A semantic edge a–b (plus one to a node outside the set, which must be ignored).
+	withEdges := ComputeCentralityWithEdges(recs, []Edge{{A: "a", B: "b", Score: 0.9}, {A: "a", B: "ghost"}})
+	if withEdges["a"].Degree != 1 || withEdges["b"].Degree != 1 {
+		t.Errorf("a,b should be connected by the extra edge: a=%d b=%d", withEdges["a"].Degree, withEdges["b"].Degree)
+	}
+	if withEdges["c"].Degree != 0 {
+		t.Errorf("c has no edge of any kind; want isolated, got degree %d", withEdges["c"].Degree)
+	}
+}

@@ -25,6 +25,18 @@ type Centrality struct {
 // request-time, cache if it bites), never persisted — like the link graph itself it
 // is a rebuildable index, not source of truth.
 func ComputeCentrality(records []Record) map[string]Centrality {
+	return ComputeCentralityWithEdges(records, nil)
+}
+
+// ComputeCentralityWithEdges is ComputeCentrality over the records' structural edges
+// (Related + DerivedFrom) PLUS extra undirected edges. The brain graph folds the
+// semantic-similarity edges in here so the insights — god nodes (load-bearing), bridges,
+// isolated — describe the graph the user actually sees, not just the often-empty curated
+// link graph (where almost every fact is "isolated"). On the combined graph "isolated"
+// means semantically singular (no similar fact), "bridge" means a cross-topic connector,
+// and consolidation hubs still rank high (they keep their provenance edges). Extra edges
+// referencing an id outside `records` are ignored; a duplicate of a structural edge collapses.
+func ComputeCentralityWithEdges(records []Record, extra []Edge) map[string]Centrality {
 	out := make(map[string]Centrality, len(records))
 	n := len(records)
 	if n == 0 {
@@ -65,6 +77,16 @@ func ComputeCentrality(records []Record) map[string]Centrality {
 			if j, ok := idx[nid]; ok {
 				connect(i, j)
 			}
+		}
+	}
+	// Fold in the extra (semantic-similarity) edges so centrality reflects the drawn graph.
+	for _, e := range extra {
+		a, ok := idx[e.A]
+		if !ok {
+			continue
+		}
+		if b, ok2 := idx[e.B]; ok2 {
+			connect(a, b)
 		}
 	}
 
