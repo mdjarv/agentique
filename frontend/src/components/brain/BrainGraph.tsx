@@ -62,13 +62,13 @@ interface LinkData {
 type GNode = NodeObject<NodeData>;
 type GLink = LinkObject<NodeData, LinkData>;
 
-const NODE_REL_SIZE = 4;
+const NODE_REL_SIZE = 2.4;
 // Label zoom thresholds. Below LABEL_ZOOM only the hovered node + neighbours label themselves;
 // past it every node shows its short caption; past FULLTEXT_ZOOM the caption expands to the FULL
 // memory text, word-wrapped, so you can read a fact in place without hovering for the tooltip.
 const LABEL_ZOOM = 1.6;
 const FULLTEXT_ZOOM = 2.6;
-const LABEL_MAX_SCREEN_PX = 200; // wrap width for the full-text label, in screen px
+const LABEL_MAX_SCREEN_PX = 250; // wrap width for the full-text label, in screen px
 const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
 const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
@@ -196,6 +196,19 @@ function withAlpha(hex: string, alpha: number): string {
   const g = Number.parseInt(h.slice(2, 4), 16);
   const b = Number.parseInt(h.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// shade mixes a "#rrggbb" hex toward white (amt > 0) or black (amt < 0) by |amt| ∈ [0,1].
+// Used to build the per-node radial gradient that gives the flat discs a lit, beaded look.
+function shade(hex: string, amt: number): string {
+  const h = hex.replace("#", "");
+  const t = amt < 0 ? 0 : 255;
+  const p = Math.min(1, Math.abs(amt));
+  const mix = (c: number) => Math.round(c + (t - c) * p);
+  const r = mix(Number.parseInt(h.slice(0, 2), 16));
+  const g = mix(Number.parseInt(h.slice(2, 4), 16));
+  const b = mix(Number.parseInt(h.slice(4, 6), 16));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 // INSIGHT_LIST_CAP bounds how many ids one section renders — some lists (notably
@@ -826,7 +839,21 @@ export function BrainGraph({
               ctx.fill();
               ctx.beginPath();
               ctx.arc(x, y, r, 0, 2 * Math.PI);
-              ctx.fillStyle = nodeColor(node, colorBy);
+              // Radial gradient lit from the top-left: a light highlight → base colour → darker rim,
+              // so each node reads as a 3D bead instead of a flat disc.
+              const base = nodeColor(node, colorBy);
+              const grad = ctx.createRadialGradient(
+                x - r * 0.35,
+                y - r * 0.35,
+                r * 0.1,
+                x,
+                y,
+                r * 1.05,
+              );
+              grad.addColorStop(0, shade(base, 0.45));
+              grad.addColorStop(0.5, base);
+              grad.addColorStop(1, shade(base, -0.3));
+              ctx.fillStyle = grad;
               ctx.fill();
               if (node.pinned) {
                 ctx.strokeStyle = "#facc15";
@@ -852,7 +879,7 @@ export function BrainGraph({
               const isHover = node.id === hoverId;
               const isNeighbor = neighbors?.has(String(node.id)) ?? false;
               if (!dim && (isHover || isNeighbor || scale > LABEL_ZOOM)) {
-                const fontSize = (isHover ? 12.5 : 11) / scale;
+                const fontSize = (isHover ? 16 : 14) / scale;
                 ctx.font = `${isHover ? 600 : 400} ${fontSize}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
