@@ -235,6 +235,39 @@ func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, erro
 // SemanticEnabled reports whether vector recall is active.
 func (s *Service) SemanticEnabled() bool { return s.semantic }
 
+// ProjectRecords lays the given records out in 2D by projecting their embeddings onto
+// their top-2 principal components (memory.ProjectPCA2D) — the "semantic layout" behind the
+// brain graph, where spatial proximity reflects embedding similarity so clusters show up as
+// spatial clusters. It returns id → coordinate (normalized to [-1,1]) for every record that
+// has a vector. Returns nil when semantic mode is off (no embedder), so callers degrade to
+// the structural force layout. Records embed through the shared text-hash cache, so the
+// graph endpoint's one-shot projection is ~free after the corpus is warmed.
+func (s *Service) ProjectRecords(ctx context.Context, records []memory.Record) (map[string]memory.Point2D, error) {
+	if !s.semantic || len(records) == 0 {
+		return nil, nil
+	}
+	vecs, err := s.embedRecords(ctx, records)
+	if err != nil {
+		return nil, err
+	}
+	// Project only the records that actually have a vector, keeping a stable order so the
+	// projection is deterministic (PCA itself is deterministic given a fixed input order).
+	ids := make([]string, 0, len(records))
+	mat := make([][]float32, 0, len(records))
+	for _, r := range records {
+		if v, ok := vecs[r.ID]; ok && len(v) > 0 {
+			ids = append(ids, r.ID)
+			mat = append(mat, v)
+		}
+	}
+	pts := memory.ProjectPCA2D(mat)
+	out := make(map[string]memory.Point2D, len(ids))
+	for i, id := range ids {
+		out[id] = pts[i]
+	}
+	return out, nil
+}
+
 // ScopeForProject maps an agentique project ID to a memory scope. An empty
 // project ID maps to the global scope.
 func ScopeForProject(projectID string) memory.Scope {

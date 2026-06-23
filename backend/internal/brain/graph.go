@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"log/slog"
 	"net/http"
 	"sort"
 	"time"
@@ -16,6 +17,11 @@ type graphNodeDTO struct {
 	memoryDTO
 	Degree      int     `json:"degree"`
 	Betweenness float64 `json:"betweenness"`
+	// X, Y are the fact's position in the 2D semantic projection of its embedding
+	// (PCA, normalized to [-1,1]) — present only in semantic mode, so the frontend can
+	// offer a vector layout and otherwise fall back to the structural force layout.
+	X *float64 `json:"x,omitempty"`
+	Y *float64 `json:"y,omitempty"`
 }
 
 // graphReportDTO is the derived "what the brain knows" panel (graphify analyze.py
@@ -84,10 +90,25 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	cent := memory.ComputeCentrality(durable)
+
+	// Semantic layout: project every durable fact's embedding to 2D so the frontend can
+	// lay the graph out by meaning (clusters → spatial clusters). Best-effort and
+	// semantic-only — nil coords in lexical mode (or on an embed failure) leave the
+	// frontend on its structural force layout.
+	coords, perr := h.Service.ProjectRecords(r.Context(), durable)
+	if perr != nil {
+		slog.Warn("brain: graph semantic projection failed; using structural layout only", "error", perr)
+	}
+
 	nodes := make([]graphNodeDTO, 0, len(durable))
 	for _, rec := range durable {
 		c := cent[rec.ID]
-		nodes = append(nodes, graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness})
+		node := graphNodeDTO{memoryDTO: toDTO(rec), Degree: c.Degree, Betweenness: c.Betweenness}
+		if p, ok := coords[rec.ID]; ok {
+			x, y := p.X, p.Y
+			node.X, node.Y = &x, &y
+		}
+		nodes = append(nodes, node)
 	}
 
 	// In semantic mode, make interference detection embedding-aware (else it stays

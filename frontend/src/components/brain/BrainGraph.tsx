@@ -1,3 +1,4 @@
+import { forceCollide, forceX, forceY } from "d3-force";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, {
@@ -11,7 +12,15 @@ import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
 // the graph endpoint has loaded, degree/betweenness are present and drive node
 // sizing and the insights panel; before then the component degrades to the plain list.
-type GraphMemory = Memory & { degree?: number; betweenness?: number };
+type GraphMemory = Memory & {
+  degree?: number;
+  betweenness?: number;
+  // x/y are the fact's 2D semantic-projection coordinates (PCA of its embedding,
+  // normalized to [-1,1]) — present only when the brain runs in semantic mode. They drive
+  // the optional "semantic" layout; absent, the graph stays on its structural force layout.
+  x?: number;
+  y?: number;
+};
 
 // BrainGraph renders the brain as an Obsidian-style force-directed graph.
 // Nodes are memories; edges come from three sources (cheapest first):
@@ -26,6 +35,9 @@ type GraphMemory = Memory & { degree?: number; betweenness?: number };
 interface NodeData {
   id: string;
   label: string;
+  // fullText is the untruncated memory text, shown in the hover tooltip (label is the
+  // short on-canvas caption).
+  fullText: string;
   scope: string;
   scopeLabel: string;
   category: string;
@@ -36,12 +48,27 @@ interface NodeData {
   area: string;
   degree: number;
   val: number;
+  // sx/sy are the node's semantic-layout target (its projection scaled to graph units).
+  // In semantic layout a positional force pulls the node toward (sx,sy) while collision
+  // keeps it from overlapping neighbours; undefined in force layout.
+  sx?: number;
+  sy?: number;
   // The per-project facts a cross-scope promotion merged into this one, shown on hover
   // (the merge inputs the Subsumed backfill restored). Empty for non-promoted facts.
   subsumed?: { scope: string; text: string }[];
 }
 
 type ColorBy = "scope" | "community" | "area";
+
+// LayoutMode selects how nodes are positioned: "force" runs the structural force
+// simulation (links + repulsion); "semantic" pins each node at its embedding's 2D
+// projection so semantically-similar facts sit together (only offered when coords exist).
+type LayoutMode = "force" | "semantic";
+
+// SEMANTIC_SPREAD scales the [-1,1] projection coords into force-graph units. The absolute
+// value is cosmetic (zoomToFit reframes); it only needs to be large enough that nodes don't
+// overlap at their drawn radii.
+const SEMANTIC_SPREAD = 820;
 
 type EdgeKind = "provenance" | "related" | "similar" | "area";
 interface LinkData {
@@ -201,11 +228,19 @@ export function BrainGraph({
   focusId?: string;
 }) {
   const [showSimilar, setShowSimilar] = useState(true);
-  const [showRegions, setShowRegions] = useState(true);
+  // Regions (the per-scope/area hulls) default OFF: at 1400+ facts the overlapping shaded
+  // polygons read as visual noise more than structure. Opt in from the controls when wanted.
+  const [showRegions, setShowRegions] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
+  // Default to the semantic layout: when the brain runs in semantic mode it's the more
+  // legible and meaningful entry point (memories grouped by what they're about). It only
+  // takes effect once coords arrive (hasCoords); until then, or with no embedder, the
+  // structural force layout is used and the Layout toggle is hidden.
+  const [layout, setLayout] = useState<LayoutMode>("semantic");
+  const hasCoords = useMemo(() => memories.some((m) => m.x != null), [memories]);
+  const effectiveLayout: LayoutMode = layout === "semantic" && hasCoords ? "semantic" : "force";
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [fg, setFg] = useState("#9ca3af");
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
@@ -220,9 +255,6 @@ export function BrainGraph({
   const graphDataRef = useRef<{ topo: string; data: { nodes: GNode[]; links: GLink[] } } | null>(
     null,
   );
-  // Custom forces are applied once and reheated once to take effect; later topology
-  // changes reheat via the graphData digest, with the forces already in place.
-  const forcesReady = useRef(false);
 
   // Measure the container so the canvas fills it (and resizes with the window).
   useEffect(() => {
@@ -230,7 +262,6 @@ export function BrainGraph({
     if (!el) return;
     const sync = () => setSize({ w: el.clientWidth, h: el.clientHeight });
     sync();
-    setFg(getComputedStyle(el).color || "#9ca3af");
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => ro.disconnect();
@@ -249,6 +280,7 @@ export function BrainGraph({
       const node: GNode = {
         id: m.id,
         label: m.text.length > 40 ? `${m.text.slice(0, 40)}…` : m.text,
+        fullText: m.text,
         scope: m.scope,
         scopeLabel: labelForScope(m.scope),
         category: m.category,
@@ -271,6 +303,27 @@ export function BrainGraph({
         node.vy = prev.vy;
         if (prev.fx != null) node.fx = prev.fx;
         if (prev.fy != null) node.fy = prev.fy;
+      }
+      // Semantic layout: stamp the projection target (sx,sy) and seed the node there; a
+      // positional force then pulls it toward that target while collision spreads overlaps,
+      // so the embedding's clusters stay legible instead of collapsing to a dense blob.
+      // Force layout clears the target so the structural simulation places the node. Done
+      // after the carry-forward so toggling layouts always re-derives the target from the mode.
+      if (effectiveLayout === "semantic" && m.x != null && m.y != null) {
+        node.sx = m.x * SEMANTIC_SPREAD;
+        node.sy = m.y * SEMANTIC_SPREAD;
+        node.fx = undefined;
+        node.fy = undefined;
+        if (prev == null) {
+          // Seed fresh nodes at their target so the layout converges fast and doesn't fly in.
+          node.x = node.sx;
+          node.y = node.sy;
+        }
+      } else {
+        node.sx = undefined;
+        node.sy = undefined;
+        node.fx = undefined;
+        node.fy = undefined;
       }
       return node;
     });
@@ -374,7 +427,7 @@ export function BrainGraph({
     // Topology signature: the node-id set plus the (kind+pair) link set, deliberately
     // excluding every display field. A refetch that only bumps uses/degree/centrality
     // leaves this unchanged, letting us reuse the prior graphData reference below.
-    const topo = `${[...idSet].sort().join(",")}#${[...seen].sort().join(",")}`;
+    const topo = `${effectiveLayout}#${[...idSet].sort().join(",")}#${[...seen].sort().join(",")}`;
 
     const prev = graphDataRef.current;
     if (prev && prev.topo === topo) {
@@ -387,6 +440,7 @@ export function BrainGraph({
         const l = live.get(String(n.id));
         if (!l) continue;
         l.label = n.label;
+        l.fullText = n.fullText;
         l.scope = n.scope;
         l.scopeLabel = n.scopeLabel;
         l.category = n.category;
@@ -409,7 +463,7 @@ export function BrainGraph({
     graphDataRef.current = { topo, data };
     prevNodesRef.current = new Map(nodes.map((n) => [String(n.id), n]));
     return data;
-  }, [memories, labelForScope, showSimilar, colorBy]);
+  }, [memories, labelForScope, showSimilar, colorBy, effectiveLayout]);
 
   const { nodes, links } = graphData;
 
@@ -434,23 +488,41 @@ export function BrainGraph({
     return m;
   }, [links]);
 
-  // Tighten the layout: a stronger repulsion with a short link distance pulls
-  // connected memories into legible clusters instead of one diffuse cloud. Forces
-  // persist on the simulation across data changes, so we set them (idempotently) and
-  // reheat exactly once to apply them to the initial layout. Subsequent topology
-  // changes reheat via react-force-graph's own graphData digest (forces already set);
-  // data-only refetches keep the graphData reference stable and so never reheat.
+  // Configure the simulation forces for the active layout, then reheat so they apply.
+  // Force layout: strong repulsion + short links pull connected memories into legible
+  // clusters. Semantic layout: a positional force pulls each node toward its embedding
+  // projection (sx,sy) while structural forces are softened, so position encodes meaning.
+  // Collision (radius = drawn size + gap) runs in both so nodes never overlap — the fix for
+  // the dense blobs the bare charge+link layout produced. Re-runs on a layout flip (and on
+  // topology change) and reheats; a flip also clears `fitted` so onEngineStop re-frames.
   // (d3Force returns a ForceFn; cast through unknown to reach .strength/.distance.)
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
-    (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
-    (g.d3Force("link") as unknown as { distance(n: number): void } | undefined)?.distance(45);
-    if (!forcesReady.current) {
-      forcesReady.current = true;
-      g.d3ReheatSimulation();
+    const charge = g.d3Force("charge") as unknown as { strength(n: number): void } | undefined;
+    const link = g.d3Force("link") as unknown as { distance(n: number): void } | undefined;
+    g.d3Force(
+      "collide",
+      forceCollide<GNode>()
+        .radius((n) => Math.sqrt(n.val ?? 2) * NODE_REL_SIZE + 1.5)
+        .iterations(2),
+    );
+    if (effectiveLayout === "semantic") {
+      // Meaning dominates position: a firm pull to the projection target, weak repulsion,
+      // short links. Nodes without a target (no embedding) drift to the origin harmlessly.
+      charge?.strength(-10);
+      link?.distance(24);
+      g.d3Force("x", forceX<GNode>((n) => n.sx ?? 0).strength(0.9));
+      g.d3Force("y", forceY<GNode>((n) => n.sy ?? 0).strength(0.9));
+    } else {
+      charge?.strength(-160);
+      link?.distance(45);
+      g.d3Force("x", null);
+      g.d3Force("y", null);
     }
-  }, [nodes]);
+    fitted.current = false; // re-frame to the (possibly very different) new arrangement
+    g.d3ReheatSimulation();
+  }, [nodes, effectiveLayout]);
 
   // Recoloring / toggling regions doesn't touch graphData, so the settled canvas won't
   // repaint on its own — nudge a redraw when either display dimension changes.
@@ -611,7 +683,7 @@ export function BrainGraph({
             nodeVal={(n) => n.val ?? 2}
             cooldownTicks={120}
             nodeLabel={(n) => {
-              const head = `${esc(n.label)}<br/><span style="opacity:.6">${esc(n.scopeLabel)} · ${n.category} · used ${n.uses}×</span>`;
+              const head = `<div style="font-weight:600;margin-bottom:3px">${esc(n.fullText)}</div><span style="opacity:.6">${esc(n.scopeLabel)} · ${n.category} · used ${n.uses}×</span>`;
               let prov = "";
               if (n.subsumed?.length) {
                 const items = n.subsumed
@@ -655,13 +727,33 @@ export function BrainGraph({
                 ctx.arc(x, y, r + 4 / scale, 0, 2 * Math.PI);
                 ctx.stroke();
               }
-              if (scale > 1.1 || node.pinned || node.uses >= 3 || node.id === hoverId) {
-                const fontSize = 12 / scale;
-                ctx.font = `${fontSize}px sans-serif`;
+              // Labels are the main source of clutter at 1400+ nodes, so they are
+              // deliberately sparse: the hovered node and its neighbours are always
+              // labelled (that's where attention is), and once the user zooms in past
+              // ~1.6× every node labels itself (legible at that scale). A dark pill behind
+              // the text gives it contrast over nodes and edges instead of vanishing into them.
+              const isHover = node.id === hoverId;
+              const isNeighbor = neighbors?.has(String(node.id)) ?? false;
+              if (!dim && (isHover || isNeighbor || scale > 1.6)) {
+                const fontSize = (isHover ? 12.5 : 11) / scale;
+                ctx.font = `${isHover ? 600 : 400} ${fontSize}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
-                ctx.fillStyle = fg;
-                ctx.fillText(node.label, x, y + r + 2 / scale);
+                const tw = ctx.measureText(node.label).width;
+                const ty = y + r + 3 / scale;
+                const padX = 4 / scale;
+                const padY = 2 / scale;
+                ctx.fillStyle = "rgba(13,16,23,0.82)";
+                ctx.beginPath();
+                const bx = x - tw / 2 - padX;
+                const by = ty - padY;
+                const bw = tw + padX * 2;
+                const bh = fontSize + padY * 2;
+                if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 3 / scale);
+                else ctx.rect(bx, by, bw, bh);
+                ctx.fill();
+                ctx.fillStyle = isHover ? "#f8fafc" : "rgba(226,232,240,0.9)";
+                ctx.fillText(node.label, x, ty);
               }
               ctx.globalAlpha = 1;
             }}
@@ -681,9 +773,12 @@ export function BrainGraph({
                   : "rgba(0,0,0,0)";
               }
               if (hoverId != null) {
-                return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.06)";
+                return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
               }
-              return l.kind === "similar" ? "rgba(150,180,235,0.5)" : "rgba(190,195,210,0.8)";
+              // Subtle by default so the coloured node clusters carry the picture and links
+              // are a faint hint of relationship rather than a dominating grey web. They
+              // sharpen on hover (above) to reveal a specific fact's connections.
+              return l.kind === "similar" ? "rgba(150,180,235,0.16)" : "rgba(190,195,210,0.3)";
             }}
             linkWidth={(l) => (linkTouchesHover(l) ? 3.2 : l.kind === "similar" ? 1.4 : 2)}
             linkLineDash={(l) =>
@@ -744,6 +839,22 @@ export function BrainGraph({
               <option value="area">by area</option>
             </select>
           </label>
+          {hasCoords && (
+            <label
+              className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur"
+              title="Force: structural layout (links + repulsion). Semantic: place each fact at its embedding's 2D projection, so similar memories sit together."
+            >
+              <span className="text-muted-foreground">Layout</span>
+              <select
+                value={layout}
+                onChange={(e) => setLayout(e.target.value as LayoutMode)}
+                className="bg-transparent outline-none"
+              >
+                <option value="force">force</option>
+                <option value="semantic">semantic</option>
+              </select>
+            </label>
+          )}
         </div>
       )}
 

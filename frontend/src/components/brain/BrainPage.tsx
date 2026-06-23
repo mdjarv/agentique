@@ -80,7 +80,9 @@ export function BrainPage() {
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
   const [mode, setMode] = useState<ConsolidateMode>("conservative");
-  const [view, setView] = useState<"list" | "graph">("list");
+  // Default to the graph: it's the more legible, exploratory entry point to the brain
+  // (the list is one click away via the toggle).
+  const [view, setView] = useState<"list" | "graph">("graph");
   const [reviewing, setReviewing] = useState(false);
   // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
   const reviewQueue = useMemo(() => memories.filter(inReviewQueue), [memories]);
