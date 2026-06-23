@@ -266,17 +266,21 @@ is bounded by the live fact set, not by every text ever seen. → `internal/brai
 `TestWarmEmbedCacheRetriesAfterFailure`, `TestPruneEmbedCacheDropsStaleTexts`, and the live
 `TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
 
-### Brain: semantic graph is a per-request O(n²) kNN with no caching
+### Brain: semantic graph is a per-request O(n²) kNN ~~with no caching / fixed knobs~~ → CLOSED 2026-06-23
 The graph layout (P6, `docs/brain-graph-layer.md`) was reworked from a PCA *projection* (retired —
 positions collapsed 384-dim similarity to 2 axes) to **semantic edges + a self-balancing force layout**:
-`memory.SemanticEdges` computes the embedding kNN graph (cosine ≥ `cosThresh`, per-node cap) with
-cosine scores that weight the layout forces. Open items: (a) it's **O(n²·d) recomputed every graph
-load** (through the warmed embed cache, so ~2s warm at 1442 facts — fine now, but a cache keyed by
-corpus fingerprint would make it instant and scale further); (b) the per-node cap
-(`semanticEdgePerNodeCap=6`) and the `cosThresh` floor are fixed — a denser/sparser graph isn't tunable
-per deployment; (c) the force/visual weight curves (link strength `0.04+0.32·w`, distance `90−55·w`,
-gravity `0.045`) are hand-tuned on the live corpus, not configurable. → `internal/memory/semantic_edges.go`,
-`internal/brain/{brain,graph}.go`, `frontend/src/components/brain/BrainGraph.tsx`.
+`memory.SemanticEdges` computes the embedding kNN graph (cosine ≥ threshold, per-node cap) with cosine
+scores that weight the layout forces. All three open items are now closed: (a) **caching** —
+`Service.SemanticEdges` memoizes by a corpus fingerprint (record ids + text-hashes plus the resolved
+threshold/cap), so a repeated load over an unchanged corpus skips the re-embed + O(n²·d) kNN entirely;
+the map is bounded (cleared past `semEdgeCacheMax`) and a fingerprint change can never serve a stale
+result. (b)+(c) **configurable** — the per-node cap, the cosine edge threshold (0 ⇒ the recall
+`cosThresh`), and the force-layout curves (link strength/distance base+span, gravity) are now
+`[brain.graph]` config with `AGENTIQUE_BRAIN_GRAPH_*` env overrides; the force curves are threaded to
+the frontend on the graph payload (`graphDTO.tuning`, falling back to `LAYOUT_DEFAULTS`). →
+`internal/memory/semantic_edges.go`, `internal/brain/{brain,graph}.go`, `internal/config/config.go`,
+`backend/cmd/agentique/serve.go`, `frontend/src/components/brain/BrainGraph.tsx`. Tests:
+`TestSemanticEdgesCachedByFingerprint`, `TestSemanticEdgesFingerprintTracksKnobs`.
 
 ### Brain: semantic infra is operator-run docker, not managed by agentique
 Semantic recall is now **live in production** (ChromaDB + Ollama all-minilm), but the two services are
@@ -290,11 +294,13 @@ except in logs), the Ollama model lives in a docker volume (durable) but the sta
 `docs/brain-semantic-recall.md` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
 reachability + a docker-compose in the repo.
 
-### Brain: cross-scope area labels are frequency-based (noisy)
-`areaLabel` names an area from its most *frequent* shared tokens, yielding labels like
-"before commit detector" or "meta repos repo". Frequency over-weights generic glue;
-idf/TF-IDF (down-weight corpus-common tokens) or an LLM naming pass would give meaningful
-names — the label is sold as info-scent in the "by area" graph. → `internal/memory/areas.go`.
+### Brain: cross-scope area labels ~~are frequency-based (noisy)~~ → TF-IDF SHIPPED 2026-06-23
+`areaLabel` now scores tokens by in-area document frequency × inverse document frequency across the
+durable corpus (`corpusIDF`, smoothed `1 + ln((1+N)/(1+df))` so a corpus-ubiquitous token bottoms out
+at idf 1 rather than being zeroed/dropped), so generic glue ("go", "user") is down-weighted in favour
+of the tokens that actually distinguish an area — replacing raw-frequency labels like "go agentkit
+codex". Deterministic (ties broken by idf, then alphabetically), so no LLM naming pass was needed. →
+`internal/memory/areas.go`. Test: `TestAssignAreasLabelDownweightsCorpusCommonTokens`.
 
 ### Brain: cosine threshold is model-specific and hand-tuned ~~(no auto-calibration)~~ → auto-calibration SHIPPED 2026-06-22
 The 3 coupled knobs are still model-specific, but no longer have to be hand-tuned: an opt-in

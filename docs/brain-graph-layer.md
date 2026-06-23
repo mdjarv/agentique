@@ -238,10 +238,13 @@ simulation self-balance it — full high-dimensional similarity preserved as top
 emergent map of meaning.
 
 - **Semantic edges (`memory.SemanticEdges`).** For each fact, edges to its nearest neighbours in
-  embedding space (cosine ≥ the model's related threshold `cosThresh`, capped `semanticEdgePerNodeCap`
-  per node), each carrying its cosine **Score**. Pure-Go, deterministic, O(n²·d) through the warmed
-  embed cache (~free once warm). `Service.SemanticEdges` → `graphDTO.links{source,target,kind,score}`;
-  nil-safe — lexical mode falls back to the client Jaccard pass.
+  embedding space (cosine ≥ a configurable edge threshold defaulting to the recall `cosThresh`, capped
+  per node by the configurable `[brain.graph] edge-cap`), each carrying its cosine **Score**. Pure-Go,
+  deterministic, O(n²·d). `Service.SemanticEdges` memoizes the result by a corpus fingerprint (record
+  ids + text-hashes + the resolved threshold/cap), so a repeated load over an unchanged corpus skips
+  the embed + kNN and returns instantly; the entry is invalidated implicitly by any text/id change.
+  `Service.SemanticEdges` → `graphDTO.links{source,target,kind,score}`; nil-safe — lexical mode falls
+  back to the client Jaccard pass.
 - **Embedding-weighted forces (the "mind" model).** Each edge's cosine, min-max-normalized across the
   set, is its association weight: a stronger relation pulls **harder** (higher d3 link strength) and
   sits **closer** (shorter link distance), and renders **brighter + thicker**. So the layout geometry
@@ -297,7 +300,8 @@ emergent map of meaning.
    pass needed.
 5. **Where the graph index lives.** Computed per-request in `brain`, or a cached adjacency in
    `memory` invalidated on write? **Started request-time** (P2's `GET /api/brain/graph`
-   computes centrality + report on each call); cache if it bites.
+   computes centrality + report on each call). The expensive part — the semantic kNN — is now
+   memoized by a corpus fingerprint (`Service.SemanticEdges`); centrality/report stay request-time.
 
 ## Sequencing
 
