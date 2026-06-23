@@ -51,6 +51,7 @@ export function BrainPage() {
     loaded,
     load,
     graph,
+    graphLoading,
     loadGraph,
     confirm,
     update,
@@ -360,21 +361,32 @@ export function BrainPage() {
 
       {view === "graph" && (
         <div className="min-h-0 flex-1">
-          <BrainGraph
-            memories={graphMemories}
-            links={graph?.links ?? null}
-            report={graph?.report ?? null}
-            tuning={graph?.tuning ?? null}
-            labelForScope={labelForScope}
-            onConfirm={async (id) => {
-              try {
-                await confirm(id);
-                toast.success("Confirmed — kept as ground truth");
-              } catch (err) {
-                toast.error(getErrorMessage(err, "Failed to confirm"));
-              }
-            }}
-          />
+          {/* Hold off mounting the graph until the payload (semantic edges + tuning) has loaded, so
+              the force layout runs ONCE with the real edges from the first tick. Rendering early
+              with the edge-less list would settle a layout, then reheat from those wrong positions
+              when the edges arrive — the "settles then jumps to a mess" the similarity links cause.
+              A graph fetch error (no graph, not loading) still falls through to the degraded list. */}
+          {!graph && graphLoading ? (
+            <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Laying out graph…
+            </div>
+          ) : (
+            <BrainGraph
+              memories={graphMemories}
+              links={graph?.links ?? null}
+              report={graph?.report ?? null}
+              tuning={graph?.tuning ?? null}
+              labelForScope={labelForScope}
+              onConfirm={async (id) => {
+                try {
+                  await confirm(id);
+                  toast.success("Confirmed — kept as ground truth");
+                } catch (err) {
+                  toast.error(getErrorMessage(err, "Failed to confirm"));
+                }
+              }}
+            />
+          )}
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 space-y-6" hidden={view !== "list"}>

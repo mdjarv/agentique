@@ -65,12 +65,17 @@ type Config struct {
 // has no constant here — when unset it falls back to the recall cosThresh (resolved in New),
 // so a single "related" line drives both recall and the graph by default.
 const (
-	DefaultGraphEdgeCap          = 6
-	DefaultGraphLinkStrengthBase = 0.04
-	DefaultGraphLinkStrengthSpan = 0.32
-	DefaultGraphLinkDistanceBase = 90.0
-	DefaultGraphLinkDistanceSpan = 55.0
-	DefaultGraphGravity          = 0.045
+	DefaultGraphEdgeCap = 6
+	// Similar-edge springs are deliberately weak and long: with thousands of cross-scope kNN
+	// edges, a firm pull collapses every project cluster into one central hairball. These
+	// values let a semantic edge *nudge* related facts together (and a strong one nudge harder
+	// + sit a little closer) without overpowering the charge repulsion that keeps clusters
+	// legible. Tuned against the live ~1.4k-fact graph; raise the strengths for a tighter web.
+	DefaultGraphLinkStrengthBase = 0.012
+	DefaultGraphLinkStrengthSpan = 0.13
+	DefaultGraphLinkDistanceBase = 130.0
+	DefaultGraphLinkDistanceSpan = 70.0
+	DefaultGraphGravity          = 0.035
 )
 
 // GraphConfig is the resolved knowledge-graph tuning the Service holds. The two edge fields

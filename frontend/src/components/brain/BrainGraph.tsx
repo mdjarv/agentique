@@ -63,6 +63,12 @@ type GNode = NodeObject<NodeData>;
 type GLink = LinkObject<NodeData, LinkData>;
 
 const NODE_REL_SIZE = 4;
+// Label zoom thresholds. Below LABEL_ZOOM only the hovered node + neighbours label themselves;
+// past it every node shows its short caption; past FULLTEXT_ZOOM the caption expands to the FULL
+// memory text, word-wrapped, so you can read a fact in place without hovering for the tooltip.
+const LABEL_ZOOM = 1.6;
+const FULLTEXT_ZOOM = 2.6;
+const LABEL_MAX_SCREEN_PX = 200; // wrap width for the full-text label, in screen px
 const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
 const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
 const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
@@ -74,12 +80,17 @@ const REGION_PAD = 12; // world-unit breathing room around a region's outermost 
 // each of these; keep these in sync with brain's DefaultGraph* constants. A similar edge's link
 // strength is base + span·weight and its distance is base − span·weight (weight ∈ [0,1]).
 const LAYOUT_DEFAULTS: GraphTuning = {
-  linkStrengthBase: 0.04,
-  linkStrengthSpan: 0.32,
-  linkDistanceBase: 90,
-  linkDistanceSpan: 55,
-  gravity: 0.045,
+  linkStrengthBase: 0.012,
+  linkStrengthSpan: 0.13,
+  linkDistanceBase: 130,
+  linkDistanceSpan: 70,
+  gravity: 0.035,
 };
+
+// Charge (node-node repulsion). Strong enough that the weakened similarity springs spread into
+// legible clusters instead of collapsing to a central mass; gravity (above) keeps the whole
+// graph framed so isolated facts don't fling off-screen.
+const CHARGE_STRENGTH = -240;
 
 const STOPWORDS = new Set(
   "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
@@ -116,6 +127,26 @@ function endId(e: string | number | GNode | undefined): string {
 
 function esc(s: string): string {
   return s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+}
+
+// wrapText greedily breaks `text` into lines no wider than maxWidth (world units), measured with
+// the canvas context's current font. A single word wider than maxWidth gets its own (overflowing)
+// line rather than looping forever. Used to render the full memory text on-canvas when zoomed in.
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of words) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur && ctx.measureText(next).width > maxWidth) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 type Pt = { x: number; y: number };
@@ -490,6 +521,28 @@ export function BrainGraph({
     return m;
   }, [links]);
 
+  // The colour-group key a node falls in under the current `colorBy` — two nodes sharing it sit
+  // in the same coloured cluster. Empty (no area / unset) means "no group": such edges read as
+  // cross-cluster bridges. Mirrors nodeColor's keying so edge and node colours agree.
+  const groupKey = (n: GNode): string => {
+    if (colorBy === "area") return n.area ?? "";
+    if (colorBy === "community") return `${n.scope}#${n.community ?? 0}`;
+    return n.scope;
+  };
+
+  // Edge colour: an edge whose endpoints share a colour group takes that cluster's colour (so the
+  // web *reinforces* the grouping); a cross-cluster edge returns null and the caller renders it as
+  // a faint neutral bridge. Null endpoints (pre-tick) also fall back to neutral.
+  const linkGroupColor = (l: GLink): string | null => {
+    const s = nodeById.get(endId(l.source));
+    const t = nodeById.get(endId(l.target));
+    if (!s || !t) return null;
+    const gs = groupKey(s);
+    const gt = groupKey(t);
+    if (gs && gs === gt) return nodeColor(s, colorBy);
+    return null;
+  };
+
   // Tune the self-balancing force layout, weighted by the embeddings: each semantic edge's
   // cosine-derived weight makes a strong association pull HARDER (higher link strength) and sit
   // CLOSER (shorter link distance), so the layout's geometry mirrors how related the memories
@@ -505,7 +558,9 @@ export function BrainGraph({
   useEffect(() => {
     const g = fgRef.current;
     if (!g || nodes.length === 0) return;
-    (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(-160);
+    (g.d3Force("charge") as unknown as { strength(n: number): void } | undefined)?.strength(
+      CHARGE_STRENGTH,
+    );
     const link = g.d3Force("link") as unknown as
       | { distance(fn: (l: GLink) => number): void; strength(fn: (l: GLink) => number): void }
       | undefined;
@@ -756,18 +811,26 @@ export function BrainGraph({
                 ctx.stroke();
               }
               // Labels are the main source of clutter at 1400+ nodes, so they are
-              // deliberately sparse: the hovered node and its neighbours are always
-              // labelled (that's where attention is), and once the user zooms in past
-              // ~1.6× every node labels itself (legible at that scale). A dark pill behind
-              // the text gives it contrast over nodes and edges instead of vanishing into them.
+              // deliberately staged by zoom: the hovered node and its neighbours are always
+              // labelled (that's where attention is); past LABEL_ZOOM every node shows its short
+              // caption; past FULLTEXT_ZOOM the caption expands to the FULL memory text, wrapped,
+              // so a fact is readable in place (no hover needed). A dark pill behind the text gives
+              // it contrast over nodes and edges instead of vanishing into them.
               const isHover = node.id === hoverId;
               const isNeighbor = neighbors?.has(String(node.id)) ?? false;
-              if (!dim && (isHover || isNeighbor || scale > 1.6)) {
+              if (!dim && (isHover || isNeighbor || scale > LABEL_ZOOM)) {
                 const fontSize = (isHover ? 12.5 : 11) / scale;
                 ctx.font = `${isHover ? 600 : 400} ${fontSize}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
-                const tw = ctx.measureText(node.label).width;
+                // Full text (wrapped) once zoomed in; the short caption otherwise.
+                const full = scale > FULLTEXT_ZOOM;
+                const lines = full
+                  ? wrapText(ctx, node.fullText, LABEL_MAX_SCREEN_PX / scale)
+                  : [node.label];
+                let tw = 0;
+                for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+                const lineH = fontSize * 1.25;
                 const ty = y + r + 3 / scale;
                 const padX = 4 / scale;
                 const padY = 2 / scale;
@@ -776,12 +839,13 @@ export function BrainGraph({
                 const bx = x - tw / 2 - padX;
                 const by = ty - padY;
                 const bw = tw + padX * 2;
-                const bh = fontSize + padY * 2;
+                const bh = lines.length * lineH + padY * 2;
                 if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 3 / scale);
                 else ctx.rect(bx, by, bw, bh);
                 ctx.fill();
                 ctx.fillStyle = isHover ? "#f8fafc" : "rgba(226,232,240,0.9)";
-                ctx.fillText(node.label, x, ty);
+                for (let i = 0; i < lines.length; i++)
+                  ctx.fillText(lines[i] ?? "", x, ty + i * lineH);
               }
               ctx.globalAlpha = 1;
             }}
@@ -803,23 +867,27 @@ export function BrainGraph({
               if (hoverId != null) {
                 return linkTouchesHover(l) ? "rgba(250,204,21,0.95)" : "rgba(140,140,150,0.05)";
               }
-              // Coloured node clusters carry the picture; edges are a faint backbone. A semantic
-              // edge's opacity rises STEEPLY with its association strength (weight²), so only the
-              // strong relations read while the weak majority fade out of the web entirely — they
-              // still shape the layout, just don't clutter it. Edges sharpen on hover.
+              // Edges are colour-coded by the cluster they live in: an edge inside a coloured group
+              // takes that group's colour (so the web reinforces the clustering), while a
+              // cross-cluster "bridge" reads as a faint neutral so it recedes instead of muddying
+              // the picture. The whole web is drawn — weight only modulates how strongly each edge
+              // reads (a floor keeps the weak majority faintly visible) so association strength is
+              // legible without any edge dominating. Edges sharpen on hover.
+              const group = linkGroupColor(l);
               if (l.kind === "similar") {
                 const w = l.weight ?? 0.5;
-                const a = 0.42 * w * w;
-                return a < 0.012 ? "rgba(0,0,0,0)" : `rgba(150,180,235,${a.toFixed(3)})`;
+                const a = 0.06 + 0.4 * w * w; // graded: strong reads, weak stays faint (full web)
+                return group ? withAlpha(group, a) : `rgba(140,152,172,${(a * 0.7).toFixed(3)})`;
               }
-              return "rgba(190,195,210,0.28)";
+              // Structural (provenance/related): firm backbone, also group-tinted.
+              return group ? withAlpha(group, 0.5) : "rgba(190,195,210,0.3)";
             }}
             linkWidth={(l) =>
               linkTouchesHover(l)
-                ? 3.2
+                ? 3
                 : l.kind === "similar"
-                  ? 0.3 + 1.7 * (l.weight ?? 0.5) ** 1.5 // thicker = stronger association
-                  : 2
+                  ? 0.12 + 0.9 * (l.weight ?? 0.5) ** 1.5 // thinner; thicker = stronger association
+                  : 1.1
             }
             linkLineDash={(l) =>
               l.kind === "similar" ? [4, 3] : l.kind === "area" ? [2, 4] : null
