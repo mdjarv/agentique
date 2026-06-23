@@ -235,6 +235,25 @@ func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, erro
 // SemanticEnabled reports whether vector recall is active.
 func (s *Service) SemanticEnabled() bool { return s.semantic }
 
+// reindexer is the rebuild-the-vector-index capability the semantic store exposes.
+// *chroma.Store satisfies it; the bare filestore (keyword mode) does not.
+type reindexer interface {
+	Reindex(ctx context.Context) error
+}
+
+// Reindex rebuilds the entire semantic vector index from the markdown source of truth.
+// The index is maintained lazily on each write, so a bulk hand-edit of the markdown
+// files or an embedding-model change leaves vectors stale or missing until the next
+// pass touches them; this re-embeds and re-upserts the whole durable corpus in one shot.
+// It errors in keyword mode, where there is no vector index to rebuild.
+func (s *Service) Reindex(ctx context.Context) error {
+	rx, ok := s.store.(reindexer)
+	if !ok {
+		return fmt.Errorf("brain: reindex requires semantic mode (no vector index configured)")
+	}
+	return rx.Reindex(ctx)
+}
+
 // semanticEdgePerNodeCap bounds how many nearest-neighbour edges each fact contributes to the
 // graph, so a densely-related cluster doesn't become a hairball. The union of asymmetric kNN can
 // still push a popular node a little over this.

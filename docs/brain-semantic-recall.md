@@ -255,6 +255,16 @@ cosine distribution + the percentile-derived thresholds) or set `AGENTIQUE_BRAIN
 the server derive them at boot (#5). The hand defaults remain the fallback; an explicit
 `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` still wins per-knob.
 
+Index maintenance: the Chroma collection is maintained **lazily** (each `Put` indexes one fact), so a
+bulk hand-edit of the markdown files or an embedding-model change leaves vectors stale or missing
+until a later pass touches each fact. Rebuild the whole collection in one shot with
+`agentique brain reindex` (re-embeds the durable corpus from the markdown source of truth; needs the
+same embedder + Chroma config the server uses — env or the `[brain]` config keys). The slow self-heal
+is the **scheduled-consolidation** pass, which also refreshes the semantic graph; it now runs once
+shortly after server start (a short initial delay) and then on `consolidate-interval`, so a
+frequently-restarted server can no longer defer that refresh indefinitely (a bare interval timer used
+to reset on every restart).
+
 ## References
 
 - `internal/memory/recall.go` (`rank`, the veto `DefaultVectorVetoScore`/`Query.VectorVetoScore`,
@@ -267,8 +277,11 @@ the server derive them at boot (#5). The hand defaults remain the fallback; an e
   `internal/brain/brain.go` (`Config.Calibrate`, `Service.Calibrate`, `New` opt-in via
   `AGENTIQUE_BRAIN_AUTOCAL`), `cmd/agentique/brain.go` (`brain calibrate`).
 - `internal/brain/brain.go` (`New` semantic wiring incl. `vetoScore`; `scopeSimOptions`;
-  veto+vouch threaded into `Recall`/`RecallBlock`; `ApplyPlan`/`Consolidate`/`ApplyGlobal`),
-  `internal/brain/graph.go` (semantic interference), `internal/memory/chroma`, `internal/memory/embedhttp`.
+  veto+vouch threaded into `Recall`/`RecallBlock`; `ApplyPlan`/`Consolidate`/`ApplyGlobal`;
+  `Service.Reindex` → `chroma.Store.Reindex`), `internal/brain/graph.go` (semantic interference),
+  `internal/memory/chroma`, `internal/memory/embedhttp`.
+- Index maintenance: `cmd/agentique/brain.go` (`brain reindex`, config-aware `newBrainService`),
+  `internal/brain/automation.go` (near-boot first pass via the initial-delay timer in `loop`).
 - Live integration tests (env-gated): `internal/memory/chroma/semantic_recall_integration_test.go`,
   `internal/brain/semantic_integration_test.go` (`TestBrainSemanticWiring`,
   `TestBrainAutoCalibrateExcludesGithub`). Unit: `internal/memory/calibrate_test.go`.

@@ -14,6 +14,7 @@ import (
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/brain"
+	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/memory/filestore"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -79,6 +80,7 @@ func init() {
 	brainCmd.AddCommand(consolidateCmd)
 	brainCmd.AddCommand(backfillSubsumedCmd)
 	brainCmd.AddCommand(assignAreasCmd)
+	brainCmd.AddCommand(reindexCmd)
 	brainCmd.AddCommand(calibrateCmd)
 	brainCmd.AddCommand(brainExportCmd)
 	brainCmd.AddCommand(brainImportCmd)
@@ -587,6 +589,44 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// --- Reindex ----------------------------------------------------------------
+
+var reindexCmd = &cobra.Command{
+	Use:   "reindex",
+	Short: "Rebuild the semantic vector index from the markdown source of truth",
+	Long: `Re-embed every durable fact and upsert it into the Chroma collection, bringing
+the vector index back in sync with the brain's markdown files.
+
+The index is maintained lazily (updated on each individual write), so a bulk
+hand-edit of the markdown files or a change of embedding model leaves stale or
+missing vectors that otherwise only heal slowly, fact by fact, via consolidation.
+This rebuilds the whole collection in a single pass.
+
+Requires a configured embedder + Chroma (AGENTIQUE_BRAIN_CHROMA_URL /
+AGENTIQUE_BRAIN_EMBED_URL / AGENTIQUE_BRAIN_EMBED_MODEL, or the matching [brain]
+config-file keys).`,
+	RunE: runBrainReindex,
+}
+
+func runBrainReindex(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	svc, err := newBrainService(ctx, resolveDBPath())
+	if err != nil {
+		return err
+	}
+	if !svc.SemanticEnabled() {
+		return fmt.Errorf("reindex needs a configured embedder + Chroma — set AGENTIQUE_BRAIN_CHROMA_URL, AGENTIQUE_BRAIN_EMBED_URL and AGENTIQUE_BRAIN_EMBED_MODEL (or the [brain] config keys)")
+	}
+
+	fmt.Println("re-embedding the durable corpus and rebuilding the vector index…")
+	if err := svc.Reindex(ctx); err != nil {
+		return fmt.Errorf("reindex: %w", err)
+	}
+	fmt.Println("reindex complete — the vector index now matches the markdown source of truth")
+	return nil
+}
+
 // --- Calibrate --------------------------------------------------------------
 
 var calibrateCmd = &cobra.Command{
@@ -910,13 +950,21 @@ func promptForTarget(src bundleProject, bySlug map[string]store.Project, reader 
 }
 
 // newBrainService builds a brain Service rooted at the data dir next to dbFile.
+// Semantic config follows serve.go's precedence — an AGENTIQUE_BRAIN_* env var wins,
+// else the [brain] config-file value. The live server is configured via config.toml
+// (not env), so reading the file here is what lets `brain reindex`/`calibrate` see the
+// same embedder + Chroma the server uses instead of silently degrading to keyword mode.
 func newBrainService(ctx context.Context, dbFile string) (*brain.Service, error) {
+	fileCfg, err := config.Load(config.Path())
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
 	svc, err := brain.New(ctx, brain.Config{
 		Dir:         filepath.Join(filepath.Dir(dbFile), "brain"),
-		ChromaURL:   os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"),
-		EmbedURL:    os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"),
-		EmbedModel:  os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"),
-		EmbedAPIKey: os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"),
+		ChromaURL:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"), fileCfg.Brain.ChromaURL),
+		EmbedURL:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"), fileCfg.Brain.EmbedURL),
+		EmbedModel:  firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"), fileCfg.Brain.EmbedModel),
+		EmbedAPIKey: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_KEY"), fileCfg.Brain.EmbedKey),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init brain: %w", err)

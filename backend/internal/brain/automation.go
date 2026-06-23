@@ -26,11 +26,20 @@ type Automation struct {
 	bus      eventbus.Broadcaster
 	interval time.Duration
 	model    claudecli.Model // "" => deterministic dedup/decay only
-	done     chan struct{}
+	// initialDelay is how long after Start the first pass runs. It is short relative to
+	// interval so a frequently-restarted server still gets a near-boot refresh instead of
+	// waiting (and resetting) a full interval each restart. Tests set it tiny.
+	initialDelay time.Duration
+	done         chan struct{}
 }
 
+// defaultInitialDelay lets the server finish coming up before the first consolidation
+// pass, while still running it well within a single interval so restarts can't defer it
+// indefinitely.
+const defaultInitialDelay = 30 * time.Second
+
 func NewAutomation(svc *Service, runner msggen.Runner, bus eventbus.Broadcaster, interval time.Duration, model claudecli.Model) *Automation {
-	return &Automation{svc: svc, runner: runner, bus: bus, interval: interval, model: model, done: make(chan struct{})}
+	return &Automation{svc: svc, runner: runner, bus: bus, interval: interval, model: model, initialDelay: defaultInitialDelay, done: make(chan struct{})}
 }
 
 // Start launches the loop when an interval is configured; otherwise it is a no-op.
@@ -54,6 +63,19 @@ func (a *Automation) Stop() {
 }
 
 func (a *Automation) loop() {
+	// Run once shortly after start, then on the interval. A bare NewTicker would defer the
+	// first pass by a full interval and reset that clock on every process start — on a
+	// frequently-restarted server the semantic refresh could be postponed forever. The
+	// initial timer fixes both: the first pass lands near boot regardless of restarts.
+	initial := time.NewTimer(a.initialDelay)
+	defer initial.Stop()
+	select {
+	case <-a.done:
+		return
+	case <-initial.C:
+		a.runOnce(context.Background())
+	}
+
 	ticker := time.NewTicker(a.interval)
 	defer ticker.Stop()
 	for {
