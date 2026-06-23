@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, MessageSquare, Send, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { dismissQuestion, resolveQuestion } from "~/lib/session/actions";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -94,13 +95,25 @@ function QuestionInput({
   question,
   value,
   onChange,
+  onSubmit,
 }: {
   question: Question;
   value: string;
   onChange: (value: string) => void;
+  onSubmit?: () => void;
 }) {
   const hasOptions = question.options && question.options.length > 0;
   const [customMode, setCustomMode] = useState(false);
+  const isMobile = useIsMobile();
+
+  // Mirror the chat composer: Enter submits, Shift+Enter inserts a newline.
+  // Skip on mobile (no hardware Enter affordance) and during IME composition.
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !isMobile && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      onSubmit?.();
+    }
+  };
 
   if (!hasOptions) {
     return (
@@ -110,6 +123,7 @@ function QuestionInput({
         rows={2}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
       />
     );
   }
@@ -124,6 +138,7 @@ function QuestionInput({
           rows={3}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
         />
         <button
           type="button"
@@ -242,7 +257,15 @@ function SingleQuestionBanner({
             </span>
           )}
           <span className="text-sm font-medium">{question.question}</span>
-          <QuestionInput question={question} value={value} onChange={onChange} />
+          <QuestionInput
+            question={question}
+            value={value}
+            onChange={onChange}
+            onSubmit={() => {
+              if (!answered || submitting || dismissing) return;
+              onSubmit();
+            }}
+          />
         </div>
         <div className="flex justify-end">
           <Button
@@ -287,6 +310,16 @@ function WizardQuestionBanner({
   const currentAnswered = currentValue.trim() !== "";
   const isLast = step === total - 1;
 
+  // Enter mirrors the primary button: advance to the next step, or submit on the last.
+  const handleEnter = () => {
+    if (submitting || dismissing) return;
+    if (isLast) {
+      if (allAnswered) onSubmit();
+    } else if (currentAnswered) {
+      setStep(step + 1);
+    }
+  };
+
   const answeredSteps = new Set(
     questions.reduce<number[]>((acc, question, i) => {
       if ((answers[question.question] ?? "").trim() !== "") acc.push(i);
@@ -324,6 +357,7 @@ function WizardQuestionBanner({
             question={q}
             value={currentValue}
             onChange={(v) => setAnswer(q.question, v)}
+            onSubmit={handleEnter}
           />
         </div>
 
