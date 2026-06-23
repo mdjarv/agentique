@@ -433,6 +433,8 @@ export const SessionStorageSchema = z.object({
   worktreePath: z.string(),
   bytes: z.number(),
   updatedAt: z.string(),
+  completedAt: z.string(),
+  completed: z.boolean(),
   orphaned: z.boolean(),
 });
 

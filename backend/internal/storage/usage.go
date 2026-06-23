@@ -143,6 +143,10 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 				projAgg[sess.ProjectID] = agg
 			}
 			agg.TotalBytes += size
+			completedAt := ""
+			if sess.CompletedAt.Valid {
+				completedAt = sess.CompletedAt.String
+			}
 			agg.Sessions = append(agg.Sessions, SessionStorage{
 				SessionID:    sess.ID,
 				Name:         sess.Name,
@@ -150,6 +154,8 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 				WorktreePath: wtPath,
 				Bytes:        size,
 				UpdatedAt:    sess.UpdatedAt,
+				CompletedAt:  completedAt,
+				Completed:    completedAt != "",
 			})
 		}
 	}

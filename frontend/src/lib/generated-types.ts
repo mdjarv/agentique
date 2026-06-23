@@ -431,6 +431,8 @@ export interface SessionStorage {
   worktreePath: string;
   bytes: number;
   updatedAt: string;
+  completedAt: string;
+  completed: boolean;
   orphaned: boolean;
 }
 

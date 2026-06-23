@@ -23,6 +23,10 @@ type CategoryUsage struct {
 // session SessionID/Name/State/UpdatedAt are populated; for an orphan (a
 // worktree dir with no matching session row) Orphaned is true and Name carries
 // the on-disk "<bucket>/<dir>" label.
+//
+// Completed mirrors the sidebar's "completed" semantics (a non-empty
+// completed_at) so the disk view can flag and bulk-clean finished sessions
+// without re-deriving the rule.
 type SessionStorage struct {
 	SessionID    string `json:"sessionId"`
 	Name         string `json:"name"`
@@ -30,6 +34,8 @@ type SessionStorage struct {
 	WorktreePath string `json:"worktreePath"`
 	Bytes        int64  `json:"bytes"`
 	UpdatedAt    string `json:"updatedAt"`
+	CompletedAt  string `json:"completedAt"`
+	Completed    bool   `json:"completed"`
 	Orphaned     bool   `json:"orphaned"`
 }
 
