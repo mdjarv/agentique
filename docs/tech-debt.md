@@ -3,8 +3,9 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-23 (brain **semantic graph layout** — PCA-projected embedding view +
-legibility pass, graph is the default brain view; **semantic recall enabled in production** —
+Last full audit: 2026-06-23 (brain **self-balancing semantic graph** — embeddings as weighted kNN
+edges, force layout, embedding-weighted forces/visuals + legibility pass, graph is the default brain
+view; **semantic recall enabled in production** —
 ChromaDB + Ollama all-minilm as durable docker containers; **all brain config now config.toml-
 settable**). Prior: 2026-06-22 (brain **automatic outcome emitter** — session-end transcript judge
 that auto-feeds MarkAutoHelped/Flag, gentler 0.25 auto weight, session-end model knobs in
@@ -265,15 +266,17 @@ is bounded by the live fact set, not by every text ever seen. → `internal/brai
 `TestWarmEmbedCacheRetriesAfterFailure`, `TestPruneEmbedCacheDropsStaleTexts`, and the live
 `TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
 
-### Brain: semantic graph layout is PCA (mushy); t-SNE/UMAP would separate topics
-The semantic graph layout (P6, `docs/brain-graph-layer.md`) projects embeddings to 2D with pure-Go
-**PCA** (`memory.ProjectPCA2D`) — cheap, deterministic, no dependency, but top-2 variance axes don't
-separate 384-dim semantic topics into crisp islands, so the layout reads as a spread, mildly-clustered
-cloud rather than distinct topic clusters. A non-linear projection (**t-SNE** — ~200 LOC, O(n²) but
-fine at ~1.5k facts, needs a deterministic seed — or **UMAP**, no good pure-Go port) is the
-highest-leverage next step for cluster separation. Projection is computed server-side per graph load
-(through the warmed embed cache, so ~free after warm); a t-SNE pass would want caching by corpus
-fingerprint. → `internal/memory/project.go`, `internal/brain/graph.go`, `frontend/src/components/brain/BrainGraph.tsx`.
+### Brain: semantic graph is a per-request O(n²) kNN with no caching
+The graph layout (P6, `docs/brain-graph-layer.md`) was reworked from a PCA *projection* (retired —
+positions collapsed 384-dim similarity to 2 axes) to **semantic edges + a self-balancing force layout**:
+`memory.SemanticEdges` computes the embedding kNN graph (cosine ≥ `cosThresh`, per-node cap) with
+cosine scores that weight the layout forces. Open items: (a) it's **O(n²·d) recomputed every graph
+load** (through the warmed embed cache, so ~2s warm at 1442 facts — fine now, but a cache keyed by
+corpus fingerprint would make it instant and scale further); (b) the per-node cap
+(`semanticEdgePerNodeCap=6`) and the `cosThresh` floor are fixed — a denser/sparser graph isn't tunable
+per deployment; (c) the force/visual weight curves (link strength `0.04+0.32·w`, distance `90−55·w`,
+gravity `0.045`) are hand-tuned on the live corpus, not configurable. → `internal/memory/semantic_edges.go`,
+`internal/brain/{brain,graph}.go`, `frontend/src/components/brain/BrainGraph.tsx`.
 
 ### Brain: semantic infra is operator-run docker, not managed by agentique
 Semantic recall is now **live in production** (ChromaDB + Ollama all-minilm), but the two services are

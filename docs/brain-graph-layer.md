@@ -222,34 +222,39 @@ codebase-specific facts.
   count. Facts promoted before this existed degrade to "originals not retained". See the
   review surface in [brain-memory.md](brain-memory.md).
 
-### P6 — Semantic layout + legibility (the graph made *useful*) ✅ implemented (2026-06-23)
+### P6 — Self-balancing semantic graph + legibility (the graph made *useful*) ✅ implemented (2026-06-23)
 
-The P4 force view shipped, but at the live scale (~1450 facts) the default was a cluttered blob:
-overlapping region hulls, every node labelled into illegibility, similar memories clumped into a
-grey web, and a hover tooltip that showed only a 40-char truncation of the memory. This pass makes
-the graph the legible, *enticing* default it was meant to be — and adds an embedding-aware layout.
+The P4 force view shipped, but at the live scale (~1450 facts) the default was a cluttered, sparse
+mess: overlapping region hulls, every node labelled into illegibility, a 40-char-truncated hover
+tooltip, and — critically — the client-side lexical similarity pass was **skipped above 800 nodes**,
+so the graph had almost no similarity edges and floated as disconnected dots. This pass makes the
+graph a legible, self-balancing model of the brain's associations.
 
-- **Semantic layout (visualize the vectors).** With an embedder on, the graph endpoint projects each
-  fact's embedding to 2D — `memory.ProjectPCA2D` (pure-Go PCA via implicit power iteration +
-  deflation, deterministic, no new dependency) through the warmed embed cache — and returns `x,y` on
-  the graph node. The frontend lays nodes out by a **positional force toward the projection** rather
-  than hard-pinning, so collision keeps clusters legible instead of collapsing to a dense disc.
-  Memories group by *what they're about*, across projects. **It's the default layout when coords
-  exist** (force layout stays a toggle for structural analysis). Nil-safe: lexical mode omits coords
-  and the toggle hides.
-- **Why PCA first (and the open follow-up).** PCA is the cheap, deterministic, dependency-free
-  projection. Its limit shows here: top-2 variance axes don't separate 384-dim semantic topics into
-  crisp islands, so the layout reads as a spread, mildly-clustered cloud. A non-linear projection
-  (**t-SNE / UMAP**) would give visibly separated topic islands — the highest-leverage next step for
-  "useful". Tracked in tech-debt.
-- **Legibility pass.** Collision force (nodes never overlap) in *both* layouts; regions default
-  **off** (the overlapping shaded hulls were the main clutter); similarity links dimmed so the
-  coloured node clusters carry the picture and links are a faint hint (they sharpen on hover); labels
-  are **sparse** — only the hovered node + its neighbours, or everything once zoomed past ~1.6× —
-  each with a dark contrast pill; the hover tooltip shows the **full** memory text. The brain page
-  now **defaults to the graph** view.
-- **Code.** `internal/memory/project.go` (+ test), `internal/brain/{brain.go (ProjectRecords),
-  graph.go (x,y)}`, `frontend/src/components/brain/{BrainGraph.tsx, BrainPage.tsx}`.
+**Design decision — the backend supplies nodes + relationships, never positions; the embeddings
+power the *edges*, not coordinates.** A short-lived first cut projected embeddings to 2D (`ProjectPCA2D`)
+and positioned nodes; it was retired because PCA collapses 384-dim similarity onto two axes (a mushy
+cloud). The better model: emit the embedding **k-nearest-neighbour graph** and let the client force
+simulation self-balance it — full high-dimensional similarity preserved as topology, the layout an
+emergent map of meaning.
+
+- **Semantic edges (`memory.SemanticEdges`).** For each fact, edges to its nearest neighbours in
+  embedding space (cosine ≥ the model's related threshold `cosThresh`, capped `semanticEdgePerNodeCap`
+  per node), each carrying its cosine **Score**. Pure-Go, deterministic, O(n²·d) through the warmed
+  embed cache (~free once warm). `Service.SemanticEdges` → `graphDTO.links{source,target,kind,score}`;
+  nil-safe — lexical mode falls back to the client Jaccard pass.
+- **Embedding-weighted forces (the "mind" model).** Each edge's cosine, min-max-normalized across the
+  set, is its association weight: a stronger relation pulls **harder** (higher d3 link strength) and
+  sits **closer** (shorter link distance), and renders **brighter + thicker**. So the layout geometry
+  and the visual emphasis both mirror how related the memories actually are. Weak radial gravity keeps
+  isolated facts from flinging out (which otherwise shrinks the connected core under zoomToFit).
+- **Legibility pass.** Collision force (nodes never overlap); regions default **off** (the overlapping
+  hulls were the main clutter); labels **sparse** — hovered node + neighbours, or everything once
+  zoomed past ~1.6× — each with a dark contrast pill; hover shows the **full** memory text and the
+  weighted neighbour edges; the brain page **defaults to the graph**.
+- **Live result.** 1442 facts → **3639 semantic edges**, **1298/1442 connected** (was ~0 similarity
+  edges, 328 isolated). Cosine scores span 0.45–0.90.
+- **Code.** `internal/memory/semantic_edges.go` (+ test), `internal/brain/{brain.go (SemanticEdges),
+  graph.go (links)}`, `frontend/src/{components/brain/{BrainGraph.tsx, BrainPage.tsx}, lib/brain-api.ts}`.
 
 ## Non-goals
 
