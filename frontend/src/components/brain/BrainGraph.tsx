@@ -906,7 +906,7 @@ export function BrainGraph({
               const r = Math.sqrt(node.val ?? 2) * NODE_REL_SIZE;
               const dim =
                 activeId != null && node.id !== activeId && !neighbors?.has(String(node.id));
-              ctx.globalAlpha = dim ? 0.12 : 1;
+              ctx.globalAlpha = dim ? 0.28 : 1;
               // Ember: a soft scope-coloured halo (additive, so neighbours' glows blend into a
               // cluster bloom) + a hot core whose colour encodes trust. No flat disc, no dark moat.
               const base = nodeColor(node, colorBy);
