@@ -373,6 +373,40 @@ describe("chat-store", () => {
       expect(todos?.[0]?.status).toBe("in_progress");
     });
 
+    it("reconstructs the task list from TaskCreate/TaskUpdate tool calls", () => {
+      const store = useChatStore.getState();
+      // TaskCreate carries no id — it shows up immediately as pending...
+      store.handleServerEvent(
+        "sess-1",
+        makeToolUseEvent({
+          toolId: "tc1",
+          toolName: "TaskCreate",
+          toolInput: { subject: "Build demo", activeForm: "Building demo" },
+        }),
+      );
+      expect(useChatStore.getState().sessions["sess-1"]?.todos).toEqual([
+        { content: "Build demo", activeForm: "Building demo", status: "pending" },
+      ]);
+      // ...the harness assigns its id in the result text...
+      store.handleServerEvent("sess-1", {
+        id: "res1",
+        type: "tool_result",
+        toolId: "tc1",
+        contentBlocks: [{ type: "text", text: "Task #1 created successfully: Build demo" }],
+      });
+      // ...which a later TaskUpdate references by id.
+      store.handleServerEvent(
+        "sess-1",
+        makeToolUseEvent({
+          toolName: "TaskUpdate",
+          toolInput: { taskId: "1", status: "in_progress" },
+        }),
+      );
+      expect(useChatStore.getState().sessions["sess-1"]?.todos).toEqual([
+        { content: "Build demo", activeForm: "Building demo", status: "in_progress" },
+      ]);
+    });
+
     it("ignores rate_limit events (no turn append)", () => {
       useChatStore
         .getState()

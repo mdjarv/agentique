@@ -1,4 +1,4 @@
-import { extractTodosFromEvent } from "~/lib/event-extractors";
+import { foldTaskList, isTaskListEvent } from "~/lib/event-extractors";
 import type { ChatEvent, SessionData } from "~/stores/chat-types";
 
 /**
@@ -60,12 +60,19 @@ export function applyServerEvent(
 
   // --- Extract metadata from events regardless of whether turns are loaded ---
 
-  const todos = extractTodosFromEvent(event);
   const isResult = event.type === "result";
   const stamped = isResult && !event.timestamp ? { ...event, timestamp: Date.now() } : event;
   const patch: Partial<SessionData> = {};
 
-  if (todos) patch.todos = todos;
+  if (isTaskListEvent(event)) {
+    // TaskCreate/TaskUpdate are incremental, so a single event isn't a full snapshot —
+    // recompute the list from the whole stream. `event` isn't in turns/streamingEvents
+    // yet, so append it; the fold pulls each TaskCreate's assigned id from its result.
+    const stream: ChatEvent[] = [];
+    for (const t of session.turns) stream.push(...t.events);
+    stream.push(...session.streamingEvents, event);
+    patch.todos = foldTaskList(stream);
+  }
 
   if (isResult && event.type === "result") {
     patch.meta = { ...session.meta, state: "idle" };
