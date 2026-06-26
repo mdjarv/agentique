@@ -170,9 +170,27 @@ batches run with bounded concurrency (`memory.RunBounded`, `maxParallelBatches` 
 
 ## CLI commands (`agentique brain …`)
 
-Admin/migration operations, defined in `backend/cmd/agentique/brain.go`. A
+Admin/migration operations, defined in `backend/cmd/agentique/brain.go`;
+read-only inspection in `backend/cmd/agentique/brain_inspect.go`. A
 non-release (`go run`) build resolves a *relative* `agentique.db`, so point it at
 the real data dir: `AGENTIQUE_DB=~/.local/share/agentique/agentique.db`.
+
+Read-only inspection (never mutates the corpus; reuses the same `brain.Service`,
+so search uses the live hybrid/keyword recall path; all take `--json`):
+
+- `list [--scope --category --limit --sort uses|new --json]` — list memories
+  (id, scope, category, trust, uses, truncated text). Most-used first by default.
+- `show <id> [--json]` — one memory's full text + all frontmatter (source,
+  confidence, derived-from, subsumed sources, related, community/area, review note).
+  `<id>` may be a unique id prefix.
+- `search <query> [--scope --limit --json]` — run the query through the production
+  recall path: a vector+keyword hybrid when semantic recall is configured, else
+  keyword-only. Returns the ranked facts the brain would surface.
+- `stats [--json]` — corpus summary: total facts, per-scope counts, trust-tier
+  breakdown (extracted/inferred/ambiguous), graph connectivity (connected vs
+  isolated) and the semantic-edge count.
+
+Admin / migration:
 
 - `backfill [--project --limit --min-events --model --dry-run -f]` — retroactively
   distill memories from past session transcripts.

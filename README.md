@@ -228,6 +228,10 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 | `agentique export <id>` | Export a session as a Playwright test fixture. |
 | `agentique cleanup` | Delete merged, terminal sessions. |
 | `agentique restore [name|index]` | List or restore database backups. |
+| `agentique brain list` | List memories (id, scope, category, trust, uses, text). Filter `--scope`/`--category`, `--sort uses\|new`, `--json`. |
+| `agentique brain show <id>` | Show one memory's full text + frontmatter (provenance, confidence, related, area). Accepts an id prefix; `--json`. |
+| `agentique brain search <query>` | Search via the live recall path (hybrid when semantic recall is configured, else keyword). `--scope`/`--limit`/`--json`. |
+| `agentique brain stats` | Corpus summary: totals, per-scope counts, trust tiers, graph connectivity, semantic-edge count. `--json`. |
 | `agentique brain backfill` | Extract durable memories from past transcripts. |
 | `agentique brain consolidate` | Run consolidation over one scope (`--project`/`--scope`, optional `--model`). |
 | `agentique brain assign-areas` | Recompute cross-scope topic "areas" and stamp them onto facts (`--dry-run` to preview). Normally automatic on scheduled consolidation, consolidate-all, or global promotion. |
