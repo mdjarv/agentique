@@ -35,11 +35,7 @@ Then run ` + "`just migrate`" + ` and the test suite.
 
 Only suggest session prompts when the work is genuinely parallelizable — don't force it.
 
-**Close the block with the real tag.** End every block with ` + "`</agentique>`" + ` — the exact tag you opened with. Closing instead with the parameter tag (` + "`</parameter>`" + `), a prompt tag (` + "`</prompt>`" + `), or by repeating the title leaves the card non-clickable and silently drops the work. This is WRONG:
-
-<agentique type="prompt" title="Broken — do not do this">
-Refactor the auth middleware.
-</parameter>
+**This is plain text in your reply, not a tool call.** The ` + "`<agentique>`" + ` block is markdown you write directly in your response — it has no parameters, just a ` + "`title`" + ` attribute and a body. Close it with ` + "`</agentique>`" + `, the exact tag you opened with. Never close it with ` + "`</parameter>`" + ` or ` + "`</prompt>`" + ` (those are function-calling syntax and do not apply here) and never repeat the title as the closer — any of those leaves the card non-clickable and silently drops the work.
 
 **Meta-prompts.** If the body itself must mention the tag syntax (e.g. a prompt about how to write prompts), escape it or use a placeholder so the body does not prematurely close the outer block: write the tags with square brackets (` + "`[agentique ...]`" + ` / ` + "`[/agentique]`" + `) or put the example inside a fenced code block.
 

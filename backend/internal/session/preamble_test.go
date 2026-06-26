@@ -40,7 +40,8 @@ func TestBuildPreamble_SuggestParallelCloserGuidance(t *testing.T) {
 
 	for _, want := range []string{
 		"</agentique>",    // names the real closing tag
-		"</parameter>",    // the wrong-closer anti-example
+		"not a tool call", // the correct mental model (root cause of the wrong closer)
+		"</parameter>",    // names the wrong closer to avoid
 		"Meta-prompts",    // meta-prompt escaping rule
 		"[agentique ...]", // square-bracket placeholder guidance
 		"Self-verify",     // self-verification reminder
@@ -55,7 +56,7 @@ func TestBuildPreamble_CloserGuidanceGatedBySuggestParallel(t *testing.T) {
 	// Closer guidance lives inside the suggest-parallel snippet; it must be absent
 	// when that preset is off.
 	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, BehaviorPresets{}, nil, nil, "", false, false, "")
-	if strings.Contains(got, "Close the block with the real tag") {
+	if strings.Contains(got, "not a tool call") {
 		t.Error("closer guidance should be excluded when SuggestParallel is off")
 	}
 }

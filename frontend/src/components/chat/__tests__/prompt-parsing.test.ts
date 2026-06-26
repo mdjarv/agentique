@@ -693,31 +693,44 @@ describe("agentique tag — malformed-closer recovery & nested tokens", () => {
     }
   });
 
-  it("incident #1: wrong closer </parameter> recovers into a warned card (not plain text)", () => {
+  it("incident #1: wrong closer </parameter> recovers SILENTLY into a card (not plain text, no warning)", () => {
     const md = [
       '<agentique type="prompt" title="Wrong closer">',
       "Refactor the auth middleware.",
       "</parameter>",
     ].join("\n");
     // No isFinal — a present-but-wrong closer is a concrete boundary, so it
-    // recovers regardless of stream state.
+    // recovers regardless of stream state. </parameter> is the understood
+    // tool-call-syntax bleed, so recovery is silent (no warning chip).
     const segments = splitByPromptBlocks(md);
     expect(segments).toHaveLength(1);
     expect(segments[0]?.type).toBe("prompt");
     if (segments[0]?.type === "prompt") {
       expect(segments[0].block.title).toBe("Wrong closer");
       expect(segments[0].block.prompt).toBe("Refactor the auth middleware.");
-      expect(segments[0].block.warning).toMatch(/malformed close tag/i);
+      expect(segments[0].block.warning).toBeUndefined();
     }
   });
 
-  it("incident #1 variant: </prompt> closer also recovers with a warning", () => {
+  it("incident #1 variant: </prompt> closer also recovers silently", () => {
     const md = '<agentique type="prompt" title="Prompt closer">\nBody.\n</prompt>';
     const segments = splitByPromptBlocks(md);
     expect(segments).toHaveLength(1);
     if (segments[0]?.type === "prompt") {
       expect(segments[0].block.prompt).toBe("Body.");
-      expect(segments[0].block.warning).toBeTruthy();
+      expect(segments[0].block.warning).toBeUndefined();
+    } else {
+      expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
+    }
+  });
+
+  it("an unknown close-like tag still recovers WITH a warning (only known closers are silent)", () => {
+    const md = '<agentique type="prompt" title="Odd closer">\nBody.\n</div>';
+    const segments = splitByPromptBlocks(md);
+    expect(segments).toHaveLength(1);
+    if (segments[0]?.type === "prompt") {
+      expect(segments[0].block.prompt).toBe("Body.");
+      expect(segments[0].block.warning).toMatch(/malformed close tag/i);
     } else {
       expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
     }
@@ -783,7 +796,7 @@ describe("agentique tag — malformed-closer recovery & nested tokens", () => {
     if (prompts[0]?.type === "prompt" && prompts[1]?.type === "prompt") {
       expect(prompts[0].block.title).toBe("A");
       expect(prompts[0].block.prompt).toBe("Body A.");
-      expect(prompts[0].block.warning).toBeTruthy(); // A was mis-closed
+      expect(prompts[0].block.warning).toBeUndefined(); // A was mis-closed with </parameter> → silent recovery
       expect(prompts[1].block.title).toBe("B");
       expect(prompts[1].block.prompt).toBe("Body B.");
       expect(prompts[1].block.warning).toBeUndefined(); // B was well-formed
@@ -859,7 +872,7 @@ describe("agentique tag — malformed-closer recovery & nested tokens", () => {
     expect(segments).toHaveLength(1);
     if (segments[0]?.type === "prompt") {
       expect(segments[0].block.projectSlug).toBe("formica");
-      expect(segments[0].block.warning).toBeTruthy();
+      expect(segments[0].block.warning).toBeUndefined(); // </parameter> → silent recovery
       expect(segments[0].block.prompt).toBe("Do it.");
     } else {
       expect.fail(`expected prompt segment, got ${segments[0]?.type}`);
@@ -951,7 +964,7 @@ describe("agentique tag — bug sweep", () => {
       expect(prompts[0].block.prompt).toContain('<agentique type="prompt" title="Inner">');
       expect(prompts[0].block.prompt).toContain("Inner body.");
       expect(prompts[0].block.prompt).toContain("More outer.");
-      expect(prompts[0].block.warning).toBeTruthy();
+      expect(prompts[0].block.warning).toBeUndefined(); // outer mis-closed with </parameter> → silent
     }
   });
 
@@ -987,13 +1000,15 @@ describe("agentique tag — bug sweep", () => {
     }
   });
 
-  it("missing title combined with a wrong closer keeps both warnings and renders a card", () => {
+  it("missing title with a silent wrong closer still warns about the title (closer recovery stays silent)", () => {
     const md = '<agentique type="prompt">\nDo the thing.\n</parameter>';
     const segments = splitByPromptBlocks(md);
     expect(segments).toHaveLength(1);
     if (segments[0]?.type === "prompt") {
       expect(segments[0].block.title).toBe("Untitled prompt");
-      expect(segments[0].block.warning).toMatch(/malformed close tag/i);
+      // The </parameter> recovery is silent, but a missing title is independently
+      // surfaced so the placeholder card isn't silent about it.
+      expect(segments[0].block.warning).not.toMatch(/malformed close tag/i);
       expect(segments[0].block.warning).toMatch(/missing title/i);
     } else {
       expect.fail(`expected prompt segment, got ${segments[0]?.type}`);

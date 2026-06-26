@@ -300,8 +300,16 @@ const UNTITLED_PROMPT = "Untitled prompt";
 const RE_ATTR = /([\w-]+)\s*=\s*"([^"]*)"/g;
 const RE_FENCE_CLOSE_LINE = /^ {0,3}(`{3,})\s*$/;
 // Any closing tag, e.g. </parameter>, </prompt>, </agentique>. Used only by the
-// recovery scanner to find a plausible boundary for a malformed block.
-const RE_CLOSE_LIKE_ANCHORED = /^<\/[a-zA-Z][\w-]*\s*>/;
+// recovery scanner to find a plausible boundary for a malformed block. Group 1
+// captures the tag name so the warning logic can tell understood mistakes
+// (</parameter>, </prompt>) apart from genuinely ambiguous closers.
+const RE_CLOSE_LIKE_ANCHORED = /^<\/([a-zA-Z][\w-]*)\s*>/;
+
+// Wrong closers we fully understand: the function-calling-syntax bleed where a
+// model closes the block with a tool-call parameter/prompt tag. Recovery is
+// deterministic and correct for these, so it happens silently — surfacing a
+// warning would be pure noise. Any other close-like tag stays warned.
+const SILENT_WRONG_CLOSERS = new Set(["parameter", "prompt"]);
 
 /** Advance past a markdown code region beginning at a backtick run at index `i`
  *  (caller guarantees markdown[i] === "`"). Handles both fenced blocks (a ``` run
@@ -434,6 +442,10 @@ interface RecoveryBoundary {
   /** Position where preprocessing should resume after this block. */
   consumeEnd: number;
   reason: "wrong-closer" | "next-opener" | "eof";
+  /** Lowercased tag name of the wrong closer that bounded the block, when
+   *  reason === "wrong-closer" and it was a non-agentique close-like tag.
+   *  Drives silent vs. warned recovery (see SILENT_WRONG_CLOSERS). */
+  closer?: string;
 }
 
 /** Locate the most plausible end of a block whose proper `</agentique>` closer is
@@ -490,7 +502,12 @@ function findRecoveryBoundary(markdown: string, openEnd: number): RecoveryBounda
       if (depth === 0) {
         const closeM = RE_CLOSE_LIKE_ANCHORED.exec(rest);
         if (closeM) {
-          return { bodyEnd: i, consumeEnd: i + closeM[0].length, reason: "wrong-closer" };
+          return {
+            bodyEnd: i,
+            consumeEnd: i + closeM[0].length,
+            reason: "wrong-closer",
+            closer: closeM[1]?.toLowerCase(),
+          };
         }
       }
     }
@@ -508,6 +525,23 @@ const RECOVERY_WARNINGS: Record<RecoveryBoundary["reason"], string> = {
   "next-opener": "Missing close tag — auto-recovered at the start of the next prompt block.",
   eof: "Missing close tag — auto-recovered at end of message.",
 };
+
+/** The user-facing warning for a recovered block, or undefined when recovery is
+ *  silent. A wrong closer we fully understand (</parameter>, </prompt>) recovers
+ *  deterministically into the correct card, so we suppress the warning to avoid
+ *  noise. Genuinely ambiguous recoveries — an unknown close-like tag, a sibling
+ *  opener, or end-of-message — keep their warning so recovery is never silent
+ *  where we can't be sure. */
+function recoveryWarning(recovery: RecoveryBoundary): string | undefined {
+  if (
+    recovery.reason === "wrong-closer" &&
+    recovery.closer &&
+    SILENT_WRONG_CLOSERS.has(recovery.closer)
+  ) {
+    return undefined;
+  }
+  return RECOVERY_WARNINGS[recovery.reason];
+}
 
 interface AgentiqueAttrs {
   type?: string;
@@ -627,7 +661,7 @@ export function preprocessAgentiqueTags(markdown: string, isFinal = false): stri
     const recovery = findRecoveryBoundary(markdown, openEnd);
     if (recovery.reason !== "eof" || isFinal) {
       const body = markdown.slice(openEnd, recovery.bodyEnd);
-      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true, RECOVERY_WARNINGS[recovery.reason])}\n`;
+      result += `${leadingPrefix}${buildFencedPrompt(attrs, body, true, recoveryWarning(recovery))}\n`;
       cursor = recovery.consumeEnd;
       continue;
     }
