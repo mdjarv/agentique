@@ -13,7 +13,14 @@ import {
   inReviewQueue,
   type Memory,
 } from "~/lib/brain-api";
-import { areaColor, communityColor, scopeColor } from "~/lib/scope-color";
+import {
+  jaccard,
+  SIM_DEGREE_CAP,
+  SIM_MAX_NODES,
+  SIM_THRESHOLD,
+  tokenize,
+} from "~/lib/brain-graph-model";
+import { areaColor, communityColor, coreColor, scopeColor } from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
 // the graph endpoint has loaded, degree/betweenness are present and drive node
@@ -79,9 +86,6 @@ const NODE_REL_SIZE = 2.4;
 const LABEL_ZOOM = 1.6;
 const FULLTEXT_ZOOM = 2.6;
 const LABEL_MAX_SCREEN_PX = 250; // wrap width for the full-text label, in screen px
-const SIM_THRESHOLD = 0.18; // min Jaccard to draw a similarity edge
-const SIM_MAX_NODES = 800; // skip the O(n^2) pass above this many nodes
-const SIM_DEGREE_CAP = 4; // max similarity edges per node, keeps it from hairballing
 const REGION_MAX_NODES = 4000; // skip the per-frame hull pass above this many nodes (hull is ~n log n, cheap)
 const REGION_PAD = 12; // world-unit breathing room around a region's outermost nodes
 
@@ -127,40 +131,10 @@ const NEBULA_MAX_ZOOM = 1.3; // fully faded by this zoom
 const NEBULA_REACH = 11; // cloud radius = nodeRadius × this (large, so neighbours' clouds overlap + bloom)
 const NEBULA_MAX_NODES = 3000;
 
-// coreColor maps a node's trust tier (+ confidence) to its core colour. `base` is the scope/area hue.
-function coreColor(trust: "human" | "review" | "normal", base: string, conf: number): string {
-  if (trust === "human") return "#fbfdff"; // white-hot ground truth
-  if (trust === "review") return "#fbbf24"; // amber — flagged / low confidence
-  const norm = Math.max(0, Math.min(1, (conf - 0.6) / 0.4));
-  return shade(base, 0.12 + 0.5 * norm); // inferred: dim → bright with confidence
-}
-
-const STOPWORDS = new Set(
-  "the and for are but not you all any can has have was with this that from they will would there their what when which while into over under more most some such only own same than too very our your".split(
-    " ",
-  ),
-);
-
 function nodeColor(node: NodeData, colorBy: ColorBy): string {
   if (colorBy === "area") return areaColor(node.area);
   if (colorBy === "community") return communityColor(node.scope, node.community);
   return scopeColor(node.scope);
-}
-
-function tokenize(text: string): Set<string> {
-  const out = new Set<string>();
-  for (const w of text.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (w.length >= 3 && !STOPWORDS.has(w)) out.add(w);
-  }
-  return out;
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  const [small, big] = a.size < b.size ? [a, b] : [b, a];
-  let inter = 0;
-  for (const x of small) if (big.has(x)) inter++;
-  return inter / (a.size + b.size - inter);
 }
 
 function endId(e: string | number | GNode | undefined): string {
@@ -231,17 +205,6 @@ function withAlpha(hex: string, alpha: number): string {
 
 // shade mixes a "#rrggbb" hex toward white (amt > 0) or black (amt < 0) by |amt| ∈ [0,1].
 // Used to build the per-node radial gradient that gives the flat discs a lit, beaded look.
-function shade(hex: string, amt: number): string {
-  const h = hex.replace("#", "");
-  const t = amt < 0 ? 0 : 255;
-  const p = Math.min(1, Math.abs(amt));
-  const mix = (c: number) => Math.round(c + (t - c) * p);
-  const r = mix(Number.parseInt(h.slice(0, 2), 16));
-  const g = mix(Number.parseInt(h.slice(2, 4), 16));
-  const b = mix(Number.parseInt(h.slice(4, 6), 16));
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 // INSIGHT_LIST_CAP bounds how many ids one section renders — some lists (notably
 // isolated, which can be most of the corpus on a sparse link graph) are unbounded
 // server-side. The full size is still shown in the header.

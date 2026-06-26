@@ -311,6 +311,30 @@ emergent map of meaning.
 4. ~~**P2** — confidence tiers + centrality + the "confirm" UX.~~ ✅ done (`memory/{confidence,centrality}.go`, `brain/graph.go`).
 5. ~~**P5** — ConsolidateGlobal via the graph: cross-scope community guardrail + content-hash manifest.~~ ✅ done (`memory/global_graph.go`). neo4j remains parked as a documented optional export — the only unimplemented item, and a non-goal at current scale.
 
+## 3D view (`BrainGraph3D`)
+
+A second renderer of the same graph, behind the third toggle (the orbit icon) on the brain
+page. It's true 3D — three.js + `d3-force-3d` — with the memories laid out as **ember nodes**
+(trust-by-heat core + scope-coloured halo, identical encoding to the 2D `coreColor`) orbiting a
+procedural **central brain model**; the semantic web is drawn as glowing line segments with
+**signal particles** flowing along edges, plus ambient dust and an `UnrealBloomPass` for the glow.
+Mouse: drag = orbit, right-drag = pan, scroll = zoom, click a node = fly-to/focus; hover dims the
+rest and shows a tooltip; proximity HTML labels reveal captions as you zoom near a region.
+
+Architecture:
+- **Shared model** (`lib/brain-graph-model.ts`): `buildBrainModel(memories, semanticLinks, …)`
+  returns the neutral `{ nodes, links }` — the same node fields, trust tiers, sizing, and
+  semantic-or-lexical edge selection the 2D view uses. `coreColor`/`shade` live in
+  `lib/scope-color.ts` so both views single-source the trust-heat encoding. The 2D `BrainGraph`
+  keeps its own react-force-graph-coupled memo (it must carry simulation positions across refetches)
+  but imports the shared helpers.
+- **Layout**: a 3D force sim (charge + weighted links + collide + light gravity) is *pre-settled
+  synchronously* on mount (CPU only, no render coupling), then a **hollow-core force** pushes the
+  connected web out of the centre so it orbits the brain. Colour-by (scope/community/area) recolours
+  in place; only the data triggers a rebuild.
+- **Lazy-loaded**: `BrainPage` code-splits it via `React.lazy`, so three.js (~580 KB) loads only
+  when the 3D view is opened — the list/2D paths stay lean.
+
 ## What's next
 
 This RFC gave the brain its *structure*. The follow-on — [brain-learning-dynamics.md](brain-learning-dynamics.md)

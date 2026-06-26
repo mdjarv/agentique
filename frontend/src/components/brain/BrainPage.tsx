@@ -9,13 +9,14 @@ import {
   Lock,
   LockOpen,
   Network,
+  Orbit,
   Pin,
   PinOff,
   Plus,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
 import { MemoryReview } from "~/components/brain/MemoryReview";
@@ -35,6 +36,12 @@ import {
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
+
+// Code-split the 3D view: three.js + d3-force-3d are a large bundle only the 3D graph
+// needs, so they load on demand when the user opens it — the list/2D paths stay lean.
+const BrainGraph3D = lazy(() =>
+  import("~/components/brain/BrainGraph3D").then((m) => ({ default: m.BrainGraph3D })),
+);
 
 const CATEGORIES = ["fact", "identity", "preference", "contact", "project", "goal", "task"];
 const GLOBAL_SCOPE = "global";
@@ -82,8 +89,10 @@ export function BrainPage() {
   const [model, setModel] = useState("opus");
   const [mode, setMode] = useState<ConsolidateMode>("conservative");
   // Default to the graph: it's the more legible, exploratory entry point to the brain
-  // (the list is one click away via the toggle).
-  const [view, setView] = useState<"list" | "graph">("graph");
+  // (the list is one click away via the toggle). "graph3d" is the three.js view —
+  // memories orbiting a central brain model in true 3D.
+  const [view, setView] = useState<"list" | "graph" | "graph3d">("graph");
+  const graphView = view === "graph" || view === "graph3d";
   const [reviewing, setReviewing] = useState(false);
   // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
   const reviewQueue = useMemo(() => memories.filter(inReviewQueue), [memories]);
@@ -113,8 +122,8 @@ export function BrainPage() {
   const jobActive = previewing || globalPreviewing || consolidatingAll;
   // biome-ignore lint/correctness/useExhaustiveDependencies: flareSeq is a trigger-only dep — it bumps on any memory change (here or another tab) to re-fetch the graph so the insights + confirm queue stay fresh after a consolidation/confirm; its value isn't read in the body.
   useEffect(() => {
-    if (view === "graph" && !jobActive) loadGraph();
-  }, [view, loadGraph, flareSeq, jobActive]);
+    if (graphView && !jobActive) loadGraph();
+  }, [graphView, loadGraph, flareSeq, jobActive]);
 
   const labelForScope = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
@@ -231,6 +240,14 @@ export function BrainPage() {
             className={`flex size-8 items-center justify-center ${view === "graph" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
             <Network className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("graph3d")}
+            title="3D graph view — memories orbiting the brain"
+            className={`flex size-8 items-center justify-center ${view === "graph3d" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Orbit className="size-4" />
           </button>
         </div>
         <select
@@ -386,6 +403,29 @@ export function BrainPage() {
                 }
               }}
             />
+          )}
+        </div>
+      )}
+      {view === "graph3d" && (
+        <div className="min-h-0 flex-1">
+          {!graph && graphLoading ? (
+            <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Laying out graph…
+            </div>
+          ) : (
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" /> Loading 3D view…
+                </div>
+              }
+            >
+              <BrainGraph3D
+                memories={graphMemories}
+                links={graph?.links ?? null}
+                labelForScope={labelForScope}
+              />
+            </Suspense>
           )}
         </div>
       )}
