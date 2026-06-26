@@ -57,6 +57,18 @@ export function formatSummary(
       const done = todos.filter((t: Record<string, unknown>) => t.status === "completed").length;
       return `${done}/${todos.length} completed`;
     }
+    case "TaskCreate":
+      return String(obj.subject ?? "");
+    case "TaskUpdate": {
+      const id = obj.taskId ? `#${obj.taskId}` : "";
+      if (typeof obj.status === "string") return `${id} → ${obj.status}`.trim();
+      if (typeof obj.subject === "string") return `${id} ${obj.subject}`.trim();
+      return id || "Updating task";
+    }
+    case "TaskList":
+      return "Listing tasks";
+    case "TaskGet":
+      return obj.taskId ? `#${obj.taskId}` : "Reading task";
     case "EnterPlanMode":
       return "Entering plan mode";
     case "TodoRead":
@@ -121,7 +133,14 @@ function buildDetail(
     case "TodoWrite":
     case "TodoRead":
     case "EnterPlanMode":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
       return null;
+
+    // The subject is in the summary; expand to show the full description.
+    case "TaskCreate":
+      return obj.description ? { kind: "text", content: String(obj.description) } : null;
 
     // Write usually has nothing to expand, but a provider may attach a
     // unified diff (e.g. codex file additions) — render it when present.

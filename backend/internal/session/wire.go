@@ -485,7 +485,10 @@ func classifyTool(name string) string {
 		return "web"
 	case "Agent":
 		return "agent"
-	case "TodoWrite", "TodoRead":
+	case "TodoWrite", "TodoRead",
+		// Claude Code's task-list family superseded TodoWrite; TaskOutput/TaskStop
+		// are background-process control (a different "task") and stay default.
+		"TaskCreate", "TaskUpdate", "TaskList", "TaskGet":
 		return "task"
 	case "EnterPlanMode", "ExitPlanMode":
 		return "plan"
