@@ -3,16 +3,25 @@
 Status: **MVP implemented** (commit `20d62bd`). Supersedes the inline-XML authoring path for
 parallel-work suggestions. Pairs with the stopgap shipped in commit `3cef7d2`.
 
-**Shipped (MVP):** the tool (backend registration + auto-allow), the preamble flip to
-tool-only guidance, and the frontend `suggest_session` segment rendering as a `PromptCard`
-(reusing `PromptGroupProvider`'s launch path). Inline parser kept as a silent fallback.
-Tests: backend preamble + frontend `segments` interception.
+**Shipped (MVP, `20d62bd`):** the tool (backend registration + auto-allow), the preamble
+flip to tool-only guidance, and the frontend `suggest_session` segment rendering as a
+`PromptCard`. Inline parser kept as a silent fallback. Tests: backend preamble + frontend
+`segments` interception.
 
-**Deferred:** the `useStartPrompt` hook extraction (MVP wraps each card in a
-`PromptGroupProvider content=""` instead — works, slightly hacky); multi-suggestion
-grouping / "Start All"; retiring the inline parser + recovery machinery. **Not yet done:**
-the real-codex-session verification and the adoption measurement (the open risk below) —
-these need the branch deployed.
+**Polish shipped (`8fbdf6a`):**
+- *Provider decoupling (was: extract `useStartPrompt`).* `PromptGroupProvider` now takes
+  `prompts: PromptBlock[]` instead of parsing markdown `content` itself — the caller parses
+  (inline) or maps from tool calls (suggestions). This removes the `content=""` hack and is
+  cleaner than a separate hook (both paths already share the launch context via the
+  provider), so the hook extraction is moot.
+- *Multi-suggestion grouping.* `buildSegments` groups consecutive `SuggestSessionPrompt`
+  calls into one `suggest_session` segment (deduping repeated tool_use ids), so 2+ render
+  under one "Start All" footer; intervening content breaks the group.
+
+**Still deferred:** retiring the inline parser + recovery machinery — gated on adoption data
+*and* legacy-message rendering (old messages in `session_events` still contain inline
+blocks). **Not yet done:** real-codex-session verification + adoption measurement (the open
+risk below) — both need the branch deployed; the rendering/grouping is unit-verified only.
 
 ## Context
 
