@@ -375,17 +375,11 @@ function SuggestSessionView({
       projectId={projectId}
       sessionId={sessionId}
       isStreaming={isStreaming}
+      variant="group"
     >
-      <div className="space-y-2">
-        {items.map((s) => (
-          <PromptCard
-            key={s.toolId}
-            title={s.title}
-            prompt={s.prompt}
-            projectSlug={s.projectSlug}
-          />
-        ))}
-      </div>
+      {items.map((s) => (
+        <PromptCard key={s.toolId} title={s.title} prompt={s.prompt} projectSlug={s.projectSlug} />
+      ))}
     </PromptGroupProvider>
   );
 }

@@ -80,6 +80,7 @@ export function PromptGroupProvider({
   projectId,
   sessionId,
   isStreaming,
+  variant = "inline",
   children,
 }: {
   /** The prompts rendered as children, used to drive the "Start All" footer and
@@ -90,6 +91,10 @@ export function PromptGroupProvider({
   projectId: string;
   sessionId: string;
   isStreaming: boolean;
+  /** "inline" (default): cards flow in prose with a bare "Start All" footer.
+   *  "group": 2+ cards are wrapped in a labeled container that reads as one
+   *  launchable team (used by tool-sourced SuggestSessionPrompt cards). */
+  variant?: "inline" | "group";
   children: ReactNode;
 }) {
   const ws = useWebSocket();
@@ -223,35 +228,58 @@ export function PromptGroupProvider({
   const allStarted =
     prompts.length > 0 && prompts.every((p) => cardStates[p.title]?.state === "started");
 
+  const startAllButton = (
+    <Button
+      size="xs"
+      variant={allStarted ? "ghost" : "default"}
+      disabled={anyCreating || allStarted}
+      onClick={startAll}
+    >
+      {anyCreating ? (
+        <>
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Starting...
+        </>
+      ) : allStarted ? (
+        <>
+          <Check className="h-3 w-3" />
+          All Started
+        </>
+      ) : (
+        <>
+          <Users2 className="h-3 w-3" />
+          Start All ({prompts.length})
+        </>
+      )}
+    </Button>
+  );
+
+  // Grouped variant: 2+ tool-sourced suggestions render inside a labeled "team"
+  // tray so the grouping reads as one unit. A lone suggestion falls through to
+  // the plain layout (no tray).
+  if (variant === "group" && prompts.length >= 2) {
+    return (
+      <Ctx.Provider value={value}>
+        <div className="not-prose my-3 rounded-xl border border-border/60 bg-muted/20 px-2.5 pt-2 pb-2.5">
+          <div className="flex items-center gap-1.5 px-1 pb-1 text-xs">
+            <Users2 className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+            <span className="font-medium text-foreground/80">
+              {prompts.length} parallel sessions
+            </span>
+            <span className="text-muted-foreground/70">— launch together as a team</span>
+          </div>
+          <div className="[&>*:first-child]:mt-1.5">{children}</div>
+          {!isStreaming && <div className="flex justify-end mt-2">{startAllButton}</div>}
+        </div>
+      </Ctx.Provider>
+    );
+  }
+
   return (
     <Ctx.Provider value={value}>
       {children}
       {prompts.length >= 2 && !isStreaming && (
-        <div className="flex justify-end mt-2">
-          <Button
-            size="xs"
-            variant={allStarted ? "ghost" : "default"}
-            disabled={anyCreating || allStarted}
-            onClick={startAll}
-          >
-            {anyCreating ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Starting...
-              </>
-            ) : allStarted ? (
-              <>
-                <Check className="h-3 w-3" />
-                All Started
-              </>
-            ) : (
-              <>
-                <Users2 className="h-3 w-3" />
-                Start All ({prompts.length})
-              </>
-            )}
-          </Button>
-        </div>
+        <div className="flex justify-end mt-2">{startAllButton}</div>
       )}
     </Ctx.Provider>
   );
