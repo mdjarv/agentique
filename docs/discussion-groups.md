@@ -358,18 +358,17 @@ transcript).
 - **Relevance gating / "speak only if you have something to add"** — Odysseus doesn't have
   it; neither do we in v1.
 
-## 12. Open questions for review
+## 12. Resolved decisions (2026-06-28)
 
-1. **Group container session?** Channel-membership cleanup vs. a synthetic parent session
-   for `DeleteSession`-subtree convenience — recommend channel-based; confirm.
-2. **Keep-transcript default** on stop: dissolve-and-discard vs. dissolve-keep-history
-   (archived read-only channel)?
-3. **Writer commits**: auto-commit per writer turn (like the swarm forces `AutoCommit`) so
-   the branch is always inspectable, or leave the writer to commit explicitly?
-4. **Web-only Bash**: web-only groups still get a CWD (`project.Path` if `Worktree:false`).
-   For pure research, point Bash at a scratch dir instead of the real repo, or disallow
-   Bash entirely for web-only? Recommend disallow Bash for web-only.
-5. **Round budget / runaway guard**: cap rounds or per-turn `TaskBudget` to bound a
-   parallel group of capable models? (Costs are irrelevant per CLAUDE.md, but wall-clock
-   isn't.)
+1. **Group container session → no.** Cleanup is channel-membership based
+   (`DissolveChannel`); no synthetic parent session.
+2. **Keep-transcript on stop → keep by default.** Stopping does a dissolve-keep-history:
+   persona sessions + shared worktree torn down, the channel + timeline archived
+   read-only. (Sensible default; revisit if it clutters.)
+3. **Writer commits → a toggle at discussion start.** "Auto-commit writer turns" is an
+   opt-in checkbox on the start form; off = the writer commits explicitly.
+4. **Web-only Bash → disallowed.** Web-only groups get no Bash tool (no CWD into the real
+   repo); they web-search + reason only.
+5. **Round / runaway guard → none in v1.** Ship without a round cap or per-turn
+   `TaskBudget`; add a guard only if wall-clock proves a problem.
 ```
