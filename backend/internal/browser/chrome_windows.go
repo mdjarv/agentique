@@ -44,5 +44,25 @@ func findChromeBinary() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no Chrome/Chromium/Edge binary found on PATH or in standard install locations")
+	// Fallback: a Chromium provisioned by `playwright install` into the user
+	// cache. This is what auto-provisioning installs when no system browser exists.
+	if path := findPlaywrightChromium(); path != "" {
+		return path, nil
+	}
+
+	return "", fmt.Errorf("no Chrome/Chromium/Edge binary found on PATH, in standard install locations, or the Playwright cache")
+}
+
+// findPlaywrightChromium locates a Chromium installed by `playwright install`
+// under the OS user cache dir (%LocalAppData%\ms-playwright). Returns "" if none.
+func findPlaywrightChromium() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	pat := filepath.Join(cacheDir, "ms-playwright", "chromium-*", "chrome-win*", "chrome.exe")
+	if hits, _ := filepath.Glob(pat); len(hits) > 0 {
+		return hits[len(hits)-1] // latest revision
+	}
+	return ""
 }

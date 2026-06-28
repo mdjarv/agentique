@@ -146,6 +146,12 @@ type Session struct {
 	// Browser support: port allocated for Chrome's remote debugging.
 	browserPort int
 
+	// onEnsureBrowser, when wired (browser support available), launches the
+	// session's Chrome on demand. Called from handlePendingChange before a
+	// browser tool runs so the agent's lazily-connecting Playwright MCP has a
+	// live CDP endpoint to attach to. Guarded by mu.
+	onEnsureBrowser func() error
+
 	// recallFn, when wired by the Manager, returns a task-relevant memory recall block
 	// to prepend to a turn plus the fact ids it surfaced. It fires every turn (not just
 	// the first), passing recalledIDs so each turn injects only newly-relevant facts —
@@ -383,6 +389,25 @@ func (s *Session) BrowserPort() int { return s.browserPort }
 
 // SetBrowserPort stores the allocated Chrome debugging port.
 func (s *Session) SetBrowserPort(port int) { s.browserPort = port }
+
+// SetEnsureBrowserFunc wires the on-demand Chrome launch callback.
+func (s *Session) SetEnsureBrowserFunc(fn func() error) {
+	s.mu.Lock()
+	s.onEnsureBrowser = fn
+	s.mu.Unlock()
+}
+
+// ensureBrowser launches the session's Chrome on demand (no-op when browser
+// support is unwired). Blocking — may provision a Chromium on first ever use.
+func (s *Session) ensureBrowser() error {
+	s.mu.Lock()
+	fn := s.onEnsureBrowser
+	s.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
 
 // claudeUnderlying is satisfied by the agentkit claude adapter's CLISession.
 // It surfaces the *claudecli.Session so agentique can reach claude-specific

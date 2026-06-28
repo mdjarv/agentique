@@ -185,6 +185,11 @@ type Service struct {
 	personaQuerier PersonaQuerier  // optional; set when teams feature is enabled
 	browserSvc     *BrowserService // optional; set when browser support is available
 
+	// browserPanelEnabled gates the human-facing browser panel (the experimental
+	// flag). The agent browser MCP is always wired when browserSvc != nil — this
+	// only controls whether the live screencast panel is offered.
+	browserPanelEnabled bool
+
 	idempotencyMu    sync.Mutex
 	idempotencyCache map[string]idempotencyEntry
 
@@ -263,6 +268,12 @@ func (s *Service) SetBrowserService(bs *BrowserService) {
 	s.browserSvc = bs
 }
 
+// SetBrowserPanelEnabled toggles the human-facing browser panel (experimental
+// flag). Does not affect the always-on agent browser MCP.
+func (s *Service) SetBrowserPanelEnabled(enabled bool) {
+	s.browserPanelEnabled = enabled
+}
+
 // Manager returns the underlying Manager (needed for CloseAll on shutdown).
 func (s *Service) Manager() *Manager {
 	return s.mgr
@@ -328,7 +339,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	}
 	cfg := resolveSessionConfig(p, pc, project)
 
-	browserPort, mcpConfigs := s.allocateBrowserPort(sessionID)
+	browserPort, mcpConfigs := s.browserMCPConfig(sessionID)
 
 	sess, err := s.mgr.Create(ctx, CreateParams{
 		ID:                    sessionID,
@@ -352,6 +363,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		ParentSessionID:       p.ParentSessionID,
 		MCPConfigs:            mcpConfigs,
 		BrowserEnabled:        s.browserSvc != nil,
+		PanelEnabled:          s.browserPanelEnabled,
 		SystemPromptAdditions: pc.SystemPromptAdditions,
 	})
 	if err != nil {
@@ -364,6 +376,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	if browserPort > 0 {
 		sess.SetBrowserPort(browserPort)
 	}
+	s.wireEnsureBrowserCallback(sess)
 
 	slog.Info("session created", "session_id", sess.ID, "project", project.Name, "model", cfg.model, "worktree", p.Worktree)
 
@@ -545,13 +558,14 @@ func resolveSessionConfig(p CreateSessionParams, pc PersonaConfig, project store
 	return cfg
 }
 
-// allocateBrowserPort pre-allocates a Playwright MCP port so the CLI process
-// can be started with the Chrome MCP config baked in. Chrome itself is not
-// started yet — it launches when the user clicks "Open Browser" and the
-// session reconnects via ReconnectMCPServer.
+// browserMCPConfig pre-allocates the agent browser's CDP port and returns the
+// always-on Playwright MCP config (pointed at that port + the session files dir
+// for screenshots). Chrome itself is not started yet — it launches lazily on the
+// first browser tool call (handlePendingChange → EnsureBrowser). The MCP tools
+// are advertised from session start and connect over CDP once Chrome is up.
 //
 // Returns 0 / nil when the browser service is unavailable or allocation fails.
-func (s *Service) allocateBrowserPort(sessionID string) (int, []string) {
+func (s *Service) browserMCPConfig(sessionID string) (int, []string) {
 	if s.browserSvc == nil {
 		return 0, nil
 	}
@@ -560,7 +574,8 @@ func (s *Service) allocateBrowserPort(sessionID string) (int, []string) {
 		slog.Warn("browser port allocation failed", "session_id", sessionID, "error", err)
 		return 0, nil
 	}
-	return port, []string{PlaywrightMCPConfig(port)}
+	outputDir := filepath.Join(paths.SessionFilesDir(), sessionID)
+	return port, []string{StandalonePlaywrightMCPConfig(port, outputDir)}
 }
 
 // resolveAgentProfileMeta returns the (name, avatar) for the bound agent
@@ -1277,14 +1292,19 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		TeamPreambles:     resumeTC.toPreambles(),
 		ExtraPreamble:         extraPreamble,
 		BrowserEnabled:        s.browserSvc != nil,
+		PanelEnabled:          s.browserPanelEnabled,
 		SystemPromptAdditions: resumePC.SystemPromptAdditions,
 	}
 
-	// Re-add browser MCP config on resume so the Playwright server starts with the CLI.
+	// Re-add the agent browser MCP config on resume so the Playwright server
+	// starts with the CLI (Chrome still launches lazily on first tool use).
+	var resumeBrowserPort int
 	if s.browserSvc != nil {
 		port, portErr := s.browserSvc.AllocatePort(sessionID)
 		if portErr == nil {
-			params.MCPConfigs = append(params.MCPConfigs, PlaywrightMCPConfig(port))
+			resumeBrowserPort = port
+			outputDir := filepath.Join(paths.SessionFilesDir(), sessionID)
+			params.MCPConfigs = append(params.MCPConfigs, StandalonePlaywrightMCPConfig(port, outputDir))
 		}
 	}
 
@@ -1299,6 +1319,9 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 		return nil, resumeErr
 	}
 
+	if resumeBrowserPort > 0 {
+		sess.SetBrowserPort(resumeBrowserPort)
+	}
 	s.wirePostResumeCallbacks(sess, dbSess, channelMemberships, resumeTC)
 	applyPostResumeFlags(sess, dbSess)
 
@@ -1325,6 +1348,19 @@ func (s *Service) wirePostResumeCallbacks(
 	}
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)
 	s.wirePersonaContext(sess, nullStr(dbSess.AgentProfileID), resumeTC)
+	s.wireEnsureBrowserCallback(sess)
+}
+
+// wireEnsureBrowserCallback wires on-demand Chrome launch for the session's
+// agent browser tools. No-op when browser support is unavailable.
+func (s *Service) wireEnsureBrowserCallback(sess *Session) {
+	if s.browserSvc == nil {
+		return
+	}
+	sessID := sess.ID
+	sess.SetEnsureBrowserFunc(func() error {
+		return s.browserSvc.EnsureBrowser(sessID)
+	})
 }
 
 // applyPostResumeFlags re-applies persisted lifecycle flags (merged/completed)

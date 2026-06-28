@@ -37,9 +37,14 @@ type Manager struct {
 	// chromePath is resolved once and cached.
 	chromePath string
 
-	// findChrome and execCommand are injectable for testing.
+	// provisionMu serializes ProvisionChrome so concurrent first-launches across
+	// sessions share a single `playwright install` instead of racing.
+	provisionMu sync.Mutex
+
+	// findChrome, execCommand, and provision are injectable for testing.
 	findChrome  func() (string, error)
 	execCommand func(ctx context.Context, name string, args ...string) *exec.Cmd
+	provision   func() error
 }
 
 // NewManager creates a new browser manager.
@@ -48,7 +53,60 @@ func NewManager() *Manager {
 		instances:   make(map[string]*Instance),
 		findChrome:  findChromeBinary,
 		execCommand: exec.CommandContext,
+		provision:   provisionChromiumDefault,
 	}
+}
+
+// ChromeAvailable reports whether a Chrome/Chromium binary can be located
+// (cached, on PATH, or in the Playwright cache) without launching it.
+func (m *Manager) ChromeAvailable() bool {
+	m.mu.Lock()
+	cached := m.chromePath
+	m.mu.Unlock()
+	if cached != "" {
+		return true
+	}
+	_, err := m.findChrome()
+	return err == nil
+}
+
+// ProvisionChrome installs a Chromium into the Playwright user cache
+// (`npx playwright install chromium` — userspace, no root). Single-flight:
+// concurrent callers share one install. A no-op if a binary already exists.
+func (m *Manager) ProvisionChrome() error {
+	m.provisionMu.Lock()
+	defer m.provisionMu.Unlock()
+
+	// Re-check under the lock: a concurrent caller may have just provisioned, or
+	// a binary may have appeared since the availability check.
+	if _, err := m.findChrome(); err == nil {
+		return nil
+	}
+	if err := m.provision(); err != nil {
+		return err
+	}
+	if _, err := m.findChrome(); err != nil {
+		return fmt.Errorf("chromium still not found after provisioning: %w", err)
+	}
+	return nil
+}
+
+// provisionChromiumDefault downloads a Chromium into the Playwright user cache.
+// No root required; the binary lands under ~/.cache/ms-playwright (or the OS
+// cache dir) where findChromeBinary's fallback discovers it.
+func provisionChromiumDefault() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "npx", "-y", "playwright", "install", "chromium")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := string(out)
+		if len(msg) > 500 {
+			msg = msg[len(msg)-500:]
+		}
+		return fmt.Errorf("npx playwright install chromium: %w: %s", err, msg)
+	}
+	return nil
 }
 
 // findChromeBinary locates a Chrome/Chromium binary. The candidate list and

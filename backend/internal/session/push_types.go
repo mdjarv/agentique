@@ -131,6 +131,13 @@ type PushBrowserStopped struct {
 	Reason    string `json:"reason"`
 }
 
+// PushBrowserProvisioning signals progress while a Chromium is being installed
+// on first browser use. State is one of "installing", "ready", "failed".
+type PushBrowserProvisioning struct {
+	SessionID string `json:"sessionId"`
+	State     string `json:"state"`
+}
+
 // ActivityItem is a single entry in the project activity feed.
 // Covers both channel messages and significant session events.
 type ActivityItem struct {

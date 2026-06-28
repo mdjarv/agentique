@@ -171,11 +171,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	gitSvc := session.NewGitService(mgr, queries, bus, runner)
 	svc.SetGitService(gitSvc)
 
-	var browserSvc *session.BrowserService
+	// The agent browser (headless Playwright MCP) is always available — it
+	// launches lazily on first tool use. The experimental flag only gates the
+	// human-facing browser panel (the live screencast view).
+	browserMgr := browser.NewManager()
+	browserSvc := session.NewBrowserService(mgr, browserMgr, bus)
+	svc.SetBrowserService(browserSvc)
+	svc.SetBrowserPanelEnabled(cfg.ExperimentalBrowser)
 	if cfg.ExperimentalBrowser {
-		browserMgr := browser.NewManager()
-		browserSvc = session.NewBrowserService(mgr, browserMgr, bus)
-		svc.SetBrowserService(browserSvc)
 		slog.Info("experimental browser panel enabled")
 	}
 

@@ -175,21 +175,29 @@ Session files directory (persistent, survives worktree deletion):
 
        [filename.md](/api/sessions/%s/files/filename.md)
 
-**IMPORTANT:** Never link to ` + "`localhost`" + `, ` + "`127.0.0.1`" + `, or any other host/port directly. The ONLY way the user can see files is through ` + "`/api/sessions/`" + `.
+**IMPORTANT:** Never link to ` + "`localhost`" + `, ` + "`127.0.0.1`" + `, or any other host/port directly. The ONLY way the user can see files is through ` + "`/api/sessions/`" + `.`
 
-**Playwright screenshots:** After ` + "`mcp__agentique-playwright__browser_take_screenshot`" + `, the tool saves to a temp path. Copy that file to the session files directory, then embed using the pattern above.`
+// preambleAgentBrowser advertises the always-on headless browser automation.
+// Included whenever browser support is wired (browserEnabled). The browser
+// launches lazily on first tool use; no "open the browser" step is required.
+const preambleAgentBrowser = `
 
-// preambleBrowser explains the managed browser and its MCP tools.
-// Only included when the browser feature is enabled.
+## Browser automation
+
+You have a headless browser via the ` + "`agentique-playwright`" + ` MCP server — tools are prefixed ` + "`mcp__agentique-playwright__`" + ` (e.g. ` + "`mcp__agentique-playwright__browser_navigate`" + `, ` + "`mcp__agentique-playwright__browser_take_screenshot`" + `). Use it to test pages, scrape, or capture screenshots. It launches automatically on first use — there is no separate "open browser" step.
+
+**Screenshots:** call ` + "`browser_take_screenshot`" + ` **without** a ` + "`filename`" + ` — it auto-saves into your session files directory. Embed the saved file with ` + "`![desc](/api/sessions/<id>/files/<name>)`" + ` (the tool result names the file). A bare ` + "`filename`" + ` saves elsewhere and won't be servable.
+
+If a global Playwright plugin (` + "`mcp__playwright__*`" + `) is also present, prefer the ` + "`agentique-playwright`" + ` tools.`
+
+// preambleBrowser explains the human-facing browser panel (the bonus). Only
+// included when the panel feature is enabled (experimental flag). The panel is a
+// live view of the SAME browser the agent drives — no separate browser.
 const preambleBrowser = `
 
-## Browser
+## Browser panel
 
-This session has a managed headless Chrome instance available via the ` + "`agentique-playwright`" + ` MCP server. Tools are prefixed ` + "`mcp__agentique-playwright__`" + ` (e.g. ` + "`mcp__agentique-playwright__browser_navigate`" + `). The user can see the browser in a panel beside the chat.
-
-**Important:** Do NOT use these tools until you receive a message confirming the browser has been launched. The browser starts on demand — calling tools before launch will fail.
-
-If a global Playwright plugin (` + "`mcp__playwright__*`" + `) is also available, prefer the ` + "`agentique-playwright`" + ` tools — they connect to the shared browser visible in the UI panel.`
+The user can open a panel beside the chat that shows your ` + "`agentique-playwright`" + ` browser live and lets them watch and intervene as you work. Nothing changes about how you use the tools — the panel is just a window onto the same browser.`
 
 // ProjectInfo holds the minimal project metadata needed for the preamble.
 type ProjectInfo struct {
@@ -237,7 +245,7 @@ type TeamPreambleMember struct {
 // Snippets are conditionally included based on the behavior presets.
 // systemPromptAdditions comes from the agent profile's persona config.
 // globalExtra is appended at the end if non-empty (e.g., dev-mode safety instructions).
-func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, channels []*ChannelPreambleInfo, teams []*TeamPreambleInfo, globalExtra string, browserEnabled bool, systemPromptAdditions string) string {
+func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, presets BehaviorPresets, channels []*ChannelPreambleInfo, teams []*TeamPreambleInfo, globalExtra string, browserEnabled bool, panelEnabled bool, systemPromptAdditions string) string {
 	s := preambleIdentity
 
 	if presets.SuggestParallel {
@@ -321,6 +329,10 @@ func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, pre
 	}
 
 	if browserEnabled {
+		s += preambleAgentBrowser
+	}
+
+	if panelEnabled {
 		s += preambleBrowser
 	}
 

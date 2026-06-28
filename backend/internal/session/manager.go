@@ -39,7 +39,8 @@ type CreateParams struct {
 	AgentProfileID        string
 	ParentSessionID       string   // optional: lead session that spawned this worker
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled        bool
+	BrowserEnabled        bool // agent browser MCP available (browserSvc wired)
+	PanelEnabled          bool // human-facing browser panel (experimental flag)
 	SystemPromptAdditions string // from persona config; appended to the session preamble
 }
 
@@ -321,7 +322,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID) + m.memoryContract(context.Background(), params.ProjectID) + m.memoryRecallPreamble()
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.PanelEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID) + m.memoryContract(context.Background(), params.ProjectID) + m.memoryRecallPreamble()
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
@@ -433,7 +434,8 @@ type ResumeParams struct {
 	TeamPreambles         []*TeamPreambleInfo
 	ExtraPreamble         string   // appended to system prompt (e.g. fresh-worktree notice)
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled        bool
+	BrowserEnabled        bool // agent browser MCP available (browserSvc wired)
+	PanelEnabled          bool // human-facing browser panel (experimental flag)
 	SystemPromptAdditions string // from persona config; appended to session preamble
 }
 
@@ -476,7 +478,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
@@ -566,7 +568,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 

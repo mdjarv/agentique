@@ -4,9 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/allbin/agentkit/runtime"
 )
+
+// browserToolPrefix is the MCP tool-name prefix for the managed agent browser.
+var browserToolPrefix = "mcp__" + MCPServerName + "__"
+
+// isBrowserTool reports whether a tool name belongs to the agent browser MCP.
+func isBrowserTool(toolName string) bool {
+	return strings.HasPrefix(toolName, browserToolPrefix)
+}
 
 // makeBroadcastHook returns a runtime BroadcastFunc bound to the given
 // agentique Session. The hook fans out events:
@@ -146,12 +155,27 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 	rtA, rtQ := rt.PendingState()
 
 	if rtA != nil {
-		if shouldBypassPermission(autoMode, permMode, rtA.ToolName) {
+		handled := false
+		// Lazy browser launch: a browser tool needs Chrome up before it executes.
+		// EnsureBrowser is a local op (no CLI control-channel round-trip) — the
+		// agent's Playwright MCP connects over CDP when the approved call runs, so
+		// having Chrome up before we approve is sufficient. On failure, deny with
+		// the actionable message rather than letting the call fail opaquely.
+		if isBrowserTool(rtA.ToolName) {
+			if err := s.ensureBrowser(); err != nil {
+				if e := rt.SubmitApproval(rtA.ID, runtime.Decision{Allow: false, DenyMessage: err.Error()}); e != nil && e != runtime.ErrPendingNotFound {
+					slog.Warn("browser-ensure deny failed", "session_id", s.ID, "approval_id", rtA.ID, "error", e)
+				}
+				s.broadcast("session.approval-auto-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: rtA.ID})
+				handled = true
+			}
+		}
+		if !handled && shouldBypassPermission(autoMode, permMode, rtA.ToolName) {
 			if err := rt.SubmitApproval(rtA.ID, runtime.Decision{Allow: true}); err != nil && err != runtime.ErrPendingNotFound {
 				slog.Warn("auto-resolve approval failed", "session_id", s.ID, "approval_id", rtA.ID, "error", err)
 			}
 			s.broadcast("session.approval-auto-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: rtA.ID})
-		} else {
+		} else if !handled {
 			s.broadcast("session.tool-permission", PushToolPermission{
 				SessionID:  s.ID,
 				ApprovalID: rtA.ID,
