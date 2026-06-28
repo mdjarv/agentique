@@ -9,33 +9,42 @@ Supersedes: the current "Teams" UI (channels-as-tab + persona-teams dashboard). 
 
 ## Implementation status (2026-06-28)
 
-Backend is implemented and verified (builds clean; `internal/session` passes
-`go test -race -short`). Frontend + persona seeding remain.
+**Shipped end-to-end and verified.** Backend builds clean and `internal/session`
+passes `go test -race -short`; frontend `just check` (biome + tsc) passes; a live
+run against the mock-CLI backend exercised the full path — `discussion.start` →
+a round-robin round → `channel.message` + `discussion.state` pushes → persisted
+transcript (both personas joined, contributed, cross-injected) → `discussion.stop`.
 
 **Landed (committed):**
-- *Enablers* — `OnTurnComplete` carries `runtime.TurnCompletedEvent` + a per-session
+- *Enablers* — `OnTurnComplete` carries `runtime.TurnCompletedEvent` + per-session
   `SetTurnCompleteHook`; `PersonaConfig.WriteAccess`/`NoNamePrefix`;
   `CreateSessionParams.SharedWorkDir` (bind N personas to one worktree, no
   per-session reaping) + `SkipRecall`.
-- *Orchestrator* (`internal/session/discussion.go`) — `StartDiscussion` /
-  `SendDiscussionRound` / `StopDiscussion`; round-robin (shuffled, sequential) and
-  parallel rounds; one-time etiquette + cross-injected `[Name]:` deltas; reply
+- *Orchestrator* (`internal/session/discussion.go`) — start/round/stop; round-robin
+  (shuffled) + parallel; one-time etiquette + cross-injected `[Name]:` deltas; reply
   capture via the turn hook; contributions mirrored to the channel timeline; one
-  shared worktree on a `group-<id>` branch; dissolve-keep-history teardown.
+  shared `group-<id>` worktree; dissolve-keep-history teardown.
 - *Endpoints* — `discussion.{start,round,stop}` WS handlers + validated payloads;
   `DiscussionInfo` + the `discussion.state` push event exported via typegen.
+- *Personas* — the 5 Odysseus profiles seeded as global `agent_profiles` at startup
+  (idempotent); verified present at runtime.
+- *Frontend* — `/discussions` launcher (composer: global+project personas,
+  per-persona write toggle, mode/scope/auto-commit, prompt) + the Roundtable
+  `DiscussionPanel` (roster rail + reused channel transcript + round composer +
+  stop); `discussion.state`/`.stopped` subscriptions + a sidebar entry.
 
-**Remaining:**
-- *Frontend* (§10) — the Roundtable panel + composer; list global + project
-  personas; `just check` must pass. The biggest remaining piece.
-- *Seed personas* (§7) — the 5 Odysseus profiles as global `agent_profiles`
-  (pairs with the composer's global-profile listing).
-- *Read-only enforcement* (DEFERRED, flagged) — needs an `agentkit`
-  `DisallowedTools` change (+ commit/repin). Until then read-only is soft-enforced
-  via `AutoApproveMode:"fullAuto"` + the persona prompt; the same dependency gates
-  the web-only "disallow Bash" decision (§5 / §12.4).
-- *End-to-end verify* — run a live discussion in an isolated env (needs a provider
-  CLI; the `-short` suite skips it).
+**Known follow-ups (non-blocking):**
+- *Read-only hard-enforcement* — needs the `agentkit` `DisallowedTools` change
+  (+ commit/repin; there's no `go.work`, so it isn't a local edit). Until then
+  read-only is soft-enforced via `AutoApproveMode:"fullAuto"` + the persona prompt;
+  the same dependency gates the web-only "no Bash" decision (§5 / §12.4).
+- *`noNamePrefix` over the wire* — the composer sends `noNamePrefix:false` for all
+  (the seeded Razor's intrinsic flag isn't surfaced in the wire `AgentProfileConfig`).
+  The field works end-to-end when set; cosmetic only.
+- *Discussion UI requires the experimental "teams" feature* (it reuses
+  `agent-profile.list`); enable with `[experimental] teams = true` in `config.toml`.
+- *Saved group config* (persisting mode/scope on `teams`) — deferred polish; the
+  composer passes them inline today.
 
 The §1–§12 design below is unchanged; this section tracks what's built.
 
