@@ -337,12 +337,20 @@ transcript).
 
 ## 10. Frontend work
 
+**Chosen layout → "Roundtable" (reviewed 2026-06-28).** A left **roster rail** of persona
+cards (avatar, role, model · effort, ✎ write badge, live status dot: idle / thinking /
+writing) beside a focused transcript — it keeps the per-persona config and write access
+always visible, which is what distinguishes this from plain chat. The "debate columns"
+layout becomes a **parallel-mode view toggle**; the single-column "transcript" is the
+narrow/mobile fallback. (Mockups: `ui-c-roundtable` / `ui-b-columns` / `ui-a-transcript`.)
+
 - **Discussion-group composer** (replaces the Teams tab): pick a saved group *or* select
   personas ad-hoc → per-persona **write toggle** → group mode (sequential/parallel) →
-  scope (web-only / repo-backed + project) → prompt → **Start**.
-- **Live discussion panel**: reuse `ChannelPanel` to render persona bubbles from the
-  channel timeline; a composer to send the next round; a stop / keep-transcript control;
-  a turn/round status indicator.
+  scope (web-only / repo-backed + project) → **auto-commit toggle** → prompt → **Start**.
+  (Mockup: `ui-composer`.)
+- **Live discussion panel**: the roster rail + reuse `ChannelPanel` to render persona
+  bubbles from the channel timeline; a composer to send the next round; a stop /
+  keep-transcript control; per-persona status dots driven off `StateIdle`/`StateRunning`.
 - Remove the 3-way "Teams" conflation; `SwarmComposer` stays for code swarms only.
 
 ---
