@@ -782,6 +782,18 @@ export const PushChannelMemberLeftSchema = z.object({
   sessionId: z.string(),
 });
 
+export const DiscussionInfoSchema = z.object({
+  channelId: z.string(),
+  projectId: z.string(),
+  groupName: z.string(),
+  mode: z.string(),
+  scope: z.string(),
+  round: z.number(),
+  running: z.boolean(),
+  worktreeBranch: z.string().optional(),
+  personas: z.array(z.string()),
+});
+
 export const TeamBehaviorPresetsSchema = z.object({
   autoCommit: z.boolean(),
   suggestParallel: z.boolean(),
@@ -907,6 +919,7 @@ export const pushSchemaMap = {
   "channel.dissolved": PushChannelDeletedSchema,
   "channel.member-joined": PushChannelMemberJoinedSchema,
   "channel.member-left": PushChannelMemberLeftSchema,
+  "discussion.state": DiscussionInfoSchema,
   "agent-profile.created": AgentProfileInfoSchema,
   "agent-profile.updated": AgentProfileInfoSchema,
   "agent-profile.deleted": PushIDOnlySchema,

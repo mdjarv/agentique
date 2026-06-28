@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/gorilla/websocket"
 	"github.com/mdjarv/agentique/backend/internal/logging"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -33,8 +33,8 @@ type conn struct {
 	queries       *store.Queries
 	bus           *eventbus.Bus
 	teamSvc       *team.Service           // nil when experimental teams is disabled
-	personaSvc    *persona.Service         // nil when experimental teams is disabled
-	browserSvc    *session.BrowserService  // nil when browser support is unavailable
+	personaSvc    *persona.Service        // nil when experimental teams is disabled
+	browserSvc    *session.BrowserService // nil when browser support is unavailable
 	sendCh        chan any
 	mu            sync.Mutex
 
@@ -211,18 +211,23 @@ var handlerRegistry = map[string]handlerFunc{
 	"browser.navigate": (*conn).handleBrowserNavigate,
 
 	// channel.*
-	"channel.create":         (*conn).handleChannelCreate,
-	"channel.delete":         (*conn).handleChannelDelete,
-	"channel.dissolve":       (*conn).handleChannelDissolve,
-	"channel.dissolve-keep":  (*conn).handleChannelDissolveKeep,
-	"channel.join":           (*conn).handleChannelJoin,
-	"channel.leave":          (*conn).handleChannelLeave,
-	"channel.list":           (*conn).handleChannelList,
-	"channel.info":           (*conn).handleChannelInfo,
-	"channel.timeline":       (*conn).handleChannelTimeline,
-	"channel.send-message":   (*conn).handleChannelSendMessage,
-	"channel.broadcast":      (*conn).handleChannelBroadcast,
-	"channel.create-swarm":   (*conn).handleChannelCreateSwarm,
+	"channel.create":        (*conn).handleChannelCreate,
+	"channel.delete":        (*conn).handleChannelDelete,
+	"channel.dissolve":      (*conn).handleChannelDissolve,
+	"channel.dissolve-keep": (*conn).handleChannelDissolveKeep,
+	"channel.join":          (*conn).handleChannelJoin,
+	"channel.leave":         (*conn).handleChannelLeave,
+	"channel.list":          (*conn).handleChannelList,
+	"channel.info":          (*conn).handleChannelInfo,
+	"channel.timeline":      (*conn).handleChannelTimeline,
+	"channel.send-message":  (*conn).handleChannelSendMessage,
+	"channel.broadcast":     (*conn).handleChannelBroadcast,
+	"channel.create-swarm":  (*conn).handleChannelCreateSwarm,
+
+	// discussion.*
+	"discussion.start": (*conn).handleDiscussionStart,
+	"discussion.round": (*conn).handleDiscussionRound,
+	"discussion.stop":  (*conn).handleDiscussionStop,
 
 	// agent-profile.* / team.* / persona.*
 	"agent-profile.list":     (*conn).handleAgentProfileList,

@@ -477,6 +477,9 @@ func main() {
 	pushChannelMemberJoined := g.register(session.PushChannelMemberJoined{}, "PushChannelMemberJoined")
 	pushChannelMemberLeft := g.register(session.PushChannelMemberLeft{}, "PushChannelMemberLeft")
 
+	// Discussion-group types.
+	discussionInfoRef := g.register(session.DiscussionInfo{}, "DiscussionInfo")
+
 	// Team/agent-profile push types (BehaviorPresets before Config, Config before Info — leaf-first).
 	g.register(team.BehaviorPresets{}, "TeamBehaviorPresets")
 	g.register(team.AgentProfileConfig{}, "AgentProfileConfig")
@@ -524,6 +527,9 @@ func main() {
 	g.addPushEvent("channel.dissolved", pushChannelDeleted)
 	g.addPushEvent("channel.member-joined", pushChannelMemberJoined)
 	g.addPushEvent("channel.member-left", pushChannelMemberLeft)
+
+	// Discussion events.
+	g.addPushEvent("discussion.state", discussionInfoRef)
 
 	// Agent profile events.
 	g.addPushEvent("agent-profile.created", agentProfileRef)

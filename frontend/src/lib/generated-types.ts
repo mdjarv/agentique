@@ -780,6 +780,18 @@ export interface PushChannelMemberLeft {
   sessionId: string;
 }
 
+export interface DiscussionInfo {
+  channelId: string;
+  projectId: string;
+  groupName: string;
+  mode: string;
+  scope: string;
+  round: number;
+  running: boolean;
+  worktreeBranch?: string;
+  personas: string[];
+}
+
 export interface TeamBehaviorPresets {
   autoCommit: boolean;
   suggestParallel: boolean;
@@ -904,6 +916,7 @@ export interface PushEventMap {
   "channel.dissolved": PushChannelDeleted;
   "channel.member-joined": PushChannelMemberJoined;
   "channel.member-left": PushChannelMemberLeft;
+  "discussion.state": DiscussionInfo;
   "agent-profile.created": AgentProfileInfo;
   "agent-profile.updated": AgentProfileInfo;
   "agent-profile.deleted": PushIDOnly;
