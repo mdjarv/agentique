@@ -122,13 +122,12 @@ type CreateSessionParams struct {
 	IdempotencyKey  string // optional: if set, duplicate creates return the cached result
 
 	// Discussion-group fields, set only by the discussion orchestrator.
-	// SharedWorkDir binds this persona session to an already-provisioned shared
-	// worktree instead of provisioning its own; the orchestrator owns that tree's
-	// lifecycle (removed once on dissolve, not per session). SkipRecall suppresses
-	// brain-recall injection so persona turns aren't polluted with memory blocks.
+	// SharedWorkDir binds this persona session's CWD to an already-provisioned
+	// shared worktree instead of provisioning its own; the session records no
+	// worktree path, so the orchestrator owns that tree's lifecycle (removed once
+	// on dissolve, not per session). SkipRecall suppresses brain-recall injection
+	// so persona turns aren't polluted with memory blocks.
 	SharedWorkDir string
-	SharedBranch  string
-	SharedBaseSHA string
 	SkipRecall    bool
 }
 
@@ -199,6 +198,10 @@ type Service struct {
 	// flag). The agent browser MCP is always wired when browserSvc != nil — this
 	// only controls whether the live screencast panel is offered.
 	browserPanelEnabled bool
+
+	// discussions holds live discussion-group orchestration state, keyed by
+	// channel ID. Zero-value ready (sync.Map); see discussion.go.
+	discussions sync.Map
 
 	idempotencyMu    sync.Mutex
 	idempotencyCache map[string]idempotencyEntry
@@ -511,15 +514,11 @@ func (s *Service) checkProjectQuota(ctx context.Context, project store.Project) 
 // target branch is adopted as a no-op.
 func (s *Service) provisionWorktree(ctx context.Context, p CreateSessionParams, project store.Project, sessionID string) (worktreeInfo, error) {
 	// A discussion group provisions one shared worktree and binds every persona
-	// session to it. Skip per-session provisioning; the orchestrator owns this
-	// tree's lifecycle (removed once on dissolve, not per persona session).
+	// session's CWD to it. Bind workDir only — record no worktree path/branch, so
+	// per-session teardown never reaps the shared tree; the orchestrator removes
+	// it exactly once on dissolve.
 	if p.SharedWorkDir != "" {
-		return worktreeInfo{
-			workDir: p.SharedWorkDir,
-			path:    p.SharedWorkDir,
-			branch:  p.SharedBranch,
-			baseSHA: p.SharedBaseSHA,
-		}, nil
+		return worktreeInfo{workDir: p.SharedWorkDir}, nil
 	}
 
 	wt := worktreeInfo{workDir: project.Path}
