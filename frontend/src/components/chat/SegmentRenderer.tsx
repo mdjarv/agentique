@@ -4,7 +4,7 @@ import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { Markdown } from "~/components/chat/Markdown";
-import { PromptGroupProvider } from "~/components/chat/PromptCard";
+import { PromptCard, PromptGroupProvider } from "~/components/chat/PromptCard";
 import { SubagentActivity } from "~/components/chat/SubagentActivity";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
@@ -19,6 +19,7 @@ import type {
   ChannelSendSegment,
   ErrorSegment,
   Segment,
+  SuggestSessionSegment,
 } from "~/lib/segments";
 import { segmentKey } from "~/lib/segments";
 import { cn } from "~/lib/utils";
@@ -331,6 +332,34 @@ function ChannelSendView({ seg }: { seg: ChannelSendSegment }) {
   );
 }
 
+// Renders a SuggestSessionPrompt tool call as a launchable PromptCard. Reuses the
+// PromptGroupProvider purely for its launch context (createSession + submitQuery);
+// empty content means no parsed prompts and therefore no "Start All" footer. While
+// the call is still the streaming segment, `isStreaming` disables the Start button.
+function SuggestSessionView({
+  seg,
+  projectId,
+  sessionId,
+  isStreaming,
+}: {
+  seg: SuggestSessionSegment;
+  projectId: string;
+  sessionId: string;
+  isStreaming: boolean;
+}) {
+  if (!seg.title && !seg.prompt) return null;
+  return (
+    <PromptGroupProvider
+      content=""
+      projectId={projectId}
+      sessionId={sessionId}
+      isStreaming={isStreaming}
+    >
+      <PromptCard title={seg.title} prompt={seg.prompt} projectSlug={seg.projectSlug} />
+    </PromptGroupProvider>
+  );
+}
+
 // --- Main renderer ---
 
 interface SegmentRendererProps {
@@ -407,6 +436,18 @@ export function SegmentRenderer({
 
   if (seg.kind === "channel_send") {
     return <ChannelSendView key={key} seg={seg} />;
+  }
+
+  if (seg.kind === "suggest_session") {
+    return (
+      <SuggestSessionView
+        key={key}
+        seg={seg}
+        projectId={projectId}
+        sessionId={sessionId}
+        isStreaming={isLastSegment}
+      />
+    );
   }
 
   return null;

@@ -36,6 +36,7 @@ const (
 	ToolMemorySearch   = "MemorySearch"
 	ToolMemoryFlag     = "MemoryFlag"
 	ToolMemoryUsed     = "MemoryUsed"
+	ToolSuggestPrompt  = "SuggestSessionPrompt"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -170,6 +171,37 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		},
 		Handler: akmcp.TypedHandler(func(ctx context.Context, _ string, args killSlotArgs) akmcp.Result {
 			return killDevPortImpl(ctx, dev, args.Slot)
+		}),
+	})
+
+	type suggestPromptArgs struct {
+		Title   string `json:"title"`
+		Prompt  string `json:"prompt"`
+		Project string `json:"project"`
+	}
+	register(h, akmcp.Tool{
+		Name: ToolSuggestPrompt,
+		Description: "Surface a ready-to-launch session prompt to the user as a clickable card. " +
+			"Use when you spot independent work that could run as its own parallel session — call " +
+			"once per suggestion. `title` becomes the new session's name; `prompt` is the full, " +
+			"self-contained task for it (the new session sees only this prompt, NOT the current " +
+			"conversation, so include the paths, conventions, and interfaces it needs). Pass " +
+			"`project` (a project slug) to target a different project; omit it for the current one. " +
+			"Only suggest genuinely parallelizable work.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"title":   akmcp.StringProp{Description: "Short session name (a few words, max ~80 chars)."},
+				"prompt":  akmcp.StringProp{Description: "Full, self-contained task for the new session."},
+				"project": akmcp.StringProp{Description: "Optional project slug to target a different project."},
+			},
+			Required: []string{"title", "prompt"},
+		},
+		// Pure UI affordance — the card renders from the persisted tool_use event on
+		// the frontend, so there is no server-side side effect to perform here. The
+		// call is auto-allowed by the session's tool interceptor; this handler just
+		// acks the model. Unlike SendMessage it needs no deny-and-route dance.
+		Handler: akmcp.TypedHandler(func(_ context.Context, _ string, _ suggestPromptArgs) akmcp.Result {
+			return akmcp.TextResult("Suggestion surfaced to the user as a launchable card.")
 		}),
 	})
 

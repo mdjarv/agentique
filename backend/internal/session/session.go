@@ -272,6 +272,7 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueMemorySearchTool:   allow,
 		AgentiqueMemoryFlagTool:     allow,
 		AgentiqueMemoryUsedTool:     allow,
+		AgentiqueSuggestPromptTool:  allow,
 	}
 }
 

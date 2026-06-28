@@ -153,6 +153,43 @@ describe("buildSegments channel-send interception", () => {
   });
 });
 
+const SUGGEST_SESSION_TOOL = "mcp__agentique__SuggestSessionPrompt";
+
+describe("buildSegments suggest-session interception", () => {
+  it("turns a SuggestSessionPrompt tool_use into a suggest_session segment and suppresses its result", () => {
+    const events: ChatEvent[] = [
+      toolUse("call_s", SUGGEST_SESSION_TOOL, {
+        title: "Refactor auth",
+        prompt: "Refactor the auth middleware.",
+        project: "backend",
+      }),
+      toolResult("call_s", "Suggestion surfaced to the user as a launchable card."),
+    ];
+    const { segments } = buildSegments(events, true);
+    expect(segments).toHaveLength(1);
+    const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
+    expect(seg).toMatchObject({
+      kind: "suggest_session",
+      title: "Refactor auth",
+      prompt: "Refactor the auth middleware.",
+      projectSlug: "backend",
+      toolId: "call_s",
+    });
+    // The benign ack tool_result must NOT render as a tool activity item.
+    expect(toolItems(segments)).toHaveLength(0);
+  });
+
+  it("omits projectSlug when no project is given (current-project suggestion)", () => {
+    const events: ChatEvent[] = [
+      toolUse("call_s2", SUGGEST_SESSION_TOOL, { title: "Add tests", prompt: "Write unit tests." }),
+    ];
+    const { segments } = buildSegments(events, true);
+    const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
+    expect(seg.kind).toBe("suggest_session");
+    expect(seg.projectSlug).toBeUndefined();
+  });
+});
+
 describe("buildSegments user_message suppression", () => {
   it("suppresses a still-sending message while the turn is in flight", () => {
     const { segments } = buildSegments([userMessage("typing…", "sending")], false);

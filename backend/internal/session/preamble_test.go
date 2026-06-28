@@ -16,7 +16,7 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 		t.Error("missing identity line")
 	}
 	// Must contain parallel session suggestion
-	if !strings.Contains(got, "suggest session prompts") {
+	if !strings.Contains(got, "SuggestSessionPrompt") {
 		t.Error("missing parallel session suggestion")
 	}
 	// Must contain commit instructions with branch name
@@ -27,37 +27,38 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 		t.Error("missing commit milestone instruction")
 	}
 	// Single project: no cross-project instructions
-	if strings.Contains(got, "Available projects:") {
+	if strings.Contains(got, "Available project slugs:") {
 		t.Error("should not include cross-project instructions for single project")
 	}
 }
 
-func TestBuildPreamble_SuggestParallelCloserGuidance(t *testing.T) {
-	// The prompt-block authoring guidance must spell out the closer rule, the
-	// meta-prompt escaping rule, and the self-verify reminder — these prevent the
-	// silent-card-loss incidents (wrong closer / nested tag tokens in body).
+func TestBuildPreamble_SuggestParallelToolGuidance(t *testing.T) {
+	// Parallel-work suggestions go through the schema-validated SuggestSessionPrompt
+	// tool (structurally can't be malformed), not inline markup. The guidance must
+	// name the tool and stress that the prompt is self-contained.
 	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, DefaultPresets(), nil, nil, "", false, false, "")
 
 	for _, want := range []string{
-		"</agentique>",    // names the real closing tag
-		"not a tool call", // the correct mental model (root cause of the wrong closer)
-		"</parameter>",    // names the wrong closer to avoid
-		"Meta-prompts",    // meta-prompt escaping rule
-		"[agentique ...]", // square-bracket placeholder guidance
-		"Self-verify",     // self-verification reminder
+		"SuggestSessionPrompt", // names the tool to call
+		"one call per suggestion",
+		"self-contained", // the new session sees only the prompt
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("authoring guidance missing %q", want)
+			t.Errorf("tool guidance missing %q", want)
 		}
+	}
+	// The obsolete inline-XML authoring form must be gone from the preamble.
+	if strings.Contains(got, "<agentique") {
+		t.Error("preamble should no longer document the inline <agentique> markup form")
 	}
 }
 
-func TestBuildPreamble_CloserGuidanceGatedBySuggestParallel(t *testing.T) {
-	// Closer guidance lives inside the suggest-parallel snippet; it must be absent
-	// when that preset is off.
+func TestBuildPreamble_ToolGuidanceGatedBySuggestParallel(t *testing.T) {
+	// The suggestion guidance lives inside the suggest-parallel snippet; it must be
+	// absent when that preset is off.
 	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, BehaviorPresets{}, nil, nil, "", false, false, "")
-	if strings.Contains(got, "not a tool call") {
-		t.Error("closer guidance should be excluded when SuggestParallel is off")
+	if strings.Contains(got, "SuggestSessionPrompt") {
+		t.Error("suggestion guidance should be excluded when SuggestParallel is off")
 	}
 }
 
@@ -68,7 +69,7 @@ func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
 	}
 	got := buildPreamble("sess-id", "main", projects, DefaultPresets(), nil, nil, "", false, false, "")
 
-	if !strings.Contains(got, "Available projects:") {
+	if !strings.Contains(got, "Available project slugs:") {
 		t.Error("missing cross-project instructions")
 	}
 	if !strings.Contains(got, "`frontend`") {
@@ -87,11 +88,11 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 	}
 	got := buildPreamble("sess-id", "branch", projects, presets, nil, nil, "", false, false, "")
 
-	if strings.Contains(got, "suggest session prompts") {
+	if strings.Contains(got, "SuggestSessionPrompt") {
 		t.Error("parallel suggestion text should be excluded")
 	}
 	// Cross-project instructions depend on SuggestParallel
-	if strings.Contains(got, "Available projects:") {
+	if strings.Contains(got, "Available project slugs:") {
 		t.Error("cross-project instructions should be excluded when SuggestParallel is off")
 	}
 	// Identity still present
@@ -153,7 +154,7 @@ func TestBuildPreamble_AllOff(t *testing.T) {
 	if !strings.Contains(got, "You are running inside Agentique") {
 		t.Error("identity line must always be present")
 	}
-	if strings.Contains(got, "suggest session prompts") {
+	if strings.Contains(got, "SuggestSessionPrompt") {
 		t.Error("parallel suggestion should be off")
 	}
 	if strings.Contains(got, "Commit after each milestone") {

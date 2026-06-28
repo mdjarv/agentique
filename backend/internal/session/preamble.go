@@ -14,44 +14,20 @@ const preambleIdentity = `You are running inside Agentique, a GUI that manages p
 
 When reporting to the user, be extremely concise — sacrifice grammar for brevity.`
 
-// presetSuggestParallel instructs Claude to suggest parallelizable work as prompt blocks.
+// presetSuggestParallel instructs Claude to suggest parallelizable work by calling
+// the SuggestSessionPrompt tool (schema-validated → structurally can't be malformed).
 const presetSuggestParallel = `
 
-When you identify independent tasks that could be worked on in parallel, suggest session prompts using the ` + "`<agentique type=\"prompt\">`" + ` tag. The ` + "`title`" + ` attribute becomes the session name. The user can launch each prompt as a separate session with one click. Example:
+When you identify independent work that could run as its own parallel session, surface it to the user by calling the ` + "`SuggestSessionPrompt`" + ` tool — one call per suggestion. It renders a card the user can launch with one click.
 
-<agentique type="prompt" title="Refactor auth middleware">
-Refactor the auth middleware in backend/internal/auth to use the new token validation library. See CLAUDE.md for conventions.
-</agentique>
+- ` + "`title`" + ` becomes the new session's name (a few words).
+- ` + "`prompt`" + ` is the full task for that session. The new session sees ONLY this prompt, not the current conversation — so make it self-contained: include the file paths, conventions, and interfaces it needs.
 
-You can include code blocks inside the prompt body — they render correctly without any fence-escaping work on your part:
-
-<agentique type="prompt" title="Update DB schema">
-Apply this migration:
-` + "```sql" + `
-ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-` + "```" + `
-Then run ` + "`just migrate`" + ` and the test suite.
-</agentique>
-
-Only suggest session prompts when the work is genuinely parallelizable — don't force it.
-
-**This is plain text in your reply, not a tool call.** The ` + "`<agentique>`" + ` block is markdown you write directly in your response — it has no parameters, just a ` + "`title`" + ` attribute and a body. Close it with ` + "`</agentique>`" + `, the exact tag you opened with. Never close it with ` + "`</parameter>`" + ` or ` + "`</prompt>`" + ` (those are function-calling syntax and do not apply here) and never repeat the title as the closer — any of those leaves the card non-clickable and silently drops the work.
-
-**Meta-prompts.** If the body itself must mention the tag syntax (e.g. a prompt about how to write prompts), escape it or use a placeholder so the body does not prematurely close the outer block: write the tags with square brackets (` + "`[agentique ...]`" + ` / ` + "`[/agentique]`" + `) or put the example inside a fenced code block.
-
-**Self-verify before sending.** Confirm every opener has a matching ` + "`</agentique>`" + ` closer and that the body contains no stray closing tokens.
-
-(Legacy form: ` + "```prompt" + ` fenced blocks with a ` + "`# Title`" + ` first line are still accepted, but prefer the tag form — it handles nested code blocks cleanly.)`
+Only suggest genuinely parallelizable work — don't force it, and don't suggest work you can finish faster yourself right now.`
 
 const crossProjectInstructions = `
 
-To target a different project, add the ` + "`project`" + ` attribute:
-
-<agentique type="prompt" title="Fix API client" project="%s">
-Fix the API client timeout handling.
-</agentique>
-
-Available projects:
+To target a different project, pass its slug as the ` + "`project`" + ` argument to ` + "`SuggestSessionPrompt`" + `. Available project slugs:
 %s`
 
 // presetDelegation instructs Claude how to spawn worker sessions.
@@ -250,14 +226,10 @@ func buildPreamble(sessionID, worktreeBranch string, projects []ProjectInfo, pre
 
 	if presets.SuggestParallel && len(projects) > 1 {
 		var lines []string
-		var exampleSlug string
 		for _, p := range projects {
 			lines = append(lines, fmt.Sprintf("- `%s` — %s", p.Slug, p.Name))
-			if exampleSlug == "" {
-				exampleSlug = p.Slug
-			}
 		}
-		s += fmt.Sprintf(crossProjectInstructions, exampleSlug, strings.Join(lines, "\n"))
+		s += fmt.Sprintf(crossProjectInstructions, strings.Join(lines, "\n"))
 	}
 
 	if presets.AutoCommit && worktreeBranch != "" {

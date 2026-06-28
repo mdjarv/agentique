@@ -12,6 +12,9 @@ import type {
 } from "~/stores/chat-types";
 
 const CHANNEL_SEND_TOOL = "mcp__agentique-channel__SendMessage";
+// Schema-validated tool the agent calls to suggest a launchable parallel session.
+// Its tool_use is rendered as a PromptCard instead of a generic tool block.
+const SUGGEST_SESSION_TOOL = "mcp__agentique__SuggestSessionPrompt";
 
 // --- Segment types ---
 
@@ -62,6 +65,13 @@ export interface ChannelSendSegment {
   messageType?: AgentMessageType;
   toolId: string;
 }
+export interface SuggestSessionSegment {
+  kind: "suggest_session";
+  title: string;
+  prompt: string;
+  projectSlug?: string;
+  toolId: string;
+}
 
 export type Segment =
   | ActivitySegment
@@ -70,7 +80,8 @@ export type Segment =
   | CompactSegment
   | UserMessageSegment
   | AgentMessageSegment
-  | ChannelSendSegment;
+  | ChannelSendSegment
+  | SuggestSessionSegment;
 export type SegmentKind = Segment["kind"];
 
 // --- Classification ---
@@ -122,7 +133,9 @@ export function buildSegments(
   // First pass: collect task events indexed by parent toolUseId,
   // and identify channel-send tool IDs so we can suppress their results.
   const taskEventsByToolUseId = new Map<string, TaskEvent[]>();
-  const channelSendToolIds = new Set<string>();
+  // Tool IDs whose tool_result we suppress because the tool_use is rendered as a
+  // custom segment (channel send, session suggestion), not a generic tool block.
+  const suppressedResultToolIds = new Set<string>();
   for (const event of events) {
     if (event.type === "task" && event.toolUseId) {
       let list = taskEventsByToolUseId.get(event.toolUseId);
@@ -132,8 +145,11 @@ export function buildSegments(
       }
       list.push(event);
     }
-    if (event.type === "tool_use" && event.toolName === CHANNEL_SEND_TOOL) {
-      channelSendToolIds.add(event.toolId);
+    if (
+      event.type === "tool_use" &&
+      (event.toolName === CHANNEL_SEND_TOOL || event.toolName === SUGGEST_SESSION_TOOL)
+    ) {
+      suppressedResultToolIds.add(event.toolId);
     }
   }
 
@@ -158,13 +174,26 @@ export function buildSegments(
       continue;
     }
 
+    // Intercept SuggestSessionPrompt tool_use → suggest_session segment (a card).
+    if (event.type === "tool_use" && event.toolName === SUGGEST_SESSION_TOOL) {
+      const input = event.toolInput as { title?: string; prompt?: string; project?: string } | null;
+      segments.push({
+        kind: "suggest_session",
+        title: input?.title ?? "",
+        prompt: input?.prompt ?? "",
+        projectSlug: input?.project || undefined,
+        toolId: event.toolId,
+      });
+      continue;
+    }
+
     const last = segments[segments.length - 1];
 
     // tool_result: suppress results for channel sends; otherwise attach to its
     // tool_use by ID. Codex fileChange items fan out to one tool_use + tool_result
     // per changed file ("{itemID}#N"), each correlating by its own suffixed ID.
     if (event.type === "tool_result") {
-      if (channelSendToolIds.has(event.toolId)) continue;
+      if (suppressedResultToolIds.has(event.toolId)) continue;
       const item = toolItemsById.get(event.toolId);
       if (item) item.result = event;
       continue;
@@ -306,6 +335,8 @@ export function segmentKey(seg: Segment, i: number): string {
       return `agent-msg-${i}`;
     case "channel_send":
       return `ch-send-${seg.toolId}`;
+    case "suggest_session":
+      return `suggest-${seg.toolId}`;
   }
 }
 
