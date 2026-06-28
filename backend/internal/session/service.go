@@ -15,17 +15,17 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // Sentinel errors for session operations.
 var (
-	ErrNotFound          = errors.New("session not found")
-	ErrNotLive           = errors.New("session not live")
-	ErrNoClaudeID        = errors.New("session has no Claude session ID")
+	ErrNotFound            = errors.New("session not found")
+	ErrNotLive             = errors.New("session not live")
+	ErrNoClaudeID          = errors.New("session has no Claude session ID")
 	ErrSessionLimitReached = errors.New("project session limit reached")
 )
 
@@ -37,10 +37,10 @@ type WireQuestionOption struct {
 
 // WireQuestion is a single question in an AskUserQuestion request.
 type WireQuestion struct {
-	Question    string             `json:"question"`
-	Header      string             `json:"header,omitempty"`
+	Question    string               `json:"question"`
+	Header      string               `json:"header,omitempty"`
 	Options     []WireQuestionOption `json:"options,omitempty"`
-	MultiSelect bool               `json:"multiSelect,omitempty"`
+	MultiSelect bool                 `json:"multiSelect,omitempty"`
 }
 
 // WirePendingApproval is a snapshot of a pending tool-permission request.
@@ -58,48 +58,48 @@ type WirePendingQuestion struct {
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID              string  `json:"id"`
-	ProjectID       string  `json:"projectId"`
-	Name            string  `json:"name"`
-	State           string  `json:"state"`
-	Connected       bool    `json:"connected"`
-	Provider        string  `json:"provider,omitempty"`
-	Capabilities    *WireCapabilities `json:"capabilities,omitempty"`
-	Model           string  `json:"model"`
-	PermissionMode  string  `json:"permissionMode"`
-	AutoApproveMode string  `json:"autoApproveMode"`
-	Effort          string  `json:"effort,omitempty"`
-	MaxBudget       float64 `json:"maxBudget,omitempty"`
-	MaxTurns        int     `json:"maxTurns,omitempty"`
-	TotalCost       float64 `json:"totalCost"`
-	TurnCount       int     `json:"turnCount"`
-	WorktreePath    string  `json:"worktreePath,omitempty"`
-	WorktreeBranch  string  `json:"worktreeBranch,omitempty"`
-	WorktreeMerged  bool    `json:"worktreeMerged,omitempty"`
-	CompletedAt     string  `json:"completedAt,omitempty"`
-	HasDirtyWorktree   bool     `json:"hasDirtyWorktree,omitempty"`
-	HasUncommitted     bool     `json:"hasUncommitted,omitempty"`
-	CommitsAhead       int      `json:"commitsAhead"`
-	CommitsBehind      int      `json:"commitsBehind"`
-	BranchMissing      bool     `json:"branchMissing,omitempty"`
-	MergeStatus        string   `json:"mergeStatus,omitempty"`
-	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
-	GitOperation       string   `json:"gitOperation,omitempty"`
-	GitVersion         int64    `json:"gitVersion"`
-	PrUrl              string   `json:"prUrl,omitempty"`
+	ID                 string               `json:"id"`
+	ProjectID          string               `json:"projectId"`
+	Name               string               `json:"name"`
+	State              string               `json:"state"`
+	Connected          bool                 `json:"connected"`
+	Provider           string               `json:"provider,omitempty"`
+	Capabilities       *WireCapabilities    `json:"capabilities,omitempty"`
+	Model              string               `json:"model"`
+	PermissionMode     string               `json:"permissionMode"`
+	AutoApproveMode    string               `json:"autoApproveMode"`
+	Effort             string               `json:"effort,omitempty"`
+	MaxBudget          float64              `json:"maxBudget,omitempty"`
+	MaxTurns           int                  `json:"maxTurns,omitempty"`
+	TotalCost          float64              `json:"totalCost"`
+	TurnCount          int                  `json:"turnCount"`
+	WorktreePath       string               `json:"worktreePath,omitempty"`
+	WorktreeBranch     string               `json:"worktreeBranch,omitempty"`
+	WorktreeMerged     bool                 `json:"worktreeMerged,omitempty"`
+	CompletedAt        string               `json:"completedAt,omitempty"`
+	HasDirtyWorktree   bool                 `json:"hasDirtyWorktree,omitempty"`
+	HasUncommitted     bool                 `json:"hasUncommitted,omitempty"`
+	CommitsAhead       int                  `json:"commitsAhead"`
+	CommitsBehind      int                  `json:"commitsBehind"`
+	BranchMissing      bool                 `json:"branchMissing,omitempty"`
+	MergeStatus        string               `json:"mergeStatus,omitempty"`
+	MergeConflictFiles []string             `json:"mergeConflictFiles,omitempty"`
+	GitOperation       string               `json:"gitOperation,omitempty"`
+	GitVersion         int64                `json:"gitVersion"`
+	PrUrl              string               `json:"prUrl,omitempty"`
 	BehaviorPresets    BehaviorPresets      `json:"behaviorPresets"`
 	ChannelIDs         []string             `json:"channelIds,omitempty"`
 	ChannelRoles       map[string]string    `json:"channelRoles,omitempty"`
 	Icon               string               `json:"icon,omitempty"`
 	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
 	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
-	AgentProfileID     string `json:"agentProfileId,omitempty"`
-	AgentProfileName   string `json:"agentProfileName,omitempty"`
-	AgentProfileAvatar string `json:"agentProfileAvatar,omitempty"`
-	ParentSessionID    string `json:"parentSessionId,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
-	LastQueryAt     string  `json:"lastQueryAt,omitempty"`
+	AgentProfileID     string               `json:"agentProfileId,omitempty"`
+	AgentProfileName   string               `json:"agentProfileName,omitempty"`
+	AgentProfileAvatar string               `json:"agentProfileAvatar,omitempty"`
+	ParentSessionID    string               `json:"parentSessionId,omitempty"`
+	CreatedAt          string               `json:"createdAt"`
+	UpdatedAt          string               `json:"updatedAt"`
+	LastQueryAt        string               `json:"lastQueryAt,omitempty"`
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
@@ -120,29 +120,39 @@ type CreateSessionParams struct {
 	AgentProfileID  string // optional: bind session to a persistent agent profile
 	ParentSessionID string // optional: lead session that spawned this one (for hierarchy tree)
 	IdempotencyKey  string // optional: if set, duplicate creates return the cached result
+
+	// Discussion-group fields, set only by the discussion orchestrator.
+	// SharedWorkDir binds this persona session to an already-provisioned shared
+	// worktree instead of provisioning its own; the orchestrator owns that tree's
+	// lifecycle (removed once on dissolve, not per session). SkipRecall suppresses
+	// brain-recall injection so persona turns aren't polluted with memory blocks.
+	SharedWorkDir string
+	SharedBranch  string
+	SharedBaseSHA string
+	SkipRecall    bool
 }
 
 // CreateSessionResult is the wire type returned after session creation.
 type CreateSessionResult struct {
-	SessionID       string          `json:"sessionId"`
-	Name            string          `json:"name"`
-	State           string          `json:"state"`
-	Connected       bool            `json:"connected"`
-	Provider        string          `json:"provider,omitempty"`
-	Capabilities    *WireCapabilities `json:"capabilities,omitempty"`
-	Model           string          `json:"model"`
-	PermissionMode  string          `json:"permissionMode"`
-	AutoApproveMode string          `json:"autoApproveMode"`
-	Effort          string          `json:"effort,omitempty"`
-	MaxBudget       float64         `json:"maxBudget,omitempty"`
-	MaxTurns        int             `json:"maxTurns,omitempty"`
-	WorktreePath    string          `json:"worktreePath,omitempty"`
-	WorktreeBranch     string          `json:"worktreeBranch,omitempty"`
-	BehaviorPresets    BehaviorPresets `json:"behaviorPresets"`
-	AgentProfileID     string          `json:"agentProfileId,omitempty"`
-	AgentProfileName   string          `json:"agentProfileName,omitempty"`
-	AgentProfileAvatar string          `json:"agentProfileAvatar,omitempty"`
-	CreatedAt          string          `json:"createdAt"`
+	SessionID          string            `json:"sessionId"`
+	Name               string            `json:"name"`
+	State              string            `json:"state"`
+	Connected          bool              `json:"connected"`
+	Provider           string            `json:"provider,omitempty"`
+	Capabilities       *WireCapabilities `json:"capabilities,omitempty"`
+	Model              string            `json:"model"`
+	PermissionMode     string            `json:"permissionMode"`
+	AutoApproveMode    string            `json:"autoApproveMode"`
+	Effort             string            `json:"effort,omitempty"`
+	MaxBudget          float64           `json:"maxBudget,omitempty"`
+	MaxTurns           int               `json:"maxTurns,omitempty"`
+	WorktreePath       string            `json:"worktreePath,omitempty"`
+	WorktreeBranch     string            `json:"worktreeBranch,omitempty"`
+	BehaviorPresets    BehaviorPresets   `json:"behaviorPresets"`
+	AgentProfileID     string            `json:"agentProfileId,omitempty"`
+	AgentProfileName   string            `json:"agentProfileName,omitempty"`
+	AgentProfileAvatar string            `json:"agentProfileAvatar,omitempty"`
+	CreatedAt          string            `json:"createdAt"`
 }
 
 // ListSessionsResult is the wire type for session list responses.
@@ -178,7 +188,7 @@ const idempotencyTTL = 5 * time.Minute
 type Service struct {
 	mgr            *Manager
 	queries        serviceQueries
-	hub eventbus.Broadcaster
+	hub            eventbus.Broadcaster
 	gitSvc         *GitService
 	runner         msggen.Runner
 	worktree       worktreeOps
@@ -365,9 +375,12 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		BrowserEnabled:        s.browserSvc != nil,
 		PanelEnabled:          s.browserPanelEnabled,
 		SystemPromptAdditions: pc.SystemPromptAdditions,
+		SkipRecall:            p.SkipRecall,
 	})
 	if err != nil {
-		if wt.path != "" {
+		// Don't reap a shared (orchestrator-owned) worktree if one persona session
+		// fails to create — the discussion orchestrator owns that tree's lifecycle.
+		if wt.path != "" && p.SharedWorkDir == "" {
 			s.worktree.RemoveWorktree(ctx, project.Path, wt.branch, wt.path)
 		}
 		return CreateSessionResult{}, fmt.Errorf("failed to create session: %w", err)
@@ -497,6 +510,18 @@ func (s *Service) checkProjectQuota(ctx context.Context, project store.Project) 
 // existing on-disk worktree at the requested path that is *already* at the
 // target branch is adopted as a no-op.
 func (s *Service) provisionWorktree(ctx context.Context, p CreateSessionParams, project store.Project, sessionID string) (worktreeInfo, error) {
+	// A discussion group provisions one shared worktree and binds every persona
+	// session to it. Skip per-session provisioning; the orchestrator owns this
+	// tree's lifecycle (removed once on dissolve, not per persona session).
+	if p.SharedWorkDir != "" {
+		return worktreeInfo{
+			workDir: p.SharedWorkDir,
+			path:    p.SharedWorkDir,
+			branch:  p.SharedBranch,
+			baseSHA: p.SharedBaseSHA,
+		}, nil
+	}
+
 	wt := worktreeInfo{workDir: project.Path}
 	if !p.Worktree {
 		return wt, nil
@@ -1272,24 +1297,24 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	}
 
 	params := ResumeParams{
-		SessionID:         sessionID,
-		ClaudeSessionID:   claudeSessID,
-		ProjectID:         dbSess.ProjectID,
-		Name:              dbSess.Name,
-		WorkDir:           workDir,
-		WorktreeBranch:    nullStr(dbSess.WorktreeBranch),
-		Provider:          dbSess.Provider,
-		Model:             dbSess.Model,
-		PermissionMode:    dbSess.PermissionMode,
-		AutoApproveMode:   dbSess.AutoApproveMode,
-		Effort:            dbSess.Effort,
-		MaxBudget:         dbSess.MaxBudget,
-		MaxTurns:          int(dbSess.MaxTurns),
-		InitialGitVersion: initialVersion,
-		Projects:          ProjectInfoFromStore(resumeProjects),
-		BehaviorPresets:   ParsePresets(dbSess.BehaviorPresets),
-		ChannelPreambles:  channelPreambles,
-		TeamPreambles:     resumeTC.toPreambles(),
+		SessionID:             sessionID,
+		ClaudeSessionID:       claudeSessID,
+		ProjectID:             dbSess.ProjectID,
+		Name:                  dbSess.Name,
+		WorkDir:               workDir,
+		WorktreeBranch:        nullStr(dbSess.WorktreeBranch),
+		Provider:              dbSess.Provider,
+		Model:                 dbSess.Model,
+		PermissionMode:        dbSess.PermissionMode,
+		AutoApproveMode:       dbSess.AutoApproveMode,
+		Effort:                dbSess.Effort,
+		MaxBudget:             dbSess.MaxBudget,
+		MaxTurns:              int(dbSess.MaxTurns),
+		InitialGitVersion:     initialVersion,
+		Projects:              ProjectInfoFromStore(resumeProjects),
+		BehaviorPresets:       ParsePresets(dbSess.BehaviorPresets),
+		ChannelPreambles:      channelPreambles,
+		TeamPreambles:         resumeTC.toPreambles(),
 		ExtraPreamble:         extraPreamble,
 		BrowserEnabled:        s.browserSvc != nil,
 		PanelEnabled:          s.browserPanelEnabled,
@@ -1507,6 +1532,14 @@ type PersonaConfig struct {
 	SystemPromptAdditions string          `json:"systemPromptAdditions,omitempty"`
 	CommunicationMode     string          `json:"communicationMode,omitempty"`
 	Capabilities          []string        `json:"capabilities,omitempty"`
+
+	// WriteAccess grants a discussion persona file-mutating tools (Edit/Write/Bash).
+	// When false the persona is restricted to read/search/web tools (enforced via
+	// the runtime DisallowedTools threading once that lands).
+	WriteAccess bool `json:"writeAccess,omitempty"`
+	// NoNamePrefix renders the persona's contributions without a "[Name]:" prefix
+	// (the Razor style) and drops the "don't prefix your own reply" etiquette line.
+	NoNamePrefix bool `json:"noNamePrefix,omitempty"`
 }
 
 // parsePersonaConfig unmarshals the profile's config JSON into a PersonaConfig.

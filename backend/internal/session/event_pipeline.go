@@ -42,7 +42,7 @@ type PipelineConfig struct {
 	OnPlanTransition  func(mode string)
 	OnExitPlanMode    func(input json.RawMessage)
 	OnWriteToolResult func()
-	OnTurnComplete    func()
+	OnTurnComplete    func(runtime.TurnCompletedEvent)
 	OnFatalError      func(err error)
 	OnSendMessage     func(toolUseID, targetName, content, msgType string)
 	OnActivityEvent   func(wireEvent any) // called for result/error events (activity feed)
@@ -56,7 +56,7 @@ type pulseState struct {
 	toolCallCount    int
 	commitCount      int
 	errorCount       int
-	turnStartedAt   int64 // epoch ms
+	turnStartedAt    int64 // epoch ms
 	dirty            bool  // true when state changed since last broadcast
 	todoTotal        int   // total unique tasks tracked this session
 	todoCompleted    int   // tasks with completed status
@@ -98,15 +98,15 @@ type EventPipeline struct {
 	toolCategories    map[string]string
 	pendingMessageIDs []string // FIFO queue of messageIds awaiting replay confirmation
 	pulse             pulseState
-	pulseTimer        *time.Timer // debounce timer for pulse broadcast
-	pulseStopped      bool        // set on close; blocks re-arming the timer
+	pulseTimer        *time.Timer     // debounce timer for pulse broadcast
+	pulseStopped      bool            // set on close; blocks re-arming the timer
 	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
 
 	onClaudeSessionID func(string)
 	onPlanTransition  func(string)
 	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
-	onTurnComplete    func()
+	onTurnComplete    func(runtime.TurnCompletedEvent)
 	onFatalError      func(error)
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
@@ -559,7 +559,7 @@ func (p *EventPipeline) trackTaskEvent(wireEvent any) {
 }
 
 func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
-	if _, ok := event.(runtime.TurnCompletedEvent); ok {
+	if tc, ok := event.(runtime.TurnCompletedEvent); ok {
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
 		p.mu.Unlock()
@@ -567,7 +567,7 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 		p.broadcastPulseNow()
 		p.resetPulse()
 		if p.onTurnComplete != nil {
-			p.onTurnComplete()
+			p.onTurnComplete(tc)
 		}
 	}
 
@@ -636,7 +636,7 @@ func (p *EventPipeline) broadcastPulseNow() {
 		ToolCallCount:    p.pulse.toolCallCount,
 		CommitCount:      p.pulse.commitCount,
 		ErrorCount:       p.pulse.errorCount,
-		TurnStartedAt:   p.pulse.turnStartedAt,
+		TurnStartedAt:    p.pulse.turnStartedAt,
 		TodoTotal:        p.pulse.todoTotal,
 		TodoCompleted:    p.pulse.todoCompleted,
 	}

@@ -42,6 +42,7 @@ type CreateParams struct {
 	BrowserEnabled        bool // agent browser MCP available (browserSvc wired)
 	PanelEnabled          bool // human-facing browser panel (experimental flag)
 	SystemPromptAdditions string // from persona config; appended to the session preamble
+	SkipRecall            bool   // discussion personas: suppress per-turn brain-recall injection
 }
 
 // Manager manages the lifecycle of agentique sessions, wrapping a runtime.Manager
@@ -51,22 +52,22 @@ type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 
-	rt             *runtime.Manager
-	connWrap       *capturingConnector
+	rt       *runtime.Manager
+	connWrap *capturingConnector
 	// routeMu serializes the provider-routing handshake (hintNext → the
 	// connector's Connect → pop) across Create/Resume/Reconnect. The shared
 	// hint + LIFO pop are only sound when this whole span runs serially —
 	// otherwise concurrent creates from different connections clobber the hint
 	// (wrong provider persisted) or pop() returns another session's CLISession.
-	routeMu        sync.Mutex
+	routeMu sync.Mutex
 	// gitOpLocks holds a per-session mutex serializing exclusive worktree
 	// operations (git merge/rebase/commit/clean/PR) against lazy resume, so a
 	// resumed turn can't write a worktree while a git op mutates it. Keyed by
 	// session ID; entries are created lazily via LoadOrStore and intentionally
 	// never reaped — the lock identity must stay stable, and one tiny mutex per
 	// session is negligible.
-	gitOpLocks sync.Map
-	db         *sql.DB
+	gitOpLocks     sync.Map
+	db             *sql.DB
 	queries        managerQueries
 	broadcaster    eventbus.Broadcaster
 	gitStatus      branchStatusQuerier
@@ -310,7 +311,11 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		workDir:   params.WorkDir,
 		gitStatus: m.gitStatus,
 	})
-	m.wireRecall(sess, params.ProjectID)
+	// Discussion personas opt out of brain-recall so their turns aren't polluted
+	// with memory blocks — the orchestrator wants clean per-persona context.
+	if !params.SkipRecall {
+		m.wireRecall(sess, params.ProjectID)
+	}
 
 	permMode := "default"
 	if params.PlanMode {

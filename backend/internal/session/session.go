@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
@@ -159,6 +160,12 @@ type Session struct {
 	// surfaced this session. Both guarded by mu.
 	recallFn    func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)
 	recalledIDs map[string]struct{}
+
+	// turnCompleteHook, when installed by the discussion orchestrator, fires with
+	// the final TurnCompletedEvent at the end of each turn so the persona's reply
+	// text can be captured for cross-injection. Atomic because the event loop reads
+	// it on a different goroutine than the orchestrator's setter. nil = no-op.
+	turnCompleteHook atomic.Pointer[func(runtime.TurnCompletedEvent)]
 }
 
 // PersonaQuerier runs persona queries. Decoupled from persona.Service to avoid
@@ -344,9 +351,14 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				"session_id", s.ID, "target", targetName)
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
-		OnTurnComplete: func() {
-			// Runtime drives Running→Idle from ResultEvent; agentique just
-			// observes via the broadcast hook. Nothing to do here.
+		OnTurnComplete: func(tc runtime.TurnCompletedEvent) {
+			// Runtime drives Running→Idle from ResultEvent; agentique observes
+			// via the broadcast hook. The discussion orchestrator installs its
+			// own hook (see Session.SetTurnCompleteHook) to capture the final
+			// reply text for cross-injection; default is a no-op.
+			if fn := s.turnCompleteHook.Load(); fn != nil {
+				(*fn)(tc)
+			}
 		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
@@ -614,6 +626,18 @@ func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string, exclud
 	s.mu.Lock()
 	s.recallFn = fn
 	s.mu.Unlock()
+}
+
+// SetTurnCompleteHook installs (or, with nil, clears) a callback fired with the
+// final TurnCompletedEvent at the end of every turn. The discussion orchestrator
+// uses it to capture a persona's contribution for cross-injection and for the
+// channel transcript. Safe for concurrent use.
+func (s *Session) SetTurnCompleteHook(fn func(runtime.TurnCompletedEvent)) {
+	if fn == nil {
+		s.turnCompleteHook.Store(nil)
+		return
+	}
+	s.turnCompleteHook.Store(&fn)
 }
 
 // injectRecall prepends a task-relevant memory recall block to the turn's prompt. It

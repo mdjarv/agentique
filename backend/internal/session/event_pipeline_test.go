@@ -278,7 +278,7 @@ func TestPipeline_ResultTriggersTurnComplete(t *testing.T) {
 	sink := newTestSink()
 	turnCompleted := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
-		cfg.OnTurnComplete = func() { turnCompleted = true }
+		cfg.OnTurnComplete = func(runtime.TurnCompletedEvent) { turnCompleted = true }
 	})
 	p.AdvanceTurn()
 
@@ -437,7 +437,7 @@ func TestPipeline_ResultClearsToolCategories(t *testing.T) {
 	turnCompleted := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
 		cfg.OnWriteToolResult = func() { gitRefreshCalled = true }
-		cfg.OnTurnComplete = func() { turnCompleted = true }
+		cfg.OnTurnComplete = func(runtime.TurnCompletedEvent) { turnCompleted = true }
 	})
 	p.AdvanceTurn()
 
