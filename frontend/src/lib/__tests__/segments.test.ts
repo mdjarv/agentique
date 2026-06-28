@@ -168,8 +168,9 @@ describe("buildSegments suggest-session interception", () => {
     const { segments } = buildSegments(events, true);
     expect(segments).toHaveLength(1);
     const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
-    expect(seg).toMatchObject({
-      kind: "suggest_session",
+    expect(seg.kind).toBe("suggest_session");
+    expect(seg.suggestions).toHaveLength(1);
+    expect(seg.suggestions[0]).toMatchObject({
       title: "Refactor auth",
       prompt: "Refactor the auth middleware.",
       projectSlug: "backend",
@@ -185,8 +186,44 @@ describe("buildSegments suggest-session interception", () => {
     ];
     const { segments } = buildSegments(events, true);
     const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
-    expect(seg.kind).toBe("suggest_session");
-    expect(seg.projectSlug).toBeUndefined();
+    expect(seg.suggestions[0]?.projectSlug).toBeUndefined();
+  });
+
+  it("groups consecutive suggestions (with suppressed acks between) into one segment", () => {
+    const events: ChatEvent[] = [
+      toolUse("a", SUGGEST_SESSION_TOOL, { title: "A", prompt: "Do A." }),
+      toolResult("a", "ack"),
+      toolUse("b", SUGGEST_SESSION_TOOL, { title: "B", prompt: "Do B.", project: "frontend" }),
+      toolResult("b", "ack"),
+    ];
+    const { segments } = buildSegments(events, true);
+    expect(segments).toHaveLength(1);
+    const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
+    expect(seg.suggestions.map((s) => s.title)).toEqual(["A", "B"]);
+    expect(seg.suggestions[1]?.projectSlug).toBe("frontend");
+    expect(toolItems(segments)).toHaveLength(0);
+  });
+
+  it("does NOT group across intervening content (text between suggestions → two segments)", () => {
+    const events: ChatEvent[] = [
+      toolUse("a", SUGGEST_SESSION_TOOL, { title: "A", prompt: "Do A." }),
+      { id: "t", type: "text", content: "Some prose." } as ChatEvent,
+      toolUse("b", SUGGEST_SESSION_TOOL, { title: "B", prompt: "Do B." }),
+    ];
+    const { segments } = buildSegments(events, true);
+    const suggestSegs = segments.filter((s) => s.kind === "suggest_session");
+    expect(suggestSegs).toHaveLength(2);
+  });
+
+  it("dedupes a repeated tool_use for the same id (codex pending→started)", () => {
+    const events: ChatEvent[] = [
+      toolUse("dup", SUGGEST_SESSION_TOOL, { title: "", prompt: "" }),
+      toolUse("dup", SUGGEST_SESSION_TOOL, { title: "Final", prompt: "Final prompt." }),
+    ];
+    const { segments } = buildSegments(events, true);
+    const seg = segments[0] as Extract<Segment, { kind: "suggest_session" }>;
+    expect(seg.suggestions).toHaveLength(1);
+    expect(seg.suggestions[0]).toMatchObject({ title: "Final", prompt: "Final prompt." });
   });
 });
 

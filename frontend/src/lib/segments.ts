@@ -65,12 +65,17 @@ export interface ChannelSendSegment {
   messageType?: AgentMessageType;
   toolId: string;
 }
-export interface SuggestSessionSegment {
-  kind: "suggest_session";
+export interface SuggestionItem {
   title: string;
   prompt: string;
   projectSlug?: string;
   toolId: string;
+}
+export interface SuggestSessionSegment {
+  kind: "suggest_session";
+  // Consecutive SuggestSessionPrompt calls (no other content between them) group
+  // into one segment so they render together under a single "Start All" footer.
+  suggestions: SuggestionItem[];
 }
 
 export type Segment =
@@ -175,15 +180,24 @@ export function buildSegments(
     }
 
     // Intercept SuggestSessionPrompt tool_use → suggest_session segment (a card).
+    // Consecutive calls accumulate into one segment; a duplicate tool_use for the
+    // same ID (codex pending→started) updates in place rather than adding a row.
     if (event.type === "tool_use" && event.toolName === SUGGEST_SESSION_TOOL) {
       const input = event.toolInput as { title?: string; prompt?: string; project?: string } | null;
-      segments.push({
-        kind: "suggest_session",
+      const suggestion: SuggestionItem = {
         title: input?.title ?? "",
         prompt: input?.prompt ?? "",
         projectSlug: input?.project || undefined,
         toolId: event.toolId,
-      });
+      };
+      const prev = segments[segments.length - 1];
+      if (prev?.kind === "suggest_session") {
+        const existing = prev.suggestions.find((s) => s.toolId === suggestion.toolId);
+        if (existing) Object.assign(existing, suggestion);
+        else prev.suggestions.push(suggestion);
+      } else {
+        segments.push({ kind: "suggest_session", suggestions: [suggestion] });
+      }
       continue;
     }
 
@@ -336,7 +350,7 @@ export function segmentKey(seg: Segment, i: number): string {
     case "channel_send":
       return `ch-send-${seg.toolId}`;
     case "suggest_session":
-      return `suggest-${seg.toolId}`;
+      return `suggest-${seg.suggestions[0]?.toolId ?? i}`;
   }
 }
 

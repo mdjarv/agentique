@@ -25,7 +25,7 @@ import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 // Re-export the prompt-parsing API from its new home so existing imports
 // (`~/components/chat/PromptCard`) keep working. The actual parser lives in
 // `~/lib/prompt-parsing.ts`.
-import { type PromptBlock, parsePromptBlocks } from "~/lib/prompt-parsing";
+import type { PromptBlock } from "~/lib/prompt-parsing";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session/actions";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -76,13 +76,17 @@ export function usePromptGroup(): PromptGroupCtx | null {
 // ---------------------------------------------------------------------------
 
 export function PromptGroupProvider({
-  content,
+  prompts,
   projectId,
   sessionId,
   isStreaming,
   children,
 }: {
-  content: string;
+  /** The prompts rendered as children, used to drive the "Start All" footer and
+   *  the swarm/cross-project partition. The caller parses these from markdown
+   *  (inline cards) or maps them from tool calls (SuggestSessionPrompt) — the
+   *  provider is decoupled from how the prompts were authored. */
+  prompts: PromptBlock[];
   projectId: string;
   sessionId: string;
   isStreaming: boolean;
@@ -90,10 +94,6 @@ export function PromptGroupProvider({
 }) {
   const ws = useWebSocket();
   const [cardStates, setCardStates] = useState<Record<string, CardEntry>>({});
-  const prompts = useMemo(
-    () => parsePromptBlocks(content, { isFinal: !isStreaming }),
-    [content, isStreaming],
-  );
 
   const startPrompt = useCallback(
     (title: string, prompt: string, targetProjectId?: string) => {

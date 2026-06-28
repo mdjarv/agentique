@@ -1,10 +1,15 @@
 import { ArrowRight, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { formatTokens } from "~/components/chat/ContextBar";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { Markdown } from "~/components/chat/Markdown";
-import { PromptCard, PromptGroupProvider } from "~/components/chat/PromptCard";
+import {
+  type PromptBlock,
+  PromptCard,
+  PromptGroupProvider,
+  parsePromptBlocks,
+} from "~/components/chat/PromptCard";
 import { SubagentActivity } from "~/components/chat/SubagentActivity";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
@@ -204,10 +209,16 @@ export const TextSegmentView = memo(function TextSegmentView({
 }) {
   const debouncedContent = useDebouncedValue(content, STREAMING_DEBOUNCE_MS);
   const markdownContent = isStreaming ? debouncedContent : content;
+  // The provider needs the prompt list to drive its "Start All" footer; parsing
+  // lives here (the caller's concern) rather than inside the provider.
+  const prompts = useMemo(
+    () => parsePromptBlocks(content, { isFinal: !isStreaming }),
+    [content, isStreaming],
+  );
 
   return (
     <PromptGroupProvider
-      content={content}
+      prompts={prompts}
       projectId={projectId}
       sessionId={sessionId}
       isStreaming={isStreaming}
@@ -332,10 +343,10 @@ function ChannelSendView({ seg }: { seg: ChannelSendSegment }) {
   );
 }
 
-// Renders a SuggestSessionPrompt tool call as a launchable PromptCard. Reuses the
-// PromptGroupProvider purely for its launch context (createSession + submitQuery);
-// empty content means no parsed prompts and therefore no "Start All" footer. While
-// the call is still the streaming segment, `isStreaming` disables the Start button.
+// Renders one or more SuggestSessionPrompt tool calls as launchable PromptCards
+// under a shared launch context. Two or more grouped suggestions get a "Start All"
+// footer (from PromptGroupProvider) that creates them as a channel. While the group
+// is still the streaming segment, `isStreaming` disables the Start buttons.
 function SuggestSessionView({
   seg,
   projectId,
@@ -347,15 +358,34 @@ function SuggestSessionView({
   sessionId: string;
   isStreaming: boolean;
 }) {
-  if (!seg.title && !seg.prompt) return null;
+  // Drop not-yet-populated calls (input still streaming in); map the rest to the
+  // PromptBlock shape the provider and cards consume.
+  const items = useMemo(
+    () => seg.suggestions.filter((s) => s.title || s.prompt),
+    [seg.suggestions],
+  );
+  const prompts = useMemo<PromptBlock[]>(
+    () => items.map((s) => ({ title: s.title, prompt: s.prompt, projectSlug: s.projectSlug })),
+    [items],
+  );
+  if (items.length === 0) return null;
   return (
     <PromptGroupProvider
-      content=""
+      prompts={prompts}
       projectId={projectId}
       sessionId={sessionId}
       isStreaming={isStreaming}
     >
-      <PromptCard title={seg.title} prompt={seg.prompt} projectSlug={seg.projectSlug} />
+      <div className="space-y-2">
+        {items.map((s) => (
+          <PromptCard
+            key={s.toolId}
+            title={s.title}
+            prompt={s.prompt}
+            projectSlug={s.projectSlug}
+          />
+        ))}
+      </div>
     </PromptGroupProvider>
   );
 }
