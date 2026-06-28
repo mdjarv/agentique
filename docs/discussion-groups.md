@@ -7,6 +7,40 @@ Supersedes: the current "Teams" UI (channels-as-tab + persona-teams dashboard). 
 
 ---
 
+## Implementation status (2026-06-28)
+
+Backend is implemented and verified (builds clean; `internal/session` passes
+`go test -race -short`). Frontend + persona seeding remain.
+
+**Landed (committed):**
+- *Enablers* — `OnTurnComplete` carries `runtime.TurnCompletedEvent` + a per-session
+  `SetTurnCompleteHook`; `PersonaConfig.WriteAccess`/`NoNamePrefix`;
+  `CreateSessionParams.SharedWorkDir` (bind N personas to one worktree, no
+  per-session reaping) + `SkipRecall`.
+- *Orchestrator* (`internal/session/discussion.go`) — `StartDiscussion` /
+  `SendDiscussionRound` / `StopDiscussion`; round-robin (shuffled, sequential) and
+  parallel rounds; one-time etiquette + cross-injected `[Name]:` deltas; reply
+  capture via the turn hook; contributions mirrored to the channel timeline; one
+  shared worktree on a `group-<id>` branch; dissolve-keep-history teardown.
+- *Endpoints* — `discussion.{start,round,stop}` WS handlers + validated payloads;
+  `DiscussionInfo` + the `discussion.state` push event exported via typegen.
+
+**Remaining:**
+- *Frontend* (§10) — the Roundtable panel + composer; list global + project
+  personas; `just check` must pass. The biggest remaining piece.
+- *Seed personas* (§7) — the 5 Odysseus profiles as global `agent_profiles`
+  (pairs with the composer's global-profile listing).
+- *Read-only enforcement* (DEFERRED, flagged) — needs an `agentkit`
+  `DisallowedTools` change (+ commit/repin). Until then read-only is soft-enforced
+  via `AutoApproveMode:"fullAuto"` + the persona prompt; the same dependency gates
+  the web-only "disallow Bash" decision (§5 / §12.4).
+- *End-to-end verify* — run a live discussion in an isolated env (needs a provider
+  CLI; the `-short` suite skips it).
+
+The §1–§12 design below is unchanged; this section tracks what's built.
+
+---
+
 ## 1. What we're building
 
 An Odysseus-style **discussion group**: a saved set of agent *personas*, into which you
