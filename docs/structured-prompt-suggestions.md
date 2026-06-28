@@ -1,7 +1,18 @@
 # Design: structured prompt suggestions — a `SuggestSessionPrompt` tool
 
-Status: **proposal** (not implemented). Supersedes the inline-XML authoring path for
+Status: **MVP implemented** (commit `20d62bd`). Supersedes the inline-XML authoring path for
 parallel-work suggestions. Pairs with the stopgap shipped in commit `3cef7d2`.
+
+**Shipped (MVP):** the tool (backend registration + auto-allow), the preamble flip to
+tool-only guidance, and the frontend `suggest_session` segment rendering as a `PromptCard`
+(reusing `PromptGroupProvider`'s launch path). Inline parser kept as a silent fallback.
+Tests: backend preamble + frontend `segments` interception.
+
+**Deferred:** the `useStartPrompt` hook extraction (MVP wraps each card in a
+`PromptGroupProvider content=""` instead — works, slightly hacky); multi-suggestion
+grouping / "Start All"; retiring the inline parser + recovery machinery. **Not yet done:**
+the real-codex-session verification and the adoption measurement (the open risk below) —
+these need the branch deployed.
 
 ## Context
 
