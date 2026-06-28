@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useSessionSubscriptions } from "~/hooks/session/useSessionSubscriptions";
 import { useBrainSubscriptions } from "~/hooks/useBrainSubscriptions";
 import { useChannelSubscriptions } from "~/hooks/useChannelSubscriptions";
+import { useDiscussionSubscriptions } from "~/hooks/useDiscussionSubscriptions";
 import { useTeamSubscriptions } from "~/hooks/useTeamSubscriptions";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listChannels } from "~/lib/channel-actions";
@@ -84,6 +85,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
   // Domain-specific subscription hooks
   useSessionSubscriptions(ws, navigate);
   useChannelSubscriptions(ws);
+  useDiscussionSubscriptions(ws);
   useTeamSubscriptions(ws);
   useBrainSubscriptions(ws);
 

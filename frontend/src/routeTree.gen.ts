@@ -13,9 +13,11 @@ import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as ProjectsRouteImport } from "./routes/projects";
+import { Route as DiscussionsRouteImport } from "./routes/discussions";
 import { Route as BrainRouteImport } from "./routes/brain";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
+import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
@@ -48,6 +50,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
   path: "/projects",
   getParentRoute: () => rootRouteImport,
 } as any);
+const DiscussionsRoute = DiscussionsRouteImport.update({
+  id: "/discussions",
+  path: "/discussions",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const BrainRoute = BrainRouteImport.update({
   id: "/brain",
   path: "/brain",
@@ -61,6 +68,11 @@ const IndexRoute = IndexRouteImport.update({
 const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
   id: "/project/$projectSlug",
   path: "/project/$projectSlug",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DiscussionsChannelIdRoute = DiscussionsChannelIdRouteImport.update({
+  id: "/discussions_/$channelId",
+  path: "/discussions/$channelId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevToolGroupsRoute = DevToolGroupsRouteImport.update({
@@ -126,6 +138,7 @@ const ProjectProjectSlugChannelChannelIdRoute =
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/brain": typeof BrainRoute;
+  "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -133,6 +146,7 @@ export interface FileRoutesByFullPath {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
@@ -146,6 +160,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/brain": typeof BrainRoute;
+  "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -153,6 +168,7 @@ export interface FileRoutesByTo {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
   "/teams/personas/$profileId": typeof TeamsPersonasProfileIdRoute;
@@ -166,6 +182,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/brain": typeof BrainRoute;
+  "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
@@ -173,6 +190,7 @@ export interface FileRoutesById {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/discussions_/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute;
@@ -188,6 +206,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/brain"
+    | "/discussions"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -195,6 +214,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
+    | "/discussions/$channelId"
     | "/project/$projectSlug"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
@@ -208,6 +228,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/brain"
+    | "/discussions"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -215,6 +236,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
+    | "/discussions/$channelId"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
     | "/teams/personas/$profileId"
@@ -227,6 +249,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/brain"
+    | "/discussions"
     | "/projects"
     | "/storage"
     | "/teams"
@@ -234,6 +257,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
+    | "/discussions_/$channelId"
     | "/project/$projectSlug"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug_/settings"
@@ -248,6 +272,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   BrainRoute: typeof BrainRoute;
+  DiscussionsRoute: typeof DiscussionsRoute;
   ProjectsRoute: typeof ProjectsRoute;
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
@@ -255,6 +280,7 @@ export interface RootRouteChildren {
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
   DevToolGroupsRoute: typeof DevToolGroupsRoute;
+  DiscussionsChannelIdRoute: typeof DiscussionsChannelIdRoute;
   ProjectProjectSlugRoute: typeof ProjectProjectSlugRouteWithChildren;
   ProjectProjectSlugSettingsRoute: typeof ProjectProjectSlugSettingsRoute;
   TeamsPersonasProfileIdRoute: typeof TeamsPersonasProfileIdRoute;
@@ -291,6 +317,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/discussions": {
+      id: "/discussions";
+      path: "/discussions";
+      fullPath: "/discussions";
+      preLoaderRoute: typeof DiscussionsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/brain": {
       id: "/brain";
       path: "/brain";
@@ -310,6 +343,13 @@ declare module "@tanstack/react-router" {
       path: "/project/$projectSlug";
       fullPath: "/project/$projectSlug";
       preLoaderRoute: typeof ProjectProjectSlugRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/discussions_/$channelId": {
+      id: "/discussions_/$channelId";
+      path: "/discussions/$channelId";
+      fullPath: "/discussions/$channelId";
+      preLoaderRoute: typeof DiscussionsChannelIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/tool-groups": {
@@ -416,6 +456,7 @@ const ProjectProjectSlugRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BrainRoute: BrainRoute,
+  DiscussionsRoute: DiscussionsRoute,
   ProjectsRoute: ProjectsRoute,
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
@@ -423,6 +464,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,
   DevToolGroupsRoute: DevToolGroupsRoute,
+  DiscussionsChannelIdRoute: DiscussionsChannelIdRoute,
   ProjectProjectSlugRoute: ProjectProjectSlugRouteWithChildren,
   ProjectProjectSlugSettingsRoute: ProjectProjectSlugSettingsRoute,
   TeamsPersonasProfileIdRoute: TeamsPersonasProfileIdRoute,
