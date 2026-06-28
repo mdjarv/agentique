@@ -152,6 +152,23 @@ export function useGlobalSubscriptions(projects: Project[]) {
       useAppStore.getState().updateProject(payload);
     });
 
+    // First-time browser use on a host without Chrome auto-installs one; surface
+    // progress so a paused browser tool call doesn't look stuck. Fires even when
+    // the browser panel feature is off (the agent provisions headlessly).
+    const unsubBrowserProvisioning = ws.subscribe(
+      "browser.provisioning",
+      (payload: { sessionId: string; state: string }) => {
+        const id = `browser-provisioning-${payload.sessionId}`;
+        if (payload.state === "installing") {
+          toast.loading("Setting up browser (one-time download)…", { id });
+        } else if (payload.state === "ready") {
+          toast.success("Browser ready", { id, duration: 2000 });
+        } else if (payload.state === "failed") {
+          toast.error("Browser setup failed — see the session for details", { id });
+        }
+      },
+    );
+
     const unsubReconnect = ws.onConnect(() => {
       // Clear orphaned streaming data from the previous connection.
       useStreamingStore.getState().reset();
@@ -177,6 +194,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
     return () => {
       unsubProjectGit();
       unsubProjectUpdated();
+      unsubBrowserProvisioning();
       unsubReconnect();
     };
   }, [ws]);

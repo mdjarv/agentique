@@ -493,6 +493,7 @@ func main() {
 	// Browser push types.
 	pushBrowserFrame := g.register(session.PushBrowserFrame{}, "PushBrowserFrame")
 	pushBrowserStopped := g.register(session.PushBrowserStopped{}, "PushBrowserStopped")
+	pushBrowserProvisioning := g.register(session.PushBrowserProvisioning{}, "PushBrowserProvisioning")
 
 	// ── Push event map (key → payload type) ──
 
@@ -543,6 +544,7 @@ func main() {
 	// Browser events.
 	g.addPushEvent("browser.frame", pushBrowserFrame)
 	g.addPushEvent("browser.stopped", pushBrowserStopped)
+	g.addPushEvent("browser.provisioning", pushBrowserProvisioning)
 
 	// ── Generate output ──
 

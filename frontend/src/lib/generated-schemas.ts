@@ -864,6 +864,11 @@ export const PushBrowserStoppedSchema = z.object({
   reason: z.string(),
 });
 
+export const PushBrowserProvisioningSchema = z.object({
+  sessionId: z.string(),
+  state: z.string(),
+});
+
 export const WireEventSchema = z.discriminatedUnion("type", [
   WireTextEventSchema,
   WireThinkingEventSchema,
@@ -912,4 +917,5 @@ export const pushSchemaMap = {
   "project.activity-item": ActivityItemSchema,
   "browser.frame": PushBrowserFrameSchema,
   "browser.stopped": PushBrowserStoppedSchema,
+  "browser.provisioning": PushBrowserProvisioningSchema,
 } as const;

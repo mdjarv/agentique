@@ -862,6 +862,11 @@ export interface PushBrowserStopped {
   reason: string;
 }
 
+export interface PushBrowserProvisioning {
+  sessionId: string;
+  state: string;
+}
+
 export type WireEvent =
   | WireTextEvent
   | WireThinkingEvent
@@ -909,6 +914,7 @@ export interface PushEventMap {
   "project.activity-item": ActivityItem;
   "browser.frame": PushBrowserFrame;
   "browser.stopped": PushBrowserStopped;
+  "browser.provisioning": PushBrowserProvisioning;
 }
 
 export type PushEventType = keyof PushEventMap;
