@@ -317,6 +317,35 @@ func TestBuildPreamble_SystemPromptAdditionsEmpty(t *testing.T) {
 	}
 }
 
+func TestBuildPreamble_BrowserBlocks(t *testing.T) {
+	const agentMarker = "## Browser automation"
+	const panelMarker = "## Browser panel"
+
+	// Agent browser available, panel off: agent block only.
+	agentOnly := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", true, false, "")
+	if !strings.Contains(agentOnly, agentMarker) {
+		t.Error("expected agent browser block when browserEnabled")
+	}
+	if strings.Contains(agentOnly, panelMarker) {
+		t.Error("panel block must require panelEnabled")
+	}
+
+	// Both on: both blocks.
+	both := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", true, true, "")
+	if !strings.Contains(both, agentMarker) || !strings.Contains(both, panelMarker) {
+		t.Error("expected both agent and panel blocks when both enabled")
+	}
+
+	// Neither: no browser blocks, and no dangling screenshot reference.
+	none := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
+	if strings.Contains(none, agentMarker) || strings.Contains(none, panelMarker) {
+		t.Error("no browser blocks expected when browser support is unwired")
+	}
+	if strings.Contains(none, "agentique-playwright") {
+		t.Error("preamble must not reference the browser MCP when unavailable")
+	}
+}
+
 func TestBuildWorkerPrompt(t *testing.T) {
 	got := buildWorkerPrompt("alpha-squad", "backend expert", "lead-session", []string{"Frontend UI"}, "Implement the API endpoints.")
 

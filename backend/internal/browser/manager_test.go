@@ -152,6 +152,53 @@ func TestManager_StopPlaceholder(t *testing.T) {
 	assert.Nil(t, m.Get("test"))
 }
 
+func TestManager_ChromeAvailable(t *testing.T) {
+	m := NewManager()
+	m.findChrome = func() (string, error) { return "", fmt.Errorf("none") }
+	assert.False(t, m.ChromeAvailable())
+
+	m.findChrome = func() (string, error) { return "/usr/bin/chromium", nil }
+	assert.True(t, m.ChromeAvailable())
+}
+
+func TestManager_ProvisionChrome_InstallsWhenMissing(t *testing.T) {
+	m := NewManager()
+	installed := false
+	m.findChrome = func() (string, error) {
+		if installed {
+			return "/cache/ms-playwright/chromium-1/chrome-linux/chrome", nil
+		}
+		return "", fmt.Errorf("none")
+	}
+	calls := 0
+	m.provision = func() error { calls++; installed = true; return nil }
+
+	require.NoError(t, m.ProvisionChrome())
+	assert.Equal(t, 1, calls)
+	assert.True(t, m.ChromeAvailable())
+}
+
+func TestManager_ProvisionChrome_SkipsWhenPresent(t *testing.T) {
+	m := NewManager()
+	m.findChrome = func() (string, error) { return "/usr/bin/chromium", nil }
+	calls := 0
+	m.provision = func() error { calls++; return nil }
+
+	// Re-check under the provision lock finds Chrome → no install runs.
+	require.NoError(t, m.ProvisionChrome())
+	assert.Equal(t, 0, calls)
+}
+
+func TestManager_ProvisionChrome_PropagatesError(t *testing.T) {
+	m := NewManager()
+	m.findChrome = func() (string, error) { return "", fmt.Errorf("none") }
+	m.provision = func() error { return fmt.Errorf("npx install failed") }
+
+	err := m.ProvisionChrome()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "npx install failed")
+}
+
 func TestManager_LaunchIdempotent(t *testing.T) {
 	expectedURL := "ws://127.0.0.1:9222/devtools/page/abc123"
 
