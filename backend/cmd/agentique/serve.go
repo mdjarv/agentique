@@ -278,6 +278,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	queries := store.New(db)
 	ensureDefaultProject(queries, fileCfg.Setup.InitialProject)
+	seedBuiltinPersonas(queries)
 
 	if !testMode && !disableBackup {
 		interval, err := time.ParseDuration(backupInterval)
