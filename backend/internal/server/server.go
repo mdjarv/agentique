@@ -398,6 +398,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 						}
 					}
 				})
+				// Learn-on-completion (M3): also fire the ingest sink when a session cleanly
+				// completes (StateDone), not only on delete. M7 rewrites this block into a job
+				// queue and MUST retain this line, or learn-on-completion is silently disabled.
+				mgr.OnSessionComplete = svc.HandleSessionComplete
 			}
 
 			// Scheduled consolidation (opt-in): automatic consolidation across all scopes on

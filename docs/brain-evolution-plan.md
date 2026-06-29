@@ -69,7 +69,15 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
 - **Recall already excludes `capture`** (`recall.go`) — verified — so captures never inject.
 - **Done:** an ended session produces `capture` records; recall does not surface them.
 
-### M3 · Learn on completion (not only on delete)
+### M3 · Learn on completion (not only on delete) — ✅ SHIPPED
+- **Trigger:** runtime `StateDone` (clean CLI exit / "conversation complete"), NOT per-turn idle.
+- **Idempotency:** a per-session event high-water mark (`Service.claimLearn`/`learnHighWater`,
+  mutex-guarded) makes the completion and delete paths fire the ingest sink at most once per
+  growth step. In-process only (a restart re-runs extraction once; brain text-dedup keeps facts
+  unique) — durable idempotency is M7.
+- **Wiring:** `Session.onComplete`/`SetOnComplete`; `runtime_bridge` fires it on `StateDone`;
+  `Manager.OnSessionComplete`/`wireCompletion` at Create/Resume/Reconnect; `Service.HandleSessionComplete`;
+  `server.go` sets `mgr.OnSessionComplete = svc.HandleSessionComplete` (M7 must preserve this line).
 - **Goal:** fresh input flows without deleting sessions.
 - **Files:** `session/service.go` — add a session-completion / `TurnCompletedEvent` hook
   alongside the existing `DeleteSession` path (kept as the capture-before-cascade safety net).

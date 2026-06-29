@@ -206,10 +206,18 @@ type Service struct {
 	idempotencyMu    sync.Mutex
 	idempotencyCache map[string]idempotencyEntry
 
-	// onSessionEnd, when set, is invoked (async, best-effort) just after a session
-	// is deleted, with the project ID and the session's transcript captured before
-	// removal — used to distill durable memories from a finished session.
+	// onSessionEnd, when set, is invoked (async, best-effort) on a session's end —
+	// both on clean completion (StateDone, M3) and just after deletion — with the
+	// project ID and the session's transcript, to distill durable memories from a
+	// finished session.
 	onSessionEnd func(projectID string, events []store.SessionEvent)
+
+	// learnHighWater records, per session id, the number of events already ingested by
+	// onSessionEnd this process, so the completion and delete paths fire it at most once
+	// per growth step (idempotency). In-process only — a restart re-runs extraction once
+	// (brain text-dedup keeps facts unique); durable idempotency is the M7 job queue.
+	learnMu        sync.Mutex
+	learnHighWater map[string]int
 
 	done chan struct{}
 }
@@ -228,10 +236,49 @@ func NewService(mgr *Manager, queries serviceQueries, hub eventbus.Broadcaster, 
 		runner:           runner,
 		worktree:         RealWorktreeOps(),
 		idempotencyCache: make(map[string]idempotencyEntry),
+		learnHighWater:   make(map[string]int),
 		done:             make(chan struct{}),
 	}
 	go svc.sweepIdempotencyCache()
 	return svc
+}
+
+// claimLearn reports whether this caller should run the brain ingest sink for sessionID
+// at the given event count, advancing the per-session high-water mark so the completion
+// and delete paths fire at most once per growth step. Returns false below
+// minEventsToEncode (trivial sessions) or when count has not grown since the last claim.
+// Fully mutex-guarded so a concurrent completion + delete fire onSessionEnd at most once.
+func (s *Service) claimLearn(sessionID string, count int) bool {
+	if count < minEventsToEncode {
+		return false
+	}
+	s.learnMu.Lock()
+	defer s.learnMu.Unlock()
+	if count <= s.learnHighWater[sessionID] {
+		return false
+	}
+	s.learnHighWater[sessionID] = count
+	return true
+}
+
+// HandleSessionComplete is the learn-on-completion entry point (M3): on a clean session
+// completion it lists the session's events and, if it claims the learn (>= minEventsToEncode
+// and grown since the last ingest), runs the onSessionEnd sink. The session is NOT deleted;
+// its events stay intact. Best-effort and idempotent across completion/delete via claimLearn.
+func (s *Service) HandleSessionComplete(projectID, sessionID string) {
+	if s.onSessionEnd == nil {
+		return
+	}
+	ctx := context.Background()
+	evs, err := s.queries.ListEventsBySession(ctx, sessionID)
+	if err != nil {
+		slog.Warn("learn-on-completion: list events failed", "session_id", sessionID, "error", err)
+		return
+	}
+	if !s.claimLearn(sessionID, len(evs)) {
+		return
+	}
+	s.onSessionEnd(projectID, evs)
 }
 
 // sweepIdempotencyCache removes expired entries every minute.
@@ -1142,10 +1189,16 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	s.hub.Publish(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
 
-	if s.onSessionEnd != nil && len(endEvents) >= minEventsToEncode {
+	// Delete remains the safety net for sessions that never cleanly completed. Route
+	// through the same high-water marker so a complete-then-delete (no new events) does
+	// not double-ingest; prune the marker since the session is gone.
+	if s.onSessionEnd != nil && s.claimLearn(sessionID, len(endEvents)) {
 		projectID := dbSess.ProjectID
 		go s.onSessionEnd(projectID, endEvents)
 	}
+	s.learnMu.Lock()
+	delete(s.learnHighWater, sessionID)
+	s.learnMu.Unlock()
 
 	return nil
 }

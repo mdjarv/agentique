@@ -132,8 +132,12 @@ New to this RFC:
 - **Lives in.** Core (`salience.go` + `consolidate.go` — decay/retention weight); the signal it
   consumes comes from the outcome loop (`brain-outcome-signal.md`).
 
-### D4 — Episodic staging + replay (activate the unused `capture` path)
+### D4 — Episodic staging + replay (activate the unused `capture` path) — ✅ ingest staged (Band 1 M2/M3)
 
+- **Status (Band 1).** Ingest now stages RAW captures (M2: `LearnFromTranscript` → `Capture`,
+  `SourceCapture`, never injected) and fires on clean **completion** as well as delete (M3:
+  `StateDone`, idempotent via a per-session event high-water mark). Replay/abstraction of those
+  captures by the churn is the remaining D4 work (Band 2 Curator).
 - **Principle.** CLS again: store episodic traces first, then *replay* and abstract them during
   sleep, prioritising the salient ones — rather than transcribing straight to semantic memory.
 - **Today.** `SourceCapture` exists but nothing writes it; auto-encode (`LearnFromTranscript`)

@@ -95,6 +95,12 @@ type Manager struct {
 	// via wireRecall.
 	MemoryRecallFn func(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string)
 
+	// OnSessionComplete, when set by the server, fires once per clean session completion
+	// (runtime StateDone), passing the project and session id, so the brain learns from a
+	// finished transcript without the session being deleted (M3). Async, best-effort; nil
+	// disables it. Installed per session via wireCompletion.
+	OnSessionComplete func(projectID, sessionID string)
+
 	// MemoryRecallPreamble, when set alongside MemoryRecallFn, is a static system-
 	// preamble section explaining the <brain> recall envelope to the agent (its shape
 	// and the MemoryUsed/MemoryFlag outcome hooks) so the per-turn recall block stays
@@ -269,6 +275,17 @@ func (m *Manager) wireRecall(sess *Session, projectID string) {
 	})
 }
 
+// wireCompletion installs the per-session completion callback, binding the session's
+// project and id, so a clean completion (StateDone) routes through OnSessionComplete.
+// No-op when learn-on-completion is disabled or the project is empty.
+func (m *Manager) wireCompletion(sess *Session, projectID string) {
+	if m.OnSessionComplete == nil || projectID == "" {
+		return
+	}
+	id := sess.ID
+	sess.SetOnComplete(func() { m.OnSessionComplete(projectID, id) })
+}
+
 // devURLsPreamble returns a system-prompt section documenting the dev URL
 // capability when at least one slot is configured. Empty string otherwise.
 func (m *Manager) devURLsPreamble(ctx context.Context) string {
@@ -315,6 +332,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	// with memory blocks — the orchestrator wants clean per-persona context.
 	if !params.SkipRecall {
 		m.wireRecall(sess, params.ProjectID)
+		m.wireCompletion(sess, params.ProjectID)
 	}
 
 	permMode := "default"
@@ -469,6 +487,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		gitStatus:         m.gitStatus,
 	})
 	m.wireRecall(sess, p.ProjectID)
+	m.wireCompletion(sess, p.ProjectID)
 
 	permMode := p.PermissionMode
 	if permMode == "" {
@@ -561,6 +580,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		gitStatus:         m.gitStatus,
 	})
 	m.wireRecall(sess, p.ProjectID)
+	m.wireCompletion(sess, p.ProjectID)
 
 	permMode := p.PermissionMode
 	if permMode == "" {

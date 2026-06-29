@@ -93,6 +93,17 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 		if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
 			slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
 		}
+		// Learn-on-completion (M3): a clean CLI exit is a learning boundary, so fire the
+		// per-session completion hook once, async, so fresh captures flow without the
+		// session being deleted. Snapshot under lock then `go` (hook handlers must not
+		// block the runtime broadcast loop). The two early returns above (StateMerging,
+		// Failed→Done) intentionally skip this — the delete path nets those.
+		s.mu.Lock()
+		cb := s.onComplete
+		s.mu.Unlock()
+		if cb != nil {
+			go cb()
+		}
 	}
 
 	select {

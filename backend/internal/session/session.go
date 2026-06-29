@@ -161,6 +161,12 @@ type Session struct {
 	recallFn    func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)
 	recalledIDs map[string]struct{}
 
+	// onComplete, when wired by the Manager, fires once per clean completion
+	// (runtime StateDone — "conversation complete") so the brain can learn from the
+	// finished transcript without the session being deleted. Async, best-effort; nil
+	// disables it. Guarded by mu.
+	onComplete func()
+
 	// turnCompleteHook, when installed by the discussion orchestrator, fires with
 	// the final TurnCompletedEvent at the end of each turn so the persona's reply
 	// text can be captured for cross-injection. Atomic because the event loop reads
@@ -625,6 +631,14 @@ const recallTimeout = 3 * time.Second
 func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)) {
 	s.mu.Lock()
 	s.recallFn = fn
+	s.mu.Unlock()
+}
+
+// SetOnComplete wires the per-session completion callback fired once on a clean
+// completion (runtime StateDone). The Manager binds the project/session; nil disables it.
+func (s *Session) SetOnComplete(fn func()) {
+	s.mu.Lock()
+	s.onComplete = fn
 	s.mu.Unlock()
 }
 
