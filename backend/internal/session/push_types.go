@@ -141,14 +141,14 @@ type PushBrowserProvisioning struct {
 // ActivityItem is a single entry in the project activity feed.
 // Covers both channel messages and significant session events.
 type ActivityItem struct {
-	Kind       string `json:"kind"`                 // "message" or "event"
-	ItemID     string `json:"itemId"`               // message UUID or event row ID
-	SourceID   string `json:"sourceId"`             // channel_id (message) or session_id (event)
-	SourceName string `json:"sourceName"`           // sender_name or session name
-	Content    string `json:"content"`              // message text / tool name / error text
-	EventType  string `json:"eventType"`            // message_type or event type (tool_use/result/error)
-	Category   string `json:"category,omitempty"`   // tool category for tool_use events
-	FilePath   string `json:"filePath,omitempty"`   // extracted file path for tool_use events
+	Kind       string `json:"kind"`               // "message" or "event"
+	ItemID     string `json:"itemId"`             // message UUID or event row ID
+	SourceID   string `json:"sourceId"`           // channel_id (message) or session_id (event)
+	SourceName string `json:"sourceName"`         // sender_name or session name
+	Content    string `json:"content"`            // message text / tool name / error text
+	EventType  string `json:"eventType"`          // message_type or event type (tool_use/result/error)
+	Category   string `json:"category,omitempty"` // tool category for tool_use events
+	FilePath   string `json:"filePath,omitempty"` // extracted file path for tool_use events
 	CreatedAt  string `json:"createdAt"`
 }
 
@@ -162,7 +162,7 @@ type PushSessionPulse struct {
 	ToolCallCount    int    `json:"toolCallCount"`
 	CommitCount      int    `json:"commitCount"`
 	ErrorCount       int    `json:"errorCount"`
-	TurnStartedAt   int64  `json:"turnStartedAt"`    // epoch ms
-	TodoTotal        int    `json:"todoTotal"`         // unique tasks seen
-	TodoCompleted    int    `json:"todoCompleted"`     // tasks with completed status
+	TurnStartedAt    int64  `json:"turnStartedAt"` // epoch ms
+	TodoTotal        int    `json:"todoTotal"`     // unique tasks seen
+	TodoCompleted    int    `json:"todoCompleted"` // tasks with completed status
 }

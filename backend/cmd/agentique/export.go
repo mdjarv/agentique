@@ -123,7 +123,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	// Assemble export.
 	type exportTurn struct {
-		Prompt   string           `json:"prompt"`
+		Prompt   string            `json:"prompt"`
 		Scenario testmode.Scenario `json:"scenario"`
 	}
 	type exportData struct {

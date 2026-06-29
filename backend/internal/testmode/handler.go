@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // Handler provides test-only HTTP endpoints for hybrid E2E tests.
@@ -54,10 +54,10 @@ type SeedSession struct {
 	ProjectID       string     `json:"projectId"`
 	Name            string     `json:"name"`
 	WorkDir         string     `json:"workDir"`
-	Live            bool       `json:"live"`             // if true, create via Manager (starts event loop)
-	Behavior        []Scenario `json:"behavior"`         // scripted event sequences for mock
-	PlanMode        bool       `json:"planMode"`         // start in plan permission mode
-	AutoApproveMode string     `json:"autoApproveMode"`  // "manual" (default), "auto", "fullAuto"
+	Live            bool       `json:"live"`            // if true, create via Manager (starts event loop)
+	Behavior        []Scenario `json:"behavior"`        // scripted event sequences for mock
+	PlanMode        bool       `json:"planMode"`        // start in plan permission mode
+	AutoApproveMode string     `json:"autoApproveMode"` // "manual" (default), "auto", "fullAuto"
 }
 
 // SeedResult is returned from POST /api/test/seed.

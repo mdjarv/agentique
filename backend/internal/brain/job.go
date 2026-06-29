@@ -34,7 +34,7 @@ const (
 // Apply it.
 type JobState struct {
 	ID      string     `json:"id"`
-	Kind    string     `json:"kind"`  // "scope" | "global" | "all"
+	Kind    string     `json:"kind"` // "scope" | "global" | "all"
 	Scope   string     `json:"scope,omitempty"`
 	Model   string     `json:"model,omitempty"`
 	Phase   string     `json:"phase"` // running | done | error

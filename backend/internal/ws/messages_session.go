@@ -10,20 +10,20 @@ import (
 // --- Session payloads ---
 
 type SessionCreatePayload struct {
-	ProjectID       string                 `json:"projectId"`
-	Name            string                 `json:"name"`
-	Worktree        bool                   `json:"worktree"`
-	Branch          string                 `json:"branch"`
-	Provider        string                 `json:"provider,omitempty"`
-	Model           string                 `json:"model"`
-	PlanMode        bool                   `json:"planMode"`
-	AutoApproveMode string                 `json:"autoApproveMode"`
-	Effort          string                 `json:"effort"`
-	MaxBudget       float64                `json:"maxBudget"`
-	MaxTurns        int                    `json:"maxTurns"`
+	ProjectID       string                  `json:"projectId"`
+	Name            string                  `json:"name"`
+	Worktree        bool                    `json:"worktree"`
+	Branch          string                  `json:"branch"`
+	Provider        string                  `json:"provider,omitempty"`
+	Model           string                  `json:"model"`
+	PlanMode        bool                    `json:"planMode"`
+	AutoApproveMode string                  `json:"autoApproveMode"`
+	Effort          string                  `json:"effort"`
+	MaxBudget       float64                 `json:"maxBudget"`
+	MaxTurns        int                     `json:"maxTurns"`
 	BehaviorPresets session.BehaviorPresets `json:"behaviorPresets"`
-	AgentProfileID  string                 `json:"agentProfileId"`
-	IdempotencyKey  string                 `json:"idempotencyKey,omitempty"`
+	AgentProfileID  string                  `json:"agentProfileId"`
+	IdempotencyKey  string                  `json:"idempotencyKey,omitempty"`
 }
 
 type SessionQueryPayload struct {

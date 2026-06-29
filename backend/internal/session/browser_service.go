@@ -10,9 +10,9 @@ import (
 
 // BrowserService handles browser lifecycle operations for sessions.
 type BrowserService struct {
-	mgr       *Manager
+	mgr        *Manager
 	browserMgr *browser.Manager
-	hub eventbus.Broadcaster
+	hub        eventbus.Broadcaster
 }
 
 // NewBrowserService creates a BrowserService.

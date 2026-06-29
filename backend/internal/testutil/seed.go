@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // SetupDB creates a fresh SQLite database with migrations applied.

@@ -32,7 +32,7 @@ func TestCredentialFromStore(t *testing.T) {
 		BackupEligible:  1,
 		BackupState:     0,
 		Aaguid:          aaguid,
-		SignCount:        42,
+		SignCount:       42,
 	}
 
 	got := credentialFromStore(c)

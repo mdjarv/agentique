@@ -113,8 +113,10 @@ func (realWorktreeOps) RemoveWorktree(ctx context.Context, projectDir, branch, w
 func (realWorktreeOps) HeadSHA(ctx context.Context, dir string) (string, error) {
 	return worktree.HeadSHA(ctx, dir)
 }
-func (realWorktreeOps) BranchExists(dir, branch string) bool      { return gitops.BranchExists(dir, branch) }
-func (realWorktreeOps) DeleteBranch(dir, branch string) error     { return gitops.DeleteBranch(dir, branch) }
+func (realWorktreeOps) BranchExists(dir, branch string) bool { return gitops.BranchExists(dir, branch) }
+func (realWorktreeOps) DeleteBranch(dir, branch string) error {
+	return gitops.DeleteBranch(dir, branch)
+}
 func (realWorktreeOps) ForceDeleteBranch(dir, branch string) error {
 	return gitops.ForceDeleteBranch(dir, branch)
 }
@@ -157,8 +159,10 @@ type realSessionGitOps struct{}
 func (realSessionGitOps) HasUncommittedChanges(dir string) (bool, error) {
 	return gitops.HasUncommittedChanges(dir)
 }
-func (realSessionGitOps) AutoCommitAll(dir, msg string) error            { return gitops.AutoCommitAll(dir, msg) }
-func (realSessionGitOps) MergeBranch(dir, branch string) (string, error) { return gitops.MergeBranch(dir, branch) }
+func (realSessionGitOps) AutoCommitAll(dir, msg string) error { return gitops.AutoCommitAll(dir, msg) }
+func (realSessionGitOps) MergeBranch(dir, branch string) (string, error) {
+	return gitops.MergeBranch(dir, branch)
+}
 func (realSessionGitOps) MergeConflictFiles(dir string) ([]string, error) {
 	return gitops.MergeConflictFiles(dir)
 }
@@ -166,9 +170,13 @@ func (realSessionGitOps) AbortMerge(dir string) error { return gitops.AbortMerge
 func (realSessionGitOps) RemoveWorktree(ctx context.Context, projectDir, branch, wtPath string) {
 	realWorktreeOps{}.RemoveWorktree(ctx, projectDir, branch, wtPath)
 }
-func (realSessionGitOps) DeleteBranch(dir, branch string) error { return gitops.DeleteBranch(dir, branch) }
-func (realSessionGitOps) DeleteRemoteBranch(dir, branch string) { gitops.DeleteRemoteBranch(dir, branch) }
-func (realSessionGitOps) GC(dir string)                         { gitops.GC(dir) }
+func (realSessionGitOps) DeleteBranch(dir, branch string) error {
+	return gitops.DeleteBranch(dir, branch)
+}
+func (realSessionGitOps) DeleteRemoteBranch(dir, branch string) {
+	gitops.DeleteRemoteBranch(dir, branch)
+}
+func (realSessionGitOps) GC(dir string) { gitops.GC(dir) }
 func (realSessionGitOps) HeadCommitHash(dir string) (string, error) {
 	return gitops.HeadCommitHash(dir)
 }
@@ -176,9 +184,11 @@ func (realSessionGitOps) RebaseBranch(dir, onto string) error { return gitops.Re
 func (realSessionGitOps) RebaseConflictFiles(dir string) ([]string, error) {
 	return gitops.RebaseConflictFiles(dir)
 }
-func (realSessionGitOps) AbortRebase(dir string) error                { return gitops.AbortRebase(dir) }
-func (realSessionGitOps) HasGhCli() bool                              { return gitops.HasGhCli() }
-func (realSessionGitOps) HasRemote(dir, remote string) (bool, error)  { return gitops.HasRemote(dir, remote) }
+func (realSessionGitOps) AbortRebase(dir string) error { return gitops.AbortRebase(dir) }
+func (realSessionGitOps) HasGhCli() bool               { return gitops.HasGhCli() }
+func (realSessionGitOps) HasRemote(dir, remote string) (bool, error) {
+	return gitops.HasRemote(dir, remote)
+}
 func (realSessionGitOps) GetExistingPR(dir, branch string) (string, error) {
 	return gitops.GetExistingPR(dir, branch)
 }
@@ -195,7 +205,9 @@ func (realSessionGitOps) UncommittedFiles(dir string) ([]gitops.FileStatus, erro
 func (realSessionGitOps) ProjectStatus(dir string) gitops.ProjectStatusResult {
 	return gitops.ProjectStatus(dir)
 }
-func (realSessionGitOps) BranchExists(dir, branch string) bool { return gitops.BranchExists(dir, branch) }
+func (realSessionGitOps) BranchExists(dir, branch string) bool {
+	return gitops.BranchExists(dir, branch)
+}
 func (realSessionGitOps) CommitLog(dir, branch string, limit int) ([]gitops.CommitLogEntry, error) {
 	return gitops.CommitLog(dir, branch, limit)
 }

@@ -16,31 +16,31 @@ import (
 // --- Mock sessionGitOps ---
 
 type mockSessionGitOps struct {
-	dirty      bool
-	dirtyErr   error
-	commitErr  error
-	headHash   string
-	headHashErr error
-	mergeHash  string
-	mergeErr   error
-	conflictFiles []string
-	abortMergeErr error
-	rebaseErr  error
+	dirty               bool
+	dirtyErr            error
+	commitErr           error
+	headHash            string
+	headHashErr         error
+	mergeHash           string
+	mergeErr            error
+	conflictFiles       []string
+	abortMergeErr       error
+	rebaseErr           error
 	rebaseConflictFiles []string
-	diffResult worktree.DiffResult
-	diffErr    error
-	uncommittedFiles []gitops.FileStatus
-	uncommittedErr   error
-	hasGhCli   bool
-	hasRemote  bool
-	remoteErr  error
-	existingPR string
-	existingPRErr error
-	pushErr    error
-	createPRUrl string
-	createPRErr error
-	branchExists bool
-	projectStatus gitops.ProjectStatusResult
+	diffResult          worktree.DiffResult
+	diffErr             error
+	uncommittedFiles    []gitops.FileStatus
+	uncommittedErr      error
+	hasGhCli            bool
+	hasRemote           bool
+	remoteErr           error
+	existingPR          string
+	existingPRErr       error
+	pushErr             error
+	createPRUrl         string
+	createPRErr         error
+	branchExists        bool
+	projectStatus       gitops.ProjectStatusResult
 
 	// call tracking
 	removedWorktrees []string
@@ -50,28 +50,49 @@ type mockSessionGitOps struct {
 
 func (m *mockSessionGitOps) HasUncommittedChanges(string) (bool, error) { return m.dirty, m.dirtyErr }
 func (m *mockSessionGitOps) AutoCommitAll(string, string) error         { return m.commitErr }
-func (m *mockSessionGitOps) MergeBranch(string, string) (string, error) { return m.mergeHash, m.mergeErr }
+func (m *mockSessionGitOps) MergeBranch(string, string) (string, error) {
+	return m.mergeHash, m.mergeErr
+}
 func (m *mockSessionGitOps) MergeConflictFiles(string) ([]string, error) { return m.conflictFiles, nil }
-func (m *mockSessionGitOps) AbortMerge(string) error                    { return m.abortMergeErr }
-func (m *mockSessionGitOps) RemoveWorktree(_ context.Context, _, _, wtPath string) { m.removedWorktrees = append(m.removedWorktrees, wtPath) }
-func (m *mockSessionGitOps) DeleteBranch(_, branch string) error        { m.deletedBranches = append(m.deletedBranches, branch); return nil }
-func (m *mockSessionGitOps) DeleteRemoteBranch(string, string)          {}
-func (m *mockSessionGitOps) GC(string)                                  { m.gcCalled = true }
-func (m *mockSessionGitOps) HeadCommitHash(string) (string, error)      { return m.headHash, m.headHashErr }
-func (m *mockSessionGitOps) RebaseBranch(string, string) error          { return m.rebaseErr }
-func (m *mockSessionGitOps) RebaseConflictFiles(string) ([]string, error) { return m.rebaseConflictFiles, nil }
-func (m *mockSessionGitOps) AbortRebase(string) error                   { return nil }
-func (m *mockSessionGitOps) HasGhCli() bool                             { return m.hasGhCli }
-func (m *mockSessionGitOps) HasRemote(string, string) (bool, error)     { return m.hasRemote, m.remoteErr }
-func (m *mockSessionGitOps) GetExistingPR(string, string) (string, error) { return m.existingPR, m.existingPRErr }
-func (m *mockSessionGitOps) PushBranch(string, string) error            { return m.pushErr }
-func (m *mockSessionGitOps) CreatePR(string, string, string, string) (string, error) { return m.createPRUrl, m.createPRErr }
-func (m *mockSessionGitOps) WorktreeDiff(context.Context, string, string, bool) (worktree.DiffResult, error) { return m.diffResult, m.diffErr }
-func (m *mockSessionGitOps) UncommittedFiles(string) ([]gitops.FileStatus, error) { return m.uncommittedFiles, m.uncommittedErr }
+func (m *mockSessionGitOps) AbortMerge(string) error                     { return m.abortMergeErr }
+func (m *mockSessionGitOps) RemoveWorktree(_ context.Context, _, _, wtPath string) {
+	m.removedWorktrees = append(m.removedWorktrees, wtPath)
+}
+func (m *mockSessionGitOps) DeleteBranch(_, branch string) error {
+	m.deletedBranches = append(m.deletedBranches, branch)
+	return nil
+}
+func (m *mockSessionGitOps) DeleteRemoteBranch(string, string)     {}
+func (m *mockSessionGitOps) GC(string)                             { m.gcCalled = true }
+func (m *mockSessionGitOps) HeadCommitHash(string) (string, error) { return m.headHash, m.headHashErr }
+func (m *mockSessionGitOps) RebaseBranch(string, string) error     { return m.rebaseErr }
+func (m *mockSessionGitOps) RebaseConflictFiles(string) ([]string, error) {
+	return m.rebaseConflictFiles, nil
+}
+func (m *mockSessionGitOps) AbortRebase(string) error               { return nil }
+func (m *mockSessionGitOps) HasGhCli() bool                         { return m.hasGhCli }
+func (m *mockSessionGitOps) HasRemote(string, string) (bool, error) { return m.hasRemote, m.remoteErr }
+func (m *mockSessionGitOps) GetExistingPR(string, string) (string, error) {
+	return m.existingPR, m.existingPRErr
+}
+func (m *mockSessionGitOps) PushBranch(string, string) error { return m.pushErr }
+func (m *mockSessionGitOps) CreatePR(string, string, string, string) (string, error) {
+	return m.createPRUrl, m.createPRErr
+}
+func (m *mockSessionGitOps) WorktreeDiff(context.Context, string, string, bool) (worktree.DiffResult, error) {
+	return m.diffResult, m.diffErr
+}
+func (m *mockSessionGitOps) UncommittedFiles(string) ([]gitops.FileStatus, error) {
+	return m.uncommittedFiles, m.uncommittedErr
+}
 func (m *mockSessionGitOps) ProjectStatus(string) gitops.ProjectStatusResult { return m.projectStatus }
-func (m *mockSessionGitOps) BranchExists(string, string) bool          { return m.branchExists }
-func (m *mockSessionGitOps) CommitLog(string, string, int) ([]gitops.CommitLogEntry, error) { return nil, nil }
-func (m *mockSessionGitOps) PRStatus(string, string) (gitops.PRStatusResult, error) { return gitops.PRStatusResult{}, nil }
+func (m *mockSessionGitOps) BranchExists(string, string) bool                { return m.branchExists }
+func (m *mockSessionGitOps) CommitLog(string, string, int) ([]gitops.CommitLogEntry, error) {
+	return nil, nil
+}
+func (m *mockSessionGitOps) PRStatus(string, string) (gitops.PRStatusResult, error) {
+	return gitops.PRStatusResult{}, nil
+}
 
 // --- Suite ---
 

@@ -32,13 +32,13 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
-	Name            *string                 `json:"name,omitempty"`
-	Slug            *string                 `json:"slug,omitempty"`
+	Name            *string                  `json:"name,omitempty"`
+	Slug            *string                  `json:"slug,omitempty"`
 	BehaviorPresets *session.BehaviorPresets `json:"behaviorPresets,omitempty"`
-	Color           *string                 `json:"color,omitempty"`
-	Icon            *string                 `json:"icon,omitempty"`
-	Folder          *string                 `json:"folder,omitempty"`
-	MaxSessions     *int64                  `json:"maxSessions,omitempty"`
+	Color           *string                  `json:"color,omitempty"`
+	Icon            *string                  `json:"icon,omitempty"`
+	Folder          *string                  `json:"folder,omitempty"`
+	MaxSessions     *int64                   `json:"maxSessions,omitempty"`
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)

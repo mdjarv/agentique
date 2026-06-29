@@ -39,10 +39,10 @@ type CreateParams struct {
 	AgentProfileID        string
 	ParentSessionID       string   // optional: lead session that spawned this worker
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled        bool // agent browser MCP available (browserSvc wired)
-	PanelEnabled          bool // human-facing browser panel (experimental flag)
-	SystemPromptAdditions string // from persona config; appended to the session preamble
-	SkipRecall            bool   // discussion personas: suppress per-turn brain-recall injection
+	BrowserEnabled        bool     // agent browser MCP available (browserSvc wired)
+	PanelEnabled          bool     // human-facing browser panel (experimental flag)
+	SystemPromptAdditions string   // from persona config; appended to the session preamble
+	SkipRecall            bool     // discussion personas: suppress per-turn brain-recall injection
 }
 
 // Manager manages the lifecycle of agentique sessions, wrapping a runtime.Manager
@@ -439,9 +439,9 @@ type ResumeParams struct {
 	TeamPreambles         []*TeamPreambleInfo
 	ExtraPreamble         string   // appended to system prompt (e.g. fresh-worktree notice)
 	MCPConfigs            []string // inline JSON or file paths for --mcp-config
-	BrowserEnabled        bool // agent browser MCP available (browserSvc wired)
-	PanelEnabled          bool // human-facing browser panel (experimental flag)
-	SystemPromptAdditions string // from persona config; appended to session preamble
+	BrowserEnabled        bool     // agent browser MCP available (browserSvc wired)
+	PanelEnabled          bool     // human-facing browser panel (experimental flag)
+	SystemPromptAdditions string   // from persona config; appended to session preamble
 }
 
 // Resume reconnects to an existing Claude session using runtime.Manager.Resume.

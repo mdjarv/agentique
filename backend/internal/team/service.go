@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/allbin/agentkit/eventbus"
-	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 type serviceQueries interface {

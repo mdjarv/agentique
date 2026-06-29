@@ -259,9 +259,9 @@ func TestPipelineSendMessageRouting(t *testing.T) {
 		"message": "looks good",
 	})
 	pipeline.trackToolUse(WireToolUseEvent{
-		Type:     "tool_use",
-		ToolID:   "tu_123",
-		ToolName: ChannelSendMessageTool,
+		Type:      "tool_use",
+		ToolID:    "tu_123",
+		ToolName:  ChannelSendMessageTool,
 		ToolInput: input,
 	})
 

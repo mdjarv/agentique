@@ -9,9 +9,9 @@ import (
 
 func TestParseResponse(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		want   QueryResult
+		name  string
+		input string
+		want  QueryResult
 	}{
 		{
 			name: "full structured response",
@@ -60,7 +60,7 @@ RESPONSE: I can implement that endpoint. This will need a full session — I'll 
 			},
 		},
 		{
-			name: "fallback when no structured format",
+			name:  "fallback when no structured format",
 			input: "I'm not sure how to answer that in the structured format, but yes I handle API routes.",
 			want: QueryResult{
 				Action:     "answer",

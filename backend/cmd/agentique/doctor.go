@@ -24,8 +24,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Column widths.
 	const (
-		colStatus  = 4
-		colName    = 14
+		colStatus = 4
+		colName   = 14
 	)
 
 	for _, c := range checks {

@@ -16,10 +16,10 @@ import (
 
 // mockCDP is a test helper that acts as a CDP WebSocket server.
 type mockCDP struct {
-	t       *testing.T
-	srv     *httptest.Server
-	mu      sync.Mutex
-	conn    *websocket.Conn
+	t        *testing.T
+	srv      *httptest.Server
+	mu       sync.Mutex
+	conn     *websocket.Conn
 	received []cdpMessage
 }
 

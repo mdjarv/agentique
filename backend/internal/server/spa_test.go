@@ -9,10 +9,10 @@ import (
 
 func TestSPAHandler_CacheHeaders(t *testing.T) {
 	fs := fstest.MapFS{
-		"index.html":          {Data: []byte("<html></html>")},
-		"sw.js":               {Data: []byte("// service worker")},
+		"index.html":           {Data: []byte("<html></html>")},
+		"sw.js":                {Data: []byte("// service worker")},
 		"manifest.webmanifest": {Data: []byte(`{"name":"test"}`)},
-		"assets/app.js":       {Data: []byte("// app")},
+		"assets/app.js":        {Data: []byte("// app")},
 	}
 	h := &spaHandler{fs: fs}
 

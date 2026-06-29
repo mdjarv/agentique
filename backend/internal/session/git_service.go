@@ -67,7 +67,7 @@ func autoCommit(ctx context.Context, git sessionGitOps, runner msggen.Runner, se
 type GitService struct {
 	mgr         *Manager
 	queries     gitServiceQueries
-	hub eventbus.Broadcaster
+	hub         eventbus.Broadcaster
 	runner      msggen.Runner
 	git         sessionGitOps
 	gitVersions sync.Map // sessionID → *atomic.Int64
@@ -475,7 +475,7 @@ func (g *GitService) savePRUrl(ctx context.Context, projectID, sessionID, url st
 // PRStatusResult describes the outcome of a PR status check.
 type PRStatusResult struct {
 	Number       int    `json:"number"`
-	State        string `json:"state"`        // OPEN, MERGED, CLOSED
+	State        string `json:"state"` // OPEN, MERGED, CLOSED
 	IsDraft      bool   `json:"isDraft"`
 	ChecksStatus string `json:"checksStatus"` // pass, fail, pending, none
 }

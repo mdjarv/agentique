@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/google/uuid"
 )
 
 // Handler handles HTTP requests for prompt template CRUD operations.

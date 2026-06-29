@@ -37,10 +37,10 @@ type jsonrpcRequest struct {
 }
 
 type jsonrpcResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
+	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *jsonrpcError `json:"error,omitempty"`
+	Result  interface{}     `json:"result,omitempty"`
+	Error   *jsonrpcError   `json:"error,omitempty"`
 }
 
 type jsonrpcError struct {
@@ -77,8 +77,8 @@ func runMCPChannel(_ *cobra.Command, _ []string) error {
 		case "initialize":
 			resp.Result = map[string]interface{}{
 				"protocolVersion": "2024-11-05",
-				"capabilities":   map[string]interface{}{"tools": map[string]interface{}{}},
-				"serverInfo":     map[string]interface{}{"name": "agentique-channel", "version": "1.0.0"},
+				"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
+				"serverInfo":      map[string]interface{}{"name": "agentique-channel", "version": "1.0.0"},
 			}
 		case "tools/list":
 			resp.Result = map[string]interface{}{

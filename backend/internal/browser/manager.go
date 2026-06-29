@@ -222,8 +222,8 @@ func (m *Manager) launchOnPort(sessionID string, port int) (*Instance, error) {
 
 // cdpTarget is a single entry from Chrome's /json endpoint.
 type cdpTarget struct {
-	ID                 string `json:"id"`
-	Type               string `json:"type"`
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 

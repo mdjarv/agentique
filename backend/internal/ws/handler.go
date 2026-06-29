@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/gorilla/websocket"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
-	"github.com/gorilla/websocket"
 )
 
 // Handler handles WebSocket connections.
@@ -21,9 +21,9 @@ type Handler struct {
 	Queries           *store.Queries
 	Bus               *eventbus.Bus
 	TeamService       *team.Service           // nil when experimental teams is disabled
-	PersonaService    *persona.Service         // nil when experimental teams is disabled
-	BrowserService    *session.BrowserService  // nil when browser support is unavailable
-	AllowedOrigins    map[string]bool          // nil/empty = accept all origins
+	PersonaService    *persona.Service        // nil when experimental teams is disabled
+	BrowserService    *session.BrowserService // nil when browser support is unavailable
+	AllowedOrigins    map[string]bool         // nil/empty = accept all origins
 }
 
 func (h *Handler) upgrader() websocket.Upgrader {

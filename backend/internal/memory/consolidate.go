@@ -237,12 +237,12 @@ func isProtected(r Record) bool {
 // runs once, at plan time.
 type Plan struct {
 	Scope             Scope       `json:"scope"`
-	InputFingerprint  string      `json:"inputFingerprint"`  // fingerprint of the reorganizable set at plan time
-	Reorganized       []Fact      `json:"reorganized"`       // ex.Reorganize output
-	ReorganizeRan     bool        `json:"reorganizeRan"`     // a reorganization was performed (vs skipped / no extractor)
-	ReorganizeSkipped bool        `json:"reorganizeSkipped"` // skipped because the set was unchanged since the last pass
-	Promoted          []Candidate `json:"promoted"`          // ex.Extract output distilled from captures
-	CaptureIDs        []string    `json:"captureIds"`        // captures considered; consumed on apply when promotion yields facts
+	InputFingerprint  string      `json:"inputFingerprint"`           // fingerprint of the reorganizable set at plan time
+	Reorganized       []Fact      `json:"reorganized"`                // ex.Reorganize output
+	ReorganizeRan     bool        `json:"reorganizeRan"`              // a reorganization was performed (vs skipped / no extractor)
+	ReorganizeSkipped bool        `json:"reorganizeSkipped"`          // skipped because the set was unchanged since the last pass
+	Promoted          []Candidate `json:"promoted"`                   // ex.Extract output distilled from captures
+	CaptureIDs        []string    `json:"captureIds"`                 // captures considered; consumed on apply when promotion yields facts
 	MinSurvivorRatio  float64     `json:"minSurvivorRatio,omitempty"` // over-deletion guard floor in effect for this plan (apply mirrors preview)
 }
 

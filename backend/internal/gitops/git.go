@@ -292,7 +292,7 @@ func GetExistingPR(projectDir, branch string) (string, error) {
 // PRStatusResult describes the status of a GitHub pull request.
 type PRStatusResult struct {
 	Number       int    `json:"number"`
-	State        string `json:"state"`        // OPEN, MERGED, CLOSED
+	State        string `json:"state"` // OPEN, MERGED, CLOSED
 	IsDraft      bool   `json:"isDraft"`
 	ChecksStatus string `json:"checksStatus"` // "pass", "fail", "pending", "none"
 }
@@ -306,10 +306,10 @@ func PRStatus(projectDir, branch string) (PRStatusResult, error) {
 	}
 
 	var raw struct {
-		Number             int    `json:"number"`
-		State              string `json:"state"`
-		IsDraft            bool   `json:"isDraft"`
-		StatusCheckRollup  []struct {
+		Number            int    `json:"number"`
+		State             string `json:"state"`
+		IsDraft           bool   `json:"isDraft"`
+		StatusCheckRollup []struct {
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 		} `json:"statusCheckRollup"`

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	claudecli "github.com/allbin/claudecli-go"
-	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // ChannelInfo is the wire type for channel metadata sent to clients.

@@ -626,8 +626,8 @@ func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
 		ParentToolUseID: "tu_agent",
 	})
 	p.ProcessEvent(runtime.ToolResultEvent{
-		ToolUseID: "t1",
-		Content:   []runtime.ToolContent{{Type: "text", Text: "ok"}},
+		ToolUseID:       "t1",
+		Content:         []runtime.ToolContent{{Type: "text", Text: "ok"}},
 		ParentToolUseID: "tu_agent",
 	})
 

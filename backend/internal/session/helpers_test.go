@@ -19,9 +19,9 @@ type mockBranchQuerier struct {
 	mergeErr     error
 }
 
-func (m *mockBranchQuerier) BranchExists(string, string) bool     { return m.branchExists }
-func (m *mockBranchQuerier) CommitsAhead(string, string) (int, error) { return m.ahead, m.aheadErr }
-func (m *mockBranchQuerier) CommitsBehind(string, string) (int, error) { return m.behind, m.behindErr }
+func (m *mockBranchQuerier) BranchExists(string, string) bool           { return m.branchExists }
+func (m *mockBranchQuerier) CommitsAhead(string, string) (int, error)   { return m.ahead, m.aheadErr }
+func (m *mockBranchQuerier) CommitsBehind(string, string) (int, error)  { return m.behind, m.behindErr }
 func (m *mockBranchQuerier) HasUncommittedChanges(string) (bool, error) { return m.dirty, m.dirtyErr }
 func (m *mockBranchQuerier) MergeTreeCheck(string, string) (gitops.MergeTreeResult, error) {
 	return m.mergeResult, m.mergeErr

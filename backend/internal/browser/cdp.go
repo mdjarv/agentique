@@ -25,7 +25,7 @@ type CDPClient struct {
 
 // FrameEvent is emitted for each screencast frame.
 type FrameEvent struct {
-	Data     string             `json:"data"`     // base64 JPEG
+	Data     string             `json:"data"` // base64 JPEG
 	Metadata ScreencastMetadata `json:"metadata"`
 	// SessionID is the CDP screencast session ID used for ack.
 	SessionID int `json:"sessionId"`
@@ -44,11 +44,11 @@ type ScreencastMetadata struct {
 
 // cdpMessage is the generic CDP JSON-RPC message structure.
 type cdpMessage struct {
-	ID     int64            `json:"id,omitempty"`
-	Method string           `json:"method,omitempty"`
-	Params json.RawMessage  `json:"params,omitempty"`
-	Result json.RawMessage  `json:"result,omitempty"`
-	Error  *cdpError        `json:"error,omitempty"`
+	ID     int64           `json:"id,omitempty"`
+	Method string          `json:"method,omitempty"`
+	Params json.RawMessage `json:"params,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *cdpError       `json:"error,omitempty"`
 }
 
 type cdpError struct {
@@ -211,8 +211,8 @@ func (c *CDPClient) call(method string, params any) (json.RawMessage, error) {
 	case result := <-ch:
 		// Check if result is an error response.
 		var errCheck struct {
-			Error   string `json:"__error"`
-			Code    int    `json:"__code"`
+			Error string `json:"__error"`
+			Code  int    `json:"__code"`
 		}
 		if json.Unmarshal(result, &errCheck) == nil && errCheck.Error != "" {
 			return nil, fmt.Errorf("cdp %s: %s (code %d)", method, errCheck.Error, errCheck.Code)
@@ -247,7 +247,7 @@ func (c *CDPClient) StartScreencast(quality int, maxWidth, maxHeight int) error 
 		"format":    "jpeg",
 		"quality":   quality,
 		"maxWidth":  maxWidth,
-		"maxHeight":  maxHeight,
+		"maxHeight": maxHeight,
 	})
 	return err
 }

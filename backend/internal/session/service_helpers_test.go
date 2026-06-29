@@ -230,4 +230,3 @@ func TestApplyPostResumeFlags_NoOpForFreshSession(t *testing.T) {
 		t.Errorf("completedAt should remain empty, got %q", completedAt)
 	}
 }
-

@@ -30,14 +30,14 @@ type Handler struct {
 }
 
 type memoryDTO struct {
-	ID          string    `json:"id"`
-	Scope       string    `json:"scope"`
-	Text        string    `json:"text"`
-	Category    string    `json:"category"`
-	Source      string    `json:"source"`
-	Pinned      bool      `json:"pinned"`
-	Locked      bool      `json:"locked"`
-	Uses        int       `json:"uses"`
+	ID       string `json:"id"`
+	Scope    string `json:"scope"`
+	Text     string `json:"text"`
+	Category string `json:"category"`
+	Source   string `json:"source"`
+	Pinned   bool   `json:"pinned"`
+	Locked   bool   `json:"locked"`
+	Uses     int    `json:"uses"`
 	// Helped counts confirmed-useful outcomes (MemoryUsed) — a stronger signal than a
 	// bare injection (Uses); it raises strength and confidence (RFC-LD D2 positive half).
 	Helped      int       `json:"helped"`

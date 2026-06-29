@@ -69,9 +69,9 @@ func NormalizeEventJSON(eventType string, data []byte) json.RawMessage {
 
 // HistoryTurn represents a single turn (prompt + response events) for replay.
 type HistoryTurn struct {
-	Prompt string            `json:"prompt"`
-	Attachments []QueryAttachment      `json:"attachments,omitempty"`
-	Events []json.RawMessage `json:"events"`
+	Prompt      string            `json:"prompt"`
+	Attachments []QueryAttachment `json:"attachments,omitempty"`
+	Events      []json.RawMessage `json:"events"`
 }
 
 // RecentHistoryFromDB returns the most recent N turns from persisted events.
