@@ -144,6 +144,11 @@ type BrainConfig struct {
 	// (haiku|sonnet|opus). Empty = off. Env: AGENTIQUE_BRAIN_OUTCOME_MODEL.
 	OutcomeModel string `toml:"outcome-model"`
 
+	// SnapshotRetain bounds how many pre-churn brain snapshots are kept under
+	// brain/.snapshots/. 0 = the built-in default (7); do not duplicate that default here.
+	// Env: AGENTIQUE_BRAIN_SNAPSHOT_RETAIN.
+	SnapshotRetain int `toml:"snapshot-retain"`
+
 	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
 	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
 	// hybrid (keyword + embedding cosine). Each has an AGENTIQUE_BRAIN_* env override that

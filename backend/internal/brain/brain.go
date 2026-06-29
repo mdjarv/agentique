@@ -55,6 +55,10 @@ type Config struct {
 	// or an embed failure falls back to the defaults. Inert without an embedder.
 	Calibrate bool
 
+	// SnapshotRetain bounds how many pre-churn brain snapshots are kept (brain/.snapshots/<ts>/).
+	// 0 uses the built-in default (7). Env override: AGENTIQUE_BRAIN_SNAPSHOT_RETAIN.
+	SnapshotRetain int
+
 	// Graph tunes the knowledge-graph view (semantic kNN edge density + force-layout
 	// curves). Zero-valued fields take the built-in defaults via GraphConfig.withDefaults.
 	Graph GraphConfig
@@ -122,6 +126,9 @@ type Service struct {
 	store    memory.Store
 	dir      string
 	semantic bool
+
+	// snapshotRetain caps the pre-churn snapshots kept under dir/.snapshots (read-only after New).
+	snapshotRetain int
 
 	// embedder, when set (semantic mode), drives semantic similarity for clustering —
 	// link/community/area edges blend Jaccard with embedding cosine (RFC phase C). nil =
@@ -195,13 +202,14 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// time. All writes funnel through this Service's store, so the cache stays consistent.
 	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
-		store:        base,
-		dir:          cfg.Dir,
-		embedCache:   make(map[string][]float32),
-		semEdgeCache: make(map[string][]memory.Edge),
-		graph:        cfg.Graph.withDefaults(),
-		fpPath:       filepath.Join(cfg.Dir, ".fingerprints.json"),
-		gmPath:       filepath.Join(cfg.Dir, ".global-manifest.json"),
+		store:          base,
+		dir:            cfg.Dir,
+		snapshotRetain: cfg.SnapshotRetain,
+		embedCache:     make(map[string][]float32),
+		semEdgeCache:   make(map[string][]memory.Edge),
+		graph:          cfg.Graph.withDefaults(),
+		fpPath:         filepath.Join(cfg.Dir, ".fingerprints.json"),
+		gmPath:         filepath.Join(cfg.Dir, ".global-manifest.json"),
 	}
 
 	if cfg.ChromaURL != "" && cfg.EmbedURL != "" && cfg.EmbedModel != "" {

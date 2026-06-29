@@ -109,6 +109,9 @@ type Config struct {
 	// force-layout curves (frontend). Resolved from [brain.graph] with AGENTIQUE_BRAIN_GRAPH_*
 	// env overrides; zero fields take brain's built-in defaults.
 	BrainGraph config.BrainGraphConfig
+	// BrainSnapshotRetain bounds how many pre-churn brain snapshots are kept. From
+	// AGENTIQUE_BRAIN_SNAPSHOT_RETAIN or [brain] snapshot-retain; 0 = brain's default (7).
+	BrainSnapshotRetain int
 }
 
 func devModePreamble(dbPath string) string {
@@ -276,6 +279,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			SemanticThreshold: cfg.BrainSemanticThreshold,
 			VectorVetoScore:   cfg.BrainVectorVeto,
 			Calibrate:         cfg.BrainCalibrate,
+			SnapshotRetain:    cfg.BrainSnapshotRetain,
 			Graph: brain.GraphConfig{
 				EdgeCap:          cfg.BrainGraph.EdgeCap,
 				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,

@@ -205,6 +205,27 @@ Admin / migration:
   resolved interactively (pick a local project / skip / send to global) unless
   `-y/--skip-unmatched` or `--map source-slug=local-slug` pre-resolves it.
   Duplicates are skipped, so import is idempotent.
+- `snapshot [--retain N]` — take a restorable filesystem snapshot of the brain dir
+  (prints the new snapshot id, file count and the retained list). Pure FS, no model.
+- `restore <id> [--retain N -f]` — restore the brain to a snapshot. A fresh
+  pre-restore safety snapshot is written first, so restore is itself reversible. An
+  unknown id prints the available ids. Offline-only: it refuses when a server pidfile
+  is live (rewriting files under a running cache is unsafe) unless `-f/--force`.
+
+## Snapshots & rollback (reversibility)
+
+The markdown brain dir is the source of truth, so every churn is made reversible by a
+one-shot filesystem copy taken *before* it runs (`brain.Snapshot`, `internal/brain/snapshot.go`).
+Snapshots live in a sibling `brain/.snapshots/<ts>/` directory (UTC timestamp ids,
+lexically == chronological). This directory is **invisible to recall/consolidation**:
+`filestore.List` is non-recursive and reads only the direct `*.md` of each top-level
+scope dir, so `.snapshots` (which holds no direct `*.md`) yields zero records and never
+enters `ListScopes`/`Recall`. Scheduled consolidation snapshots the whole brain at the
+top of each pass (a snapshot failure is WARN-logged and does **not** block the pass — the
+archive-not-delete churn keeps the pass reversible regardless). Retention keeps the
+newest `snapshot-retain` (default 7); older snapshots are pruned. This is the single
+snapshot mechanism — the label backfill and the CLI reuse `brain.Snapshot`. Restore is
+offline-only (it bypasses the live read-through cache).
 
 ## Configuration
 
@@ -221,6 +242,12 @@ The brain is enabled by default with keyword recall over markdown files at
 All three of `CHROMA_URL`, `EMBED_URL`, `EMBED_MODEL` must be set (and Chroma
 reachable) for semantic recall; otherwise the brain logs a warning and uses
 keyword recall.
+
+Other `[brain]` tunables (config-file key → env override; env wins):
+
+| `[brain]` key | Env override | Default | Meaning |
+|---|---|---|---|
+| `snapshot-retain` | `AGENTIQUE_BRAIN_SNAPSHOT_RETAIN` | 7 | pre-churn brain snapshots to keep under `brain/.snapshots/` |
 
 ## Automation (the live recall → encode → consolidate loop)
 

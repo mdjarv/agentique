@@ -355,6 +355,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Session-end learning: env wins over the [brain] config-file value, else off.
 		BrainLearnModel:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"), fileCfg.Brain.LearnModel),
 		BrainOutcomeModel: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL"), fileCfg.Brain.OutcomeModel),
+		// Pre-churn snapshot retention: env wins over the [brain] value; 0 → brain's default (7).
+		BrainSnapshotRetain: envIntOr("AGENTIQUE_BRAIN_SNAPSHOT_RETAIN", fileCfg.Brain.SnapshotRetain),
 		// Graph-view tuning: env wins over the [brain.graph] file value; 0 → brain's default.
 		BrainGraph: config.BrainGraphConfig{
 			EdgeCap:          envIntOr("AGENTIQUE_BRAIN_GRAPH_EDGE_CAP", fileCfg.Brain.Graph.EdgeCap),

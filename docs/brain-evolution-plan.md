@@ -48,12 +48,15 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
   fixture corpus; snapshot current frontmatter schema.
 - **Done:** tests green and committed before any behaviour change.
 
-### M1 · Brain snapshot + rollback
+### M1 · Brain snapshot + rollback — ✅ SHIPPED
 - **Goal:** one-shot, restorable snapshot of the brain dir before each churn / migration.
 - **Files:** new `backend/internal/brain/snapshot.go`; call from `automation.go:runOnce`
-  (top); CLI `agentique brain snapshot` + `restore`.
-- **Approach:** copy `brain/` → `brain/.snapshots/<ts>/`; retain N (config). Pure FS, no deps.
-- **Done:** snapshot created before a churn; restore verified; retention enforced.
+  (top); CLI `agentique brain snapshot` + `restore` (`backend/cmd/agentique/brain_snapshot.go`).
+- **Approach:** copy `brain/` → `brain/.snapshots/<ts>/`; retain N (`snapshot-retain`, default 7).
+  Pure FS, stdlib only (manual `WalkDir`, not `os.CopyFS`). Time-injectable core (`snapshotAt`).
+- **Done:** snapshot taken at the top of `runOnce` (WARN-and-proceed on failure); restore writes a
+  pre-restore safety snapshot first and refuses against a live server unless `--force`; retention
+  enforced; `.snapshots` proven invisible to `filestore.List`/`ListScopes`.
 
 ### M2 · Capture-tier ingest (the gate's input)
 - **Goal:** session ingest writes **raw, non-injectable captures**, not injectable facts.

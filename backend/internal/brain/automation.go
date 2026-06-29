@@ -98,6 +98,17 @@ func (a *Automation) runOnce(ctx context.Context) {
 	if a.model != "" && a.runner != nil {
 		ex = NewClaudeExtractor(a.runner, a.model)
 	}
+	// Reversibility: take a pre-churn snapshot of the whole brain before mutating any
+	// scope, so a consolidation pass is recoverable (brain restore <id>). Failure is
+	// WARN-logged and non-fatal — a missing snapshot must not block the churn (the
+	// archive-not-delete model keeps the pass itself reversible regardless).
+	if len(scopes) > 0 {
+		if info, err := a.svc.Snapshot(); err != nil {
+			slog.Warn("brain: scheduled consolidation: snapshot failed", "error", err)
+		} else {
+			slog.Info("brain: pre-churn snapshot", "id", info.ID, "files", info.Files)
+		}
+	}
 	for _, scope := range scopes {
 		select {
 		case <-a.done:
