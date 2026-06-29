@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Memory } from "~/lib/brain-api";
 import { useAppStore } from "~/stores/app-store";
@@ -94,5 +94,32 @@ describe("BrainPage tier filters", () => {
     render(<BrainPage />);
     expect(screen.queryByRole("button", { name: /Captures/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Archived/ })).toBeNull();
+  });
+
+  it("shows Restore on an archived row and restoring it leaves the archived set (F3)", async () => {
+    const restore = vi.fn(async (id: string) => {
+      useBrainStore.setState((s) => ({
+        memories: s.memories.map((m) => (m.id === id ? { ...m, lifecycle: "active" as const } : m)),
+      }));
+    });
+    useBrainStore.setState({
+      memories: [
+        mem({ id: "n1", text: "NORMAL FACT" }),
+        mem({ id: "cold", text: "COLD FACT", lifecycle: "archived" }),
+      ],
+      restore,
+    });
+    render(<BrainPage />);
+
+    // Reveal the archived tier, then the row + its Restore action appear.
+    fireEvent.click(screen.getByRole("button", { name: /Archived \(1\)/ }));
+    expect(screen.getByText("COLD FACT")).toBeTruthy();
+
+    fireEvent.click(screen.getByTitle(/Restore/));
+    expect(restore).toHaveBeenCalledWith("cold");
+
+    // Now active → it has left the archived set (toggle gone), but stays visible as a live fact.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).toBeNull());
+    expect(screen.getByText("COLD FACT")).toBeTruthy();
   });
 });

@@ -172,8 +172,15 @@ Auto-approved, scoped to the calling session's project (+ global):
   `/{id}/flag {reason}` (RFC-LD D2: weaken a contradicted fact into the review queue,
   mirrors the agent `MemoryFlag` tool), `/{id}/refine {text,instruction,model}`
   (RFC-LD: the model rewrites a fact per an instruction and returns a *draft* — no
-  write; the review UI's "Refine with AI"), `/search`, `/graph` (centrality + insight
-  report incl. `dueForReview`/`interference`), `/status`.
+  write; the review UI's "Refine with AI"), `/{id}/restore` (un-archive a cold fact
+  back into the live set — flips `lifecycle` to active and restarts the disuse clock;
+  a normal cachestore-consistent write, idempotent on a non-archived fact; the Brain
+  tab's per-row Restore action on archived rows), `/search`, `/graph` (centrality +
+  insight report incl. `dueForReview`/`interference`), `/status`.
+- Every `memoryDTO` carries the Band-1 controlled-vocabulary labels (`lifecycle`,
+  `evidence`, `volatility`, `corroborations`, typed `relations`, `keywords`,
+  `lastCurated`, `curatorNote`). These wire types are **hand-synced** with
+  `frontend/src/lib/brain-api.ts` (`Memory`) — there is no typegen for brain types.
 - **Consolidation is preview → apply.** `POST /consolidate/preview
   {scope,model,mode,force}` (mode `conservative|aggressive`; force re-runs an
   unchanged scope) and `POST /consolidate/global/preview {model}` start a background

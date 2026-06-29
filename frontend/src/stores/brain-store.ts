@@ -17,6 +17,7 @@ import {
   getStatus,
   listMemories,
   type Memory,
+  restoreMemory,
   setLocked,
   setPinned,
   startConsolidateAll,
@@ -72,6 +73,8 @@ interface BrainState {
   pin: (id: string, pinned: boolean) => Promise<void>;
   lock: (id: string, locked: boolean) => Promise<void>;
   confirm: (id: string) => Promise<void>;
+  // restore un-archives a cold fact back into the live set (F3).
+  restore: (id: string) => Promise<void>;
 
   startPreview: (
     scope: string,
@@ -174,6 +177,11 @@ export const useBrainStore = create<BrainState>((set, get) => ({
 
   lock: async (id, locked) => {
     const m = await setLocked(id, locked);
+    set((s) => ({ memories: upsert(s.memories, m) }));
+  },
+
+  restore: async (id) => {
+    const m = await restoreMemory(id);
     set((s) => ({ memories: upsert(s.memories, m) }));
   },
 

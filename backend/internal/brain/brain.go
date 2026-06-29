@@ -902,6 +902,23 @@ func (s *Service) MarkAutoHelped(ctx context.Context, id string) (memory.Record,
 	})
 }
 
+// Restore pulls an archived (cold-tier) fact back into the live set: it flips Lifecycle
+// to active and restarts the disuse clock (LastUsedAt=now) so the fact is not immediately
+// re-archived, exactly mirroring the Update un-archive branch but without a content edit.
+// A non-archived fact is left unchanged (idempotent). This is a NORMAL write — it funnels
+// through mutate/Put, so the read-through cache stays consistent (unlike a snapshot
+// restore, which rewrites files underneath the cache). It is the dedicated, no-edit
+// counterpart to the M5 "archived = restorable" cold tier (brain-ui-spec.md F3).
+func (s *Service) Restore(ctx context.Context, id string) (memory.Record, error) {
+	return s.mutate(ctx, id, func(r *memory.Record) {
+		if r.Lifecycle != memory.LifecycleArchived {
+			return // already live — no-op
+		}
+		r.Lifecycle = memory.LifecycleActive
+		r.LastUsedAt = time.Now().UTC()
+	})
+}
+
 func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)) (memory.Record, error) {
 	// Hold s.mu across Get→fn→Put so a human action (Confirm/Flag/SetPinned/…) is not lost to a
 	// concurrent reinforce (Add/Capture) or churn (Consolidate) RMW — all the durable single-fact

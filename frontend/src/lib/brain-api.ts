@@ -204,6 +204,15 @@ export async function flagMemory(id: string, reason?: string): Promise<Memory> {
   return res.json();
 }
 
+// restoreMemory un-archives a cold-tier fact, pulling it back into the live (injectable)
+// set and restarting its disuse clock so it re-enters recall. Idempotent on a non-archived
+// fact. A normal write (cachestore-consistent) — distinct from a snapshot restore.
+export async function restoreMemory(id: string): Promise<Memory> {
+  const res = await fetch(`${BASE}/memories/${id}/restore`, { method: "POST" });
+  await throwIfNotOk(res, "Failed to restore memory");
+  return res.json();
+}
+
 // refineMemory asks the model to rewrite a fact per an instruction (informed by the
 // sources it was merged from) and returns the DRAFT text. It writes nothing — the
 // caller shows the draft and the user decides whether to save it.

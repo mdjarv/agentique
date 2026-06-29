@@ -314,6 +314,18 @@ func (h *Handler) HandleFlag(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// HandleRestore POST /api/brain/memories/{id}/restore — un-archive a cold fact back into
+// the live set (no body; idempotent on a non-archived fact). The cold tier is restorable.
+func (h *Handler) HandleRestore(w http.ResponseWriter, r *http.Request) error {
+	rec, err := h.Service.Restore(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return mapErr(err)
+	}
+	h.brainChanged()
+	httperror.JSON(w, http.StatusOK, toDTO(rec))
+	return nil
+}
+
 // HandleRefine POST /api/brain/memories/{id}/refine {text?, instruction, model}
 // Runs the model to rewrite a fact per the user's instruction (informed by the
 // sources it was merged from) and returns the DRAFT text — it writes nothing; the

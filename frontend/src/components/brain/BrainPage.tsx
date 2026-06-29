@@ -1,4 +1,5 @@
 import {
+  ArchiveRestore,
   ArrowUpToLine,
   Brain,
   Check,
@@ -748,7 +749,7 @@ function confidenceChip(memory: Memory): { dot: string; label: string } | null {
 }
 
 function MemoryCard({ memory }: { memory: Memory }) {
-  const { update, remove, pin, lock, confirm } = useBrainStore();
+  const { update, remove, pin, lock, confirm, restore } = useBrainStore();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(memory.text);
   const conf = confidenceChip(memory);
@@ -830,6 +831,14 @@ function MemoryCard({ memory }: { memory: Memory }) {
         {memory.locked && <Lock className="size-3 text-muted-foreground" aria-label="locked" />}
 
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {memory.lifecycle === "archived" && (
+            <IconBtn
+              title="Restore — bring this archived fact back into the live set"
+              onClick={() => act(() => restore(memory.id), "Failed to restore")}
+            >
+              <ArchiveRestore className="size-3.5" />
+            </IconBtn>
+          )}
           {canConfirm && (
             <IconBtn
               title="Confirm — keep as ground truth (exempt from consolidation)"
