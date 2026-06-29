@@ -67,6 +67,11 @@ type Record struct {
 	// D2 positive half — see brain-outcome-signal.md). A stronger signal than a bare
 	// injection; it raises both StorageStrength and (via MarkHelped) ConfidenceScore.
 	Helped int
+	// Corroborations counts independent RE-OBSERVATIONS: an ingest/Add saw text duplicating
+	// this durable fact. Distinct from Helped (an agent acknowledged a *recalled* fact via
+	// MemoryUsed) and Uses (bare injection). Raises ConfidenceScore toward CorroborationCeiling
+	// via Reinforce (the gentle automatic weight — a dup match is a machine inference).
+	Corroborations int
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

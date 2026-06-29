@@ -37,25 +37,26 @@ func New(dir string) *FileStore { return &FileStore{root: dir} }
 // frontmatter is the YAML header serialized for each record. Field order here is
 // the order written to disk, chosen for human readability.
 type frontmatter struct {
-	ID          string       `yaml:"id"`
-	Scope       string       `yaml:"scope"`
-	Category    string       `yaml:"category"`
-	Source      string       `yaml:"source"`
-	Pinned      bool         `yaml:"pinned,omitempty"`
-	Locked      bool         `yaml:"locked,omitempty"`
-	Uses        int          `yaml:"uses"`
-	Helped      int          `yaml:"helped,omitempty"`
-	Created     time.Time    `yaml:"created"`
-	Updated     time.Time    `yaml:"updated"`
-	LastUsed    time.Time    `yaml:"last_used,omitempty"`
-	DerivedFrom []string     `yaml:"derived_from,omitempty"`
-	Related     []string     `yaml:"related,omitempty"`
-	Community   int          `yaml:"community,omitempty"`
-	Area        string       `yaml:"area,omitempty"`
-	Confidence  string       `yaml:"confidence,omitempty"`
-	ConfScore   float64      `yaml:"confidence_score,omitempty"`
-	ReviewNote  string       `yaml:"review_note,omitempty"`
-	Subsumed    []subsumedFM `yaml:"subsumed,omitempty"`
+	ID             string       `yaml:"id"`
+	Scope          string       `yaml:"scope"`
+	Category       string       `yaml:"category"`
+	Source         string       `yaml:"source"`
+	Pinned         bool         `yaml:"pinned,omitempty"`
+	Locked         bool         `yaml:"locked,omitempty"`
+	Uses           int          `yaml:"uses"`
+	Helped         int          `yaml:"helped,omitempty"`
+	Corroborations int          `yaml:"corroborations,omitempty"`
+	Created        time.Time    `yaml:"created"`
+	Updated        time.Time    `yaml:"updated"`
+	LastUsed       time.Time    `yaml:"last_used,omitempty"`
+	DerivedFrom    []string     `yaml:"derived_from,omitempty"`
+	Related        []string     `yaml:"related,omitempty"`
+	Community      int          `yaml:"community,omitempty"`
+	Area           string       `yaml:"area,omitempty"`
+	Confidence     string       `yaml:"confidence,omitempty"`
+	ConfScore      float64      `yaml:"confidence_score,omitempty"`
+	ReviewNote     string       `yaml:"review_note,omitempty"`
+	Subsumed       []subsumedFM `yaml:"subsumed,omitempty"`
 }
 
 // subsumedFM is the frontmatter form of memory.SubsumedSource (a merged-away source).
@@ -66,25 +67,26 @@ type subsumedFM struct {
 
 func toFrontmatter(r memory.Record) frontmatter {
 	return frontmatter{
-		ID:          r.ID,
-		Scope:       string(r.Scope),
-		Category:    string(r.Category),
-		Source:      string(r.Source),
-		Pinned:      r.Pinned,
-		Locked:      r.Locked,
-		Uses:        r.Uses,
-		Helped:      r.Helped,
-		Created:     r.CreatedAt.UTC(),
-		Updated:     r.UpdatedAt.UTC(),
-		LastUsed:    r.LastUsedAt.UTC(),
-		DerivedFrom: r.DerivedFrom,
-		Related:     r.Related,
-		Community:   r.Community,
-		Area:        r.Area,
-		Confidence:  string(r.Confidence),
-		ConfScore:   r.ConfidenceScore,
-		ReviewNote:  r.ReviewNote,
-		Subsumed:    toSubsumedFM(r.Subsumed),
+		ID:             r.ID,
+		Scope:          string(r.Scope),
+		Category:       string(r.Category),
+		Source:         string(r.Source),
+		Pinned:         r.Pinned,
+		Locked:         r.Locked,
+		Uses:           r.Uses,
+		Helped:         r.Helped,
+		Corroborations: r.Corroborations,
+		Created:        r.CreatedAt.UTC(),
+		Updated:        r.UpdatedAt.UTC(),
+		LastUsed:       r.LastUsedAt.UTC(),
+		DerivedFrom:    r.DerivedFrom,
+		Related:        r.Related,
+		Community:      r.Community,
+		Area:           r.Area,
+		Confidence:     string(r.Confidence),
+		ConfScore:      r.ConfidenceScore,
+		ReviewNote:     r.ReviewNote,
+		Subsumed:       toSubsumedFM(r.Subsumed),
 	}
 }
 
@@ -128,6 +130,7 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		Locked:          m.Locked,
 		Uses:            m.Uses,
 		Helped:          m.Helped,
+		Corroborations:  m.Corroborations,
 		LastUsedAt:      m.LastUsed,
 		CreatedAt:       m.Created,
 		UpdatedAt:       m.Updated,

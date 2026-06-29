@@ -452,6 +452,12 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 	if source == "" {
 		source = memory.SourceAgent
 	}
+	// Hold s.mu across the whole List → dedup/Reinforce → Put critical section so a
+	// concurrent ingest (M3 fires lock-free Capture on every clean completion) and the
+	// churn (Consolidate already holds s.mu) are mutually exclusive — no lost Reinforce
+	// increment (RMW), no cachestore stale-cache install. No caller holds s.mu here.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	all, err := s.store.List(ctx, recallScopes(scope)...)
 	if err != nil {
 		return memory.Record{}, err
@@ -465,7 +471,14 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 		}
 	}
 	if dup, ok := memory.FindDuplicate(text, existing, memory.DefaultDuplicateThreshold); ok {
-		return dup, nil
+		// Re-observation of a known durable fact: strengthen it (count the corroboration,
+		// refresh recency, nudge confidence toward the ceiling) instead of discarding the
+		// signal, and return the strengthened record (same ID).
+		reinforced := memory.Reinforce(dup, time.Now().UTC())
+		if err := s.store.Put(ctx, reinforced); err != nil {
+			return memory.Record{}, fmt.Errorf("brain: reinforce duplicate %s: %w", dup.ID, err)
+		}
+		return reinforced, nil
 	}
 	r := memory.New(scope, text, category, source)
 	if category == memory.CategoryIdentity {
@@ -493,7 +506,29 @@ func (s *Service) Capture(ctx context.Context, scope memory.Scope, text string, 
 	if category == "" {
 		category = memory.CategoryFact
 	}
-	r := memory.New(scope, text, category, memory.SourceCapture) // Pinned stays false
+	// Same atomic critical section + race fix as Add (see there). A re-observation arriving
+	// on the ingest tier reinforces the DURABLE fact instead of stacking a redundant capture;
+	// the dedup set stays durable-only, so capture-vs-capture still never dedups (M2's invariant).
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all, err := s.store.List(ctx, recallScopes(scope)...)
+	if err != nil {
+		return memory.Record{}, err
+	}
+	existing := make([]memory.Record, 0, len(all))
+	for _, r := range all {
+		if r.Source != memory.SourceCapture {
+			existing = append(existing, r)
+		}
+	}
+	if dup, ok := memory.FindDuplicate(text, existing, memory.DefaultDuplicateThreshold); ok {
+		reinforced := memory.Reinforce(dup, time.Now().UTC())
+		if err := s.store.Put(ctx, reinforced); err != nil {
+			return memory.Record{}, fmt.Errorf("brain: reinforce duplicate %s: %w", dup.ID, err)
+		}
+		return reinforced, nil
+	}
+	r := memory.New(scope, text, category, memory.SourceCapture) // genuinely-new: stage as capture (Pinned stays false)
 	if err := s.store.Put(ctx, r); err != nil {
 		return memory.Record{}, fmt.Errorf("brain: capture: %w", err)
 	}

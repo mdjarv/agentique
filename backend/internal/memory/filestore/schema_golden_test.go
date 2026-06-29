@@ -32,6 +32,7 @@ func fullRecord() memory.Record {
 		Locked:          true,
 		Uses:            5,
 		Helped:          2,
+		Corroborations:  4,
 		CreatedAt:       ts,
 		UpdatedAt:       ts.Add(time.Hour),
 		LastUsedAt:      ts.Add(2 * time.Hour),

@@ -73,6 +73,24 @@ func MarkHelpedWith(r Record, now time.Time, gapClose float64) Record {
 	return NormalizeConfidence(r)
 }
 
+// Reinforce records that the same fact was independently OBSERVED AGAIN — a re-observation
+// at ingest that duplicates a DURABLE memory (the third reconsolidation verb, beside
+// MarkHelped/MarkContradicted). It increments Corroborations, stamps LastUsedAt (driving
+// retrieval recency + decay-by-disuse), and for a non-protected fact raises ConfidenceScore
+// toward CorroborationCeiling by AutoCorroborationGapClose of the remaining gap — a dup match
+// is a machine inference, so it earns the gentle automatic weight, not firsthand 0.5. Protected
+// facts (pinned/locked/human ground truth) keep their score but still accrue the count. Like
+// MarkHelped (and unlike MarkContradicted), it leaves UpdatedAt untouched: re-observation is
+// retrieval, not a content edit. now stamps LastUsedAt.
+func Reinforce(r Record, now time.Time) Record {
+	r.Corroborations++
+	r.LastUsedAt = now
+	if !isProtected(r) && r.ConfidenceScore < CorroborationCeiling {
+		r.ConfidenceScore += AutoCorroborationGapClose * (CorroborationCeiling - r.ConfidenceScore)
+	}
+	return NormalizeConfidence(r)
+}
+
 // maxReviewNote bounds the stored reason so an over-eager agent can't write an essay
 // into a fact's frontmatter.
 const maxReviewNote = 280

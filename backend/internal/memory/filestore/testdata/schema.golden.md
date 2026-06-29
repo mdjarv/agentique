@@ -7,6 +7,7 @@ pinned: true
 locked: true
 uses: 5
 helped: 2
+corroborations: 4
 created: 2026-05-01T09:00:00Z
 updated: 2026-05-01T10:00:00Z
 last_used: 2026-05-01T11:00:00Z

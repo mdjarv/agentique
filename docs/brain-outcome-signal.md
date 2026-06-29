@@ -120,6 +120,22 @@ So a cross-project preference (0.65) needs two confirmations to act-on; an ordin
 | `helpedUseWeight` | 2 | how many injections a single `Helped` is worth in `StorageStrength` |
 | `ActOnConfidence` | 0.85 | preference confidence at/above which a fact joins the operating contract |
 
+### Re-observation: the third reconsolidation verb (`Reinforce`, Band 1 M4)
+
+Beside the two outcome verbs — `MarkHelped` (an agent acknowledged a *recalled* fact) and
+`MarkContradicted` (an agent found one wrong) — there is now a third: `memory.Reinforce`, for
+when the *same fact is independently observed again* at ingest. When `Add` (or `Capture`) sees
+text that duplicates an existing **durable** fact, instead of silently returning the duplicate it
+counts the corroboration (`Record.Corroborations++`), refreshes `LastUsedAt`, and — for a
+non-protected fact — nudges `ConfidenceScore` toward `CorroborationCeiling` by
+`AutoCorroborationGapClose` of the remaining gap (a dup match is a machine inference, so it earns
+the gentle automatic weight, not the firsthand 0.5). Protected facts keep their score but still
+accrue the count; `UpdatedAt` is never touched (re-observation is retrieval, not a content edit).
+`Corroborations` is a new omitempty markdown field (legacy files read as 0). The dedup set stays
+**durable-only**, so a re-observation never reinforces or stacks onto a raw capture. The
+`Add`/`Capture` critical section (`List → dedup/Reinforce → Put`) now runs under the service mutex,
+so concurrent ingest and the churn can't lose an increment.
+
 ---
 
 # ADR addendum: the automatic outcome emitter — closing the loop without the agent

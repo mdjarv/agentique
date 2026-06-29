@@ -195,6 +195,10 @@ func TestAddDedupAndIdentityPin(t *testing.T) {
 	if r1.ID != r2.ID {
 		t.Fatalf("duplicate add should be idempotent: %s vs %s", r1.ID, r2.ID)
 	}
+	// Re-observation reinforces rather than silently dropping the signal (M4).
+	if r2.Corroborations != 1 {
+		t.Fatalf("duplicate add should reinforce: Corroborations=%d, want 1", r2.Corroborations)
+	}
 	// identity facts auto-pin
 	id, err := s.Add(ctx, scope, "User's name is Mathias.", memory.CategoryIdentity, memory.SourceAgent)
 	if err != nil {

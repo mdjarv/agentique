@@ -86,7 +86,12 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
 - **Done:** captures appear on completion; no double-capture vs the delete path (dedup by
   session id + last-ingested marker).
 
-### M4 · Reinforce-on-re-observe
+### M4 · Reinforce-on-re-observe — ✅ SHIPPED
+- **Done:** `Record.Corroborations` + `memory.Reinforce` (reconsolidate.go, the third reconsolidation
+  verb); `Add`/`Capture` reinforce a duplicated **durable** fact (count + recency + confidence→ceiling)
+  instead of dropping the signal; both wrap `List→dedup/Reinforce→Put` under `s.mu` (the churn-vs-ingest
+  race fix, required before M5); frontmatter persists `corroborations` (omitempty). Dedup set stays
+  durable-only, so capture-vs-capture still never dedups.
 - **Goal:** re-encountering a known fact **strengthens** it instead of being silently dropped.
 - **Files:** `memory/record.go` (`Corroborations int`); `brain/brain.go` (`Add` dedup branch);
   `memory/strength.go` (reinforce helper, reuse the 0.95 corroboration ceiling).
