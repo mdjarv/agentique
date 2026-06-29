@@ -19,6 +19,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
+import { MemoryLabels } from "~/components/brain/MemoryLabels";
 import { MemoryReview } from "~/components/brain/MemoryReview";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { Badge } from "~/components/ui/badge";
@@ -759,7 +760,10 @@ function MemoryCard({ memory }: { memory: Memory }) {
 
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         <Badge className={categoryColor(memory.category)}>{memory.category}</Badge>
-        <span className="text-[10px] text-muted-foreground">{memory.source}</span>
+        {memory.source !== "capture" && (
+          <span className="text-[10px] text-muted-foreground">{memory.source}</span>
+        )}
+        <MemoryLabels memory={memory} />
         {memory.uses > 0 && (
           <span className="text-[10px] text-muted-foreground tabular-nums">
             · used {memory.uses}×

@@ -1,5 +1,6 @@
 import { ArrowDown, Check, Loader2, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { MemoryLabels } from "~/components/brain/MemoryLabels";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
@@ -232,9 +233,13 @@ export function MemoryReview({
                 )}
               </div>
 
-              {/* METADATA — tertiary, fine print. */}
-              <div className="text-[11px] text-muted-foreground/60">
-                {current.source} · used {current.uses}×{updated ? ` · updated ${updated}` : ""}
+              {/* METADATA — tertiary, fine print. Evidence/volatility chips render here
+                  read-only (F1); they show only when a fact deviates from the defaults. */}
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground/60">
+                <span>
+                  {current.source} · used {current.uses}×{updated ? ` · updated ${updated}` : ""}
+                </span>
+                <MemoryLabels memory={current} />
               </div>
             </div>
 

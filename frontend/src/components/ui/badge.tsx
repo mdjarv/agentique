@@ -17,6 +17,16 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+        // Brain memory-tier badges (brain-ui-spec.md F1). capture = raw/pending (dashed,
+        // provisional); archived = cold tier (greyed); superseded = replaced (faded).
+        capture:
+          "border-dashed border-amber-500/60 bg-amber-500/5 text-amber-700 dark:text-amber-400",
+        archived: "bg-muted text-muted-foreground",
+        superseded: "border-border bg-transparent text-muted-foreground/80",
+        // Evidence / volatility chips: subtle muted outline so dense rows stay quiet — the
+        // label (from brain-labels) carries the meaning, not a loud colour.
+        evidence: "border-border bg-transparent font-normal text-muted-foreground",
+        volatility: "border-border bg-transparent font-normal text-muted-foreground",
       },
     },
     defaultVariants: {
