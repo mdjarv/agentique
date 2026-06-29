@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
@@ -6,13 +6,15 @@ import { useProfileNavigation } from "~/hooks/useProfileNavigation";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { AgentProfileInfo } from "~/lib/team-actions";
 import { deleteAgentProfile } from "~/lib/team-actions";
-import { getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useTeamStore } from "~/stores/team-store";
 import { LaunchResumeButton } from "./LaunchResumeButton";
 import { AgentStatusDot, useProfileActiveSession } from "./team-utils";
 
 export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
   const ws = useWebSocket();
+  const { profileId: selectedProfileId } = useParams({ strict: false });
+  const isSelected = selectedProfileId === profile.id;
   const activeSession = useProfileActiveSession(profile.id);
   const { project, launching, handleLaunch, handleResume } = useProfileNavigation(
     profile,
@@ -30,7 +32,14 @@ export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
   }, [ws, profile.id]);
 
   return (
-    <div className="flex items-center justify-between text-xs group hover:bg-muted/30 rounded px-2 py-1.5">
+    <div
+      className={cn(
+        "flex items-center justify-between text-xs group px-2 py-1.5 transition-colors",
+        isSelected
+          ? "bg-sidebar-accent border-l-2 border-l-primary rounded-r-md"
+          : "hover:bg-muted/30 rounded",
+      )}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <AgentStatusDot profileId={profile.id} />
         {profile.avatar && <span className="text-sm">{profile.avatar}</span>}
@@ -38,7 +47,10 @@ export function ProfileRow({ profile }: { profile: AgentProfileInfo }) {
           <Link
             to="/teams/personas/$profileId"
             params={{ profileId: profile.id }}
-            className="font-medium hover:underline block truncate"
+            className={cn(
+              "font-medium hover:underline block truncate",
+              isSelected && "text-primary",
+            )}
           >
             {profile.name || "Unnamed"}
           </Link>

@@ -72,6 +72,7 @@ function EditProfilePage() {
       </PageHeader>
       <div className="flex-1 overflow-y-auto">
         <ProfileForm
+          key={profile.id}
           profile={profile}
           onSaved={() => {
             toast.success("Profile saved");
