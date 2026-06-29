@@ -53,10 +53,17 @@ separate one.
    first call, well within the connect timeout.
 
 3. **A pre-execution interception point exists.** `handlePendingChange`
-   (`runtime_bridge.go:136`) runs on every tool approval, on a goroutine, with
+   (`runtime_bridge.go`) runs on every tool approval, on a goroutine, with
    `rtA.ToolName` available, *before* the call is allowed to execute. It already
    does async work before `SubmitApproval`. → We can ensure Chrome is up before
-   approving the first `mcp__agentique-playwright__*` call.
+   approving the first `mcp__agentique-playwright__*` call. **Correction
+   (2026-06-29):** this holds for the `runtime.AutoApproveOff` modes
+   (default/acceptEdits/plan/auto) only. `fullAuto` maps to
+   `runtime.AutoApproveAll`, which short-circuits the approval pump *inside*
+   `runtime.Session.handleToolPermission` (agentkit `runtime/approval.go`) — it
+   returns Allow without ever queueing a `PendingApproval` or emitting
+   `PendingChangeEvent`, so `handlePendingChange` (and its lazy launch) never
+   runs. See *fullAuto gap* below.
 
 4. **The existing Chrome launch is already headless + debug-port +
    screencast-ready.** `browser.Manager.launchOnPort` (`manager.go:124`) launches
@@ -119,8 +126,50 @@ if isBrowserTool(rtA.ToolName) {
 pre-allocated port if not already running, wait for CDP ready, return. First
 browser call pays a one-time cold start (a few hundred ms, far under the 30s
 `--cdp-timeout`); subsequent calls find Chrome up and are no-ops. The MCP's lazy
-CDP connect then succeeds against the live endpoint. Works identically in
-auto-approve and manual-approve modes because it runs ahead of that branch.
+CDP connect then succeeds against the live endpoint. This branch covers the
+`runtime.AutoApproveOff` modes (default/acceptEdits/plan/auto), where every tool
+reaches the pump.
+
+### fullAuto gap — interceptor-driven launch (fix 2026-06-29)
+
+The pump-driven launch above does **not** fire in `fullAuto`. `fullAuto` maps to
+`runtime.AutoApproveAll`, which the runtime resolves *inside* its tool-permission
+callback (`runtime/approval.go`) by returning Allow immediately — no
+`PendingApproval`, no `PendingChangeEvent`, so `handlePendingChange` never runs.
+The browser tool then dispatches against a port with no Chrome listening and
+`@playwright/mcp` fails with a raw CDP `ECONNREFUSED` (no agentique deny, no
+prompt). This was the live failure in the default autonomous mode.
+
+The fix uses the runtime's **tool interceptor** — the one hook that runs *before*
+the `AutoApproveAll` short-circuit (interceptor lookup precedes the mode check in
+`handleToolPermission`). `Session.interceptBrowserTool`
+(`session.go`) is registered for every browser tool name
+(`browserToolNames`, `runtime_bridge.go`) in `agentiqueInterceptors`. It
+`EnsureBrowser`s when the session is in `fullAuto` (returning a deny with the
+actionable `install-deps` message on launch failure, else nil to fall through to
+the AutoApproveAll allow), and deliberately no-ops in the other modes so the pump
+path remains the single launch point there.
+
+Why exact tool names rather than a prefix: agentkit's interceptor map is keyed by
+exact tool name (no prefix matching), so `browserToolNames` enumerates the
+@playwright/mcp set. `isBrowserTool`'s prefix check still backs the pump path, so
+a missing entry only degrades `fullAuto` — and only until the first listed tool
+(navigate/snapshot/screenshot — the natural first action) brings Chrome up for
+the rest of the session.
+
+**Why not route `fullAuto` through the pump instead** (so the existing prefix
+branch would cover it): `runtimeAutoApproveMode("fullAuto") → AutoApproveAll` is
+load-bearing for the codex provider — its adapter maps `AutoApproveAll →
+("never", SandboxDangerFull)` at connect (agentkit
+`runtime/cli/codex/connector.go`), so demoting it to `AutoApproveOff` would
+silently re-enable codex approval prompts and lock its sandbox. The interceptor
+keeps the claude fast-path intact and is provider-neutral.
+
+**Known gap (codex `fullAuto`):** codex's `SandboxDangerFull` bypasses the
+runtime permission callback *natively*, so no interceptor fires for a codex
+`fullAuto` session — its browser tools would still hit a dead port on first use
+before Chrome is up. Tracked in `docs/tech-debt.md`. The claude path (the modes
+this doc and the repro target) is fully covered.
 
 **`EnsureBrowser` is a purely local op — it never touches the CLI control
 channel.** It does *not* send `mcp_reconnect`: the spike (below) proved

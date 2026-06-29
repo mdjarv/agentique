@@ -103,6 +103,26 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
   agentkit codex adapter set `ErrorKind` on `ErrorEvent` (or add error
   sentinels to codexcli-go). No agentique-side change needed.
 
+### Agent browser never launches under codex `fullAuto`
+
+- **Symptom:** in a **codex** session in `fullAuto`, the first
+  `mcp__agentique-playwright__*` call fails with a raw CDP `ECONNREFUSED` —
+  Chrome never launched. (The claude path is fixed, see below.)
+- **Cause:** Chrome is launched lazily via the runtime tool-permission callback
+  — `handlePendingChange` for the `AutoApproveOff` modes and
+  `Session.interceptBrowserTool` for `fullAuto` (which bypasses the pump). Both
+  hang off that callback. codex `fullAuto` maps to `SandboxDangerFull`
+  (agentkit `runtime/cli/codex/connector.go`), which bypasses the permission
+  callback **natively in the codex CLI**, so neither hook fires and no
+  `EnsureBrowser` runs. The claude `fullAuto` fix (2026-06-29,
+  `interceptBrowserTool`) doesn't help codex because codex never calls back.
+- **Fix path:** a codex-specific pre-dispatch launch — e.g. observe the codex
+  tool-begin CLI event and `EnsureBrowser` there (race-tolerant since
+  `EnsureBrowser` is idempotent and the codex sandbox start has slack), or
+  eager-launch on the first browser tool advertised in a danger-full codex
+  session. Out of scope for the claude-focused fix. → `internal/session/`,
+  `docs/agent-browser-mcp.md` (*fullAuto gap*).
+
 ### Codex attachments path is half-baked
 
 - **Frontend gate added (2026-05-25):** the paperclip button is hidden

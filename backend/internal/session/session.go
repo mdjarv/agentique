@@ -272,7 +272,7 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 			return fn(input)
 		}
 	}
-	return map[string]runtime.ToolInterceptor{
+	m := map[string]runtime.ToolInterceptor{
 		ChannelSendMessageTool:      intercept(s.interceptSendMessage),
 		AgentiqueSendMessageTool:    intercept(s.interceptSendMessage),
 		"AskTeammate":               intercept(s.interceptAskTeammate),
@@ -287,6 +287,45 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueMemoryUsedTool:     allow,
 		AgentiqueSuggestPromptTool:  allow,
 	}
+	// fullAuto (runtime.AutoApproveAll) short-circuits the approval pump, so the
+	// lazy Chrome launch in handlePendingChange never runs for it. Register a
+	// pre-dispatch launch interceptor on every browser tool — the one hook that
+	// still fires under AutoApproveAll — so Chrome is up before @playwright/mcp
+	// attaches over CDP. See Session.interceptBrowserTool / browserToolNames.
+	for _, name := range browserToolNames {
+		m[browserToolPrefix+name] = intercept(s.interceptBrowserTool)
+	}
+	return m
+}
+
+// interceptBrowserTool launches the session's Chrome before a browser MCP tool
+// dispatches in fullAuto mode. fullAuto maps to runtime.AutoApproveAll, which
+// short-circuits agentkit's approval pump before PendingChangeEvent fires — so
+// handlePendingChange's prefix-based lazy launch never runs in that mode. This
+// interceptor, by contrast, runs inline on the CLI permission goroutine ahead of
+// the AutoApproveAll short-circuit, making it the one pre-dispatch hook that
+// still fires under fullAuto.
+//
+// Every other mode keeps mapping to runtime.AutoApproveOff and routes through the
+// pump, where handlePendingChange launches Chrome by prefix; this interceptor
+// deliberately no-ops there (returns nil to fall through) to avoid a redundant
+// launch. On success it returns nil so the AutoApproveAll path still allows the
+// call; on launch failure it denies with the actionable message rather than
+// letting @playwright/mcp fail opaquely with a CDP ECONNREFUSED.
+//
+// Blocking is intentional: the tool genuinely cannot run until Chrome is up, and
+// EnsureBrowser is idempotent and race-safe.
+func (s *Session) interceptBrowserTool(_ json.RawMessage) (*runtime.Decision, error) {
+	s.mu.Lock()
+	fullAuto := s.autoApproveMode == "fullAuto"
+	s.mu.Unlock()
+	if !fullAuto {
+		return nil, nil
+	}
+	if err := s.ensureBrowser(); err != nil {
+		return &runtime.Decision{Allow: false, DenyMessage: err.Error()}, nil
+	}
+	return nil, nil
 }
 
 // buildPipelineConfig constructs the PipelineConfig for a session's event pipeline.

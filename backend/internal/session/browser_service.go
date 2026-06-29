@@ -25,12 +25,21 @@ func NewBrowserService(mgr *Manager, browserMgr *browser.Manager, hub eventbus.B
 const MCPServerName = "agentique-playwright"
 
 // StandalonePlaywrightMCPConfig returns the MCP config JSON for the always-on
-// agent browser. It points @playwright/mcp at the session's pre-allocated CDP
-// port — Chrome is launched lazily on first tool use, at which point the MCP
-// connects over CDP — and at outputDir so screenshots taken without an explicit
-// filename land where the API can serve them. No launch/profile flags: in
-// --cdp-endpoint mode the MCP attaches to the agentique-managed Chrome rather
-// than launching its own, so headless-ness and profile come from that launch.
+// agent browser. The agent browser is always available — independent of the
+// experimental.browser flag, which gates only the human-facing panel. It points
+// @playwright/mcp at the session's pre-allocated CDP port — Chrome is launched
+// lazily on first tool use, at which point the MCP connects over CDP — and at
+// outputDir so screenshots taken without an explicit filename land where the API
+// can serve them. No launch/profile flags: in --cdp-endpoint mode the MCP
+// attaches to the agentique-managed Chrome rather than launching its own, so
+// headless-ness and profile come from that launch.
+//
+// "Lazily on first tool use" must hold across every permission mode. Two triggers
+// cover that: the approval pump (handlePendingChange) launches Chrome for the
+// runtime.AutoApproveOff modes (default/acceptEdits/plan/auto), and
+// Session.interceptBrowserTool launches it for fullAuto, whose runtime.AutoApproveAll
+// fast-path bypasses the pump. Without the latter the MCP would attach to a dead
+// port and fail with a raw CDP ECONNREFUSED.
 func StandalonePlaywrightMCPConfig(port int, outputDir string) string {
 	return fmt.Sprintf(`{"mcpServers":{%q:{"command":"npx","args":["@playwright/mcp","--cdp-endpoint","http://127.0.0.1:%d","--output-dir",%q]}}}`, MCPServerName, port, outputDir)
 }
@@ -48,6 +57,10 @@ func (bs *BrowserService) AllocatePort(sessionID string) (int, error) {
 // the screencast: that is the panel's job (LaunchBrowser). Never touches the CLI
 // control channel — having Chrome up before the tool call is approved is
 // sufficient; no MCP reconnect is needed.
+//
+// Callers must invoke this before the backing browser tool executes, in every
+// permission mode: handlePendingChange for the pump-driven modes and
+// Session.interceptBrowserTool for fullAuto (which bypasses the pump).
 func (bs *BrowserService) EnsureBrowser(sessionID string) error {
 	sess := bs.mgr.Get(sessionID)
 	if sess == nil {

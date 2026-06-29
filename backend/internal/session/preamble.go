@@ -150,8 +150,11 @@ Session files directory (persistent, survives worktree deletion):
 **IMPORTANT:** Never link to ` + "`localhost`" + `, ` + "`127.0.0.1`" + `, or any other host/port directly. The ONLY way the user can see files is through ` + "`/api/sessions/`" + `.`
 
 // preambleAgentBrowser advertises the always-on headless browser automation.
-// Included whenever browser support is wired (browserEnabled). The browser
-// launches lazily on first tool use; no "open the browser" step is required.
+// Included whenever browser support is wired (browserEnabled) — which is
+// independent of the experimental.browser panel flag, so the tools are honest:
+// the backing Chrome launches lazily on first tool use across every permission
+// mode (pump path + interceptBrowserTool for fullAuto), so no "open the browser"
+// step is required.
 const preambleAgentBrowser = `
 
 ## Browser automation

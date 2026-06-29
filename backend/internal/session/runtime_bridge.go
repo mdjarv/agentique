@@ -13,8 +13,49 @@ import (
 var browserToolPrefix = "mcp__" + MCPServerName + "__"
 
 // isBrowserTool reports whether a tool name belongs to the agent browser MCP.
+// This prefix check is the source of truth for the approval-pump path
+// (handlePendingChange): it covers every browser tool in the default / acceptEdits
+// / plan / auto modes regardless of @playwright/mcp's exact tool set.
 func isBrowserTool(toolName string) bool {
 	return strings.HasPrefix(toolName, browserToolPrefix)
+}
+
+// browserToolNames enumerates the @playwright/mcp tool set exposed under the
+// agent browser MCP (server name MCPServerName), without the browserToolPrefix.
+//
+// It exists solely for the fullAuto fast-path. fullAuto maps to
+// runtime.AutoApproveAll, which short-circuits the approval pump before
+// PendingChangeEvent fires — so handlePendingChange's prefix-based lazy launch
+// never runs in that mode. agentkit's interceptor lookup is keyed by exact tool
+// name (no prefix matching), so we register a per-tool launch interceptor for
+// each of these. Keep in sync with @playwright/mcp; because the prefix check in
+// isBrowserTool still covers the four pump-driven modes, a missing entry here
+// only degrades fullAuto (and only until the first listed tool brings Chrome up).
+// See Session.interceptBrowserTool.
+var browserToolNames = []string{
+	"browser_click",
+	"browser_close",
+	"browser_console_messages",
+	"browser_drag",
+	"browser_drop",
+	"browser_evaluate",
+	"browser_file_upload",
+	"browser_fill_form",
+	"browser_handle_dialog",
+	"browser_hover",
+	"browser_navigate",
+	"browser_navigate_back",
+	"browser_network_request",
+	"browser_network_requests",
+	"browser_press_key",
+	"browser_resize",
+	"browser_run_code_unsafe",
+	"browser_select_option",
+	"browser_snapshot",
+	"browser_tabs",
+	"browser_take_screenshot",
+	"browser_type",
+	"browser_wait_for",
 }
 
 // makeBroadcastHook returns a runtime BroadcastFunc bound to the given
@@ -167,11 +208,15 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 
 	if rtA != nil {
 		handled := false
-		// Lazy browser launch: a browser tool needs Chrome up before it executes.
-		// EnsureBrowser is a local op (no CLI control-channel round-trip) — the
-		// agent's Playwright MCP connects over CDP when the approved call runs, so
-		// having Chrome up before we approve is sufficient. On failure, deny with
-		// the actionable message rather than letting the call fail opaquely.
+		// Lazy browser launch (pump-driven modes): a browser tool needs Chrome up
+		// before it executes. EnsureBrowser is a local op (no CLI control-channel
+		// round-trip) — the agent's Playwright MCP connects over CDP when the
+		// approved call runs, so having Chrome up before we approve is sufficient.
+		// On failure, deny with the actionable message rather than letting the call
+		// fail opaquely. This branch covers default/acceptEdits/plan/auto (all
+		// runtime.AutoApproveOff, so every tool reaches the pump). fullAuto
+		// (runtime.AutoApproveAll) bypasses the pump entirely and is handled instead
+		// by Session.interceptBrowserTool, which fires inside the permission callback.
 		if isBrowserTool(rtA.ToolName) {
 			if err := s.ensureBrowser(); err != nil {
 				if e := rt.SubmitApproval(rtA.ID, runtime.Decision{Allow: false, DenyMessage: err.Error()}); e != nil && e != runtime.ErrPendingNotFound {
