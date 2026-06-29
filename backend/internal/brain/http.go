@@ -29,6 +29,10 @@ type Handler struct {
 	job   *JobState // single active/most-recent consolidation job
 }
 
+// memoryDTO is the wire shape of a brain memory. It is HAND-SYNCED with the
+// frontend `Memory` interface in frontend/src/lib/brain-api.ts — there is NO typegen
+// for brain types, so every field added/changed here MUST be mirrored there by hand
+// (matching the JSON tag names/casing). See brain-ui-spec.md §3.
 type memoryDTO struct {
 	ID       string `json:"id"`
 	Scope    string `json:"scope"`
@@ -58,11 +62,43 @@ type memoryDTO struct {
 	// Subsumed are the per-project facts this promotion merged in (RFC P5) — the
 	// merge inputs, snapshotted before the originals were deleted.
 	Subsumed []subsumedDTO `json:"subsumed,omitempty"`
+
+	// --- Band-1 controlled-vocabulary labels (memory/labels.go). Lifecycle/Evidence/
+	// Volatility are always set on a record (New + NormalizeLabels-on-load), so they are
+	// never omitted; the rest are optional. The frontend surfaces these as tier badges,
+	// chips, filters, and typed graph edges (brain-ui-spec.md F0–F6).
+
+	// Lifecycle is the coarse state: active | superseded | archived (archived = cold tier,
+	// out of recall, restorable).
+	Lifecycle string `json:"lifecycle"`
+	// Evidence is the trust source (user_stated | code_verified | corroborated | inferred |
+	// observed_once).
+	Evidence string `json:"evidence"`
+	// Volatility is the decay rate (evergreen | slow | ephemeral).
+	Volatility string `json:"volatility"`
+	// Corroborations counts independent re-observations (distinct from uses/helped).
+	Corroborations int `json:"corroborations,omitempty"`
+	// Relations is the typed link graph (supersedes/contradicts/duplicates/generalizes/
+	// corroborates); the untyped `related` above stays for back-compat.
+	Relations []relationDTO `json:"relations,omitempty"`
+	// Keywords are free-form recall hints.
+	Keywords []string `json:"keywords,omitempty"`
+	// LastCurated is when a churn/human last reviewed the fact; omitted when never curated.
+	LastCurated *time.Time `json:"lastCurated,omitempty"`
+	// CuratorNote is a free-form human annotation.
+	CuratorNote string `json:"curatorNote,omitempty"`
 }
 
 type subsumedDTO struct {
 	Scope string `json:"scope"`
 	Text  string `json:"text"`
+}
+
+// relationDTO is one typed edge to another record (mirrors memory.TypedRelation's json
+// tags, and the frontend `{type,target}` shape). Kept in sync with brain-api.ts by hand.
+type relationDTO struct {
+	Type   string `json:"type"`
+	Target string `json:"target"`
 }
 
 func toDTO(r memory.Record) memoryDTO {
@@ -76,7 +112,36 @@ func toDTO(r memory.Record) memoryDTO {
 		ConfidenceScore: r.ConfidenceScore,
 		ReviewNote:      r.ReviewNote,
 		Subsumed:        toSubsumedDTOs(r.Subsumed),
+		Lifecycle:       string(r.Lifecycle),
+		Evidence:        string(r.Evidence),
+		Volatility:      string(r.Volatility),
+		Corroborations:  r.Corroborations,
+		Relations:       toRelationDTOs(r.Relations),
+		Keywords:        r.Keywords,
+		LastCurated:     nonZeroTime(r.LastCurated),
+		CuratorNote:     r.CuratorNote,
 	}
+}
+
+// nonZeroTime returns a pointer to t, or nil when t is the zero time, so a never-curated
+// fact omits `lastCurated` from the wire (encoding/json's omitempty does not drop a
+// zero time.Time struct, but it does drop a nil *time.Time).
+func nonZeroTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func toRelationDTOs(rs []memory.TypedRelation) []relationDTO {
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]relationDTO, len(rs))
+	for i, r := range rs {
+		out[i] = relationDTO{Type: string(r.Type), Target: r.Target}
+	}
+	return out
 }
 
 func toSubsumedDTOs(ss []memory.SubsumedSource) []subsumedDTO {

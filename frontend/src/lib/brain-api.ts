@@ -2,6 +2,10 @@ import { throwIfNotOk } from "~/lib/http";
 
 const BASE = "/api/brain";
 
+// Memory is the HAND-WRITTEN mirror of `memoryDTO` in backend/internal/brain/http.go.
+// Brain wire types are NOT in the typegen registry — `just typegen` does not touch them.
+// Every field here must match a memoryDTO json tag exactly; edit both files together.
+// See brain-ui-spec.md §3.
 export interface Memory {
   id: string;
   scope: string;
@@ -11,6 +15,9 @@ export interface Memory {
   pinned: boolean;
   locked: boolean;
   uses: number;
+  // Helped counts confirmed-useful outcomes (MemoryUsed) — a stronger signal than a bare
+  // injection (uses). Distinct from corroborations (independent re-observations).
+  helped?: number;
   createdAt: string;
   updatedAt: string;
   derivedFrom?: string[];
@@ -30,7 +37,41 @@ export interface Memory {
   // The per-project facts a cross-scope promotion merged into this one (RFC P5),
   // snapshotted before the originals were deleted — the merge inputs for review.
   subsumed?: { scope: string; text: string }[];
+
+  // --- Band-1 controlled-vocabulary labels (mirrors memoryDTO; see labels.go). The
+  // list/graph surfaces read these for tier badges, chips, filters, and typed edges.
+  // lifecycle/evidence/volatility are always set server-side; typed as optional only
+  // because an older backend (pre-F0) wouldn't send them.
+  // Lifecycle: active = live/injectable, superseded = replaced, archived = cold tier.
+  lifecycle?: "active" | "superseded" | "archived";
+  // Evidence (trust source) — one of EVIDENCE_VALUES.
+  evidence?: string;
+  // Volatility (decay rate) — one of VOLATILITY_VALUES.
+  volatility?: string;
+  // Corroborations counts independent re-observations (distinct from uses/helped).
+  corroborations?: number;
+  // Typed link graph (supersedes/contradicts/duplicates/generalizes/corroborates); the
+  // untyped `related` stays for back-compat. Churn-populated (Band 2) — empty today.
+  relations?: { type: string; target: string }[];
+  // Free-form recall hints; no logic branches on them.
+  keywords?: string[];
+  // When a churn/human last reviewed the fact; absent when never curated.
+  lastCurated?: string;
+  // Free-form human annotation.
+  curatorNote?: string;
 }
+
+// Controlled-vocabulary enums (mirror memory/labels.go), exported for badges/filters so
+// the strings live in one place. Order is rough trust/stability tiers (strongest first).
+export const EVIDENCE_VALUES = [
+  "user_stated",
+  "code_verified",
+  "corroborated",
+  "inferred",
+  "observed_once",
+] as const;
+export const VOLATILITY_VALUES = ["evergreen", "slow", "ephemeral"] as const;
+export const LIFECYCLE_VALUES = ["active", "superseded", "archived"] as const;
 
 // NEEDS_CONFIRMATION_SCORE mirrors the backend's NeedsConfirmationScore: facts at or
 // below it (and not pinned/locked/human) are the ones the brain offers up to confirm.
