@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   ClipboardCheck,
+  History,
   List,
   Loader2,
   Lock,
@@ -20,6 +21,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
+import { BrainSnapshots } from "~/components/brain/BrainSnapshots";
 import { MemoryLabels } from "~/components/brain/MemoryLabels";
 import { MemoryReview } from "~/components/brain/MemoryReview";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -102,6 +104,7 @@ export function BrainPage() {
   const [view, setView] = useState<"list" | "graph" | "graph3d">("graph");
   const graphView = view === "graph" || view === "graph3d";
   const [reviewing, setReviewing] = useState(false);
+  const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
   const reviewQueue = useMemo(() => memories.filter(inReviewQueue), [memories]);
   // Global is expanded by default; projects collapse to keep the (large) list
@@ -338,10 +341,22 @@ export function BrainPage() {
             </span>
           )}
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setSnapshotsOpen(true)}
+          title="Brain snapshots — list, take, or roll the whole brain back"
+        >
+          <History className="size-4" /> Snapshots
+        </Button>
         <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
           <Plus className="size-4" /> Add
         </Button>
       </PageHeader>
+
+      {snapshotsOpen && (
+        <BrainSnapshots onClose={() => setSnapshotsOpen(false)} jobActive={jobActive} />
+      )}
 
       {reviewing && (
         <MemoryReview

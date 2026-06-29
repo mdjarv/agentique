@@ -443,3 +443,34 @@ export async function applyGlobalConsolidate(
   await throwIfNotOk(res, "Failed to apply global consolidation");
   return res.json();
 }
+
+// Snapshot is the wire shape of a brain snapshot (HAND-SYNCED with snapshotDTO in
+// backend/internal/brain/http.go). A snapshot is a byte-level copy of the whole markdown
+// brain tree, taken before each churn and on demand; restoring rolls the entire brain back.
+export interface Snapshot {
+  id: string;
+  createdAt: string;
+  files: number;
+  bytes: number;
+}
+
+// listSnapshots returns the brain snapshots, newest-first.
+export async function listSnapshots(): Promise<Snapshot[]> {
+  const res = await fetch(`${BASE}/snapshots`);
+  await throwIfNotOk(res, "Failed to list snapshots");
+  return res.json();
+}
+
+// createSnapshot takes a brain snapshot on demand (non-destructive).
+export async function createSnapshot(): Promise<Snapshot> {
+  const res = await fetch(`${BASE}/snapshots`, { method: "POST" });
+  await throwIfNotOk(res, "Failed to take snapshot");
+  return res.json();
+}
+
+// restoreSnapshot rolls the ENTIRE brain back to a snapshot (a safety snapshot is taken
+// first, and the live cache is invalidated server-side). Admin/destructive.
+export async function restoreSnapshot(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/snapshots/${id}/restore`, { method: "POST" });
+  await throwIfNotOk(res, "Failed to restore snapshot");
+}

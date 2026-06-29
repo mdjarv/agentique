@@ -348,6 +348,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleConsolidateAll))
 			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
 			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
+			mux.Handle("GET /api/brain/snapshots", httperror.HandlerFunc(bh.HandleListSnapshots))
+			mux.Handle("POST /api/brain/snapshots", httperror.HandlerFunc(bh.HandleCreateSnapshot))
+			mux.Handle("POST /api/brain/snapshots/{id}/restore", httperror.HandlerFunc(bh.HandleRestoreSnapshot))
 			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
 
 			// --- Memory automation (the recall → encode → consolidate loop) ---

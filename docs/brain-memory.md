@@ -194,6 +194,10 @@ Auto-approved, scoped to the calling session's project (+ global):
   consolidates **every scope and auto-applies each** (an on-demand consolidation,
   kind `"all"`), relying on the guards; progress is per-scope. One job at a time, so
   it can't overlap a single-scope/global consolidation.
+- **Snapshots.** `GET /snapshots` (list newest-first), `POST /snapshots` (take one),
+  `POST /snapshots/{id}/restore` (roll the whole brain back; 204 + `brain.updated`
+  broadcast). Restore invalidates the live read-through cache so the UI reflects the
+  restored tree immediately (see *Snapshots & rollback*).
 
 Background consolidation runs off the request context so a request hiccup can't
 SIGTERM the model subprocess; see `brain/job.go`. Job state is **in-memory** (one
@@ -264,8 +268,18 @@ enters `ListScopes`/`Recall`. Scheduled consolidation snapshots the whole brain 
 top of each pass (a snapshot failure is WARN-logged and does **not** block the pass — the
 archive-not-delete churn keeps the pass reversible regardless). Retention keeps the
 newest `snapshot-retain` (default 7); older snapshots are pruned. This is the single
-snapshot mechanism — the label backfill and the CLI reuse `brain.Snapshot`. Restore is
-offline-only (it bypasses the live read-through cache).
+snapshot mechanism — the label backfill and the CLI reuse `brain.Snapshot`.
+
+**Live restore (Brain tab).** `Service.RestoreSnapshot(id)` makes restore safe against a
+*running* server: it holds `s.mu` (so the file rewrite can't race a single-fact write),
+takes a pre-restore safety snapshot, restores the tree, then calls `cachestore.Invalidate()`
+so the read-through cache rebuilds from the restored files — without it the cache would keep
+serving the pre-restore corpus until the next write (the old "offline-only" caveat). It then
+broadcasts `brain.updated` so every tab refetches. In semantic mode the chroma vector index
+is *not* reindexed here (it reconciles lazily on the next write per fact / on a Reindex or
+restart warm), so the memory list is correct immediately while recall ranking may be briefly
+stale — a deliberate follow-up. The Brain tab's **Snapshots** panel lists/takes/restores
+snapshots; restore is guarded by a confirm and blocked while a consolidation job runs.
 
 ## Configuration
 

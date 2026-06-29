@@ -130,7 +130,12 @@ func (g GraphConfig) withDefaults() GraphConfig {
 
 // Service is the agentique brain.
 type Service struct {
-	store    memory.Store
+	store memory.Store
+	// cache is the read-through cache that fronts the filestore. It is the SAME object as
+	// store in keyword mode; in semantic mode store is the chroma decorator that WRAPS this
+	// cache. Held directly so RestoreSnapshot can Invalidate() it after an external file
+	// rewrite (the chroma wrapper doesn't expose the cache). Set once in New, read-only after.
+	cache    *cachestore.Store
 	dir      string
 	semantic bool
 
@@ -213,6 +218,7 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
 		store:          base,
+		cache:          base,
 		dir:            cfg.Dir,
 		snapshotRetain: cfg.SnapshotRetain,
 		archiveFloor:   cfg.ArchiveFloor,

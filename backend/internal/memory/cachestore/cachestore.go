@@ -60,6 +60,13 @@ func (s *Store) invalidate() {
 	s.mu.Unlock()
 }
 
+// Invalidate drops the cached corpus so the next read rebuilds it from the inner store.
+// Put/Delete already invalidate on their own, so callers only need this after an EXTERNAL
+// rewrite of the underlying files that bypasses this decorator — notably a snapshot restore
+// (brain.Service.RestoreSnapshot), which rewrites the markdown tree underneath the cache.
+// Without it the cache would keep serving the pre-restore corpus until the next write.
+func (s *Store) Invalidate() { s.invalidate() }
+
 // List returns records in the given scopes (all when none given), in the inner store's
 // order. Callers must treat the returned records as read-only — they share slice backing
 // with the cache (the codebase's write pattern is replace-field-then-Put, which is safe).

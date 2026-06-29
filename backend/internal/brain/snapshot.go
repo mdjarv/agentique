@@ -31,6 +31,32 @@ const (
 // churn (automation.runOnce) and the M6 label backfill both rely on.
 func (s *Service) Snapshot() (SnapshotInfo, error) { return Snapshot(s.dir, s.snapshotRetain) }
 
+// ListSnapshots returns this service's snapshots newest-first (wraps the package-level
+// ListSnapshots over the service's brain dir). A missing .snapshots dir is not an error.
+func (s *Service) ListSnapshots() ([]SnapshotInfo, error) { return ListSnapshots(s.dir) }
+
+// RestoreSnapshot rolls the ENTIRE brain back to snapshot id: it takes a fresh pre-restore
+// safety snapshot (so the restore is itself reversible), makes the markdown tree match id,
+// then INVALIDATES the read-through cache so the running server reflects the restored
+// corpus immediately. Without that invalidation the cache would keep serving the
+// pre-restore corpus until the next write — the M1 "restore is offline-only" caveat, lifted
+// here for the live UI path (brain-ui-spec.md F4, the load-bearing fix). Held under s.mu so
+// the file rewrite can't race a concurrent single-fact write (mutate funnels through s.mu).
+//
+// NOTE: in semantic mode the chroma vector index is NOT reindexed here — its vectors
+// reconcile lazily on the next write touching each fact (and fully on a Reindex / restart
+// warm). The memory LIST the UI shows is correct immediately; only semantic recall ranking
+// may be briefly stale. A full post-restore Reindex is a deliberate follow-up.
+func (s *Service) RestoreSnapshot(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := Restore(s.dir, id, s.snapshotRetain); err != nil {
+		return err
+	}
+	s.cache.Invalidate()
+	return nil
+}
+
 // SnapshotInfo describes a single snapshot directory.
 type SnapshotInfo struct {
 	ID        string    // the <ts> directory name (also the restore handle)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -571,5 +572,60 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) error {
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"semantic": h.Service.SemanticEnabled(),
 	})
+	return nil
+}
+
+// snapshotDTO is the wire shape of a brain snapshot. Kept in sync by hand with the frontend
+// `Snapshot` type in brain-api.ts. Path is intentionally omitted (internal absolute path).
+type snapshotDTO struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	Files     int       `json:"files"`
+	Bytes     int64     `json:"bytes"`
+}
+
+func toSnapshotDTO(s SnapshotInfo) snapshotDTO {
+	return snapshotDTO{ID: s.ID, CreatedAt: s.CreatedAt, Files: s.Files, Bytes: s.Bytes}
+}
+
+// HandleListSnapshots GET /api/brain/snapshots — list brain snapshots, newest-first.
+func (h *Handler) HandleListSnapshots(w http.ResponseWriter, r *http.Request) error {
+	snaps, err := h.Service.ListSnapshots()
+	if err != nil {
+		return err
+	}
+	out := make([]snapshotDTO, 0, len(snaps))
+	for _, s := range snaps {
+		out = append(out, toSnapshotDTO(s))
+	}
+	httperror.JSON(w, http.StatusOK, out)
+	return nil
+}
+
+// HandleCreateSnapshot POST /api/brain/snapshots — take a snapshot on demand
+// (non-destructive). Returns the new snapshot's metadata.
+func (h *Handler) HandleCreateSnapshot(w http.ResponseWriter, r *http.Request) error {
+	info, err := h.Service.Snapshot()
+	if err != nil {
+		return err
+	}
+	httperror.JSON(w, http.StatusCreated, toSnapshotDTO(info))
+	return nil
+}
+
+// HandleRestoreSnapshot POST /api/brain/snapshots/{id}/restore — roll the WHOLE brain back
+// to the given snapshot (a pre-restore safety snapshot is taken first) and invalidate the
+// live read-through cache so the UI reflects the restored tree immediately. Broadcasts
+// brain.updated so every tab refetches. Admin/destructive — the UI guards it behind a
+// confirm dialog.
+func (h *Handler) HandleRestoreSnapshot(w http.ResponseWriter, r *http.Request) error {
+	if err := h.Service.RestoreSnapshot(r.PathValue("id")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return httperror.NotFound("snapshot not found")
+		}
+		return err
+	}
+	h.brainChanged()
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
