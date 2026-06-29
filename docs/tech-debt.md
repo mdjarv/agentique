@@ -198,6 +198,19 @@ recall + outcome constants in particular are calibration choices made on a small
 sample (one real mis-recall, the live pref distribution) and want revisiting once there
 is real `MemoryUsed`/recall traffic to measure against.
 
+### Brain: durable job queue is at-least-once (outcome double-count on replay)
+The session-end learn/outcome passes now run through a durable retry queue (`brain/jobqueue.go`,
+`brain_jobs` table, M7) so a crash mid-extraction no longer loses the work — drained on startup,
+retried, then dead-lettered. Delivery is **at-least-once**: the row is deleted only after a
+successful handler, so a crash *after* the LLM pass mutated memory but *before* `DeleteBrainJob`
+replays the job on restart. `LearnFromTranscript` is self-healing under replay (`Add` dedups + M4
+reinforces), but `ApplyOutcomesFromTranscript` is **not** idempotent — a replay can re-increment
+`Helped`. This is an accepted bound for Band 1; the follow-up is a per-`(scope, fact-id)` applied
+marker (exactly-once outcomes). Also: `DeleteSession` holds `endEvents` in memory and enqueues
+after the row delete, so a `kill -9` in that gap loses one transcript (pre-existing, smaller than
+the bug M7 fixes; `Enqueue` is a single fast insert to minimise it).
+→ `internal/brain/jobqueue.go`, `internal/server/server.go`.
+
 ### Brain: single consolidation job slot
 Only one consolidation runs at a time (`beginJob` 409s a second); "Consolidate all" is
 sequential and two scopes can't consolidate concurrently. Parallel-across-scopes was

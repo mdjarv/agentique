@@ -141,7 +141,14 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
 - **Done:** all records carry defaulted labels; round-trips through filestore; Chroma metadata
   extended with volatility/lifecycle for filtered recall.
 
-### M7 · Durable retry queue
+### M7 · Durable retry queue — ✅ SHIPPED
+- **Done:** migration `037_create_brain_jobs.sql` + `queries/brain_jobs.sql` (sqlc); `brain/jobqueue.go`
+  (`JobQueue`/`Enqueue`/`Drain`, single-flight + follow-up pass, bounded retries → dead-letter,
+  `jobStore` interface so `store` is not imported back); `server.go` enqueues two INDEPENDENT jobs
+  (learn + outcome) instead of running inline, drains on startup, and **retains
+  `mgr.OnSessionComplete = svc.HandleSessionComplete`** (M3). Config `retry-max` (default 5).
+  At-least-once: `LearnFromTranscript` self-heals under replay (Add dedups + M4 reinforces);
+  `ApplyOutcomesFromTranscript` is not idempotent (documented bound, see `docs/tech-debt.md`).
 - **Goal:** a restart mid-extraction never loses a learn/outcome job.
 - **Files:** goose migration + sqlc for `brain_jobs(id, kind, scope, payload, attempts,
   created)`; new `brain/jobqueue.go`; `server.go` wiring; drain on startup + on enqueue.

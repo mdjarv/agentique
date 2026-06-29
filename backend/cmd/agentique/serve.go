@@ -360,6 +360,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Disuse-aging archival: env wins; "" = off, 0 floor → brain's default (0.35).
 		BrainArchiveAfter: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_ARCHIVE_AFTER"), fileCfg.Brain.ArchiveAfter),
 		BrainArchiveFloor: envFloatOr("AGENTIQUE_BRAIN_ARCHIVE_FLOOR", fileCfg.Brain.ArchiveConfidenceFloor),
+		// Durable learn/outcome job retry budget: env wins; 0 → brain's default (5).
+		BrainRetryMax: envIntOr("AGENTIQUE_BRAIN_RETRY_MAX", fileCfg.Brain.RetryMax),
 		// Graph-view tuning: env wins over the [brain.graph] file value; 0 → brain's default.
 		BrainGraph: config.BrainGraphConfig{
 			EdgeCap:          envIntOr("AGENTIQUE_BRAIN_GRAPH_EDGE_CAP", fileCfg.Brain.Graph.EdgeCap),

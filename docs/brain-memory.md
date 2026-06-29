@@ -283,6 +283,7 @@ Other `[brain]` tunables (config-file key → env override; env wins):
 | `snapshot-retain` | `AGENTIQUE_BRAIN_SNAPSHOT_RETAIN` | 7 | pre-churn brain snapshots to keep under `brain/.snapshots/` |
 | `archive-after` | `AGENTIQUE_BRAIN_ARCHIVE_AFTER` | `""` (off) | disuse-aging archival: a fact untouched longer than this **and** faded below the floor is archived (e.g. `"720h"`). Empty = no fade/archive |
 | `archive-confidence-floor` | `AGENTIQUE_BRAIN_ARCHIVE_FLOOR` | 0.35 | effective-confidence line below which a faded fact is archived / faded from recall |
+| `retry-max` | `AGENTIQUE_BRAIN_RETRY_MAX` | 5 | session-end learn/outcome job retries before dead-lettering |
 
 ## Automation (the live recall → encode → consolidate loop)
 

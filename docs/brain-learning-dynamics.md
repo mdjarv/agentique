@@ -143,8 +143,10 @@ New to this RFC:
 
 - **Status (Band 1).** Ingest now stages RAW captures (M2: `LearnFromTranscript` → `Capture`,
   `SourceCapture`, never injected) and fires on clean **completion** as well as delete (M3:
-  `StateDone`, idempotent via a per-session event high-water mark). Replay/abstraction of those
-  captures by the churn is the remaining D4 work (Band 2 Curator).
+  `StateDone`, idempotent via a per-session event high-water mark). The ingest passes are
+  **durable** (M7: a `brain_jobs` queue, drained on startup, retried then dead-lettered) so a
+  crash mid-extraction never silently loses them — at-least-once (`docs/tech-debt.md`). Replay/
+  abstraction of those captures by the churn is the remaining D4 work (Band 2 Curator).
 - **Principle.** CLS again: store episodic traces first, then *replay* and abstract them during
   sleep, prioritising the salient ones — rather than transcribing straight to semantic memory.
 - **Today.** `SourceCapture` exists but nothing writes it; auto-encode (`LearnFromTranscript`)

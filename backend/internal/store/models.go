@@ -27,6 +27,16 @@ type AuthSession struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type BrainJob struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Scope     string `json:"scope"`
+	Payload   string `json:"payload"`
+	Attempts  int64  `json:"attempts"`
+	LastError string `json:"last_error"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Channel struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`

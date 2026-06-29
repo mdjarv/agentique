@@ -20,6 +20,7 @@ type Querier interface {
 	CountWebAuthnCredentials(ctx context.Context) (int64, error)
 	CreateAgentProfile(ctx context.Context, arg CreateAgentProfileParams) (AgentProfile, error)
 	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
+	CreateBrainJob(ctx context.Context, arg CreateBrainJobParams) (BrainJob, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
@@ -32,6 +33,7 @@ type Querier interface {
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
 	DeleteAuthSession(ctx context.Context, token string) error
+	DeleteBrainJob(ctx context.Context, id string) error
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
@@ -62,6 +64,7 @@ type Querier interface {
 	ListAgentMessagesByChannel(ctx context.Context, channelID string) ([]SessionEvent, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
+	ListBrainJobs(ctx context.Context) ([]BrainJob, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
 	ListChannelsByProject(ctx context.Context, projectID string) ([]Channel, error)
 	ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error)
@@ -94,6 +97,7 @@ type Querier interface {
 	UnsetSessionCompleted(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateAgentProfile(ctx context.Context, arg UpdateAgentProfileParams) (AgentProfile, error)
+	UpdateBrainJobAttempts(ctx context.Context, arg UpdateBrainJobAttemptsParams) error
 	UpdateChannelName(ctx context.Context, arg UpdateChannelNameParams) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
 	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error

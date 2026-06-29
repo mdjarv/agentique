@@ -159,6 +159,10 @@ type BrainConfig struct {
 	// archived/faded from recall. 0 = the built-in default (0.35). Env: AGENTIQUE_BRAIN_ARCHIVE_FLOOR.
 	ArchiveConfidenceFloor float64 `toml:"archive-confidence-floor"`
 
+	// RetryMax bounds how many times a session-end learn/outcome job is retried before it is
+	// dead-lettered. 0 = the built-in default (5). Env: AGENTIQUE_BRAIN_RETRY_MAX.
+	RetryMax int `toml:"retry-max"`
+
 	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
 	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
 	// hybrid (keyword + embedding cosine). Each has an AGENTIQUE_BRAIN_* env override that

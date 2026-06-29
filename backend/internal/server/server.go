@@ -119,6 +119,9 @@ type Config struct {
 	// faded from recall. From AGENTIQUE_BRAIN_ARCHIVE_FLOOR or [brain] archive-confidence-floor;
 	// 0 = brain's default (0.35).
 	BrainArchiveFloor float64
+	// BrainRetryMax bounds session-end learn/outcome job retries before dead-lettering. From
+	// AGENTIQUE_BRAIN_RETRY_MAX or [brain] retry-max; 0 = brain's default (5).
+	BrainRetryMax int
 }
 
 func devModePreamble(dbPath string) string {
@@ -377,38 +380,47 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 					slog.Info("brain: auto-outcome emitter enabled", "model", om)
 				}
 			}
-			if encodeEx != nil || outcomeJudge != nil {
+			// Durable retry queue (M7): the session-end learn/outcome passes run as durable,
+			// idempotent jobs (brain_jobs) so a restart mid-extraction never loses the work —
+			// drained on startup + on enqueue, retried then dead-lettered. The handler bodies call
+			// the exact same Service methods as before, just routed through durability. Two
+			// INDEPENDENT jobs so a learn failure can't force an outcome re-run.
+			handlers := map[string]brain.JobHandler{}
+			if encodeEx != nil {
+				handlers[brain.JobKindLearn] = func(ctx context.Context, j brain.Job) (bool, error) {
+					n, err := brainSvc.LearnFromTranscript(ctx, j.Scope, j.Events, encodeEx)
+					return n > 0, err
+				}
+			}
+			if outcomeJudge != nil {
+				handlers[brain.JobKindOutcome] = func(ctx context.Context, j brain.Job) (bool, error) {
+					rep, err := brainSvc.ApplyOutcomesFromTranscript(ctx, j.Scope, j.Events, outcomeJudge)
+					return rep.Helped > 0 || rep.Flagged > 0, err
+				}
+			}
+			if len(handlers) > 0 {
+				jq := brain.NewJobQueue(queries, bus, cfg.BrainRetryMax, handlers)
+				go jq.Drain(context.Background()) // startup recovery: resume crash-left jobs
 				svc.SetOnSessionEnd(func(projectID string, events []store.SessionEvent) {
 					tevents := make([]brain.TranscriptEvent, len(events))
 					for i, e := range events {
 						tevents[i] = brain.TranscriptEvent{Type: e.Type, Data: e.Data}
 					}
-					scope := brain.ScopeForProject(projectID)
-					if encodeEx != nil {
-						n, lerr := brainSvc.LearnFromTranscript(context.Background(), scope, tevents, encodeEx)
-						if lerr != nil {
-							slog.Warn("brain: auto-encode failed", "project", projectID, "error", lerr)
-						} else if n > 0 {
-							// Ingest is now capture-tier: these are RAW captures staged for the
-							// churn to promote, not injectable facts (see LearnFromTranscript).
-							slog.Info("brain: staged captures from ended session", "project", projectID, "captures", n)
-							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
+					if _, ok := handlers[brain.JobKindLearn]; ok {
+						if err := jq.Enqueue(context.Background(), brain.JobKindLearn, projectID, tevents); err != nil {
+							slog.Warn("brain: enqueue learn job failed", "project", projectID, "error", err)
 						}
 					}
-					if outcomeJudge != nil {
-						rep, oerr := brainSvc.ApplyOutcomesFromTranscript(context.Background(), scope, tevents, outcomeJudge)
-						if oerr != nil {
-							slog.Warn("brain: auto-outcome emitter failed", "project", projectID, "error", oerr)
-						} else if rep.Helped > 0 || rep.Flagged > 0 {
-							slog.Info("brain: outcomes from ended session", "project", projectID,
-								"judged", rep.Judged, "helped", rep.Helped, "flagged", rep.Flagged)
-							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
+					if _, ok := handlers[brain.JobKindOutcome]; ok {
+						if err := jq.Enqueue(context.Background(), brain.JobKindOutcome, projectID, tevents); err != nil {
+							slog.Warn("brain: enqueue outcome job failed", "project", projectID, "error", err)
 						}
 					}
 				})
 				// Learn-on-completion (M3): also fire the ingest sink when a session cleanly
-				// completes (StateDone), not only on delete. M7 rewrites this block into a job
-				// queue and MUST retain this line, or learn-on-completion is silently disabled.
+				// completes (StateDone), not only on delete. MUST be retained, or learn-on-
+				// completion is silently disabled. M3's completion ingest flows through the same
+				// svc.onSessionEnd, so it gains queue durability automatically.
 				mgr.OnSessionComplete = svc.HandleSessionComplete
 			}
 
