@@ -381,7 +381,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 						if lerr != nil {
 							slog.Warn("brain: auto-encode failed", "project", projectID, "error", lerr)
 						} else if n > 0 {
-							slog.Info("brain: learned from ended session", "project", projectID, "facts", n)
+							// Ingest is now capture-tier: these are RAW captures staged for the
+							// churn to promote, not injectable facts (see LearnFromTranscript).
+							slog.Info("brain: staged captures from ended session", "project", projectID, "captures", n)
 							bus.Broadcast(brain.EventBrainUpdated, map[string]string{})
 						}
 					}

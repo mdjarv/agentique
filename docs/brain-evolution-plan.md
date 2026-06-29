@@ -58,7 +58,7 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
   pre-restore safety snapshot first and refuses against a live server unless `--force`; retention
   enforced; `.snapshots` proven invisible to `filestore.List`/`ListScopes`.
 
-### M2 · Capture-tier ingest (the gate's input)
+### M2 · Capture-tier ingest (the gate's input) — ✅ SHIPPED
 - **Goal:** session ingest writes **raw, non-injectable captures**, not injectable facts.
 - **Files:** `brain/brain.go` (`LearnFromTranscript` — change `SourceConsolidated` →
   `SourceCapture` at the write); `session/service.go` (ingest trigger); `server.go` (wire).

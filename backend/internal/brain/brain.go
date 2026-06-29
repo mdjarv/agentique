@@ -477,16 +477,25 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 	return r, nil
 }
 
-// Capture stages a raw episodic memory (Source "capture") for later distillation
-// by the consolidation pass. Captures are never injected directly.
-func (s *Service) Capture(ctx context.Context, scope memory.Scope, text string) (memory.Record, error) {
+// Capture stages a RAW episodic memory (Source "capture") from a finished session,
+// carrying the candidate's own category, for later promotion by the churn. Captures are
+// the ingest tier (tier 1): NEVER injected (recall excludes SourceCapture) and NEVER
+// pinned — not even CategoryIdentity, because pinning would inject a raw capture. The
+// only path to injectability is consolidation promoting capture → consolidated (stamping
+// DerivedFrom provenance). In M2 there is no dedup: genuinely-new captures accumulate and
+// capture-vs-capture never dedups; M4 adds capture-vs-*durable* reinforcement on this same
+// signature (the dedup set stays durable-only, so this invariant holds).
+func (s *Service) Capture(ctx context.Context, scope memory.Scope, text string, category memory.Category) (memory.Record, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return memory.Record{}, fmt.Errorf("brain: empty capture text")
 	}
-	r := memory.New(scope, text, memory.CategoryFact, memory.SourceCapture)
+	if category == "" {
+		category = memory.CategoryFact
+	}
+	r := memory.New(scope, text, category, memory.SourceCapture) // Pinned stays false
 	if err := s.store.Put(ctx, r); err != nil {
-		return memory.Record{}, err
+		return memory.Record{}, fmt.Errorf("brain: capture: %w", err)
 	}
 	return r, nil
 }
@@ -723,24 +732,29 @@ func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {
 	return scopes, nil
 }
 
-// LearnFromTranscript distills durable facts from a finished session's transcript
-// and adds them to the scope (deduped against existing facts). Best-effort: a
-// chunk that fails extraction is skipped. Returns the count of new facts written.
+// LearnFromTranscript stages RAW captures from a finished session's transcript for
+// later promotion by the churn. Captures are never injected; only consolidation
+// promotes them (capture → consolidated, with DerivedFrom provenance). Best-effort: a
+// chunk that fails extraction is skipped. Returns the count of captures staged.
+//
+// PIPELINE NOTE: after this change ingest no longer injects directly, so a deployment
+// with a learn model set but NO scheduled consolidation will stage captures that never
+// surface — require scheduled consolidation enabled (see docs/brain-memory.md).
 func (s *Service) LearnFromTranscript(ctx context.Context, scope memory.Scope, events []TranscriptEvent, ex memory.Extractor) (int, error) {
 	chunks := BuildTranscript(events, extractMaxChars)
-	added := 0
+	staged := 0
 	for _, chunk := range chunks {
 		cands, err := ex.Extract(ctx, []string{chunk})
 		if err != nil {
 			continue
 		}
 		for _, c := range cands {
-			if _, err := s.Add(ctx, scope, c.Text, c.Category, memory.SourceConsolidated); err == nil {
-				added++
+			if _, err := s.Capture(ctx, scope, c.Text, c.Category); err == nil {
+				staged++
 			}
 		}
 	}
-	return added, nil
+	return staged, nil
 }
 
 // Get returns a single memory by ID.

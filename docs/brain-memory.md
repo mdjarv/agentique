@@ -278,9 +278,17 @@ The cognitive loop runs automatically, not just via the CLI/UI:
     stamped, so per-turn recall is also the read signal that feeds two-factor strength
     (D1), strength-weighted decay, and spaced review — previously starved because
     recall was pull-only and fired once.
-- **Auto-encode (opt-in).** When a session is deleted, its transcript is distilled
-  into durable facts and added to the project scope (async, deduped) — set
-  `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips trivial sessions.
+- **Auto-encode → capture tier (opt-in).** When a session ends, its transcript is
+  distilled into **raw captures** (`source: capture`, never injected) staged in the
+  project scope (async) — set `AGENTIQUE_BRAIN_LEARN_MODEL=haiku|sonnet|opus`. Skips
+  trivial sessions. Ingest is now tier-1: it stages captures, it does **not** write
+  injectable facts. The only path `capture → consolidated` is the churn (scheduled
+  consolidation), which promotes captures with `derived_from` provenance — so a
+  deployment with a learn model set **must also enable scheduled consolidation**, or
+  captures pile up and never surface. `LearnFromTranscript` returns the count of
+  captures *staged* (M2). M4 reconciles re-observation by reinforcing a duplicated
+  *durable* fact instead of stacking a redundant capture (the dedup set stays
+  durable-only, so capture-vs-capture still never dedups).
 - **Scheduled consolidation (opt-in).** `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL` (e.g. `6h`),
   or `[brain] consolidate-interval` in `config.toml` (env wins), starts a background pass
   that consolidates every scope on each tick; add `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` /
