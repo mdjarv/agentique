@@ -26,6 +26,12 @@ type Automation struct {
 	bus      eventbus.Broadcaster
 	interval time.Duration
 	model    claudecli.Model // "" => deterministic dedup/decay only
+	// archiveAfter is the hard minimum disuse age before the churn archives a faded fact
+	// (M5). 0 disables archiving (the pass behaves as before — no fade-out, no archive),
+	// preserving today's behaviour until an operator opts in. archiveFloor is the
+	// effective-confidence line (0 → memory.DefaultArchiveConfidenceFloor).
+	archiveAfter time.Duration
+	archiveFloor float64
 	// initialDelay is how long after Start the first pass runs. It is short relative to
 	// interval so a frequently-restarted server still gets a near-boot refresh instead of
 	// waiting (and resetting) a full interval each restart. Tests set it tiny.
@@ -38,8 +44,8 @@ type Automation struct {
 // indefinitely.
 const defaultInitialDelay = 30 * time.Second
 
-func NewAutomation(svc *Service, runner msggen.Runner, bus eventbus.Broadcaster, interval time.Duration, model claudecli.Model) *Automation {
-	return &Automation{svc: svc, runner: runner, bus: bus, interval: interval, model: model, initialDelay: defaultInitialDelay, done: make(chan struct{})}
+func NewAutomation(svc *Service, runner msggen.Runner, bus eventbus.Broadcaster, interval time.Duration, model claudecli.Model, archiveAfter time.Duration, archiveFloor float64) *Automation {
+	return &Automation{svc: svc, runner: runner, bus: bus, interval: interval, model: model, archiveAfter: archiveAfter, archiveFloor: archiveFloor, initialDelay: defaultInitialDelay, done: make(chan struct{})}
 }
 
 // Start launches the loop when an interval is configured; otherwise it is a no-op.
@@ -115,7 +121,11 @@ func (a *Automation) runOnce(ctx context.Context) {
 			return
 		default:
 		}
-		rep, err := a.svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, ConsolidateOpts{})
+		// Archive-transition policy (M5): archiveAfter<=0 leaves the policy inert (no fade,
+		// no archive — today's behaviour) until an operator sets archive-after. The pre-churn
+		// snapshot above (M1) is the restore point for the archive writes.
+		decay := memory.DecayPolicy{MaxAge: a.archiveAfter, ArchiveFloor: a.archiveFloor}
+		rep, err := a.svc.Consolidate(ctx, scope, ex, decay, false, ConsolidateOpts{})
 		if err != nil {
 			slog.Warn("brain: scheduled consolidation: consolidate failed", "scope", scope, "error", err)
 			continue

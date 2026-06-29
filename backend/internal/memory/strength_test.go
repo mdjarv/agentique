@@ -80,7 +80,6 @@ func TestBumpUsesStampsLastUsed(t *testing.T) {
 // StrengthWeighted decay forgets a weakly-held, long-unused fact while sparing a
 // strong, recently-used one of the same age-since-edit.
 func TestStrengthWeightedDecay(t *testing.T) {
-	ctx := context.Background()
 	now := time.Now().UTC()
 	old := now.Add(-100 * 24 * time.Hour)
 
@@ -94,20 +93,13 @@ func TestStrengthWeightedDecay(t *testing.T) {
 	strong.UpdatedAt = old
 	strong.LastUsedAt = now // recalled today → protected by disuse measure
 
-	store := newMemStore(weak, strong)
+	// shouldDecay directly (M5's live path is shouldArchive, which does not read
+	// StrengthWeighted; the strength weighting is retained and still covered here).
 	policy := DecayPolicy{MaxAge: 60 * 24 * time.Hour, MinUses: 1000, StrengthWeighted: true}
-	rep, err := Consolidate(ctx, store, nil, scopeA, ConsolidateOptions{Decay: policy})
-	if err != nil {
-		t.Fatal(err)
-	}
-	decayed := map[string]bool{}
-	for _, r := range rep.Decayed {
-		decayed[r.ID] = true
-	}
-	if !decayed["weak"] {
+	if !policy.shouldDecay(weak, now) {
 		t.Fatal("a weakly-held, long-unused fact should decay under StrengthWeighted")
 	}
-	if decayed["strong"] {
+	if policy.shouldDecay(strong, now) {
 		t.Fatal("a strong, recently-recalled fact must survive (disuse-measured age is ~0)")
 	}
 }

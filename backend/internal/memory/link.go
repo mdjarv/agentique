@@ -30,7 +30,7 @@ func RelinkScope(ctx context.Context, store Store, scope Scope, opts ...SimOptio
 	}
 	facts := make([]Record, 0, len(all))
 	for _, r := range all {
-		if r.Source != SourceCapture {
+		if r.Source != SourceCapture && !isArchived(r) { // archived = cold tier (M5)
 			facts = append(facts, r)
 		}
 	}

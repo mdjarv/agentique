@@ -66,6 +66,21 @@ API surface).
 Chroma 1.x does not embed server-side, so an `Embedder` is required for semantic
 recall; `embedhttp` calls any OpenAI-compatible embeddings endpoint.
 
+**Archived cold tier + disuse aging (M5).** Confidence is a *living scalar*: the stored
+`ConfidenceScore` eroded by time-since-last-use on a volatility-keyed half-life (slow 90d,
+ephemeral 14d; evergreen never), clamped up to an evidence floor (trusted 0.50 — above the
+archive line, so trusted facts never fade out; inferred 0.30; observed-once 0.15). This
+*effective confidence* is computed at recall (`memory.EffectiveConfidence`), **never written on
+a nudge**. Forgetting = **archive**, not delete: when a fact has faded below the archive floor
+and gone untouched longer than `archive-after`, the churn moves it to `Lifecycle=archived` — a
+cold tier excluded from recall and every other live consumer (promotion, areas/community/link/
+graph, review queue, operating contract), **kept on disk and restorable** (a hand-edit revives
+it and restarts its clock). Human/pinned/locked/evergreen never erode or archive. Two deploy
+safeguards: the read-time fade is gated on archiving being enabled (`archive-after` defaults to
+off, so nothing hard-drops until an operator opts in after curating), and the M6 backfill stamps
+`last_used=now`-where-zero so the disuse clock starts at the migration boundary, not an ancient
+`updated`. Nothing in the aging path ever deletes a record.
+
 **Label control plane (M6).** Every record carries a controlled vocabulary the churn and
 aging branch on (`internal/memory/labels.go`): `Evidence` (`user_stated`/`code_verified`/
 `corroborated`/`inferred`/`observed_once`), `Volatility` (`evergreen`/`slow`/`ephemeral` →
@@ -266,6 +281,8 @@ Other `[brain]` tunables (config-file key → env override; env wins):
 | `[brain]` key | Env override | Default | Meaning |
 |---|---|---|---|
 | `snapshot-retain` | `AGENTIQUE_BRAIN_SNAPSHOT_RETAIN` | 7 | pre-churn brain snapshots to keep under `brain/.snapshots/` |
+| `archive-after` | `AGENTIQUE_BRAIN_ARCHIVE_AFTER` | `""` (off) | disuse-aging archival: a fact untouched longer than this **and** faded below the floor is archived (e.g. `"720h"`). Empty = no fade/archive |
+| `archive-confidence-floor` | `AGENTIQUE_BRAIN_ARCHIVE_FLOOR` | 0.35 | effective-confidence line below which a faded fact is archived / faded from recall |
 
 ## Automation (the live recall → encode → consolidate loop)
 

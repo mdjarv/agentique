@@ -215,12 +215,12 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 	for _, r := range all {
 		byID[r.ID] = r
 		if r.Scope == ScopeGlobal {
-			if r.Source != SourceCapture {
+			if r.Source != SourceCapture && !isArchived(r) { // archived globals are cold (M5)
 				globalFacts = append(globalFacts, r)
 			}
 			continue
 		}
-		if r.Source == SourceCapture || isProtected(r) {
+		if r.Source == SourceCapture || isProtected(r) || isArchived(r) { // never promote an archived fact (M5)
 			continue
 		}
 		byScope[r.Scope] = append(byScope[r.Scope], r)

@@ -112,6 +112,13 @@ type Config struct {
 	// BrainSnapshotRetain bounds how many pre-churn brain snapshots are kept. From
 	// AGENTIQUE_BRAIN_SNAPSHOT_RETAIN or [brain] snapshot-retain; 0 = brain's default (7).
 	BrainSnapshotRetain int
+	// BrainArchiveAfter enables disuse-aging archival when set to a positive duration string
+	// (e.g. "720h"); "" disables it. From AGENTIQUE_BRAIN_ARCHIVE_AFTER or [brain] archive-after.
+	BrainArchiveAfter string
+	// BrainArchiveFloor is the effective-confidence floor below which a faded fact is archived/
+	// faded from recall. From AGENTIQUE_BRAIN_ARCHIVE_FLOOR or [brain] archive-confidence-floor;
+	// 0 = brain's default (0.35).
+	BrainArchiveFloor float64
 }
 
 func devModePreamble(dbPath string) string {
@@ -280,6 +287,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			VectorVetoScore:   cfg.BrainVectorVeto,
 			Calibrate:         cfg.BrainCalibrate,
 			SnapshotRetain:    cfg.BrainSnapshotRetain,
+			ArchiveFloor:      cfg.BrainArchiveFloor,
 			Graph: brain.GraphConfig{
 				EdgeCap:          cfg.BrainGraph.EdgeCap,
 				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,
@@ -419,7 +427,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 							slog.Warn("brain: consolidation model invalid; deterministic dedup only", "model", smName, "error", merr)
 						}
 					}
-					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm)
+					// Disuse-aging archival (M5): "" archive-after = off (inert policy). A bad
+					// duration logs a warning and leaves archiving disabled.
+					archiveAfter := time.Duration(0)
+					if aa := cfg.BrainArchiveAfter; aa != "" {
+						if ad, aerr := time.ParseDuration(aa); aerr == nil && ad > 0 {
+							archiveAfter = ad
+						} else {
+							slog.Warn("brain: archiving disabled (bad archive-after)", "value", aa, "error", aerr)
+						}
+					}
+					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm, archiveAfter, cfg.BrainArchiveFloor)
 					brainAuto.Start()
 				}
 			}

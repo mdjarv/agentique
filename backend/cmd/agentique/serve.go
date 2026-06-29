@@ -357,6 +357,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainOutcomeModel: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL"), fileCfg.Brain.OutcomeModel),
 		// Pre-churn snapshot retention: env wins over the [brain] value; 0 → brain's default (7).
 		BrainSnapshotRetain: envIntOr("AGENTIQUE_BRAIN_SNAPSHOT_RETAIN", fileCfg.Brain.SnapshotRetain),
+		// Disuse-aging archival: env wins; "" = off, 0 floor → brain's default (0.35).
+		BrainArchiveAfter: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_ARCHIVE_AFTER"), fileCfg.Brain.ArchiveAfter),
+		BrainArchiveFloor: envFloatOr("AGENTIQUE_BRAIN_ARCHIVE_FLOOR", fileCfg.Brain.ArchiveConfidenceFloor),
 		// Graph-view tuning: env wins over the [brain.graph] file value; 0 → brain's default.
 		BrainGraph: config.BrainGraphConfig{
 			EdgeCap:          envIntOr("AGENTIQUE_BRAIN_GRAPH_EDGE_CAP", fileCfg.Brain.Graph.EdgeCap),

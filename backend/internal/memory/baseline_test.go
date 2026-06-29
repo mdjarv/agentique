@@ -255,27 +255,37 @@ func TestBaselineConsolidateReport(t *testing.T) {
 		assertGolden(t, "consolidate_promote_reorg_decay_off.golden", mustJSON(t, snap))
 	})
 
-	t.Run("decay_on_deletes", func(t *testing.T) {
+	t.Run("decay_archives", func(t *testing.T) {
 		store := newMemStore(decayBaseRecords()...)
 		rep, err := Consolidate(ctx, store, fakeExtractor{}, ScopeGlobal,
-			ConsolidateOptions{Decay: DecayPolicy{MaxAge: 24 * time.Hour, MinUses: 1}})
+			ConsolidateOptions{Decay: DecayPolicy{MaxAge: 24 * time.Hour, ArchiveFloor: DefaultArchiveConfidenceFloor}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		snap := normalizeReport(rep)
 		final := finalStoreIDs(t, store)
-		// Current (pre-M5) behaviour: a decayed fact is DELETED, not archived.
+		// M5 (the committed delete→archive audit): a decayed fact is ARCHIVED
+		// (Lifecycle=archived), not deleted — it stays in the store, out of recall, restorable.
+		// rep.Decayed still reports them, so the golden (DecayedIDs) is unchanged; the flip is
+		// the store-state assertion below (was "absent", now "present + archived").
 		for _, id := range []string{"d1", "d2", "d3"} {
-			if containsString(final, id) {
-				t.Fatalf("stale fact %s must be removed from store on decay, final=%v", id, final)
+			if !containsString(final, id) {
+				t.Fatalf("archived fact %s must remain in the store, final=%v", id, final)
+			}
+			got, err := store.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("Get(%s): %v", id, err)
+			}
+			if got.Lifecycle != LifecycleArchived {
+				t.Fatalf("fact %s Lifecycle=%s, want archived", id, got.Lifecycle)
 			}
 		}
 		for _, id := range []string{"h1", "l1", "p1"} {
 			if !containsString(final, id) {
-				t.Fatalf("protected fact %s must survive decay, final=%v", id, final)
+				t.Fatalf("protected fact %s must survive, final=%v", id, final)
 			}
 		}
-		assertGolden(t, "consolidate_decay_on_deletes.golden", mustJSON(t, snap))
+		assertGolden(t, "consolidate_decay_archives.golden", mustJSON(t, snap))
 	})
 
 	t.Run("dedup_promotion", func(t *testing.T) {

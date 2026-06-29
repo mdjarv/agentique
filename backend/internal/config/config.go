@@ -149,6 +149,16 @@ type BrainConfig struct {
 	// Env: AGENTIQUE_BRAIN_SNAPSHOT_RETAIN.
 	SnapshotRetain int `toml:"snapshot-retain"`
 
+	// ArchiveAfter enables disuse-aging archival when set to a positive duration (e.g.
+	// "720h" = 30 days): the hard minimum a fact must go untouched before the churn archives
+	// it once its effective confidence has faded below the floor. "" (the default) = OFF — no
+	// recall fade-out, no archive (preserves today's behaviour until an operator opts in after
+	// curating). Env: AGENTIQUE_BRAIN_ARCHIVE_AFTER.
+	ArchiveAfter string `toml:"archive-after"`
+	// ArchiveConfidenceFloor is the effective-confidence line below which a faded fact is
+	// archived/faded from recall. 0 = the built-in default (0.35). Env: AGENTIQUE_BRAIN_ARCHIVE_FLOOR.
+	ArchiveConfidenceFloor float64 `toml:"archive-confidence-floor"`
+
 	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
 	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
 	// hybrid (keyword + embedding cosine). Each has an AGENTIQUE_BRAIN_* env override that

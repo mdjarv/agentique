@@ -75,6 +75,11 @@ type DecayPolicy struct {
 	// shown a lot doesn't redeem a fact later found wrong. Off by default; composes
 	// multiplicatively with ConfidenceWeighted and StrengthWeighted.
 	SalienceWeighted bool
+
+	// ArchiveFloor is the effective-confidence line below which a faded fact is archived
+	// (M5, aging.go shouldArchive). <=0 uses DefaultArchiveConfidenceFloor. Consulted only by
+	// shouldArchive (the live archive path); the legacy shouldDecay does not read it.
+	ArchiveFloor float64
 }
 
 // effectiveMaxAge returns the staleness threshold for a record under this policy:
@@ -266,7 +271,7 @@ func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Sco
 	for _, r := range all {
 		if r.Source == SourceCapture {
 			captures = append(captures, r)
-		} else {
+		} else if !isArchived(r) { // archived facts are the cold tier — never reorganized/promoted-against
 			durable = append(durable, r)
 		}
 	}
@@ -331,7 +336,7 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	}
 	var durable []Record
 	for _, r := range all {
-		if r.Source != SourceCapture {
+		if r.Source != SourceCapture && !isArchived(r) { // archived = cold tier, excluded from the churn
 			durable = append(durable, r)
 		}
 	}
@@ -372,20 +377,25 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 		}
 	}
 
-	// 3) Decay stale, low-value facts (deterministic; runs regardless of skip). The
-	// per-fact decision lives in DecayPolicy.shouldDecay: a confidence-weighted policy
-	// forgets what it is least sure about first, a salience-weighted one targets
-	// contradicted facts and spares corroborated ones.
+	// 3) Forgetting = ARCHIVE, not delete (M5, RFC-LD reversibility). A fact that has faded
+	// past its evidence/volatility floor and gone untouched longer than the policy's hard
+	// minimum (DecayPolicy.shouldArchive, aging.go) is moved to the cold tier
+	// (Lifecycle=archived): excluded from recall and every other live consumer, kept on disk,
+	// restorable — never auto-deleted. Protected/evergreen never archive; idempotent. (The
+	// legacy shouldDecay predicate is retained for tests but no longer drives the live path.)
 	if opts.Decay.MaxAge > 0 {
 		kept := reorgInput[:0]
 		for _, r := range reorgInput {
-			if opts.Decay.shouldDecay(r, now) {
+			if opts.Decay.shouldArchive(r, now) {
 				if !opts.DryRun {
-					if err := store.Delete(ctx, r.ID); err != nil {
-						return rep, err
+					ar := r
+					ar.Lifecycle = LifecycleArchived
+					ar.UpdatedAt = now
+					if err := store.Put(ctx, ar); err != nil {
+						return rep, fmt.Errorf("memory: archive %s: %w", r.ID, err)
 					}
 				}
-				rep.Decayed = append(rep.Decayed, r)
+				rep.Decayed = append(rep.Decayed, r) // "Decayed" now means archived; field name kept
 				continue
 			}
 			kept = append(kept, r)

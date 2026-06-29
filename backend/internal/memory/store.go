@@ -40,6 +40,12 @@ type Query struct {
 	// unrelated pairs) would otherwise vouch for everything. <= 0 uses
 	// DefaultSemanticThreshold. Only consulted when a Searcher is present.
 	VectorVouchScore float64
+	// ArchiveFloor, when > 0, enables the read-time disuse fade (M5): a non-protected,
+	// non-evergreen candidate whose EffectiveConfidence has eroded to/below this is dropped
+	// from recall — computed, NEVER persisted (reversible; the churn archives it later). 0
+	// disables the fade entirely (the recall-cliff defense: nothing hard-drops until the
+	// operator opts into archiving via the brain's archive-after config).
+	ArchiveFloor float64
 }
 
 // Result splits recall output the way it is injected: pinned facts are always

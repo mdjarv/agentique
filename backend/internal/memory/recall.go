@@ -89,6 +89,9 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	var res Result
 	candidates := make([]Record, 0, len(all))
 	for _, r := range all {
+		if isArchived(r) {
+			continue // cold tier never injected — first so an archived fact never reaches Pinned (M5)
+		}
 		if r.Pinned {
 			res.Pinned = append(res.Pinned, r)
 			continue
@@ -138,7 +141,7 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 	if vouchScore <= 0 {
 		vouchScore = DefaultSemanticThreshold
 	}
-	res.Recalled = rank(q.Text, candidates, vec, vetoFloor, vouchScore, k)
+	res.Recalled = rank(q.Text, candidates, vec, vetoFloor, vouchScore, q.ArchiveFloor, k)
 	res.Recalled = expandAssociative(res.Recalled, res.Pinned, all, k)
 	return res, nil
 }
@@ -160,6 +163,9 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 	byID := make(map[string]Record, len(all))
 	byArea := make(map[string][]Record)
 	for _, r := range all {
+		if isArchived(r) {
+			continue // archived facts are never folded in as associative neighbours (M5)
+		}
 		byID[r.ID] = r
 		if r.Area != "" && r.Source != SourceCapture {
 			byArea[r.Area] = append(byArea[r.Area], r)
@@ -217,7 +223,7 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 	return recalled
 }
 
-func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, vouchScore float64, k int) []Record {
+func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, vouchScore, archiveFloor float64, k int) []Record {
 	kwNorm, kwMatches := keywordScores(query, candidates)
 	multiToken := len(uniqueTokens(query)) > 1
 	qcats := queryCategories(query)
@@ -230,6 +236,13 @@ func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, 
 	}
 	out := make([]scored, 0, len(candidates))
 	for i, c := range candidates {
+		// Read-time disuse fade (M5): when archiving is enabled (floor > 0), drop a fact whose
+		// effective confidence has eroded to/below the floor — WITHOUT writing (reversible; the
+		// churn archives it later). Protected/evergreen never fade. Gating on floor > 0 is the
+		// recall-cliff defense: archiving off (floor 0) → recall never hard-drops a faded fact.
+		if archiveFloor > 0 && !isProtected(c) && !isEvergreen(c) && EffectiveConfidence(c, now) <= archiveFloor {
+			continue
+		}
 		kw := kwNorm[i]
 		if b, ok := categoryBoost(qcats, c.Category); ok {
 			kw = math.Min(kw*b, 1.0)

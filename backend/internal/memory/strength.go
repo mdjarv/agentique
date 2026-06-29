@@ -93,7 +93,7 @@ func DueForReview(records []Record, now time.Time, limit int) []Record {
 	}
 	var out []scored
 	for _, r := range records {
-		if r.Pinned || r.Source == SourceCapture {
+		if r.Pinned || r.Source == SourceCapture || isArchived(r) { // archived = cold tier, never surfaced for review (M5)
 			continue
 		}
 		st := StorageStrength(r)

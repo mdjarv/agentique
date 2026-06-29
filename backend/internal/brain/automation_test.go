@@ -29,7 +29,7 @@ func TestAutomationRunsOnceShortlyAfterStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAutomation(svc, nil, eventbus.NopBroadcaster{}, time.Hour, "")
+	a := NewAutomation(svc, nil, eventbus.NopBroadcaster{}, time.Hour, "", 0, 0)
 	a.initialDelay = 5 * time.Millisecond
 	a.Start()
 	defer a.Stop()
@@ -57,7 +57,7 @@ func TestAutomationStopBeforeInitialPass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAutomation(svc, nil, eventbus.NopBroadcaster{}, time.Hour, "")
+	a := NewAutomation(svc, nil, eventbus.NopBroadcaster{}, time.Hour, "", 0, 0)
 	a.initialDelay = time.Hour // long enough that Stop wins the race
 	a.Start()
 	a.Stop()

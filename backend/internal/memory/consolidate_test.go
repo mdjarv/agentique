@@ -439,29 +439,29 @@ func TestConsolidateProtectsPinnedLockedHuman(t *testing.T) {
 	}
 }
 
-func TestConsolidateDecay(t *testing.T) {
+// TestDecayPolicyStaleUseProtection exercises the legacy shouldDecay predicate directly.
+// (M5 swapped the live consolidation path to shouldArchive — archive-not-delete, computed by
+// effective confidence — but shouldDecay is retained, so its stale + use-protection logic is
+// still covered here rather than end-to-end through Consolidate.)
+func TestDecayPolicyStaleUseProtection(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DecayPolicy{MaxAge: 30 * 24 * time.Hour, MinUses: 2}
+
 	old := mk("old", ScopeGlobal, "stale unused fact", CategoryFact, SourceAgent)
-	old.UpdatedAt = time.Now().UTC().Add(-100 * 24 * time.Hour)
+	old.UpdatedAt = now.Add(-100 * 24 * time.Hour)
 	usedOld := mk("usedold", ScopeGlobal, "stale but useful", CategoryFact, SourceAgent)
-	usedOld.UpdatedAt = time.Now().UTC().Add(-100 * 24 * time.Hour)
+	usedOld.UpdatedAt = now.Add(-100 * 24 * time.Hour)
 	usedOld.Uses = 5
 	fresh := mk("fresh", ScopeGlobal, "recent fact", CategoryFact, SourceAgent)
-	store := newMemStore(old, usedOld, fresh)
 
-	rep, err := Consolidate(context.Background(), store, nil, ScopeGlobal, ConsolidateOptions{
-		Decay: DecayPolicy{MaxAge: 30 * 24 * time.Hour, MinUses: 2},
-	})
-	if err != nil {
-		t.Fatal(err)
+	if !policy.shouldDecay(old, now) {
+		t.Fatal("a stale, unused fact should decay")
 	}
-	if len(rep.Decayed) != 1 || rep.Decayed[0].ID != "old" {
-		t.Fatalf("expected only 'old' decayed, got %+v", rep.Decayed)
+	if policy.shouldDecay(usedOld, now) {
+		t.Fatal("a frequently-used stale fact is use-protected")
 	}
-	if _, err := store.Get(context.Background(), "old"); err != ErrNotFound {
-		t.Fatal("old should be pruned")
-	}
-	if _, err := store.Get(context.Background(), "usedold"); err != nil {
-		t.Fatal("frequently-used stale fact should survive")
+	if policy.shouldDecay(fresh, now) {
+		t.Fatal("a recent fact should not decay")
 	}
 }
 

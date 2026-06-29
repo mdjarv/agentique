@@ -59,6 +59,12 @@ type Config struct {
 	// 0 uses the built-in default (7). Env override: AGENTIQUE_BRAIN_SNAPSHOT_RETAIN.
 	SnapshotRetain int
 
+	// ArchiveFloor is the effective-confidence line below which a faded fact is dropped from
+	// recall and (by the churn) archived (M5). 0 uses memory.DefaultArchiveConfidenceFloor.
+	// The read-time fade is additionally gated on archiving being enabled (archive-after set).
+	// Env override: AGENTIQUE_BRAIN_ARCHIVE_FLOOR.
+	ArchiveFloor float64
+
 	// Graph tunes the knowledge-graph view (semantic kNN edge density + force-layout
 	// curves). Zero-valued fields take the built-in defaults via GraphConfig.withDefaults.
 	Graph GraphConfig
@@ -129,6 +135,9 @@ type Service struct {
 
 	// snapshotRetain caps the pre-churn snapshots kept under dir/.snapshots (read-only after New).
 	snapshotRetain int
+	// archiveFloor is the effective-confidence floor threaded into RecallBlock's Query to fade
+	// out cold facts at read time (M5); 0 lets memory apply its default. Read-only after New.
+	archiveFloor float64
 
 	// embedder, when set (semantic mode), drives semantic similarity for clustering —
 	// link/community/area edges blend Jaccard with embedding cosine (RFC phase C). nil =
@@ -205,6 +214,7 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 		store:          base,
 		dir:            cfg.Dir,
 		snapshotRetain: cfg.SnapshotRetain,
+		archiveFloor:   cfg.ArchiveFloor,
 		embedCache:     make(map[string][]float32),
 		semEdgeCache:   make(map[string][]memory.Edge),
 		graph:          cfg.Graph.withDefaults(),
@@ -587,6 +597,9 @@ func (s *Service) OperatingContract(ctx context.Context, projectID string) strin
 		if r.Category != memory.CategoryPreference || r.Source == memory.SourceCapture {
 			continue
 		}
+		if memory.IsArchived(r) { // archived = cold tier, never an acted-on directive (M5)
+			continue
+		}
 		if r.ReviewNote != "" { // flagged/contradicted prefs don't get to drive behavior
 			continue
 		}
@@ -645,7 +658,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 		return "", nil
 	}
 	scope := ScopeForProject(projectID)
-	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore, VectorVouchScore: s.cosThresh})
+	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore, VectorVouchScore: s.cosThresh, ArchiveFloor: s.archiveFloor})
 	if err != nil {
 		slog.Warn("brain: task-relevant recall failed", "project", projectID, "error", err)
 		return "", nil
@@ -818,6 +831,12 @@ func (s *Service) Update(ctx context.Context, id, text string, category memory.C
 	}
 	r.Source = memory.SourceHuman
 	r.ReviewNote = "" // a hand-edit resolves any pending review
+	if r.Lifecycle == memory.LifecycleArchived {
+		// A hand-edit revives an archived fact: flip it back to active and restart the disuse
+		// clock so it is not immediately re-archived (M5 restore path).
+		r.Lifecycle = memory.LifecycleActive
+		r.LastUsedAt = time.Now().UTC()
+	}
 	r.UpdatedAt = time.Now().UTC()
 	if err := s.store.Put(ctx, r); err != nil {
 		return memory.Record{}, err

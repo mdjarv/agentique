@@ -30,7 +30,7 @@ type AreaInfo struct {
 func durableFacts(all []Record) []Record {
 	out := make([]Record, 0, len(all))
 	for _, r := range all {
-		if r.Source != SourceCapture {
+		if r.Source != SourceCapture && !isArchived(r) { // archived = cold tier, excluded from areas (M5)
 			out = append(out, r)
 		}
 	}

@@ -100,7 +100,15 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
   (no new record). Genuinely-new text → write a capture.
 - **Done:** repeated observation raises a durable fact's confidence/corroborations.
 
-### M5 · Computed disuse-confidence aging (not materialized)
+### M5 · Computed disuse-confidence aging (not materialized) — ✅ SHIPPED (after M6)
+- **Done:** `memory/aging.go` (`EffectiveConfidence`, `DecayPolicy.shouldArchive`, evidence floors +
+  volatility half-lives); `ApplyPlan` archives (Lifecycle=archived) instead of deleting; recall
+  excludes archived + an opt-in read-time fade (`Query.ArchiveFloor`, recall-cliff-gated); archived
+  excluded from every non-recall consumer (promotion, DueForReview, areas/community/link/global-graph,
+  operating contract) with named tests; `automation` passes a real archive policy (inert until
+  `archive-after` set); `Update` revives + restamps an archived fact; config `archive-after` +
+  `archive-confidence-floor`. `shouldDecay` retained (now tested directly, not via the live path).
+  M0 decay golden flipped delete→archive (the audit). Nothing deletes.
 - **Goal:** confidence erodes with disuse and rises with use, **without** rewriting files for
   every nudge; archiving is a *transition*, not a timer.
 - **Files:** new `memory/aging.go` (`EffectiveConfidence(r, now, policy)` pure fn);

@@ -267,7 +267,7 @@ func TestRunOnceSnapshotsBeforeChurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	auto := NewAutomation(svc, nil, nil, 0, "")
+	auto := NewAutomation(svc, nil, nil, 0, "", 0, 0)
 	auto.runOnce(ctx)
 
 	snaps, err := ListSnapshots(dir)

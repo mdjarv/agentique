@@ -63,7 +63,6 @@ func TestSalienceWeightedNeutralIsNoOp(t *testing.T) {
 // corroborated one survives (its threshold is extended past the age), and the neutral one
 // sits on the original boundary.
 func TestSalienceWeightedDecayContradictedVsCorroborated(t *testing.T) {
-	ctx := context.Background()
 	now := time.Now().UTC()
 	age := now.Add(-50 * 24 * time.Hour) // 50d old; MaxAge is 60d
 
@@ -75,30 +74,20 @@ func TestSalienceWeightedDecayContradictedVsCorroborated(t *testing.T) {
 	corroborated.UpdatedAt = age
 	corroborated.Helped = 1 // factor 1.5 → effective max age 90d > 50d
 
-	store := newMemStore(contradicted, corroborated)
-	policy := DecayPolicy{MaxAge: 60 * 24 * time.Hour, MinUses: 1, SalienceWeighted: true}
-	rep, err := Consolidate(ctx, store, nil, scopeA, ConsolidateOptions{Decay: policy})
-	if err != nil {
-		t.Fatal(err)
-	}
-	decayed := map[string]bool{}
-	for _, r := range rep.Decayed {
-		decayed[r.ID] = true
-	}
-	if !decayed["bad"] {
+	// shouldDecay directly (M5 moved the live consolidation path to shouldArchive, which is
+	// effective-confidence-based and does not read SalienceWeighted; the salience weighting it
+	// is retained and still covered here).
+	salient := DecayPolicy{MaxAge: 60 * 24 * time.Hour, MinUses: 1, SalienceWeighted: true}
+	if !salient.shouldDecay(contradicted, now) {
 		t.Fatal("a contradicted fact (salience 0.1 → 0.2× max age) should decay at 50d")
 	}
-	if decayed["good"] {
+	if salient.shouldDecay(corroborated, now) {
 		t.Fatal("a corroborated fact (salience 0.75 → 1.5× max age) should resist decay at 50d")
 	}
 	// Without SalienceWeighted, neither decays at 50d (< 60d MaxAge) — proving salience drove it.
-	store2 := newMemStore(contradicted, corroborated)
-	rep2, err := Consolidate(ctx, store2, nil, scopeA, ConsolidateOptions{Decay: DecayPolicy{MaxAge: 60 * 24 * time.Hour, MinUses: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rep2.Decayed) != 0 {
-		t.Fatalf("flat decay should prune nothing at 50d < 60d, got %+v", rep2.Decayed)
+	flat := DecayPolicy{MaxAge: 60 * 24 * time.Hour, MinUses: 1}
+	if flat.shouldDecay(contradicted, now) || flat.shouldDecay(corroborated, now) {
+		t.Fatal("flat decay should prune nothing at 50d < 60d")
 	}
 }
 

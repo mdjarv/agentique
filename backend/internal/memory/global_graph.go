@@ -22,7 +22,8 @@ const DefaultMinPromotionScopes = 2
 // staleness guard and the incremental manifest all key on this one predicate so
 // they can never drift out of agreement.
 func isPromotable(r Record) bool {
-	return r.Scope != ScopeGlobal && r.Source != SourceCapture && !isProtected(r)
+	// Archived = cold tier (M5): never resurrect a faded fact as a new global promotion.
+	return r.Scope != ScopeGlobal && r.Source != SourceCapture && !isProtected(r) && !isArchived(r)
 }
 
 // CrossScopeGroup is a topic community whose member facts recur across two or more

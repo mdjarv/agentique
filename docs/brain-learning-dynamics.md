@@ -80,8 +80,15 @@ New to this RFC:
 
 ## Proposals
 
-### D1 — Two-factor strength (storage vs. retrieval) ✅ implemented
+### D1 — Two-factor strength (storage vs. retrieval) ✅ implemented · disuse-confidence aging shipped (Band 1 M5)
 
+- **Status (Band 1 M5).** Disuse now also erodes **confidence** (not just retrieval strength):
+  `memory.EffectiveConfidence(r, now)` = stored `ConfidenceScore` decayed by time-since-last-use on
+  a volatility half-life (slow 90d / ephemeral 14d / evergreen ∞), clamped to an evidence floor.
+  Computed at recall, **never persisted on a nudge**; persisted exactly once at the **archive**
+  transition (`Lifecycle=archived` — cold tier, out of recall, restorable, never deleted). Human/
+  pinned/locked/evergreen are exempt. Opt-in via `archive-after`, with a recall-cliff gate +
+  backfill clock-reset for deploy safety.
 - **Principle.** Bjork & Bjork's *New Theory of Disuse*: a memory has two strengths — **storage**
   (how deeply learned; ~permanent) and **retrieval** (how accessible right now; decays with disuse).
   Retrieval practice raises both; only retrieval strength fades.
