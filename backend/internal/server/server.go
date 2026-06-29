@@ -280,6 +280,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var memProvider mcphttp.MemoryStore
 	var brainAuto *brain.Automation
 	if cfg.BrainDir != "" {
+		// Couple the read-time recall fade to archiving being ENABLED: it activates only when
+		// archive-after parses to a positive duration, so a stray archive-confidence-floor can
+		// never silently evict live facts from recall while the churn isn't archiving (the
+		// deploy-safety contract). When enabled, an unset floor takes the built-in default.
+		recallArchiveFloor := 0.0
+		if d, perr := time.ParseDuration(cfg.BrainArchiveAfter); cfg.BrainArchiveAfter != "" && perr == nil && d > 0 {
+			recallArchiveFloor = cfg.BrainArchiveFloor
+			if recallArchiveFloor <= 0 {
+				recallArchiveFloor = memory.DefaultArchiveConfidenceFloor
+			}
+		}
 		brainSvc, err := brain.New(context.Background(), brain.Config{
 			Dir:               cfg.BrainDir,
 			ChromaURL:         cfg.BrainChromaURL,
@@ -290,7 +301,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			VectorVetoScore:   cfg.BrainVectorVeto,
 			Calibrate:         cfg.BrainCalibrate,
 			SnapshotRetain:    cfg.BrainSnapshotRetain,
-			ArchiveFloor:      cfg.BrainArchiveFloor,
+			ArchiveFloor:      recallArchiveFloor,
 			Graph: brain.GraphConfig{
 				EdgeCap:          cfg.BrainGraph.EdgeCap,
 				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,

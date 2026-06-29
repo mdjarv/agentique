@@ -77,6 +77,39 @@ func TestRestoreActiveRefreshesLastUsedAt(t *testing.T) {
 	}
 }
 
+func TestAddRevivesArchivedDuplicate(t *testing.T) {
+	ctx := context.Background()
+	arch := memory.New(memory.ScopeGlobal, "an archived fact that gets re-observed", memory.CategoryFact, memory.SourceConsolidated)
+	arch.ID = "arch"
+	arch.Lifecycle = memory.LifecycleArchived
+	arch.LastUsedAt = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	arch.UpdatedAt = arch.LastUsedAt
+	svc := svcWithRecords(t, arch)
+
+	// Re-observing the archived fact's text reinforces AND revives it (same id, now active) —
+	// instead of burying the renewed corroboration in the cold tier.
+	got, err := svc.Add(ctx, memory.ScopeGlobal, "an archived fact that gets re-observed", memory.CategoryFact, memory.SourceAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "arch" {
+		t.Fatalf("re-observation should match the archived fact, got %s", got.ID)
+	}
+	if got.Lifecycle != memory.LifecycleActive {
+		t.Fatalf("a re-observed archived fact must be revived, got %s", got.Lifecycle)
+	}
+	if got.Corroborations != 1 {
+		t.Fatalf("Corroborations=%d, want 1", got.Corroborations)
+	}
+	recs, err := svc.List(ctx, memory.ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("revive must not create a duplicate record: got %d", len(recs))
+	}
+}
+
 func TestOperatingContract_SkipsArchived(t *testing.T) {
 	ctx := context.Background()
 	scope := ScopeForProject("p1")

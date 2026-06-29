@@ -82,9 +82,17 @@ func MarkHelpedWith(r Record, now time.Time, gapClose float64) Record {
 // facts (pinned/locked/human ground truth) keep their score but still accrue the count. Like
 // MarkHelped (and unlike MarkContradicted), it leaves UpdatedAt untouched: re-observation is
 // retrieval, not a content edit. now stamps LastUsedAt.
+//
+// Restore-on-re-observe (M5 interaction): a re-observation of an ARCHIVED durable fact revives
+// it — flip Lifecycle back to active so the renewed corroboration re-enters recall instead of
+// being buried in the cold tier (the archive dedup-target gap the M4 gotcha delegated to M5).
+// The stamped LastUsedAt=now restarts its disuse clock so it is not immediately re-archived.
 func Reinforce(r Record, now time.Time) Record {
 	r.Corroborations++
 	r.LastUsedAt = now
+	if isArchived(r) {
+		r.Lifecycle = LifecycleActive
+	}
 	if !isProtected(r) && r.ConfidenceScore < CorroborationCeiling {
 		r.ConfidenceScore += AutoCorroborationGapClose * (CorroborationCeiling - r.ConfidenceScore)
 	}

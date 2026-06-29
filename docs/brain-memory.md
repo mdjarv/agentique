@@ -320,8 +320,11 @@ The cognitive loop runs automatically, not just via the CLI/UI:
   trivial sessions. Ingest is now tier-1: it stages captures, it does **not** write
   injectable facts. The only path `capture → consolidated` is the churn (scheduled
   consolidation), which promotes captures with `derived_from` provenance — so a
-  deployment with a learn model set **must also enable scheduled consolidation**, or
-  captures pile up and never surface. `LearnFromTranscript` returns the count of
+  deployment with a learn model set **must also enable scheduled consolidation _with a
+  consolidate model_**: promotion is LLM-only (`Extractor`-gated), so an interval set but
+  `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` left empty runs deterministic dedup/decay that never
+  drains captures — they pile up indefinitely. Set BOTH the interval and the model.
+  `LearnFromTranscript` returns the count of
   captures *staged* (M2). M4 reconciles re-observation by reinforcing a duplicated
   *durable* fact instead of stacking a redundant capture (the dedup set stays
   durable-only, so capture-vs-capture still never dedups).
@@ -448,11 +451,11 @@ dynamics — what the brain borrows next from human-memory research).
   (cross-scope-community guardrail + content-hash manifest for global promotion)
   are **done** — all RFC proposals are now shipped (neo4j export remains a parked
   non-goal).
-- **Episodic `capture` staging is unused.** Auto-encode distills a finished
-  session's transcript directly into durable facts rather than staging raw
-  captures for a later scheduled consolidation; the `SourceCapture` path exists but nothing
-  writes to it. Activating it (stage episodes → replay-and-abstract during consolidation,
-  per Complementary Learning Systems) is RFC-LD **D4**.
+- **Episodic `capture` staging is the ingest tier (Band 1 M2/M3 — shipped).** Auto-encode now
+  stages RAW captures (`SourceCapture`, never injected) on session completion and delete; the
+  scheduled consolidation is the only `capture → consolidated` promotion path. The remaining D4
+  work is the churn's *replay-and-abstract* of those captures (batch abstraction per Complementary
+  Learning Systems), which the Band 2 Curator delivers.
 - **Chroma collection space.** The collection is created with cosine distance;
   changing the embedding model/space requires a fresh collection name (a stale
   collection of the same name created with a different space would skew scores).

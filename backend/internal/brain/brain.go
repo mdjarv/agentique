@@ -59,10 +59,11 @@ type Config struct {
 	// 0 uses the built-in default (7). Env override: AGENTIQUE_BRAIN_SNAPSHOT_RETAIN.
 	SnapshotRetain int
 
-	// ArchiveFloor is the effective-confidence line below which a faded fact is dropped from
-	// recall and (by the churn) archived (M5). 0 uses memory.DefaultArchiveConfidenceFloor.
-	// The read-time fade is additionally gated on archiving being enabled (archive-after set).
-	// Env override: AGENTIQUE_BRAIN_ARCHIVE_FLOOR.
+	// ArchiveFloor is the RECALL-side effective-confidence line below which a faded fact is
+	// dropped from recall at read time (M5). 0 DISABLES the read-time fade (it is NOT promoted to
+	// a default — the recall-cliff defense). The server only sets it non-zero when archiving is
+	// enabled (archive-after set), so the fade and the churn's archival move together. The churn's
+	// own floor (DecayPolicy.ArchiveFloor) is separate and DOES default to 0.35 when 0.
 	ArchiveFloor float64
 
 	// Graph tunes the knowledge-graph view (semantic kNN edge density + force-layout
@@ -902,6 +903,13 @@ func (s *Service) MarkAutoHelped(ctx context.Context, id string) (memory.Record,
 }
 
 func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)) (memory.Record, error) {
+	// Hold s.mu across Get→fn→Put so a human action (Confirm/Flag/SetPinned/…) is not lost to a
+	// concurrent reinforce (Add/Capture) or churn (Consolidate) RMW — all the durable single-fact
+	// writers funnel through s.mu. No s.mu holder calls mutate, so there is no self-deadlock. (The
+	// per-turn recall BumpUses stays unlocked by design — counters are approximate and recall must
+	// not block on a long churn; see docs/tech-debt.md.)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	r, err := s.store.Get(ctx, id)
 	if err != nil {
 		return memory.Record{}, err

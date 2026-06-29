@@ -211,6 +211,18 @@ after the row delete, so a `kill -9` in that gap loses one transcript (pre-exist
 the bug M7 fixes; `Enqueue` is a single fast insert to minimise it).
 → `internal/brain/jobqueue.go`, `internal/server/server.go`.
 
+### Brain: per-turn recall `BumpUses` is intentionally unlocked (approximate counters)
+The durable single-fact writers — `Add`/`Capture` (reinforce), `Consolidate` (churn), and
+`mutate` (Confirm/Flag/SetPinned) — all funnel through `Service.mu`, so human actions and
+reinforcements can't clobber each other. The hot per-turn recall path (`MarkUsed` → `memory.BumpUses`)
+is **deliberately left unlocked**: locking it would serialise recall against a long consolidation
+pass and stall the per-turn injection. The accepted cost is that `Uses`/`LastUsedAt` increments on a
+fact being recalled *at the same instant* it is reinforced/curated can occasionally be lost
+(last-writer-wins) — a counter is approximate and the increment re-accrues on the next turn; no
+durable curated state (score/lifecycle/pin) is at risk since those go through `mutate`. If exact
+use-counting is ever needed, move `BumpUses` to an atomic SQL `UPDATE … SET uses = uses + 1` rather
+than an RMW. → `internal/brain/brain.go` (`mutate`, `MarkUsed`), `internal/memory/store.go` (`BumpUses`).
+
 ### Brain: single consolidation job slot
 Only one consolidation runs at a time (`beginJob` 409s a second); "Consolidate all" is
 sequential and two scopes can't consolidate concurrently. Parallel-across-scopes was

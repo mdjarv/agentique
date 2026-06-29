@@ -43,6 +43,23 @@ func TestReinforceSparesProtectedScore(t *testing.T) {
 	}
 }
 
+func TestReinforceRevivesArchived(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	r := New(ScopeGlobal, "a re-observed cold fact", CategoryFact, SourceConsolidated)
+	r.Lifecycle = LifecycleArchived
+	r.LastUsedAt = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	got := Reinforce(r, now)
+	if got.Lifecycle != LifecycleActive {
+		t.Fatalf("re-observing an archived fact must revive it: Lifecycle=%s", got.Lifecycle)
+	}
+	if !got.LastUsedAt.Equal(now) {
+		t.Fatalf("revive must restart the disuse clock: LastUsedAt=%v", got.LastUsedAt)
+	}
+	if got.Corroborations != 1 {
+		t.Fatalf("Corroborations=%d, want 1", got.Corroborations)
+	}
+}
+
 func TestReinforceDoesNotTouchUpdatedAt(t *testing.T) {
 	r := New(ScopeGlobal, "x", CategoryFact, SourceConsolidated)
 	updated := r.UpdatedAt
