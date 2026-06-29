@@ -408,12 +408,12 @@ export function BrainPage() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        {hiddenCounts.captures > 0 && (
+        {view === "list" && hiddenCounts.captures > 0 && (
           <TierToggle
             active={showCaptures}
             label="Captures"
             count={hiddenCounts.captures}
-            title="Raw captures awaiting promotion — never injected. Toggle to show them in the list and graph."
+            title="Raw captures awaiting promotion — never injected. Toggle to show them in the list. (Captures have no structural edges, so the graph never shows them.)"
             onClick={() => setShowCaptures((v) => !v)}
           />
         )}

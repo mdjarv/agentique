@@ -321,16 +321,16 @@ function scheduleRefresh() {
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    // Refresh the memory list AND the health counts together so the strip stays in step with
-    // the corpus (both are cheap, request-time aggregations).
-    Promise.all([listMemories(), getStatus()])
-      .then(([memories, status]) =>
-        useBrainStore.setState({
-          memories,
-          semantic: status.semantic,
-          counts: status.counts ?? null,
-        }),
+    // Refresh the memory list AND the health counts so the strip stays in step with the
+    // corpus (both are cheap, request-time aggregations). Decoupled so a status hiccup can't
+    // drop the (more important) memory-list refresh, and vice-versa.
+    listMemories()
+      .then((memories) => useBrainStore.setState({ memories }))
+      .catch((err) => console.error("Failed to refresh memories:", err));
+    getStatus()
+      .then((status) =>
+        useBrainStore.setState({ semantic: status.semantic, counts: status.counts ?? null }),
       )
-      .catch((err) => console.error("Failed to refresh brain:", err));
+      .catch((err) => console.error("Failed to refresh brain status:", err));
   }, 600);
 }

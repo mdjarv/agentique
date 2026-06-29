@@ -722,14 +722,17 @@ export function BrainGraph({
     return scopes.map((s) => ({ scope: s, label: labelForScope(s), color: scopeColor(s) }));
   }, [nodes, labelForScope]);
 
-  // Region grouping for the shaded hulls. Membership tracks the active colour dimension:
-  // by scope → one region per project (labelled with the project name); by community →
-  // one per scope-local topic cluster (colour only); by area → one per cross-scope topic
-  // area (labelled with the area's readable name, spanning projects). The live GNode
-  // objects are kept so the hull reads their current x/y each frame. Recomputed only on
-  // topology/colour change, never per frame.
+  // Region grouping for the shaded hulls. Membership tracks the active colour dimension for the
+  // SPATIAL dimensions — by scope → one region per project (labelled with the project name);
+  // by community → one per scope-local topic cluster (colour only); by area → one per
+  // cross-scope topic area (labelled, spanning projects). The ORDINAL colour dimensions
+  // (evidence/volatility) form NO regions: their buckets don't cluster in space, so a hull
+  // around e.g. every "weak evidence" fact would be a useless graph-spanning blob — the nodes
+  // are still recoloured, just not hulled. The live GNode objects are kept so the hull reads
+  // their current x/y each frame. Recomputed only on topology/colour change, never per frame.
   const regionGroups = useMemo(() => {
     const groups = new Map<string, { color: string; label: string; nodes: GNode[] }>();
+    if (colorBy === "evidence" || colorBy === "volatility") return groups; // ordinal → no hulls
     for (const n of nodes) {
       let key: string;
       let color: string;

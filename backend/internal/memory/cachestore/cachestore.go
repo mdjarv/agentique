@@ -23,6 +23,12 @@ type Store struct {
 	mu   sync.RWMutex
 	all  []memory.Record          // full corpus snapshot; nil = cold
 	byID map[string]memory.Record // id index over the same snapshot
+	// gen is bumped on every invalidation. snapshot() reads the inner store WITHOUT the lock
+	// held (so concurrent reads don't serialize on a slow filestore read), then re-checks gen
+	// before installing: if an Invalidate happened during that unlocked read, the freshly-read
+	// snapshot may predate it and must NOT be installed, or it would silently re-poison the
+	// cache with stale data (the TOCTOU an external rewrite — a snapshot restore — exposes).
+	gen uint64
 }
 
 var _ memory.Store = (*Store)(nil)
@@ -34,7 +40,7 @@ func New(inner memory.Store) *Store { return &Store{inner: inner} }
 // cold cache. Two concurrent cold rebuilds are harmless (identical data, last wins).
 func (s *Store) snapshot(ctx context.Context) ([]memory.Record, map[string]memory.Record, error) {
 	s.mu.RLock()
-	all, byID := s.all, s.byID
+	all, byID, gen := s.all, s.byID, s.gen
 	s.mu.RUnlock()
 	if all != nil {
 		return all, byID, nil
@@ -49,14 +55,27 @@ func (s *Store) snapshot(ctx context.Context) ([]memory.Record, map[string]memor
 		idx[r.ID] = r
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.all != nil {
+		// A concurrent rebuild already installed a snapshot; prefer it (at least as fresh
+		// as ours) for cache consistency.
+		return s.all, s.byID, nil
+	}
+	if s.gen != gen {
+		// The cache was invalidated while we read the inner store, so `fresh` may predate
+		// that invalidation. Do NOT install it (that would re-poison the cache); leave the
+		// cache cold so the next read rebuilds from the now-current store. Return our
+		// best-effort read to THIS caller only (a benign one-time slightly-stale read).
+		return fresh, idx, nil
+	}
 	s.all, s.byID = fresh, idx
-	s.mu.Unlock()
 	return fresh, idx, nil
 }
 
 func (s *Store) invalidate() {
 	s.mu.Lock()
 	s.all, s.byID = nil, nil
+	s.gen++ // signal any in-flight rebuild that its snapshot is now stale (see snapshot()).
 	s.mu.Unlock()
 }
 

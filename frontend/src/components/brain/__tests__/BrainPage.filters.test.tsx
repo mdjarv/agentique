@@ -67,6 +67,8 @@ beforeEach(() => {
 describe("BrainPage tier filters", () => {
   it("hides captures + archived by default, shows their counts, and reveals on toggle", () => {
     render(<BrainPage />);
+    // The captures toggle is list-only (the graph drops captures), so view the list.
+    fireEvent.click(screen.getByTitle("List view"));
 
     // Default list = live injectable facts only.
     expect(screen.getByText("NORMAL FACT")).toBeTruthy();
@@ -87,6 +89,12 @@ describe("BrainPage tier filters", () => {
     fireEvent.click(archivedBtn);
     expect(screen.getByText("ARCHIVED ONE")).toBeTruthy();
     expect(screen.getByText("ARCHIVED TWO")).toBeTruthy();
+  });
+
+  it("hides the captures toggle in graph view (the graph has no captures), keeps archived", () => {
+    render(<BrainPage />); // default view is graph
+    expect(screen.queryByRole("button", { name: /Captures/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Archived \(2\)/ })).toBeTruthy();
   });
 
   it("does not show a toggle for a tier with nothing hidden", () => {
