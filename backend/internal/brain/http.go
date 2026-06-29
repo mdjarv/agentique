@@ -567,10 +567,55 @@ func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// HandleStatus GET /api/brain/status
+// statusCounts is the brain-health distribution (brain-ui-spec.md F6, Band 3 E2): a cheap
+// single-pass aggregation over the whole corpus that makes the Band-1 pipeline legible —
+// how many captures await promotion, how much is archived, the evidence/volatility/
+// confidence spread, and the review backlog. Kept in sync by hand with brain-api.ts.
+type statusCounts struct {
+	Total            int            `json:"total"`
+	ByLifecycle      map[string]int `json:"byLifecycle"`
+	BySource         map[string]int `json:"bySource"`
+	ByEvidence       map[string]int `json:"byEvidence"`
+	ByVolatility     map[string]int `json:"byVolatility"`
+	ByConfidenceTier map[string]int `json:"byConfidenceTier"`
+	// ReviewQueue counts facts explicitly flagged for review (a non-empty ReviewNote).
+	ReviewQueue int `json:"reviewQueue"`
+	// CorroboratedTotal is the SUM of independent re-observations across the corpus.
+	CorroboratedTotal int `json:"corroboratedTotal"`
+}
+
+func computeStatusCounts(recs []memory.Record) statusCounts {
+	c := statusCounts{
+		Total:            len(recs),
+		ByLifecycle:      map[string]int{},
+		BySource:         map[string]int{},
+		ByEvidence:       map[string]int{},
+		ByVolatility:     map[string]int{},
+		ByConfidenceTier: map[string]int{},
+	}
+	for _, r := range recs {
+		c.ByLifecycle[string(r.Lifecycle)]++
+		c.BySource[string(r.Source)]++
+		c.ByEvidence[string(r.Evidence)]++
+		c.ByVolatility[string(r.Volatility)]++
+		c.ByConfidenceTier[string(r.Confidence)]++
+		if strings.TrimSpace(r.ReviewNote) != "" {
+			c.ReviewQueue++
+		}
+		c.CorroboratedTotal += r.Corroborations
+	}
+	return c
+}
+
+// HandleStatus GET /api/brain/status — semantic flag + the brain-health distribution.
 func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) error {
+	recs, err := h.Service.List(r.Context())
+	if err != nil {
+		return err
+	}
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"semantic": h.Service.SemanticEnabled(),
+		"counts":   computeStatusCounts(recs),
 	})
 	return nil
 }

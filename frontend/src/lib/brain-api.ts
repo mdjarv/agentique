@@ -95,8 +95,26 @@ export function inReviewQueue(m: Memory): boolean {
   return needsConfirmation(m) || !!m.reviewNote;
 }
 
+// BrainCounts is the brain-health distribution (HAND-SYNCED with statusCounts in
+// backend/internal/brain/http.go). A cheap single-pass aggregation surfacing the Band-1
+// pipeline: capture backlog, archived/superseded, the evidence/volatility/confidence spread,
+// and the review queue. The by* maps are keyed by the controlled-vocabulary value; read a
+// bucket as `byLifecycle.archived ?? 0` (absent keys are zero).
+export interface BrainCounts {
+  total: number;
+  byLifecycle: Record<string, number>;
+  bySource: Record<string, number>;
+  byEvidence: Record<string, number>;
+  byVolatility: Record<string, number>;
+  byConfidenceTier: Record<string, number>;
+  reviewQueue: number;
+  corroboratedTotal: number;
+}
+
 export interface BrainStatus {
   semantic: boolean;
+  // Present from the F6 backend; optional so an older backend still decodes.
+  counts?: BrainCounts;
 }
 
 export interface SearchResult {

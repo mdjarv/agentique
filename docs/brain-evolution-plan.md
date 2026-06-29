@@ -197,9 +197,16 @@ Stage 2 promotes recurring cross-scope facts to global (existing `MinPromotionSc
   "remember this" / user corrections promote immediately (skip the wait).
 - **E2 · Brain-health report** — per-pass changelog + trend dashboard (recall precision,
   churn %, age/confidence distributions, contract self-earned vs human). Brain UI + digest.
+  **Frontend SHIPPED** (`docs/brain-ui-spec.md` F6): the Health popover surfaces the
+  lifecycle/source/evidence/volatility/confidence distributions, capture backlog, and review
+  queue from an extended `/status` endpoint. The per-pass Curator changelog (Band 2) slots in
+  later — the component is built to hold it.
 - **E3 · Deep repo grounding** — Curator verifies factual claims against live code.
-- **E4 · Frontend** — typed-relation edges in the 3D `BrainGraph.tsx`; lifecycle/archived
-  filter; evidence/volatility surfaced. `just typegen` for new wire types; `just check`.
+- **E4 · Frontend** — typed-relation edges in `BrainGraph.tsx`/`BrainGraph3D.tsx`;
+  lifecycle/archived filter; evidence/volatility surfaced. **SHIPPED** (`docs/brain-ui-spec.md`
+  F0–F5): typed edges + colour-by + the lifecycle filter render; the new labels are on the
+  wire (badges/chips/restore/snapshots too). NOTE: brain wire types are **hand-synced**, NOT
+  `just typegen` — `memoryDTO` ↔ `brain-api.ts Memory` are edited together by hand.
 
 ---
 

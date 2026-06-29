@@ -176,7 +176,10 @@ Auto-approved, scoped to the calling session's project (+ global):
   back into the live set — flips `lifecycle` to active and restarts the disuse clock;
   a normal cachestore-consistent write, idempotent on a non-archived fact; the Brain
   tab's per-row Restore action on archived rows), `/search`, `/graph` (centrality +
-  insight report incl. `dueForReview`/`interference`), `/status`.
+  insight report incl. `dueForReview`/`interference`), `/status` (the `semantic` flag plus
+  the brain-health `counts`: `total`, `byLifecycle`, `bySource`, `byEvidence`,
+  `byVolatility`, `byConfidenceTier`, `reviewQueue`, `corroboratedTotal` — a single-pass
+  aggregation over the corpus, the Band-3 E2 report).
 - Every `memoryDTO` carries the Band-1 controlled-vocabulary labels (`lifecycle`,
   `evidence`, `volatility`, `corroborations`, typed `relations`, `keywords`,
   `lastCurated`, `curatorNote`). These wire types are **hand-synced** with
@@ -206,6 +209,35 @@ is a dry-run — and the frontend re-hydrates on WS reconnect (`useBrainSubscrip
 → `GET /consolidate/job`), clearing a stale "Analyzing…" spinner. A preview's model
 batches run with bounded concurrency (`memory.RunBounded`, `maxParallelBatches` /
 `maxParallelReorg` = 4) — independent calls whose results just merge.
+
+## Brain tab (UI surface for the Band-1 pipeline)
+
+The Brain tab makes the Band-1 backend visible and manageable (the spec is
+`docs/brain-ui-spec.md`):
+
+- **Tier visibility (F1).** Every memory row is self-describing: a *capture* / *archived* /
+  *superseded* badge, compact *evidence* + *volatility* chips, and a corroboration `×N`
+  count. The defaults (evidence `inferred`, volatility `slow`, lifecycle `active`) render
+  nothing, so ordinary rows stay quiet. The vocabulary→label map lives in `lib/brain-labels`
+  and the shared `MemoryLabels` component renders it on both the list and the review surface.
+- **Default-hide filters (F2).** The list shows only *live injectable* facts
+  (`lifecycle=active`, non-capture) by default; two toolbar toggles reveal captures and
+  archived, each with a count. Filtering is component-local in `BrainPage` (the
+  stable-selector rule keeps derived lists out of the store) and threads through both the
+  list and the graph's `graphMemories`.
+- **Restore (F3).** An archived row has a **Restore** action (`store.restore` →
+  `POST /memories/{id}/restore`).
+- **Snapshots (F4).** A **Snapshots** toolbar button opens a panel to list / take / restore
+  brain snapshots; restore is guarded by a confirm and blocked while a consolidation runs.
+- **Graph (F5 / E4).** Typed relations render as distinct directed edges (coloured by kind);
+  colour-by gains *evidence* and *volatility*; archived nodes are excluded (via the F2 filter)
+  and superseded nodes can be dimmed; the new labels show on hover.
+- **Health (F6 / E2).** A **Health** popover shows the `/status` `counts` distribution
+  (capture backlog, archived/superseded, evidence/volatility/confidence spread, review
+  queue), refreshed on `brain.updated`.
+
+Brain wire types are **hand-synced** (no typegen): each `memoryDTO`/`snapshotDTO`/
+`statusCounts` change in `internal/brain/http.go` has a mirror edit in `lib/brain-api.ts`.
 
 ## CLI commands (`agentique brain …`)
 

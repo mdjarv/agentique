@@ -21,6 +21,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
+import { BrainHealth } from "~/components/brain/BrainHealth";
 import { BrainSnapshots } from "~/components/brain/BrainSnapshots";
 import { MemoryLabels } from "~/components/brain/MemoryLabels";
 import { MemoryReview } from "~/components/brain/MemoryReview";
@@ -341,6 +342,7 @@ export function BrainPage() {
             </span>
           )}
         </Button>
+        <BrainHealth />
         <Button
           size="sm"
           variant="outline"

@@ -2,10 +2,13 @@ package brain
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
 )
 
@@ -120,4 +123,84 @@ func TestToDTO_OmitsEmptyOptionalLabels(t *testing.T) {
 			t.Errorf("JSON should omit %s for an empty record: %s", absent, js)
 		}
 	}
+}
+
+// TestComputeStatusCounts is the deterministic core of the brain-health report (F6): a
+// single-pass aggregation over a hand-built corpus (built directly so no load-time
+// normalization perturbs the labels), one fact per tier.
+func TestComputeStatusCounts(t *testing.T) {
+	recs := []memory.Record{
+		{Lifecycle: memory.LifecycleActive, Source: memory.SourceHuman, Evidence: memory.EvidenceUserStated, Volatility: memory.VolatilityEvergreen, Confidence: memory.ConfidenceExtracted},
+		{Lifecycle: memory.LifecycleArchived, Source: memory.SourceAgent, Evidence: memory.EvidenceInferred, Volatility: memory.VolatilitySlow, Confidence: memory.ConfidenceInferred, Corroborations: 2},
+		{Lifecycle: memory.LifecycleSuperseded, Source: memory.SourceConsolidated, Evidence: memory.EvidenceCorroborated, Volatility: memory.VolatilityEphemeral, Confidence: memory.ConfidenceAmbiguous, Corroborations: 3, ReviewNote: "stale"},
+		{Lifecycle: memory.LifecycleActive, Source: memory.SourceCapture, Evidence: memory.EvidenceObservedOnce, Volatility: memory.VolatilitySlow, Confidence: memory.ConfidenceInferred},
+	}
+	c := computeStatusCounts(recs)
+
+	if c.Total != 4 {
+		t.Errorf("Total = %d, want 4", c.Total)
+	}
+	wantEq(t, "byLifecycle.active", c.ByLifecycle["active"], 2)
+	wantEq(t, "byLifecycle.archived", c.ByLifecycle["archived"], 1)
+	wantEq(t, "byLifecycle.superseded", c.ByLifecycle["superseded"], 1)
+	wantEq(t, "bySource.capture", c.BySource["capture"], 1)
+	wantEq(t, "bySource.human", c.BySource["human"], 1)
+	wantEq(t, "byEvidence.observed_once", c.ByEvidence["observed_once"], 1)
+	wantEq(t, "byEvidence.corroborated", c.ByEvidence["corroborated"], 1)
+	wantEq(t, "byVolatility.slow", c.ByVolatility["slow"], 2)
+	wantEq(t, "byVolatility.ephemeral", c.ByVolatility["ephemeral"], 1)
+	wantEq(t, "byConfidenceTier.inferred", c.ByConfidenceTier["inferred"], 2)
+	wantEq(t, "byConfidenceTier.ambiguous", c.ByConfidenceTier["ambiguous"], 1)
+	wantEq(t, "reviewQueue", c.ReviewQueue, 1)
+	wantEq(t, "corroboratedTotal", c.CorroboratedTotal, 5)
+}
+
+func wantEq(t *testing.T, name string, got, want int) {
+	t.Helper()
+	if got != want {
+		t.Errorf("%s = %d, want %d", name, got, want)
+	}
+}
+
+// TestHandleStatus_Counts asserts the status endpoint returns the semantic flag plus the
+// counts object (the buckets that survive load-time normalization).
+func TestHandleStatus_Counts(t *testing.T) {
+	svc := newSvc(t)
+	a := memory.New(memory.ScopeGlobal, "a live fact", memory.CategoryFact, memory.SourceHuman)
+	if err := svc.store.Put(t.Context(), a); err != nil {
+		t.Fatal(err)
+	}
+	b := memory.New(memory.ScopeGlobal, "an archived flagged fact", memory.CategoryFact, memory.SourceAgent)
+	b.Lifecycle = memory.LifecycleArchived
+	b.ReviewNote = "contradicted"
+	b.Corroborations = 2
+	if err := svc.store.Put(t.Context(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handler{Service: svc}
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/brain/status", httperror.HandlerFunc(h.HandleStatus))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/brain/status", nil))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var resp struct {
+		Semantic bool         `json:"semantic"`
+		Counts   statusCounts `json:"counts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Semantic {
+		t.Errorf("semantic = true, want false in keyword mode")
+	}
+	wantEq(t, "total", resp.Counts.Total, 2)
+	wantEq(t, "byLifecycle.active", resp.Counts.ByLifecycle["active"], 1)
+	wantEq(t, "byLifecycle.archived", resp.Counts.ByLifecycle["archived"], 1)
+	wantEq(t, "bySource.human", resp.Counts.BySource["human"], 1)
+	wantEq(t, "reviewQueue", resp.Counts.ReviewQueue, 1)
+	wantEq(t, "corroboratedTotal", resp.Counts.CorroboratedTotal, 2)
 }

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   applyConsolidate,
   applyGlobalConsolidate,
+  type BrainCounts,
   type ConsolidateMode,
   type ConsolidateReport,
   type ConsolidationJob,
@@ -38,6 +39,9 @@ interface GlobalPreview {
 interface BrainState {
   memories: Memory[];
   semantic: boolean;
+  // Brain-health distribution from the status endpoint (F6); null until first load. Refreshed
+  // on brain.updated so the health strip tracks the live corpus.
+  counts: BrainCounts | null;
   loaded: boolean;
   loading: boolean;
 
@@ -108,6 +112,7 @@ function upsert(list: Memory[], m: Memory): Memory[] {
 export const useBrainStore = create<BrainState>((set, get) => ({
   memories: [],
   semantic: false,
+  counts: null,
   loaded: false,
   loading: false,
   graph: null,
@@ -128,7 +133,13 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     set({ loading: true });
     try {
       const [memories, status] = await Promise.all([listMemories(), getStatus()]);
-      set({ memories, semantic: status.semantic, loaded: true, loading: false });
+      set({
+        memories,
+        semantic: status.semantic,
+        counts: status.counts ?? null,
+        loaded: true,
+        loading: false,
+      });
     } catch (err) {
       console.error("Failed to load brain:", err);
       set({ loading: false });
@@ -310,8 +321,16 @@ function scheduleRefresh() {
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    listMemories()
-      .then((memories) => useBrainStore.setState({ memories }))
-      .catch((err) => console.error("Failed to refresh memories:", err));
+    // Refresh the memory list AND the health counts together so the strip stays in step with
+    // the corpus (both are cheap, request-time aggregations).
+    Promise.all([listMemories(), getStatus()])
+      .then(([memories, status]) =>
+        useBrainStore.setState({
+          memories,
+          semantic: status.semantic,
+          counts: status.counts ?? null,
+        }),
+      )
+      .catch((err) => console.error("Failed to refresh brain:", err));
   }, 600);
 }
