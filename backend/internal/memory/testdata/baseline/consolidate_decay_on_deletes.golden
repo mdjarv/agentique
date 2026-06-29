@@ -1,0 +1,14 @@
+{
+  "promotedTexts": [],
+  "capturesConsumed": null,
+  "rewrittenIds": [],
+  "abstractedTexts": [],
+  "deletedIds": [],
+  "decayedIds": [
+    "d1",
+    "d2",
+    "d3"
+  ],
+  "skipped": false,
+  "reorgRefused": false
+}

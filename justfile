@@ -81,7 +81,7 @@ backend-build: frontend-build
 
 # Test
 test-backend:
-    cd backend && go test ./... -count=1
+    cd backend && go test ./... -count=1 -race -short
 
 test-frontend:
     cd frontend && npx vitest run

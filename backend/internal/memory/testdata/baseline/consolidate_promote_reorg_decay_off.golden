@@ -1,0 +1,17 @@
+{
+  "promotedTexts": [
+    "Distilled durable fact about the delta subsystem."
+  ],
+  "capturesConsumed": [
+    "c1",
+    "c2"
+  ],
+  "rewrittenIds": [
+    "d1"
+  ],
+  "abstractedTexts": [],
+  "deletedIds": [],
+  "decayedIds": [],
+  "skipped": false,
+  "reorgRefused": false
+}
