@@ -20,7 +20,14 @@ import {
   SIM_THRESHOLD,
   tokenize,
 } from "~/lib/brain-graph-model";
-import { areaColor, communityColor, coreColor, scopeColor } from "~/lib/scope-color";
+import {
+  areaColor,
+  communityColor,
+  coreColor,
+  evidenceColor,
+  scopeColor,
+  volatilityColor,
+} from "~/lib/scope-color";
 
 // GraphMemory is a memory optionally carrying its server-computed centrality. When
 // the graph endpoint has loaded, degree/betweenness are present and drive node
@@ -55,6 +62,11 @@ interface NodeData {
   community: number;
   area: string;
   degree: number;
+  // Band-1 labels (Band 3 E4): colour-by dimensions + hover/detail.
+  lifecycle: string;
+  evidence: string;
+  volatility: string;
+  corroborations: number;
   val: number;
   // Trust tier driving the node's core "heat": human = ground truth (white-hot), review = flagged /
   // low-confidence (amber), normal = inferred (a scope-hue brightened by `conf`). See coreColor.
@@ -65,15 +77,18 @@ interface NodeData {
   subsumed?: { scope: string; text: string }[];
 }
 
-type ColorBy = "scope" | "community" | "area";
+type ColorBy = "scope" | "community" | "area" | "evidence" | "volatility";
 
-type EdgeKind = "provenance" | "related" | "similar" | "area";
+type EdgeKind = "provenance" | "related" | "similar" | "area" | "typed";
 interface LinkData {
   kind: EdgeKind;
   // weight ∈ [0,1] is the normalized association strength for a semantic edge (from cosine
   // similarity, min-max scaled across the current edge set); undefined for structural edges,
   // which are treated as firm (weight 1). Drives both force strength and visual emphasis.
   weight?: number;
+  // The typed-relation kind when kind === "typed" (supersedes/contradicts/…); drives the
+  // distinct directed-edge styling.
+  relation?: string;
 }
 
 type GNode = NodeObject<NodeData>;
@@ -134,7 +149,23 @@ const NEBULA_MAX_NODES = 3000;
 function nodeColor(node: NodeData, colorBy: ColorBy): string {
   if (colorBy === "area") return areaColor(node.area);
   if (colorBy === "community") return communityColor(node.scope, node.community);
+  if (colorBy === "evidence") return evidenceColor(node.evidence);
+  if (colorBy === "volatility") return volatilityColor(node.volatility);
   return scopeColor(node.scope);
+}
+
+// Typed-relation edge styling: each relation kind reads distinctly so the typed link graph
+// is legible at a glance — contradicts is an alarming red, supersedes amber, etc. Returns a
+// "#rrggbb" hue; dashed flags the non-equivalence relations.
+const TYPED_EDGE: Record<string, { color: string; dashed: boolean }> = {
+  contradicts: { color: "#ef4444", dashed: true }, // red — conflict
+  supersedes: { color: "#f59e0b", dashed: false }, // amber — replaces
+  generalizes: { color: "#60a5fa", dashed: false }, // blue — abstracts
+  duplicates: { color: "#9ca3af", dashed: true }, // grey — same fact
+  corroborates: { color: "#34d399", dashed: false }, // green — confirms
+};
+function typedEdgeStyle(relation?: string): { color: string; dashed: boolean } {
+  return (relation && TYPED_EDGE[relation]) || { color: "#a78bfa", dashed: false };
 }
 
 function endId(e: string | number | GNode | undefined): string {
@@ -285,6 +316,10 @@ export function BrainGraph({
   // polygons read as visual noise more than structure. Opt in from the controls when wanted.
   const [showRegions, setShowRegions] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>("scope");
+  // Lifecycle filter (E4): archived nodes are already excluded upstream (the page hands us
+  // the F2-filtered set); this dims SUPERSEDED nodes so replaced facts recede without
+  // vanishing. Default on.
+  const [dimSuperseded, setDimSuperseded] = useState(true);
   // Insights + legend default COLLAPSED: they're a dense wall of truncated text otherwise. The
   // collapsed insights panel shows a scannable row of count chips; expand for the lists.
   const [insightsOpen, setInsightsOpen] = useState(false);
@@ -344,6 +379,10 @@ export function BrainGraph({
         community: m.community ?? 0,
         area: m.area ?? "",
         degree: m.degree ?? 0,
+        lifecycle: m.lifecycle ?? "active",
+        evidence: m.evidence ?? "inferred",
+        volatility: m.volatility ?? "slow",
+        corroborations: m.corroborations ?? 0,
         // Size blends use-count, pinned, and structural degree so load-bearing "god
         // nodes" read bigger — the graphify signal made visual.
         val: 3 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
@@ -374,18 +413,21 @@ export function BrainGraph({
     const structural = new Set<string>(); // pairs with a real edge, suppresses `similar`
     const pk = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
-    const addLink = (a: string, b: string, kind: EdgeKind, weight?: number) => {
+    const addLink = (a: string, b: string, kind: EdgeKind, weight?: number, relation?: string) => {
       if (a === b || !idSet.has(a) || !idSet.has(b)) return;
-      const key = `${kind}#${pk(a, b)}`;
+      const key = `${kind}${relation ? `:${relation}` : ""}#${pk(a, b)}`;
       if (seen.has(key)) return;
       seen.add(key);
-      links.push({ source: a, target: b, kind, weight });
+      links.push({ source: a, target: b, kind, weight, relation });
       if (kind !== "similar") structural.add(pk(a, b));
     };
 
     for (const m of memories) {
       for (const d of m.derivedFrom ?? []) addLink(m.id, d, "provenance");
       for (const r of m.related ?? []) addLink(m.id, r, "related");
+      // Typed relations (churn-populated, Band 2/E4) → distinct directed edges. No-op on
+      // today's data (relations empty), so the layout/topology is unchanged until filled.
+      for (const tr of m.relations ?? []) addLink(m.id, tr.target, "typed", undefined, tr.type);
     }
 
     // Cross-scope area edges — only in "by area" colouring: star-link each area's members
@@ -513,6 +555,10 @@ export function BrainGraph({
         l.community = n.community;
         l.area = n.area;
         l.degree = n.degree;
+        l.lifecycle = n.lifecycle;
+        l.evidence = n.evidence;
+        l.volatility = n.volatility;
+        l.corroborations = n.corroborations;
         l.val = n.val;
         l.trust = n.trust;
         l.conf = n.conf;
@@ -559,6 +605,8 @@ export function BrainGraph({
   const groupKey = (n: GNode): string => {
     if (colorBy === "area") return n.area ?? "";
     if (colorBy === "community") return `${n.scope}#${n.community ?? 0}`;
+    if (colorBy === "evidence") return n.evidence ?? "";
+    if (colorBy === "volatility") return n.volatility ?? "";
     return n.scope;
   };
 
@@ -659,7 +707,7 @@ export function BrainGraph({
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps — read by the paint callbacks on the next frame; this effect just forces that frame.
   useEffect(() => {
     (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
-  }, [colorBy, showRegions, lockedId]);
+  }, [colorBy, showRegions, lockedId, dimSuperseded]);
 
   // The node whose neighbourhood is highlighted: a live hover takes precedence (transient preview),
   // and when nothing is hovered we fall back to the locked node so a click-locked view persists.
@@ -846,6 +894,19 @@ export function BrainGraph({
             cooldownTicks={120}
             nodeLabel={(n) => {
               const head = `<div style="font-weight:600;margin-bottom:3px">${esc(n.fullText)}</div><span style="opacity:.6">${esc(n.scopeLabel)} · ${n.category} · used ${n.uses}×</span>`;
+              // Band-1 labels: show only the noteworthy ones (skip the active/inferred/slow
+              // defaults) so the tooltip stays quiet for ordinary facts.
+              const labels = [
+                n.lifecycle !== "active" ? n.lifecycle : "",
+                n.evidence !== "inferred" ? n.evidence : "",
+                n.volatility !== "slow" ? n.volatility : "",
+                n.corroborations > 0 ? `corroborated ×${n.corroborations}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              const labelLine = labels
+                ? `<div style="margin-top:3px;opacity:.75">${esc(labels)}</div>`
+                : "";
               let prov = "";
               if (n.subsumed?.length) {
                 const items = n.subsumed
@@ -861,7 +922,7 @@ export function BrainGraph({
                     : "";
                 prov = `<div style="margin-top:4px;opacity:.85">merged from ${n.subsumed.length} fact(s):</div>${items}${more}`;
               }
-              return `<div style="font:12px sans-serif;max-width:300px">${head}${prov}</div>`;
+              return `<div style="font:12px sans-serif;max-width:300px">${head}${labelLine}${prov}</div>`;
             }}
             nodeCanvasObject={(node, ctx, scale) => {
               const x = node.x ?? 0;
@@ -869,7 +930,10 @@ export function BrainGraph({
               const r = Math.sqrt(node.val ?? 2) * NODE_REL_SIZE;
               const dim =
                 activeId != null && node.id !== activeId && !neighbors?.has(String(node.id));
-              ctx.globalAlpha = dim ? 0.28 : 1;
+              // Superseded facts recede (E4 lifecycle filter) unless they're the active focus.
+              const supersededDim =
+                dimSuperseded && node.lifecycle === "superseded" && node.id !== activeId;
+              ctx.globalAlpha = dim ? 0.28 : supersededDim ? 0.4 : 1;
               // Ember: a soft scope-coloured halo (additive, so neighbours' glows blend into a
               // cluster bloom) + a hot core whose colour encodes trust. No flat disc, no dark moat.
               const base = nodeColor(node, colorBy);
@@ -962,6 +1026,13 @@ export function BrainGraph({
               ctx.fill();
             }}
             linkColor={(l) => {
+              // Typed relations (E4): always visible, coloured by relation kind. They sharpen
+              // on hover and fade (not vanish) otherwise so the typed graph stays readable.
+              if (l.kind === "typed") {
+                const { color } = typedEdgeStyle(l.relation);
+                const a = activeId != null ? (linkTouchesActive(l) ? 0.95 : 0.18) : 0.7;
+                return withAlpha(color, a);
+              }
               // Area edges exist only to cluster the layout — invisible unless the hovered
               // node touches one (then they reveal the area's connections).
               if (l.kind === "area") {
@@ -992,11 +1063,24 @@ export function BrainGraph({
                 ? 3
                 : l.kind === "similar"
                   ? 0.12 + 0.9 * (l.weight ?? 0.5) ** 1.5 // thinner; thicker = stronger association
-                  : 1.1
+                  : l.kind === "typed"
+                    ? 1.6 // typed relations read a touch bolder than the structural backbone
+                    : 1.1
             }
             linkLineDash={(l) =>
-              l.kind === "similar" ? [4, 3] : l.kind === "area" ? [2, 4] : null
+              l.kind === "typed"
+                ? typedEdgeStyle(l.relation).dashed
+                  ? [5, 3]
+                  : null
+                : l.kind === "similar"
+                  ? [4, 3]
+                  : l.kind === "area"
+                    ? [2, 4]
+                    : null
             }
+            // Typed relations are directed (m → target); a small arrowhead shows the direction.
+            linkDirectionalArrowLength={(l) => (l.kind === "typed" ? 3.5 : 0)}
+            linkDirectionalArrowRelPos={1}
             onNodeHover={(n) => setHoverId(n ? String(n.id) : null)}
             onNodeClick={(n) => {
               const id = String(n.id);
@@ -1057,12 +1141,25 @@ export function BrainGraph({
               value={colorBy}
               onChange={(e) => setColorBy(e.target.value as ColorBy)}
               className="bg-transparent outline-none"
-              title="Colour by scope (project), by scope-local cluster, or by cross-scope topic area"
+              title="Colour by scope (project), scope-local cluster, cross-scope topic area, evidence tier, or volatility"
             >
               <option value="scope">by scope</option>
               <option value="community">by cluster</option>
               <option value="area">by area</option>
+              <option value="evidence">by evidence</option>
+              <option value="volatility">by volatility</option>
             </select>
+          </label>
+          <label
+            className="flex items-center gap-1.5 rounded-md border bg-card/80 px-2 py-1 text-xs backdrop-blur"
+            title="Fade superseded facts (replaced by a newer one) so they recede without disappearing. Archived facts are hidden entirely (toggle them from the list)."
+          >
+            <input
+              type="checkbox"
+              checked={dimSuperseded}
+              onChange={(e) => setDimSuperseded(e.target.checked)}
+            />
+            Dim superseded
           </label>
         </div>
       )}
@@ -1234,6 +1331,15 @@ export function BrainGraph({
           ) : colorBy === "community" ? (
             <div className="mt-1 text-muted-foreground">
               Coloured by topic cluster — facts in the same cluster consolidate together.
+            </div>
+          ) : colorBy === "evidence" ? (
+            <div className="mt-1 text-muted-foreground">
+              Coloured by evidence — how firmly each fact is grounded: stated → code-verified →
+              corroborated → inferred → seen-once.
+            </div>
+          ) : colorBy === "volatility" ? (
+            <div className="mt-1 text-muted-foreground">
+              Coloured by volatility — how fast a fact decays: evergreen, slow, or ephemeral.
             </div>
           ) : (
             <div className="mt-1">

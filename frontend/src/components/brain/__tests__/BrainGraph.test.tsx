@@ -31,6 +31,8 @@ vi.mock("react-force-graph-2d", async () => {
 });
 
 import { BrainGraph } from "~/components/brain/BrainGraph";
+import { buildBrainModel } from "~/lib/brain-graph-model";
+import { evidenceColor } from "~/lib/scope-color";
 
 const labelForScope = (s: string) => s;
 const onConfirm = () => {};
@@ -164,5 +166,65 @@ describe("BrainGraph layout stability", () => {
     const m5Node = gd2.nodes.find((n) => n.id === "m5");
     expect(m5Node).toBeDefined();
     expect(m5Node?.x).toBeUndefined();
+  });
+});
+
+// buildBrainModel is the pure node/edge model the 3D view builds on (the 2D view mirrors
+// its logic inline). These cover the Band-3 E4 additions: typed relations and the new
+// label fields. (Archived exclusion lives upstream in BrainPage's graphMemories filter, so
+// the F2 "show archived" toggle can still reveal them — see BrainPage.filters.test.)
+describe("buildBrainModel typed relations + labels (E4)", () => {
+  const opts = { colorBy: "scope" as const, labelForScope, showSimilar: false };
+
+  it("emits a directed typed link per relations entry", () => {
+    const a = mem("m1", { relations: [{ type: "supersedes", target: "m2" }] });
+    const { links } = buildBrainModel([a, mem("m2")], null, opts);
+    const typed = links.filter((l) => l.kind === "typed");
+    expect(typed).toHaveLength(1);
+    expect(typed[0]).toMatchObject({ source: "m1", target: "m2", relation: "supersedes" });
+  });
+
+  it("is a no-op when relations is empty (graph unchanged)", () => {
+    const { links } = buildBrainModel([mem("m1"), mem("m2")], null, opts);
+    expect(links.some((l) => l.kind === "typed")).toBe(false);
+  });
+
+  it("drops a typed link whose target isn't in the node set", () => {
+    const a = mem("m1", { relations: [{ type: "contradicts", target: "ghost" }] });
+    const { links } = buildBrainModel([a], null, opts);
+    expect(links.filter((l) => l.kind === "typed")).toHaveLength(0);
+  });
+
+  it("carries lifecycle/evidence/volatility/corroborations onto nodes for colour-by + hover", () => {
+    const { nodes } = buildBrainModel(
+      [
+        mem("m1", {
+          lifecycle: "superseded",
+          evidence: "code_verified",
+          volatility: "ephemeral",
+          corroborations: 4,
+        }),
+      ],
+      null,
+      opts,
+    );
+    expect(nodes[0]).toMatchObject({
+      lifecycle: "superseded",
+      evidence: "code_verified",
+      volatility: "ephemeral",
+      corroborations: 4,
+    });
+    // colour-by evidence resolves to the evidence bucket's hue.
+    expect(evidenceColor(nodes[0]?.evidence ?? "")).toBe(evidenceColor("code_verified"));
+  });
+
+  it("defaults the labels for an unlabelled (legacy) record", () => {
+    const { nodes } = buildBrainModel([mem("m1")], null, opts);
+    expect(nodes[0]).toMatchObject({
+      lifecycle: "active",
+      evidence: "inferred",
+      volatility: "slow",
+      corroborations: 0,
+    });
   });
 });

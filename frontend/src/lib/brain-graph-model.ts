@@ -10,8 +10,10 @@ import { type GraphLink, inReviewQueue, type Memory } from "~/lib/brain-api";
 // endpoint has loaded; drives node sizing).
 export type GraphMemory = Memory & { degree?: number; betweenness?: number };
 
-export type BrainColorBy = "scope" | "community" | "area";
-export type BrainEdgeKind = "provenance" | "related" | "similar" | "area";
+export type BrainColorBy = "scope" | "community" | "area" | "evidence" | "volatility";
+// "typed" carries a churn-populated typed relation (supersedes/contradicts/…); the relation
+// kind rides on BrainLink.relation so a single edge kind covers all five (Band 3 E4).
+export type BrainEdgeKind = "provenance" | "related" | "similar" | "area" | "typed";
 
 export interface BrainNode {
   id: string;
@@ -26,6 +28,11 @@ export interface BrainNode {
   community: number;
   area: string;
   degree: number;
+  // Band-1 labels surfaced for colour-by + hover/detail (Band 3 E4).
+  lifecycle: string;
+  evidence: string;
+  volatility: string;
+  corroborations: number;
   val: number; // visual size — blends uses + pinned + structural degree
   // Trust tier driving the node's core heat (see coreColor): human = ground truth,
   // review = flagged / low-confidence, normal = inferred.
@@ -38,6 +45,9 @@ export interface BrainLink {
   target: string; // memory id
   kind: BrainEdgeKind;
   weight?: number; // normalized [0,1] semantic strength; undefined for structural edges
+  // The typed-relation kind (supersedes/contradicts/duplicates/generalizes/corroborates)
+  // when kind === "typed"; undefined otherwise. Drives the distinct edge styling.
+  relation?: string;
 }
 
 // Lexical-similarity fallback knobs (used only when the backend supplied no semantic edges).
@@ -86,6 +96,10 @@ function toNode(m: GraphMemory, labelForScope: (s: string) => string): BrainNode
     community: m.community ?? 0,
     area: m.area ?? "",
     degree: m.degree ?? 0,
+    lifecycle: m.lifecycle ?? "active",
+    evidence: m.evidence ?? "inferred",
+    volatility: m.volatility ?? "slow",
+    corroborations: m.corroborations ?? 0,
     val: 3 + Math.min(m.uses, 10) + (m.pinned ? 2 : 0) + Math.min(m.degree ?? 0, 8),
     trust: trustOf(m),
     conf: m.confidenceScore ?? 0.8,
@@ -94,6 +108,7 @@ function toNode(m: GraphMemory, labelForScope: (s: string) => string): BrainNode
 
 // buildBrainModel assembles the node + edge set. Edges:
 //   - provenance / related: structural backbone (firm).
+//   - typed: churn-populated typed relations (supersedes/contradicts/…), directed (E4).
 //   - area: cross-scope topic clustering hint, only under "by area" colouring.
 //   - similar: the backend's semantic kNN (preferred) or a local lexical Jaccard fallback.
 export function buildBrainModel(
@@ -110,18 +125,29 @@ export function buildBrainModel(
   const structural = new Set<string>(); // pairs with a real edge — suppresses a `similar` dupe
   const pk = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
-  const addLink = (a: string, b: string, kind: BrainEdgeKind, weight?: number) => {
+  const addLink = (
+    a: string,
+    b: string,
+    kind: BrainEdgeKind,
+    weight?: number,
+    relation?: string,
+  ) => {
     if (a === b || !idSet.has(a) || !idSet.has(b)) return;
-    const key = `${kind}#${pk(a, b)}`;
+    // Typed edges dedupe by relation too, so a contradicts + a supersedes between the same
+    // pair are distinct edges (not collapsed into one).
+    const key = `${kind}${relation ? `:${relation}` : ""}#${pk(a, b)}`;
     if (seen.has(key)) return;
     seen.add(key);
-    links.push({ source: a, target: b, kind, weight });
+    links.push({ source: a, target: b, kind, weight, relation });
     if (kind !== "similar") structural.add(pk(a, b));
   };
 
   for (const m of memories) {
     for (const d of m.derivedFrom ?? []) addLink(m.id, d, "provenance");
     for (const r of m.related ?? []) addLink(m.id, r, "related");
+    // Typed relations (churn-populated, Band 2/E4) → distinct directed edges. A no-op on
+    // today's data (relations is empty), so the graph is unchanged until the churn fills it.
+    for (const tr of m.relations ?? []) addLink(m.id, tr.target, "typed", undefined, tr.type);
   }
 
   // Cross-scope area edges (only when colouring by area): star-link each area's members to

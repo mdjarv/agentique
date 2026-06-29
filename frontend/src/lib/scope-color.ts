@@ -45,6 +45,33 @@ export function areaColor(area: string): string {
   return PALETTE[hashStr(area) % PALETTE.length] ?? GLOBAL_COLOR;
 }
 
+// Evidence-tier colours (the "colour by evidence" graph dimension): a trust gradient from
+// firmly-grounded (warm/bright) to weakly-grounded (muted). Keyed by the Evidence enum
+// values (memory/labels.go). An unknown value falls back to the inferred hue.
+const EVIDENCE_COLORS: Record<string, string> = {
+  user_stated: "#f8fafc", // near-white — asserted by a human (strongest)
+  code_verified: "#34d399", // green — checked against live code
+  corroborated: "#60a5fa", // blue — independently re-observed
+  inferred: "#a78bfa", // violet — ordinary LLM inference (the default)
+  observed_once: "#6b7280", // muted grey — a raw single observation
+};
+
+export function evidenceColor(evidence: string): string {
+  return EVIDENCE_COLORS[evidence] ?? EVIDENCE_COLORS.inferred ?? GLOBAL_COLOR;
+}
+
+// Volatility colours (the "colour by volatility" dimension): how fast a fact decays —
+// evergreen (durable) → ephemeral (fleeting). Keyed by the Volatility enum values.
+const VOLATILITY_COLORS: Record<string, string> = {
+  evergreen: "#34d399", // green — never erodes
+  slow: "#60a5fa", // blue — the default
+  ephemeral: "#fb923c", // orange — erodes fast
+};
+
+export function volatilityColor(volatility: string): string {
+  return VOLATILITY_COLORS[volatility] ?? VOLATILITY_COLORS.slow ?? GLOBAL_COLOR;
+}
+
 // shade lightens (amt > 0, toward white) or darkens (amt < 0, toward black) a "#rrggbb"
 // hex by the given fraction, returning an "rgb(r, g, b)" string.
 export function shade(hex: string, amt: number): string {

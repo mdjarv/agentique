@@ -23,7 +23,14 @@ import {
   buildBrainModel,
   type GraphMemory,
 } from "~/lib/brain-graph-model";
-import { areaColor, communityColor, coreColor, scopeColor } from "~/lib/scope-color";
+import {
+  areaColor,
+  communityColor,
+  coreColor,
+  evidenceColor,
+  scopeColor,
+  volatilityColor,
+} from "~/lib/scope-color";
 
 // BrainGraph3D renders the brain as a true 3D force-directed graph (three.js + d3-force-3d):
 // ember nodes (trust-by-heat core + scope-coloured halo) orbiting a central brain model,
@@ -147,13 +154,13 @@ export function BrainGraph3D({
         <div className="mt-3 text-[10px] uppercase tracking-wide text-[#7c84a6]">
           Colour halo by
         </div>
-        <div className="mt-1 flex rounded-lg bg-white/[0.04] p-0.5">
-          {(["scope", "community", "area"] as BrainColorBy[]).map((c) => (
+        <div className="mt-1 grid grid-cols-3 gap-0.5 rounded-lg bg-white/[0.04] p-0.5">
+          {(["scope", "community", "area", "evidence", "volatility"] as BrainColorBy[]).map((c) => (
             <button
               type="button"
               key={c}
               onClick={() => setColorBy(c)}
-              className={`flex-1 rounded-md px-1.5 py-1 text-xs capitalize transition-colors ${
+              className={`rounded-md px-1.5 py-1 text-xs capitalize transition-colors ${
                 colorBy === c ? "bg-sky-400/20 text-sky-100" : "text-[#aab2d5] hover:text-white"
               }`}
             >
@@ -385,6 +392,8 @@ function buildScene(args: {
   function haloHex(nd: BrainNode, by: BrainColorBy): string {
     if (by === "area") return areaColor(nd.area);
     if (by === "community") return communityColor(nd.scope, nd.community);
+    if (by === "evidence") return evidenceColor(nd.evidence);
+    if (by === "volatility") return volatilityColor(nd.volatility);
     return scopeColor(nd.scope);
   }
   function computeBaseColors(by: BrainColorBy) {
