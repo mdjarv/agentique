@@ -104,6 +104,26 @@ type Record struct {
 	// whole brain; like Community it is a rebuildable index, never the source of truth.
 	Area string
 
+	// --- Controlled-vocabulary label control plane (M6, labels.go). The churn and aging
+	// branch on these; NormalizeLabels fills empties on load. Evidence/Volatility/Lifecycle
+	// are always set on a fresh record by New.
+	//
+	// Evidence is how firmly the fact is grounded (its trust source); Volatility keys the
+	// disuse half-life; Lifecycle is active/superseded/archived (archived = cold tier, kept
+	// on disk, out of recall).
+	Evidence   Evidence
+	Volatility Volatility
+	Lifecycle  Lifecycle
+	// Relations is the typed link graph (supersedes/contradicts/duplicates/generalizes/
+	// corroborates) — empty until the churn populates it; replaces the untyped Related (kept).
+	Relations []TypedRelation
+	// Keywords are free-form recall hints; no logic branches on them.
+	Keywords []string
+	// LastCurated is when a churn or human last reviewed this fact; zero until first curated.
+	LastCurated time.Time
+	// CuratorNote is a free-form human annotation.
+	CuratorNote string
+
 	// Confidence is the coarse trust tier (EXTRACTED / INFERRED / AMBIGUOUS) and
 	// ConfidenceScore the finer 0..1 signal behind it (RFC P2). The score is
 	// canonical; the tier is always derived from (Source, score) — see confidence.go.
@@ -141,7 +161,11 @@ func New(scope Scope, text string, category Category, source Source) Record {
 		Source:          source,
 		Confidence:      tier,
 		ConfidenceScore: score,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		// Fresh-record label defaults (Helped==0, so the source-only Evidence is correct).
+		Evidence:   EvidenceForSource(source),
+		Volatility: VolatilityForCategory(category),
+		Lifecycle:  LifecycleActive,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 }

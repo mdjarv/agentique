@@ -17,6 +17,19 @@ derived_from:
 related:
     - rel-1
     - rel-2
+evidence: code_verified
+volatility: ephemeral
+lifecycle: superseded
+relations:
+    - type: supersedes
+      target: rel-x
+    - type: duplicates
+      target: rel-y
+keywords:
+    - kw-one
+    - kw-two
+last_curated: 2026-05-01T12:00:00Z
+curator_note: curated during the schema test
 community: 7
 area: tooling
 confidence: inferred

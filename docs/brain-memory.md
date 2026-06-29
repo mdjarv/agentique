@@ -66,6 +66,19 @@ API surface).
 Chroma 1.x does not embed server-side, so an `Embedder` is required for semantic
 recall; `embedhttp` calls any OpenAI-compatible embeddings endpoint.
 
+**Label control plane (M6).** Every record carries a controlled vocabulary the churn and
+aging branch on (`internal/memory/labels.go`): `Evidence` (`user_stated`/`code_verified`/
+`corroborated`/`inferred`/`observed_once`), `Volatility` (`evergreen`/`slow`/`ephemeral` →
+decay rate), `Lifecycle` (`active`/`superseded`/`archived`), typed `Relations`
+(supersedes/contradicts/duplicates/generalizes/corroborates — replaces the untyped
+`Related`, which is retained), free-form `Keywords`, plus `LastCurated`/`CuratorNote`.
+`New()` stamps the source/category defaults; `NormalizeLabels` fills empties on load (never
+overwriting an explicit value — idempotent and human-curation-safe). Defaults flow from
+source (human→`user_stated`, capture→`observed_once`, else `inferred`; non-human with
+`Helped≥2 && !contradicted`→`corroborated`) and category (identity→`evergreen`,
+task→`ephemeral`, else `slow`). `agentique brain backfill-labels` persists these onto the
+existing files and into Chroma metadata, snapshot-first and idempotently.
+
 ## Recall ranking
 
 `memory.Recall` returns pinned facts (always) plus the top-K query-relevant
@@ -205,6 +218,11 @@ Admin / migration:
   resolved interactively (pick a local project / skip / send to global) unless
   `-y/--skip-unmatched` or `--map source-slug=local-slug` pre-resolves it.
   Duplicates are skipped, so import is idempotent.
+- `backfill-labels [--brain-dir --dry-run -f --no-reindex]` — one-time: seed the
+  Evidence/Volatility/Lifecycle defaults onto the existing markdown files, stamp `last_used`
+  where it is zero (start the disuse clock at the migration boundary), and reindex Chroma so
+  its metadata carries `volatility`/`lifecycle`. Snapshot-first and idempotent (a second run
+  rewrites nothing). Run with the server idle and **restart afterward**.
 - `snapshot [--retain N]` — take a restorable filesystem snapshot of the brain dir
   (prints the new snapshot id, file count and the retained list). Pure FS, no model.
 - `restore <id> [--retain N -f]` — restore the brain to a snapshot. A fresh

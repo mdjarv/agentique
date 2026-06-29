@@ -51,6 +51,13 @@ type frontmatter struct {
 	LastUsed       time.Time    `yaml:"last_used,omitempty"`
 	DerivedFrom    []string     `yaml:"derived_from,omitempty"`
 	Related        []string     `yaml:"related,omitempty"`
+	Evidence       string       `yaml:"evidence,omitempty"`
+	Volatility     string       `yaml:"volatility,omitempty"`
+	Lifecycle      string       `yaml:"lifecycle,omitempty"`
+	Relations      []relationFM `yaml:"relations,omitempty"`
+	Keywords       []string     `yaml:"keywords,omitempty"`
+	LastCurated    time.Time    `yaml:"last_curated,omitempty"`
+	CuratorNote    string       `yaml:"curator_note,omitempty"`
 	Community      int          `yaml:"community,omitempty"`
 	Area           string       `yaml:"area,omitempty"`
 	Confidence     string       `yaml:"confidence,omitempty"`
@@ -63,6 +70,34 @@ type frontmatter struct {
 type subsumedFM struct {
 	Scope string `yaml:"scope"`
 	Text  string `yaml:"text"`
+}
+
+// relationFM is the frontmatter form of memory.TypedRelation (a typed link-graph edge).
+type relationFM struct {
+	Type   string `yaml:"type"`
+	Target string `yaml:"target"`
+}
+
+func toRelationFM(rs []memory.TypedRelation) []relationFM {
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]relationFM, len(rs))
+	for i, r := range rs {
+		out[i] = relationFM{Type: string(r.Type), Target: r.Target}
+	}
+	return out
+}
+
+func fromRelationFM(rs []relationFM) []memory.TypedRelation {
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]memory.TypedRelation, len(rs))
+	for i, r := range rs {
+		out[i] = memory.TypedRelation{Type: memory.RelationType(r.Type), Target: r.Target}
+	}
+	return out
 }
 
 func toFrontmatter(r memory.Record) frontmatter {
@@ -81,6 +116,13 @@ func toFrontmatter(r memory.Record) frontmatter {
 		LastUsed:       r.LastUsedAt.UTC(),
 		DerivedFrom:    r.DerivedFrom,
 		Related:        r.Related,
+		Evidence:       string(r.Evidence),
+		Volatility:     string(r.Volatility),
+		Lifecycle:      string(r.Lifecycle),
+		Relations:      toRelationFM(r.Relations),
+		Keywords:       r.Keywords,
+		LastCurated:    r.LastCurated.UTC(),
+		CuratorNote:    r.CuratorNote,
 		Community:      r.Community,
 		Area:           r.Area,
 		Confidence:     string(r.Confidence),
@@ -118,9 +160,11 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		scope = memory.ScopeGlobal
 	}
 	// NormalizeConfidence backfills facts written before P2 (no confidence in the
-	// frontmatter) from their Source and reconciles the tier with the score, so every
-	// record read from disk carries a coherent confidence pair (RFC open-decision #4).
-	return memory.NormalizeConfidence(memory.Record{
+	// frontmatter) from their Source and reconciles the tier with the score; NormalizeLabels
+	// (M6) does the same for the Evidence/Volatility/Lifecycle control plane, filling empties
+	// only — so every record read from disk carries a coherent confidence pair AND labels
+	// regardless of when it was written.
+	return memory.NormalizeLabels(memory.NormalizeConfidence(memory.Record{
 		ID:              m.ID,
 		Scope:           scope,
 		Text:            strings.TrimSpace(body),
@@ -136,13 +180,20 @@ func (m frontmatter) toRecord(body string) memory.Record {
 		UpdatedAt:       m.Updated,
 		DerivedFrom:     m.DerivedFrom,
 		Related:         m.Related,
+		Evidence:        memory.Evidence(m.Evidence),
+		Volatility:      memory.Volatility(m.Volatility),
+		Lifecycle:       memory.Lifecycle(m.Lifecycle),
+		Relations:       fromRelationFM(m.Relations),
+		Keywords:        m.Keywords,
+		LastCurated:     m.LastCurated,
+		CuratorNote:     m.CuratorNote,
 		Community:       m.Community,
 		Area:            m.Area,
 		Confidence:      memory.ConfidenceTier(m.Confidence),
 		ConfidenceScore: m.ConfScore,
 		ReviewNote:      m.ReviewNote,
 		Subsumed:        fromSubsumedFM(m.Subsumed),
-	})
+	}))
 }
 
 const frontmatterDelim = "---"

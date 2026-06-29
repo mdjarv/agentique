@@ -70,6 +70,14 @@ canonical. See "Non-goals."
 
 ### P1 — Activate the link graph (foundational)
 
+**Typed relations (Band 1 M6).** `memory.Record` now also carries `Relations []TypedRelation`
+— a *typed* link graph (`supersedes`/`contradicts`/`duplicates`/`generalizes`/`corroborates`)
+that supersedes the untyped `Related []string` for the churn's reconcile decisions. `Related`
+is retained for back-compat (recall's associative one-hop and the graph view still read it);
+`Relations` is empty until the Curator populates it (Band 2 C3, wiring `DetectInterference`
+into the churn). Both round-trip through the filestore frontmatter (`relations:` mirrors the
+`subsumed:` shape).
+
 **Populate `Related` during consolidation.** When dedup / the extractor's reorganize step finds two
 durable facts on the same topic (Jaccard or embedding-cosine over the configured threshold, reusing
 `memory/dedup.go`), record a `Related` edge instead of only merging-or-leaving. Edge creation is

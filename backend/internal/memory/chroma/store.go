@@ -92,6 +92,21 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// metadataFor builds the Chroma metadata for a record, shared by index() and Reindex() so
+// the two never drift. It normalizes labels first (M6) so an un-labeled input never writes
+// an empty-string volatility/lifecycle. All values are strings (Chroma v2 accepts string
+// metadata), enabling future filtered recall by volatility/lifecycle.
+func metadataFor(r memory.Record) map[string]any {
+	r = memory.NormalizeLabels(r)
+	return map[string]any{
+		"scope":      string(r.Scope),
+		"category":   string(r.Category),
+		"source":     string(r.Source),
+		"volatility": string(r.Volatility),
+		"lifecycle":  string(r.Lifecycle),
+	}
+}
+
 func (s *Store) index(ctx context.Context, r memory.Record) {
 	// Captures are never recalled, so keep them out of the vector index. If a
 	// record became (or already was) a capture, ensure no stale vector lingers.
@@ -110,11 +125,7 @@ func (s *Store) index(ctx context.Context, r memory.Record) {
 		s.onErr(fmt.Errorf("chroma: embed %s: embedder returned no vector", r.ID))
 		return
 	}
-	md := map[string]any{
-		"scope":    string(r.Scope),
-		"category": string(r.Category),
-		"source":   string(r.Source),
-	}
+	md := metadataFor(r)
 	if err := s.client.Upsert(ctx, s.coll, []string{r.ID}, emb, []string{r.Text}, []map[string]any{md}); err != nil {
 		s.onErr(fmt.Errorf("chroma: index %s: %w", r.ID, err))
 	}
@@ -162,11 +173,7 @@ func (s *Store) Reindex(ctx context.Context) error {
 		}
 		ids = append(ids, r.ID)
 		texts = append(texts, r.Text)
-		metas = append(metas, map[string]any{
-			"scope":    string(r.Scope),
-			"category": string(r.Category),
-			"source":   string(r.Source),
-		})
+		metas = append(metas, metadataFor(r))
 	}
 	if len(ids) == 0 {
 		return nil

@@ -114,7 +114,14 @@ Swaps the dormant machinery for the live pipeline. No LLM Curator yet, so nothin
 - **Done:** unused inferred facts fade out of recall over time; a single `helped` revives;
   human/evergreen never erode; nothing is deleted.
 
-### M6 · Label fields + one-time backfill
+### M6 · Label fields + one-time backfill — ✅ SHIPPED (sequenced BEFORE M5)
+- **Done:** `internal/memory/labels.go` is the sole owner of `Evidence`/`Volatility`/`Lifecycle`/
+  typed `Relations` + `Keywords`/`LastCurated`/`CuratorNote`; `New` stamps defaults, `NormalizeLabels`
+  fills empties (idempotent); `IsArchived` exported for the brain layer. Filestore round-trips all of
+  them (+ `relationFM` converters); `RewriteNormalized` persists labels and stamps `last_used`-where-zero
+  (the M5 disuse-clock grace), snapshot-first + idempotent, via `agentique brain backfill-labels`.
+  Chroma `metadataFor` (shared by index + reindex) adds `volatility`/`lifecycle`. No churn branches on
+  labels yet (Band 2).
 - **Goal:** the controlled vocabulary the churn and aging branch on.
 - **Files:** `memory/record.go` (`Evidence`, `Volatility`, `Lifecycle`, `Relations
   []TypedRelation`, `Keywords`, `LastCurated`, `CuratorNote`); filestore yaml tags; a one-time
