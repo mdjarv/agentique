@@ -16,7 +16,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BrainGraph } from "~/components/brain/BrainGraph";
 import { MemoryLabels } from "~/components/brain/MemoryLabels";
@@ -86,6 +86,12 @@ export function BrainPage() {
   } = useBrainStore();
   const projects = useAppStore((s) => s.projects);
   const [filter, setFilter] = useState("");
+  // The default list is "what the brain will actually inject": live (lifecycle=active),
+  // non-capture facts. These toggles reveal the cold/raw tiers, each shown with a count so
+  // nothing is silently hidden (F2). Component-local (not store) so the stable-selector
+  // rule stays intact — derived/filtered lists live in the useMemos below.
+  const [showArchived, setShowArchived] = useState(false);
+  const [showCaptures, setShowCaptures] = useState(false);
   const [adding, setAdding] = useState(false);
   const [model, setModel] = useState("opus");
   const [mode, setMode] = useState<ConsolidateMode>("conservative");
@@ -138,9 +144,30 @@ export function BrainPage() {
     };
   }, [projects]);
 
+  // How many facts each toggle would reveal (captures awaiting promotion, archived cold
+  // facts). Derived from the full corpus so the counts are stable regardless of the text
+  // filter or the toggles themselves — they advertise what's hidden by default.
+  const hiddenCounts = useMemo(() => {
+    let captures = 0;
+    let archived = 0;
+    for (const m of memories) {
+      if (m.source === "capture") captures++;
+      if (m.lifecycle === "archived") archived++;
+    }
+    return { captures, archived };
+  }, [memories]);
+
+  // visible composes the two tier toggles: by default drop captures and archived; a toggle
+  // re-includes its tier. Shared by the list (groups) and the graph (graphMemories).
+  const visible = useCallback(
+    (m: Memory) =>
+      (showCaptures || m.source !== "capture") && (showArchived || m.lifecycle !== "archived"),
+    [showCaptures, showArchived],
+  );
+
   const groups = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    const filtered = f ? memories.filter((m) => m.text.toLowerCase().includes(f)) : memories;
+    const filtered = memories.filter((m) => visible(m) && (!f || m.text.toLowerCase().includes(f)));
     const byScope = new Map<string, Memory[]>();
     for (const m of filtered) {
       const arr = byScope.get(m.scope) ?? [];
@@ -161,7 +188,7 @@ export function BrainPage() {
         if (b.scope === GLOBAL_SCOPE) return 1;
         return labelForScope(a.scope).localeCompare(labelForScope(b.scope));
       });
-  }, [memories, filter, labelForScope]);
+  }, [memories, filter, labelForScope, visible]);
 
   // Graph view shows the same filtered set as the list, flat (grouping is expressed
   // by node color, not sections). It uses the centrality-annotated nodes from the
@@ -169,8 +196,11 @@ export function BrainPage() {
   const graphMemories = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const base = graph?.nodes ?? memories;
-    return f ? base.filter((m) => m.text.toLowerCase().includes(f)) : base;
-  }, [graph, memories, filter]);
+    // Exclude captures + archived by default too (the backend graph already drops captures
+    // but NOT archived, so the archived filter is load-bearing here), composed with the
+    // text filter and the F2 toggles.
+    return base.filter((m) => visible(m) && (!f || m.text.toLowerCase().includes(f)));
+  }, [graph, memories, filter, visible]);
 
   const handleConsolidate = async (scope: string, force = false) => {
     try {
@@ -353,12 +383,31 @@ export function BrainPage() {
         />
       )}
 
-      <div className="px-4 py-2 border-b">
+      <div className="px-4 py-2 border-b flex items-center gap-2">
         <Input
+          className="flex-1"
           placeholder="Filter memories…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
+        {hiddenCounts.captures > 0 && (
+          <TierToggle
+            active={showCaptures}
+            label="Captures"
+            count={hiddenCounts.captures}
+            title="Raw captures awaiting promotion — never injected. Toggle to show them in the list and graph."
+            onClick={() => setShowCaptures((v) => !v)}
+          />
+        )}
+        {hiddenCounts.archived > 0 && (
+          <TierToggle
+            active={showArchived}
+            label="Archived"
+            count={hiddenCounts.archived}
+            title="Cold-tier facts, out of recall but kept on disk. Toggle to show them in the list and graph."
+            onClick={() => setShowArchived((v) => !v)}
+          />
+        )}
       </div>
 
       {adding && (
@@ -835,6 +884,37 @@ function IconBtn({
       }`}
     >
       {children}
+    </button>
+  );
+}
+
+// TierToggle is a toolbar chip that reveals a normally-hidden memory tier (captures /
+// archived), showing how many it would surface so the hidden set is never silent (F2). The
+// pressed (active) state reads as "showing".
+function TierToggle({
+  active,
+  label,
+  count,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={`shrink-0 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+        active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label} <span className="tabular-nums">({count})</span>
     </button>
   );
 }
