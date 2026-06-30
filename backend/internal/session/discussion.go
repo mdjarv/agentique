@@ -2,14 +2,16 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/allbin/agentkit/runtime"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // Discussion groups are an Odysseus-style multi-persona deliberation: N personas,
@@ -95,7 +97,14 @@ type personaContribution struct {
 
 // discussionParticipant is the live state for one persona in a running group.
 type discussionParticipant struct {
-	sessionID    string
+	// runtime drives this persona's turns — a dbSessionPersona (repo-backed,
+	// full session) or a sessionlessPersona (web-only, raw CLI subprocess).
+	runtime personaRuntime
+	// senderType / senderID attribute this persona's channel messages: a
+	// repo-backed persona posts as "session" with its session id; a web-only
+	// persona posts as "persona" with its agent_profile id (it has no session).
+	senderType   string
+	senderID     string
 	name         string
 	noNamePrefix bool
 	writeAccess  bool
@@ -118,6 +127,7 @@ type Discussion struct {
 	projectPath    string
 	worktreePath   string // "" for web-only
 	worktreeBranch string
+	scratchDir     string // web-only: per-discussion os.MkdirTemp root; "" for repo-backed
 
 	mu           sync.Mutex
 	participants []*discussionParticipant
@@ -160,19 +170,34 @@ func (s *Service) StartDiscussion(ctx context.Context, p StartDiscussionParams) 
 		p.Scope = DiscussionScopeWebOnly
 	}
 
-	project, err := s.queries.GetProject(ctx, p.ProjectID)
-	if err != nil {
-		return DiscussionInfo{}, fmt.Errorf("get project: %w", err)
+	webOnly := p.Scope == DiscussionScopeWebOnly
+
+	// Repo-backed discussions are project-scoped (shared worktree needs the
+	// project path). Web-only discussions are project-less and sessionless — no
+	// GetProject, no worktree, no agentique sessions rows.
+	var project store.Project
+	if !webOnly {
+		var err error
+		project, err = s.queries.GetProject(ctx, p.ProjectID)
+		if err != nil {
+			return DiscussionInfo{}, fmt.Errorf("get project: %w", err)
+		}
 	}
 
-	ch, err := s.CreateChannel(ctx, p.ProjectID, p.GroupName)
+	// Web-only channels carry no project (channels.project_id is NULL since
+	// migration 038); their lifecycle events fan out on the empty/global topic.
+	channelProjectID := ""
+	if !webOnly {
+		channelProjectID = p.ProjectID
+	}
+	ch, err := s.CreateChannel(ctx, channelProjectID, p.GroupName)
 	if err != nil {
 		return DiscussionInfo{}, fmt.Errorf("create channel: %w", err)
 	}
 
 	d := &Discussion{
 		ChannelID:   ch.ID,
-		ProjectID:   p.ProjectID,
+		ProjectID:   channelProjectID,
 		GroupName:   p.GroupName,
 		Mode:        p.Mode,
 		Scope:       p.Scope,
@@ -182,7 +207,7 @@ func (s *Service) StartDiscussion(ctx context.Context, p StartDiscussionParams) 
 	// Provision ONE shared worktree for repo-backed groups; every persona binds
 	// its CWD to it. The orchestrator owns this tree (removed once on dissolve).
 	var sharedDir string
-	if p.Scope == DiscussionScopeRepoBacked {
+	if !webOnly {
 		branch := "group-" + shortID(ch.ID)
 		sharedDir = s.worktree.WorktreePath(project.Name, branch)
 		if err := s.worktree.ProvisionWorktree(ctx, project.Path, branch, sharedDir); err != nil {
@@ -193,44 +218,30 @@ func (s *Service) StartDiscussion(ctx context.Context, p StartDiscussionParams) 
 		d.worktreeBranch = branch
 	}
 
-	for _, spec := range p.Personas {
-		params := CreateSessionParams{
-			ProjectID:       p.ProjectID,
-			Name:            spec.Name,
-			AgentProfileID:  spec.AgentProfileID,
-			Model:           spec.Model,
-			Effort:          spec.Effort,
-			AutoApproveMode: "fullAuto", // headless: no human to approve tool calls
-			SkipRecall:      true,       // keep persona context clean of brain recall
-		}
-		if sharedDir != "" {
-			params.SharedWorkDir = sharedDir
-			if spec.WriteAccess && p.AutoCommit {
-				params.BehaviorPresets.AutoCommit = true
-			}
-		}
-		res, err := s.CreateSession(ctx, params)
+	// Web-only personas share one throwaway scratch dir as their CWD — no repo,
+	// no project. They are read-only (no writers) so they never conflict in it.
+	if webOnly {
+		scratch, err := os.MkdirTemp("", "agentique-discussion-"+shortID(ch.ID)+"-")
 		if err != nil {
-			slog.Warn("discussion: persona create failed", "name", spec.Name, "error", err)
+			_ = s.DissolveChannel(ctx, ch.ID)
+			return DiscussionInfo{}, fmt.Errorf("create scratch dir: %w", err)
+		}
+		d.scratchDir = scratch
+	}
+
+	for _, spec := range p.Personas {
+		var part *discussionParticipant
+		var perr error
+		if webOnly {
+			part, perr = s.startWebOnlyPersona(ctx, d, ch.ID, spec)
+		} else {
+			part, perr = s.startRepoBackedPersona(ctx, ch.ID, p, spec, sharedDir)
+		}
+		if perr != nil {
+			slog.Warn("discussion: persona start failed", "name", spec.Name, "scope", p.Scope, "error", perr)
 			continue
 		}
-		role := "reader"
-		if spec.WriteAccess {
-			role = "writer"
-		}
-		if _, err := s.JoinChannel(ctx, res.SessionID, ch.ID, role); err != nil {
-			slog.Warn("discussion: persona join failed", "session_id", res.SessionID, "error", err)
-			// Safe: the persona records no worktree path, so this won't reap the
-			// shared tree.
-			_ = s.DeleteSession(ctx, res.SessionID)
-			continue
-		}
-		d.participants = append(d.participants, &discussionParticipant{
-			sessionID:    res.SessionID,
-			name:         spec.Name,
-			noNamePrefix: spec.NoNamePrefix,
-			writeAccess:  spec.WriteAccess,
-		})
+		d.participants = append(d.participants, part)
 	}
 
 	if len(d.participants) < 2 {
@@ -241,6 +252,147 @@ func (s *Service) StartDiscussion(ctx context.Context, p StartDiscussionParams) 
 	s.discussions.Store(ch.ID, d)
 	go s.runRound(context.Background(), d, p.Prompt)
 	return d.info(), nil
+}
+
+// startRepoBackedPersona creates a full agentique session for a persona, binds it
+// to the shared worktree, and joins it to the channel. This is the pre-refactor
+// path, factored behind personaRuntime unchanged.
+func (s *Service) startRepoBackedPersona(ctx context.Context, channelID string, p StartDiscussionParams, spec DiscussionPersonaSpec, sharedDir string) (*discussionParticipant, error) {
+	params := CreateSessionParams{
+		ProjectID:       p.ProjectID,
+		Name:            spec.Name,
+		AgentProfileID:  spec.AgentProfileID,
+		Model:           spec.Model,
+		Effort:          spec.Effort,
+		AutoApproveMode: "fullAuto", // headless: no human to approve tool calls
+		SkipRecall:      true,       // keep persona context clean of brain recall
+		SharedWorkDir:   sharedDir,
+	}
+	if spec.WriteAccess && p.AutoCommit {
+		params.BehaviorPresets.AutoCommit = true
+	}
+	res, err := s.CreateSession(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	role := "reader"
+	if spec.WriteAccess {
+		role = "writer"
+	}
+	if _, err := s.JoinChannel(ctx, res.SessionID, channelID, role); err != nil {
+		// Safe: the persona records no worktree path, so this won't reap the
+		// shared tree.
+		_ = s.DeleteSession(ctx, res.SessionID)
+		return nil, fmt.Errorf("join channel: %w", err)
+	}
+	return &discussionParticipant{
+		runtime:      &dbSessionPersona{svc: s, sessionID: res.SessionID},
+		senderType:   "session",
+		senderID:     res.SessionID,
+		name:         spec.Name,
+		noNamePrefix: spec.NoNamePrefix,
+		writeAccess:  spec.WriteAccess,
+	}, nil
+}
+
+// startWebOnlyPersona starts a sessionless persona CLI subprocess (no session,
+// worktree, or project), emits its introduction to the channel timeline, and
+// returns its participant. Model/effort/system-prompt come from the bound agent
+// profile, with per-spec overrides.
+func (s *Service) startWebOnlyPersona(ctx context.Context, d *Discussion, channelID string, spec DiscussionPersonaSpec) (*discussionParticipant, error) {
+	var pc PersonaConfig
+	avatar, role := "", "participant"
+	if spec.AgentProfileID != "" {
+		ap, err := s.queries.GetAgentProfile(ctx, spec.AgentProfileID)
+		if err != nil {
+			return nil, fmt.Errorf("get agent profile: %w", err)
+		}
+		pc = parsePersonaConfig(ap.Config)
+		avatar = ap.Avatar
+		if ap.Role != "" {
+			role = ap.Role
+		}
+	}
+
+	model := spec.Model
+	if model == "" {
+		model = pc.Model
+	}
+	if model == "" {
+		model = "opus"
+	}
+	effort := spec.Effort
+	if effort == "" {
+		effort = pc.Effort
+	}
+
+	rt, err := s.mgr.StartPersonaRuntime(ctx, PersonaRuntimeParams{
+		Preamble: buildPersonaPreamble(pc.SystemPromptAdditions, s.mgr.GlobalPreamble),
+		Model:    model,
+		Effort:   effort,
+		WorkDir:  d.scratchDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("start persona runtime: %w", err)
+	}
+
+	s.emitPersonaIntroduction(ctx, channelID, spec, role, avatar, pc.Capabilities)
+
+	return &discussionParticipant{
+		runtime:      rt,
+		senderType:   "persona",
+		senderID:     spec.AgentProfileID,
+		name:         spec.Name,
+		noNamePrefix: spec.NoNamePrefix,
+		writeAccess:  spec.WriteAccess,
+	}, nil
+}
+
+// emitPersonaIntroduction posts a sender_type:"persona" introduction to the
+// channel timeline so the transcript records who is participating. Unlike a
+// session intro (JoinChannel → channel_members), there is no membership row and
+// no per-session dedup — the orchestrator creates each persona exactly once per
+// discussion. The intro is informational (no recipients) and is skipped by
+// writeLegacyAgentMessageEvents (persona sender + introduction type).
+func (s *Service) emitPersonaIntroduction(ctx context.Context, channelID string, spec DiscussionPersonaSpec, role, avatar string, capabilities []string) {
+	header := spec.Name
+	if avatar != "" {
+		header = avatar + " " + header
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "**%s** joined", header)
+	if role != "" {
+		fmt.Fprintf(&sb, " as _%s_", role)
+	}
+	sb.WriteString(".\n")
+	if len(capabilities) > 0 {
+		fmt.Fprintf(&sb, "\n**Capabilities:** %s\n", strings.Join(capabilities, ", "))
+	}
+
+	meta := map[string]any{
+		"name":         spec.Name,
+		"role":         role,
+		"capabilities": capabilities,
+	}
+	if spec.AgentProfileID != "" {
+		meta["agentProfileId"] = spec.AgentProfileID
+	}
+	if avatar != "" {
+		meta["avatar"] = avatar
+	}
+	metaJSON, _ := json.Marshal(meta)
+
+	if _, err := s.SendChannelMessage(ctx, ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "persona",
+		SenderID:    spec.AgentProfileID,
+		SenderName:  spec.Name,
+		Content:     sb.String(),
+		MessageType: "introduction",
+		Metadata:    metaJSON,
+	}); err != nil {
+		slog.Warn("discussion: persona intro emit failed", "name", spec.Name, "error", err)
+	}
 }
 
 // SendDiscussionRound runs another round with a new user prompt. Rejected if a
@@ -376,36 +528,12 @@ func (s *Service) runParallelRound(ctx context.Context, d *Discussion, userPromp
 	}
 }
 
-// runPersonaTurn installs a turn-complete hook to capture the reply text, kicks
-// the turn via QuerySession (one call appends the cross-injected prompt to the
-// persona's history AND runs the turn), and waits for completion.
+// runPersonaTurn drives one persona turn via its runtime — a full session
+// (repo-backed) or a sessionless CLI subprocess (web-only) — returning the reply
+// text. The per-scope turn mechanics (and the 20-minute timeout) live in the
+// personaRuntime implementations.
 func (s *Service) runPersonaTurn(ctx context.Context, p *discussionParticipant, prompt string) (string, error) {
-	live, err := s.ensureLive(ctx, p.sessionID)
-	if err != nil {
-		return "", fmt.Errorf("ensure live: %w", err)
-	}
-
-	done := make(chan string, 1)
-	live.SetTurnCompleteHook(func(tc runtime.TurnCompletedEvent) {
-		select {
-		case done <- tc.Text:
-		default:
-		}
-	})
-	defer live.SetTurnCompleteHook(nil)
-
-	if err := s.QuerySession(ctx, p.sessionID, prompt, nil); err != nil {
-		return "", fmt.Errorf("query: %w", err)
-	}
-
-	select {
-	case text := <-done:
-		return strings.TrimSpace(text), nil
-	case <-time.After(discussionTurnTimeout):
-		return "", fmt.Errorf("turn timed out after %s", discussionTurnTimeout)
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	return p.runtime.Query(ctx, prompt)
 }
 
 // composePersonaPrompt builds a persona's turn prompt: the one-time group
@@ -441,8 +569,8 @@ func (s *Service) composePersonaPrompt(d *Discussion, p *discussionParticipant, 
 func (s *Service) recordContribution(d *Discussion, p *discussionParticipant, text string) {
 	if _, err := s.SendChannelMessage(context.Background(), ChannelMessageParams{
 		ChannelID:   d.ChannelID,
-		SenderType:  "session",
-		SenderID:    p.sessionID,
+		SenderType:  p.senderType,
+		SenderID:    p.senderID,
 		SenderName:  p.name,
 		Content:     text,
 		MessageType: "message",
@@ -483,9 +611,24 @@ func (d *Discussion) etiquetteLocked(p *discussionParticipant) string {
 	return b.String()
 }
 
-// teardownDiscussion dissolves the channel (keeping or discarding the transcript)
-// and removes the shared worktree exactly once.
+// teardownDiscussion closes every persona runtime, dissolves the channel (keeping
+// or discarding the transcript), and removes the shared worktree (repo-backed) or
+// scratch dir (web-only) exactly once.
 func (s *Service) teardownDiscussion(ctx context.Context, d *Discussion, keepHistory bool) {
+	// Close persona runtimes: stops web-only CLI subprocesses; a no-op for
+	// repo-backed sessions, whose teardown is owned by the channel dissolve below.
+	d.mu.Lock()
+	parts := append([]*discussionParticipant(nil), d.participants...)
+	d.mu.Unlock()
+	for _, p := range parts {
+		if p.runtime == nil {
+			continue
+		}
+		if err := p.runtime.Close(); err != nil {
+			slog.Warn("discussion: persona close failed", "name", p.name, "error", err)
+		}
+	}
+
 	var err error
 	if keepHistory {
 		err = s.DissolveChannelKeepHistory(ctx, d.ChannelID)
@@ -497,6 +640,11 @@ func (s *Service) teardownDiscussion(ctx context.Context, d *Discussion, keepHis
 	}
 	if d.worktreePath != "" {
 		s.worktree.RemoveWorktree(ctx, d.projectPath, d.worktreeBranch, d.worktreePath)
+	}
+	if d.scratchDir != "" {
+		if rmErr := os.RemoveAll(d.scratchDir); rmErr != nil {
+			slog.Warn("discussion: scratch cleanup failed", "channel_id", d.ChannelID, "error", rmErr)
+		}
 	}
 	s.discussions.Delete(d.ChannelID)
 	if s.hub != nil {

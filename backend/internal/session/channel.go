@@ -47,7 +47,7 @@ func (s *Service) CreateChannel(ctx context.Context, projectID, name string) (Ch
 	ch, err := s.queries.CreateChannel(ctx, store.CreateChannelParams{
 		ID:        channelID,
 		Name:      name,
-		ProjectID: projectID,
+		ProjectID: sqlNullString(projectID),
 	})
 	if err != nil {
 		return ChannelInfo{}, fmt.Errorf("create channel: %w", err)
@@ -55,7 +55,7 @@ func (s *Service) CreateChannel(ctx context.Context, projectID, name string) (Ch
 
 	info := ChannelInfo{
 		ID:        ch.ID,
-		ProjectID: ch.ProjectID,
+		ProjectID: nullStr(ch.ProjectID),
 		Name:      ch.Name,
 		Members:   []ChannelMember{},
 		CreatedAt: ch.CreatedAt,
@@ -84,7 +84,7 @@ func (s *Service) DeleteChannel(ctx context.Context, channelID string) error {
 		return fmt.Errorf("delete channel: %w", err)
 	}
 
-	s.hub.Publish(ch.ProjectID, "channel.deleted", map[string]string{"channelId": channelID})
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.deleted", map[string]string{"channelId": channelID})
 	return nil
 }
 
@@ -100,9 +100,9 @@ func (s *Service) DissolveChannel(ctx context.Context, channelID string) error {
 	if err != nil {
 		return fmt.Errorf("list members: %w", err)
 	}
-	project, projErr := s.queries.GetProject(ctx, ch.ProjectID)
+	project, projErr := s.queries.GetProject(ctx, nullStr(ch.ProjectID))
 
-	s.dissolveWorkers(ctx, channelID, ch.ProjectID, members, project, projErr == nil,
+	s.dissolveWorkers(ctx, channelID, nullStr(ch.ProjectID), members, project, projErr == nil,
 		func(m store.ListChannelMemberSessionsRow) {
 			_ = s.queries.RemoveChannelMember(ctx, store.RemoveChannelMemberParams{
 				ChannelID: channelID, SessionID: m.ID,
@@ -112,7 +112,7 @@ func (s *Service) DissolveChannel(ctx context.Context, channelID string) error {
 	if err := s.queries.DeleteChannel(ctx, channelID); err != nil {
 		return fmt.Errorf("delete channel: %w", err)
 	}
-	s.hub.Publish(ch.ProjectID, "channel.dissolved", map[string]string{"channelId": channelID})
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.dissolved", map[string]string{"channelId": channelID})
 	slog.Info("channel dissolved", "channel_id", channelID, "channel_name", ch.Name)
 	return nil
 }
@@ -129,16 +129,16 @@ func (s *Service) DissolveChannelKeepHistory(ctx context.Context, channelID stri
 	if err != nil {
 		return fmt.Errorf("list members: %w", err)
 	}
-	project, projErr := s.queries.GetProject(ctx, ch.ProjectID)
+	project, projErr := s.queries.GetProject(ctx, nullStr(ch.ProjectID))
 
-	s.dissolveWorkers(ctx, channelID, ch.ProjectID, members, project, projErr == nil,
+	s.dissolveWorkers(ctx, channelID, nullStr(ch.ProjectID), members, project, projErr == nil,
 		func(_ store.ListChannelMemberSessionsRow) {}, "dissolve-keep")
 
 	info, err := s.buildChannelInfo(ctx, ch)
 	if err != nil {
 		return fmt.Errorf("build channel info: %w", err)
 	}
-	s.hub.Publish(ch.ProjectID, "channel.updated", info)
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.updated", info)
 	slog.Info("channel dissolved (keep history)", "channel_id", channelID, "channel_name", ch.Name)
 	return nil
 }
@@ -276,7 +276,7 @@ func (s *Service) JoinChannel(ctx context.Context, sessionID, channelID, role st
 	} else {
 		slog.Warn("buildChannelInfo after join failed", "channelId", channelID, "error", buildErr)
 	}
-	s.hub.Publish(ch.ProjectID, "channel.member-joined", payload)
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.member-joined", payload)
 
 	// Wire callbacks for the joining session.
 	if live := s.mgr.Get(sessionID); live != nil {
@@ -406,7 +406,7 @@ func (s *Service) LeaveChannel(ctx context.Context, sessionID, channelID string)
 		live.RemoveAgentMessageCallback(channelID)
 	}
 
-	s.hub.Publish(ch.ProjectID, "channel.member-left", PushChannelMemberLeft{ChannelID: channelID, SessionID: sessionID})
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.member-left", PushChannelMemberLeft{ChannelID: channelID, SessionID: sessionID})
 	return nil
 }
 
@@ -421,7 +421,7 @@ func (s *Service) GetChannelInfo(ctx context.Context, channelID string) (Channel
 
 // ListChannels returns all channels for a project.
 func (s *Service) ListChannels(ctx context.Context, projectID string) ([]ChannelInfo, error) {
-	channels, err := s.queries.ListChannelsByProject(ctx, projectID)
+	channels, err := s.queries.ListChannelsByProject(ctx, sqlNullString(projectID))
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
@@ -503,14 +503,14 @@ func (s *Service) SendChannelMessage(ctx context.Context, p ChannelMessageParams
 	}
 
 	// --- Dual-write: legacy agent_message session_events ---
-	s.writeLegacyAgentMessageEvents(ctx, ch.ProjectID, msg, p)
+	s.writeLegacyAgentMessageEvents(ctx, nullStr(ch.ProjectID), msg, p)
 
 	// Broadcast the unified channel message to all project WS clients.
 	wireMsg := messageToWire(msg)
-	s.hub.Publish(ch.ProjectID, "channel.message", wireMsg)
+	s.hub.Publish(nullStr(ch.ProjectID), "channel.message", wireMsg)
 
 	// Broadcast activity-item for the project activity feed.
-	s.hub.Publish(ch.ProjectID, "project.activity-item", ActivityItem{
+	s.hub.Publish(nullStr(ch.ProjectID), "project.activity-item", ActivityItem{
 		Kind:       "message",
 		ItemID:     msg.ID,
 		SourceID:   msg.ChannelID,
@@ -550,6 +550,13 @@ func (s *Service) tryLiveDelivery(live *Session, recipientID, formatted string) 
 func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID string, msg store.Message, p ChannelMessageParams) {
 	if p.SenderType == "user" {
 		// User broadcasts: no session_events needed — messages table is source of truth.
+		return
+	}
+	if p.SenderType == "persona" {
+		// Web-only discussion personas have no backing sessions row, so there is
+		// no per-session event timeline to dual-write into — and SenderID is an
+		// agent_profile id, not a session id. The messages table + channel.message
+		// WS events are the source of truth for their channel timeline.
 		return
 	}
 	if p.MessageType == "introduction" || p.MessageType == "spawn" {
@@ -788,7 +795,7 @@ func (s *Service) buildChannelInfo(ctx context.Context, ch store.Channel) (Chann
 
 	return ChannelInfo{
 		ID:        ch.ID,
-		ProjectID: ch.ProjectID,
+		ProjectID: nullStr(ch.ProjectID),
 		Name:      ch.Name,
 		Members:   memberInfos,
 		CreatedAt: ch.CreatedAt,
@@ -1126,7 +1133,7 @@ func (s *Service) extendSwarm(ctx context.Context, projectID, channelID, senderI
 	if err != nil {
 		return fmt.Errorf("channel not found: %w", err)
 	}
-	if ch.ProjectID != projectID {
+	if nullStr(ch.ProjectID) != projectID {
 		return fmt.Errorf("channel belongs to a different project")
 	}
 

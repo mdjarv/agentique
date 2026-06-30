@@ -38,10 +38,10 @@ type BrainJob struct {
 }
 
 type Channel struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id"`
-	CreatedAt string `json:"created_at"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	ProjectID sql.NullString `json:"project_id"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type ChannelMember struct {

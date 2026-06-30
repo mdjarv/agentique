@@ -66,14 +66,22 @@ function DiscussionsPage() {
     [profileList, projectId, selected],
   );
 
-  const canSubmit = !sending && projectId !== "" && selected.length >= 2 && prompt.trim() !== "";
+  // Repo-backed discussions need a project (shared worktree); web-only ones are
+  // project-less. The project picker still scopes which personas are offered
+  // (global + the picked project's), but a web-only discussion is started with
+  // no project.
+  const canSubmit =
+    !sending &&
+    selected.length >= 2 &&
+    prompt.trim() !== "" &&
+    (scope === "web-only" || projectId !== "");
 
   async function handleStart() {
     if (!canSubmit) return;
     setSending(true);
     try {
       const info = await startDiscussion(ws, {
-        projectId,
+        projectId: scope === "web-only" ? "" : projectId,
         groupName: groupName.trim() || "Discussion",
         mode,
         scope,
@@ -108,8 +116,8 @@ function DiscussionsPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Discussion Groups</h1>
             <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
               Pick a panel of personas, drop in a prompt, and watch them discuss it with each other
-              across rounds you drive. Each persona is a real session — they can read the repo,
-              search the web, and (if you grant write access) edit code.
+              across rounds you drive. Web-only personas search the web and reason; repo-backed
+              personas also read the project and (if you grant write access) edit code.
             </p>
           </header>
 

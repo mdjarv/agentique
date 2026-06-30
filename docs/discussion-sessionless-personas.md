@@ -1,7 +1,43 @@
 # Sessionless discussion personas (web-only)
 
-Design doc / hand-off. Status: **proposed** (not yet implemented). Owner: TBD —
-intended to be picked up as its own session.
+Design doc / hand-off. Status: **implemented** (2026-06-30).
+
+## Implementation notes (deviations from the original design)
+
+The build followed this doc with four deliberate, correctness-driven deviations:
+
+1. **Runtime seam: `runtime.Manager.Create`, not raw `connector.Connect`.** The
+   claude adapter ignores `ConnectParams.AutoApprove` — only the runtime
+   `Session`'s permission pump (wired by `Manager.Create`) enforces fullAuto, so
+   the "thin direct over `connector.Connect`" plan would make tool calls block
+   forever. Going through the manager also reuses the state machine, watchdog,
+   and approval pump. See `StartPersonaRuntime` / `sessionlessPersona`
+   (`internal/session/persona_runtime.go`). The `personaRuntime` interface is
+   `{ Query, Close }` with two impls (`dbSessionPersona`, `sessionlessPersona`).
+2. **Migration 038 keeps `ON DELETE CASCADE`, not `SET NULL`.** `SET NULL` would
+   orphan repo-backed channels (stale worktree refs) when their project is
+   deleted. Making the column nullable is sufficient: web-only rows are NULL so
+   the cascade never fires for them; repo-backed rows still cascade with their
+   project. The migration is a `NO TRANSACTION` table rebuild with
+   `foreign_keys=OFF` (a plain `DROP TABLE channels` with FKs on would cascade-
+   wipe `channel_members`/`messages`).
+3. **Transport for project-less events: conns join the empty topic `""`.**
+   Web-only channels publish on topic `""` (their `project_id` is NULL →
+   `nullStr` → `""`); every conn joins `""` at creation (`ws/conn.go`) so those
+   events fan out globally with no Service-side branching. Per-project topics are
+   unchanged.
+4. **`writeLegacyAgentMessageEvents` skips `sender_type == "persona"`** — a
+   persona's `sender_id` is an agent_profile id, not a session, so a legacy event
+   would target a nonexistent session.
+
+Validation/UI extras: `DiscussionStartPayload.Validate` now also rejects unknown
+`scope`/`mode` strings (previously an unknown scope silently defaulted to
+web-only). The frontend keeps the project picker as an optional persona source
+for web-only and starts the discussion project-less.
+
+---
+
+Original design follows.
 
 ## Problem
 

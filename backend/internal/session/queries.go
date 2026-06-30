@@ -76,7 +76,7 @@ type serviceQueries interface {
 	// Channel queries
 	CreateChannel(ctx context.Context, arg store.CreateChannelParams) (store.Channel, error)
 	GetChannel(ctx context.Context, id string) (store.Channel, error)
-	ListChannelsByProject(ctx context.Context, projectID string) ([]store.Channel, error)
+	ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]store.Channel, error)
 	DeleteChannel(ctx context.Context, id string) error
 	UpdateChannelName(ctx context.Context, arg store.UpdateChannelNameParams) error
 	AddChannelMember(ctx context.Context, arg store.AddChannelMemberParams) error

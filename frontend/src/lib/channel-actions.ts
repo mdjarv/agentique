@@ -31,7 +31,7 @@ export type AgentMessageType =
 export interface ChannelMessage {
   id: string;
   channelId: string;
-  senderType: "session" | "user";
+  senderType: "session" | "user" | "persona";
   senderId: string;
   senderName: string;
   content: string;

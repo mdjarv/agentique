@@ -183,6 +183,14 @@ func (c *RecordingConnector) SessionCount() int {
 	return len(c.sessions)
 }
 
+// Sessions returns a snapshot of every mock session connected so far, in
+// connect order.
+func (c *RecordingConnector) Sessions() []*MockCLISession {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]*MockCLISession(nil), c.sessions...)
+}
+
 // --- MockCLISession ---
 
 // MockCLISession implements the runtime.CLISession interface for tests.

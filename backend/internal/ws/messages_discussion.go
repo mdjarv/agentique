@@ -37,11 +37,33 @@ type DiscussionStopPayload struct {
 var (
 	errDiscussionPersonas = errors.New("a discussion needs 2–8 personas")
 	errDiscussionPrompt   = errors.New("prompt is required")
+	errDiscussionScope    = errors.New("scope must be \"web-only\" or \"repo-backed\"")
+	errDiscussionMode     = errors.New("mode must be \"round-robin\" or \"parallel\"")
 )
 
 func (p *DiscussionStartPayload) Validate() error {
-	if err := validateProjectID(p.ProjectID); err != nil {
-		return err
+	// projectId is required only for repo-backed discussions (they need a project
+	// path for the shared worktree). Web-only discussions are project-less; an
+	// empty projectId is valid, a present one must still be a UUID. Empty scope
+	// defaults to web-only (see Service.StartDiscussion).
+	switch p.Scope {
+	case "", "web-only":
+		if p.ProjectID != "" {
+			if err := validateUUID("projectId", p.ProjectID); err != nil {
+				return err
+			}
+		}
+	case "repo-backed":
+		if err := validateProjectID(p.ProjectID); err != nil {
+			return err
+		}
+	default:
+		return errDiscussionScope
+	}
+	switch p.Mode {
+	case "", "round-robin", "parallel":
+	default:
+		return errDiscussionMode
 	}
 	if len(p.Personas) < 2 || len(p.Personas) > 8 {
 		return errDiscussionPersonas

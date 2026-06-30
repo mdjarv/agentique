@@ -216,6 +216,26 @@ type TeamPreambleMember struct {
 	Role string
 }
 
+// buildPersonaPreamble returns the lean system-prompt preamble for a sessionless
+// web-only discussion persona. It deliberately drops everything tied to a
+// project / worktree / session: cross-project suggestions, the delegation
+// (@spawn) block, channel & team coordination, session-files sharing, browser,
+// dev URLs, and all brain memory/recall blocks. What remains is the Agentique
+// identity, the persona's own system-prompt additions (its character), and the
+// global safety extra (dev-mode guardrails). The provider appends this on top of
+// Claude Code's default system prompt, so built-in tools (web search, read) still
+// work. The discussion etiquette is injected per-turn by composePersonaPrompt.
+func buildPersonaPreamble(systemPromptAdditions, globalExtra string) string {
+	s := preambleIdentity
+	if systemPromptAdditions != "" {
+		s += "\n\n" + systemPromptAdditions
+	}
+	if globalExtra != "" {
+		s += "\n\n" + globalExtra
+	}
+	return s
+}
+
 // buildPreamble returns the system prompt preamble for a session.
 // Snippets are conditionally included based on the behavior presets.
 // systemPromptAdditions comes from the agent profile's persona config.

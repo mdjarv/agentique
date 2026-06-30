@@ -31,9 +31,9 @@ INSERT INTO channels (id, name, project_id) VALUES (?, ?, ?) RETURNING id, name,
 `
 
 type CreateChannelParams struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	ProjectID sql.NullString `json:"project_id"`
 }
 
 func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error) {
@@ -208,7 +208,7 @@ const listChannelsByProject = `-- name: ListChannelsByProject :many
 SELECT id, name, project_id, created_at FROM channels WHERE project_id = ? ORDER BY created_at ASC
 `
 
-func (q *Queries) ListChannelsByProject(ctx context.Context, projectID string) ([]Channel, error) {
+func (q *Queries) ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]Channel, error) {
 	rows, err := q.db.QueryContext(ctx, listChannelsByProject, projectID)
 	if err != nil {
 		return nil, err

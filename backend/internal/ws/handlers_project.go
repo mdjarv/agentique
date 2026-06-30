@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -109,7 +110,9 @@ func (c *conn) handleProjectActivity(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p ProjectActivityPayload) ([]session.ActivityItem, error) {
 		since := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.000")
 		rows, err := c.queries.ListRecentActivityByProject(ctx, store.ListRecentActivityByProjectParams{
-			ProjectID: p.ProjectID,
+			// channels.project_id is nullable since migration 038; a real project
+			// activity query always has a non-empty id.
+			ProjectID: sql.NullString{String: p.ProjectID, Valid: p.ProjectID != ""},
 			Since:     since,
 		})
 		if err != nil {

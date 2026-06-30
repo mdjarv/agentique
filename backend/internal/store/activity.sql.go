@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 )
 
 const listRecentActivityByProject = `-- name: ListRecentActivityByProject :many
@@ -62,8 +63,8 @@ LIMIT 100
 `
 
 type ListRecentActivityByProjectParams struct {
-	ProjectID string `json:"project_id"`
-	Since     string `json:"since"`
+	ProjectID sql.NullString `json:"project_id"`
+	Since     string         `json:"since"`
 }
 
 type ListRecentActivityByProjectRow struct {

@@ -5,6 +5,45 @@ import (
 	"testing"
 )
 
+func TestBuildPersonaPreamble_LeanForWebOnly(t *testing.T) {
+	got := buildPersonaPreamble("You are Socrates. Question everything.", "DEV-SAFETY-EXTRA")
+
+	// Keeps: the Agentique identity, the persona's own system-prompt additions,
+	// and the global safety extra.
+	for _, want := range []string{
+		"You are running inside Agentique",
+		"You are Socrates. Question everything.",
+		"DEV-SAFETY-EXTRA",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("persona preamble missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+
+	// Drops everything tied to a project / session / worktree: delegation
+	// (@spawn), session files, channel coordination, dev URLs, browser.
+	for _, unwanted := range []string{
+		"SuggestSessionPrompt",
+		"## Delegation",
+		"@spawn",
+		"## Session Files",
+		"## Channel Coordination",
+		"AcquireDevUrl",
+		"Browser automation",
+	} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("persona preamble should not contain %q", unwanted)
+		}
+	}
+}
+
+func TestBuildPersonaPreamble_EmptyAdditions(t *testing.T) {
+	got := buildPersonaPreamble("", "")
+	if got != preambleIdentity {
+		t.Errorf("empty persona preamble should equal preambleIdentity, got:\n%s", got)
+	}
+}
+
 func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 	// DefaultPresets (suggestParallel=true, autoCommit=true) with a worktree
 	// should produce the same output as the old hardcoded preamble.

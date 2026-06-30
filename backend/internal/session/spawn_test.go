@@ -161,7 +161,7 @@ func (s *SpawnSuite) TestExecuteSpawn_WithChannelID_ExtendsExisting() {
 	s.Require().Len(members, 2)
 
 	// No *new* channel should have been created.
-	channels, err := s.Queries.ListChannelsByProject(ctx, s.Project.ID)
+	channels, err := s.Queries.ListChannelsByProject(ctx, sqlNullString(s.Project.ID))
 	s.Require().NoError(err)
 	s.Require().Len(channels, 1, "spawn with ChannelID must not create a new channel")
 
@@ -193,7 +193,7 @@ func (s *SpawnSuite) TestExecuteSpawn_NewChannel_EmitsAudit() {
 	})
 	s.Require().NoError(err)
 
-	channels, err := s.Queries.ListChannelsByProject(ctx, s.Project.ID)
+	channels, err := s.Queries.ListChannelsByProject(ctx, sqlNullString(s.Project.ID))
 	s.Require().NoError(err)
 	s.Require().Len(channels, 1)
 	chID := channels[0].ID

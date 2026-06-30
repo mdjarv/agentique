@@ -62,6 +62,12 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		sendCh:        make(chan any, sendBufSize),
 	}
 	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
+	// Join the empty/global topic: project-less events (web-only discussion
+	// channels, whose channels.project_id is NULL → published on topic "") fan
+	// out to every connected client, since such discussions belong to no project
+	// the client subscribes to individually. Per-project topics are added on
+	// demand via subscribeProject.
+	c.sub.AddTopic("")
 	return c
 }
 

@@ -17,6 +17,7 @@ export interface DiscussionPersonaInput {
 }
 
 export interface StartDiscussionInput {
+  /** Required for repo-backed; empty/omitted for web-only (project-less). */
   projectId: string;
   groupName: string;
   mode: DiscussionMode;
