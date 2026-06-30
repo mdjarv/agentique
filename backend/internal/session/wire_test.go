@@ -370,6 +370,81 @@ func TestToWireEvent_SubagentEvent(t *testing.T) {
 	}
 }
 
+func TestToWireEvent_WorkflowTask(t *testing.T) {
+	event := runtime.SubagentEvent{
+		Subtype:      "task_progress",
+		TaskID:       "w8a0hi7jg",
+		ToolUseID:    "tu_workflow",
+		TaskType:     "local_workflow",
+		WorkflowName: "deep-research",
+		TotalTokens:  408651,
+		ToolUses:     114,
+		DurationMs:   407148,
+		WorkflowProgress: []runtime.WorkflowAgentProgress{
+			{Type: "workflow_phase", Index: 4, Title: "Verify"},
+			{
+				Type: "workflow_agent", Index: 38, Label: "v1:source-3",
+				PhaseIndex: 4, PhaseTitle: "Verify", AgentID: "ac9d1b08",
+				State: "progress", LastToolName: "StructuredOutput",
+				Tokens: 10552, ToolCalls: 3,
+			},
+		},
+	}
+	wire, ok := ToWireEvent(event, "").(WireTaskEvent)
+	if !ok {
+		t.Fatalf("expected WireTaskEvent, got %T", ToWireEvent(event, ""))
+	}
+	if wire.TaskType != "local_workflow" {
+		t.Errorf("TaskType = %q, want local_workflow", wire.TaskType)
+	}
+	if wire.WorkflowName != "deep-research" {
+		t.Errorf("WorkflowName = %q, want deep-research", wire.WorkflowName)
+	}
+	if len(wire.WorkflowProgress) != 2 {
+		t.Fatalf("WorkflowProgress len = %d, want 2", len(wire.WorkflowProgress))
+	}
+	if wire.WorkflowProgress[0].Type != "workflow_phase" || wire.WorkflowProgress[0].Title != "Verify" {
+		t.Errorf("phase entry = %+v", wire.WorkflowProgress[0])
+	}
+	agent := wire.WorkflowProgress[1]
+	if agent.Label != "v1:source-3" || agent.State != "progress" || agent.Tokens != 10552 {
+		t.Errorf("agent entry = %+v", agent)
+	}
+}
+
+func TestToWireEvent_OrdinarySubagentHasNilWorkflowProgress(t *testing.T) {
+	event := runtime.SubagentEvent{Subtype: "task_progress", TaskType: "local_agent"}
+	wire := ToWireEvent(event, "").(WireTaskEvent)
+	if wire.WorkflowProgress != nil {
+		t.Errorf("WorkflowProgress = %v, want nil for ordinary subagent", wire.WorkflowProgress)
+	}
+}
+
+func TestToWireEvent_WorkflowLaunched(t *testing.T) {
+	event := runtime.WorkflowLaunchedEvent{
+		RunID: "run-1", WorkflowName: "deep-research", ScriptPath: "/x/script.js",
+		TranscriptDir: "/x/sub", Summary: "running in the background",
+	}
+	wire, ok := ToWireEvent(event, "").(WireWorkflowLaunchedEvent)
+	if !ok {
+		t.Fatalf("expected WireWorkflowLaunchedEvent, got %T", ToWireEvent(event, ""))
+	}
+	if wire.Type != "workflow_launched" || wire.RunID != "run-1" || wire.WorkflowName != "deep-research" {
+		t.Errorf("wire = %+v", wire)
+	}
+}
+
+func TestToWireEvent_ResultWorkflowPending(t *testing.T) {
+	pending := ToWireEvent(runtime.TurnCompletedEvent{WorkflowPending: true}, "").(WireResultEvent)
+	if !pending.WorkflowPending {
+		t.Error("expected WorkflowPending=true on placeholder result")
+	}
+	final := ToWireEvent(runtime.TurnCompletedEvent{}, "").(WireResultEvent)
+	if final.WorkflowPending {
+		t.Error("expected WorkflowPending=false on final result")
+	}
+}
+
 func TestToWireEvent_UserEchoReturnsNil(t *testing.T) {
 	// UserEcho is handled by EventPipeline.processUserEcho, not ToWireEvent.
 	event := runtime.UserEcho{MessageID: "msg_1"}

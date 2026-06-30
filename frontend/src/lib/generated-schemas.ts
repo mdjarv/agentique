@@ -72,6 +72,7 @@ export const WireResultEventSchema = z.object({
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
   timestamp: z.number(),
+  workflowPending: z.boolean().optional(),
 });
 
 export const WireErrorEventSchema = z.object({
@@ -165,6 +166,7 @@ export const WireCapabilitiesSchema = z.object({
   ping: z.boolean(),
   toolProgressTicks: z.boolean(),
   attachments: z.boolean(),
+  workflows: z.boolean(),
   modelSwitch: z.boolean(),
 });
 

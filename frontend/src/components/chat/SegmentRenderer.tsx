@@ -14,6 +14,7 @@ import { SubagentActivity } from "~/components/chat/SubagentActivity";
 import { ThinkingBlock } from "~/components/chat/ThinkingBlock";
 import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
+import { WorkflowActivity } from "~/components/chat/WorkflowActivity";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
 import { formatDuration, formatTurnTime } from "~/lib/format";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
@@ -177,9 +178,13 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 resultContent={item.result?.contentBlocks}
                 onImageClick={setLightboxSrc}
               />
-              {item.taskEvents && item.taskEvents.length > 0 && (
-                <SubagentActivity taskEvents={item.taskEvents} />
-              )}
+              {item.taskEvents &&
+                item.taskEvents.length > 0 &&
+                (item.taskEvents.some((e) => e.taskType === "local_workflow") ? (
+                  <WorkflowActivity taskEvents={item.taskEvents} />
+                ) : (
+                  <SubagentActivity taskEvents={item.taskEvents} />
+                ))}
             </div>
           ),
         )}

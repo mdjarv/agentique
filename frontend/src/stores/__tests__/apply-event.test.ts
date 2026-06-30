@@ -189,6 +189,14 @@ describe("applyServerEvent — streaming buffer", () => {
 // --- Result boundary -------------------------------------------------------
 
 describe("applyServerEvent — result merge", () => {
+  it("ignores a workflowPending placeholder result (no turn end, session stays running)", () => {
+    const turn = makeTurn({ events: [text("prompt-echo")] });
+    const session = makeSession({ turns: [turn], streamingEvents: [text("streamed")] });
+    const res = applyServerEvent(session, result({ workflowPending: true }), false);
+    // The placeholder is dropped entirely — turn not merged/completed, no idle.
+    expect(res).toBeNull();
+  });
+
   it("merges the streaming buffer into the last turn and marks it complete", () => {
     const turn = makeTurn({ events: [text("prompt-echo")] });
     const session = makeSession({ turns: [turn], streamingEvents: [text("streamed")] });

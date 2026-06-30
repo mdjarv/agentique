@@ -70,6 +70,7 @@ export interface WireResultEvent {
   inputTokens?: number;
   outputTokens?: number;
   timestamp: number;
+  workflowPending?: boolean;
 }
 
 export interface WireErrorEvent {
@@ -163,6 +164,7 @@ export interface WireCapabilities {
   ping: boolean;
   toolProgressTicks: boolean;
   attachments: boolean;
+  workflows: boolean;
   modelSwitch: boolean;
 }
 

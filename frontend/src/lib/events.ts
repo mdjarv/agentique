@@ -118,6 +118,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         contextWindow: raw.contextWindow as number | undefined,
         inputTokens: raw.inputTokens as number | undefined,
         outputTokens: raw.outputTokens as number | undefined,
+        workflowPending: raw.workflowPending as boolean | undefined,
         timestamp,
         parentToolUseId,
       } satisfies ResultEvent;
@@ -238,6 +239,10 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         totalTokens: raw.totalTokens as number | undefined,
         toolUses: raw.toolUses as number | undefined,
         durationMs: raw.durationMs as number | undefined,
+        workflowName: raw.workflowName as string | undefined,
+        outputFile: raw.outputFile as string | undefined,
+        endTime: raw.endTime as number | undefined,
+        workflowProgress: raw.workflowProgress as TaskEvent["workflowProgress"],
         timestamp,
         parentToolUseId,
       } satisfies TaskEvent;

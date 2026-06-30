@@ -35,6 +35,9 @@ type WireCapabilities struct {
 	Ping                   bool   `json:"ping"`
 	ToolProgressTicks      bool   `json:"toolProgressTicks"`
 	Attachments            bool   `json:"attachments"`
+	// Workflows indicates the adapter surfaces dynamic-workflow runs (synthetic
+	// local_workflow tasks + the launch handle). Claude only.
+	Workflows bool `json:"workflows"`
 	// ModelSwitch indicates the adapter implements runtime.ModelSwitchable.
 	// Codex's adapter currently returns ErrNotSupported, so the UI keeps the
 	// model picker read-only for codex sessions.
@@ -69,6 +72,7 @@ func runtimeCapsToWire(c runtime.Capabilities, attachments bool) WireCapabilitie
 		Ping:                   c.Ping,
 		ToolProgressTicks:      c.ToolProgressTicks,
 		Attachments:            attachments,
+		Workflows:              c.Workflows,
 	}
 }
 
@@ -100,6 +104,7 @@ func capabilitiesForProvider(provider string) WireCapabilities {
 			ToolProgressTicks:      true,
 			Attachments:            true,
 			ModelSwitch:            true,
+			Workflows:              true,
 		}
 	case "codex":
 		return WireCapabilities{

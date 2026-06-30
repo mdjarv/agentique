@@ -289,6 +289,40 @@ func TestPipeline_ResultTriggersTurnComplete(t *testing.T) {
 	}
 }
 
+func TestPipeline_WorkflowPendingResultDoesNotCompleteTurn(t *testing.T) {
+	sink := newTestSink()
+	turnCompleted := false
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnTurnComplete = func(runtime.TurnCompletedEvent) { turnCompleted = true }
+	})
+	p.AdvanceTurn()
+
+	// The workflow launch placeholder must not end the turn or persist a result
+	// row, but must still broadcast so the frontend can react.
+	pending := testResultEvent(0.01)
+	pending.WorkflowPending = true
+	p.ProcessEvent(pending)
+
+	if turnCompleted {
+		t.Error("placeholder result must not trigger OnTurnComplete")
+	}
+	if len(sink.persisted) != 0 {
+		t.Errorf("placeholder result must not persist; got %d persisted", len(sink.persisted))
+	}
+	if len(sink.broadcasts) != 1 {
+		t.Errorf("expected 1 broadcast for the placeholder, got %d", len(sink.broadcasts))
+	}
+
+	// The real (non-pending) result then completes the turn normally.
+	p.ProcessEvent(testResultEvent(0.02))
+	if !turnCompleted {
+		t.Error("final result must trigger OnTurnComplete")
+	}
+	if len(sink.persisted) != 1 {
+		t.Errorf("expected final result persisted; got %d", len(sink.persisted))
+	}
+}
+
 func TestPipeline_FatalErrorTriggersCallback(t *testing.T) {
 	sink := newTestSink()
 	var fatalErr error

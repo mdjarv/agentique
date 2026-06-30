@@ -55,6 +55,10 @@ export interface ResultEvent extends BaseChatEvent {
   contextWindow?: number;
   inputTokens?: number;
   outputTokens?: number;
+  // Set on the placeholder "running in the background" result a dynamic workflow
+  // emits on launch. Not the final answer — apply-event drops it so it never
+  // ends the turn or renders as the assistant message.
+  workflowPending?: boolean;
 }
 
 export interface ErrorEvent extends BaseChatEvent {
@@ -122,6 +126,31 @@ export interface AgentMessageEvent extends BaseChatEvent {
   messageType?: "plan" | "progress" | "done" | "message";
 }
 
+// One entry in a dynamic workflow's progress list: a phase boundary
+// (type "workflow_phase", carrying index/title) or a single subagent's live
+// state (type "workflow_agent"). Mirrors the backend WireWorkflowProgress.
+export interface WorkflowProgressEntry {
+  type: "workflow_agent" | "workflow_phase";
+  index: number;
+  // workflow_phase
+  title?: string;
+  // workflow_agent
+  label?: string;
+  phaseIndex?: number;
+  phaseTitle?: string;
+  agentId?: string;
+  model?: string;
+  state?: "queued" | "start" | "progress" | "done" | "error";
+  attempt?: number;
+  lastToolName?: string;
+  lastToolSummary?: string;
+  promptPreview?: string;
+  resultPreview?: string;
+  tokens?: number;
+  toolCalls?: number;
+  durationMs?: number;
+}
+
 export interface TaskEvent extends BaseChatEvent {
   type: "task";
   toolUseId?: string;
@@ -134,6 +163,11 @@ export interface TaskEvent extends BaseChatEvent {
   totalTokens?: number;
   toolUses?: number;
   durationMs?: number;
+  // Workflow fields — present only when taskType === "local_workflow".
+  workflowName?: string;
+  outputFile?: string;
+  endTime?: number;
+  workflowProgress?: WorkflowProgressEntry[];
 }
 
 export interface AgentResultEvent extends BaseChatEvent {

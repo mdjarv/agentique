@@ -560,6 +560,14 @@ func (p *EventPipeline) trackTaskEvent(wireEvent any) {
 
 func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 	if tc, ok := event.(runtime.TurnCompletedEvent); ok {
+		// A dynamic workflow emits a placeholder "running in the background"
+		// turn-completion on launch; the real answer arrives in a later
+		// (non-pending) completion. agentkit keeps the session in StateRunning
+		// across it, but the event still flows here — skip all turn-end side
+		// effects (pulse reset, turn-complete hook) so the workflow keeps running.
+		if tc.WorkflowPending {
+			return
+		}
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
 		p.mu.Unlock()
@@ -708,6 +716,10 @@ func isTransient(wireEvent any) bool {
 		return true
 	case WireTaskEvent:
 		return e.Subtype == "task_progress"
+	case WireResultEvent:
+		// The workflow launch placeholder is broadcast-only: skip persistence
+		// (no real result row) and the activity feed (no "turn completed" item).
+		return e.WorkflowPending
 	}
 	return false
 }

@@ -58,6 +58,12 @@ type WireResultEvent struct {
 	InputTokens   int     `json:"inputTokens,omitempty"`
 	OutputTokens  int     `json:"outputTokens,omitempty"`
 	Timestamp     int64   `json:"timestamp"` // epoch ms — set by pipeline
+	// WorkflowPending marks the placeholder "running in the background" result a
+	// dynamic workflow emits when it launches. It is NOT the final answer — a
+	// later result with WorkflowPending=false carries that. The frontend must not
+	// render a pending result as the turn's assistant message or treat it as a
+	// turn boundary. See WireWorkflowLaunchedEvent / WireTaskEvent workflow fields.
+	WorkflowPending bool `json:"workflowPending,omitempty"`
 }
 
 type WireErrorEvent struct {
@@ -181,14 +187,17 @@ type WireMessageDeliveryEvent struct {
 	MessageID string `json:"messageId"`
 }
 
-// WireTaskEvent represents a subagent lifecycle event.
+// WireTaskEvent represents a subagent lifecycle event. A dynamic workflow
+// surfaces through this same shape as a single synthetic task with
+// TaskType == "local_workflow"; the Workflow* fields are populated only then and
+// carry per-phase / per-agent progress for the workflow panel.
 type WireTaskEvent struct {
 	Type         string `json:"type"`    // "task"
 	Subtype      string `json:"subtype"` // "task_started", "task_progress", "task_notification"
 	TaskID       string `json:"taskId"`
 	ToolUseID    string `json:"toolUseId"` // parent Agent ToolUseEvent.ID
 	Description  string `json:"description,omitempty"`
-	TaskType     string `json:"taskType,omitempty"`
+	TaskType     string `json:"taskType,omitempty"` // "local_agent" | "local_workflow"
 	Prompt       string `json:"prompt,omitempty"`
 	LastToolName string `json:"lastToolName,omitempty"`
 	Status       string `json:"status,omitempty"`
@@ -196,6 +205,58 @@ type WireTaskEvent struct {
 	TotalTokens  int    `json:"totalTokens,omitempty"`
 	ToolUses     int    `json:"toolUses,omitempty"`
 	DurationMs   int    `json:"durationMs,omitempty"`
+
+	// Workflow fields — set only when TaskType == "local_workflow".
+	WorkflowName     string                 `json:"workflowName,omitempty"`
+	OutputFile       string                 `json:"outputFile,omitempty"`
+	EndTime          int64                  `json:"endTime,omitempty"`
+	WorkflowProgress []WireWorkflowProgress `json:"workflowProgress,omitempty"`
+}
+
+// WireWorkflowProgress is one entry in a workflow's progress list: a phase
+// boundary (Type == "workflow_phase", carrying Index/Title) or a single
+// subagent's state (Type == "workflow_agent"). Mirrors
+// runtime.WorkflowAgentProgress; rides on task_progress WireTaskEvents.
+type WireWorkflowProgress struct {
+	Type  string `json:"type"` // "workflow_agent" | "workflow_phase"
+	Index int    `json:"index"`
+
+	// workflow_phase
+	Title string `json:"title,omitempty"`
+
+	// workflow_agent
+	Label           string `json:"label,omitempty"`
+	PhaseIndex      int    `json:"phaseIndex,omitempty"`
+	PhaseTitle      string `json:"phaseTitle,omitempty"`
+	AgentID         string `json:"agentId,omitempty"`
+	Model           string `json:"model,omitempty"`
+	State           string `json:"state,omitempty"` // queued|start|progress|done|error
+	Attempt         int    `json:"attempt,omitempty"`
+	LastToolName    string `json:"lastToolName,omitempty"`
+	LastToolSummary string `json:"lastToolSummary,omitempty"`
+	PromptPreview   string `json:"promptPreview,omitempty"`
+	ResultPreview   string `json:"resultPreview,omitempty"`
+	Tokens          int    `json:"tokens,omitempty"`
+	ToolCalls       int    `json:"toolCalls,omitempty"`
+	DurationMs      int    `json:"durationMs,omitempty"`
+}
+
+// WireWorkflowLaunchedEvent reports that a dynamic workflow launched in the
+// background. It is the run's identity/handle (RunID keys a run; ScriptPath
+// locates the generated script). The lifecycle then streams through
+// WireTaskEvents (TaskType == "local_workflow") and the final answer arrives as
+// a later non-pending WireResultEvent.
+//
+// NOTE: agentkit's WorkflowLaunchedEvent carries no TaskID/ToolUseID, so this
+// event cannot be correlated to the task stream client-side — the workflow panel
+// keys on the task events' ToolUseID instead. See docs/workflows-integration.md.
+type WireWorkflowLaunchedEvent struct {
+	Type          string `json:"type"` // "workflow_launched"
+	RunID         string `json:"runId"`
+	WorkflowName  string `json:"workflowName,omitempty"`
+	ScriptPath    string `json:"scriptPath,omitempty"`
+	TranscriptDir string `json:"transcriptDir,omitempty"`
+	Summary       string `json:"summary,omitempty"`
 }
 
 // WireAgentResultEvent represents a completed subagent execution.
@@ -226,6 +287,7 @@ func (e WireAgentMessageEvent) WireType() string      { return e.Type }
 func (e WireUserMessageEvent) WireType() string       { return e.Type }
 func (e WireMessageDeliveryEvent) WireType() string   { return e.Type }
 func (e WireTaskEvent) WireType() string              { return e.Type }
+func (e WireWorkflowLaunchedEvent) WireType() string  { return e.Type }
 func (e WireAgentResultEvent) WireType() string       { return e.Type }
 func (e WireToolOutputDeltaEvent) WireType() string   { return e.Type }
 func (e WireReasoningDeltaEvent) WireType() string    { return e.Type }
@@ -321,6 +383,7 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 		if wire.ContextWindow == 0 {
 			wire.ContextWindow = defaultContextWindow(model)
 		}
+		wire.WorkflowPending = e.WorkflowPending
 		return wire
 	case runtime.ErrorEvent:
 		return wireErrorEvent(e)
@@ -346,19 +409,32 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 		return WireContextManagementEvent{Type: "context_management", Raw: rawJSONOrString(e.Raw)}
 	case runtime.SubagentEvent:
 		return WireTaskEvent{
-			Type:         "task",
-			Subtype:      e.Subtype,
-			TaskID:       e.TaskID,
-			ToolUseID:    e.ToolUseID,
-			Description:  e.Description,
-			TaskType:     e.TaskType,
-			Prompt:       e.Prompt,
-			LastToolName: e.LastToolName,
-			Status:       e.Status,
-			Summary:      e.Summary,
-			TotalTokens:  e.TotalTokens,
-			ToolUses:     e.ToolUses,
-			DurationMs:   e.DurationMs,
+			Type:             "task",
+			Subtype:          e.Subtype,
+			TaskID:           e.TaskID,
+			ToolUseID:        e.ToolUseID,
+			Description:      e.Description,
+			TaskType:         e.TaskType,
+			Prompt:           e.Prompt,
+			LastToolName:     e.LastToolName,
+			Status:           e.Status,
+			Summary:          e.Summary,
+			TotalTokens:      e.TotalTokens,
+			ToolUses:         e.ToolUses,
+			DurationMs:       e.DurationMs,
+			WorkflowName:     e.WorkflowName,
+			OutputFile:       e.OutputFile,
+			EndTime:          e.EndTime,
+			WorkflowProgress: convertWorkflowProgress(e.WorkflowProgress),
+		}
+	case runtime.WorkflowLaunchedEvent:
+		return WireWorkflowLaunchedEvent{
+			Type:          "workflow_launched",
+			RunID:         e.RunID,
+			WorkflowName:  e.WorkflowName,
+			ScriptPath:    e.ScriptPath,
+			TranscriptDir: e.TranscriptDir,
+			Summary:       e.Summary,
 		}
 	case runtime.AgentResultEvent:
 		return WireAgentResultEvent{
@@ -458,6 +534,38 @@ func convertToolContent(blocks []runtime.ToolContent) []WireContentBlock {
 				URL:       "data:" + b.MediaType + ";base64," + b.Data,
 			})
 		}
+	}
+	return out
+}
+
+// convertWorkflowProgress maps neutral runtime workflow-progress entries to
+// their wire shape. Returns nil for ordinary subagent tasks (nil input), so the
+// omitempty tag drops the field for non-workflow task events.
+func convertWorkflowProgress(in []runtime.WorkflowAgentProgress) []WireWorkflowProgress {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]WireWorkflowProgress, 0, len(in))
+	for _, p := range in {
+		out = append(out, WireWorkflowProgress{
+			Type:            p.Type,
+			Index:           p.Index,
+			Title:           p.Title,
+			Label:           p.Label,
+			PhaseIndex:      p.PhaseIndex,
+			PhaseTitle:      p.PhaseTitle,
+			AgentID:         p.AgentID,
+			Model:           p.Model,
+			State:           p.State,
+			Attempt:         p.Attempt,
+			LastToolName:    p.LastToolName,
+			LastToolSummary: p.LastToolSummary,
+			PromptPreview:   p.PromptPreview,
+			ResultPreview:   p.ResultPreview,
+			Tokens:          p.Tokens,
+			ToolCalls:       p.ToolCalls,
+			DurationMs:      p.DurationMs,
+		})
 	}
 	return out
 }

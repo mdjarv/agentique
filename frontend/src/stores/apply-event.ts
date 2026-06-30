@@ -50,6 +50,12 @@ export function applyServerEvent(
   )
     return null;
 
+  // A dynamic workflow's launch emits a placeholder "running in the background"
+  // result; the real answer arrives in a later (non-pending) result. Ignore the
+  // placeholder entirely so it neither ends the turn nor renders as a message —
+  // the session stays running and the workflow panel keeps streaming.
+  if (event.type === "result" && event.workflowPending) return null;
+
   if (event.type === "message_delivery" && event.messageId) {
     return { patch: applyMessageDelivery(session, event.messageId) };
   }

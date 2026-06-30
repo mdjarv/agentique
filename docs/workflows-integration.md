@@ -1,8 +1,57 @@
 # Dynamic Workflows — integration design
 
-Status: **proposal / design-first** (2026-06-30). Investigated `claudecli-go`
-v0.1.0; agentkit-side changes are being done in parallel. This doc is the
-agentique-side plan + the neutral contract the two sides must agree on.
+Status: **Phase 1 MVP shipped** (2026-06-30). agentkit's workflow support merged
+to master; agentique consumer wired against it. §1–§5 are the original design;
+the status of each piece is recorded in "## Implemented" below.
+
+## Implemented (Phase 1 MVP — agentique consumer)
+
+Pins bumped: `claudecli-go → v0.1.0`, `agentkit → master (8d3508fd…)`.
+
+- **Backend** (`internal/session/`):
+  - `WireTaskEvent` extended with `workflowName` / `outputFile` / `endTime` /
+    `workflowProgress[]` (+ `WireWorkflowProgress` mirror of
+    `runtime.WorkflowAgentProgress`); populated from `SubagentEvent` in `wire.go`.
+  - `WireResultEvent.workflowPending` carried from `TurnCompletedEvent`.
+  - New `WireWorkflowLaunchedEvent` (`type:"workflow_launched"`) from
+    `runtime.WorkflowLaunchedEvent`.
+  - **Placeholder suppression** (the two-result fix on our side): a
+    `WorkflowPending` `TurnCompletedEvent` is short-circuited in
+    `handleTerminalEvents` (no pulse reset / turn-complete hook), and the
+    `WorkflowPending` `WireResultEvent` is marked transient in `isTransient` (no
+    DB row, no activity-feed item) — broadcast-only.
+  - `WireCapabilities.workflows` mirrors `runtime.Capabilities.Workflows`
+    (claude=true, codex=false).
+- **Frontend**:
+  - `chat-types.ts` / `events.ts`: parse the new task + result fields; new
+    `WorkflowProgressEntry`.
+  - `apply-event.ts`: a `workflowPending` result is dropped (never ends the turn
+    / renders as the assistant message).
+  - `WorkflowActivity.tsx`: phase → agent tree (state glyphs, live tokens/tools,
+    auto-folding completed phases), keyed on the task events' `toolUseId`;
+    `SegmentRenderer` routes `local_workflow` tasks to it, others to
+    `SubagentActivity`.
+- **Tests**: wire mapping (workflow task / launched / pending), pipeline
+  placeholder-suppression (no turn-complete, transient), apply-event placeholder
+  drop. Backend `-race` clean; `just check` green.
+
+### Flagged: agentkit interface gap (for the parallel agentkit work)
+
+`runtime.WorkflowLaunchedEvent` carries no `TaskID`/`ToolUseID`, so it cannot be
+correlated client-side to the subsequent `local_workflow` task stream. The
+upstream `claudecli.WorkflowLaunch` *does* have a `TaskID` (and the
+`async_launched` tool_result has a tool_use_id). **Recommend agentkit add
+`TaskID` (and ideally `ToolUseID`) to `WorkflowLaunchedEvent`.** Until then the
+workflow panel keys on the task events' `ToolUseID` (robust), and the launch
+event is surfaced on the wire but not rendered as a separate element.
+
+### Known MVP limitation
+
+`task_progress` stays transient (not persisted), so the live phase/agent tree is
+lost on reconnect/reload — the panel then shows header + aggregates (from the
+persisted `task_notification`) but an empty tree. Phase 2 (manifest rehydration)
+was explicitly **declined** by the agentkit design (a workflow can't outlive its
+CLI process, so the in-band stream is authoritative). Accepted for MVP.
 
 ## 1. What landed upstream (claudecli-go v0.1.0)
 
