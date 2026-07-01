@@ -1,8 +1,71 @@
 # Dynamic Workflows — integration design
 
-Status: **Phase 1 MVP shipped** (2026-06-30). agentkit's workflow support merged
-to master; agentique consumer wired against it. §1–§5 are the original design;
-the status of each piece is recorded in "## Implemented" below.
+Status: **Phase 1 wired, then INVALIDATED by live verification** (2026-07-01).
+agentkit's workflow support merged; agentique consumer wired against it (§"##
+Implemented"). But live e2e verification found the in-band approach it (and
+agentkit's design) assumed **does not hold in agentique's interactive session
+mode** — see "## VERIFIED 2026-07-01" immediately below. §1–§5 are the original
+(now partly superseded) design.
+
+## VERIFIED 2026-07-01 — interactive mode does not stream the workflow lifecycle
+
+Ran the **same real workflow** (2 agents returning "hello", CLI 2.1.197) two ways:
+
+| Signal | headless `claude -p` | interactive `Connect()` (**what agentique uses**) |
+| --- | --- | --- |
+| `task_started` (local_workflow) | ✅ | ✅ |
+| `WorkflowLaunch` (RunID + **TaskID**) | ✅ | ✅ |
+| `task_progress` w/ `workflow_progress[]` | ✅ ×5 | ❌ none |
+| `task_notification` (terminal) | ✅ | ❌ never |
+| `result` events | ✅ **2** (placeholder + answer) | ❌ **1** (placeholder), then silence |
+
+The workflow **completed normally** either way — the on-disk manifest
+(`workflows/<runId>.json`) had `status:"completed"`, the result, and the full
+`workflowProgress`. Only the *interactive event stream* is silent. The two-turn
+lifecycle is a **`-p` behavior**: `-p` runs the agent loop to true completion
+(observed **two `system.init`s** — it re-drives turn 2); interactive yields
+control at the placeholder result and never continues.
+
+**Consequence (code-confirmed in agentkit `runtime/eventloop.go`):**
+`observeWorkflow` sets `workflowInFlight` on launch and clears it only on a
+terminal notification; `finishTurn` marks the placeholder `WorkflowPending` and
+holds the turn `Running` until that notification. In interactive mode it never
+arrives → **the turn hangs `Running` forever, no progress, no answer.** Phase 1
+(suppress placeholder, render from `task_progress`) therefore cannot work as
+built.
+
+**This refutes agentkit's design premise** — *"out-of-band manifest polling buys
+agentique nothing; the in-band stream is authoritative."* In agentique's only
+mode (interactive), the in-band stream is **not** authoritative; the **manifest
+is**. So `WatchWorkflow` (which agentkit declined) is the path, not a redundancy.
+
+### Corrected approach — out-of-band manifest monitoring
+
+Goal (per user steer 2026-07-01): **insight into what the agents are doing** —
+the phase/agent view the CLI's ultracode TUI shows. The manifest already carries
+exactly that, checkpointed live. So:
+
+- On `WorkflowLaunchedEvent` (we have `RunID` + `ScriptPath`), poll the manifest
+  (`filepath.Join(dir(dir(scriptPath)), runId+".json")`) until terminal status.
+- Feed each snapshot's `workflowProgress`/`status`/`result` into the existing
+  `WorkflowActivity` panel (reuse the wire shape already built).
+- Terminal status also lets us end the turn and surface the result — fixing the
+  hang as a side effect.
+
+**Open decision — where the poller lives:**
+- **A (agentkit-neutral, recommended):** agentkit exposes a neutral workflow
+  monitor (it already has `claudecli.WatchWorkflow` + the path logic, and owns
+  the CLI coupling). Keeps the undocumented-manifest dependency behind the
+  provider boundary; agentique consumes neutral snapshot events. Reopens
+  agentkit's declined decision — but the premise for declining is now falsified.
+- **B (agentique-direct):** agentique's session layer polls the manifest file
+  itself (it already receives `ScriptPath`/`RunID` on the neutral launch event;
+  reading a JSON file needs no `claudecli` import). Ships without cross-repo work,
+  but couples agentique to the undocumented manifest layout — the exact thing the
+  provider boundary exists to prevent.
+
+Recommendation: **A** (structural correctness; the manifest layout is a CLI
+implementation detail). B is the fast fallback if we want it purely in-repo now.
 
 ## Implemented (Phase 1 MVP — agentique consumer)
 
@@ -45,13 +108,13 @@ upstream `claudecli.WorkflowLaunch` *does* have a `TaskID` (and the
 workflow panel keys on the task events' `ToolUseID` (robust), and the launch
 event is surfaced on the wire but not rendered as a separate element.
 
-### Known MVP limitation
+### Known limitation → SUPERSEDED by the 2026-07-01 finding
 
-`task_progress` stays transient (not persisted), so the live phase/agent tree is
-lost on reconnect/reload — the panel then shows header + aggregates (from the
-persisted `task_notification`) but an empty tree. Phase 2 (manifest rehydration)
-was explicitly **declined** by the agentkit design (a workflow can't outlive its
-CLI process, so the in-band stream is authoritative). Accepted for MVP.
+Earlier note (Phase 1): `task_progress` is transient, so the live tree would be
+lost on reconnect, and out-of-band monitoring was "declined by agentkit." **Both
+premises are now wrong for interactive mode:** the in-band tree isn't just lost
+on reconnect — it never arrives at all (see "## VERIFIED 2026-07-01"), and
+out-of-band monitoring is the fix, not a declined nicety.
 
 ## 1. What landed upstream (claudecli-go v0.1.0)
 
