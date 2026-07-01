@@ -18,15 +18,12 @@ import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
+import { newSessionDraftKey } from "~/lib/session/new-session-draft";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { DEFAULT_SESSION_DEFAULTS, useUIStore } from "~/stores/ui-store";
-
-function newSessionDraftKey(projectId: string): string {
-  return `new:${projectId}`;
-}
 
 const DEFAULT_PRESETS: BehaviorPresets = {
   autoCommit: true,

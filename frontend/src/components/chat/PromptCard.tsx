@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  Pencil,
   Play,
   Users2,
 } from "lucide-react";
@@ -16,6 +17,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { ProjectPill } from "~/components/ui/project-pill";
@@ -27,6 +30,7 @@ import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 // `~/lib/prompt-parsing.ts`.
 import type { PromptBlock } from "~/lib/prompt-parsing";
 import { type CreateSessionOpts, createSession, submitQuery } from "~/lib/session/actions";
+import { openPrefilledNewSession } from "~/lib/session/new-session-draft";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -346,6 +350,19 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
   );
 
   const navSlug = useAppStore((s) => s.projects.find((p) => p.id === targetProjectId)?.slug ?? "");
+
+  // Prefill-and-edit: open the target project's new-session composer with this
+  // prompt, without spawning. Shares the code-block Run primitive; nothing is
+  // created until the user sends.
+  const handleEdit = useCallback(() => {
+    if (!navSlug || !targetProjectId) return;
+    openPrefilledNewSession(navigate, {
+      projectId: targetProjectId,
+      projectSlug: navSlug,
+      text: prompt,
+    });
+  }, [navigate, navSlug, targetProjectId, prompt]);
+
   const handleNav = useCallback(() => {
     if (sessionId && navSlug) {
       navigate({
@@ -399,13 +416,7 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
           </button>
         )}
         <div className="flex items-center justify-end gap-2 pt-0.5">
-          {state === "idle" && !showProjectPicker && (
-            <Button size="xs" disabled={isStreaming || !ctx || invalidSlug} onClick={handleStart}>
-              <Play className="h-3 w-3" />
-              Start Session
-            </Button>
-          )}
-          {state === "idle" && showProjectPicker && (
+          {state === "idle" && (
             <DropdownMenu>
               <div
                 className={cn(
@@ -427,30 +438,46 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    disabled={isStreaming || !ctx}
-                    className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors disabled:pointer-events-none"
-                    aria-label="Choose project"
+                    className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors"
+                    aria-label="More launch options"
                   >
                     <ChevronDown className="h-3 w-3" />
                   </button>
                 </DropdownMenuTrigger>
               </div>
               <DropdownMenuContent align="end">
-                {allProjects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
-                    onClick={() => handleStartInProject(project.id)}
-                    className="text-xs gap-2"
-                  >
-                    <Check
-                      className={cn(
-                        "h-3 w-3",
-                        project.id === targetProjectId ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    {project.name}
-                  </DropdownMenuItem>
-                ))}
+                {showProjectPicker && (
+                  <>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      Start in project…
+                    </DropdownMenuLabel>
+                    {allProjects.map((project) => (
+                      <DropdownMenuItem
+                        key={project.id}
+                        onClick={() => handleStartInProject(project.id)}
+                        className="text-xs gap-2"
+                      >
+                        <Check
+                          className={cn(
+                            "h-3 w-3",
+                            project.id === targetProjectId ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        {project.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {/* Prefill-and-edit: land in the new-session composer without spawning. */}
+                <DropdownMenuItem
+                  onClick={handleEdit}
+                  disabled={!navSlug}
+                  className="text-xs gap-2"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit before running
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

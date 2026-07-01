@@ -18,6 +18,7 @@ import { BrainCard } from "~/components/chat/BrainCard";
 import { MarkdownFileLink } from "~/components/chat/MarkdownFileLink";
 import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
+import { RunBlockButton } from "~/components/chat/RunBlockButton";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
@@ -105,10 +106,16 @@ function PreBlock({
   const lang = /language-(\w+)/.exec(codeChild.props.className ?? "")?.[1];
   const code = nodeToPlainText(codeChild.props.children).replace(/\n$/, "");
 
+  const isMermaid = lang === "mermaid";
+
   return (
     <div className="code-block-wrapper">
-      <CopyButton text={code} />
-      {lang === "mermaid" ? (
+      <div className="code-block-actions">
+        {/* Mermaid renders as a diagram, not a runnable block. */}
+        {!isMermaid && <RunBlockButton code={code} />}
+        <CopyButton text={code} />
+      </div>
+      {isMermaid ? (
         <MermaidDiagram code={code} />
       ) : lang ? (
         <DeferredHighlighter code={code} language={lang} />

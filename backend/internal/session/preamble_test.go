@@ -92,6 +92,27 @@ func TestBuildPreamble_SuggestParallelToolGuidance(t *testing.T) {
 	}
 }
 
+func TestBuildPreamble_SuggestParallelCoversHandoffs(t *testing.T) {
+	// The trigger wording must reach beyond "parallel work" to cover a hand-off /
+	// spec written for another repo's agent — the case where the model otherwise
+	// pastes a plain code fence and the card affordance silently doesn't exist.
+	projects := []ProjectInfo{
+		{Name: "Frontend", Slug: "frontend"},
+		{Name: "Backend", Slug: "backend"},
+	}
+	got := buildPreamble("sess-id", "branch", projects, DefaultPresets(), nil, nil, "", false, false, "")
+
+	for _, want := range []string{
+		"hand-off",           // explicitly names the hand-off case
+		"another repo",       // spec written for another repo's agent
+		"instead of pasting", // steer away from a plain code block
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hand-off guidance missing %q", want)
+		}
+	}
+}
+
 func TestBuildPreamble_ToolGuidanceGatedBySuggestParallel(t *testing.T) {
 	// The suggestion guidance lives inside the suggest-parallel snippet; it must be
 	// absent when that preset is off.

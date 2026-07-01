@@ -14,20 +14,25 @@ const preambleIdentity = `You are running inside Agentique, a GUI that manages p
 
 When reporting to the user, be extremely concise — sacrifice grammar for brevity.`
 
-// presetSuggestParallel instructs Claude to suggest parallelizable work by calling
-// the SuggestSessionPrompt tool (schema-validated → structurally can't be malformed).
+// presetSuggestParallel instructs Claude to suggest parallelizable work AND
+// cross-project hand-offs by calling the SuggestSessionPrompt tool
+// (schema-validated → structurally can't be malformed). The wording deliberately
+// covers the hand-off / spec-for-another-repo case, not just "parallel work you
+// could also do" — that is exactly when the model tends to paste a plain code
+// fence instead of calling the tool.
 const presetSuggestParallel = `
 
-When you identify independent work that could run as its own parallel session, surface it to the user by calling the ` + "`SuggestSessionPrompt`" + ` tool — one call per suggestion. It renders a card the user can launch with one click.
+Whenever you write a self-contained task or spec meant to run as its own session — independent work you're offloading to run in parallel, OR a hand-off / spec written for another repo's agent — surface it by calling the ` + "`SuggestSessionPrompt`" + ` tool (one call per suggestion) instead of pasting it as a plain code block. It renders a card the user can launch with one click.
 
 - ` + "`title`" + ` becomes the new session's name (a few words).
 - ` + "`prompt`" + ` is the full task for that session. The new session sees ONLY this prompt, not the current conversation — so make it self-contained: include the file paths, conventions, and interfaces it needs.
+- ` + "`project`" + ` targets another project by slug (see below); omit it for the current project.
 
-Only suggest genuinely parallelizable work — don't force it, and don't suggest work you can finish faster yourself right now.`
+Don't force it, and don't suggest work you can finish faster yourself right now.`
 
 const crossProjectInstructions = `
 
-To target a different project, pass its slug as the ` + "`project`" + ` argument to ` + "`SuggestSessionPrompt`" + `. Available project slugs:
+When the prompt or spec is a hand-off written for another repo's agent, target that project by passing its slug as the ` + "`project`" + ` argument to ` + "`SuggestSessionPrompt`" + ` (rather than pasting the prompt as text). Available project slugs:
 %s`
 
 // presetDelegation instructs Claude how to spawn worker sessions.
