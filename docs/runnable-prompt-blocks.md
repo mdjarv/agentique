@@ -1,6 +1,9 @@
 # Design: runnable prompt blocks + reliable session hand-offs
 
-Status: **Proposed — awaiting review.** Implementation follows review.
+Status: **Implemented.** Phases 1–3 shipped; Phase 4 (inline-parser retirement) deferred as
+planned. Verified end-to-end against the mock backend: a plain fenced block → Run dropdown
+(all projects, current floated + tagged) → cross-project navigation to `/project/the-pint/
+session/new` with the block pre-filled into the composer, **unsent**, no session created.
 
 Covers two features that together make "surface a launchable prompt to the user" reliable
 instead of dependent on the model volunteering structure:
