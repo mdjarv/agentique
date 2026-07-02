@@ -1,9 +1,26 @@
 # Dynamic Workflows — integration design
 
-Status: **Phase 1 in-band approach CORRECT; hang was an agentkit gate bug, now
-fixed** (2026-07-02). Pins bumped to the fixed deps (agentkit
-`bab30cec`, claudecli-go `v0.1.2`). §1–§5 are the design; "## Implemented" is the
-consumer.
+Status: **SHIPPED & live-verified** (2026-07-02). In-band approach correct; the
+hang was an agentkit gate bug (fixed upstream, pins bumped to agentkit `bab30cec`
+/ claudecli-go `v0.1.2`). Workflow view lives in a generalized right panel, and a
+real workflow renders its phase/agent tree end-to-end in the running app
+(verified via a live run: `2/2 agents`, per-agent tokens/duration, no turn hang).
+§1–§5 are the design; "## Implemented" is the consumer.
+
+### Live verification (2026-07-02)
+Ran real workflows through the actual app (isolated backend on the fixed deps +
+this branch's frontend, real CLI). Confirmed: turn completes (no hang), real
+answer delivered, and the right-panel tree renders phases + per-agent
+state/tokens/duration. Two frontend bugs the run surfaced and fixed:
+- **Right panel** (was: panel buried in the collapsed inline activity group →
+  looked missing). Generalized the collapsible right panel with `rightPanelView`
+  (browser | workflow) + a header `WorkflowToggle` + auto-open on a live run.
+- **Parser field-name mismatch** (the tree stayed empty): the frontend read
+  `raw.taskSubtype/taskDescription/taskSummary/taskStatus`, but `WireTaskEvent`
+  sends `subtype/description/summary/status`. `WorkflowActivity`/`SubagentActivity`
+  key off `taskSubtype`, so they rendered nothing despite the data being present.
+  Fixed in `events.ts` (also fixes terminal detection → over-eager auto-open, and
+  the long-latent `SubagentActivity` breakage).
 
 ## RETRACTED — the 2026-07-01 "interactive asymmetry" finding was wrong
 
