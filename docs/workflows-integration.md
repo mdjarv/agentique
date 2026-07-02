@@ -1,75 +1,59 @@
 # Dynamic Workflows — integration design
 
-Status: **Phase 1 wired, then INVALIDATED by live verification** (2026-07-01).
-agentkit's workflow support merged; agentique consumer wired against it (§"##
-Implemented"). But live e2e verification found the in-band approach it (and
-agentkit's design) assumed **does not hold in agentique's interactive session
-mode** — see "## VERIFIED 2026-07-01" immediately below. §1–§5 are the original
-(now partly superseded) design.
+Status: **Phase 1 in-band approach CORRECT; hang was an agentkit gate bug, now
+fixed** (2026-07-02). Pins bumped to the fixed deps (agentkit
+`bab30cec`, claudecli-go `v0.1.2`). §1–§5 are the design; "## Implemented" is the
+consumer.
 
-## VERIFIED 2026-07-01 — interactive mode does not stream the workflow lifecycle
+## RETRACTED — the 2026-07-01 "interactive asymmetry" finding was wrong
 
-Ran the **same real workflow** (2 agents returning "hello", CLI 2.1.197) two ways:
+I earlier claimed interactive mode does not stream the workflow lifecycle (only
+headless `-p` does), and pivoted to out-of-band manifest monitoring. **That was
+wrong.** It came from a *single* interactive probe run whose model happened to
+end the turn after the placeholder ("I'll wait…") and not continue — I
+over-generalized one anomalous run into a confident "VERIFIED" design-invalidating
+claim, which sent the agentkit agent to reopen a settled decision.
 
-| Signal | headless `claude -p` | interactive `Connect()` (**what agentique uses**) |
-| --- | --- | --- |
-| `task_started` (local_workflow) | ✅ | ✅ |
-| `WorkflowLaunch` (RunID + **TaskID**) | ✅ | ✅ |
-| `task_progress` w/ `workflow_progress[]` | ✅ ×5 | ❌ none |
-| `task_notification` (terminal) | ✅ | ❌ never |
-| `result` events | ✅ **2** (placeholder + answer) | ❌ **1** (placeholder), then silence |
+The agentkit agent's more thorough testing (multiple interactive runs incl. a
+2-min 3-phase workflow, plus an end-to-end run through the real agentkit Manager)
+showed interactive **is symmetric** with `-p`: `workflow_progress`, the terminal
+`task_notification`, and the second real-answer `result` all arrive **in-band** —
+even when the workflow finishes after the session settled to idle. The in-band
+stream **is** authoritative; agentkit's decision to skip `WatchWorkflow` stands.
+No out-of-band monitoring, no backend disk access.
 
-The workflow **completed normally** either way — the on-disk manifest
-(`workflows/<runId>.json`) had `status:"completed"`, the result, and the full
-`workflowProgress`. Only the *interactive event stream* is silent. The two-turn
-lifecycle is a **`-p` behavior**: `-p` runs the agent loop to true completion
-(observed **two `system.init`s** — it re-drives turn 2); interactive yields
-control at the placeholder result and never continues.
+**The real bug (agentkit, now fixed).** The CLI stamps `task_type` only on
+`task_started`; `task_progress`/`task_updated`/`task_notification` carry
+`task_type: null`. agentkit gated its workflow-in-flight *clear* on
+`SubagentEvent.IsWorkflow()` (`TaskType=="local_workflow"`), so the terminal
+notification (`TaskType==""` → `IsWorkflow()==false`) was skipped,
+`workflowInFlight` never cleared, and the real second `TurnCompletedEvent` got
+marked `WorkflowPending` and suppressed → hang. Every event was on the wire;
+agentkit dropped them. My "silent stream" reading was inferred from that symptom.
 
-**Consequence (code-confirmed in agentkit `runtime/eventloop.go`):**
-`observeWorkflow` sets `workflowInFlight` on launch and clears it only on a
-terminal notification; `finishTurn` marks the placeholder `WorkflowPending` and
-holds the turn `Running` until that notification. In interactive mode it never
-arrives → **the turn hangs `Running` forever, no progress, no answer.** Phase 1
-(suppress placeholder, render from `task_progress`) therefore cannot work as
-built.
+Fixes (both shipped upstream):
+- **agentkit** — `observeWorkflow` now correlates by the run's `TaskID` and always
+  honors a terminal status, robust to both wire shapes.
+- **claudecli-go v0.1.1** — `TaskEvent.IsWorkflow()` backfills `task_type` /
+  `workflowName` across a task's lifecycle; agentkit pins `v0.1.2`.
 
-**This refutes agentkit's design premise** — *"out-of-band manifest polling buys
-agentique nothing; the in-band stream is authoritative."* In agentique's only
-mode (interactive), the in-band stream is **not** authoritative; the **manifest
-is**. So `WatchWorkflow` (which agentkit declined) is the path, not a redundancy.
+**Consumer alignment (this repo):** the original Phase 1 is vindicated — in-band
+`task_progress` → panel; `task_notification` settles it; treat
+`WorkflowPending==true` results as not-final. With the backfill (claudecli ≥
+v0.1.1) `taskType` is now present on progress/terminal too, so our
+`.some(e => taskType==="local_workflow")` detection is even more robust; the
+`WorkflowPending` suppression is correct (the real answer arrives as a later
+`WorkflowPending==false` result). No code change needed beyond the dep bump; the
+out-of-band card sent to agentkit is moot.
 
-### Corrected approach — out-of-band manifest monitoring
-
-Goal (per user steer 2026-07-01): **insight into what the agents are doing** —
-the phase/agent view the CLI's ultracode TUI shows. The manifest already carries
-exactly that, checkpointed live. So:
-
-- On `WorkflowLaunchedEvent` (we have `RunID` + `ScriptPath`), poll the manifest
-  (`filepath.Join(dir(dir(scriptPath)), runId+".json")`) until terminal status.
-- Feed each snapshot's `workflowProgress`/`status`/`result` into the existing
-  `WorkflowActivity` panel (reuse the wire shape already built).
-- Terminal status also lets us end the turn and surface the result — fixing the
-  hang as a side effect.
-
-**Open decision — where the poller lives:**
-- **A (agentkit-neutral, recommended):** agentkit exposes a neutral workflow
-  monitor (it already has `claudecli.WatchWorkflow` + the path logic, and owns
-  the CLI coupling). Keeps the undocumented-manifest dependency behind the
-  provider boundary; agentique consumes neutral snapshot events. Reopens
-  agentkit's declined decision — but the premise for declining is now falsified.
-- **B (agentique-direct):** agentique's session layer polls the manifest file
-  itself (it already receives `ScriptPath`/`RunID` on the neutral launch event;
-  reading a JSON file needs no `claudecli` import). Ships without cross-repo work,
-  but couples agentique to the undocumented manifest layout — the exact thing the
-  provider boundary exists to prevent.
-
-Recommendation: **A** (structural correctness; the manifest layout is a CLI
-implementation detail). B is the fast fallback if we want it purely in-repo now.
+**Lesson:** one run is not "VERIFIED" — especially for a claim that contradicts
+an existing design decision. Re-run (and go through the real integration path)
+before asserting. See the agentkit write-up `docs/workflow-monitoring-findings.md`.
 
 ## Implemented (Phase 1 MVP — agentique consumer)
 
-Pins bumped: `claudecli-go → v0.1.0`, `agentkit → master (8d3508fd…)`.
+Pins bumped: `claudecli-go → v0.1.2`, `agentkit → master (bab30cec…, includes the
+workflow-in-flight gate fix)`.
 
 - **Backend** (`internal/session/`):
   - `WireTaskEvent` extended with `workflowName` / `outputFile` / `endTime` /
@@ -108,13 +92,14 @@ upstream `claudecli.WorkflowLaunch` *does* have a `TaskID` (and the
 workflow panel keys on the task events' `ToolUseID` (robust), and the launch
 event is surfaced on the wire but not rendered as a separate element.
 
-### Known limitation → SUPERSEDED by the 2026-07-01 finding
+### Known limitation (real, minor)
 
-Earlier note (Phase 1): `task_progress` is transient, so the live tree would be
-lost on reconnect, and out-of-band monitoring was "declined by agentkit." **Both
-premises are now wrong for interactive mode:** the in-band tree isn't just lost
-on reconnect — it never arrives at all (see "## VERIFIED 2026-07-01"), and
-out-of-band monitoring is the fix, not a declined nicety.
+`task_progress` is transient (not persisted), so the live phase/agent tree is
+lost on **reconnect/reload** — the panel then shows header + aggregates (from the
+persisted `task_started`/`task_notification`) but an empty tree until the next
+live workflow. Same tradeoff as ordinary subagents; accepted for now. (The larger
+"the tree never arrives at all" claim in the retracted 2026-07-01 note was wrong —
+see the RETRACTED section above.)
 
 ## 1. What landed upstream (claudecli-go v0.1.0)
 
