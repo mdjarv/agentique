@@ -3,7 +3,6 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Markdown } from "~/components/chat/Markdown";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 interface MarkdownFileLinkProps {
@@ -92,7 +91,12 @@ export function MarkdownFileLink({ href, children }: MarkdownFileLinkProps) {
             </Button>
           </div>
 
-          <ScrollArea className="flex-1">
+          {/* Native scroll container. min-h-0 lets this flex child shrink below its
+              content height so it becomes the scroll region instead of overflowing
+              the 85vh dialog. (A radix ScrollArea can't be used here: its viewport
+              relies on height:100%, which doesn't resolve against a flex-grown
+              parent whose computed height is auto, so it balloons to full content.) */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading && (
               <div className="flex h-40 items-center justify-center">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -104,7 +108,7 @@ export function MarkdownFileLink({ href, children }: MarkdownFileLinkProps) {
                 <Markdown content={content} />
               </div>
             )}
-          </ScrollArea>
+          </div>
         </DialogContent>
       </Dialog>
     </>
