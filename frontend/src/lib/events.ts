@@ -54,10 +54,18 @@ function isKnownEventType(value: unknown): value is ChatEventType {
   return typeof value === "string" && KNOWN_EVENT_TYPES.has(value as ChatEventType);
 }
 
+// Wire events we intentionally don't turn into ChatEvents. They're surfaced for
+// other consumers / persistence (e.g. workflow_launched is the run handle; the
+// workflow panel renders from the task_* stream instead). Skipped silently so
+// they don't log as "unknown".
+const IGNORED_EVENT_TYPES = new Set<string>(["workflow_launched"]);
+
 /** Parse a raw server event (wire format) into a typed ChatEvent. Returns undefined for unknown types. */
 export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | undefined {
   if (!isKnownEventType(raw.type)) {
-    console.warn("[events] Unknown event type, skipping:", raw.type);
+    if (typeof raw.type !== "string" || !IGNORED_EVENT_TYPES.has(raw.type)) {
+      console.warn("[events] Unknown event type, skipping:", raw.type);
+    }
     return undefined;
   }
 
@@ -230,11 +238,15 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         id,
         type: "task",
         toolUseId: raw.toolUseId as string | undefined,
-        taskSubtype: raw.taskSubtype as TaskEvent["taskSubtype"],
-        taskDescription: raw.taskDescription as string | undefined,
+        // Wire field names are subtype/description/summary/status (see
+        // WireTaskEvent); the frontend prefixes them with "task". Reading the
+        // wrong keys left these undefined, which broke Subagent/Workflow rendering
+        // (both key off taskSubtype === "task_started").
+        taskSubtype: raw.subtype as TaskEvent["taskSubtype"],
+        taskDescription: raw.description as string | undefined,
         taskType: raw.taskType as string | undefined,
-        taskSummary: raw.taskSummary as string | undefined,
-        taskStatus: raw.taskStatus as string | undefined,
+        taskSummary: raw.summary as string | undefined,
+        taskStatus: raw.status as string | undefined,
         lastToolName: raw.lastToolName as string | undefined,
         totalTokens: raw.totalTokens as number | undefined,
         toolUses: raw.toolUses as number | undefined,
