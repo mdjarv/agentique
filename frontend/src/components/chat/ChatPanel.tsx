@@ -23,6 +23,7 @@ import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
 import { useSessionState } from "~/hooks/session/useSessionState";
+import { useAutoOpenWorkflowPanel } from "~/hooks/useAutoOpenWorkflowPanel";
 import { useIsLarge } from "~/hooks/useIsLarge";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useTheme } from "~/hooks/useTheme";
@@ -104,6 +105,8 @@ const resumableStates = new Set(["stopped", "failed", "done"]);
 export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
+  // Pop the workflow panel open when this session launches a live workflow.
+  useAutoOpenWorkflowPanel(sessionId);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const projectSlug = project?.slug ?? "";
   const mainBranch = useAppStore((s) => s.projectGitStatus[projectId]?.branch);

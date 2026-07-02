@@ -1,5 +1,5 @@
-import { Check, FolderGit2, Gauge, GitBranch, Globe } from "lucide-react";
-import { useState } from "react";
+import { Check, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
+import { useMemo, useState } from "react";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
@@ -18,9 +18,10 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import { cn, sessionShortId } from "~/lib/utils";
+import { latestWorkflowToolUseId } from "~/lib/workflow-events";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { useBrowserStore } from "~/stores/browser-store";
-import type { SessionMetadata } from "~/stores/chat-store";
+import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useUIStore } from "~/stores/ui-store";
 
@@ -104,6 +105,8 @@ export function SessionHeader({
           />
 
           {isMobile && <ConnectionIndicator />}
+
+          {!isMobile && <WorkflowToggle sessionId={meta.id} />}
 
           {!isMobile && browserEnabled && <BrowserToggle sessionId={meta.id} />}
 
@@ -257,11 +260,21 @@ function ReadOnlyIndicators({
 
 function BrowserToggle({ sessionId }: { sessionId: string }) {
   const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
+  const rightPanelView = useUIStore((s) => s.rightPanelView);
   const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed);
+  const setRightPanelView = useUIStore((s) => s.setRightPanelView);
   const launched = useBrowserStore((s) => s.sessions[sessionId]?.launched ?? false);
 
+  // Active only when the panel is open AND showing the browser view — the panel
+  // is shared with the workflow view now.
+  const active = !rightPanelCollapsed && rightPanelView === "browser";
   const handleToggle = () => {
-    setRightPanelCollapsed(!rightPanelCollapsed);
+    if (active) {
+      setRightPanelCollapsed(true);
+    } else {
+      setRightPanelView("browser");
+      setRightPanelCollapsed(false);
+    }
   };
 
   return (
@@ -270,13 +283,54 @@ function BrowserToggle({ sessionId }: { sessionId: string }) {
       size="sm"
       className={cn(
         "h-7 px-2 text-xs gap-1 relative",
-        rightPanelCollapsed ? "text-muted-foreground" : "text-foreground",
+        active ? "text-foreground" : "text-muted-foreground",
       )}
       title="Toggle browser panel"
       onClick={handleToggle}
     >
       <Globe className="h-3.5 w-3.5" />
       {launched && <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-green-500" />}
+    </Button>
+  );
+}
+
+// WorkflowToggle appears once the session has run (or is running) a dynamic
+// workflow; it opens the shared right panel to the workflow view. Hidden
+// otherwise so it doesn't clutter sessions that never use workflows.
+function WorkflowToggle({ sessionId }: { sessionId: string }) {
+  const turns = useChatStore((s) => s.sessions[sessionId]?.turns);
+  const streamingEvents = useChatStore((s) => s.sessions[sessionId]?.streamingEvents);
+  const hasWorkflow = useMemo(
+    () => latestWorkflowToolUseId(turns, streamingEvents) !== null,
+    [turns, streamingEvents],
+  );
+
+  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
+  const rightPanelView = useUIStore((s) => s.rightPanelView);
+  const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed);
+  const setRightPanelView = useUIStore((s) => s.setRightPanelView);
+
+  if (!hasWorkflow) return null;
+
+  const active = !rightPanelCollapsed && rightPanelView === "workflow";
+  const handleToggle = () => {
+    if (active) {
+      setRightPanelCollapsed(true);
+    } else {
+      setRightPanelView("workflow");
+      setRightPanelCollapsed(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn("h-7 px-2 text-xs gap-1", active ? "text-foreground" : "text-muted-foreground")}
+      title="Toggle workflow panel"
+      onClick={handleToggle}
+    >
+      <Workflow className="h-3.5 w-3.5" />
     </Button>
   );
 }

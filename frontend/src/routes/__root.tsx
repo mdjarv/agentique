@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { Toaster } from "sonner";
 import { LoginPage } from "~/components/auth/LoginPage";
 import { BrowserPanel } from "~/components/browser/BrowserPanel";
+import { WorkflowPanel } from "~/components/chat/WorkflowPanel";
 import { ErrorBoundary } from "~/components/ErrorBoundary";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
@@ -64,6 +65,7 @@ function AuthenticatedLayout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
+  const rightPanelView = useUIStore((s) => s.rightPanelView);
   const browserPanelWidth = useUIStore((s) => s.browserPanelWidth);
   const setBrowserPanelWidth = useUIStore((s) => s.setBrowserPanelWidth);
   const loadFeatures = useFeatureStore((s) => s.load);
@@ -130,20 +132,36 @@ function AuthenticatedLayout() {
               <Outlet />
             </ErrorBoundary>
           </main>
-          {browserEnabled && !isMobile && !rightPanelCollapsed && activeSessionId && (
-            <div
-              className="border-l flex flex-col shrink-0 relative"
-              style={{ width: browserPanelWidth }}
-            >
+          {(() => {
+            // Shared collapsible right panel — content switches on rightPanelView.
+            const showWorkflow = rightPanelView === "workflow";
+            const showBrowser = rightPanelView === "browser" && browserEnabled;
+            if (
+              isMobile ||
+              rightPanelCollapsed ||
+              !activeSessionId ||
+              (!showWorkflow && !showBrowser)
+            )
+              return null;
+            return (
               <div
-                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-primary/20 active:bg-primary/30"
-                onMouseDown={handleDragStart}
-              />
-              <ErrorBoundary>
-                <BrowserPanel sessionId={activeSessionId} />
-              </ErrorBoundary>
-            </div>
-          )}
+                className="border-l flex flex-col shrink-0 relative"
+                style={{ width: browserPanelWidth }}
+              >
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-primary/20 active:bg-primary/30"
+                  onMouseDown={handleDragStart}
+                />
+                <ErrorBoundary>
+                  {showWorkflow ? (
+                    <WorkflowPanel sessionId={activeSessionId} />
+                  ) : (
+                    <BrowserPanel sessionId={activeSessionId} />
+                  )}
+                </ErrorBoundary>
+              </div>
+            );
+          })()}
           <Toaster
             theme={resolvedTheme}
             position={isMobile ? "top-center" : "bottom-right"}

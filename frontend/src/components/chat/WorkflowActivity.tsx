@@ -14,6 +14,8 @@ import type { TaskEvent, WorkflowProgressEntry } from "~/stores/chat-types";
 
 interface WorkflowActivityProps {
   taskEvents: TaskEvent[];
+  /** When true, drop the inline chat indent (left rule) — for the right-panel view. */
+  bare?: boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -59,6 +61,7 @@ const EMPTY_PROGRESS: WorkflowProgressEntry[] = [];
  */
 export const WorkflowActivity = memo(function WorkflowActivity({
   taskEvents,
+  bare = false,
 }: WorkflowActivityProps) {
   const started = taskEvents.find((e) => e.taskSubtype === "task_started");
   const latestProgress = taskEvents.findLast((e) => e.taskSubtype === "task_progress");
@@ -117,7 +120,7 @@ export const WorkflowActivity = memo(function WorkflowActivity({
   const hasPhases = phases.length > 0;
 
   return (
-    <div className="ml-5 border-l-2 border-agent/20 pl-2.5">
+    <div className={bare ? "" : "ml-5 border-l-2 border-agent/20 pl-2.5"}>
       <div className="border rounded-md bg-muted/20 overflow-hidden text-xs">
         {/* Header */}
         <button

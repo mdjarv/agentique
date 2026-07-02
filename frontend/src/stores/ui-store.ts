@@ -6,6 +6,9 @@ import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type Theme = "light" | "dark" | "system";
 
+/** Which view the shared collapsible right panel shows. */
+export type RightPanelView = "browser" | "workflow";
+
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
 
 function readLegacyCollapsedProjects(): string[] {
@@ -44,6 +47,8 @@ interface UIState {
    *  the source of truth is `authStore.user.sidebarFocusMode`. */
   sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
+  /** Which content the shared right panel shows when expanded. */
+  rightPanelView: RightPanelView;
   todoSidebarCollapsed: boolean;
   browserPanelWidth: number;
   theme: Theme;
@@ -61,6 +66,7 @@ interface UIState {
   clearLegacyPinnedProjectIds: () => void;
   setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
+  setRightPanelView: (view: RightPanelView) => void;
   setTodoSidebarCollapsed: (collapsed: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
@@ -76,6 +82,7 @@ export const useUIStore = create<UIState>()(
       legacyPinnedProjectIds: [],
       sidebarFocusMode: false,
       rightPanelCollapsed: true,
+      rightPanelView: "browser" as RightPanelView,
       todoSidebarCollapsed: false,
       browserPanelWidth: 500,
       theme: "dark" as Theme,
@@ -171,6 +178,7 @@ export const useUIStore = create<UIState>()(
       setSidebarFocusMode: (enabled) => set({ sidebarFocusMode: enabled }),
 
       setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
+      setRightPanelView: (view) => set({ rightPanelView: view }),
 
       setTodoSidebarCollapsed: (collapsed) => set({ todoSidebarCollapsed: collapsed }),
 
@@ -223,6 +231,7 @@ export const useUIStore = create<UIState>()(
         legacyPinnedProjectIds: state.legacyPinnedProjectIds,
         sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
+        rightPanelView: state.rightPanelView,
         todoSidebarCollapsed: state.todoSidebarCollapsed,
         browserPanelWidth: state.browserPanelWidth,
         theme: state.theme,
