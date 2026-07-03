@@ -662,6 +662,19 @@ func (m *Manager) IsLive(id string) bool {
 	return ok
 }
 
+// LiveIDs returns the set of session IDs with a live CLI process in the
+// in-memory registry. Used by the janitor to spare any artifact of a session
+// the running server still holds, independent of persisted DB state.
+func (m *Manager) LiveIDs() map[string]bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make(map[string]bool, len(m.sessions))
+	for id := range m.sessions {
+		ids[id] = true
+	}
+	return ids
+}
+
 // Evict removes a dead session from the in-memory map and closes it.
 // Unlike Stop, it does not change the DB state.
 func (m *Manager) Evict(id string) {

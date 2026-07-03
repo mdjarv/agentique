@@ -521,6 +521,18 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 }
 
 // Shutdown gracefully closes all live sessions and browser instances.
+// SweepOrphans reclaims orphaned worktrees and /tmp artifacts left by sessions
+// that no longer exist (crashes, force-quits, DB resets). Orphans-only and
+// self-guarding (it reaps nothing when the session table is empty), so it is
+// safe to run unattended. Invoked once from the serve command at production
+// startup — deliberately not from New, so unit tests that construct a server
+// never trigger filesystem removals against the developer's real data dir.
+func (s *Server) SweepOrphans(ctx context.Context) {
+	if s.svc != nil {
+		s.svc.SweepOrphans(ctx)
+	}
+}
+
 func (s *Server) Shutdown() {
 	if s.brainAuto != nil {
 		s.brainAuto.Stop()

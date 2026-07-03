@@ -54,6 +54,7 @@ type serviceQueries interface {
 	sessionWriter
 
 	ListProjects(ctx context.Context) ([]store.Project, error)
+	ListAllSessions(ctx context.Context) ([]store.Session, error)
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]store.SessionSummariesByProjectRow, error)
 	AllSessionSummaries(ctx context.Context) ([]store.AllSessionSummariesRow, error)
 	DeleteSession(ctx context.Context, id string) error

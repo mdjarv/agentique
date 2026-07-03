@@ -155,6 +155,15 @@ func (bs *BrowserService) StopBrowser(sessionID string) error {
 	return nil
 }
 
+// RemoveProfile deletes the session's persisted Chrome profile directory. Called
+// on definitive teardown (DeleteSession) — not on Stop, which keeps the profile
+// so a resumed session retains its browser state. Best-effort; logs on failure.
+func (bs *BrowserService) RemoveProfile(sessionID string) {
+	if err := bs.browserMgr.RemoveProfile(sessionID); err != nil {
+		slog.Warn("chrome profile cleanup failed", "session_id", sessionID, "error", err)
+	}
+}
+
 // BrowserInput dispatches a mouse or keyboard event to the session's browser.
 func (bs *BrowserService) BrowserInput(sessionID string, input BrowserInputParams) error {
 	cdp, err := bs.requireCDP(sessionID)

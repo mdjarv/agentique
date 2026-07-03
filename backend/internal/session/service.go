@@ -16,6 +16,7 @@ import (
 
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/janitor"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -1168,6 +1169,22 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	filesDir := filepath.Join(paths.SessionFilesDir(), sessionID)
 	if err := os.RemoveAll(filesDir); err != nil {
 		slog.Warn("session files cleanup failed", "session_id", sessionID, "error", err)
+	}
+
+	// Reclaim the /tmp artifacts that survive Stop: the Chrome profile (kept
+	// across resume by design) and the Claude scratchpad (keyed by worktree
+	// path). Only reap the scratchpad for a session that owned a private
+	// worktree — sessions running in the project root share that scratchpad
+	// with siblings, so removing it would disrupt them.
+	if s.browserSvc != nil {
+		s.browserSvc.RemoveProfile(sessionID)
+	}
+	if wtPath := nullStr(dbSess.WorktreePath); wtPath != "" {
+		if scratch := janitor.ScratchpadDir(wtPath); scratch != "" {
+			if err := os.RemoveAll(scratch); err != nil {
+				slog.Warn("scratchpad cleanup failed", "session_id", sessionID, "error", err)
+			}
+		}
 	}
 
 	// Capture the transcript before deletion so the auto-encode hook can distill

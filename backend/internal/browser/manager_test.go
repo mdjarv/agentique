@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -223,4 +225,20 @@ func TestManager_LaunchIdempotent(t *testing.T) {
 	inst, err := m.Launch("test")
 	require.NoError(t, err)
 	assert.Equal(t, expectedURL, inst.CDPEndpoint)
+}
+
+func TestRemoveProfile(t *testing.T) {
+	m := NewManager()
+	id := "unit-test-remove-profile"
+	dir := profileDir(id)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "Default"), 0o755))
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	require.NoError(t, m.RemoveProfile(id))
+	_, err := os.Stat(dir)
+	assert.True(t, os.IsNotExist(err), "profile dir should be gone, stat err = %v", err)
+
+	// Idempotent: removing an absent profile is not an error.
+	assert.NoError(t, m.RemoveProfile(id))
 }

@@ -398,6 +398,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
+	// Reclaim orphaned worktrees and /tmp artifacts from sessions that no longer
+	// exist. Production-only (never in test mode, whose isolated DB would misjudge
+	// real artifacts as orphans) and off the critical startup path.
+	if !testMode {
+		go srv.SweepOrphans(context.Background())
+	}
+
 	authStatus := "enabled"
 	if disableAuth {
 		authStatus = "disabled"

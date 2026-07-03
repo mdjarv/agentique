@@ -187,7 +187,7 @@ func (m *Manager) launchOnPort(sessionID string, port int) (*Instance, error) {
 		"--disable-gpu",
 		"--disable-extensions",
 		"--no-sandbox",
-		fmt.Sprintf("--user-data-dir=%s", filepath.Join(os.TempDir(), "agentique-chrome-"+sessionID)),
+		fmt.Sprintf("--user-data-dir=%s", profileDir(sessionID)),
 	}
 
 	cmd := m.execCommand(ctx, m.chromePath, args...)
@@ -268,6 +268,21 @@ func discoverCDPEndpoint(port int, maxRetries int, delay time.Duration) (string,
 		}
 	}
 	return "", fmt.Errorf("after %d retries: %w", maxRetries, lastErr)
+}
+
+// profileDir is the Chrome --user-data-dir for a session. The janitor package
+// reproduces this path (janitor.ChromeProfilePath) for offline/orphan cleanup —
+// keep the "agentique-chrome-" prefix in sync across both.
+func profileDir(sessionID string) string {
+	return filepath.Join(os.TempDir(), "agentique-chrome-"+sessionID)
+}
+
+// RemoveProfile deletes a session's Chrome --user-data-dir. Stop deliberately
+// leaves it on disk so a resumed session keeps its browser state (cookies,
+// logins); call this only on definitive teardown (DeleteSession) to reclaim the
+// /tmp space. Safe to call whether or not Chrome ever launched.
+func (m *Manager) RemoveProfile(sessionID string) error {
+	return os.RemoveAll(profileDir(sessionID))
 }
 
 // Stop kills the Chrome process for the given session and removes it.
