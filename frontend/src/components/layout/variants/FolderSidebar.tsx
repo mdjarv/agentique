@@ -9,7 +9,7 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, FolderPlus } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { setProjectPinned } from "~/lib/project-actions";
@@ -18,12 +18,14 @@ import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
+import { StreamSearchBar } from "../StreamSearchBar";
 import { DragOverlayProject } from "./folder-sidebar/DraggableProject";
 import { FocusModeList } from "./folder-sidebar/FocusModeList";
 import { FolderContent } from "./folder-sidebar/FolderHeader";
 import { FolderSection } from "./folder-sidebar/FolderSection";
 import { InlineRename } from "./folder-sidebar/InlineRename";
 import { SidebarRow } from "./folder-sidebar/SidebarRow";
+import type { ProjectEntry } from "./folder-sidebar/types";
 import { UngroupedSection } from "./folder-sidebar/UngroupedSection";
 import { useExpandCollapse } from "./folder-sidebar/use-expand-collapse";
 import { useFolderGroups } from "./folder-sidebar/use-folder-groups";
@@ -113,8 +115,37 @@ export function FolderSidebar() {
     [mutations.renameFolderProjects, renameFolderExpanded, renameInFolderOrder],
   );
 
+  // ── Search / filter (project name, slug, or folder name) ──
+  const [searchQuery, setSearchQuery] = useState("");
+  const query = searchQuery.trim().toLowerCase();
+  const isSearching = query.length > 0;
+
+  const { displayFolders, displayUngrouped } = useMemo(() => {
+    if (!isSearching) return { displayFolders: orderedFolders, displayUngrouped: ungrouped };
+    const matchEntry = (e: ProjectEntry) =>
+      e.project.name.toLowerCase().includes(query) || e.project.slug.toLowerCase().includes(query);
+    const displayFolders = orderedFolders
+      // A folder-name match surfaces the whole folder; otherwise filter its projects.
+      .map((f) =>
+        f.name.toLowerCase().includes(query)
+          ? f
+          : { ...f, projects: f.projects.filter(matchEntry) },
+      )
+      .filter((f) => f.projects.length > 0);
+    return { displayFolders, displayUngrouped: ungrouped.filter(matchEntry) };
+  }, [isSearching, query, orderedFolders, ungrouped]);
+
+  // Search overrides focus mode and forces folders open so matches stay visible.
+  const showList = isSearching || !focusMode;
+  const noMatches = isSearching && displayFolders.length === 0 && displayUngrouped.length === 0;
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <StreamSearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Filter projects..."
+      />
       <DndContext
         sensors={dnd.sensors}
         onDragStart={dnd.handleDragStart}
@@ -123,24 +154,14 @@ export function FolderSidebar() {
       >
         <div className="flex-1 overflow-y-auto min-h-0 py-2 px-2">
           <SortableContext items={dnd.allSortableIds} strategy={verticalListSortingStrategy}>
-            {focusMode ? (
-              <FocusModeList
-                orderedFolders={orderedFolders}
-                ungrouped={ungrouped}
-                isProjectExpanded={expand.isProjectExpanded}
-                onToggleProject={expand.toggleProject}
-                onExpandProject={expand.expandProject}
-                onTogglePin={togglePinned}
-                onSessionClick={handleSessionClick}
-              />
-            ) : (
+            {showList ? (
               <>
-                {orderedFolders.map((folder, folderIdx) => (
+                {displayFolders.map((folder, folderIdx) => (
                   <FolderSection
                     key={folder.name}
                     folder={folder}
                     folderIdx={folderIdx}
-                    expanded={expand.isFolderExpanded(folder.name)}
+                    expanded={isSearching || expand.isFolderExpanded(folder.name)}
                     isRenaming={mutations.renamingFolder === folder.name}
                     onStartRename={() => mutations.setRenamingFolder(folder.name)}
                     onConfirmRename={(n) => handleRenameFolder(folder.name, n)}
@@ -160,8 +181,8 @@ export function FolderSidebar() {
                 ))}
 
                 <UngroupedSection
-                  ungrouped={ungrouped}
-                  hasFolders={orderedFolders.length > 0}
+                  ungrouped={displayUngrouped}
+                  hasFolders={displayFolders.length > 0}
                   isDragProject={dnd.isDragProject}
                   dragSourceFolder={dnd.dragSourceFolder}
                   isProjectExpanded={expand.isProjectExpanded}
@@ -170,7 +191,23 @@ export function FolderSidebar() {
                   onTogglePin={togglePinned}
                   onSessionClick={handleSessionClick}
                 />
+
+                {noMatches && (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground-faint">
+                    No projects match “{searchQuery.trim()}”
+                  </div>
+                )}
               </>
+            ) : (
+              <FocusModeList
+                orderedFolders={orderedFolders}
+                ungrouped={ungrouped}
+                isProjectExpanded={expand.isProjectExpanded}
+                onToggleProject={expand.toggleProject}
+                onExpandProject={expand.expandProject}
+                onTogglePin={togglePinned}
+                onSessionClick={handleSessionClick}
+              />
             )}
           </SortableContext>
         </div>

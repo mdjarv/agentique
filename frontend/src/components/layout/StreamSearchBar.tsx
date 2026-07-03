@@ -5,9 +5,14 @@ import { cn } from "~/lib/utils";
 interface StreamSearchBarProps {
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }
 
-export function StreamSearchBar({ value, onChange }: StreamSearchBarProps) {
+export function StreamSearchBar({
+  value,
+  onChange,
+  placeholder = "Filter sessions...",
+}: StreamSearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClear = useCallback(() => {
@@ -27,7 +32,7 @@ export function StreamSearchBar({ value, onChange }: StreamSearchBarProps) {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Filter sessions..."
+          placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="flex-1 bg-transparent text-sm text-sidebar-foreground placeholder:text-muted-foreground-faint outline-none"
