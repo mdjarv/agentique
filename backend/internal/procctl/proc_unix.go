@@ -61,9 +61,21 @@ func signalGroup(pgid int, sig syscall.Signal) error {
 	return syscall.Kill(-pgid, sig)
 }
 
-// findCLIProcesses scans /proc for processes whose command line contains
-// CLIProcessMarker, returning their pid, parent pid, and process-group id.
-// Unreadable or vanished entries are skipped (best-effort).
+// findCLIProcesses scans /proc for agentique-spawned CLI subprocesses, returning
+// their pid, parent pid, and process-group id. Unreadable or vanished entries are
+// skipped (best-effort). A process qualifies only when BOTH hold:
+//
+//   - its command line passes isAgentiqueCLICmdline — the marker appears as the
+//     value of the --append-system-prompt flag, not merely somewhere on the line,
+//     so a user's interactive `claude` whose prompt happens to mention Agentique
+//     is never matched; and
+//   - it is its own process-group leader (pgid == pid) — every session CLI is
+//     spawned with Setpgid, so this holds for all real targets and excludes
+//     incidental shell commands that inherit their shell's group.
+//
+// These two together identify agentique CLIs precisely enough that the reapers
+// can rely on parentage (see ReapOrphanedCLIProcesses / KillCLIChildrenOf) rather
+// than a fragile substring match.
 func findCLIProcesses() []CLIProcess {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -79,16 +91,33 @@ func findCLIProcesses() []CLIProcess {
 			continue // not a pid dir
 		}
 		cmdline, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
-		if err != nil || !bytes.Contains(cmdline, []byte(CLIProcessMarker)) {
+		if err != nil || !isAgentiqueCLICmdline(cmdline) {
 			continue
 		}
 		ppid, pgid, ok := readParentAndGroup("/proc/" + e.Name() + "/stat")
-		if !ok {
-			continue
+		if !ok || pgid != pid {
+			continue // only own-group leaders are real spawned CLIs
 		}
 		out = append(out, CLIProcess{PID: pid, PPID: ppid, PGID: pgid})
 	}
 	return out
+}
+
+// isAgentiqueCLICmdline reports whether a NUL-separated /proc cmdline is an
+// agentique-spawned provider CLI: it must carry the CLIProcessMarker as the
+// value of the --append-system-prompt flag (how agentique injects the session
+// preamble). Requiring the flag/value adjacency — not a bare substring — means
+// a process that merely mentions the marker text in a prompt or argument does
+// not qualify.
+func isAgentiqueCLICmdline(cmdline []byte) bool {
+	args := bytes.Split(cmdline, []byte{0})
+	marker := []byte(CLIProcessMarker)
+	for i := 0; i+1 < len(args); i++ {
+		if string(args[i]) == appendSystemPromptFlag && bytes.Contains(args[i+1], marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // readParentAndGroup parses ppid (field 4) and pgrp (field 5) from a

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -67,6 +68,59 @@ func TestReadParentAndGroup(t *testing.T) {
 	}
 }
 
+func TestIsAgentiqueCLICmdline(t *testing.T) {
+	nul := func(args ...string) []byte {
+		return []byte(strings.Join(args, "\x00"))
+	}
+	preamble := "You are " + CLIProcessMarker + ", a GUI that manages sessions."
+
+	cases := []struct {
+		name  string
+		args  []string
+		match bool
+	}{
+		{
+			name:  "agentique CLI: marker is the --append-system-prompt value",
+			args:  []string{"claude", "--input-format", "stream-json", appendSystemPromptFlag, preamble},
+			match: true,
+		},
+		{
+			// The safety case the user asked about: an interactive `claude`
+			// whose PROMPT merely mentions the marker text must NOT match.
+			name:  "user prompt mentions Agentique (positional) — not matched",
+			args:  []string{"claude", "tell me about running inside Agentique"},
+			match: false,
+		},
+		{
+			name:  "user prompt via -p mentions marker — not matched",
+			args:  []string{"claude", "-p", "what does " + CLIProcessMarker + " mean"},
+			match: false,
+		},
+		{
+			name:  "bare interactive claude — not matched",
+			args:  []string{"claude", "--dangerously-skip-permissions"},
+			match: false,
+		},
+		{
+			name:  "flag present but value lacks the marker — not matched",
+			args:  []string{"claude", appendSystemPromptFlag, "be terse"},
+			match: false,
+		},
+		{
+			name:  "flag is the very last arg (no value) — not matched",
+			args:  []string{"claude", appendSystemPromptFlag},
+			match: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isAgentiqueCLICmdline(nul(tc.args...)); got != tc.match {
+				t.Fatalf("isAgentiqueCLICmdline = %v, want %v", got, tc.match)
+			}
+		})
+	}
+}
+
 func TestSignalGroupRefusesSelfAndInvalid(t *testing.T) {
 	for _, pgid := range []int{0, 1, syscall.Getpgrp()} {
 		if err := signalGroup(pgid, syscall.SIGTERM); err != errRefuseSelfGroup {
@@ -82,9 +136,10 @@ func TestFindAndKillCLIProcess(t *testing.T) {
 	if _, err := os.Stat("/proc/self/stat"); err != nil {
 		t.Skip("no /proc; reaper is Linux-specific")
 	}
-	// The marker lands in argv, so FindCLIProcesses matches it via /proc/<pid>/cmdline.
-	script := "sleep 60 # " + CLIProcessMarker
-	cmd := exec.Command("/bin/sh", "-c", script)
+	// Mimic a real agentique CLI: the marker is the value of --append-system-prompt
+	// (extra args after `-c cmd` become $0,$1,... in sh's argv, i.e. its cmdline).
+	cmd := exec.Command("/bin/sh", "-c", "sleep 60", "claude",
+		appendSystemPromptFlag, "You are "+CLIProcessMarker+", a GUI. Blah.")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own group, like the CLI adapter
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)

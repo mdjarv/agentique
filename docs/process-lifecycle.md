@@ -20,8 +20,9 @@ mechanisms below. There is **no ambient-context safety net**.
 1. **Orphans on an ungraceful server exit.** On SIGKILL / crash / OOM the server
    dies without running Shutdown. Because each child is in its own group and only
    a child of the server (never in the server's group), nothing signals it — it
-   reparents to init and survives until reboot, leaking a `claude` process plus
-   its Playwright/Chromium subtree. Restarts do not clean it up (`RecoverStale
+   reparents to init (or the systemd `--user` subreaper) and survives until
+   reboot, leaking a `claude` process plus its Playwright/Chromium subtree.
+   Restarts do not clean it up (`RecoverStale
    Sessions` only rewrites DB rows), so orphans accumulate across restarts.
    On a swapless box this feeds a vicious cycle: warm processes exhaust memory →
    OOM-kill → orphan storm → restart → repeat.
@@ -38,15 +39,23 @@ mechanisms below. There is **no ambient-context safety net**.
 - `ReapOrphanedCLIProcesses()` runs at startup (in `serve.go`, in the
   production-only `!testMode` block next to `SweepOrphans` — deliberately kept
   out of `server.New`, since a constructor must have no destructive side
-  effects). It scans `/proc` for processes
-  whose command line contains `CLIProcessMarker` (`"running inside Agentique"`,
-  injected into every session's system prompt via `--append-system-prompt`;
-  `preamble.go` `preambleIdentity`) **and** that are reparented to init
-  (`PPID == 1`), then SIGTERMs their process group. Safe because the
-  single-instance guard (`isServerRunning()`) runs before `server.New` and
-  startup does not auto-resume, so any such orphan can only belong to a dead
-  server. A live session (child of the running server, `PPID != 1`) is never
-  matched.
+  effects). `findCLIProcesses` scans `/proc` and matches a process only when
+  **both** hold: (a) `CLIProcessMarker` (`"running inside Agentique"`, from
+  `preamble.go` `preambleIdentity`) appears as the **value of the
+  `--append-system-prompt` flag** — not merely somewhere on the line, so a
+  user's interactive `claude` whose *prompt* mentions Agentique is never matched;
+  and (b) the process is its **own process-group leader** (`pgid == pid`, true for
+  every Setpgid-spawned CLI). It then SIGTERMs the process group of each match
+  that is **not a child of the current server** (`PPID != os.Getpid()`).
+  - **Orphan = "not our child", not "PPID == 1".** On a systemd *user* session a
+    dead parent's children reparent to the systemd `--user` **subreaper**, not
+    pid 1, so a `PPID == 1` test misses every orphan (verified empirically). Since
+    the single-instance guard ran and startup has spawned no sessions, any match
+    is by construction not the current server's child, hence an orphan of a dead
+    prior server.
+  - Safe for unrelated CLIs: an SSH/interactive `claude`, reviewbot's claude, or a
+    nested agent-run `claude` carries no agentique preamble via
+    `--append-system-prompt`, so it fails the match regardless of parentage.
 - `KillCLIChildrenOf(os.Getpid())` runs as a **shutdown backstop** after
   `srv.Shutdown()` in `serve.go`, SIGKILLing the group of any marker-matching
   process still a direct child of the server — catching the shutdown race (#2).
