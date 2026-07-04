@@ -47,6 +47,23 @@ The live SQLite database is at `~/.local/share/agentique/agentique.db`. Sessions
 - sqlc generates type-safe query code from SQL in `backend/db/queries/` — do not edit generated files.
 - Migrations in `backend/db/migrations/` (goose, sequential numbering).
 
+## CLI Subprocess Lifecycle
+
+Each session drives a provider CLI (`claude`/`codex`) in its **own process group**
+(`Setpgid`), spawned with `context.Background()` so it outlives the request. It is
+only closed cooperatively (Stop/Delete/Evict/Shutdown). Two safeguards prevent
+leaks — design in `docs/process-lifecycle.md`:
+- **Orphan reaper** (`internal/procctl`): a startup sweep in `serve.go` (production
+  block next to `SweepOrphans`, **never** in `server.New` — no destructive side
+  effects in constructors) kills process groups orphaned by an ungraceful prior
+  exit, plus a shutdown backstop. A process is matched only when the
+  `CLIProcessMarker` appears as the `--append-system-prompt` value **and** it is
+  its own group leader; "orphan" = `PPID != os.Getpid()` (robust to the systemd
+  `--user` subreaper — not `PPID == 1`).
+- **Idle eviction** (`internal/session/idle_evict.go`, opt-in via `[session]
+  idle-evict-timeout`): stops idle-past-TTL sessions to reclaim the CLI + browser
+  subtree; they lazy-resume on the next message.
+
 ## Channels, Hierarchy, and Coordination
 
 The `messages` table is the source of truth for channel timelines. `session_events` is maintained for legacy agent-message display, but informational channel metadata (`messageType: "introduction"`, `messageType: "spawn"`) is **not** written to session events — see `writeLegacyAgentMessageEvents` in `session/channel.go`. When adding a new informational message type, extend that skip list.
