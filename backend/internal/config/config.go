@@ -18,12 +18,23 @@ import (
 
 type Config struct {
 	Server       ServerConfig       `toml:"server"`
+	Session      SessionConfig      `toml:"session"`
 	Logging      LoggingConfig      `toml:"logging"`
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
 	Experimental ExperimentalConfig `toml:"experimental"`
 	Brain        BrainConfig        `toml:"brain"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
+}
+
+// SessionConfig tunes session lifecycle behavior.
+type SessionConfig struct {
+	// IdleEvictTimeout, when set to a positive duration (e.g. "30m"), stops a
+	// session that has been idle at least this long to reclaim its CLI process
+	// and Playwright/Chrome subtree. The session resumes transparently on the
+	// next message. "" (the default) disables idle eviction. Env override:
+	// AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT.
+	IdleEvictTimeout string `toml:"idle-evict-timeout"`
 }
 
 // DevURLSlot describes one publicly-routable dev frontend URL.

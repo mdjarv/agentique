@@ -766,6 +766,21 @@ func (m *Manager) overlayLiveStates(sessions []store.Session) {
 	}
 }
 
+// LiveSessions returns a snapshot of all sessions with a connected CLI. The
+// returned slice is a copy; the sessions themselves are shared. Used by the
+// idle-eviction sweep.
+func (m *Manager) LiveSessions() []*Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		if s != nil {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // CloseAll gracefully closes all live sessions.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()

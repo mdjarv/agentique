@@ -328,6 +328,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	mcpInternalURL := fmt.Sprintf("http://127.0.0.1:%s/mcp", mcpPort)
 
+	// Idle-session eviction: env wins over the [session] config-file value; ""
+	// disables it. An unparseable value is a hard config error rather than a
+	// silent no-op.
+	var idleEvictTimeout time.Duration
+	if v := firstNonEmpty(os.Getenv("AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT"), fileCfg.Session.IdleEvictTimeout); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			slog.Error("invalid session idle-evict-timeout", "value", v, "error", err)
+			os.Exit(1)
+		}
+		idleEvictTimeout = d
+	}
+
 	cfg := server.Config{
 		AuthEnabled:         !disableAuth,
 		TestMode:            testMode,
@@ -336,6 +349,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		DB:                  db,
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
+		IdleEvictTimeout:    idleEvictTimeout,
 		DevURLSlots:         fileCfg.DevURLs,
 		MCPInternalURL:      mcpInternalURL,
 		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic

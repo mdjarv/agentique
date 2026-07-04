@@ -57,6 +57,12 @@ type Config struct {
 	// ExperimentalBrowser enables the per-session Chrome browser panel.
 	ExperimentalBrowser bool
 
+	// IdleEvictTimeout, when > 0, stops a session idle at least this long to
+	// reclaim its CLI process and browser subtree (it resumes on the next
+	// message). 0 disables idle eviction. Resolved from [session]
+	// idle-evict-timeout (or AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT).
+	IdleEvictTimeout time.Duration
+
 	// DevURLSlots is the configured pool of leasable dev URL slots. Empty
 	// disables the AcquireDevUrl tool path (slots will report all-busy).
 	DevURLSlots []config.DevURLSlot
@@ -197,6 +203,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	svc := session.NewService(mgr, queries, bus, runner)
 	gitSvc := session.NewGitService(mgr, queries, bus, runner)
 	svc.SetGitService(gitSvc)
+	if cfg.IdleEvictTimeout > 0 {
+		svc.SetIdleEvictTimeout(cfg.IdleEvictTimeout)
+	}
 
 	// The agent browser (headless Playwright MCP) is always available — it
 	// launches lazily on first tool use. The experimental flag only gates the

@@ -115,9 +115,20 @@ type Session struct {
 	ctx       context.Context
 	cancelCtx context.CancelFunc
 
-	mu             sync.Mutex
-	state          State
-	queryCount     int
+	mu         sync.Mutex
+	state      State
+	queryCount int
+
+	// lastActiveAt is the wall-clock time of the last turn start / state
+	// transition. For an idle session it is "idle since"; the idle-eviction
+	// sweep measures now-lastActiveAt against the configured TTL. Stamped in
+	// newSession, validateAndPrepareQuery (turn commit), and setState. Guarded
+	// by mu.
+	lastActiveAt time.Time
+	// evicting is set by beginIdleEvict to atomically claim an idle session for
+	// resource-reclaiming eviction; validateAndPrepareQuery refuses while it is
+	// set, so a turn can never start on a session being torn down. Guarded by mu.
+	evicting       bool
 	pipeline       *EventPipeline
 	queries        sessionQueries
 	broadcast      func(pushType string, payload any)
@@ -220,6 +231,7 @@ func newSession(p sessionParams) *Session {
 		ctx:                ctx,
 		cancelCtx:          cancel,
 		state:              StateIdle,
+		lastActiveAt:       time.Now(),
 		db:                 p.db,
 		queries:            p.queries,
 		broadcast:          p.broadcast,
@@ -775,6 +787,13 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 	if s.rt == nil {
 		return nil, false, false, ErrNotLive
 	}
+	// Refuse a session claimed by the idle-eviction sweep — it is being torn
+	// down and removed from the pool; the caller should lazy-resume a fresh one.
+	// This is the same lock beginIdleEvict claims under, so the two are mutually
+	// exclusive: whichever takes s.mu first wins.
+	if s.evicting {
+		return nil, false, false, ErrNotLive
+	}
 	// Refuse StateRunning (already querying) and StateMerging (a git op holds
 	// the worktree) — starting a turn during a merge/rebase would write the
 	// worktree concurrently with the git op.
@@ -782,6 +801,11 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, s.state)
 	}
 	s.queryCount++
+	// Stamp activity at the turn-commit point. The runtime flips Idle→Running
+	// asynchronously, so in-memory state can still read Idle during the gap;
+	// refreshing lastActiveAt here guarantees a just-started turn is never seen
+	// as idle-past-TTL by a concurrent eviction sweep.
+	s.lastActiveAt = time.Now()
 	wasCompleted = s.completedAt != ""
 	s.completedAt = ""
 	wasMerged = s.git.worktreeMerged

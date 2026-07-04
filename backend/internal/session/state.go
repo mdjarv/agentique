@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/allbin/agentkit/runtime"
 	"github.com/allbin/agentkit/sqliteops"
@@ -87,6 +88,9 @@ func (s *Session) setState(state State) error {
 		return err
 	}
 	s.state = state
+	// Every transition is activity; for a →Idle transition this stamps
+	// "idle since" so the idle-eviction sweep counts from turn end.
+	s.lastActiveAt = time.Now()
 	s.mu.Unlock()
 
 	// Persist outside the lock so the blocking DB write (RetryWrite, can stall

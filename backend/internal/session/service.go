@@ -207,6 +207,11 @@ type Service struct {
 	idempotencyMu    sync.Mutex
 	idempotencyCache map[string]idempotencyEntry
 
+	// idleEvictTimeout, when > 0, enables the background sweep that stops
+	// sessions idle for at least this long to reclaim their CLI process and
+	// browser subtree. 0 = disabled. See idle_evict.go.
+	idleEvictTimeout time.Duration
+
 	// onSessionEnd, when set, is invoked (async, best-effort) on a session's end —
 	// both on clean completion (StateDone, M3) and just after deletion — with the
 	// project ID and the session's transcript, to distill durable memories from a
