@@ -136,6 +136,19 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
 
 ## P2 — Smells / drift
 
+### CLI subprocess PID is not exposed → orphan reaper is heuristic
+The startup orphan reaper and shutdown backstop (`internal/procctl`, see
+`docs/process-lifecycle.md`) identify agentique-owned `claude` processes by
+matching the `"running inside Agentique"` preamble marker in `/proc/<pid>/cmdline`,
+because `claudecli.ProcessInfo` — and therefore `runtime.ProcessInfo` — never
+surfaces the child's OS PID. Consequences: (a) the match is a string heuristic
+guarded only by a sync test, not an exact PID; (b) agentique cannot force-kill a
+single stuck/hung session mid-life (no PID to signal); (c) codex orphans aren't
+covered if codexcli doesn't put the preamble on its command line. Fix is a small
+additive change in claudecli-go (`Process.PID` + `ProcessInfo.PID`) and agentkit
+(`runtime.ProcessInfo.PID` + adapter mapping); then agentique bumps both and
+targets exact PIDs. Handed off as session prompts 2026-07-04.
+
 ### Brain: new signals are inert / headless on the live corpus
 Several shipped features can't yet show value because their inputs don't exist in
 practice:
@@ -584,6 +597,13 @@ share a colour in the graph and the review surface. Cosmetic, but the colour is 
 Condensed log — `git log -- docs/tech-debt.md` and the referenced commits
 hold the full detail.
 
+- **2026-07-04** — CLI subprocess leak prevention (`docs/process-lifecycle.md`):
+  startup orphan reaper + shutdown backstop (`internal/procctl`,
+  SIGTERM/SIGKILL the reparented/child process group by preamble marker) and
+  opt-in idle-session eviction (`[session] idle-evict-timeout`) that stops warm
+  idle sessions and lazy-resumes them. Closes the "orphaned `claude` + Playwright
+  subtree survives an OOM/crash restart until reboot" leak. Remaining PID-exposure
+  gap tracked under P2.
 - **2026-06-18** — Brain review surface: force-graph re-layout jump on every
   `brain.updated` fixed (position carry-forward + reheat-on-topology-change +
   fit-once); applied preview no longer re-hydrates (apply clears the held job);
