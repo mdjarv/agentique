@@ -75,6 +75,25 @@ and a turn start (`validateAndPrepareQuery`) are mutually exclusive under
 sets `evicting` (turn refused), so a turn can never start on a session being
 torn down. Verified by a `-race` mutual-exclusion test.
 
+### cgroup containment — systemd unit (the OS-level guarantee)
+When agentique runs as its systemd unit (`internal/service/systemd.go`), every
+session CLI and its Playwright/Chromium subtree lives in the unit's cgroup, so the
+kernel/systemd govern the whole tree as one:
+- **`KillMode=control-group`** — a stop/restart SIGKILLs the entire cgroup after
+  the stop timeout, so a restart can never orphan a subprocess regardless of
+  process groups. This is the *primary* teardown guarantee; the in-process reaper
+  above is a backstop for non-systemd launches and mid-life stuck sessions.
+- **`OOMPolicy=kill`** — if any member is OOM-killed, the whole unit is torn down
+  and restarted (via `Restart=on-failure`) rather than left half-dead.
+- **`MemoryHigh` / `MemoryMax`** (percent of host RAM, e.g. 70% / 85%) — bound
+  agentique's total footprint so a burst of warm sessions can't exhaust host
+  memory and force a reboot. The cgroup OOMs *within its own limit* instead of
+  taking the box down; combined with idle eviction, steady-state footprint stays
+  bounded. Tune via the unit or a drop-in.
+
+This is what makes DB-persisted PIDs unnecessary for crash-safety: the kernel
+enforces subtree cleanup, no bookkeeping that PID reuse could corrupt.
+
 ## Known gap — PID not exposed
 The reaper matches by command-line marker because `claudecli.ProcessInfo` (and
 therefore `runtime.ProcessInfo`) does not expose the child's OS PID. Exposing it

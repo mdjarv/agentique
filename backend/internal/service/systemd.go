@@ -24,6 +24,25 @@ Environment=PATH={{.Path}}
 Restart=on-failure
 RestartSec=5
 
+# Resource containment. Every session CLI (claude/codex) and its Playwright /
+# Chromium subtree runs inside this unit's cgroup, so systemd governs the whole
+# tree as a unit:
+#   KillMode=control-group  — stop/restart SIGKILLs the entire cgroup after the
+#                             stop timeout, so no session subprocess is ever left
+#                             orphaned by a restart (the in-process reaper is a
+#                             belt-and-suspenders backstop, not the primary path).
+#   OOMPolicy=kill          — if any member is OOM-killed, tear down and restart
+#                             the whole unit rather than leaving a half-dead tree.
+#   MemoryHigh/MemoryMax    — bound agentique's total footprint (percent of host
+#                             RAM) so a burst of warm sessions can't exhaust
+#                             memory and force a host reboot; the cgroup OOMs
+#                             within its own limit instead of taking the box down.
+#                             Tune to taste (or override with a drop-in / edit).
+KillMode=control-group
+OOMPolicy=kill
+MemoryHigh=70%
+MemoryMax=85%
+
 [Install]
 WantedBy=default.target
 `))
