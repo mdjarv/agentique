@@ -23,6 +23,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/doctor"
 	"github.com/mdjarv/agentique/backend/internal/logging"
 	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -463,6 +464,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	srv.Shutdown()
+
+	// Backstop: srv.Shutdown() gracefully closes every session, but the
+	// cooperative Close path can time out (a busy turn not exiting on stdin EOF
+	// within the grace window) and leave a CLI subprocess mid-kill. Force-kill
+	// any that are still our children so nothing is orphaned when we exit.
+	if !testMode {
+		if n := procctl.KillCLIChildrenOf(os.Getpid()); n > 0 {
+			slog.Warn("shutdown backstop force-killed surviving CLI process groups", "count", n)
+		}
+	}
+
 	slog.Info("server stopped")
 	return nil
 }

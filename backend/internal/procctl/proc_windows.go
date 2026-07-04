@@ -58,3 +58,17 @@ func killByPID(pid int) error {
 	}
 	return proc.Kill()
 }
+
+// findCLIProcesses is not implemented on Windows: process enumeration with
+// command-line inspection requires toolhelp + NtQueryInformationProcess, and
+// the orphan model differs (createNewProcessGroup + job objects rather than
+// POSIX process groups). The orphan reaper is therefore a no-op on Windows for
+// now; the Windows port tracks this separately.
+func findCLIProcesses() []CLIProcess { return nil }
+
+// terminateGroup / killGroup have no POSIX process-group analogue here. They are
+// unreachable while findCLIProcesses returns nil, but are defined for the shared
+// reaper API to compile; they fall back to a single-PID kill.
+func terminateGroup(pgid int) error { return killByPID(pgid) }
+
+func killGroup(pgid int) error { return killByPID(pgid) }
