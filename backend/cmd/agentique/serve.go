@@ -418,6 +418,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// real artifacts as orphans) and off the critical startup path.
 	if !testMode {
 		go srv.SweepOrphans(context.Background())
+
+		// Reap CLI subprocesses orphaned by a prior server that exited without a
+		// clean shutdown (crash / OOM-kill / SIGKILL). Each session CLI runs in
+		// its own process group and is only a child of the server, so an
+		// ungraceful exit reparents it to init where nothing signals it — it
+		// survives until reboot, leaking a claude process plus its Playwright MCP
+		// subtree across every restart. Safe here: the single-instance guard ran
+		// above and we have not resumed any sessions, so no live server owns
+		// these. Kept out of server.New — a constructor must have no destructive
+		// side effects (a stray sweep there once nuked real worktrees in tests).
+		if n := procctl.ReapOrphanedCLIProcesses(); n > 0 {
+			slog.Info("reaped orphaned CLI process groups on startup", "count", n)
+		}
 	}
 
 	authStatus := "enabled"

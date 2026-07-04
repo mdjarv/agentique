@@ -35,8 +35,10 @@ mechanisms below. There is **no ambient-context safety net**.
 ## Mechanisms
 
 ### Orphan reaper — `internal/procctl` (Layer A)
-- `ReapOrphanedCLIProcesses()` runs at startup (in `server.New`, right after
-  `RecoverStaleSessions`, gated on `!TestMode`). It scans `/proc` for processes
+- `ReapOrphanedCLIProcesses()` runs at startup (in `serve.go`, in the
+  production-only `!testMode` block next to `SweepOrphans` — deliberately kept
+  out of `server.New`, since a constructor must have no destructive side
+  effects). It scans `/proc` for processes
   whose command line contains `CLIProcessMarker` (`"running inside Agentique"`,
   injected into every session's system prompt via `--append-system-prompt`;
   `preamble.go` `preambleIdentity`) **and** that are reparented to init

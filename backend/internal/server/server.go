@@ -26,7 +26,6 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/persona"
-	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -187,19 +186,6 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		mgr.GlobalPreamble = devModePreamble(cfg.DBPath)
 	}
 	mgr.RecoverStaleSessions(context.Background())
-
-	// Reap CLI subprocesses orphaned by a prior server that exited without a
-	// clean shutdown (crash / OOM-kill / SIGKILL). Each session CLI runs in its
-	// own process group and is only a child of the server, so an ungraceful exit
-	// reparents it to init where nothing signals it — it survives until reboot,
-	// leaking memory (a claude process plus its Playwright MCP subtree) across
-	// every restart. Safe here: the single-instance guard ran before server.New,
-	// and startup does not auto-resume, so no live server owns these orphans.
-	if !cfg.TestMode {
-		if n := procctl.ReapOrphanedCLIProcesses(); n > 0 {
-			slog.Info("reaped orphaned CLI process groups on startup", "count", n)
-		}
-	}
 	svc := session.NewService(mgr, queries, bus, runner)
 	gitSvc := session.NewGitService(mgr, queries, bus, runner)
 	svc.SetGitService(gitSvc)
