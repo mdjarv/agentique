@@ -1,4 +1,4 @@
-import { Check, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
+import { ArrowUp, Check, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
@@ -9,6 +9,11 @@ import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { PageHeader } from "~/components/layout/PageHeader";
+import {
+  resolveSessionState,
+  resolveStatusLabel,
+  SessionBadge,
+} from "~/components/layout/session/SessionBadge";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
@@ -73,94 +78,119 @@ export function SessionHeader({
   const projectDirty = !!projectGitStatus && projectGitStatus.uncommittedCount > 0;
   const hasUncommitted = !!git?.uncommittedFiles && git.uncommittedFiles.length > 0;
 
+  // The overflow menu is identical on both layouts — declared once, placed in
+  // whichever actions zone is rendered.
+  const actionMenu = (
+    <SessionActionMenu
+      isMobile={isMobile}
+      sessionRef={sessionRef}
+      canStop={canStop}
+      canRestart={canRestart}
+      isWorktree={isWorktree}
+      isBusy={isBusy}
+      hasChannel={channel.hasChannel}
+      cleaning={actions.cleaning}
+      onStop={actions.handleStop}
+      onRestart={actions.handleRestart}
+      onResetConversation={actions.handleResetConversation}
+      onRename={() => setActiveDialog("rename")}
+      onClean={actions.handleClean}
+      onLeaveChannel={channel.handleLeaveChannel}
+      onCreateChannel={() => {
+        channel.resetChannelForm();
+        setActiveDialog("create-channel");
+      }}
+      onJoinChannel={async () => {
+        if (await channel.openJoinChannel()) setActiveDialog("join-channel");
+      }}
+      onDelete={() => setActiveDialog("delete")}
+    />
+  );
+
   return (
     <>
       <PageHeader accentColor={accentColor}>
-        <SessionStatusPill
-          state={meta.state}
-          connected={meta.connected}
-          hasPendingApproval={hasPendingInput}
-          compact={isMobile}
-        />
-
-        {/* Identity zone: name + detail popover / inline rename */}
-        <SessionIdentity
-          meta={meta}
-          sessionRef={sessionRef}
-          onRename={actions.rename}
-          onIconChange={actions.handleIconChange}
-        />
-
-        {/* Navigation zone: tab bar (desktop only, with extra left spacing) */}
-        {!isMobile && tabBar && (
-          <div className="flex items-stretch gap-1 ml-6 self-stretch">{tabBar}</div>
-        )}
-
-        {/* Actions zone */}
-        <div className="ml-auto flex items-center gap-1.5">
-          <ReadOnlyIndicators
-            effort={meta.effort as EffortLevel | undefined}
-            isWorktree={isWorktree}
-            worktreeBranch={meta.worktreeBranch}
-          />
-
-          {isMobile && <ConnectionIndicator />}
-
-          {!isMobile && <WorkflowToggle sessionId={meta.id} />}
-
-          {!isMobile && browserEnabled && <BrowserToggle sessionId={meta.id} />}
-
-          {!isMobile && git && canMerge && (
-            <MergeDropdown
-              git={git}
-              projectDirty={projectDirty}
-              className={cn(
-                "h-7 px-2 text-xs border",
-                meta.mergeStatus === "clean" && !hasUncommitted
-                  ? "bg-success/10 text-success border-success/30 hover:bg-success/20"
-                  : "hover:bg-accent",
-              )}
+        {isMobile ? (
+          // Mobile: the full name owns the header (up to two lines) with a dim
+          // status/branch/ahead subline. Tapping opens the detail sheet. The
+          // finish action lives on the tab strip below (see ChatPanel), and the
+          // read-only effort/branch chips move into the sheet.
+          <>
+            <SessionIdentity
+              meta={meta}
+              sessionRef={sessionRef}
+              onRename={actions.rename}
+              onIconChange={actions.handleIconChange}
+              stacked
+              subline={<MobileSubline meta={meta} hasPendingApproval={hasPendingInput} />}
             />
-          )}
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              <ConnectionIndicator />
+              {actionMenu}
+            </div>
+          </>
+        ) : (
+          <>
+            <SessionStatusPill
+              state={meta.state}
+              connected={meta.connected}
+              hasPendingApproval={hasPendingInput}
+              compact={false}
+            />
 
-          {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-success gap-1"
-              title="Mark done"
-              onClick={actions.handleMarkDone}
-            >
-              <Check className="h-3.5 w-3.5" />
-              {!isMobile && <span>Done</span>}
-            </Button>
-          )}
+            {/* Identity zone: name + detail popover / inline rename */}
+            <SessionIdentity
+              meta={meta}
+              sessionRef={sessionRef}
+              onRename={actions.rename}
+              onIconChange={actions.handleIconChange}
+            />
 
-          <SessionActionMenu
-            isMobile={isMobile}
-            sessionRef={sessionRef}
-            canStop={canStop}
-            canRestart={canRestart}
-            isWorktree={isWorktree}
-            isBusy={isBusy}
-            hasChannel={channel.hasChannel}
-            cleaning={actions.cleaning}
-            onStop={actions.handleStop}
-            onRestart={actions.handleRestart}
-            onResetConversation={actions.handleResetConversation}
-            onRename={() => setActiveDialog("rename")}
-            onClean={actions.handleClean}
-            onLeaveChannel={channel.handleLeaveChannel}
-            onCreateChannel={() => {
-              channel.resetChannelForm();
-              setActiveDialog("create-channel");
-            }}
-            onJoinChannel={async () => {
-              if (await channel.openJoinChannel()) setActiveDialog("join-channel");
-            }}
-            onDelete={() => setActiveDialog("delete")}
-          />
-        </div>
+            {/* Navigation zone: tab bar (inline in the header on desktop) */}
+            {tabBar && <div className="flex items-stretch gap-1 ml-6 self-stretch">{tabBar}</div>}
+
+            {/* Actions zone */}
+            <div className="ml-auto flex items-center gap-1.5">
+              <ReadOnlyIndicators
+                effort={meta.effort as EffortLevel | undefined}
+                isWorktree={isWorktree}
+                worktreeBranch={meta.worktreeBranch}
+              />
+
+              <WorkflowToggle sessionId={meta.id} />
+
+              {browserEnabled && <BrowserToggle sessionId={meta.id} />}
+
+              {git && canMerge && (
+                <MergeDropdown
+                  git={git}
+                  projectDirty={projectDirty}
+                  className={cn(
+                    "h-7 px-2 text-xs border",
+                    meta.mergeStatus === "clean" && !hasUncommitted
+                      ? "bg-success/10 text-success border-success/30 hover:bg-success/20"
+                      : "hover:bg-accent",
+                  )}
+                />
+              )}
+
+              {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-success gap-1"
+                  title="Mark done"
+                  onClick={actions.handleMarkDone}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Done</span>
+                </Button>
+              )}
+
+              {actionMenu}
+            </div>
+          </>
+        )}
       </PageHeader>
 
       <DeleteSessionDialog
@@ -206,6 +236,37 @@ export function SessionHeader({
         }}
       />
     </>
+  );
+}
+
+// The dim metadata line under the name on mobile: a status dot + label, the
+// branch, and the commits-ahead count — the essentials that were scattered
+// across chips before, now glanceable without a tap.
+function MobileSubline({
+  meta,
+  hasPendingApproval,
+}: {
+  meta: SessionMetadata;
+  hasPendingApproval: boolean;
+}) {
+  const badgeState = resolveSessionState({ state: meta.state, hasPendingApproval });
+  const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
+  const branch = meta.worktreeBranch;
+  const ahead = meta.commitsAhead ?? 0;
+  return (
+    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+      <SessionBadge state={badgeState} size="sm" bare />
+      <span className="truncate">
+        {label}
+        {branch ? ` · ${branch}` : ""}
+      </span>
+      {ahead > 0 && (
+        <span className="flex items-center gap-0.5 shrink-0 text-success">
+          <ArrowUp className="size-2.5" />
+          {ahead}
+        </span>
+      )}
+    </span>
   );
 }
 

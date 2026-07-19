@@ -13,6 +13,7 @@ import { CommitDialog } from "~/components/chat/dialogs/CommitDialog";
 import { CreatePRDialog } from "~/components/chat/dialogs/CreatePRDialog";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
+import { finishActionKind, SessionFinishAction } from "~/components/chat/SessionFinishAction";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { SessionTabBar } from "~/components/chat/SessionTabBar";
 import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
@@ -37,6 +38,7 @@ import {
   interruptSession,
   isGitFresh,
   type ModelId,
+  markSessionDone,
   type ProviderId,
   refreshGitStatus,
   resumeSession,
@@ -322,6 +324,12 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId]);
 
+  const handleMarkDone = useCallback(() => {
+    markSessionDone(ws, sessionId).catch((err) => {
+      toast.error(getErrorMessage(err, "Failed to mark done"));
+    });
+  }, [ws, sessionId]);
+
   // Settings application mutates session state on the backend (set-model,
   // set-permission, set-auto-approve), so it must wait until the user has
   // committed to the template — i.e. either no variables to fill, or the
@@ -398,6 +406,9 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const effectiveTab: SessionTab = hideTodosTab && activeTab === "todos" ? "chat" : activeTab;
   const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
   const showTabs = (hasTodos && !hideTodosTab) || hasGitContent || hasChanges;
+  // The mobile finish action shares the tab strip; compute it here so the strip
+  // renders even when there are no tabs (e.g. a clean session that can be marked done).
+  const finishKind = isMobile ? finishActionKind(meta, git) : null;
   const ahead = isWorktree ? (meta?.commitsAhead ?? 0) : (projectGitStatus?.aheadRemote ?? 0);
   const behind = isWorktree ? (meta?.commitsBehind ?? 0) : (projectGitStatus?.behindRemote ?? 0);
 
@@ -438,9 +449,22 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
         projectGitStatus={projectGitStatus}
       />
 
-      {/* Tab bar — mobile only (desktop renders inline in header) */}
-      {isMobile && showTabs && (
-        <div className="shrink-0 flex gap-1 px-2 py-1 border-b text-xs">{tabBarElement}</div>
+      {/* Tab strip — mobile only (desktop renders tabs inline in the header).
+          Also hosts the state-aware finish action on its right edge. */}
+      {isMobile && (showTabs || finishKind) && (
+        <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b text-xs">
+          <div className="flex-1 min-w-0 flex gap-1 overflow-x-auto">
+            {showTabs ? tabBarElement : null}
+          </div>
+          {finishKind && (
+            <SessionFinishAction
+              meta={meta}
+              git={git}
+              projectGitStatus={projectGitStatus}
+              onMarkDone={handleMarkDone}
+            />
+          )}
+        </div>
       )}
 
       {/* Tab content + optional desktop todo sidebar */}

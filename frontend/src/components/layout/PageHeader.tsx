@@ -16,7 +16,7 @@ export function PageHeader({ children, accentColor }: PageHeaderProps) {
 
   return (
     <header
-      className="border-b bg-sidebar px-4 flex items-center gap-2 text-sm shrink-0 h-12"
+      className="border-b bg-sidebar px-4 flex items-center gap-2 text-sm shrink-0 min-h-12 py-1"
       style={accentColor ? { borderBottomColor: `${accentColor}40` } : undefined}
     >
       {isMobile && (

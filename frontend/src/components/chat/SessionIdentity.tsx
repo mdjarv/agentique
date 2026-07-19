@@ -1,10 +1,11 @@
 import { Check, Copy, Pencil } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { IconPicker } from "~/components/chat/IconPicker";
 import { ProviderBadge } from "~/components/chat/ProviderBadge";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -16,19 +17,28 @@ interface SessionIdentityProps {
   /** Commit an inline rename (no-op when unchanged). */
   onRename: (name: string) => void;
   onIconChange: (icon: string | undefined) => void;
+  /**
+   * Stacked layout: the name wraps to two lines and a metadata `subline` sits
+   * beneath it. Used on mobile, where the name gets the whole header width.
+   */
+  stacked?: boolean;
+  /** Optional metadata line rendered under the name in stacked layout. */
+  subline?: ReactNode;
 }
 
 /**
  * The header identity zone: session name with an inline editor, plus a detail
- * popover (ref / branch / path / agent / icon). The same popover backs both
- * desktop and mobile — tapping the name on mobile opens it rather than hitting
- * a dead no-op button.
+ * popover (ref / branch / path / effort / agent / icon). The same popover backs
+ * both desktop and mobile — tapping the name on mobile opens it rather than
+ * hitting a dead no-op button.
  */
 export function SessionIdentity({
   meta,
   sessionRef,
   onRename,
   onIconChange,
+  stacked = false,
+  subline,
 }: SessionIdentityProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
@@ -87,18 +97,41 @@ export function SessionIdentity({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 min-w-0 rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors cursor-pointer"
+          className={cn(
+            "flex min-w-0 rounded-md hover:bg-accent transition-colors cursor-pointer",
+            stacked
+              ? "flex-1 items-start gap-2 px-1 py-0.5 text-left"
+              : "items-center gap-1.5 px-1.5 py-0.5",
+          )}
         >
-          <SessionIcon className="size-3.5 text-agent shrink-0" />
-          <span
-            className={cn(
-              "truncate font-medium text-sm",
-              !meta.name && "italic text-muted-foreground",
-            )}
-          >
-            {meta.name || "Untitled"}
-          </span>
-          <ProviderBadge provider={meta.provider} size="sm" />
+          <SessionIcon
+            className={cn("text-agent shrink-0", stacked ? "size-4 mt-0.5" : "size-3.5")}
+          />
+          {stacked ? (
+            <span className="flex flex-col min-w-0 gap-0.5">
+              <span
+                className={cn(
+                  "line-clamp-2 font-medium text-sm leading-tight break-words",
+                  !meta.name && "italic text-muted-foreground",
+                )}
+              >
+                {meta.name || "Untitled"}
+              </span>
+              {subline}
+            </span>
+          ) : (
+            <>
+              <span
+                className={cn(
+                  "truncate font-medium text-sm",
+                  !meta.name && "italic text-muted-foreground",
+                )}
+              >
+                {meta.name || "Untitled"}
+              </span>
+              <ProviderBadge provider={meta.provider} size="sm" />
+            </>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-3 space-y-3">
@@ -194,6 +227,18 @@ export function SessionIdentity({
               >
                 {pathCopied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Effort */}
+        {meta.effort && EFFORT_LABELS[meta.effort as EffortLevel] && (
+          <div className="space-y-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Effort
+            </span>
+            <div className="text-xs text-muted-foreground">
+              {EFFORT_LABELS[meta.effort as EffortLevel]}
             </div>
           </div>
         )}
