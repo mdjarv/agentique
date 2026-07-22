@@ -6,6 +6,8 @@ import type { ContextUsage } from "~/stores/chat-store";
 interface ContextBarProps {
   usage?: ContextUsage | null;
   compacting?: boolean;
+  /** Slim variant for mobile — thinner bar, tighter padding, smaller label. */
+  compact?: boolean;
 }
 
 export function formatTokens(n: number): string {
@@ -54,12 +56,16 @@ function getTier(pct: number): Tier {
   };
 }
 
-export function ContextBar({ usage, compacting }: ContextBarProps) {
+export function ContextBar({ usage, compacting, compact }: ContextBarProps) {
+  const pad = compact ? "px-3 py-0.5" : "px-4 py-1";
+  const barH = compact ? "h-1" : "h-1.5";
+  const txt = compact ? "text-[10px]" : "text-[11px]";
+
   if (compacting) {
     return (
-      <div className="flex items-center gap-2 px-4 py-1 shrink-0">
-        <div className="h-1.5 flex-1 rounded-full overflow-hidden compact-stripes" />
-        <span className="text-[11px] text-primary shrink-0">Compacting...</span>
+      <div className={cn("flex items-center gap-2 shrink-0", pad)}>
+        <div className={cn("flex-1 rounded-full overflow-hidden compact-stripes", barH)} />
+        <span className={cn("text-primary shrink-0", txt)}>Compacting...</span>
       </div>
     );
   }
@@ -71,15 +77,15 @@ export function ContextBar({ usage, compacting }: ContextBarProps) {
   const tier = getTier(pct);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1 shrink-0">
+    <div className={cn("flex items-center gap-2 shrink-0", pad)}>
       {tier.label && (
-        <span className={cn("inline-flex items-center gap-1 text-[11px] shrink-0", tier.text)}>
+        <span className={cn("inline-flex items-center gap-1 shrink-0", txt, tier.text)}>
           <AlertTriangle className="size-3" />
           {tier.label}
         </span>
       )}
-      <Progress value={pct} className={cn("h-1.5 flex-1", tier.track, tier.bar)} />
-      <span className={cn("text-[11px] tabular-nums shrink-0", tier.text)}>
+      <Progress value={pct} className={cn("flex-1", barH, tier.track, tier.bar)} />
+      <span className={cn("tabular-nums shrink-0", txt, tier.text)}>
         {pct}%
         <span className="text-muted-foreground-faint ml-1">
           {formatTokens(used)}/{formatTokens(usage.contextWindow)}

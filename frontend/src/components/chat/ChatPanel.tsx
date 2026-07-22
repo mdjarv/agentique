@@ -515,7 +515,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
               )}
 
               {(contextUsage || compacting) && (
-                <ContextBar usage={contextUsage} compacting={compacting} />
+                <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
               )}
               {isResumable && (
                 <ResumeBanner
@@ -537,6 +537,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 isRunning={sessionState === "running"}
                 onInterrupt={handleInterrupt}
                 attachmentsSupported={attachmentsSupported}
+                focusMode
                 placeholder={
                   compacting
                     ? "Compacting context..."

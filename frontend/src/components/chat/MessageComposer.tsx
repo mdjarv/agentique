@@ -1,6 +1,7 @@
-import { ClipboardPaste, ListPlus, Mic, MicOff, SendHorizonal, Square } from "lucide-react";
+import { ClipboardPaste, ListPlus, Mic, MicOff, Plus, SendHorizonal, Square } from "lucide-react";
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { useAttachments } from "~/hooks/useAttachments";
+import { useIsMobile } from "~/hooks/useIsMobile";
 import { ACCEPTED_TYPES, type EffortLevel } from "~/lib/composer-constants";
 import type { ModelId, ProviderId } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
@@ -51,6 +52,12 @@ interface MessageComposerProps {
   onEffortChange?: (value: EffortLevel) => void;
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
+  /**
+   * Mobile "focus" layout: collapse the toolbar behind a `+` tools tray so the
+   * bar is just input + send, and the rarely-changed mode/model controls stay
+   * out of the way. No-op on desktop and on the new-session form (opt-in).
+   */
+  focusMode?: boolean;
   stashedText?: string;
   stashDepth?: number;
   onStash?: (text: string) => void;
@@ -90,6 +97,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onEffortChange,
       onEmptySubmit,
       templatePicker,
+      focusMode,
       stashedText,
       stashDepth,
       onStash,
@@ -97,6 +105,10 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     },
     ref,
   ) {
+    const isMobile = useIsMobile();
+    const [showTools, setShowTools] = useState(false);
+    // Focus layout only kicks in on a narrow viewport; desktop keeps the inline toolbar.
+    const useFocusLayout = !!focusMode && isMobile;
     const {
       attachments,
       isDragging,
@@ -175,74 +187,111 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       </button>
     ) : undefined;
 
-    const bottomBar = (
-      <div className="flex items-center justify-between px-2 pb-2">
-        <ComposerToolbar
-          attachmentsSupported={attachmentsSupported}
-          onAttachClick={onAttachClick}
-          disabled={!!disabled || send.submitting}
-          templatePicker={templatePicker}
-          worktree={worktree}
-          onWorktreeChange={onWorktreeChange}
-          planMode={planMode}
-          onPlanModeChange={onPlanModeChange}
-          isRunning={isRunning}
-          autoApproveMode={autoApproveMode}
-          onAutoApproveModeChange={onAutoApproveModeChange}
-          provider={provider}
-          onProviderChange={onProviderChange}
-          model={model}
-          onModelChange={onModelChange}
-          effort={effort}
-          onEffortChange={onEffortChange}
-        />
+    const toolbar = (
+      <ComposerToolbar
+        attachmentsSupported={attachmentsSupported}
+        onAttachClick={onAttachClick}
+        disabled={!!disabled || send.submitting}
+        templatePicker={templatePicker}
+        worktree={worktree}
+        onWorktreeChange={onWorktreeChange}
+        planMode={planMode}
+        onPlanModeChange={onPlanModeChange}
+        isRunning={isRunning}
+        autoApproveMode={autoApproveMode}
+        onAutoApproveModeChange={onAutoApproveModeChange}
+        provider={provider}
+        onProviderChange={onProviderChange}
+        model={model}
+        onModelChange={onModelChange}
+        effort={effort}
+        onEffortChange={onEffortChange}
+      />
+    );
 
-        <div className="flex items-center gap-1">
-          {speech.isSupported && (
-            <button
-              type="button"
-              {...speech.micHandlers}
-              disabled={!!disabled || send.submitting}
-              className={cn(
-                "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
-                speech.isListening
-                  ? "text-destructive bg-destructive/10 mic-pulse"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-              )}
-              aria-label={speech.isListening ? "Stop dictation" : "Start dictation"}
-              title="Click to toggle, hold to dictate (Ctrl+Shift+M)"
-            >
-              {speech.isListening ? (
-                <MicOff className="h-3.5 w-3.5" />
-              ) : (
-                <Mic className="h-3.5 w-3.5" />
-              )}
-            </button>
-          )}
-          {isRunning && (
-            <button
-              type="button"
-              onClick={onInterrupt}
-              className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
-              aria-label="Stop"
-            >
-              <Square className="h-3.5 w-3.5" />
-            </button>
-          )}
+    const rightActions = (
+      <div className="flex items-center gap-1">
+        {speech.isSupported && (
           <button
             type="button"
-            onClick={() => void send.handleSend()}
-            disabled={isSendDisabled}
-            className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-agent text-background flex items-center justify-center transition-colors hover:bg-agent/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-            aria-label={isRunning ? "Queue message" : "Send message"}
+            {...speech.micHandlers}
+            disabled={!!disabled || send.submitting}
+            className={cn(
+              "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
+              speech.isListening
+                ? "text-destructive bg-destructive/10 mic-pulse"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+            )}
+            aria-label={speech.isListening ? "Stop dictation" : "Start dictation"}
+            title="Click to toggle, hold to dictate (Ctrl+Shift+M)"
           >
-            {isRunning ? (
-              <ListPlus className="h-3.5 w-3.5" />
+            {speech.isListening ? (
+              <MicOff className="h-3.5 w-3.5" />
             ) : (
-              <SendHorizonal className="h-3.5 w-3.5" />
+              <Mic className="h-3.5 w-3.5" />
             )}
           </button>
+        )}
+        {isRunning && (
+          <button
+            type="button"
+            onClick={onInterrupt}
+            className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Stop"
+          >
+            <Square className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void send.handleSend()}
+          disabled={isSendDisabled}
+          className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg bg-agent text-background flex items-center justify-center transition-colors hover:bg-agent/90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          aria-label={isRunning ? "Queue message" : "Send message"}
+        >
+          {isRunning ? (
+            <ListPlus className="h-3.5 w-3.5" />
+          ) : (
+            <SendHorizonal className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+    );
+
+    // Focus layout (mobile session): the bar is just a `+` tools toggle and the
+    // send cluster; attach/template/dictate and the rarely-changed mode/model
+    // controls live in the collapsible tray the `+` reveals. Otherwise the
+    // classic inline toolbar (desktop + new-session form).
+    const bottomBar = useFocusLayout ? (
+      <div className="flex flex-col gap-2 px-2 pb-2">
+        {showTools && (
+          <div className="rounded-xl border border-border/60 bg-muted/20 px-1.5 py-1">
+            {toolbar}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTools((v) => !v)}
+            className={cn(
+              "h-10 w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0",
+              showTools
+                ? "bg-agent/15 text-agent"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+            )}
+            aria-label={showTools ? "Hide tools" : "Show tools"}
+            aria-expanded={showTools}
+          >
+            <Plus className={cn("h-5 w-5 transition-transform", showTools && "rotate-45")} />
+          </button>
+          <div className="flex-1" />
+          {rightActions}
         </div>
+      </div>
+    ) : (
+      <div className="flex items-center justify-between px-2 pb-2">
+        {toolbar}
+        {rightActions}
       </div>
     );
 
