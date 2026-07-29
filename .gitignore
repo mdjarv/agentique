@@ -51,3 +51,6 @@ tmp/
 
 # Claude Code
 .claude/
+
+# Impeccable live mode (local durable session journal; config.json is tracked)
+.impeccable/live/sessions/
