@@ -36,27 +36,23 @@ type dbSessionPersona struct {
 }
 
 func (d *dbSessionPersona) Query(ctx context.Context, prompt string) (string, error) {
-	live, err := d.svc.ensureLive(ctx, d.sessionID)
+	// The outcome subscription is atomic with the turn start, so this cannot
+	// capture a neighbouring turn (another persona, a human) and cannot miss
+	// a fast completion. FinalText is provider-independent (the pipeline
+	// accumulates codex's assistant text, whose adapter leaves
+	// TurnCompletedEvent.Text empty), and a Stop mid-turn resolves with
+	// SessionClosed instead of stranding the round until its timeout.
+	_, outcome, err := d.svc.QuerySessionWithOutcome(ctx, d.sessionID, prompt, nil)
 	if err != nil {
-		return "", fmt.Errorf("ensure live: %w", err)
-	}
-
-	done := make(chan string, 1)
-	live.SetTurnCompleteHook(func(tc runtime.TurnCompletedEvent) {
-		select {
-		case done <- tc.Text:
-		default:
-		}
-	})
-	defer live.SetTurnCompleteHook(nil)
-
-	if err := d.svc.QuerySession(ctx, d.sessionID, prompt, nil); err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}
 
 	select {
-	case text := <-done:
-		return strings.TrimSpace(text), nil
+	case out := <-outcome:
+		if out.SessionClosed {
+			return "", fmt.Errorf("session closed before the turn completed")
+		}
+		return strings.TrimSpace(out.FinalText), nil
 	case <-time.After(discussionTurnTimeout):
 		return "", fmt.Errorf("turn timed out after %s", discussionTurnTimeout)
 	case <-ctx.Done():

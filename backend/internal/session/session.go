@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
@@ -178,11 +177,18 @@ type Session struct {
 	// disables it. Guarded by mu.
 	onComplete func()
 
-	// turnCompleteHook, when installed by the discussion orchestrator, fires with
-	// the final TurnCompletedEvent at the end of each turn so the persona's reply
-	// text can be captured for cross-injection. Atomic because the event loop reads
-	// it on a different goroutine than the orchestrator's setter. nil = no-op.
-	turnCompleteHook atomic.Pointer[func(runtime.TurnCompletedEvent)]
+	// turnReg resolves turn completions to the callers that started the turns
+	// (discussion orchestrator, scheduler), keyed by turn index. Created once
+	// per Session object; Close resolves open subscriptions with a synthetic
+	// SessionClosed outcome. See turn_registry.go.
+	turnReg *turnRegistry
+
+	// queryMu serializes turn starts (validate → persist → runtime Query).
+	// Without it two concurrent Query callers can both pass validation during
+	// the async Idle→Running gap; the loser is refused inside the runtime
+	// *after* its prompt row and running-state were persisted, corrupting the
+	// session with an orphan turn and a spurious StateFailed.
+	queryMu sync.Mutex
 }
 
 // PersonaQuerier runs persona queries. Decoupled from persona.Service to avoid
@@ -240,6 +246,7 @@ func newSession(p sessionParams) *Session {
 		autoApproveMode:    "manual",
 		permissionMode:     "default",
 		syntheticApprovals: make(map[string]*syntheticApproval),
+		turnReg:            newTurnRegistry(),
 		git: sessionGitState{
 			workDir:    p.workDir,
 			gitVersion: p.initialGitVersion,
@@ -410,14 +417,12 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				"session_id", s.ID, "target", targetName)
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
-		OnTurnComplete: func(tc runtime.TurnCompletedEvent) {
+		OnTurnComplete: func(outcome TurnOutcome) {
 			// Runtime drives Running→Idle from ResultEvent; agentique observes
-			// via the broadcast hook. The discussion orchestrator installs its
-			// own hook (see Session.SetTurnCompleteHook) to capture the final
-			// reply text for cross-injection; default is a no-op.
-			if fn := s.turnCompleteHook.Load(); fn != nil {
-				(*fn)(tc)
-			}
+			// via the broadcast hook. The registry resolves whoever subscribed
+			// to this turn (discussion orchestrator, scheduler); delivery is
+			// buffered and never blocks the event loop.
+			s.turnReg.Deliver(outcome)
 		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
@@ -695,16 +700,11 @@ func (s *Session) SetOnComplete(fn func()) {
 	s.mu.Unlock()
 }
 
-// SetTurnCompleteHook installs (or, with nil, clears) a callback fired with the
-// final TurnCompletedEvent at the end of every turn. The discussion orchestrator
-// uses it to capture a persona's contribution for cross-injection and for the
-// channel transcript. Safe for concurrent use.
-func (s *Session) SetTurnCompleteHook(fn func(runtime.TurnCompletedEvent)) {
-	if fn == nil {
-		s.turnCompleteHook.Store(nil)
-		return
-	}
-	s.turnCompleteHook.Store(&fn)
+// SubscribeTurn registers for the outcome of a specific turn on this session.
+// Prefer QueryWithOutcome, which makes the subscription atomic with the turn
+// start; this exists for observers that learn the turn index out of band.
+func (s *Session) SubscribeTurn(turnIndex int) <-chan TurnOutcome {
+	return s.turnReg.Subscribe(turnIndex)
 }
 
 // injectRecall prepends a task-relevant memory recall block to the turn's prompt. It
@@ -744,11 +744,33 @@ func (s *Session) injectRecall(prompt string) string {
 	return block + "\n\n" + prompt
 }
 
-// Query sends a prompt (with optional images) to the Claude session and starts streaming events.
-func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAttachment) error {
+// Query sends a prompt (with optional images) to the CLI session and starts
+// streaming events.
+func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryAttachment) error {
+	_, _, err := s.queryInternal(ctx, prompt, attachments, false)
+	return err
+}
+
+// QueryWithOutcome starts a fresh turn like Query and additionally returns the
+// turn's index plus a single-delivery channel that resolves with the turn's
+// outcome — or a synthetic SessionClosed if the session is torn down first.
+// The subscription is registered under the same turn-start critical section,
+// so it can neither miss a fast completion nor capture a neighbouring turn.
+func (s *Session) QueryWithOutcome(ctx context.Context, prompt string, attachments []QueryAttachment) (int, <-chan TurnOutcome, error) {
+	return s.queryInternal(ctx, prompt, attachments, true)
+}
+
+func (s *Session) queryInternal(_ context.Context, prompt string, attachments []QueryAttachment, subscribe bool) (int, <-chan TurnOutcome, error) {
+	// Serialize turn starts end-to-end: every turn-start path (composer,
+	// scheduler, pending-flush replay, plan-approval auto-fire) funnels here,
+	// so validate → persist → runtime Query is atomic per session and a
+	// concurrent caller is refused *before* anything was persisted.
+	s.queryMu.Lock()
+	defer s.queryMu.Unlock()
+
 	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery()
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 
 	// Inject task-relevant recall only after validation passes, so a rejected
@@ -758,9 +780,13 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 	prompt = s.injectRecall(prompt)
 
 	turnIndex := s.pipeline.AdvanceTurn()
+	var outcome <-chan TurnOutcome
+	if subscribe {
+		outcome = s.turnReg.Subscribe(turnIndex)
+	}
 	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments)
 
-	turnPayload := PushTurnStarted{SessionID: s.ID, Prompt: prompt}
+	turnPayload := PushTurnStarted{SessionID: s.ID, Prompt: prompt, TurnIndex: turnIndex}
 	if len(attachments) > 0 {
 		turnPayload.Attachments = attachments
 	}
@@ -768,16 +794,19 @@ func (s *Session) Query(_ context.Context, prompt string, attachments []QueryAtt
 
 	atts, berr := toRuntimeAttachments(attachments)
 	if berr != nil {
-		return fmt.Errorf("parse attachments: %w", berr)
+		return 0, nil, fmt.Errorf("parse attachments: %w", berr)
 	}
 	queryErr := rt.Query(context.Background(), prompt, atts...)
 	if queryErr != nil {
+		// With turn starts serialized and the runtime state checked under the
+		// same critical section, a refusal here is a genuine CLI failure —
+		// not a lost race.
 		if stErr := s.setState(StateFailed); stErr != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
-		return queryErr
+		return 0, nil, queryErr
 	}
-	return nil
+	return turnIndex, outcome, nil
 }
 
 // validateAndPrepareQuery checks the runtime is connected and preserves prior
@@ -801,6 +830,14 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 	// worktree concurrently with the git op.
 	if s.state == StateRunning || s.state == StateMerging {
 		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, s.state)
+	}
+	// The runtime's own state is authoritative for turn-in-flight: s.state
+	// lags it (updated async via the broadcast hook), so a caller racing the
+	// Idle→Running flip could pass the check above alone. Under queryMu this
+	// closes the gap entirely — the winner's runtime transition is synchronous
+	// inside rt.Query, so a loser always observes StateRunning here.
+	if s.rt.State() == runtime.StateRunning {
+		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, StateRunning)
 	}
 	s.queryCount++
 	// Stamp activity at the turn-commit point. The runtime flips Idle→Running
@@ -1019,6 +1056,11 @@ func (s *Session) Close() {
 	// Drain synthetic approvals — runtime drains its own. No broadcast: the
 	// session is going away so subscribers will not act on it.
 	_ = s.drainSyntheticApprovals("session closed")
+
+	// Resolve open turn subscriptions with a synthetic SessionClosed outcome
+	// so no subscriber (discussion orchestrator, scheduler) is left waiting
+	// on a turn whose CLI is gone.
+	s.turnReg.Close()
 }
 
 // MarkDone transitions the session to StateDone and marks it completed.

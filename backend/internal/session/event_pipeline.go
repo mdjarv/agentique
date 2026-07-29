@@ -46,10 +46,14 @@ type PipelineConfig struct {
 	OnPlanTransition  func(mode string)
 	OnExitPlanMode    func(input json.RawMessage)
 	OnWriteToolResult func()
-	OnTurnComplete    func(runtime.TurnCompletedEvent)
-	OnFatalError      func(err error)
-	OnSendMessage     func(toolUseID, targetName, content, msgType string)
-	OnActivityEvent   func(wireEvent any) // called for result/error events (activity feed)
+	// OnTurnComplete fires once per completed turn with the full outcome —
+	// turn identity, status, final text (provider-independent, see
+	// TurnOutcome.FinalText), and the classified error kind. Dispatched from
+	// the event-loop goroutine; implementations must not block.
+	OnTurnComplete  func(TurnOutcome)
+	OnFatalError    func(err error)
+	OnSendMessage   func(toolUseID, targetName, content, msgType string)
+	OnActivityEvent func(wireEvent any) // called for result/error events (activity feed)
 }
 
 // pulseState holds in-memory activity counters for the session pulse broadcast.
@@ -106,12 +110,19 @@ type EventPipeline struct {
 	pulseStopped      bool            // set on close; blocks re-arming the timer
 	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
 
+	// Per-turn outcome accumulation (guarded by mu, reset in AdvanceTurn):
+	// the last top-level assistant text (codex leaves TurnCompletedEvent.Text
+	// empty — this is its fallback) and the strongest classified error kind
+	// observed during the turn.
+	turnFinalText string
+	turnErrorKind string
+
 	onClaudeSessionID func(string)
 	onResolvedModel   func(string)
 	onPlanTransition  func(string)
 	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
-	onTurnComplete    func(runtime.TurnCompletedEvent)
+	onTurnComplete    func(TurnOutcome)
 	onFatalError      func(error)
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
@@ -150,6 +161,15 @@ func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 	if unk, ok := event.(runtime.UnknownProviderEvent); ok {
 		slog.Debug("unknown provider event", "session_id", p.sessionID, "provider", unk.Provider, "type", unk.Type)
 		return
+	}
+
+	// Accumulate the turn's last top-level assistant text as the
+	// provider-independent FinalText fallback (subagent output — a non-empty
+	// ParentToolUseID — is not the turn's answer).
+	if at, ok := event.(runtime.AssistantTextEvent); ok && at.ParentToolUseID == "" && at.Content != "" {
+		p.mu.Lock()
+		p.turnFinalText = at.Content
+		p.mu.Unlock()
 	}
 
 	// Log raw rate_limit events for investigation (utilization field presence).
@@ -306,6 +326,8 @@ func (p *EventPipeline) AdvanceTurn() int {
 	defer p.mu.Unlock()
 	p.turnIndex++
 	p.seqInTurn = 0
+	p.turnFinalText = ""
+	p.turnErrorKind = ""
 	// Preserve todo counts across turn boundaries — they track session-level task progress.
 	p.pulse = pulseState{
 		turnStartedAt: time.Now().UnixMilli(),
@@ -313,6 +335,55 @@ func (p *EventPipeline) AdvanceTurn() int {
 		todoCompleted: p.pulse.todoCompleted,
 	}
 	return p.turnIndex
+}
+
+// classifyErrorKind maps a provider error to one of the ErrorKind* constants.
+// Adapters do not populate ErrorEvent.Kind today (tracked as an upstream
+// hand-off), so a non-empty Kind wins and message sniffing is the fallback.
+func classifyErrorKind(errEv runtime.ErrorEvent) string {
+	switch errEv.Kind {
+	case "rate_limit":
+		return ErrorKindRateLimit
+	case "overloaded":
+		return ErrorKindOverloaded
+	case "context":
+		return ErrorKindContext
+	}
+	msg := ""
+	if errEv.Err != nil {
+		msg = strings.ToLower(errEv.Err.Error())
+	}
+	switch {
+	case strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit") ||
+		strings.Contains(msg, "usage limit") || strings.Contains(msg, "429"):
+		return ErrorKindRateLimit
+	case strings.Contains(msg, "overloaded") || strings.Contains(msg, "529"):
+		return ErrorKindOverloaded
+	case strings.Contains(msg, "context window") || strings.Contains(msg, "context_window") ||
+		strings.Contains(msg, "prompt is too long"):
+		return ErrorKindContext
+	default:
+		return ErrorKindOther
+	}
+}
+
+// strongerErrorKind keeps the more actionable of two classified kinds: a
+// specific transient/context classification beats "other", which beats "".
+func strongerErrorKind(current, next string) string {
+	rank := func(k string) int {
+		switch k {
+		case ErrorKindRateLimit, ErrorKindOverloaded, ErrorKindContext:
+			return 2
+		case ErrorKindOther:
+			return 1
+		default:
+			return 0
+		}
+	}
+	if rank(next) > rank(current) {
+		return next
+	}
+	return current
 }
 
 // SetSeq sets the sequence counter. Called by Session.Query() after
@@ -579,16 +650,39 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 		}
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
+		outcome := TurnOutcome{
+			TurnIndex:     p.turnIndex,
+			Status:        tc.Status,
+			FinalText:     tc.Text,
+			ErrorKind:     p.turnErrorKind,
+			Duration:      tc.Duration,
+			Usage:         tc.Usage,
+			ContextWindow: tc.ContextWindow,
+		}
+		if outcome.FinalText == "" {
+			outcome.FinalText = p.turnFinalText
+		}
+		p.turnFinalText = ""
+		p.turnErrorKind = ""
 		p.mu.Unlock()
 		// Broadcast final pulse before resetting, then clear.
 		p.broadcastPulseNow()
 		p.resetPulse()
 		if p.onTurnComplete != nil {
-			p.onTurnComplete(tc)
+			p.onTurnComplete(outcome)
 		}
 	}
 
+	if rle, ok := event.(runtime.RateLimitEvent); ok && rle.Status == "rejected" {
+		p.mu.Lock()
+		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, ErrorKindRateLimit)
+		p.mu.Unlock()
+	}
+
 	if errEv, ok := event.(runtime.ErrorEvent); ok {
+		p.mu.Lock()
+		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, classifyErrorKind(errEv))
+		p.mu.Unlock()
 		lvl := slog.LevelWarn
 		if errEv.Fatal {
 			lvl = slog.LevelError

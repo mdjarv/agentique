@@ -28,11 +28,14 @@ type PushSessionEvent struct {
 	Epoch     int64  `json:"epoch"`
 }
 
-// PushTurnStarted signals a new turn has begun.
+// PushTurnStarted signals a new turn has begun. TurnIndex is the persisted
+// turn identity (allocated by the event pipeline, stable across reloads) —
+// the anchor scheduled-run rows and deep-links key on.
 type PushTurnStarted struct {
 	SessionID   string            `json:"sessionId"`
 	Prompt      string            `json:"prompt"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
+	TurnIndex   int               `json:"turnIndex"`
 }
 
 // PushSessionRenamed signals a session name change.

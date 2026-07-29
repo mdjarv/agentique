@@ -688,6 +688,29 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 	return nil
 }
 
+// QuerySessionWithOutcome starts a turn like QuerySession and additionally
+// returns the turn's index plus a single-delivery channel resolving with the
+// turn's outcome (or a synthetic SessionClosed if the session is torn down
+// first). Callers that need to attribute a completion to the exact turn they
+// started — the discussion orchestrator, the scheduler — use this instead of
+// QuerySession + observation.
+func (s *Service) QuerySessionWithOutcome(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) (int, <-chan TurnOutcome, error) {
+	sess, err := s.ensureLive(ctx, sessionID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
+
+	turnIndex, outcome, err := sess.QueryWithOutcome(ctx, prompt, attachments)
+	if err != nil {
+		return 0, nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	s.postQuery(ctx, sessionID, sess, prompt)
+	return turnIndex, outcome, nil
+}
+
 // EnqueueMessage sends a prompt as a new turn if idle, or delivers it mid-turn
 // if running. Providers with native mid-turn injection (claude) use SendMessage
 // so the CLI picks it up at the next safe boundary within the current turn;
