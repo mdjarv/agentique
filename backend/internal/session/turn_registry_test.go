@@ -180,3 +180,46 @@ func TestStrongerErrorKind(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// The runtime fires the Idle state hook BEFORE the pipeline processes the
+// TurnCompletedEvent (agentkit finishTurn), so a turn started in that window
+// could advance turnIndex under the unprocessed completion and steal its
+// outcome. WaitTurnClosed is the guard: regression for the misattribution.
+func TestPipeline_WaitTurnClosedGuardsOutcomeAttribution(t *testing.T) {
+	sink := newTestSink()
+	var got []TurnOutcome
+	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
+		cfg.OnTurnComplete = func(o TurnOutcome) { got = append(got, o) }
+	})
+
+	first := p.AdvanceTurn()
+
+	// Turn open, completion unprocessed: a would-be starter must wait.
+	if p.WaitTurnClosed(20 * time.Millisecond) {
+		t.Fatal("WaitTurnClosed must block while the completion is unprocessed")
+	}
+
+	// Completion drains → waiters release → the next turn may start.
+	p.ProcessEvent(testResultEvent(0.01))
+	if !p.WaitTurnClosed(time.Second) {
+		t.Fatal("WaitTurnClosed must return once the completion processed")
+	}
+	second := p.AdvanceTurn()
+	p.ProcessEvent(testResultEvent(0.01))
+
+	if len(got) != 2 || got[0].TurnIndex != first || got[1].TurnIndex != second {
+		t.Fatalf("outcome attribution wrong: %+v (want turns %d then %d)", got, first, second)
+	}
+}
+
+func TestPipeline_FatalErrorClosesTurn(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(runtime.ErrorEvent{Fatal: true, Err: errString("CLI died")})
+
+	if !p.WaitTurnClosed(time.Second) {
+		t.Fatal("a fatal error must release turn-start waiters — no completion will ever arrive")
+	}
+}

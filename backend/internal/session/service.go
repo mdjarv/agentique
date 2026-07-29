@@ -33,6 +33,10 @@ var (
 	// the scheduler — match this to distinguish "retry at the next idle
 	// boundary" from a hard failure.
 	ErrBusy = errors.New("session busy")
+	// ErrSessionFinished means a schedule-origin turn was refused because the
+	// session is user-finished (completed or merged). Checked atomically at
+	// turn start so a fire cannot reopen a session the user considers done.
+	ErrSessionFinished = errors.New("session finished")
 )
 
 // WireQuestionOption is a selectable option within a question.

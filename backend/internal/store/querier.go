@@ -12,6 +12,7 @@ import (
 type Querier interface {
 	AddChannelMember(ctx context.Context, arg AddChannelMemberParams) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error
+	AdvanceScheduleNextRunIfEnabled(ctx context.Context, arg AdvanceScheduleNextRunIfEnabledParams) (int64, error)
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
 	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
 	ClaimScheduleRun(ctx context.Context, id string) (int64, error)

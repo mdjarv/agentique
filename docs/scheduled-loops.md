@@ -508,7 +508,9 @@ horizontally; the name-tap sheet gains the overnight digest line ("8 runs,
 
 ```toml
 [scheduler]
-enabled = true              # AGENTIQUE_SCHEDULER_ENABLED
+disabled = false            # AGENTIQUE_SCHEDULER_DISABLED — negative-form key:
+                            # a TOML "enabled = true" default would decode an
+                            # absent key as false in Go and turn the feature off
 tick-interval = "20s"       # AGENTIQUE_SCHEDULER_TICK_INTERVAL
 min-interval = "1m"         # hard floor; UI warns below 15m on persistent sessions
 max-run-duration = "30m"    # -> overdue flag + attention (not error)

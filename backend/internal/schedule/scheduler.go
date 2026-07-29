@@ -85,6 +85,20 @@ var deliveryBackoff = []time.Duration{30 * time.Second, 2 * time.Minute, 10 * ti
 // catchupIterationCap bounds the missed-slot walk for pathological specs.
 const catchupIterationCap = 10000
 
+// runNowReason marks ad-hoc run-now runs: they deliver on paused schedules
+// and never consume a one-shot's cadence fire.
+const runNowReason = "run now"
+
+// pendingHumanGrace is how long a running fire must be in flight before the
+// blocked-on-human check may resolve it action_needed — long enough that a
+// just-opened approval the user is actively clicking doesn't flap.
+const pendingHumanGrace = time.Minute
+
+// errSchedulePausedRace aborts a fire transaction whose schedule was paused
+// between the due-list read and the claim commit. Benign: rolls back the run
+// insert so nothing fires on a paused loop.
+var errSchedulePausedRace = errors.New("schedule paused mid-tick")
+
 // Gateway is the narrow session-facing surface the scheduler needs.
 // Implemented by sessionGateway over session.Service; faked in tests.
 type Gateway interface {
@@ -166,12 +180,36 @@ type Scheduler struct {
 	gw        Gateway
 	broadcast func(eventType string, payload any)
 
+	// sessionLocks grows one mutex per session ever scheduled against in this
+	// process's lifetime — never pruned (a delete would race a holder), and
+	// at ~one small allocation per session it is deliberately accepted.
 	lockMu       sync.Mutex
 	sessionLocks map[string]*sync.Mutex
+
+	// spawnMu gates goroutine launches against Stop: wg.Add concurrent with
+	// wg.Wait while the counter is at zero is documented WaitGroup misuse
+	// (OnSessionIdle and RunNow arrive on external goroutines at any time).
+	spawnMu sync.RWMutex
+	stopped bool
 
 	done     chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+// spawn launches a tracked goroutine unless the scheduler has stopped.
+func (s *Scheduler) spawn(fn func()) {
+	s.spawnMu.RLock()
+	if s.stopped {
+		s.spawnMu.RUnlock()
+		return
+	}
+	s.wg.Add(1)
+	s.spawnMu.RUnlock()
+	go func() {
+		defer s.wg.Done()
+		fn()
+	}()
 }
 
 // NewScheduler creates a scheduler. broadcast is the global (Broadcast, not
@@ -194,20 +232,21 @@ func NewScheduler(db *sql.DB, q *store.Queries, gw Gateway, broadcast func(strin
 // Start launches the tick loop: an initial short-delay pass (so a frequently
 // restarted server can't defer overdue fires forever), then the ticker.
 func (s *Scheduler) Start() {
-	s.wg.Add(1)
-	go s.loop()
+	s.spawn(s.loop)
 }
 
 // Stop halts the loop and waits for in-flight delivery goroutines to park.
 // Outcome waiters exit immediately; unresolved runs are reconciled by the
 // next boot's sweep.
 func (s *Scheduler) Stop() {
+	s.spawnMu.Lock()
+	s.stopped = true
+	s.spawnMu.Unlock()
 	s.stopOnce.Do(func() { close(s.done) })
 	s.wg.Wait()
 }
 
 func (s *Scheduler) loop() {
-	defer s.wg.Done()
 	initial := time.NewTimer(s.opts.InitialDelay)
 	defer initial.Stop()
 	select {
@@ -294,9 +333,11 @@ func (s *Scheduler) fireDue(ctx context.Context, sched store.Schedule, now time.
 
 	case ModeDynamic:
 		slot = now
-		// Fallback pre-write: if the fired run never reschedules (M2's
-		// ScheduleNext), the fallback fires; if that one doesn't either,
-		// resolveOutcome parks the loop as dynamic-ended.
+		// Fallback pre-write: dynamic mode is not creatable until M2's
+		// ScheduleNext tool lands (Create derives only recurring/once); this
+		// scaffold refires on the fallback cadence. M2 adds ScheduleNext
+		// overwriting this and dynamic-ended parking when a loop stops
+		// rescheduling.
 		newNext = formatTime(now.Add(s.opts.DynamicFallback))
 
 	default: // recurring
@@ -360,14 +401,24 @@ func (s *Scheduler) fireDue(ctx context.Context, sched store.Schedule, now time.
 					return err
 				}
 			}
-			return q.UpdateScheduleNextRun(ctx, store.UpdateScheduleNextRunParams{
+			advanced, err := q.AdvanceScheduleNextRunIfEnabled(ctx, store.AdvanceScheduleNextRunIfEnabledParams{
 				NextRunAt: newNext,
 				LastRunAt: formatTime(now),
 				UpdatedAt: formatTime(now),
 				ID:        sched.ID,
 			})
+			if err != nil {
+				return err
+			}
+			if advanced == 0 {
+				return errSchedulePausedRace
+			}
+			return nil
 		})
 	})
+	if errors.Is(txErr, errSchedulePausedRace) {
+		return nil // pause landed between the due read and the claim — no-op
+	}
 	if txErr != nil {
 		return fmt.Errorf("claim slot: %w", txErr)
 	}
@@ -378,11 +429,7 @@ func (s *Scheduler) fireDue(ctx context.Context, sched store.Schedule, now time.
 	s.pushRun(ctx, runID)
 	s.pruneRuns(ctx, sched.ID)
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.attemptDelivery(context.Background(), runID)
-	}()
+	s.spawn(func() { s.attemptDelivery(context.Background(), runID) })
 	return nil
 }
 
@@ -421,14 +468,24 @@ func (s *Scheduler) recordSkippedSlot(ctx context.Context, sched store.Schedule,
 			}); err != nil {
 				return err
 			}
-			return q.UpdateScheduleNextRun(ctx, store.UpdateScheduleNextRunParams{
+			rows, err := q.AdvanceScheduleNextRunIfEnabled(ctx, store.AdvanceScheduleNextRunIfEnabledParams{
 				NextRunAt: newNext,
 				LastRunAt: sched.LastRunAt,
 				UpdatedAt: formatTime(now),
 				ID:        sched.ID,
 			})
+			if err != nil {
+				return err
+			}
+			if rows == 0 {
+				return errSchedulePausedRace
+			}
+			return nil
 		})
 	})
+	if errors.Is(txErr, errSchedulePausedRace) {
+		return nil
+	}
 	if txErr != nil {
 		return fmt.Errorf("record skipped slot: %w", txErr)
 	}
@@ -449,7 +506,13 @@ func (s *Scheduler) attemptDelivery(ctx context.Context, runID string) {
 		return
 	}
 	sched, err := s.q.GetSchedule(ctx, run.ScheduleID)
-	if err != nil || !scheduleEnabled(sched, err) {
+	if err != nil {
+		return // schedule deleted; FK cascade removes the runs
+	}
+	if sched.Enabled == 0 && run.Reason != runNowReason {
+		// A queued run that raced past pauseSchedule's sweep must not strand
+		// queued forever. Run-now runs stay deliverable on a paused schedule.
+		s.resolveRun(ctx, run.ID, resolution{status: RunSkipped, reason: "schedule paused"})
 		return
 	}
 	s.deliverClaimed(ctx, run, sched)
@@ -472,6 +535,21 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 	if err != nil || rows == 0 {
 		return
 	}
+	// Re-read after winning the claim: the row loaded before the per-session
+	// lock may be stale (another deliverer bumped attempts/backoff meanwhile).
+	run, err = s.q.GetScheduleRun(ctx, runID)
+	if err != nil {
+		return
+	}
+	if run.NextAttemptAt != "" && run.NextAttemptAt > formatTime(s.opts.Now().UTC()) {
+		// Delivery backoff still pending — hand the claim back.
+		if rqErr := s.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{
+			Attempts: run.Attempts, NextAttemptAt: run.NextAttemptAt, ID: runID,
+		}); rqErr != nil {
+			slog.Error("scheduler: backoff requeue failed", "run_id", runID, "error", rqErr)
+		}
+		return
+	}
 
 	finished, err := s.gw.SessionFinished(ctx, run.SessionID)
 	if err == nil && finished {
@@ -491,6 +569,15 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 	turnIndex, outcome, err := s.gw.Deliver(ctx, run.SessionID, sched.Prompt, origin)
 	now := s.opts.Now().UTC()
 	if err != nil {
+		if errors.Is(err, session.ErrSessionFinished) {
+			// The atomic turn-start check caught a mark-done/merge that raced
+			// the pre-delivery DB read — same treatment as the DB check.
+			s.resolveRun(ctx, runID, resolution{status: RunSkipped, reason: "session completed"})
+			if perr := s.pauseSchedule(ctx, run.ScheduleID, PauseSessionCompleted, ""); perr != nil {
+				slog.Error("scheduler: pause on finished session failed", "schedule_id", run.ScheduleID, "error", perr)
+			}
+			return
+		}
 		if errors.Is(err, session.ErrBusy) || errors.Is(err, session.ErrNotLive) {
 			// Transient: back to queued without consuming an attempt; the
 			// idle-boundary callback or the next tick retries.
@@ -531,11 +618,7 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 	}
 	s.pushRun(ctx, runID)
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.waitForOutcome(runID, sched.ID, outcome)
-	}()
+	s.spawn(func() { s.waitForOutcome(runID, sched.ID, outcome) })
 }
 
 func (s *Scheduler) waitForOutcome(runID, scheduleID string, outcome <-chan session.TurnOutcome) {
@@ -561,11 +644,7 @@ func (s *Scheduler) OnSessionIdle(sessionID string) {
 			continue // delivery backoff still pending
 		}
 		id := r.ID
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			s.attemptDelivery(context.Background(), id)
-		}()
+		s.spawn(func() { s.attemptDelivery(context.Background(), id) })
 	}
 }
 
@@ -607,28 +686,31 @@ func (s *Scheduler) retryAndOverduePass(ctx context.Context, now time.Time) {
 				continue
 			}
 			id := r.ID
-			s.wg.Add(1)
-			go func() {
-				defer s.wg.Done()
-				s.attemptDelivery(context.Background(), id)
-			}()
+			s.spawn(func() { s.attemptDelivery(context.Background(), id) })
 		case RunRunning:
-			if r.Overdue != 0 || r.FiredAt == "" {
-				continue
-			}
 			fired, ok := parseTime(r.FiredAt)
-			if !ok || now.Sub(fired) < s.opts.MaxRunDuration {
+			if r.FiredAt == "" || !ok {
 				continue
 			}
-			if pending := s.gw.PendingHumanInput(r.SessionID); pending != "" {
-				// Blocked on a human, not failing: resolve honestly. A late
-				// completion lands in late_report via the terminal-once guard.
-				s.resolveRun(ctx, r.ID, resolution{
-					status:     RunActionNeeded,
-					reason:     "waiting on " + pending,
-					durationMS: now.Sub(fired).Milliseconds(),
-				})
-				s.setAttention(ctx, r.ScheduleID, AttentionActionNeeded, r.ID)
+			elapsed := now.Sub(fired)
+			// Blocked-on-human detection runs after a short grace, not the
+			// full run-duration bound — a fire that opens an approval in its
+			// first minute must surface action_needed promptly, not sit
+			// "running" for 30 minutes.
+			if elapsed >= pendingHumanGrace {
+				if pending := s.gw.PendingHumanInput(r.SessionID); pending != "" {
+					// Blocked on a human, not failing: resolve honestly. A late
+					// completion lands in late_report via the terminal-once guard.
+					s.resolveRun(ctx, r.ID, resolution{
+						status:     RunActionNeeded,
+						reason:     "waiting on " + pending,
+						durationMS: elapsed.Milliseconds(),
+					})
+					s.setAttention(ctx, r.ScheduleID, AttentionActionNeeded, r.ID)
+					continue
+				}
+			}
+			if r.Overdue != 0 || elapsed < s.opts.MaxRunDuration {
 				continue
 			}
 			if err := s.q.SetScheduleRunOverdue(ctx, r.ID); err != nil {
@@ -647,6 +729,11 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 	sched, err := s.q.GetSchedule(ctx, scheduleID)
 	if err != nil {
 		slog.Error("scheduler: load schedule for outcome failed", "schedule_id", scheduleID, "error", err)
+		return
+	}
+	run, err := s.q.GetScheduleRun(ctx, runID)
+	if err != nil {
+		slog.Error("scheduler: load run for outcome failed", "run_id", runID, "error", err)
 		return
 	}
 	now := s.opts.Now().UTC()
@@ -678,7 +765,12 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 			durationMS: out.Duration.Milliseconds(),
 		}
 		if resolved := s.resolveRun(ctx, runID, res); resolved {
-			if err := s.q.UpdateScheduleNextRun(ctx, store.UpdateScheduleNextRunParams{
+			// Enabled-guarded: a pause landing after the fire must keep the
+			// schedule parked — a deferred reschedule must not re-arm it.
+			// (A racing cadence advance can still overwrite this anchor;
+			// last-writer-wins between two legitimate future fire times is
+			// accepted — both are sane, the loop stays alive either way.)
+			if _, err := s.q.AdvanceScheduleNextRunIfEnabled(ctx, store.AdvanceScheduleNextRunIfEnabledParams{
 				NextRunAt: formatTime(next),
 				LastRunAt: sched.LastRunAt,
 				UpdatedAt: formatTime(now),
@@ -725,7 +817,9 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 		}
 	}
 
-	if sched.Mode == ModeOnce {
+	// Only the cadence fire consumes a one-shot — an ad-hoc run-now on a
+	// pending reminder must not destroy it.
+	if sched.Mode == ModeOnce && run.Reason != runNowReason {
 		if err := s.pauseSchedule(ctx, scheduleID, PauseCompleted, ""); err != nil {
 			slog.Error("scheduler: park once-schedule failed", "schedule_id", scheduleID, "error", err)
 		}
@@ -782,13 +876,9 @@ func (s *Scheduler) countFailure(ctx context.Context, scheduleID, runID string) 
 	}
 	if int(failures) >= s.opts.MaxConsecutiveFailures {
 		// A broken loop degrades loudly to paused, never to a retry storm.
-		if err := s.q.SetScheduleEnabled(ctx, store.SetScheduleEnabledParams{
-			Enabled:     0,
-			PauseReason: PauseAutoFailures,
-			NextRunAt:   "",
-			UpdatedAt:   now,
-			ID:          scheduleID,
-		}); err != nil {
+		// pauseSchedule (not a bare disable) so queued runs resolve skipped
+		// like every other pause path.
+		if err := s.pauseSchedule(ctx, scheduleID, PauseAutoFailures, ""); err != nil {
 			slog.Error("scheduler: auto-pause failed", "schedule_id", scheduleID, "error", err)
 		}
 		s.setAttention(ctx, scheduleID, AttentionFailed, runID)
@@ -871,8 +961,18 @@ func (s *Scheduler) BootSweep(ctx context.Context) {
 		return
 	}
 	for _, r := range runs {
-		if r.Status == RunFiring || r.Status == RunRunning {
-			s.resolveRun(ctx, r.ID, resolution{status: RunError, errText: "server restarted mid-run"})
+		if r.Status != RunFiring && r.Status != RunRunning {
+			continue
+		}
+		s.resolveRun(ctx, r.ID, resolution{status: RunError, errText: "server restarted mid-run"})
+		// A one-shot whose delivered run died with the server would otherwise
+		// strand as an enabled-but-parked zombie (next_run_at was cleared at
+		// fire time; only resolveOutcome parks it) — park it here.
+		if sched, err := s.q.GetSchedule(ctx, r.ScheduleID); err == nil &&
+			sched.Mode == ModeOnce && sched.Enabled != 0 && sched.NextRunAt == "" {
+			if perr := s.pauseSchedule(ctx, r.ScheduleID, PauseCompleted, ""); perr != nil {
+				slog.Error("scheduler: park once-schedule in sweep failed", "schedule_id", r.ScheduleID, "error", perr)
+			}
 		}
 	}
 }
@@ -912,10 +1012,6 @@ func (s *Scheduler) insertRunRow(ctx context.Context, sched store.Schedule, slot
 	}); err != nil {
 		slog.Error("scheduler: insert run row failed", "schedule_id", sched.ID, "error", err)
 	}
-}
-
-func scheduleEnabled(sched store.Schedule, err error) bool {
-	return err == nil && sched.Enabled != 0
 }
 
 func mustParse(s string) time.Time {

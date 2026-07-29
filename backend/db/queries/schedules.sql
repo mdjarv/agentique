@@ -35,6 +35,10 @@ WHERE id = ?;
 -- name: UpdateScheduleNextRun :exec
 UPDATE schedules SET next_run_at = ?, last_run_at = ?, updated_at = ? WHERE id = ?;
 
+-- name: AdvanceScheduleNextRunIfEnabled :execrows
+UPDATE schedules SET next_run_at = ?, last_run_at = ?, updated_at = ?
+WHERE id = ? AND enabled = 1;
+
 -- name: SetScheduleEnabled :exec
 UPDATE schedules SET enabled = ?, pause_reason = ?, next_run_at = ?, updated_at = ? WHERE id = ?;
 

@@ -784,7 +784,19 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	s.queryMu.Lock()
 	defer s.queryMu.Unlock()
 
-	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery()
+	// The runtime flips Idle and fires the state hook BEFORE the pipeline
+	// processes the TurnCompletedEvent (agentkit finishTurn broadcasts the
+	// StateChange from inside the completion's dispatch). Starting a turn in
+	// that window would advance the turn counter under the unprocessed
+	// completion and steal its outcome attribution. Wait for it to drain; the
+	// timeout covers turns that never complete (fatal CLI death also closes
+	// the turn via the pipeline's fatal-error branch).
+	if !s.pipeline.WaitTurnClosed(5 * time.Second) {
+		slog.Warn("turn start proceeding with previous completion unprocessed",
+			"session_id", s.ID)
+	}
+
+	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery(origin)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -837,11 +849,18 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 // validateAndPrepareQuery checks the runtime is connected and preserves prior
 // flags (completed, merged) for cleanup. Runtime drives the Idle→Running
 // transition; agentique just resets transient flags and bumps queryCount.
-func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, wasMerged bool, err error) {
+// Schedule-origin turns are refused on a finished session under the same
+// lock — Query would otherwise atomically UNSET completed/merged, so a fire
+// racing the user's mark-done/merge would silently reopen the session. The
+// scheduler's pre-delivery DB check cannot close that window; this can.
+func (s *Session) validateAndPrepareQuery(origin QueryOrigin) (rt *runtime.Session, wasCompleted, wasMerged bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.rt == nil {
 		return nil, false, false, ErrNotLive
+	}
+	if origin.Kind == "schedule" && (s.completedAt != "" || s.git.worktreeMerged) {
+		return nil, false, false, fmt.Errorf("session %s: %w", s.ID, ErrSessionFinished)
 	}
 	// Refuse a session claimed by the idle-eviction sweep — it is being torn
 	// down and removed from the pool; the caller should lazy-resume a fresh one.

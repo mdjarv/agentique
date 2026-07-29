@@ -110,7 +110,7 @@ func TestIdleEvictVsQueryMutualExclusion(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			_, _, _, err := s.validateAndPrepareQuery()
+			_, _, _, err := s.validateAndPrepareQuery(QueryOrigin{})
 			queried = err == nil
 		}()
 		wg.Wait()

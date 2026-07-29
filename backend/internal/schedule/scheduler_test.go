@@ -337,13 +337,11 @@ func TestResolve_ErrorAutoPausesAfterThreshold(t *testing.T) {
 		f.advance(2 * time.Hour)
 	}
 
-	got, _ := f.q.GetSchedule(context.Background(), sched.ID)
-	if got.Enabled != 0 || got.PauseReason != PauseAutoFailures {
-		t.Errorf("expected auto-pause, got enabled=%d reason=%q", got.Enabled, got.PauseReason)
-	}
-	if got.Attention != AttentionFailed {
-		t.Errorf("attention = %q, want failed", got.Attention)
-	}
+	// Pause and attention are two writes; poll for the settled state.
+	waitFor(t, "auto-pause with failed attention", func() bool {
+		got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+		return got.Enabled == 0 && got.PauseReason == PauseAutoFailures && got.Attention == AttentionFailed
+	})
 }
 
 func TestResolve_DeferredOnRateLimitDoesNotCountFailure(t *testing.T) {
@@ -632,6 +630,129 @@ func TestAPI_MarkViewedClearsActionAttention(t *testing.T) {
 	got, _ = f.q.GetSchedule(ctx, sched.ID)
 	if got.Attention != AttentionFailed {
 		t.Error("failed attention must survive viewing")
+	}
+}
+
+func TestRunNow_OnPausedScheduleSurvivesBusyRetry(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-31T00:00:00Z")
+	if _, err := f.sched.Pause(context.Background(), sched.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	f.gw.mu.Lock()
+	f.gw.deliverErr = session.ErrBusy
+	f.gw.mu.Unlock()
+
+	if _, err := f.sched.RunNow(context.Background(), sched.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Busy → requeued. The tick retry must NOT skip it as "schedule paused" —
+	// run-now runs stay deliverable on paused schedules.
+	waitFor(t, "requeued", func() bool { r := f.runByStatus(RunQueued); return r != nil })
+	f.sched.tick()
+	if r := f.runByStatus(RunSkipped); r != nil {
+		t.Fatalf("run-now run must not be skipped on a paused schedule: %+v", r)
+	}
+
+	f.gw.mu.Lock()
+	f.gw.deliverErr = nil
+	f.gw.mu.Unlock()
+	f.sched.tick()
+	waitFor(t, "delivered", func() bool { return f.gw.deliveryCount() == 1 })
+}
+
+func TestPause_StrayQueuedRunResolvesSkipped(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-31T00:00:00Z")
+	ctx := context.Background()
+
+	// A cadence run that raced past pauseSchedule's sweep.
+	if _, err := f.q.CreateScheduleRun(ctx, store.CreateScheduleRunParams{
+		ID: newID(), ScheduleID: sched.ID, SessionID: "s1",
+		ScheduledFor: "2026-07-30T11:00:00Z", CreatedAt: formatTime(f.clock()), Status: RunQueued,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.q.SetScheduleEnabled(ctx, store.SetScheduleEnabledParams{
+		Enabled: 0, PauseReason: PauseUser, NextRunAt: "", UpdatedAt: formatTime(f.clock()), ID: sched.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	f.sched.tick()
+	waitFor(t, "stray run skipped", func() bool {
+		r := f.runByStatus(RunSkipped)
+		return r != nil && r.Reason == "schedule paused"
+	})
+	if f.gw.deliveryCount() != 0 {
+		t.Fatal("paused schedule's cadence run must not deliver")
+	}
+}
+
+func TestRunNow_DoesNotConsumePendingOneShot(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeOnce, "", "2026-07-31T09:00:00Z") // future reminder
+
+	if _, err := f.sched.RunNow(context.Background(), sched.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "delivered", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "ad-hoc"}
+	waitFor(t, "resolved", func() bool { return f.runByStatus(RunOK) != nil })
+
+	got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+	if got.Enabled != 1 || got.NextRunAt != "2026-07-31T09:00:00Z" {
+		t.Fatalf("run-now consumed the pending one-shot: %+v", got)
+	}
+}
+
+func TestDeliver_SessionFinishedSentinelSkipsAndPauses(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+
+	f.gw.mu.Lock()
+	f.gw.deliverErr = session.ErrSessionFinished
+	f.gw.mu.Unlock()
+
+	f.sched.tick()
+	waitFor(t, "skipped + paused", func() bool {
+		r := f.runByStatus(RunSkipped)
+		got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+		return r != nil && r.Reason == "session completed" &&
+			got.Enabled == 0 && got.PauseReason == PauseSessionCompleted
+	})
+}
+
+func TestFireDue_PauseRaceRollsBack(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+	ctx := context.Background()
+
+	stale, err := f.q.GetSchedule(ctx, sched.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sched.Pause(ctx, sched.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulates a pause landing between the tick's due read and fireDue.
+	if err := f.sched.fireDue(ctx, stale, f.clock().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := f.db.QueryRow("SELECT COUNT(*) FROM schedule_runs").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("fire on a paused-mid-tick schedule must roll back, found %d runs", count)
+	}
+	got, _ := f.q.GetSchedule(ctx, sched.ID)
+	if got.NextRunAt != "" {
+		t.Fatalf("paused schedule re-armed by racing fire: %q", got.NextRunAt)
 	}
 }
 

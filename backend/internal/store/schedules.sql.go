@@ -9,6 +9,31 @@ import (
 	"context"
 )
 
+const advanceScheduleNextRunIfEnabled = `-- name: AdvanceScheduleNextRunIfEnabled :execrows
+UPDATE schedules SET next_run_at = ?, last_run_at = ?, updated_at = ?
+WHERE id = ? AND enabled = 1
+`
+
+type AdvanceScheduleNextRunIfEnabledParams struct {
+	NextRunAt string `json:"next_run_at"`
+	LastRunAt string `json:"last_run_at"`
+	UpdatedAt string `json:"updated_at"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) AdvanceScheduleNextRunIfEnabled(ctx context.Context, arg AdvanceScheduleNextRunIfEnabledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, advanceScheduleNextRunIfEnabled,
+		arg.NextRunAt,
+		arg.LastRunAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const appendScheduleRunLateReport = `-- name: AppendScheduleRunLateReport :exec
 UPDATE schedule_runs SET late_report = ? WHERE id = ?
 `

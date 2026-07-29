@@ -275,7 +275,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id string) (ScheduleRunInfo, err
 		ScheduledFor: formatTime(now),
 		CreatedAt:    formatTime(now),
 		Status:       RunQueued,
-		Reason:       "run now",
+		Reason:       runNowReason,
 	})
 	if err != nil {
 		return ScheduleRunInfo{}, fmt.Errorf("create run: %w", err)
@@ -285,11 +285,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id string) (ScheduleRunInfo, err
 	}
 	s.pushRun(ctx, runID)
 	s.pruneRuns(ctx, id)
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.deliverRunNow(context.Background(), runID)
-	}()
+	s.spawn(func() { s.deliverRunNow(context.Background(), runID) })
 	run, err := s.q.GetScheduleRun(ctx, runID)
 	if err != nil {
 		return ScheduleRunInfo{}, err
@@ -403,8 +399,9 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 	return fmt.Sprintf("Schedule %q created and awaiting the user's approval in the UI (id %s). It will not fire until approved — do not wait for it; mention it to the user and continue.", info.Name, info.ID), nil
 }
 
-// validateCron parses the expression and enforces the cadence floor by
-// checking the gap between the next two occurrences.
+// validateCron parses the expression and enforces the cadence floor over
+// several successive gaps — a single sample can miss clustered specs (e.g.
+// comma lists) whose minimum gap is far below their average.
 func (s *Scheduler) validateCron(expr string, now time.Time) (time.Time, error) {
 	spec, err := ParseSpec(expr)
 	if err != nil {
@@ -414,10 +411,16 @@ func (s *Scheduler) validateCron(expr string, now time.Time) (time.Time, error) 
 	if first.IsZero() {
 		return time.Time{}, fmt.Errorf("%w: cron expression has no future occurrence", ErrValidation)
 	}
-	if second := spec.Next(first, s.opts.Loc); !second.IsZero() {
-		if gap := second.Sub(first); gap < s.opts.MinInterval {
+	prev := first
+	for i := 0; i < 8; i++ {
+		next := spec.Next(prev, s.opts.Loc)
+		if next.IsZero() {
+			break
+		}
+		if gap := next.Sub(prev); gap < s.opts.MinInterval {
 			return time.Time{}, fmt.Errorf("%w: cadence %s is below the %s floor", ErrValidation, gap, s.opts.MinInterval)
 		}
+		prev = next
 	}
 	return first, nil
 }

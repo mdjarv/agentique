@@ -118,6 +118,17 @@ type EventPipeline struct {
 	turnErrorKind     string
 	turnRateLimitedAt int64
 
+	// turnOpen tracks a started turn whose completion has not yet been
+	// processed; turnClosed is closed when it drains. The runtime flips Idle
+	// and fires the state hook BEFORE the pipeline sees the
+	// TurnCompletedEvent (agentkit's finishTurn broadcasts the StateChange
+	// from inside the completion's dispatch), so an idle-boundary caller can
+	// try to start a turn while the previous outcome is unprocessed —
+	// advancing turnIndex under it and misattributing the outcome. Turn
+	// starts wait on WaitTurnClosed. Guarded by mu.
+	turnOpen   bool
+	turnClosed chan struct{}
+
 	onClaudeSessionID func(string)
 	onResolvedModel   func(string)
 	onPlanTransition  func(string)
@@ -330,6 +341,8 @@ func (p *EventPipeline) AdvanceTurn() int {
 	p.turnFinalText = ""
 	p.turnErrorKind = ""
 	p.turnRateLimitedAt = 0
+	p.turnOpen = true
+	p.turnClosed = make(chan struct{})
 	// Preserve todo counts across turn boundaries — they track session-level task progress.
 	p.pulse = pulseState{
 		turnStartedAt: time.Now().UnixMilli(),
@@ -394,6 +407,38 @@ func (p *EventPipeline) SetSeq(seq int) {
 	p.mu.Lock()
 	p.seqInTurn = seq
 	p.mu.Unlock()
+}
+
+// closeTurnLocked marks the current turn's completion as processed and
+// releases WaitTurnClosed waiters. Caller holds p.mu.
+func (p *EventPipeline) closeTurnLocked() {
+	if !p.turnOpen {
+		return
+	}
+	p.turnOpen = false
+	close(p.turnClosed)
+}
+
+// WaitTurnClosed blocks until the previous turn's completion has drained
+// through the pipeline (or the timeout elapses; false on timeout). Turn
+// starts call this so a fresh AdvanceTurn can never slip under an
+// unprocessed TurnCompletedEvent and steal its outcome attribution — the
+// runtime fires the Idle state hook before the completion event reaches the
+// pipeline, so "state says idle" does not imply "outcome processed".
+func (p *EventPipeline) WaitTurnClosed(timeout time.Duration) bool {
+	p.mu.Lock()
+	if !p.turnOpen {
+		p.mu.Unlock()
+		return true
+	}
+	ch := p.turnClosed
+	p.mu.Unlock()
+	select {
+	case <-ch:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // AllocSeq atomically allocates a (turnIndex, seq) pair for the current turn.
@@ -668,6 +713,7 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 		p.turnFinalText = ""
 		p.turnErrorKind = ""
 		p.turnRateLimitedAt = 0
+		p.closeTurnLocked()
 		p.mu.Unlock()
 		// Broadcast final pulse before resetting, then clear.
 		p.broadcastPulseNow()
@@ -689,6 +735,11 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 	if errEv, ok := event.(runtime.ErrorEvent); ok {
 		p.mu.Lock()
 		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, classifyErrorKind(errEv))
+		if errEv.Fatal {
+			// A fatal error means no TurnCompletedEvent will ever arrive for
+			// this turn — release waiters instead of forcing their timeout.
+			p.closeTurnLocked()
+		}
 		p.mu.Unlock()
 		lvl := slog.LevelWarn
 		if errEv.Fatal {
