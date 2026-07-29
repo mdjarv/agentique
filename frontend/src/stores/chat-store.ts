@@ -184,6 +184,10 @@ export interface ChatState {
     sessionId: string,
     prompt: string,
     attachments?: import("~/stores/chat-types").Attachment[],
+    meta?: {
+      turnIndex?: number;
+      origin?: import("~/lib/generated-types").QueryOrigin;
+    },
   ) => void;
   rollbackOptimisticTurn: (sessionId: string, prompt: string) => void;
   adoptTurnPrompt: (sessionId: string, prompt: string) => void;
@@ -502,7 +506,7 @@ export const useChatStore = create<ChatState>((set) => ({
       return result;
     }),
 
-  submitQuery: (sessionId, prompt, attachments) =>
+  submitQuery: (sessionId, prompt, attachments, meta) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
@@ -515,6 +519,8 @@ export const useChatStore = create<ChatState>((set) => ({
             attachments: (attachments ?? []).map(({ previewUrl: _, ...rest }) => rest),
             events: [],
             complete: false,
+            turnIndex: meta?.turnIndex,
+            origin: meta?.origin,
           },
         ],
         streamingEvents: [],

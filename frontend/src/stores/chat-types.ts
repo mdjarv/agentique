@@ -249,6 +249,11 @@ export interface Turn {
   attachments: Attachment[];
   events: ChatEvent[];
   complete: boolean;
+  /** Persisted server-side turn identity (deep-link anchor). Absent on
+   * optimistic turns until the turn-started broadcast/history supplies it. */
+  turnIndex?: number;
+  /** Set for non-human turns — scheduled loop fires render an origin badge. */
+  origin?: import("~/lib/generated-types").QueryOrigin;
 }
 
 // --- Session state ---

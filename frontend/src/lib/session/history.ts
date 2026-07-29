@@ -34,6 +34,8 @@ function convertTurn(ht: HistoryTurn): Turn {
     attachments: (ht.attachments ?? []).map((a) => ({ ...a, id: uuid() })),
     events,
     complete: ht.events.some((e) => (e as Record<string, unknown>).type === "result"),
+    turnIndex: ht.turnIndex,
+    origin: ht.origin,
   };
 }
 

@@ -79,7 +79,10 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         return;
       }
       const attachments = payload.attachments?.map(fromWireAttachment);
-      useChatStore.getState().submitQuery(sid, payload.prompt, attachments);
+      useChatStore.getState().submitQuery(sid, payload.prompt, attachments, {
+        turnIndex: payload.turnIndex,
+        origin: payload.origin,
+      });
     });
 
     return () => {

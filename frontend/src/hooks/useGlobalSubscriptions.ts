@@ -5,11 +5,13 @@ import { useSessionSubscriptions } from "~/hooks/session/useSessionSubscriptions
 import { useBrainSubscriptions } from "~/hooks/useBrainSubscriptions";
 import { useChannelSubscriptions } from "~/hooks/useChannelSubscriptions";
 import { useDiscussionSubscriptions } from "~/hooks/useDiscussionSubscriptions";
+import { useScheduleSubscriptions } from "~/hooks/useScheduleSubscriptions";
 import { useTeamSubscriptions } from "~/hooks/useTeamSubscriptions";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listChannels } from "~/lib/channel-actions";
 import type { ListSessionsResult } from "~/lib/generated-types";
 import { getProjectGitStatus, setProjectPinned } from "~/lib/project-actions";
+import { listSchedules } from "~/lib/schedule-actions";
 import { listProviderModels } from "~/lib/session/actions";
 import { loadSessionHistory } from "~/lib/session/history";
 import type { TeamInfo } from "~/lib/team-actions";
@@ -21,6 +23,7 @@ import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useEventSeqStore } from "~/stores/event-seq";
 import { useProviderStore } from "~/stores/provider-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 import { useTeamStore } from "~/stores/team-store";
 import { useUIStore } from "~/stores/ui-store";
@@ -88,6 +91,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
   useDiscussionSubscriptions(ws);
   useTeamSubscriptions(ws);
   useBrainSubscriptions(ws);
+  useScheduleSubscriptions(ws);
 
   // Load teams once on mount
   const teamsLoadedRef = useRef(false);
@@ -106,6 +110,9 @@ export function useGlobalSubscriptions(projects: Project[]) {
     listProviderModels(ws)
       .then((result) => useProviderStore.getState().setProviders(result.providers))
       .catch((err) => console.error("listProviderModels failed", err));
+    listSchedules(ws)
+      .then((schedules) => useScheduleStore.getState().setSchedules(schedules))
+      .catch((err) => console.error("listSchedules failed", err));
   }, [ws]);
 
   // Subscribe to new projects as they appear
@@ -191,6 +198,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
       listAgentProfiles(ws)
         .then((profiles) => useTeamStore.getState().setProfiles(profiles))
         .catch((err) => console.error("listAgentProfiles (reconnect) failed", err));
+      // Schedules mutate server-side while disconnected (fires, auto-pauses)
+      // — refetch or the panel goes stale.
+      listSchedules(ws)
+        .then((schedules) => useScheduleStore.getState().setSchedules(schedules))
+        .catch((err) => console.error("listSchedules (reconnect) failed", err));
     });
 
     return () => {
