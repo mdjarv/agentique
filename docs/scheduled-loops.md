@@ -1,10 +1,13 @@
 # Scheduled loops — recurring prompts with first-class observability
 
-Status: **design proposal, revision 2** (nothing implemented). Grounding research
-2026-07-29 (live probe of the Claude Code CLI scheduler over stream-json);
-adversarial review round 2026-07-30 (four independent reviewers, findings and
-dispositions in the review log at the bottom). Revision 2 reworks the delivery
-substrate, run state machine, and the insight surfaces in response.
+Status: **M1 implemented** (backend `internal/schedule` + session registry
+refactor + full frontend; see the CLAUDE.md "Scheduled Loops" section for the
+operational invariants). Grounding research 2026-07-29 (live probe of the
+Claude Code CLI scheduler over stream-json); adversarial design review
+2026-07-30 (four reviewers, dispositions in the review log at the bottom);
+implementation review workflow ran over the M1 diff before merge. M2
+(ScheduleReport/ScheduleNext, deep-links, standing consent, codex rotation)
+and M3 are not yet started.
 
 ## Goal
 

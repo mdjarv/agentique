@@ -126,6 +126,50 @@ Both are exposed on each lead node in the `/teams` hierarchy tree.
 - **Web-only channels are project-less.** `channels.project_id` is nullable (migration 038, kept `ON DELETE CASCADE` — *not* `SET NULL`, which would orphan repo-backed channels). Their WS events fan out on the empty/global topic `""`, which every conn joins (`ws/conn.go`); repo-backed channels stay on their project topic. Read `channels.project_id` via `nullStr(ch.ProjectID)`.
 - **Lean preamble.** `buildPersonaPreamble` is identity + the persona's system-prompt additions + global safety only — it drops delegation/@spawn, channel/team coordination, session-files, dev URLs, browser, and all memory/recall blocks.
 
+## Scheduled Loops
+
+Agentique-owned recurring/one-shot prompts fired into sessions as fresh turns
+(`internal/schedule`; design + review log: `docs/scheduled-loops.md`). Never
+the CLI's own cron (session-only, dies on evict/stop/restart — verified live).
+Invariants a change here must respect:
+
+- **Delivery is idle-gated, fresh-turn-only** — never `EnqueueMessage` (its
+  running-session branch is mid-turn injection). The scheduler delivers via
+  `QuerySessionWithOutcome` behind a per-session mutex + `queued→firing` CAS
+  on the run row; busy refusals (`session.ErrBusy`/`ErrNotLive`) requeue
+  without consuming a delivery attempt. Evicted sessions lazy-resume on fire —
+  idle eviction is the *feature* that makes long loops free between fires.
+- **Turn identity comes from the registry** (`session/turn_registry.go`):
+  `QueryWithOutcome` subscribes atomically with the turn start, keyed by
+  `turnIndex`; `Session.Close` resolves open subscriptions as SessionClosed.
+  Never observe completions via state polling or a single shared hook.
+- **Run lifecycle is one-way** (`queued→firing→running→` terminal), enforced
+  by `ResolveScheduleRun`'s WHERE clause; late completions/reports land in
+  `late_report`, never rewrite terminals. Timeout is the `overdue` *flag* +
+  attention, not a status. Auto-pause counts only real `error` terminals:
+  `deferred` (rate-limit/overload → rescheduled at ResetsAt), `interrupted`,
+  `action_needed` (blocked-on-human via `PendingHumanInput`), sweep errors,
+  and SessionClosed are excluded.
+- **Timestamps are pinned** to UTC RFC3339 seconds (`schedule.formatTime`) —
+  SQLite compares TEXT lexicographically; a stray offset/precision breaks
+  `next_run_at <=` ordering. `next_run_at = ''` means parked.
+- **Session-lifecycle seams**: auto-pause hooks user intent only (mark-done
+  RPC + merge finalize via `SetOnSessionFinished`) — never runtime `StateDone`
+  (a clean CLI exit is not user intent). The fire path re-checks
+  completed/merged at delivery (a `Query` would otherwise *unset* those flags).
+- **Schedule-origin turns are second-class ambient citizens**: they skip brain
+  recall (`QueryOrigin` — uses-inflation), skip `postQuery` (no Active-sort
+  bump/auto-name), skip `hasUnseenCompletion`, and collapse in the timeline.
+  Schedule attention (`schedules.attention`) is the dedicated channel:
+  `action_needed` clears on viewing/next-ok, `failed` only on explicit act;
+  neither uses the orange pulse (that means "agent blocked right now").
+- **`ScheduleCreate` (MCP) must stay non-blocking** — the CLI's MCP client
+  times out ~60s and the POST-only transport can't extend; it creates a
+  *paused pending-approval* schedule and returns immediately.
+- Pushes use `Broadcast` (global page), like teams/brain. Boot sweep
+  (queued re-arm, delivered→error excluded from failure counts) runs from
+  `serve.go` strictly before `Scheduler.Start` — never in `server.New`.
+
 ## Provider Abstraction
 
 Sessions are driven via `agentkit/runtime`'s neutral `CLISession` / `CLIConnector` contract — agentique never imports a provider-native event type inside the session pipeline. The current providers:
