@@ -13,6 +13,9 @@ type Querier interface {
 	AddChannelMember(ctx context.Context, arg AddChannelMemberParams) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error
 	AllSessionSummaries(ctx context.Context) ([]AllSessionSummariesRow, error)
+	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
+	ClaimScheduleRun(ctx context.Context, id string) (int64, error)
+	ClearScheduleActionAttention(ctx context.Context, arg ClearScheduleActionAttentionParams) error
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
@@ -25,6 +28,10 @@ type Querier interface {
 	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreatePromptTemplate(ctx context.Context, arg CreatePromptTemplateParams) (PromptTemplate, error)
+	// Scheduled loops (docs/scheduled-loops.md). All timestamps are UTC RFC3339
+	// seconds precision ("2006-01-02T15:04:05Z"); '' means unset.
+	CreateSchedule(ctx context.Context, arg CreateScheduleParams) (Schedule, error)
+	CreateScheduleRun(ctx context.Context, arg CreateScheduleRunParams) (int64, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -39,6 +46,7 @@ type Querier interface {
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
 	DeleteProject(ctx context.Context, id string) error
 	DeletePromptTemplate(ctx context.Context, id string) error
+	DeleteSchedule(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteTeam(ctx context.Context, id string) error
 	DeleteUser(ctx context.Context, id string) error
@@ -52,6 +60,8 @@ type Querier interface {
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetPromptTemplate(ctx context.Context, id string) (PromptTemplate, error)
+	GetSchedule(ctx context.Context, id string) (Schedule, error)
+	GetScheduleRun(ctx context.Context, id string) (ScheduleRun, error)
 	GetSession(ctx context.Context, id string) (Session, error)
 	GetTeam(ctx context.Context, id string) (Team, error)
 	GetUser(ctx context.Context, id string) (User, error)
@@ -69,6 +79,8 @@ type Querier interface {
 	ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]Channel, error)
 	ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error)
 	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
+	ListDueSchedules(ctx context.Context, nextRunAt string) ([]Schedule, error)
+	ListEnabledSchedulesBySession(ctx context.Context, sessionID string) ([]Schedule, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error)
 	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]Message, error)
@@ -80,19 +92,34 @@ type Querier interface {
 	ListPromptTemplates(ctx context.Context) ([]PromptTemplate, error)
 	ListRecentActivityByProject(ctx context.Context, arg ListRecentActivityByProjectParams) ([]ListRecentActivityByProjectRow, error)
 	ListRecentEventsBySession(ctx context.Context, arg ListRecentEventsBySessionParams) ([]SessionEvent, error)
+	ListRunsSince(ctx context.Context, arg ListRunsSinceParams) (ListRunsSinceRow, error)
+	ListScheduleRuns(ctx context.Context, arg ListScheduleRunsParams) ([]ScheduleRun, error)
+	ListSchedules(ctx context.Context) ([]Schedule, error)
+	ListSchedulesBySession(ctx context.Context, sessionID string) ([]Schedule, error)
 	ListSessionChannels(ctx context.Context, sessionID string) ([]ListSessionChannelsRow, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
 	ListTeamMembers(ctx context.Context, teamID string) ([]AgentProfile, error)
 	ListTeams(ctx context.Context) ([]Team, error)
 	ListTeamsForAgent(ctx context.Context, agentProfileID string) ([]Team, error)
+	ListUnfinishedRunsForSchedule(ctx context.Context, scheduleID string) ([]ScheduleRun, error)
+	ListUnfinishedScheduleRuns(ctx context.Context) ([]ScheduleRun, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	MarkScheduleRunFired(ctx context.Context, arg MarkScheduleRunFiredParams) error
+	MarkScheduleViewed(ctx context.Context, arg MarkScheduleViewedParams) error
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
+	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
 	RecoverStaleSessions(ctx context.Context) error
 	RemoveChannelMember(ctx context.Context, arg RemoveChannelMemberParams) error
 	RemoveSessionFromAllChannels(ctx context.Context, sessionID string) error
 	RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberParams) error
 	ReorderPromptTemplates(ctx context.Context, arg ReorderPromptTemplatesParams) error
+	RequeueScheduleRun(ctx context.Context, arg RequeueScheduleRunParams) error
+	ResolveScheduleRun(ctx context.Context, arg ResolveScheduleRunParams) (int64, error)
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
+	SetScheduleAttention(ctx context.Context, arg SetScheduleAttentionParams) error
+	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
+	SetScheduleFailures(ctx context.Context, arg SetScheduleFailuresParams) error
+	SetScheduleRunOverdue(ctx context.Context, id string) error
 	SetSessionCompleted(ctx context.Context, id string) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionCompleted(ctx context.Context, id string) error
@@ -114,6 +141,8 @@ type Querier interface {
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdatePromptTemplate(ctx context.Context, arg UpdatePromptTemplateParams) (PromptTemplate, error)
+	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) error
+	UpdateScheduleNextRun(ctx context.Context, arg UpdateScheduleNextRunParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error

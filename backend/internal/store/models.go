@@ -133,6 +133,49 @@ type PromptTemplate struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type Schedule struct {
+	ID                  string `json:"id"`
+	ProjectID           string `json:"project_id"`
+	SessionID           string `json:"session_id"`
+	Name                string `json:"name"`
+	Prompt              string `json:"prompt"`
+	Cron                string `json:"cron"`
+	Mode                string `json:"mode"`
+	Enabled             int64  `json:"enabled"`
+	PauseReason         string `json:"pause_reason"`
+	Attention           string `json:"attention"`
+	AttentionRunID      string `json:"attention_run_id"`
+	NextRunAt           string `json:"next_run_at"`
+	ExpiresAt           string `json:"expires_at"`
+	LastRunAt           string `json:"last_run_at"`
+	LastViewedAt        string `json:"last_viewed_at"`
+	ConsecutiveFailures int64  `json:"consecutive_failures"`
+	CreatedBy           string `json:"created_by"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+}
+
+type ScheduleRun struct {
+	ID            string `json:"id"`
+	ScheduleID    string `json:"schedule_id"`
+	SessionID     string `json:"session_id"`
+	ScheduledFor  string `json:"scheduled_for"`
+	CreatedAt     string `json:"created_at"`
+	FiredAt       string `json:"fired_at"`
+	FinishedAt    string `json:"finished_at"`
+	Status        string `json:"status"`
+	Overdue       int64  `json:"overdue"`
+	Attempts      int64  `json:"attempts"`
+	NextAttemptAt string `json:"next_attempt_at"`
+	TurnIndex     int64  `json:"turn_index"`
+	Summary       string `json:"summary"`
+	Reason        string `json:"reason"`
+	Error         string `json:"error"`
+	ErrorKind     string `json:"error_kind"`
+	LateReport    string `json:"late_report"`
+	DurationMs    int64  `json:"duration_ms"`
+}
+
 type Session struct {
 	ID              string         `json:"id"`
 	ProjectID       string         `json:"project_id"`
