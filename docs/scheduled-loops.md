@@ -233,15 +233,35 @@ deliberately (fires within one tick are already serialized by the loop).
 ## Dynamic pacing (agent-chosen interval) — M2
 
 Claude Code's self-paced `/loop` (agent picks the next delay + prints a reason)
-maps cleanly: `mode='dynamic'` schedules expose an auto-allowed MCP tool
+maps 1:1 onto the same substrate: `mode='dynamic'` schedules have no cron —
+`next_run_at` is written by the agent itself via an auto-allowed MCP tool
 **`ScheduleNext(delaySeconds, reason)`** (+ `stop: true` to end the loop),
-mirroring `ScheduleWakeup`. The scheduler clamps the delay to config bounds
-(default 1m–6h), writes `next_run_at`, and stores the reason on the run row —
-the UI then shows *"next in 25m — waiting for CI run to finish"*, which is
-exactly the insight the built-in tool prints into a terminal but agentique can
-render persistently. If a dynamic run ends without calling `ScheduleNext`, one
-fallback fire is scheduled at `dynamic-fallback` (default 20m), and the loop
-auto-pauses if that run doesn't reschedule either (Claude Code's semantics).
+mirroring `ScheduleWakeup`. Semantics, point by point against the CC docs:
+
+- **Start**: creating a dynamic schedule sets `next_run_at = now` — the first
+  iteration fires immediately, then the agent paces itself.
+- **Prompt**: the schedule row holds the loop prompt and the scheduler re-sends
+  it each fire (CC threads the prompt back through each `ScheduleWakeup`; ours
+  is durable state, simpler).
+- **Clamp**: delay bounded to `[min-interval, dynamic-max-delay]` (default
+  1m–6h; CC clamps 60s–3600s — we allow longer waits because an evicted
+  session costs nothing while parked).
+- **Reason**: stored on the run row and rendered persistently — *"next in 25m
+  — waiting for CI run to finish"* — the insight CC prints into a scrolling
+  terminal, agentique keeps on screen.
+- **Forgot to reschedule**: detected at turn completion (the turn-complete
+  registry knows whether `ScheduleNext` was called during the fired turn). One
+  fallback fire at `dynamic-fallback` (default 20m); if that run doesn't
+  reschedule either, the loop auto-pauses (`pause_reason='dynamic loop ended'`)
+  — CC's v2.1.202 fallback semantics, but ending in a visible paused state
+  instead of silence.
+- **Stop**: `ScheduleNext(stop: true)` pauses immediately (CC's
+  `ScheduleWakeup stop`); the schedule row survives for history/resume.
+- **Monitor-style waiting** needs no scheduler support: mid-turn the agent can
+  already run background watch commands; dynamic pacing governs the *between-
+  turn* cadence only.
+- **Not inherited**: CC's jitter and 7-day expiry are deliberately dropped
+  (single host; visible loops with auto-pause don't need an expiry backstop).
 
 ## Wire, API, and timeline tagging
 
@@ -285,11 +305,12 @@ must force-mount the target). "View run" navigates to the session with
 - **Health**: `BrainHealth`-style popover per schedule (consecutive failures,
   last error, fires in last 24h). Auto-pause fires a sonner toast (stable-id
   `loading→error` pattern from `useGlobalSubscriptions`' browser.provisioning).
-- **Attention**: new `AttentionKind: "schedule_failed"` in
-  `useActivityStreamItems` + a `schedule_failed` entry in `SessionBadge`
-  `CONFIG` — a failing/auto-paused loop lands in the sidebar inbox like a
-  pending approval. Each fire also emits a `project.activity-item` (existing
-  generic feed) so the folder sidebar shows loop activity live.
+- **Attention** (decided 2026-07-30): both `schedule_failed` (run errored /
+  auto-paused) **and `action_needed`** (agent reported the loop needs a human)
+  flip the target session's badge and land in the sidebar inbox like a pending
+  approval — new `AttentionKind` + `SessionBadge` `CONFIG` entries for each.
+  Each fire also emits a `project.activity-item` (existing generic feed) so
+  the folder sidebar shows loop activity live.
 - **Store**: `stores/schedule-store.ts` (team-store pattern: `Record<id,…>` +
   WS-push upserts), `hooks/useScheduleSubscriptions.ts` wired into
   `useGlobalSubscriptions` **including its `onConnect` refetch branch**.
@@ -362,11 +383,10 @@ timeline badge, run history, deep-link, and auto-pause after 3 forced failures.
 
 ## Open questions for review
 
-1. Should `action_needed` also flip the session's own badge (like a pending
-   question) or only the schedule's health? Proposed: session badge too.
-2. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
+1. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
 
 Resolved 2026-07-30 (review round): in-house cron parser (no dep); both
 creation paths in M1 (UI form + approved `ScheduleCreate`); auto-pause on
-session completion/merge; dynamic pacing promoted to M2; both management
-surfaces (global page + session tab) in M1.
+session completion/merge; dynamic pacing promoted to M2 with full
+`ScheduleWakeup`-parity semantics; both management surfaces (global page +
+session tab) in M1; `action_needed` flips the session badge.
