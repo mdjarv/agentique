@@ -68,10 +68,14 @@ func NormalizeEventJSON(eventType string, data []byte) json.RawMessage {
 }
 
 // HistoryTurn represents a single turn (prompt + response events) for replay.
+// TurnIndex is the persisted turn identity (deep-link anchor); Origin is set
+// for non-human turns (scheduled runs).
 type HistoryTurn struct {
 	Prompt      string            `json:"prompt"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
 	Events      []json.RawMessage `json:"events"`
+	TurnIndex   int               `json:"turnIndex"`
+	Origin      *QueryOrigin      `json:"origin,omitempty"`
 }
 
 // RecentHistoryFromDB returns the most recent N turns from persisted events.
@@ -103,7 +107,7 @@ func buildTurns(rows []store.SessionEvent) []HistoryTurn {
 	for _, row := range rows {
 		t, ok := turnMap[row.TurnIndex]
 		if !ok {
-			t = &HistoryTurn{}
+			t = &HistoryTurn{TurnIndex: int(row.TurnIndex)}
 			turnMap[row.TurnIndex] = t
 			turnOrder = append(turnOrder, row.TurnIndex)
 		}
@@ -112,10 +116,12 @@ func buildTurns(rows []store.SessionEvent) []HistoryTurn {
 			var p struct {
 				Prompt      string            `json:"prompt"`
 				Attachments []QueryAttachment `json:"attachments,omitempty"`
+				Origin      *QueryOrigin      `json:"origin,omitempty"`
 			}
 			if json.Unmarshal([]byte(row.Data), &p) == nil {
 				t.Prompt = p.Prompt
 				t.Attachments = p.Attachments
+				t.Origin = p.Origin
 			}
 		} else {
 			ev := NormalizeEventJSON(row.Type, []byte(row.Data))

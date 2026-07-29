@@ -19,6 +19,7 @@ import (
 type Config struct {
 	Server       ServerConfig       `toml:"server"`
 	Session      SessionConfig      `toml:"session"`
+	Scheduler    SchedulerConfig    `toml:"scheduler"`
 	Logging      LoggingConfig      `toml:"logging"`
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
@@ -54,6 +55,37 @@ type SessionConfig struct {
 	// next message. "" (the default) disables idle eviction. Env override:
 	// AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT.
 	IdleEvictTimeout string `toml:"idle-evict-timeout"`
+}
+
+// SchedulerConfig tunes scheduled loops (docs/scheduled-loops.md). Durations
+// are Go duration strings; empty fields fall back to the defaults noted per
+// field. Env overrides follow AGENTIQUE_SCHEDULER_<KEY>.
+type SchedulerConfig struct {
+	// Disabled turns the scheduler off entirely (schedules persist but never
+	// fire). Env: AGENTIQUE_SCHEDULER_DISABLED.
+	Disabled bool `toml:"disabled"`
+	// TickInterval is the due-schedule poll cadence. Default 20s.
+	TickInterval string `toml:"tick-interval"`
+	// MinInterval is the hard floor for cron cadence and dynamic delays.
+	// Default 1m.
+	MinInterval string `toml:"min-interval"`
+	// MaxRunDuration marks a running fire overdue (attention, not error)
+	// after this long. Default 30m.
+	MaxRunDuration string `toml:"max-run-duration"`
+	// MaxConsecutiveFailures auto-pauses a schedule after this many error
+	// terminals in a row. Default 3.
+	MaxConsecutiveFailures int `toml:"max-consecutive-failures"`
+	// RunHistory is the retained runs per schedule (pruned by creation
+	// order). Default 200.
+	RunHistory int `toml:"run-history"`
+	// OnceCatchupWindow bounds how stale a missed one-shot may fire.
+	// Default 1h.
+	OnceCatchupWindow string `toml:"once-catchup-window"`
+	// DynamicMaxDelay clamps ScheduleNext delays. Default 6h.
+	DynamicMaxDelay string `toml:"dynamic-max-delay"`
+	// DynamicFallback is the pre-written next fire a dynamic run gets in
+	// case it never reschedules. Default 20m.
+	DynamicFallback string `toml:"dynamic-fallback"`
 }
 
 // DevURLSlot describes one publicly-routable dev frontend URL.

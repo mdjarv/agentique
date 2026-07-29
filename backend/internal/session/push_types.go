@@ -36,6 +36,7 @@ type PushTurnStarted struct {
 	Prompt      string            `json:"prompt"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
 	TurnIndex   int               `json:"turnIndex"`
+	Origin      *QueryOrigin      `json:"origin,omitempty"`
 }
 
 // PushSessionRenamed signals a session name change.

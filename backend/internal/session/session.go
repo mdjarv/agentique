@@ -747,7 +747,7 @@ func (s *Session) injectRecall(prompt string) string {
 // Query sends a prompt (with optional images) to the CLI session and starts
 // streaming events.
 func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryAttachment) error {
-	_, _, err := s.queryInternal(ctx, prompt, attachments, false)
+	_, _, err := s.queryInternal(ctx, prompt, attachments, false, QueryOrigin{})
 	return err
 }
 
@@ -756,11 +756,12 @@ func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryA
 // outcome — or a synthetic SessionClosed if the session is torn down first.
 // The subscription is registered under the same turn-start critical section,
 // so it can neither miss a fast completion nor capture a neighbouring turn.
-func (s *Session) QueryWithOutcome(ctx context.Context, prompt string, attachments []QueryAttachment) (int, <-chan TurnOutcome, error) {
-	return s.queryInternal(ctx, prompt, attachments, true)
+// A non-zero origin tags the persisted prompt row and the turn-started push.
+func (s *Session) QueryWithOutcome(ctx context.Context, prompt string, attachments []QueryAttachment, origin QueryOrigin) (int, <-chan TurnOutcome, error) {
+	return s.queryInternal(ctx, prompt, attachments, true, origin)
 }
 
-func (s *Session) queryInternal(_ context.Context, prompt string, attachments []QueryAttachment, subscribe bool) (int, <-chan TurnOutcome, error) {
+func (s *Session) queryInternal(_ context.Context, prompt string, attachments []QueryAttachment, subscribe bool, origin QueryOrigin) (int, <-chan TurnOutcome, error) {
 	// Serialize turn starts end-to-end: every turn-start path (composer,
 	// scheduler, pending-flush replay, plan-approval auto-fire) funnels here,
 	// so validate → persist → runtime Query is atomic per session and a
@@ -776,17 +777,26 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	// Inject task-relevant recall only after validation passes, so a rejected
 	// query doesn't consume the one-shot. The augmented prompt is persisted, sent
 	// to the model, and broadcast — so the recalled facts are visible in the
-	// transcript and seen by the agent.
-	prompt = s.injectRecall(prompt)
+	// transcript and seen by the agent. Schedule-origin turns skip recall:
+	// eviction between fires resets the per-session seen-set, so a loop would
+	// re-inject the same facts every fire and inflate their `uses` counters
+	// with no outcome signal (see QueryOrigin).
+	if origin.Kind == "" {
+		prompt = s.injectRecall(prompt)
+	}
 
 	turnIndex := s.pipeline.AdvanceTurn()
 	var outcome <-chan TurnOutcome
 	if subscribe {
 		outcome = s.turnReg.Subscribe(turnIndex)
 	}
-	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments)
+	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments, origin)
 
 	turnPayload := PushTurnStarted{SessionID: s.ID, Prompt: prompt, TurnIndex: turnIndex}
+	if origin.Kind != "" {
+		o := origin
+		turnPayload.Origin = &o
+	}
 	if len(attachments) > 0 {
 		turnPayload.Attachments = attachments
 	}
@@ -855,10 +865,13 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 // persistQueryStart writes the running state, resets completed/merged flags in the
 // database, and persists the prompt as seq 0 of the new turn.
 // All writes are wrapped in a single transaction for atomicity.
-func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool, prompt string, attachments []QueryAttachment) {
+func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool, prompt string, attachments []QueryAttachment, origin QueryOrigin) {
 	promptPayload := map[string]any{"prompt": prompt}
 	if len(attachments) > 0 {
 		promptPayload["attachments"] = attachments
+	}
+	if origin.Kind != "" {
+		promptPayload["origin"] = origin
 	}
 	promptData, err := json.Marshal(promptPayload)
 	if err != nil {

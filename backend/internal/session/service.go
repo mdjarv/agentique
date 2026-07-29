@@ -694,15 +694,15 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 // first). Callers that need to attribute a completion to the exact turn they
 // started — the discussion orchestrator, the scheduler — use this instead of
 // QuerySession + observation.
-func (s *Service) QuerySessionWithOutcome(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) (int, <-chan TurnOutcome, error) {
+func (s *Service) QuerySessionWithOutcome(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment, origin QueryOrigin) (int, <-chan TurnOutcome, error) {
 	sess, err := s.ensureLive(ctx, sessionID)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments), "origin", origin.Kind)
 
-	turnIndex, outcome, err := sess.QueryWithOutcome(ctx, prompt, attachments)
+	turnIndex, outcome, err := sess.QueryWithOutcome(ctx, prompt, attachments, origin)
 	if err != nil {
 		return 0, nil, fmt.Errorf("query failed: %w", err)
 	}

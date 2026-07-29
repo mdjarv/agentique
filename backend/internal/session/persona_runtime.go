@@ -42,7 +42,7 @@ func (d *dbSessionPersona) Query(ctx context.Context, prompt string) (string, er
 	// accumulates codex's assistant text, whose adapter leaves
 	// TurnCompletedEvent.Text empty), and a Stop mid-turn resolves with
 	// SessionClosed instead of stranding the round until its timeout.
-	_, outcome, err := d.svc.QuerySessionWithOutcome(ctx, d.sessionID, prompt, nil)
+	_, outcome, err := d.svc.QuerySessionWithOutcome(ctx, d.sessionID, prompt, nil, QueryOrigin{})
 	if err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}

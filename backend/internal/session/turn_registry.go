@@ -18,6 +18,19 @@ const (
 	ErrorKindOther      = "other"
 )
 
+// QueryOrigin identifies a turn's initiator. The zero value means a human
+// (composer) turn. Schedule-origin turns are tagged on the persisted prompt
+// row and the turn-started push so the timeline can render them as scheduled
+// runs, and they skip brain recall injection — every fire on an evicted
+// session would otherwise re-inject the same facts and inflate their `uses`
+// counters with no corresponding outcome signal.
+type QueryOrigin struct {
+	Kind         string `json:"kind"` // "" (user) | "schedule"
+	ScheduleID   string `json:"scheduleId,omitempty"`
+	RunID        string `json:"runId,omitempty"`
+	ScheduleName string `json:"scheduleName,omitempty"`
+}
+
 // TurnOutcome is the completion payload delivered to turn subscribers: the
 // terminal fact of one turn, identified by its persisted turn index.
 type TurnOutcome struct {
