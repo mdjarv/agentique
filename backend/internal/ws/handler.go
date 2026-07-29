@@ -9,6 +9,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/providers"
+	"github.com/mdjarv/agentique/backend/internal/schedule"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
@@ -24,6 +25,7 @@ type Handler struct {
 	TeamService       *team.Service           // nil when experimental teams is disabled
 	PersonaService    *persona.Service        // nil when experimental teams is disabled
 	BrowserService    *session.BrowserService // nil when browser support is unavailable
+	ScheduleService   *schedule.Scheduler     // nil when the scheduler is disabled
 	Catalog           *providers.Catalog      // model catalog; nil falls back to base aliases
 	AllowedOrigins    map[string]bool         // nil/empty = accept all origins
 }
@@ -48,7 +50,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("ws connected", "remote", r.RemoteAddr)
-	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Bus, h.TeamService, h.PersonaService, h.BrowserService, h.Catalog)
+	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Bus, h.TeamService, h.PersonaService, h.BrowserService, h.ScheduleService, h.Catalog)
 	c.run()
 	slog.Info("ws disconnected", "remote", r.RemoteAddr)
 }

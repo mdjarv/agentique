@@ -37,6 +37,7 @@ const (
 	ToolMemoryFlag     = "MemoryFlag"
 	ToolMemoryUsed     = "MemoryUsed"
 	ToolSuggestPrompt  = "SuggestSessionPrompt"
+	ToolScheduleCreate = "ScheduleCreate"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -80,10 +81,19 @@ type MemoryStore interface {
 	MemoryUsed(ctx context.Context, sessionID, id string) (string, error)
 }
 
+// ScheduleCreator creates an agent-proposed scheduled loop in a paused,
+// pending-approval state and returns the message shown to the agent.
+// Implemented by schedule.Scheduler. May be nil — the ScheduleCreate tool is
+// then not registered.
+type ScheduleCreator interface {
+	AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string) (string, error)
+}
+
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
 // tests that don't exercise SetSessionName — calls to that tool will then
-// return an error result. mem may be nil to omit the brain memory tools.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore) http.Handler {
+// return an error result. mem may be nil to omit the brain memory tools;
+// sched may be nil to omit ScheduleCreate.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
 	register(h, akmcp.Tool{
@@ -208,8 +218,40 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 	if mem != nil {
 		registerMemoryTools(h, mem)
 	}
+	if sched != nil {
+		registerScheduleTools(h, sched)
+	}
 
 	return h
+}
+
+func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
+	type createArgs struct {
+		Name   string `json:"name"`
+		Prompt string `json:"prompt"`
+		Cron   string `json:"cron"`
+		At     string `json:"at"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolScheduleCreate,
+		Description: "Propose a scheduled loop on THIS session: agentique will re-send the prompt as a fresh turn on the schedule, durably (survives restarts and idle eviction). The schedule is created PAUSED, awaiting the user's approval in the UI — it never fires before approval, and this call returns immediately (do not wait for approval; tell the user and move on). Provide exactly one of `cron` (recurring) or `at` (one-shot reminder).",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"name":   akmcp.StringProp{Description: "Short human-readable name for the loop (shown in the schedules UI)."},
+				"prompt": akmcp.StringProp{Description: "The prompt to run each fire. Self-contained: it is re-sent verbatim every time."},
+				"cron":   akmcp.StringProp{Description: "5-field cron expression in the server's local timezone (e.g. \"*/30 * * * *\", \"0 9 * * 1-5\"). Supported: wildcards, values, steps, ranges, lists. No names/L/W."},
+				"at":     akmcp.StringProp{Description: "RFC3339 time for a one-shot reminder (e.g. \"2026-07-31T15:00:00+02:00\"). Mutually exclusive with cron."},
+			},
+			Required: []string{"name", "prompt"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args createArgs) akmcp.Result {
+			msg, err := sched.AgentCreate(ctx, sid, args.Name, args.Prompt, args.Cron, args.At)
+			if err != nil {
+				return akmcp.ErrorResultf("schedule create failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
 }
 
 func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {

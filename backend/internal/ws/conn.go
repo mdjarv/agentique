@@ -12,6 +12,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/providers"
+	"github.com/mdjarv/agentique/backend/internal/schedule"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
@@ -36,6 +37,7 @@ type conn struct {
 	teamSvc       *team.Service           // nil when experimental teams is disabled
 	personaSvc    *persona.Service        // nil when experimental teams is disabled
 	browserSvc    *session.BrowserService // nil when browser support is unavailable
+	scheduleSvc   *schedule.Scheduler     // nil when the scheduler is disabled
 	catalog       *providers.Catalog      // model catalog; nil = base aliases only
 	sendCh        chan any
 	mu            sync.Mutex
@@ -47,7 +49,7 @@ type conn struct {
 	sub *eventbus.Subscription
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, catalog *providers.Catalog) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, scheduleSvc *schedule.Scheduler, catalog *providers.Catalog) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	c := &conn{
 		ctx:           ctx,
@@ -61,6 +63,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		teamSvc:       teamSvc,
 		personaSvc:    personaSvc,
 		browserSvc:    browserSvc,
+		scheduleSvc:   scheduleSvc,
 		catalog:       catalog,
 		sendCh:        make(chan any, sendBufSize),
 	}
@@ -255,6 +258,18 @@ var handlerRegistry = map[string]handlerFunc{
 
 	// providers.*
 	"providers.models": (*conn).handleProvidersModels,
+
+	// schedule.* — scheduled loops (docs/scheduled-loops.md)
+	"schedule.create":      (*conn).handleScheduleCreate,
+	"schedule.list":        (*conn).handleScheduleList,
+	"schedule.update":      (*conn).handleScheduleUpdate,
+	"schedule.delete":      (*conn).handleScheduleDelete,
+	"schedule.pause":       (*conn).handleSchedulePause,
+	"schedule.resume":      (*conn).handleScheduleResume,
+	"schedule.approve":     (*conn).handleScheduleApprove,
+	"schedule.run-now":     (*conn).handleScheduleRunNow,
+	"schedule.runs":        (*conn).handleScheduleRuns,
+	"schedule.mark-viewed": (*conn).handleScheduleMarkViewed,
 
 	// ping
 	"ping": (*conn).handlePing,

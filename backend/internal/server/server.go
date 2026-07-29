@@ -28,6 +28,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
+	"github.com/mdjarv/agentique/backend/internal/schedule"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -61,6 +62,14 @@ type Config struct {
 	// message). 0 disables idle eviction. Resolved from [session]
 	// idle-evict-timeout (or AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT).
 	IdleEvictTimeout time.Duration
+
+	// SchedulerDisabled turns scheduled loops off entirely (schedules persist
+	// but never fire). Resolved from [scheduler] disabled
+	// (or AGENTIQUE_SCHEDULER_DISABLED).
+	SchedulerDisabled bool
+	// SchedulerOptions tunes the scheduled-loop service; zero values use the
+	// documented defaults (docs/scheduled-loops.md).
+	SchedulerOptions schedule.Options
 
 	// DevURLSlots is the configured pool of leasable dev URL slots. Empty
 	// disables the AcquireDevUrl tool path (slots will report all-busy).
@@ -152,8 +161,14 @@ type Server struct {
 	browserSvc     *session.BrowserService
 	authSvc        *auth.Service
 	brainAuto      *brain.Automation
+	scheduler      *schedule.Scheduler
 	allowedOrigins map[string]bool
 }
+
+// Scheduler exposes the scheduled-loop service so serve.go can run the boot
+// sweep and start the tick loop (deliberately not started in New — see the
+// SweepOrphans precedent). Nil when the scheduler is disabled.
+func (s *Server) Scheduler() *schedule.Scheduler { return s.scheduler }
 
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries, cfg Config) (*Server, error) {
@@ -206,6 +221,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	svc.SetBrowserPanelEnabled(cfg.ExperimentalBrowser)
 	if cfg.ExperimentalBrowser {
 		slog.Info("experimental browser panel enabled")
+	}
+
+	// Scheduled loops (docs/scheduled-loops.md): agentique-owned recurring
+	// prompts fired into sessions as fresh turns. Constructed and wired here;
+	// the boot sweep and tick loop start from serve.go (never in New).
+	var sched *schedule.Scheduler
+	if !cfg.SchedulerDisabled && cfg.DB != nil {
+		sched = schedule.NewScheduler(cfg.DB, queries, schedule.NewSessionGateway(svc, queries), bus.Broadcast, cfg.SchedulerOptions)
+		svc.SetOnSessionFinished(sched.OnSessionFinished)
+		mgr.OnSessionIdle = sched.OnSessionIdle
 	}
 
 	ph := &project.Handler{Queries: queries}
@@ -284,7 +309,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		slog.Info("experimental teams feature enabled")
 	}
 
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, Catalog: modelCatalog(queries, cfg.ModelOverrides)}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: modelCatalog(queries, cfg.ModelOverrides)}
 	mux.Handle("GET /ws", wsh)
 
 	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is
@@ -484,7 +509,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		}
 	}
 
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider)
+	// A typed-nil *Scheduler must not become a non-nil interface.
+	var schedCreator mcphttp.ScheduleCreator
+	if sched != nil {
+		schedCreator = sched
+	}
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator)
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)
@@ -504,7 +534,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto}
+	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched}
 
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
@@ -547,6 +577,9 @@ func (s *Server) SweepOrphans(ctx context.Context) {
 }
 
 func (s *Server) Shutdown() {
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
 	if s.brainAuto != nil {
 		s.brainAuto.Stop()
 	}

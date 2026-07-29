@@ -26,6 +26,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/project"
+	"github.com/mdjarv/agentique/backend/internal/schedule"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -396,6 +397,33 @@ func runServe(cmd *cobra.Command, args []string) error {
 		idleEvictTimeout = d
 	}
 
+	// Scheduled loops ([scheduler], docs/scheduled-loops.md): env wins over the
+	// config file; unset fields take the scheduler's documented defaults. An
+	// unparseable duration is a hard config error, same as idle-evict.
+	schedDuration := func(key, fileVal string) time.Duration {
+		v := firstNonEmpty(os.Getenv(key), fileVal)
+		if v == "" {
+			return 0 // scheduler default
+		}
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			slog.Error("invalid scheduler duration", "key", key, "value", v, "error", err)
+			os.Exit(1)
+		}
+		return d
+	}
+	schedulerDisabled := envBoolOr("AGENTIQUE_SCHEDULER_DISABLED", fileCfg.Scheduler.Disabled)
+	schedulerOpts := schedule.Options{
+		TickInterval:           schedDuration("AGENTIQUE_SCHEDULER_TICK_INTERVAL", fileCfg.Scheduler.TickInterval),
+		MinInterval:            schedDuration("AGENTIQUE_SCHEDULER_MIN_INTERVAL", fileCfg.Scheduler.MinInterval),
+		MaxRunDuration:         schedDuration("AGENTIQUE_SCHEDULER_MAX_RUN_DURATION", fileCfg.Scheduler.MaxRunDuration),
+		OnceCatchupWindow:      schedDuration("AGENTIQUE_SCHEDULER_ONCE_CATCHUP_WINDOW", fileCfg.Scheduler.OnceCatchupWindow),
+		DynamicMaxDelay:        schedDuration("AGENTIQUE_SCHEDULER_DYNAMIC_MAX_DELAY", fileCfg.Scheduler.DynamicMaxDelay),
+		DynamicFallback:        schedDuration("AGENTIQUE_SCHEDULER_DYNAMIC_FALLBACK", fileCfg.Scheduler.DynamicFallback),
+		MaxConsecutiveFailures: envIntOr("AGENTIQUE_SCHEDULER_MAX_CONSECUTIVE_FAILURES", fileCfg.Scheduler.MaxConsecutiveFailures),
+		RunHistory:             envIntOr("AGENTIQUE_SCHEDULER_RUN_HISTORY", fileCfg.Scheduler.RunHistory),
+	}
+
 	cfg := server.Config{
 		AuthEnabled:         !disableAuth,
 		TestMode:            testMode,
@@ -405,6 +433,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		IdleEvictTimeout:    idleEvictTimeout,
+		SchedulerDisabled:   schedulerDisabled,
+		SchedulerOptions:    schedulerOpts,
 		DevURLSlots:         fileCfg.DevURLs,
 		ModelOverrides:      fileCfg.Models,
 		MCPInternalURL:      mcpInternalURL,
@@ -476,6 +506,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// its data dir (see ownsDataDir): a server pointed at a scratch DB sees real
 	// artifacts as unowned, which is precisely how a sandboxed verify run comes
 	// to delete production state.
+	// Scheduled loops: reconcile runs stranded by an ungraceful exit, then
+	// start the tick loop. Sweep strictly before Start (never in server.New)
+	// so the first tick can't misread a stale `queued` row as a live
+	// predecessor. Runs in test mode too — the scheduler is provider-neutral
+	// and the mock connector exercises it end-to-end.
+	if sched := srv.Scheduler(); sched != nil {
+		sched.BootSweep(context.Background())
+		sched.Start()
+	}
+
 	if !testMode && ownsDataDir(dbFile) {
 		go srv.SweepOrphans(context.Background())
 

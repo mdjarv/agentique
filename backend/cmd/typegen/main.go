@@ -25,6 +25,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	projpkg "github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/providers"
+	"github.com/mdjarv/agentique/backend/internal/schedule"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -357,6 +358,7 @@ func main() {
 	sessionInfoRef := g.register(session.SessionInfo{}, "SessionInfo")
 	g.register(session.CreateSessionResult{}, "CreateSessionResult")
 	g.register(session.ListSessionsResult{}, "ListSessionsResult")
+	g.register(session.QueryOrigin{}, "QueryOrigin")
 	g.register(session.HistoryTurn{}, "HistoryTurn")
 	g.register(session.HistoryResult{}, "HistoryResult")
 
@@ -551,6 +553,14 @@ func main() {
 	g.addPushEvent("browser.frame", pushBrowserFrame)
 	g.addPushEvent("browser.stopped", pushBrowserStopped)
 	g.addPushEvent("browser.provisioning", pushBrowserProvisioning)
+
+	// ── Scheduled loops (docs/scheduled-loops.md) ──
+
+	scheduleInfoRef := g.register(schedule.ScheduleInfo{}, "ScheduleInfo")
+	scheduleRunRef := g.register(schedule.ScheduleRunInfo{}, "ScheduleRunInfo")
+	g.addPushEvent("schedule.updated", scheduleInfoRef)
+	g.addPushEvent("schedule.deleted", scheduleInfoRef)
+	g.addPushEvent("schedule.run", scheduleRunRef)
 
 	// ── Generate output ──
 

@@ -44,6 +44,11 @@ const (
 	// no server-side side effect (the card renders from the tool_use event), so it
 	// auto-allows like the other affordance tools.
 	AgentiqueSuggestPromptTool = "mcp__" + AgentiqueMCPServerName + "__SuggestSessionPrompt"
+	// AgentiqueScheduleCreateTool proposes a scheduled loop. Auto-allowed
+	// because the handler only creates a *paused, pending-approval* schedule —
+	// the human approval happens in the UI banner, never in the tool call
+	// (the CLI's MCP client timeout forbids blocking handlers).
+	AgentiqueScheduleCreateTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleCreate"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

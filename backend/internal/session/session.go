@@ -312,6 +312,7 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueMemoryFlagTool:     allow,
 		AgentiqueMemoryUsedTool:     allow,
 		AgentiqueSuggestPromptTool:  allow,
+		AgentiqueScheduleCreateTool: allow,
 	}
 	// fullAuto (runtime.AutoApproveAll) short-circuits the approval pump, so the
 	// lazy Chrome launch in handlePendingChange never runs for it. Register a

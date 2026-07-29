@@ -255,10 +255,19 @@ export const ListSessionsResultSchema = z.object({
   sessions: z.array(SessionInfoSchema),
 });
 
+export const QueryOriginSchema = z.object({
+  kind: z.string(),
+  scheduleId: z.string().optional(),
+  runId: z.string().optional(),
+  scheduleName: z.string().optional(),
+});
+
 export const HistoryTurnSchema = z.object({
   prompt: z.string(),
   attachments: z.array(QueryAttachmentSchema).optional(),
   events: z.array(z.unknown()),
+  turnIndex: z.number(),
+  origin: QueryOriginSchema.optional(),
 });
 
 export const HistoryResultSchema = z.object({
@@ -739,6 +748,8 @@ export const PushTurnStartedSchema = z.object({
   sessionId: z.string(),
   prompt: z.string(),
   attachments: z.array(QueryAttachmentSchema).optional(),
+  turnIndex: z.number(),
+  origin: QueryOriginSchema.optional(),
 });
 
 export const PushSessionPulseSchema = z.object({
@@ -884,6 +895,49 @@ export const PushBrowserProvisioningSchema = z.object({
   state: z.string(),
 });
 
+export const ScheduleInfoSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  sessionId: z.string(),
+  name: z.string(),
+  prompt: z.string(),
+  cron: z.string(),
+  mode: z.string(),
+  enabled: z.boolean(),
+  pauseReason: z.string(),
+  attention: z.string(),
+  attentionRunId: z.string(),
+  nextRunAt: z.string(),
+  expiresAt: z.string(),
+  lastRunAt: z.string(),
+  lastViewedAt: z.string(),
+  consecutiveFailures: z.number(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const ScheduleRunInfoSchema = z.object({
+  id: z.string(),
+  scheduleId: z.string(),
+  sessionId: z.string(),
+  scheduledFor: z.string(),
+  createdAt: z.string(),
+  firedAt: z.string(),
+  finishedAt: z.string(),
+  status: z.string(),
+  overdue: z.boolean(),
+  attempts: z.number(),
+  nextAttemptAt: z.string(),
+  turnIndex: z.number(),
+  summary: z.string(),
+  reason: z.string(),
+  error: z.string(),
+  errorKind: z.string(),
+  lateReport: z.string(),
+  durationMs: z.number(),
+});
+
 export const WireEventSchema = z.discriminatedUnion("type", [
   WireTextEventSchema,
   WireThinkingEventSchema,
@@ -934,4 +988,7 @@ export const pushSchemaMap = {
   "browser.frame": PushBrowserFrameSchema,
   "browser.stopped": PushBrowserStoppedSchema,
   "browser.provisioning": PushBrowserProvisioningSchema,
+  "schedule.updated": ScheduleInfoSchema,
+  "schedule.deleted": ScheduleInfoSchema,
+  "schedule.run": ScheduleRunInfoSchema,
 } as const;

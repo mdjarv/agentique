@@ -377,6 +377,32 @@ func (s *Scheduler) Approve(ctx context.Context, id string) (ScheduleInfo, error
 	return s.Resume(ctx, id)
 }
 
+// AgentCreate is the ScheduleCreate MCP tool backend: a self-targeting,
+// **pending-approval** schedule. Non-blocking by design — the CLI's MCP
+// client times out per call (~60s) and agentkit's POST-only transport cannot
+// extend it with progress, so the handler must never park waiting for a
+// human. The schedule is created paused; the approval banner enables it.
+func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string) (string, error) {
+	sess, err := s.q.GetSession(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("session not found: %w", err)
+	}
+	info, err := s.Create(ctx, CreateParams{
+		ProjectID: sess.ProjectID,
+		SessionID: sessionID,
+		Name:      name,
+		Prompt:    prompt,
+		Cron:      cron,
+		At:        at,
+		CreatedBy: "agent",
+		Paused:    true,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Schedule %q created and awaiting the user's approval in the UI (id %s). It will not fire until approved — do not wait for it; mention it to the user and continue.", info.Name, info.ID), nil
+}
+
 // validateCron parses the expression and enforces the cadence floor by
 // checking the gap between the next two occurrences.
 func (s *Scheduler) validateCron(expr string, now time.Time) (time.Time, error) {

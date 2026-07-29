@@ -253,10 +253,19 @@ export interface ListSessionsResult {
   sessions: SessionInfo[];
 }
 
+export interface QueryOrigin {
+  kind: string;
+  scheduleId?: string;
+  runId?: string;
+  scheduleName?: string;
+}
+
 export interface HistoryTurn {
   prompt: string;
   attachments?: QueryAttachment[];
   events: unknown[];
+  turnIndex: number;
+  origin?: QueryOrigin;
 }
 
 export interface HistoryResult {
@@ -737,6 +746,8 @@ export interface PushTurnStarted {
   sessionId: string;
   prompt: string;
   attachments?: QueryAttachment[];
+  turnIndex: number;
+  origin?: QueryOrigin;
 }
 
 export interface PushSessionPulse {
@@ -882,6 +893,49 @@ export interface PushBrowserProvisioning {
   state: string;
 }
 
+export interface ScheduleInfo {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  name: string;
+  prompt: string;
+  cron: string;
+  mode: string;
+  enabled: boolean;
+  pauseReason: string;
+  attention: string;
+  attentionRunId: string;
+  nextRunAt: string;
+  expiresAt: string;
+  lastRunAt: string;
+  lastViewedAt: string;
+  consecutiveFailures: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleRunInfo {
+  id: string;
+  scheduleId: string;
+  sessionId: string;
+  scheduledFor: string;
+  createdAt: string;
+  firedAt: string;
+  finishedAt: string;
+  status: string;
+  overdue: boolean;
+  attempts: number;
+  nextAttemptAt: string;
+  turnIndex: number;
+  summary: string;
+  reason: string;
+  error: string;
+  errorKind: string;
+  lateReport: string;
+  durationMs: number;
+}
+
 export type WireEvent =
   | WireTextEvent
   | WireThinkingEvent
@@ -931,6 +985,9 @@ export interface PushEventMap {
   "browser.frame": PushBrowserFrame;
   "browser.stopped": PushBrowserStopped;
   "browser.provisioning": PushBrowserProvisioning;
+  "schedule.updated": ScheduleInfo;
+  "schedule.deleted": ScheduleInfo;
+  "schedule.run": ScheduleRunInfo;
 }
 
 export type PushEventType = keyof PushEventMap;
