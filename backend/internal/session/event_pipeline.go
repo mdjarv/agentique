@@ -39,6 +39,10 @@ type PipelineConfig struct {
 	// Callbacks for side effects triggered by specific event types.
 	// All are optional (nil-safe).
 	OnClaudeSessionID func(id string)
+	// OnResolvedModel fires once per pipeline with the concrete model ID the
+	// provider reported for the configured slug (e.g. "opus" → "claude-opus-5").
+	// It is what keeps the model catalog current without a new release.
+	OnResolvedModel   func(id string)
 	OnPlanTransition  func(mode string)
 	OnExitPlanMode    func(input json.RawMessage)
 	OnWriteToolResult func()
@@ -103,6 +107,7 @@ type EventPipeline struct {
 	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
 
 	onClaudeSessionID func(string)
+	onResolvedModel   func(string)
 	onPlanTransition  func(string)
 	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
@@ -123,6 +128,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		toolCategories:    make(map[string]string),
 		taskStatus:        make(map[string]bool),
 		onClaudeSessionID: cfg.OnClaudeSessionID,
+		onResolvedModel:   cfg.OnResolvedModel,
 		onPlanTransition:  cfg.OnPlanTransition,
 		onExitPlanMode:    cfg.OnExitPlanMode,
 		onWriteToolResult: cfg.OnWriteToolResult,
@@ -398,6 +404,9 @@ func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
 		)
 	}
 	if captureModel {
+		if p.onResolvedModel != nil {
+			p.onResolvedModel(initEv.Model)
+		}
 		// ModelDisplayName fails safe — returns the input unchanged for
 		// unrecognized IDs (e.g. codex's "gpt-5"), so calling it from this
 		// provider-neutral layer is harmless.

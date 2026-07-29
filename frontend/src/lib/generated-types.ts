@@ -338,6 +338,7 @@ export interface ProviderModelInfo {
   slug: string;
   displayName: string;
   description?: string;
+  resolvedId?: string;
 }
 
 export interface ProviderModels {

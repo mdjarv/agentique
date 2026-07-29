@@ -351,6 +351,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		IdleEvictTimeout:    idleEvictTimeout,
 		DevURLSlots:         fileCfg.DevURLs,
+		ModelOverrides:      fileCfg.Models,
 		MCPInternalURL:      mcpInternalURL,
 		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic
 		// recall is opt-in via env (otherwise keyword recall over markdown files).

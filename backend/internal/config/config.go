@@ -25,6 +25,25 @@ type Config struct {
 	Experimental ExperimentalConfig `toml:"experimental"`
 	Brain        BrainConfig        `toml:"brain"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
+	// Models overrides the auto-detected model catalog, keyed by provider
+	// ("claude", "codex"). A non-empty list replaces that provider's generated
+	// list entirely — it is the escape hatch for anything auto-detection misses.
+	//
+	//	[[models.claude]]
+	//	slug = "opus"
+	//	display = "Opus 5"
+	Models map[string][]ModelOverride `toml:"models"`
+}
+
+// ModelOverride is one config-supplied entry in the model picker.
+type ModelOverride struct {
+	// Slug is passed to the provider CLI verbatim (an alias like "opus" or a
+	// pinned ID like "claude-opus-5"). Required; entries without it are dropped.
+	Slug string `toml:"slug"`
+	// Display is the picker label. Defaults to Slug when empty.
+	Display string `toml:"display"`
+	// Description is optional secondary text in the picker.
+	Description string `toml:"description"`
 }
 
 // SessionConfig tunes session lifecycle behavior.

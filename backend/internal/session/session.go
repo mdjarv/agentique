@@ -210,6 +210,7 @@ type sessionParams struct {
 	id                string
 	projectID         string
 	model             string
+	provider          string
 	db                *sql.DB
 	queries           sessionQueries
 	broadcast         func(pushType string, payload any)
@@ -372,6 +373,7 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				slog.Error("persist claude session ID failed", "session_id", p.id, "error", err)
 			}
 		},
+		OnResolvedModel:  func(id string) { persistResolvedModel(p, id) },
 		OnPlanTransition: s.transitionPlanMode,
 		OnExitPlanMode: func(input json.RawMessage) {
 			s.mu.Lock()

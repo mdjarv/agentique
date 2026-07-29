@@ -72,6 +72,7 @@ type Querier interface {
 	ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error)
 	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]Message, error)
+	ListModelResolutions(ctx context.Context) ([]ModelResolution, error)
 	ListPendingDeliveriesForSession(ctx context.Context, recipientSessionID string) ([]ListPendingDeliveriesForSessionRow, error)
 	ListPersonaInteractions(ctx context.Context, arg ListPersonaInteractionsParams) ([]PersonaInteraction, error)
 	ListPersonaInteractionsForProfile(ctx context.Context, arg ListPersonaInteractionsForProfileParams) ([]PersonaInteraction, error)
@@ -119,11 +120,13 @@ type Querier interface {
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg UpdateSessionPRUrlParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg UpdateSessionPermissionModeParams) error
+	UpdateSessionResolvedModel(ctx context.Context, arg UpdateSessionResolvedModelParams) error
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
 	UpdateSessionWorktree(ctx context.Context, arg UpdateSessionWorktreeParams) error
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
+	UpsertModelResolution(ctx context.Context, arg UpsertModelResolutionParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }
 

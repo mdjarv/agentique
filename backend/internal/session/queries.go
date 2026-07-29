@@ -24,6 +24,8 @@ type sessionWriter interface {
 	UpdateClaudeSessionID(ctx context.Context, arg store.UpdateClaudeSessionIDParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	SetSessionCompleted(ctx context.Context, id string) error
+	UpdateSessionResolvedModel(ctx context.Context, arg store.UpdateSessionResolvedModelParams) error
+	UpsertModelResolution(ctx context.Context, arg store.UpsertModelResolutionParams) error
 }
 
 // ---------------------------------------------------------------------------

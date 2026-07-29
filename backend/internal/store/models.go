@@ -79,6 +79,13 @@ type MessageDelivery struct {
 	DeliveredAt        sql.NullString `json:"delivered_at"`
 }
 
+type ModelResolution struct {
+	Provider   string `json:"provider"`
+	Slug       string `json:"slug"`
+	ResolvedID string `json:"resolved_id"`
+	LastSeenAt string `json:"last_seen_at"`
+}
+
 type PersonaInteraction struct {
 	ID             string  `json:"id"`
 	ProfileID      string  `json:"profile_id"`
@@ -155,6 +162,7 @@ type Session struct {
 	AgentProfileID  sql.NullString `json:"agent_profile_id"`
 	ParentSessionID sql.NullString `json:"parent_session_id"`
 	Provider        string         `json:"provider"`
+	ResolvedModel   string         `json:"resolved_model"`
 }
 
 type SessionEvent struct {

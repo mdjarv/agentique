@@ -66,6 +66,10 @@ type Config struct {
 	// disables the AcquireDevUrl tool path (slots will report all-busy).
 	DevURLSlots []config.DevURLSlot
 
+	// ModelOverrides replaces the auto-detected model catalog for a provider,
+	// keyed by provider name. Empty leaves auto-detection in charge.
+	ModelOverrides map[string][]config.ModelOverride
+
 	// MCPInternalURL is the URL spawned Claude subprocesses use to reach the
 	// agentique HTTP MCP endpoint (e.g. "http://localhost:19201/mcp"). Must
 	// be reachable from the local machine; not exposed publicly.
@@ -280,7 +284,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		slog.Info("experimental teams feature enabled")
 	}
 
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, Catalog: modelCatalog(queries, cfg.ModelOverrides)}
 	mux.Handle("GET /ws", wsh)
 
 	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is

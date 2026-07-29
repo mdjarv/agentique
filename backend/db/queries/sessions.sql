@@ -23,6 +23,9 @@ UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M
 -- name: UpdateSessionModel :exec
 UPDATE sessions SET model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateSessionResolvedModel :exec
+UPDATE sessions SET resolved_model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UpdateSessionPermissionMode :exec
 UPDATE sessions SET permission_mode = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

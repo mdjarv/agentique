@@ -340,6 +340,7 @@ export const ProviderModelInfoSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   description: z.string().optional(),
+  resolvedId: z.string().optional(),
 });
 
 export const ProviderModelsSchema = z.object({
