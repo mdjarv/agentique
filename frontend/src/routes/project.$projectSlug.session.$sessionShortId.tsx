@@ -7,7 +7,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 const searchSchema = z.object({
-  tab: z.enum(["chat", "todos", "git", "changes"]).optional(),
+  tab: z.enum(["chat", "todos", "git", "changes", "loops"]).optional(),
 });
 
 export const Route = createFileRoute("/project/$projectSlug/session/$sessionShortId")({

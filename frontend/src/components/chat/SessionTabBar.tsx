@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Circle, FileDiff, ListTodo, MessageSquare } from "lucide-react";
+import { ArrowDown, ArrowUp, Circle, Clock, FileDiff, ListTodo, MessageSquare } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionTab } from "./ChatPanel";
 
@@ -15,6 +15,8 @@ interface SessionTabBarProps {
   hasChanges: boolean;
   totalAdd?: number;
   totalDel?: number;
+  /** Session has schedules — shows the Loops tab. */
+  hasLoops?: boolean;
   /** Project accent color hex — used for active tab indicator. */
   accentColor?: string;
 }
@@ -32,6 +34,7 @@ export function SessionTabBar({
   hasChanges,
   totalAdd = 0,
   totalDel = 0,
+  hasLoops = false,
   accentColor,
 }: SessionTabBarProps) {
   const showChangesTab = hasGitContent || hasChanges;
@@ -109,6 +112,13 @@ export function SessionTabBar({
               )}
             </span>
           )}
+        </Tab>
+      )}
+
+      {hasLoops && (
+        <Tab tab="loops">
+          <Clock className="size-3.5" />
+          Loops
         </Tab>
       )}
     </>

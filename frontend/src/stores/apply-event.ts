@@ -82,7 +82,14 @@ export function applyServerEvent(
 
   if (isResult && event.type === "result") {
     patch.meta = { ...session.meta, state: "idle" };
-    patch.hasUnseenCompletion = !isViewing;
+    // Ambient-signal exclusion (docs/scheduled-loops.md, "Frontend — insight
+    // without noise"): schedule-origin turns are second-class in the signal
+    // layer — an hourly loop must not bold the sidebar row on every fire.
+    // Runs that need the user are surfaced through schedule attention
+    // (schedule.updated → inbox), not the unseen-completion flag.
+    const completesScheduledTurn =
+      session.turns[session.turns.length - 1]?.origin?.kind === "schedule";
+    if (!completesScheduledTurn) patch.hasUnseenCompletion = !isViewing;
     if (event.contextWindow && event.contextWindow > 0) {
       patch.contextUsage = {
         contextWindow: event.contextWindow,

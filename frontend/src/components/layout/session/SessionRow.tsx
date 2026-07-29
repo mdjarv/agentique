@@ -13,6 +13,8 @@ interface SessionRowProps {
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
+  /** Worst-of schedule attention for the session ('' when none). */
+  scheduleAttention?: "" | "action_needed" | "failed";
   isActive: boolean;
   hasDraft?: boolean;
   worktreeMerged?: boolean;
@@ -48,6 +50,7 @@ export const SessionRow = memo(
       hasUnseenCompletion,
       hasPendingApproval,
       isPlanning,
+      scheduleAttention,
       isActive,
       hasDraft,
       worktreeMerged,
@@ -95,6 +98,7 @@ export const SessionRow = memo(
             hasUnseenCompletion={hasUnseenCompletion}
             hasPendingApproval={hasPendingApproval}
             isPlanning={isPlanning}
+            scheduleAttention={scheduleAttention}
             gitOperation={gitOperation}
           />
         </span>

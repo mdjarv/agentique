@@ -1,6 +1,8 @@
 import {
   Check,
   Circle,
+  Clock,
+  ClockAlert,
   GitMerge,
   ListChecks,
   Loader,
@@ -27,7 +29,9 @@ export type BadgeState =
   | "plan"
   | "planning"
   | "unseen"
-  | "channel_msg";
+  | "channel_msg"
+  | "schedule_failed"
+  | "schedule_action";
 
 export type BadgeSize = "sm" | "md" | "lg";
 
@@ -68,6 +72,11 @@ const CONFIG: Record<BadgeState, BadgeConfig> = {
   planning: { bg: "bg-teal/15", text: "text-teal", label: "Planning" },
   unseen: { bg: "bg-success/15", text: "text-success", label: "New response" },
   channel_msg: { bg: "bg-warning/15", text: "text-warning", label: "Channel message" },
+  // Schedule attention (docs/scheduled-loops.md, "Attention semantics").
+  // Deliberately NO pulseRing on either: the orange pulse means "agent blocked
+  // right now" and must keep meaning exactly that.
+  schedule_failed: { bg: "bg-destructive/15", text: "text-destructive", label: "Loop paused" },
+  schedule_action: { bg: "bg-amber-500/15", text: "text-amber-500", label: "Loop needs you" },
 };
 
 export function getBadgeConfig(state: BadgeState): BadgeConfig {
@@ -79,9 +88,16 @@ export function resolveSessionState(props: {
   state: string;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
+  /** Worst-of schedule attention for the session ('' when none). */
+  scheduleAttention?: "" | "action_needed" | "failed";
 }): BadgeState {
   if (props.hasPendingApproval) return props.isPlanning ? "plan" : "approval";
   if (props.isPlanning && props.state === "running") return "planning";
+  // Schedule attention ranks below approval/question and never masks live work.
+  if (props.state !== "running" && props.state !== "merging") {
+    if (props.scheduleAttention === "failed") return "schedule_failed";
+    if (props.scheduleAttention === "action_needed") return "schedule_action";
+  }
   return props.state as BadgeState;
 }
 
@@ -161,6 +177,10 @@ export function BadgeIcon({ state, size = "lg", bare, gitOperation }: BadgeIconP
       return <PenLine className={cn(iconCls, "animate-pulse")} />;
     case "channel_msg":
       return <MessageSquare className={iconCls} />;
+    case "schedule_failed":
+      return <ClockAlert className={iconCls} />;
+    case "schedule_action":
+      return <Clock className={iconCls} />;
   }
 }
 

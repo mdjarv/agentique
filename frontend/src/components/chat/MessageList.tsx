@@ -1,4 +1,4 @@
-import { ArrowDown, Loader2 } from "lucide-react";
+import { ArrowDown, Eye, EyeOff, Loader2 } from "lucide-react";
 import {
   memo,
   type ReactNode,
@@ -11,6 +11,7 @@ import {
 } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { UserMessage } from "~/components/chat/UserMessage";
+import { ScheduledTurnGroup } from "~/components/schedules/ScheduledTurnGroup";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
@@ -25,6 +26,64 @@ const EMPTY_USER_MESSAGES: UserMessageEvent[] = [];
 
 /** Per-session scroll position, preserved across tab switches and remounts. */
 const scrollMemory = new Map<string, { scrollTop: number; atBottom: boolean }>();
+
+/** Per-session "hide scheduled runs" filter, preserved across tab switches
+ * and remounts (component state, deliberately not the ui-store). */
+const hideScheduledMemory = new Map<string, boolean>();
+
+/** One row of the rendered timeline: a real turn (with its original index so
+ * eager/postCompact math stays on the full list) or a collapsed group of
+ * consecutive schedule-origin turns (docs/scheduled-loops.md, "Timeline at
+ * real cadences"). */
+type DisplayItem = { type: "turn"; turn: Turn; index: number } | { type: "group"; turns: Turn[] };
+
+function isScheduledTurn(turn: Turn): boolean {
+  return turn.origin?.kind === "schedule";
+}
+
+/** Compute the render list: collapse runs of 2+ consecutive schedule-origin
+ * turns into one group row, or (filter on) hide all scheduled turns except the
+ * latest. The session's last turn always renders standalone so streaming /
+ * isLast behavior is untouched. */
+function buildDisplayItems(turns: Turn[], hideScheduled: boolean): DisplayItem[] {
+  if (hideScheduled) {
+    let lastScheduled = -1;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (t && isScheduledTurn(t)) {
+        lastScheduled = i;
+        break;
+      }
+    }
+    const items: DisplayItem[] = [];
+    turns.forEach((turn, index) => {
+      if (isScheduledTurn(turn) && index !== lastScheduled) return;
+      items.push({ type: "turn", turn, index });
+    });
+    return items;
+  }
+
+  const items: DisplayItem[] = [];
+  let run: { turn: Turn; index: number }[] = [];
+  const flush = () => {
+    if (run.length >= 2) {
+      items.push({ type: "group", turns: run.map((r) => r.turn) });
+    } else {
+      for (const r of run) items.push({ type: "turn", turn: r.turn, index: r.index });
+    }
+    run = [];
+  };
+  turns.forEach((turn, index) => {
+    if (isScheduledTurn(turn) && index !== turns.length - 1) {
+      run.push({ turn, index });
+      return;
+    }
+    flush();
+    items.push({ type: "turn", turn, index });
+  });
+  flush();
+  return items;
+}
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
@@ -243,10 +302,14 @@ export function MessageList({
   const [following, setFollowing] = useState(initialFollowing);
   const followingRef = useRef(following);
   followingRef.current = following;
+  const [hideScheduled, setHideScheduled] = useState(
+    () => hideScheduledMemory.get(sessionId) ?? false,
+  );
   const prevSessionRef = useRef(sessionId);
   if (prevSessionRef.current !== sessionId) {
     const prevId = prevSessionRef.current;
     prevSessionRef.current = sessionId;
+    setHideScheduled(hideScheduledMemory.get(sessionId) ?? false);
     // Flush outgoing session's live scroll state in case a throttled rAF was
     // still pending when the user swapped tabs.
     const el = scrollRef.current;
@@ -446,6 +509,19 @@ export function MessageList({
     followBottom(behavior);
   }, [followBottom]);
 
+  const hasScheduledTurns = useMemo(() => turns.some(isScheduledTurn), [turns]);
+
+  const toggleHideScheduled = useCallback(() => {
+    const next = !(hideScheduledMemory.get(sessionId) ?? false);
+    hideScheduledMemory.set(sessionId, next);
+    setHideScheduled(next);
+  }, [sessionId]);
+
+  const displayItems = useMemo(
+    () => buildDisplayItems(turns, hideScheduled && hasScheduledTurns),
+    [turns, hideScheduled, hasScheduledTurns],
+  );
+
   if (turns.length === 0) {
     if (isLoadingHistory) {
       return (
@@ -471,7 +547,23 @@ export function MessageList({
       >
         <div ref={setContentRef} className="py-4 pl-5 pr-4 max-md:px-2 space-y-8 min-w-0">
           {isBackfilling && <HistoryBackfillIndicator />}
-          {turns.map((turn, i) => {
+          {displayItems.map((item) => {
+            if (item.type === "group") {
+              // Keyed by the first member's id so the key survives members
+              // joining/leaving the group as new fires arrive.
+              return (
+                <ScheduledTurnGroup
+                  key={item.turns[0]?.id ?? "scheduled-group"}
+                  turns={item.turns}
+                  sessionId={sessionId}
+                  projectId={projectId}
+                  sessionState={sessionState}
+                  projectPath={projectPath}
+                  worktreePath={worktreePath}
+                />
+              );
+            }
+            const { turn, index: i } = item;
             const eager = i >= turns.length - EAGER_TURN_COUNT;
             // If this turn has a compact_boundary, find the post-compaction
             // token count from the next turn's result event.
@@ -527,6 +619,24 @@ export function MessageList({
           <div ref={bottomRef} />
         </div>
       </div>
+      {hasScheduledTurns && (
+        <div className="absolute top-2 right-4 z-10">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={toggleHideScheduled}
+            className="h-6 gap-1 rounded-full px-2 text-[11px] shadow opacity-70 hover:opacity-100 transition-opacity"
+            title={
+              hideScheduled
+                ? "Show all scheduled runs in the timeline"
+                : "Hide scheduled runs (keeps the latest)"
+            }
+          >
+            {hideScheduled ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            <span>{hideScheduled ? "Show scheduled runs" : "Hide scheduled runs"}</span>
+          </Button>
+        </div>
+      )}
       {!following && (
         <div className="absolute bottom-3 right-3 z-10 pointer-events-none">
           <Tooltip>

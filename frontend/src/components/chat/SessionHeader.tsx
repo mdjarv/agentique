@@ -1,4 +1,4 @@
-import { ArrowUp, Check, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
+import { ArrowUp, Check, Clock, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
@@ -15,6 +15,7 @@ import {
   SessionBadge,
 } from "~/components/layout/session/SessionBadge";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
+import { untilText } from "~/components/schedules/schedule-format";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useChannelManagement } from "~/hooks/session/useChannelManagement";
@@ -22,12 +23,14 @@ import { useSessionActions } from "~/hooks/session/useSessionActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
+import type { ScheduleInfo } from "~/lib/schedule-actions";
 import { cn, sessionShortId } from "~/lib/utils";
 import { latestWorkflowToolUseId } from "~/lib/workflow-events";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import { useBrowserStore } from "~/stores/browser-store";
 import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 import { useUIStore } from "~/stores/ui-store";
 
 interface SessionHeaderProps {
@@ -151,6 +154,7 @@ export function SessionHeader({
 
             {/* Actions zone */}
             <div className="ml-auto flex items-center gap-1.5">
+              <ParkedScheduleChip sessionId={meta.id} state={meta.state} />
               <ReadOnlyIndicators
                 effort={meta.effort as EffortLevel | undefined}
                 isWorktree={isWorktree}
@@ -239,6 +243,37 @@ export function SessionHeader({
   );
 }
 
+// Parked-state presentation (docs/scheduled-loops.md, "The parked state must
+// not read as dead"): the earliest enabled schedule with a queued next fire
+// for this session, or null. Returns a store object reference (or null) —
+// stable across renders, safe as a zustand selector.
+function useNextSchedule(sessionId: string): ScheduleInfo | null {
+  return useScheduleStore((s) => {
+    let best: ScheduleInfo | null = null;
+    for (const sched of Object.values(s.schedules)) {
+      if (sched.sessionId !== sessionId || !sched.enabled || !sched.nextRunAt) continue;
+      if (!best || sched.nextRunAt < best.nextRunAt) best = sched;
+    }
+    return best;
+  });
+}
+
+// Desktop read-only chip for a parked loop session: stopped/evicted but with a
+// schedule that will resume it — the header must not read as dead.
+function ParkedScheduleChip({ sessionId, state }: { sessionId: string; state: string }) {
+  const next = useNextSchedule(sessionId);
+  if (state !== "stopped" || !next) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0"
+      title={`Parked — "${next.name}" fires ${untilText(next.nextRunAt)}`}
+    >
+      <Clock className="h-2.5 w-2.5 shrink-0" />
+      <span>Next {untilText(next.nextRunAt)}</span>
+    </span>
+  );
+}
+
 // The dim metadata line under the name on mobile: a status dot + label, the
 // branch, and the commits-ahead count — the essentials that were scattered
 // across chips before, now glanceable without a tap.
@@ -253,12 +288,17 @@ function MobileSubline({
   const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
   const branch = meta.worktreeBranch;
   const ahead = meta.commitsAhead ?? 0;
+  // Parked loop session: "Stopped" would read as dead — show the next fire
+  // and which schedule owns it instead.
+  const nextSchedule = useNextSchedule(meta.id);
+  const parked = meta.state === "stopped" ? nextSchedule : null;
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
       <SessionBadge state={badgeState} size="sm" bare />
       <span className="truncate">
-        {label}
-        {branch ? ` · ${branch}` : ""}
+        {parked
+          ? `next ${untilText(parked.nextRunAt)} · ${parked.name}`
+          : `${label}${branch ? ` · ${branch}` : ""}`}
       </span>
       {ahead > 0 && (
         <span className="flex items-center gap-0.5 shrink-0 text-success">

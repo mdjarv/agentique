@@ -1,11 +1,37 @@
 import { useMemo } from "react";
+import type { ScheduleInfo } from "~/lib/schedule-actions";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 
-export type AttentionKind = "approval" | "question" | "plan" | "failed" | "unseen" | "channel_msg";
+export type AttentionKind =
+  | "approval"
+  | "question"
+  | "plan"
+  | "failed"
+  | "unseen"
+  | "channel_msg"
+  | "schedule_failed"
+  | "schedule_action";
+
+/** Worst-of aggregation of a session's schedules' attention ('failed' > 'action_needed'). */
+export type ScheduleAttention = "" | "action_needed" | "failed";
+
+export function worstScheduleAttention(
+  schedules: Record<string, ScheduleInfo>,
+  sessionId: string,
+): ScheduleAttention {
+  let worst: ScheduleAttention = "";
+  for (const sched of Object.values(schedules)) {
+    if (sched.sessionId !== sessionId) continue;
+    if (sched.attention === "failed") return "failed";
+    if (sched.attention === "action_needed") worst = "action_needed";
+  }
+  return worst;
+}
 
 export interface AttentionItem {
   id: string;
@@ -44,9 +70,21 @@ export function useActivityStreamItems(
   const sessions = useChatStore((s) => s.sessions);
   const projects = useAppStore((s) => s.projects);
   const channelMap = useChannelStore((s) => s.channels);
+  const schedules = useScheduleStore((s) => s.schedules);
 
   return useMemo(() => {
     const projectMap = new Map(projects.map((p: Project) => [p.id, p]));
+
+    // Schedule attention, worst-of per session (docs/scheduled-loops.md,
+    // "Attention semantics"). Ranked below approval/question in the cascade.
+    const scheduleAttentionBySession = new Map<string, "action_needed" | "failed">();
+    for (const sched of Object.values(schedules)) {
+      if (sched.attention !== "failed" && sched.attention !== "action_needed") continue;
+      const worst = sched.attention === "failed" ? "failed" : "action_needed";
+      if (scheduleAttentionBySession.get(sched.sessionId) !== "failed") {
+        scheduleAttentionBySession.set(sched.sessionId, worst);
+      }
+    }
     const channels = Object.values(channelMap);
     const channelSessionIds = new Set<string>();
     for (const ch of channels) {
@@ -103,6 +141,12 @@ export function useActivityStreamItems(
         attentionKind = data.planMode ? "plan" : "approval";
       } else if (data.pendingQuestion) {
         attentionKind = "question";
+      } else {
+        // Schedule attention lands the session in the inbox too, but only when
+        // nothing higher-priority (approval/question) already does.
+        const schedAtt = scheduleAttentionBySession.get(id);
+        if (schedAtt === "failed") attentionKind = "schedule_failed";
+        else if (schedAtt === "action_needed") attentionKind = "schedule_action";
       }
 
       if (attentionKind) {
@@ -204,5 +248,5 @@ export function useActivityStreamItems(
     recentItems.sort((a, b) => b.lastActivity - a.lastActivity);
 
     return { attention, active: activeItems, recent: recentItems, activeUnread, recentUnread };
-  }, [sessions, projects, channelMap, searchQuery, filterProjectId]);
+  }, [sessions, projects, channelMap, schedules, searchQuery, filterProjectId]);
 }

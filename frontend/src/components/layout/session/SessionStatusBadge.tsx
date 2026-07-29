@@ -13,6 +13,8 @@ interface SessionStatusBadgeProps {
   hasUnseenCompletion?: boolean;
   hasPendingApproval?: boolean;
   isPlanning?: boolean;
+  /** Worst-of schedule attention for the session ('' when none). */
+  scheduleAttention?: "" | "action_needed" | "failed";
   gitOperation?: string;
   size?: BadgeSize;
   className?: string;
@@ -24,11 +26,17 @@ export function SessionStatusBadge({
   hasUnseenCompletion,
   hasPendingApproval,
   isPlanning,
+  scheduleAttention,
   gitOperation,
   size,
   className,
 }: SessionStatusBadgeProps) {
-  const badgeState = resolveSessionState({ state, hasPendingApproval, isPlanning });
+  const badgeState = resolveSessionState({
+    state,
+    hasPendingApproval,
+    isPlanning,
+    scheduleAttention,
+  });
   const title =
     state === "idle" && !connected
       ? "Idle (disconnected)"

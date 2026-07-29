@@ -19,6 +19,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "~/components/ui/context-menu";
+import { worstScheduleAttention } from "~/hooks/useActivityStreamItems";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   deleteSession,
@@ -28,6 +29,7 @@ import {
 } from "~/lib/session/actions";
 import { getErrorMessage, relativeTime } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 import { useUIStore } from "~/stores/ui-store";
 
 import { RenameDialog } from "./RenameDialog";
@@ -65,6 +67,8 @@ export const StreamSessionRow = memo(function StreamSessionRow({
   );
   const todoTotal = useChatStore((s) => s.sessions[sessionId]?.todos?.length ?? 0);
   const hasDraft = useUIStore((s) => !!s.drafts[sessionId]);
+  // Primitive return — stable reference, safe as a zustand selector.
+  const scheduleAttention = useScheduleStore((s) => worstScheduleAttention(s.schedules, sessionId));
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: sessionId,
@@ -143,6 +147,7 @@ export const StreamSessionRow = memo(function StreamSessionRow({
         hasUnseenCompletion={hasUnseenCompletion}
         hasPendingApproval={hasPendingInput}
         isPlanning={isPlanning}
+        scheduleAttention={scheduleAttention}
         isActive={sessionId === activeSessionId}
         hasDraft={hasDraft}
         worktreeMerged={meta.worktreeMerged}

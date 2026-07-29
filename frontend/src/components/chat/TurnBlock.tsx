@@ -181,6 +181,7 @@ export const TurnBlock = memo(function TurnBlock({
         prompt={turn.prompt}
         attachments={turn.attachments}
         timestamp={initialPromptTimestamp}
+        origin={turn.origin}
       />
 
       {hasAssistantContent &&

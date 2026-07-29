@@ -19,6 +19,8 @@ import { SessionTabBar } from "~/components/chat/SessionTabBar";
 import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
 import { TodosView } from "~/components/chat/TodosView";
 import { StatusPage } from "~/components/layout/PageHeader";
+import { LoopsPanel } from "~/components/schedules/LoopsPanel";
+import { ScheduleApprovalBanner } from "~/components/schedules/ScheduleApprovalBanner";
 import { TemplatePicker } from "~/components/templates/TemplatePicker";
 import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useGitActions } from "~/hooks/git/useGitActions";
@@ -53,6 +55,7 @@ import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode, PendingApproval } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 
 function ApprovalBannerSwitch({
   sessionId,
@@ -87,7 +90,7 @@ function ApprovalBannerSwitch({
 
 import { useUIStore } from "~/stores/ui-store";
 
-export type SessionTab = "chat" | "todos" | "git" | "changes"; // "git" kept for backward compat URLs
+export type SessionTab = "chat" | "todos" | "git" | "changes" | "loops"; // "git" kept for backward compat URLs
 
 interface ChatPanelProps {
   projectId: string;
@@ -127,6 +130,11 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
     compacting,
   } = useSessionState(sessionId);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
+  // Schedules targeting this session (loops). Element refs are stable in the
+  // store, so useShallow keeps the selector reference-stable across renders.
+  const sessionSchedules = useScheduleStore(
+    useShallow((s) => Object.values(s.schedules).filter((sc) => sc.sessionId === sessionId)),
+  );
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
   const historyComplete = useChatStore((s) => s.sessions[sessionId]?.historyComplete ?? false);
 
@@ -405,7 +413,15 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
   const hideTodosTab = isLarge && hasTodos;
   const effectiveTab: SessionTab = hideTodosTab && activeTab === "todos" ? "chat" : activeTab;
   const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
-  const showTabs = (hasTodos && !hideTodosTab) || hasGitContent || hasChanges;
+  const hasLoops = sessionSchedules.length > 0;
+  const pendingApprovalSchedules = sessionSchedules.filter(
+    (sc) => sc.pauseReason === "pending-approval",
+  );
+  // A stopped session with an enabled schedule is parked, not dead — the
+  // scheduler resumes it on the next fire, so don't offer manual resume.
+  const isParkedLoop =
+    sessionState === "stopped" && sessionSchedules.some((sc) => sc.enabled && sc.nextRunAt !== "");
+  const showTabs = (hasTodos && !hideTodosTab) || hasGitContent || hasChanges || hasLoops;
   // The mobile finish action shares the tab strip; compute it here so the strip
   // renders even when there are no tabs (e.g. a clean session that can be marked done).
   const finishKind = isMobile ? finishActionKind(meta, git) : null;
@@ -426,6 +442,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
       hasChanges={hasChanges}
       totalAdd={totalAdd}
       totalDel={totalDel}
+      hasLoops={hasLoops}
       accentColor={agentColor}
     />
   ) : null;
@@ -487,6 +504,8 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
               expandFile={expandFile}
               onExpandFileConsumed={handleExpandFileConsumed}
             />
+          ) : effectiveTab === "loops" ? (
+            <LoopsPanel sessionId={sessionId} />
           ) : (
             <>
               <MessageList
@@ -513,11 +532,15 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
               {pendingQuestion && (
                 <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
               )}
+              {pendingApprovalSchedules.map((sc) => (
+                <ScheduleApprovalBanner key={sc.id} schedule={sc} />
+              ))}
 
               {(contextUsage || compacting) && (
                 <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
               )}
-              {isResumable && (
+              {/* Suppressed while parked: the schedule will resume this session. */}
+              {isResumable && !isParkedLoop && (
                 <ResumeBanner
                   state={sessionState as "stopped" | "failed" | "done"}
                   onResume={handleResume}

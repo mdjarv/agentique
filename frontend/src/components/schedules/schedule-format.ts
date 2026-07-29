@@ -92,16 +92,36 @@ export function runStatusMeta(run: Pick<ScheduleRunInfo, "status" | "overdue">):
     case "deferred":
       return { label: "deferred", dotClass: "bg-sky-500", textClass: "text-sky-500" };
     case "interrupted":
-      return { label: "interrupted", dotClass: "bg-muted-foreground", textClass: "text-muted-foreground" };
+      return {
+        label: "interrupted",
+        dotClass: "bg-muted-foreground",
+        textClass: "text-muted-foreground",
+      };
     case "skipped":
-      return { label: "skipped", dotClass: "bg-muted-foreground/50", textClass: "text-muted-foreground" };
+      return {
+        label: "skipped",
+        dotClass: "bg-muted-foreground/50",
+        textClass: "text-muted-foreground",
+      };
     case "running":
-      return { label: "running", dotClass: "bg-blue-500 animate-pulse", textClass: "text-blue-500" };
+      return {
+        label: "running",
+        dotClass: "bg-blue-500 animate-pulse",
+        textClass: "text-blue-500",
+      };
     case "firing":
     case "queued":
-      return { label: "queued", dotClass: "bg-muted-foreground/70", textClass: "text-muted-foreground" };
+      return {
+        label: "queued",
+        dotClass: "bg-muted-foreground/70",
+        textClass: "text-muted-foreground",
+      };
     default:
-      return { label: run.status, dotClass: "bg-muted-foreground/50", textClass: "text-muted-foreground" };
+      return {
+        label: run.status,
+        dotClass: "bg-muted-foreground/50",
+        textClass: "text-muted-foreground",
+      };
   }
 }
 

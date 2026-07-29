@@ -7,6 +7,7 @@ import { extractBrainBlock } from "~/components/chat/PromptCard";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { formatTurnTime } from "~/lib/format";
+import type { QueryOrigin } from "~/lib/generated-types";
 import type { Attachment } from "~/stores/chat-store";
 
 interface UserMessageProps {
@@ -14,6 +15,8 @@ interface UserMessageProps {
   attachments?: Attachment[];
   deliveryStatus?: "sending" | "delivered" | "queued";
   timestamp?: number;
+  /** Turn origin — schedule-origin prompts render a Clock + schedule-name badge. */
+  origin?: QueryOrigin;
 }
 
 export const UserMessage = memo(function UserMessage({
@@ -21,6 +24,7 @@ export const UserMessage = memo(function UserMessage({
   attachments,
   deliveryStatus,
   timestamp,
+  origin,
 }: UserMessageProps) {
   const { copied, copy: handleCopy } = useCopyToClipboard();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -62,6 +66,12 @@ export const UserMessage = memo(function UserMessage({
                 : "from-primary/18 to-primary/10 border-primary/15 shadow-lg shadow-black/30 text-foreground"
             }`}
           >
+            {origin?.kind === "schedule" && (
+              <div className="flex items-center gap-1 mb-1 text-[10px] text-muted-foreground/80">
+                <Clock className="h-3 w-3 shrink-0" />
+                <span className="truncate">{origin.scheduleName || "Scheduled run"}</span>
+              </div>
+            )}
             {attachments && attachments.length > 0 && (
               <div className="flex gap-1.5 flex-wrap mb-2">
                 {attachments.map((a) =>

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as StorageRouteImport } from "./routes/storage";
+import { Route as SchedulesRouteImport } from "./routes/schedules";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as DiscussionsRouteImport } from "./routes/discussions";
 import { Route as BrainRouteImport } from "./routes/brain";
@@ -43,6 +44,11 @@ const TeamsRoute = TeamsRouteImport.update({
 const StorageRoute = StorageRouteImport.update({
   id: "/storage",
   path: "/storage",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SchedulesRoute = SchedulesRouteImport.update({
+  id: "/schedules",
+  path: "/schedules",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
+  "/schedules": typeof SchedulesRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
@@ -162,6 +169,7 @@ export interface FileRoutesByTo {
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
+  "/schedules": typeof SchedulesRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
+  "/schedules": typeof SchedulesRoute;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | "/brain"
     | "/discussions"
     | "/projects"
+    | "/schedules"
     | "/storage"
     | "/teams"
     | "/templates"
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | "/brain"
     | "/discussions"
     | "/projects"
+    | "/schedules"
     | "/storage"
     | "/teams"
     | "/templates"
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | "/brain"
     | "/discussions"
     | "/projects"
+    | "/schedules"
     | "/storage"
     | "/teams"
     | "/templates"
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   BrainRoute: typeof BrainRoute;
   DiscussionsRoute: typeof DiscussionsRoute;
   ProjectsRoute: typeof ProjectsRoute;
+  SchedulesRoute: typeof SchedulesRoute;
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
@@ -308,6 +321,13 @@ declare module "@tanstack/react-router" {
       path: "/storage";
       fullPath: "/storage";
       preLoaderRoute: typeof StorageRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/schedules": {
+      id: "/schedules";
+      path: "/schedules";
+      fullPath: "/schedules";
+      preLoaderRoute: typeof SchedulesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/projects": {
@@ -458,6 +478,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrainRoute: BrainRoute,
   DiscussionsRoute: DiscussionsRoute,
   ProjectsRoute: ProjectsRoute,
+  SchedulesRoute: SchedulesRoute,
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
