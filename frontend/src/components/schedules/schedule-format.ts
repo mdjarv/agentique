@@ -11,7 +11,7 @@ export function humanCadence(s: ScheduleInfo): string {
 export function cronToHuman(cron: string): string {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return cron;
-  const [min, hour, dom, mon, dow] = parts;
+  const [min = "", hour = "", dom = "", mon = "", dow = ""] = parts;
   const pad = (v: string) => v.padStart(2, "0");
   if (mon === "*" && dom === "*") {
     if (hour === "*" && dow === "*") {
