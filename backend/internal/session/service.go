@@ -716,6 +716,27 @@ func (s *Service) notifySessionFinished(sessionID string) {
 	go s.onSessionFinished(sessionID)
 }
 
+// PendingHumanInput returns a short description of what the session's current
+// turn is blocked on — a tool approval or a question — or "" when nothing is
+// pending (or the session is not live). The scheduler uses it to resolve an
+// overdue run as action_needed instead of misclassifying a human-blocked turn
+// as an error.
+func (s *Service) PendingHumanInput(sessionID string) string {
+	sess := s.mgr.Get(sessionID)
+	if sess == nil {
+		return ""
+	}
+	approval, question := sess.PendingState()
+	switch {
+	case approval != nil:
+		return "approval: " + approval.ToolName
+	case question != nil:
+		return "question"
+	default:
+		return ""
+	}
+}
+
 // QuerySessionWithOutcome starts a turn like QuerySession and additionally
 // returns the turn's index plus a single-delivery channel resolving with the
 // turn's outcome (or a synthetic SessionClosed if the session is torn down
