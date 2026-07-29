@@ -108,6 +108,26 @@ Provider routing lives in `session.Manager` via `capturingConnector.hintNext`: e
 
 **Known gaps vs. pre-migration claude behavior** (see `docs/tech-debt.md`): `AgentResult` metadata doesn't surface today because the neutral event set omits it. `ToolOutputDeltaEvent` and `ToolProgressEvent` are rendered on in-flight tool blocks via the streaming store. `ReasoningDeltaEvent` and `TurnDiffEvent` are wired through the backend pipeline but still classified as transient/skip with no frontend renderers.
 
+## Model Catalog
+
+Every model picker is driven by the `providers.models` request
+(`internal/providers`), never by a hard-coded list. Design: `docs/model-catalog.md`.
+The invariant: **a new upstream model release must not require an agentique
+release.** What that costs a change here:
+
+- **Never add a version number to a label literal.** Claude labels are derived
+  from the concrete model ID the CLI reports (`providers.ModelDisplayName`
+  parses structure, not a lookup table — so an unannounced family renders too).
+  The alias list (`opus`, `sonnet`, …) is stable and stays; versions are learned.
+- **`EventPipeline.handleInit` → `OnResolvedModel` → `persistResolvedModel`** is
+  the learning loop. It writes `sessions.resolved_model` (history) and upserts
+  `model_resolutions` (the catalog signal). Don't make it fatal: a session must
+  never die because a catalog hint could not be stored.
+- **`ModelId` is `string` on the frontend**, deliberately. A union type would put
+  the release dependency straight back.
+- Layers are weakest-first (base → learned → CLI-advertised → `[models]` config
+  override) and each degrades to the one below; `ListModels` never fails.
+
 ## Brain / Memory
 
 The persistent agent memory ("brain") is a major subsystem. Design docs:
