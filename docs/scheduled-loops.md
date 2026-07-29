@@ -109,10 +109,21 @@ Notes:
 - **No 7-day expiry by default.** Claude Code's expiry bounds *invisible*
   forgotten loops; agentique schedules are visible in the UI and auto-pause on
   failure, so the safety argument doesn't apply. `expires_at` remains available.
-- Cron parsing: no cron lib is vendored. Recommend `robfig/cron/v3`
-  (`cron.ParseStandard`, used for `.Next()` only) over a hand-rolled parser —
-  DST/local-time edge cases are exactly where in-house parsers go wrong.
-  Times are computed in server-local tz (like Claude Code), stored UTC.
+- **Cron parsing: in-house, no dependency** (decided 2026-07-30). We need
+  exactly parse + `Next()`; robfig/cron is 90% scheduler machinery we replace,
+  is dormant (fine — frozen spec — but we'd own a fork on the first quirk
+  anyway), and doesn't solve DST either (long-open issues). Implement the
+  **same restricted grammar Claude Code supports**: wildcards, values,
+  `*/step`, ranges, lists; vixie DOM-or-DOW OR-rule; *no* `L`/`W`/`?`/name
+  aliases — keeps agent-authored expressions portable, bounds the parser to
+  ~200 pure, table-testable lines (`internal/schedule/cronspec.go`).
+  `Next()` does a calendar field-search via `time.Date` in server-local tz
+  (stored UTC): spring-forward's nonexistent times normalize forward,
+  fall-back's repeated hour fires once — both acceptable for a loop scheduler
+  and locked in by tests. The design is DST-tolerant by construction anyway
+  (persisted `next_run_at`, 20s tick, fire-once catch-up). Test vectors may be
+  generated once against robfig/cron as an oracle in a throwaway script,
+  never in `go.mod`.
 
 ## Scheduler service
 
@@ -313,7 +324,8 @@ Env wins over file, resolved explicitly in `serve.go` (`firstNonEmpty` /
 
 ## Verification plan
 
-Unit: cron next-fire + catch-up math (table-driven, DST cases), auto-pause /
+Unit: cron parse + next-fire + catch-up math (table-driven; Europe/Stockholm
+spring-forward and fall-back vectors, vixie DOM-or-DOW cases), auto-pause /
 reset counters, retention pruning. `-race`: scheduler vs idle-evict vs human
 `Query` on one session (the `beginIdleEvict` mutual-exclusion test is the
 template). Live end-to-end (per house rule, multiple runs): a 1-minute schedule
@@ -323,8 +335,7 @@ timeline badge, run history, deep-link, and auto-pause after 3 forced failures.
 
 ## Open questions for review
 
-1. `robfig/cron/v3` dependency vs. a minimal in-house 5-field parser?
-2. Per-session tab named "Loops" vs. only the global `/schedules` page in M1?
-3. Should `action_needed` also flip the session's own badge (like a pending
+1. Per-session tab named "Loops" vs. only the global `/schedules` page in M1?
+2. Should `action_needed` also flip the session's own badge (like a pending
    question) or only the schedule's health? Proposed: session badge too.
-4. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
+3. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
