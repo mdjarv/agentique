@@ -756,7 +756,13 @@ func (s *Service) QuerySessionWithOutcome(ctx context.Context, sessionID, prompt
 		return 0, nil, fmt.Errorf("query failed: %w", err)
 	}
 
-	s.postQuery(ctx, sessionID, sess, prompt)
+	// Scheduled fires skip postQuery: bumping last_query_at would pin the
+	// loop's session to the top of the sidebar's Active sort forever (and
+	// auto-naming from a loop prompt is meaningless). Human-origin callers
+	// (the discussion orchestrator) keep the normal side effects.
+	if origin.Kind == "" {
+		s.postQuery(ctx, sessionID, sess, prompt)
+	}
 	return turnIndex, outcome, nil
 }
 
