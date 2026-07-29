@@ -71,6 +71,10 @@ type GitService struct {
 	runner      msggen.Runner
 	git         sessionGitOps
 	gitVersions sync.Map // sessionID → *atomic.Int64
+
+	// onSessionFinished mirrors Service.onSessionFinished (set via
+	// Service.SetOnSessionFinished) for the merge-completion paths.
+	onSessionFinished func(sessionID string)
 }
 
 // NewGitService creates a new GitService.
@@ -292,6 +296,9 @@ func (g *GitService) finalizeMerge(ctx context.Context, mode string, live *Sessi
 		if live != nil {
 			live.MarkMerged()
 			live.MarkCompleted()
+		}
+		if g.onSessionFinished != nil {
+			go g.onSessionFinished(sessionID)
 		}
 	}
 
@@ -627,6 +634,9 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 		}
 		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
 			slog.Warn("persist session completed after commit failed", "session_id", sessionID, "error", err)
+		}
+		if g.onSessionFinished != nil {
+			go g.onSessionFinished(sessionID)
 		}
 		if projErr == nil {
 			go g.broadcastProjectGitStatus(dbSess.ProjectID, project.Path)

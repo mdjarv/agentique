@@ -47,6 +47,10 @@ type TurnOutcome struct {
 	Duration      time.Duration
 	Usage         runtime.TokenUsage
 	ContextWindow int
+	// RateLimitResetsAt is the epoch-seconds reset time from a rejected
+	// rate-limit event observed during the turn (0 when none) — the
+	// scheduler's deferred-run reschedule anchor.
+	RateLimitResetsAt int64
 	// SessionClosed marks a synthetic delivery: the session was closed or
 	// stopped before the turn completed. Status is empty in that case.
 	SessionClosed bool

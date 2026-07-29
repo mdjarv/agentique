@@ -74,7 +74,11 @@ func (s *Service) SetAutoApproveMode(sessionID string, mode string) error {
 // Works for both live (idle) and non-live (stopped/failed) sessions.
 func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 	if sess := s.mgr.Get(sessionID); sess != nil {
-		return sess.MarkDone()
+		if err := sess.MarkDone(); err != nil {
+			return err
+		}
+		s.notifySessionFinished(sessionID)
+		return nil
 	}
 
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
@@ -103,5 +107,6 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 		}
 	}
 
+	s.notifySessionFinished(sessionID)
 	return nil
 }

@@ -95,6 +95,11 @@ type Manager struct {
 	// via wireRecall.
 	MemoryRecallFn func(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string)
 
+	// OnSessionIdle, when set by the server, fires on every runtime →Idle
+	// transition with the session id. The scheduler uses it for idle-boundary
+	// delivery of queued runs.
+	OnSessionIdle func(sessionID string)
+
 	// OnSessionComplete, when set by the server, fires once per clean session completion
 	// (runtime StateDone), passing the project and session id, so the brain learns from a
 	// finished transcript without the session being deleted (M3). Async, best-effort; nil
@@ -279,11 +284,14 @@ func (m *Manager) wireRecall(sess *Session, projectID string) {
 // project and id, so a clean completion (StateDone) routes through OnSessionComplete.
 // No-op when learn-on-completion is disabled or the project is empty.
 func (m *Manager) wireCompletion(sess *Session, projectID string) {
-	if m.OnSessionComplete == nil || projectID == "" {
-		return
+	if m.OnSessionComplete != nil && projectID != "" {
+		id := sess.ID
+		sess.SetOnComplete(func() { m.OnSessionComplete(projectID, id) })
 	}
-	id := sess.ID
-	sess.SetOnComplete(func() { m.OnSessionComplete(projectID, id) })
+	if m.OnSessionIdle != nil {
+		id := sess.ID
+		sess.SetOnIdle(func() { m.OnSessionIdle(id) })
+	}
 }
 
 // devURLsPreamble returns a system-prompt section documenting the dev URL

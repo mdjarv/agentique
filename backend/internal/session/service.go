@@ -28,6 +28,11 @@ var (
 	ErrNotLive             = errors.New("session not live")
 	ErrNoClaudeID          = errors.New("session has no Claude session ID")
 	ErrSessionLimitReached = errors.New("project session limit reached")
+	// ErrBusy means a turn could not start because one is already in flight
+	// (or a git op holds the worktree). Callers that deliver deferred work —
+	// the scheduler — match this to distinguish "retry at the next idle
+	// boundary" from a hard failure.
+	ErrBusy = errors.New("session busy")
 )
 
 // WireQuestionOption is a selectable option within a question.
@@ -194,6 +199,10 @@ type Service struct {
 	worktree       worktreeOps
 	personaQuerier PersonaQuerier  // optional; set when teams feature is enabled
 	browserSvc     *BrowserService // optional; set when browser support is available
+
+	// onSessionFinished fires when a session is finished by user intent
+	// (mark-done, completing merge). See SetOnSessionFinished.
+	onSessionFinished func(sessionID string)
 
 	// browserPanelEnabled gates the human-facing browser panel (the experimental
 	// flag). The agent browser MCP is always wired when browserSvc != nil — this
@@ -686,6 +695,25 @@ func (s *Service) QuerySession(ctx context.Context, sessionID, prompt string, at
 
 	s.postQuery(ctx, sessionID, sess, prompt)
 	return nil
+}
+
+// SetOnSessionFinished wires the callback fired when a session is finished by
+// user intent — mark-done or a completing merge. Deliberately NOT the runtime
+// StateDone seam (a clean CLI exit is not user intent; lazy-resume revives
+// those transparently). The scheduler pauses the session's loops here.
+func (s *Service) SetOnSessionFinished(fn func(sessionID string)) {
+	s.onSessionFinished = fn
+	if s.gitSvc != nil {
+		s.gitSvc.onSessionFinished = fn
+	}
+}
+
+// notifySessionFinished fires the finished hook async, best-effort.
+func (s *Service) notifySessionFinished(sessionID string) {
+	if s.onSessionFinished == nil {
+		return
+	}
+	go s.onSessionFinished(sessionID)
 }
 
 // QuerySessionWithOutcome starts a turn like QuerySession and additionally

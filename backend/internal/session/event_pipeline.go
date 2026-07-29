@@ -112,10 +112,11 @@ type EventPipeline struct {
 
 	// Per-turn outcome accumulation (guarded by mu, reset in AdvanceTurn):
 	// the last top-level assistant text (codex leaves TurnCompletedEvent.Text
-	// empty — this is its fallback) and the strongest classified error kind
-	// observed during the turn.
-	turnFinalText string
-	turnErrorKind string
+	// empty — this is its fallback), the strongest classified error kind, and
+	// the reset time of a rejected rate-limit event observed during the turn.
+	turnFinalText     string
+	turnErrorKind     string
+	turnRateLimitedAt int64
 
 	onClaudeSessionID func(string)
 	onResolvedModel   func(string)
@@ -328,6 +329,7 @@ func (p *EventPipeline) AdvanceTurn() int {
 	p.seqInTurn = 0
 	p.turnFinalText = ""
 	p.turnErrorKind = ""
+	p.turnRateLimitedAt = 0
 	// Preserve todo counts across turn boundaries — they track session-level task progress.
 	p.pulse = pulseState{
 		turnStartedAt: time.Now().UnixMilli(),
@@ -651,19 +653,21 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 		p.mu.Lock()
 		p.toolCategories = make(map[string]string)
 		outcome := TurnOutcome{
-			TurnIndex:     p.turnIndex,
-			Status:        tc.Status,
-			FinalText:     tc.Text,
-			ErrorKind:     p.turnErrorKind,
-			Duration:      tc.Duration,
-			Usage:         tc.Usage,
-			ContextWindow: tc.ContextWindow,
+			TurnIndex:         p.turnIndex,
+			Status:            tc.Status,
+			FinalText:         tc.Text,
+			ErrorKind:         p.turnErrorKind,
+			Duration:          tc.Duration,
+			Usage:             tc.Usage,
+			ContextWindow:     tc.ContextWindow,
+			RateLimitResetsAt: p.turnRateLimitedAt,
 		}
 		if outcome.FinalText == "" {
 			outcome.FinalText = p.turnFinalText
 		}
 		p.turnFinalText = ""
 		p.turnErrorKind = ""
+		p.turnRateLimitedAt = 0
 		p.mu.Unlock()
 		// Broadcast final pulse before resetting, then clear.
 		p.broadcastPulseNow()
@@ -676,6 +680,9 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 	if rle, ok := event.(runtime.RateLimitEvent); ok && rle.Status == "rejected" {
 		p.mu.Lock()
 		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, ErrorKindRateLimit)
+		if rle.ResetsAt > p.turnRateLimitedAt {
+			p.turnRateLimitedAt = rle.ResetsAt
+		}
 		p.mu.Unlock()
 	}
 

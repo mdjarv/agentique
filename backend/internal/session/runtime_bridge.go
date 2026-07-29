@@ -161,6 +161,15 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	// runtime broadcast loop.
 	if target == StateIdle {
 		go s.flushPendingMessages()
+		// Scheduler idle-boundary delivery: queued scheduled runs fire here
+		// instead of waiting for the next tick. Async — hook handlers must
+		// not block the runtime broadcast loop.
+		s.mu.Lock()
+		idleCb := s.onIdle
+		s.mu.Unlock()
+		if idleCb != nil {
+			go idleCb()
+		}
 	}
 }
 

@@ -322,6 +322,52 @@ func (q *Queries) ListEnabledSchedulesBySession(ctx context.Context, sessionID s
 	return items, nil
 }
 
+const listQueuedRunsBySession = `-- name: ListQueuedRunsBySession :many
+SELECT id, schedule_id, session_id, scheduled_for, created_at, fired_at, finished_at, status, overdue, attempts, next_attempt_at, turn_index, summary, reason, error, error_kind, late_report, duration_ms FROM schedule_runs WHERE session_id = ? AND status = 'queued'
+`
+
+func (q *Queries) ListQueuedRunsBySession(ctx context.Context, sessionID string) ([]ScheduleRun, error) {
+	rows, err := q.db.QueryContext(ctx, listQueuedRunsBySession, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScheduleRun{}
+	for rows.Next() {
+		var i ScheduleRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScheduleID,
+			&i.SessionID,
+			&i.ScheduledFor,
+			&i.CreatedAt,
+			&i.FiredAt,
+			&i.FinishedAt,
+			&i.Status,
+			&i.Overdue,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.TurnIndex,
+			&i.Summary,
+			&i.Reason,
+			&i.Error,
+			&i.ErrorKind,
+			&i.LateReport,
+			&i.DurationMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunsSince = `-- name: ListRunsSince :one
 SELECT COUNT(*) AS total,
        COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0) AS ok_count

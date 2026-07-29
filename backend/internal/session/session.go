@@ -177,6 +177,12 @@ type Session struct {
 	// disables it. Guarded by mu.
 	onComplete func()
 
+	// onIdle, when wired by the Manager, fires on every runtime →Idle
+	// transition (async). The scheduler uses it to deliver queued runs at the
+	// next idle boundary instead of waiting for the following tick. Guarded
+	// by mu.
+	onIdle func()
+
 	// turnReg resolves turn completions to the callers that started the turns
 	// (discussion orchestrator, scheduler), keyed by turn index. Created once
 	// per Session object; Close resolves open subscriptions with a synthetic
@@ -700,6 +706,14 @@ func (s *Session) SetOnComplete(fn func()) {
 	s.mu.Unlock()
 }
 
+// SetOnIdle wires the per-session idle callback fired on every runtime →Idle
+// transition. The Manager binds the session id; nil disables it.
+func (s *Session) SetOnIdle(fn func()) {
+	s.mu.Lock()
+	s.onIdle = fn
+	s.mu.Unlock()
+}
+
 // SubscribeTurn registers for the outcome of a specific turn on this session.
 // Prefer QueryWithOutcome, which makes the subscription atomic with the turn
 // start; this exists for observers that learn the turn index out of band.
@@ -839,7 +853,7 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 	// the worktree) — starting a turn during a merge/rebase would write the
 	// worktree concurrently with the git op.
 	if s.state == StateRunning || s.state == StateMerging {
-		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, s.state)
+		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s: %w", s.ID, s.state, ErrBusy)
 	}
 	// The runtime's own state is authoritative for turn-in-flight: s.state
 	// lags it (updated async via the broadcast hook), so a caller racing the
@@ -847,7 +861,7 @@ func (s *Session) validateAndPrepareQuery() (rt *runtime.Session, wasCompleted, 
 	// closes the gap entirely — the winner's runtime transition is synchronous
 	// inside rt.Query, so a loser always observes StateRunning here.
 	if s.rt.State() == runtime.StateRunning {
-		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s", s.ID, StateRunning)
+		return nil, false, false, fmt.Errorf("session %s: cannot Query in state %s: %w", s.ID, StateRunning, ErrBusy)
 	}
 	s.queryCount++
 	// Stamp activity at the turn-commit point. The runtime flips Idle→Running

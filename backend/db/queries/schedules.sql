@@ -79,6 +79,9 @@ WHERE schedule_id = ? AND created_at > ?;
 -- name: ListUnfinishedScheduleRuns :many
 SELECT * FROM schedule_runs WHERE status IN ('queued', 'firing', 'running');
 
+-- name: ListQueuedRunsBySession :many
+SELECT * FROM schedule_runs WHERE session_id = ? AND status = 'queued';
+
 -- name: ListUnfinishedRunsForSchedule :many
 SELECT * FROM schedule_runs
 WHERE schedule_id = ? AND status IN ('queued', 'firing', 'running');
