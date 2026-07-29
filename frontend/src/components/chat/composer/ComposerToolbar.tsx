@@ -21,14 +21,11 @@ import {
   PERMISSION_MODES,
 } from "~/lib/composer-constants";
 import {
-  MODEL_LABELS,
-  MODEL_PROVIDER,
-  MODELS,
+  buildModelOptions,
   type ModelId,
-  PROVIDER_LABELS,
-  PROVIDERS,
   type ProviderId,
-} from "~/lib/session/actions";
+  providerForModel,
+} from "~/lib/model-catalog";
 import type { AutoApproveMode } from "~/stores/chat-store";
 import { useProviderStore } from "~/stores/provider-store";
 import { ToolbarDropdown, type ToolbarDropdownOption } from "../ToolbarDropdown";
@@ -43,60 +40,11 @@ const PERMISSION_OPTIONS: ToolbarDropdownOption[] = PERMISSION_MODES.map((m) => 
   description: PERMISSION_DESCRIPTIONS[m],
 }));
 
-/** Static fallback options used until the backend catalog hydrates. */
-const STATIC_MODEL_OPTIONS: ToolbarDropdownOption[] = MODELS.map((m) => ({
-  value: m,
-  label: MODEL_LABELS[m],
-  group: PROVIDER_LABELS[MODEL_PROVIDER[m]],
-}));
-
 const EFFORT_OPTIONS: ToolbarDropdownOption[] = EFFORT_LEVELS.map((lvl) => ({
   value: lvl,
   label: EFFORT_LABELS[lvl],
   color: EFFORT_COLORS[lvl],
 }));
-
-interface BuiltOptions {
-  options: ToolbarDropdownOption[];
-  /** model slug → provider, built from whatever catalog is available. */
-  providerOf: (slug: string) => ProviderId | undefined;
-}
-
-function buildModelOptions(
-  catalog: Record<string, { slug: string; displayName: string; description?: string }[]>,
-  filterProvider: ProviderId | undefined,
-): BuiltOptions {
-  const providers = filterProvider ? [filterProvider] : PROVIDERS;
-  const providerOf = new Map<string, ProviderId>();
-  const options: ToolbarDropdownOption[] = [];
-
-  for (const p of providers) {
-    const groupLabel = PROVIDER_LABELS[p];
-    const dynamic = catalog[p];
-    const entries =
-      dynamic && dynamic.length > 0
-        ? dynamic.map((m) => ({
-            value: m.slug,
-            label: m.displayName || m.slug,
-            description: m.description,
-          }))
-        : STATIC_MODEL_OPTIONS.filter((o) => MODEL_PROVIDER[o.value as ModelId] === p).map(
-            ({ value, label }) => ({ value, label, description: undefined as string | undefined }),
-          );
-
-    for (const entry of entries) {
-      providerOf.set(entry.value, p);
-      options.push({
-        value: entry.value,
-        label: entry.label,
-        group: groupLabel,
-        ...(entry.description ? { description: entry.description } : {}),
-      });
-    }
-  }
-
-  return { options, providerOf: (slug) => providerOf.get(slug) };
-}
 
 interface ComposerToolbarProps {
   attachmentsSupported: boolean;
@@ -232,7 +180,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
             onModelChange
               ? (v) => {
                   const next = v as ModelId;
-                  const nextProvider = providerOf(v) ?? MODEL_PROVIDER[next];
+                  const nextProvider = providerOf(v) ?? providerForModel(next);
                   if (nextProvider && nextProvider !== provider) {
                     onProviderChange?.(nextProvider);
                   }

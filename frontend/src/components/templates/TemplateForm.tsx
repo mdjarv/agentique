@@ -9,7 +9,7 @@ import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
 import { EFFORT_LABELS, EFFORT_LEVELS, type EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
-import { MODEL_LABELS, MODELS, type ModelId } from "~/lib/session/actions";
+import { type ModelId, useModelOptions } from "~/lib/model-catalog";
 import {
   extractVariables,
   formatVariableName,
@@ -38,6 +38,7 @@ interface TemplateFormProps {
 
 export function TemplateForm({ template, onDone, onCancel }: TemplateFormProps) {
   const { create, update } = useTemplateStore();
+  const { options: modelOptions } = useModelOptions();
   const isEdit = !!template;
 
   const [name, setName] = useState(template?.name ?? "");
@@ -244,9 +245,9 @@ export function TemplateForm({ template, onDone, onCancel }: TemplateFormProps) 
                   className="w-full h-9 rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">Default</option>
-                  {MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {MODEL_LABELS[m]}
+                  {modelOptions.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
                     </option>
                   ))}
                 </select>

@@ -28,60 +28,19 @@ export type CommitResult = SessionCommitResult;
 export type BulkDeleteResultItem = SessionDeleteBulkResultItem;
 export type BulkDeleteResult = SessionDeleteBulkResult;
 
-export const PROVIDERS = ["claude", "codex"] as const;
-export type ProviderId = (typeof PROVIDERS)[number];
+// The model catalog lives in ~/lib/model-catalog and is driven by the backend's
+// providers.models response; these re-exports keep the historical import path
+// working for call sites that only need the constants.
+import type { ModelId, ProviderId } from "~/lib/model-catalog";
 
-export const PROVIDER_LABELS: Record<ProviderId, string> = {
-  claude: "Claude",
-  codex: "Codex",
-};
-
-export const MODELS = [
-  "haiku",
-  "sonnet",
-  "opus",
-  "fable",
-  "sonnet[1m]",
-  "opus[1m]",
-  "gpt-5",
-  "gpt-5-codex",
-  "gpt-5-mini",
-] as const;
-export type ModelId = (typeof MODELS)[number];
-
-export const MODEL_LABELS: Record<ModelId, string> = {
-  haiku: "Haiku 4.5",
-  sonnet: "Sonnet 4.6",
-  opus: "Opus 4.8",
-  fable: "Fable 5",
-  "sonnet[1m]": "Sonnet 4.6 (1M)",
-  "opus[1m]": "Opus 4.8 (1M)",
-  "gpt-5": "GPT-5",
-  "gpt-5-codex": "GPT-5 Codex",
-  "gpt-5-mini": "GPT-5 Mini",
-};
-
-export const MODEL_PROVIDER: Record<ModelId, ProviderId> = {
-  haiku: "claude",
-  sonnet: "claude",
-  opus: "claude",
-  fable: "claude",
-  "sonnet[1m]": "claude",
-  "opus[1m]": "claude",
-  "gpt-5": "codex",
-  "gpt-5-codex": "codex",
-  "gpt-5-mini": "codex",
-};
-
-export const DEFAULT_MODEL_FOR_PROVIDER: Record<ProviderId, ModelId> = {
-  claude: "sonnet",
-  codex: "gpt-5",
-};
-
-export function providerForModel(model: ModelId | string | undefined): ProviderId {
-  if (!model) return "claude";
-  return MODEL_PROVIDER[model as ModelId] ?? "claude";
-}
+export {
+  DEFAULT_MODEL_FOR_PROVIDER,
+  type ModelId,
+  PROVIDER_LABELS,
+  PROVIDERS,
+  type ProviderId,
+  providerForModel,
+} from "~/lib/model-catalog";
 
 export interface CreateSessionOpts {
   branch?: string;

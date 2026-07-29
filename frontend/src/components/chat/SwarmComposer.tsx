@@ -13,7 +13,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 import type { BehaviorPresets } from "~/lib/generated-types";
-import { MODEL_LABELS, MODELS, type ModelId } from "~/lib/session/actions";
+import { type ModelId, modelLabel, useModelOptions } from "~/lib/model-catalog";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SwarmMode = "goal" | "prompts";
@@ -45,6 +45,7 @@ export function SwarmComposer({
   onCreated,
 }: SwarmComposerProps) {
   const ws = useWebSocket();
+  const { options: modelOptions } = useModelOptions();
   const [mode, setMode] = useState<SwarmMode>("goal");
   const [channelName, setChannelName] = useState("");
   const [sending, setSending] = useState(false);
@@ -146,13 +147,17 @@ export function SwarmComposer({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="xs" className="shrink-0">
-              {MODEL_LABELS[model]}
+              {modelLabel(model)}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {MODELS.map((m) => (
-              <DropdownMenuItem key={m} onClick={() => onModelChange(m)} className="text-xs">
-                {MODEL_LABELS[m]}
+            {modelOptions.map((m) => (
+              <DropdownMenuItem
+                key={m.value}
+                onClick={() => onModelChange(m.value)}
+                className="text-xs"
+              >
+                {m.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

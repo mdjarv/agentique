@@ -1,6 +1,6 @@
 import { Gauge, Loader2, ShieldAlert, ShieldCheck, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ToolbarDropdown, type ToolbarDropdownOption } from "~/components/chat/ToolbarDropdown";
 import { Button } from "~/components/ui/button";
@@ -22,13 +22,13 @@ import {
   PERMISSION_MODES,
 } from "~/lib/composer-constants";
 import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
+import { useModelOptions } from "~/lib/model-catalog";
 import {
   DEFAULT_PRESETS,
   emptyPersonaConfig,
   hydratePersonaConfig,
   stripPersonaConfig,
 } from "~/lib/persona-config";
-import { MODEL_LABELS, MODELS } from "~/lib/session/actions";
 import type { AgentProfileConfig, AgentProfileInfo } from "~/lib/team-actions";
 import { createAgentProfile, generateAgentProfile, updateAgentProfile } from "~/lib/team-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -38,10 +38,7 @@ import { useTeamStore } from "~/stores/team-store";
 
 // ─── Option lists ──────────────────────────────────────
 
-const MODEL_OPTIONS: ToolbarDropdownOption[] = [
-  { value: "", label: "Project default" },
-  ...MODELS.map((m) => ({ value: m, label: MODEL_LABELS[m] })),
-];
+const PROJECT_DEFAULT_OPTION: ToolbarDropdownOption = { value: "", label: "Project default" };
 
 const EFFORT_OPTIONS: ToolbarDropdownOption[] = [
   { value: "", label: "Project default" },
@@ -260,6 +257,8 @@ export interface ProfileFormProps {
 export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
   const ws = useWebSocket();
   const projects = useAppStore((s) => s.projects);
+  const { options: catalogModels } = useModelOptions();
+  const modelOptions = useMemo(() => [PROJECT_DEFAULT_OPTION, ...catalogModels], [catalogModels]);
   const isEdit = !!profile;
 
   const [name, setName] = useState(profile?.name ?? "");
@@ -550,7 +549,7 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
               <ToolbarDropdown
                 value={config.model ?? ""}
                 onChange={(v) => setConfig((c) => ({ ...c, model: v }))}
-                options={MODEL_OPTIONS}
+                options={modelOptions}
               />
             </Field>
             <Field>
