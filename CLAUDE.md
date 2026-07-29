@@ -56,13 +56,46 @@ leaks — design in `docs/process-lifecycle.md`:
 - **Orphan reaper** (`internal/procctl`): a startup sweep in `serve.go` (production
   block next to `SweepOrphans`, **never** in `server.New` — no destructive side
   effects in constructors) kills process groups orphaned by an ungraceful prior
-  exit, plus a shutdown backstop. A process is matched only when the
-  `CLIProcessMarker` appears as the `--append-system-prompt` value **and** it is
-  its own group leader; "orphan" = `PPID != os.Getpid()` (robust to the systemd
-  `--user` subreaper — not `PPID == 1`).
+  exit, plus a shutdown backstop. A process is matched only when **all three**
+  hold: the `CLIProcessMarker` appears as the `--append-system-prompt` value, it
+  is its own group leader, and its environment carries
+  `AGENTIQUE_OWNER_DATADIR` (`procctl.OwnerEnvVar`) equal to *this* server's
+  data dir. "Orphan" = `PPID != os.Getpid()` (robust to the systemd `--user`
+  subreaper — not `PPID == 1`). The owner stamp is set once via
+  `procctl.StampOwner` in `serve.go` and reaches every provider CLI by ordinary
+  env inheritance, so it needs no per-provider plumbing. Matching **fails
+  closed**: an unreadable or absent environ never matches, so CLIs spawned
+  before this stamp existed are invisible to the reaper (`KillMode=control-group`
+  covers them on a service restart).
 - **Idle eviction** (`internal/session/idle_evict.go`, opt-in via `[session]
   idle-evict-timeout`): stops idle-past-TTL sessions to reclaim the CLI + browser
   subtree; they lazy-resume on the next message.
+
+### Running a second server locally
+
+Destructive startup reclaim (`SweepOrphans` + the orphan reaper) runs **only**
+when `ownsDataDir(dbFile)` holds — the opened DB is the data dir's own
+`agentique.db`. A server pointed at a scratch DB has no picture of what the data
+dir legitimately owns, so it reclaims nothing. Three rules follow:
+
+- **Isolate the data dir, not just the DB and port.** `AGENTIQUE_HOME=<tmp>`
+  gives a verification server its own worktrees, session files, instance lock,
+  and reaper authority. `--db`/`--addr` alone do **not** isolate the process
+  table.
+- **`just dev` targets the production data dir.** It now fails fast against the
+  running service (both hold the same data-dir lock, `procctl.AcquireInstanceLock`)
+  rather than starting alongside it. Use an isolated `AGENTIQUE_HOME` to run a
+  second server.
+- **`--test-mode` is not a sandbox flag** — it swaps in the mock CLI connector
+  (`server.go`), so it cannot verify real session behavior.
+
+Single-instance is enforced on the **data directory** (flock on
+`<datadir>/agentique.lock`), not the listen address. The address probe
+(`isServerRunning`) is kept as a nicer early error, but it is not the guard: two
+servers on different ports still share one data dir's DB, worktrees, and CLI
+subprocesses. On 2026-07-29 a sandboxed verify server on another port reaped
+every live session of the running service; the lock plus the owner stamp are what
+prevent that.
 
 ## Channels, Hierarchy, and Coordination
 

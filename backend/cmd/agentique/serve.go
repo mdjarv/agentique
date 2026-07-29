@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -64,6 +65,10 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the Agentique server",
 	RunE:  runServe,
+	// Failures here are runtime conditions (port taken, data dir already
+	// owned), not malformed invocations — a flag dump buries the message that
+	// actually tells the operator what to do.
+	SilenceUsage: true,
 }
 
 func preflight() error {
@@ -209,6 +214,27 @@ func resolveDBPath() string {
 	return p
 }
 
+// ownsDataDir reports whether a server that opened dbFile is the canonical
+// instance for paths.DataDir() — i.e. it opened that data dir's own database
+// rather than a scratch one beside it.
+//
+// This is the empty-authority guard for every destructive startup sweep. A
+// server whose DB is not the data dir's DB has no picture of what that data dir
+// legitimately contains: its (empty or stale) session set makes real worktrees,
+// files, and CLI processes look unowned. Such a server must reclaim nothing.
+// `--db /tmp/verify.db` with a production AGENTIQUE_HOME is exactly that shape.
+func ownsDataDir(dbFile string) bool {
+	abs, err := filepath.Abs(dbFile)
+	if err != nil {
+		return false
+	}
+	canonical, err := filepath.Abs(paths.DBPath())
+	if err != nil {
+		return false
+	}
+	return abs == canonical
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	// Load config file (missing file = defaults, not an error).
 	fileCfg, err := config.Load(config.Path())
@@ -258,6 +284,35 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// manual start) and protects the DB from concurrent migrations below.
 	if !testMode && isServerRunning() {
 		return fmt.Errorf("agentique already running at %s — stop it first or use a different --addr", baseURL())
+	}
+
+	// Single-instance is a property of the DATA DIRECTORY, not the listen
+	// address: two servers on different ports still share this dir's database,
+	// worktrees, session files, and the CLI subprocesses the orphan reaper
+	// claims authority over. The address probe above misses that case entirely
+	// (it is how `just dev` on :9201 could start alongside the service on
+	// :19201 and reap its live sessions), so take an exclusive lock on the dir.
+	if !testMode {
+		lock, err := procctl.AcquireInstanceLock(paths.DataDir())
+		if err != nil {
+			if errors.Is(err, procctl.ErrInstanceLocked) {
+				return fmt.Errorf("%w\n  data dir: %s\n  hint: stop it first, or run against an isolated data dir with AGENTIQUE_HOME=<dir>", err, paths.DataDir())
+			}
+			return fmt.Errorf("instance lock: %w", err)
+		}
+		defer func() {
+			if err := lock.Release(); err != nil {
+				slog.Warn("releasing instance lock", "error", err)
+			}
+		}()
+	}
+
+	// Stamp this instance's identity onto every subprocess we spawn from here
+	// on (ordinary env inheritance reaches the provider CLI and its subtree).
+	// It is what scopes the orphan reaper to our own CLIs — see
+	// procctl.OwnerEnvVar.
+	if err := procctl.StampOwner(paths.DataDir()); err != nil {
+		return fmt.Errorf("stamp owner identity: %w", err)
 	}
 
 	db, err := store.Open(dbFile)
@@ -414,10 +469,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
-	// Reclaim orphaned worktrees and /tmp artifacts from sessions that no longer
-	// exist. Production-only (never in test mode, whose isolated DB would misjudge
-	// real artifacts as orphans) and off the critical startup path.
-	if !testMode {
+	// Reclaim orphaned worktrees, /tmp artifacts, and leaked CLI subprocesses.
+	//
+	// Both sweeps are destructive and both judge "orphan" against this server's
+	// own state, so they run ONLY when this server is the canonical instance for
+	// its data dir (see ownsDataDir): a server pointed at a scratch DB sees real
+	// artifacts as unowned, which is precisely how a sandboxed verify run comes
+	// to delete production state.
+	if !testMode && ownsDataDir(dbFile) {
 		go srv.SweepOrphans(context.Background())
 
 		// Reap CLI subprocesses orphaned by a prior server that exited without a
@@ -425,13 +484,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// its own process group and is only a child of the server, so an
 		// ungraceful exit reparents it to init where nothing signals it — it
 		// survives until reboot, leaking a claude process plus its Playwright MCP
-		// subtree across every restart. Safe here: the single-instance guard ran
-		// above and we have not resumed any sessions, so no live server owns
-		// these. Kept out of server.New — a constructor must have no destructive
-		// side effects (a stray sweep there once nuked real worktrees in tests).
-		if n := procctl.ReapOrphanedCLIProcesses(); n > 0 {
+		// subtree across every restart. Safe here: we hold this data dir's
+		// instance lock, the scan is scoped to CLIs stamped with our own data dir
+		// (procctl.OwnerEnvVar), and we have not resumed any sessions — so
+		// nothing matched can belong to a live server. Kept out of server.New — a
+		// constructor must have no destructive side effects (a stray sweep there
+		// once nuked real worktrees in tests).
+		switch n, err := procctl.ReapOrphanedCLIProcesses(paths.DataDir()); {
+		case err != nil:
+			slog.Warn("orphan CLI reap skipped", "error", err)
+		case n > 0:
 			slog.Info("reaped orphaned CLI process groups on startup", "count", n)
 		}
+	} else if !testMode {
+		slog.Info("startup reclaim skipped — not the canonical server for this data dir",
+			"db", dbFile, "canonical_db", paths.DBPath())
 	}
 
 	authStatus := "enabled"
@@ -498,7 +565,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// within the grace window) and leave a CLI subprocess mid-kill. Force-kill
 	// any that are still our children so nothing is orphaned when we exit.
 	if !testMode {
-		if n := procctl.KillCLIChildrenOf(os.Getpid()); n > 0 {
+		switch n, err := procctl.KillCLIChildrenOf(os.Getpid(), paths.DataDir()); {
+		case err != nil:
+			slog.Warn("shutdown backstop skipped", "error", err)
+		case n > 0:
 			slog.Warn("shutdown backstop force-killed surviving CLI process groups", "count", n)
 		}
 	}

@@ -3,6 +3,7 @@
 package procctl
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,9 +139,11 @@ func TestFindAndKillCLIProcess(t *testing.T) {
 	}
 	// Mimic a real agentique CLI: the marker is the value of --append-system-prompt
 	// (extra args after `-c cmd` become $0,$1,... in sh's argv, i.e. its cmdline).
+	owner := t.TempDir()
 	cmd := exec.Command("/bin/sh", "-c", "sleep 60", "claude",
 		appendSystemPromptFlag, "You are "+CLIProcessMarker+", a GUI. Blah.")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own group, like the CLI adapter
+	cmd.Env = append(os.Environ(), OwnerEnvVar+"="+owner)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -150,14 +153,16 @@ func TestFindAndKillCLIProcess(t *testing.T) {
 		_, _ = cmd.Process.Wait()
 	})
 
-	var found *CLIProcess
-	for _, p := range FindCLIProcesses() {
-		if p.PID == pid {
-			p := p
-			found = &p
-			break
+	find := func(owner string) *CLIProcess {
+		for _, p := range FindCLIProcesses(owner) {
+			if p.PID == pid {
+				return &p
+			}
 		}
+		return nil
 	}
+
+	found := find(owner)
 	if found == nil {
 		t.Fatalf("FindCLIProcesses did not return spawned pid %d", pid)
 	}
@@ -168,8 +173,30 @@ func TestFindAndKillCLIProcess(t *testing.T) {
 		t.Errorf("PGID = %d, want %d (own group leader)", found.PGID, pid)
 	}
 
-	// KillCLIChildrenOf(self) should SIGKILL the whole group.
-	if n := KillCLIChildrenOf(os.Getpid()); n < 1 {
+	// The regression that matters: a server with a different data dir (a
+	// sandboxed verify run) must not even see this process, let alone signal it.
+	if p := find(t.TempDir()); p != nil {
+		t.Fatalf("pid %d matched a foreign owner — reaper authority is not scoped", pid)
+	}
+
+	// An empty owner must abort rather than widen to "everything is mine".
+	if _, err := KillCLIChildrenOf(os.Getpid(), ""); !errors.Is(err, ErrNoOwner) {
+		t.Fatalf("KillCLIChildrenOf with empty owner: err = %v, want ErrNoOwner", err)
+	}
+	if _, err := ReapOrphanedCLIProcesses(""); !errors.Is(err, ErrNoOwner) {
+		t.Fatalf("ReapOrphanedCLIProcesses with empty owner: err = %v, want ErrNoOwner", err)
+	}
+	// A foreign owner finds nothing to kill.
+	if n, err := KillCLIChildrenOf(os.Getpid(), t.TempDir()); err != nil || n != 0 {
+		t.Fatalf("KillCLIChildrenOf with foreign owner: n=%d err=%v, want 0, nil", n, err)
+	}
+
+	// KillCLIChildrenOf(self, owner) should SIGKILL the whole group.
+	n, err := KillCLIChildrenOf(os.Getpid(), owner)
+	if err != nil {
+		t.Fatalf("KillCLIChildrenOf: %v", err)
+	}
+	if n < 1 {
 		t.Fatalf("KillCLIChildrenOf killed %d groups, want >=1", n)
 	}
 	done := make(chan struct{})

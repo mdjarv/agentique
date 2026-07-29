@@ -71,12 +71,15 @@ func signalGroup(pgid int, sig syscall.Signal) error {
 //     is never matched; and
 //   - it is its own process-group leader (pgid == pid) — every session CLI is
 //     spawned with Setpgid, so this holds for all real targets and excludes
-//     incidental shell commands that inherit their shell's group.
+//     incidental shell commands that inherit their shell's group; and
+//   - when owner is non-empty, its environment carries OwnerEnvVar=owner, so a
+//     CLI spawned by a *different* agentique instance (a sandboxed verify run
+//     with its own AGENTIQUE_HOME) is not ours to signal.
 //
-// These two together identify agentique CLIs precisely enough that the reapers
-// can rely on parentage (see ReapOrphanedCLIProcesses / KillCLIChildrenOf) rather
+// These together identify agentique CLIs precisely enough that the reapers can
+// rely on parentage (see ReapOrphanedCLIProcesses / KillCLIChildrenOf) rather
 // than a fragile substring match.
-func findCLIProcesses() []CLIProcess {
+func findCLIProcesses(owner string) []CLIProcess {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
@@ -94,6 +97,9 @@ func findCLIProcesses() []CLIProcess {
 		if err != nil || !isAgentiqueCLICmdline(cmdline) {
 			continue
 		}
+		if owner != "" && !hasOwner("/proc/"+e.Name()+"/environ", owner) {
+			continue // spawned by a different agentique instance — not ours
+		}
 		ppid, pgid, ok := readParentAndGroup("/proc/" + e.Name() + "/stat")
 		if !ok || pgid != pid {
 			continue // only own-group leaders are real spawned CLIs
@@ -101,6 +107,28 @@ func findCLIProcesses() []CLIProcess {
 		out = append(out, CLIProcess{PID: pid, PPID: ppid, PGID: pgid})
 	}
 	return out
+}
+
+// hasOwner reports whether the process whose environment lives at environPath
+// was spawned by the agentique instance owning the data dir owner, i.e. its
+// environment contains exactly OwnerEnvVar=owner.
+//
+// Fails CLOSED: an unreadable environ (a process of another user, or one that
+// exited mid-scan) yields false, so a candidate we cannot attribute is never
+// signaled. /proc/<pid>/environ is the process's *initial* environment, which is
+// what we want — it cannot be rewritten by the child after exec.
+func hasOwner(environPath, owner string) bool {
+	data, err := os.ReadFile(environPath)
+	if err != nil {
+		return false
+	}
+	want := []byte(OwnerEnvVar + "=" + owner)
+	for _, kv := range bytes.Split(data, []byte{0}) {
+		if bytes.Equal(kv, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // isAgentiqueCLICmdline reports whether a NUL-separated /proc cmdline is an
