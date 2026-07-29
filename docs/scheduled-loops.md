@@ -196,6 +196,14 @@ due (with catch-up). Runs left `running`/`queued` at boot are marked `error`
 ("server restarted mid-run") by a startup sweep in `serve.go` (production
 block, next to `SweepOrphans` — never in `server.New`).
 
+**Session lifecycle coupling** (decided 2026-07-30): when the target session is
+marked completed or its worktree merged, its schedules **auto-pause**
+(`pause_reason='session completed'`) — a PR-babysitting loop goes quiet when
+the PR merges, visibly and reversibly (one click to resume). Hook point: the
+existing completion path (`SetSessionCompleted` / `mgr.OnSessionComplete`, the
+same seam the brain learn hook uses) plus the merge flow. Session deletion
+needs no scheduler code — the `ON DELETE CASCADE` FK removes schedules + runs.
+
 **Interplay with idle eviction.** None needed — that's the point. `beginIdleEvict`
 and `validateAndPrepareQuery` are already mutually exclusive; a fire on an
 evicted session goes through resume. After a run completes the session idles
@@ -207,7 +215,22 @@ wall-clock fires across thousands of sessions. Agentique is one host with few
 schedules; a deterministic offset would only make timing confusing. Skipped
 deliberately (fires within one tick are already serialized by the loop).
 
-## Dynamic pacing (agent-chosen interval) — M3
+## Creating schedules — both paths in M1 (decided 2026-07-30)
+
+- **UI form**: create/edit dialog reachable from the `/schedules` page and the
+  session action menu — name, prompt, cadence (interval presets + raw cron),
+  target session prefilled in session context.
+- **Chat-first**: the user types "check this PR every 30m" and the agent calls
+  a **`ScheduleCreate` MCP tool** (name, prompt, cron, target = own session).
+  Approval is **server-side in the tool handler**, not the CLI permission pump
+  — agentique MCP tools are auto-allowed, and fullAuto short-circuits
+  `handleToolPermission` anyway (the `@spawn` lesson), so the handler itself
+  must park the request and surface a UI approval banner
+  (`SpawnWorkerApprovalBanner` pattern, `authorizeSpawn`-style flow). The tool
+  blocks until approve/deny/timeout; approved schedules emit `schedule.updated`
+  like any other. Agents may only target their own session in v1.
+
+## Dynamic pacing (agent-chosen interval) — M2
 
 Claude Code's self-paced `/loop` (agent picks the next delay + prints a reason)
 maps cleanly: `mode='dynamic'` schedules expose an auto-allowed MCP tool
@@ -297,9 +320,9 @@ Env wins over file, resolved explicitly in `serve.go` (`firstNonEmpty` /
   the session preamble that scheduling must go through agentique. Future:
   intercept the `CronCreate` tool_use event and offer promotion to a real
   schedule ("Claude scheduled a task in-session — make it durable?").
-- **Agent-created schedules**: v1 is human-created only (UI/RPC). Letting
-  agents create schedules for themselves/workers needs the same authorization
-  treatment as `@spawn` (`SpawnAuthCallback`) — deferred.
+- **Agent-created schedules for *other* sessions** (a lead scheduling loops on
+  workers) needs `@spawn`-grade authorization design — deferred; v1
+  `ScheduleCreate` is self-targeting only, human-approved per call.
 - **Channel-targeted schedules** (fire into a channel, personas discuss) and
   **fresh-session-per-run** (Routines-style) are future modes; the schema keeps
   them open (target columns), the code doesn't speculate.
@@ -310,17 +333,21 @@ Env wins over file, resolved explicitly in `serve.go` (`firstNonEmpty` /
 ## Phasing
 
 - **M1 — durable loop, visible runs**: migration 039 + sqlc; `internal/schedule`
-  service (tick, fire, catch-up, retries, auto-pause); origin tagging on
-  `WireUserMessageEvent`; passive outcome capture (final-text summary +
-  error classification) via the turn-complete registry refactor; RPCs + pushes +
-  typegen; `/schedules` page + per-session tab with run history;
+  service (tick, fire, catch-up, retries, auto-pause on failures **and on
+  session completion/merge**); origin tagging on `WireUserMessageEvent`;
+  passive outcome capture (final-text summary + error classification) via the
+  turn-complete registry refactor; RPCs + pushes + typegen; **both creation
+  paths** (UI form + `ScheduleCreate` MCP with server-side approval banner);
+  `/schedules` page **and** per-session "Loops" tab with run history;
   pause/resume/run-now; `schedule_failed` attention kind; startup sweep.
-- **M2 — insight polish**: `ScheduleReport` MCP tool (`action_needed` state),
-  turn deep-links (`data-turn-id` + `scrollToTurn` + `?turn=`), activity-feed
-  items, health popover, run-strip visualization, toasts.
-- **M3 — dynamic pacing + entry points**: `ScheduleNext`/stop, dynamic mode UI
-  ("next in 25m — <reason>"), composer "Run on a schedule…", `CronCreate`
-  interception/promotion.
+- **M2 — smart loops + insight polish**: `ScheduleReport` MCP tool
+  (`action_needed` state) **and `ScheduleNext`/stop dynamic pacing** (shared
+  MCP wiring; UI: "next in 25m — <reason>"); turn deep-links (`data-turn-id` +
+  `scrollToTurn` + `?turn=`); activity-feed items; health popover; run-strip
+  visualization; toasts.
+- **M3 — entry points + future modes**: composer "Run on a schedule…",
+  `CronCreate` interception/promotion, groundwork for channel-targeted and
+  fresh-session-per-run modes.
 
 ## Verification plan
 
@@ -335,7 +362,11 @@ timeline badge, run history, deep-link, and auto-pause after 3 forced failures.
 
 ## Open questions for review
 
-1. Per-session tab named "Loops" vs. only the global `/schedules` page in M1?
-2. Should `action_needed` also flip the session's own badge (like a pending
+1. Should `action_needed` also flip the session's own badge (like a pending
    question) or only the schedule's health? Proposed: session badge too.
-3. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
+2. Default `max-run-duration` 30m — long enough for heavyweight nightly runs?
+
+Resolved 2026-07-30 (review round): in-house cron parser (no dep); both
+creation paths in M1 (UI form + approved `ScheduleCreate`); auto-pause on
+session completion/merge; dynamic pacing promoted to M2; both management
+surfaces (global page + session tab) in M1.
