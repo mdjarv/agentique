@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T00:00:00Z",
+  "title": "Design System: Agentique",
+  "extensions": {
+    "colorMeta": {
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#5e9eff",
+        "lightValue": "#1e66f5",
+        "tonalRamp": ["#0b1730", "#132a56", "#1b3d7d", "#2452a6", "#3b73cf", "#5e9eff", "#8fbaff", "#c4dcff"]
+      },
+      "agent-violet": {
+        "role": "secondary",
+        "displayName": "Agent Violet",
+        "canonical": "#c990f0",
+        "lightValue": "#8839ef",
+        "tonalRamp": ["#241033", "#3a1a52", "#522573", "#6c3596", "#9a5fc4", "#c990f0", "#dcb4f6", "#eedafb"]
+      },
+      "live-teal": {
+        "role": "tertiary",
+        "displayName": "Live Teal",
+        "canonical": "#73daca",
+        "lightValue": "#179299",
+        "tonalRamp": ["#08251f", "#0d3d34", "#12564a", "#187161", "#3ba795", "#73daca", "#a5e9df", "#d3f5f0"]
+      },
+      "attention-amber": {
+        "role": "tertiary",
+        "displayName": "Attention Amber",
+        "canonical": "#ff9e64",
+        "lightValue": "#fe640b",
+        "tonalRamp": ["#331704", "#52250a", "#733410", "#96461a", "#c96f38", "#ff9e64", "#ffc19b", "#ffe1cd"]
+      },
+      "warning-gold": {
+        "role": "tertiary",
+        "displayName": "Warning Gold",
+        "canonical": "#e0af68",
+        "lightValue": "#df8e1d",
+        "tonalRamp": ["#2b1d06", "#46300e", "#634518", "#835c23", "#b0873f", "#e0af68", "#eecb9b", "#f8e6cd"]
+      },
+      "alert-rose": {
+        "role": "tertiary",
+        "displayName": "Alert Rose",
+        "canonical": "#f7768e",
+        "lightValue": "#d20f39",
+        "tonalRamp": ["#33070f", "#520f1c", "#73182a", "#96253a", "#c94a63", "#f7768e", "#faa6b5", "#fdd5dd"]
+      },
+      "ready-green": {
+        "role": "tertiary",
+        "displayName": "Ready Green",
+        "canonical": "#9ece6a",
+        "lightValue": "#40a02b",
+        "tonalRamp": ["#16240b", "#243c13", "#34551c", "#457027", "#6f9f45", "#9ece6a", "#c2e29d", "#e2f3cf"]
+      },
+      "info-cyan": {
+        "role": "tertiary",
+        "displayName": "Info Cyan",
+        "canonical": "#7dcfff",
+        "lightValue": "#209fb5",
+        "tonalRamp": ["#062232", "#0a3951", "#0f5173", "#166b96", "#3d9cc9", "#7dcfff", "#aae2ff", "#d6f1ff"]
+      },
+      "void": {
+        "role": "neutral",
+        "displayName": "Void",
+        "canonical": "#0c0d14",
+        "lightValue": "#eff1f5",
+        "tonalRamp": ["#0c0d14", "#16161e", "#1e2030", "#24283b", "#3b4261", "#565f89", "#8891b5", "#c0caf5"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "#16161e",
+        "lightValue": "#e6e9ef",
+        "tonalRamp": ["#0c0d14", "#16161e", "#1e2030", "#24283b", "#3b4261", "#565f89", "#8891b5", "#c0caf5"]
+      },
+      "sidebar-slate": {
+        "role": "neutral",
+        "displayName": "Sidebar Slate",
+        "canonical": "#1e2030",
+        "lightValue": "hsl(228 15% 98%)",
+        "tonalRamp": ["#0c0d14", "#16161e", "#1e2030", "#24283b", "#292e42", "#3b4261", "#565f89", "#8891b5"]
+      },
+      "raised-slate": {
+        "role": "neutral",
+        "displayName": "Raised Slate",
+        "canonical": "#24283b",
+        "lightValue": "#dce0e8",
+        "tonalRamp": ["#0c0d14", "#16161e", "#1e2030", "#24283b", "#292e42", "#3b4261", "#565f89", "#8891b5"]
+      },
+      "popover-slate": {
+        "role": "neutral",
+        "displayName": "Popover Slate",
+        "canonical": "#1f2335",
+        "lightValue": "#dce0e8",
+        "tonalRamp": ["#0c0d14", "#16161e", "#1f2335", "#24283b", "#292e42", "#3b4261", "#565f89", "#8891b5"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#3b4261",
+        "lightValue": "#bcc0cc",
+        "tonalRamp": ["#12141f", "#1b1f2f", "#252b40", "#303751", "#3b4261", "#565f89", "#7c85ab", "#a9b1d6"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1a1b26",
+        "lightValue": "#eff1f5",
+        "tonalRamp": ["#0c0d14", "#1a1b26", "#24283b", "#3b4261", "#565f89", "#8891b5", "#a9b1d6", "#c0caf5"]
+      },
+      "text-bright": {
+        "role": "neutral",
+        "displayName": "Text Bright",
+        "canonical": "#c0caf5",
+        "lightValue": "#303245",
+        "tonalRamp": ["#1a1d2e", "#2b3049", "#3d4466", "#525a85", "#7e88b0", "#a9b1d6", "#c0caf5", "#e2e7fb"]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Text Primary",
+        "canonical": "#a9b1d6",
+        "lightValue": "#4c4f69",
+        "tonalRamp": ["#1a1d2e", "#2b3049", "#3d4466", "#525a85", "#7e88b0", "#a9b1d6", "#c0caf5", "#e2e7fb"]
+      },
+      "text-dim": {
+        "role": "neutral",
+        "displayName": "Text Dim",
+        "canonical": "#8891b5",
+        "lightValue": "#5c5f77",
+        "tonalRamp": ["#1a1d2e", "#2b3049", "#3d4466", "#525a85", "#6b7394", "#8891b5", "#a9b1d6", "#c0caf5"]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Text Muted",
+        "canonical": "#6b7394",
+        "lightValue": "#6c6f85",
+        "tonalRamp": ["#1a1d2e", "#2b3049", "#3d4466", "#4b5273", "#565f89", "#6b7394", "#8891b5", "#a9b1d6"]
+      },
+      "text-faint": {
+        "role": "neutral",
+        "displayName": "Text Faint",
+        "canonical": "#565f89",
+        "lightValue": "#9ca0b0",
+        "tonalRamp": ["#161a29", "#232842", "#31375c", "#414877", "#565f89", "#6b7394", "#8891b5", "#a9b1d6"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display — Space Grotesk", "purpose": "Wordmark and login screen only, rendered as a signal-blue → agent-violet gradient clipped to the text." },
+      "headline": { "displayName": "Headline", "purpose": "Page titles and the large tabular figures in stat tiles." },
+      "title": { "displayName": "Title", "purpose": "Session names, card and dialog headings; goes Text Bright + 600 on unseen completion." },
+      "body": { "displayName": "Body", "purpose": "Chat prose, descriptions, form values, markdown bodies." },
+      "label": { "displayName": "Label — 10px caps", "purpose": "Sidebar section headers and metadata rows, in a dimmed neutral, count before label." },
+      "mono": { "displayName": "Mono — JetBrains", "purpose": "Anything a machine produced or will read: paths, commands, tool names, diffs, IDs, the composer placeholder." }
+    },
+    "shadows": [
+      { "name": "sidebar-lift-light", "value": "2px 0 12px hsl(228 20% 50% / 0.12), 4px 0 24px hsl(228 20% 50% / 0.06)", "purpose": "Light theme only — separates the sidebar rail from the work surface where glow cannot." },
+      { "name": "row-selected-light", "value": "0 1px 3px hsl(228 20% 50% / 0.08), 0 0 0 1px hsl(228 15% 85% / 0.5)", "purpose": "Light theme only — lifted-card cue for the selected sidebar row." },
+      { "name": "bubble-lift", "value": "0 10px 15px -3px rgb(0 0 0 / 0.30)", "purpose": "User chat bubble — the one intentional dark-mode shadow, separating the user's words from the frost behind them." },
+      { "name": "focus-ring", "value": "0 0 0 3px color-mix(in srgb, #5e9eff 50%, transparent)", "purpose": "Focus-visible on every interactive control, paired with a Signal Blue border shift." },
+      { "name": "state-glow", "value": "0 0 8px 2px color-mix(in srgb, #5e9eff 50%, transparent)", "purpose": "Transient state announcement only (brain flare, attention pulse, todo spark) — never resting elevation." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "120ms ease", "purpose": "Color and opacity changes on hover/reveal — code-block actions, icon buttons." },
+      { "name": "surface-transition", "value": "200ms ease", "purpose": "Default Tailwind transition for buttons, rows, and tinted surfaces." },
+      { "name": "progress-fill", "value": "300ms ease", "purpose": "Todo bar width changes, so a completed task reads as movement." },
+      { "name": "pulse-attention", "value": "animate-pulse on ring-current/30", "purpose": "Blocked states only: approval, question, plan-ready." },
+      { "name": "brain-flare", "value": "1.1s ease-out ×2", "purpose": "Two-beat glow on the brain nav button when memory changes anywhere in the app." },
+      { "name": "shimmer-sweep", "value": "0.5s ease forwards", "purpose": "One-shot diagonal sheen across the new-session button on press." },
+      { "name": "todo-spark-flicker", "value": "1.2s ease-in-out infinite", "purpose": "Living spark at the leading edge of an in-progress todo bar." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce)", "purpose": "Hard requirement — every ambient animation above disables itself." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" },
+      { "name": "sidebar", "value": "288px" },
+      { "name": "header", "value": "48px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one solid saturated action in normal use — new session, confirm, submit.",
+      "html": "<button class=\"ds-btn-primary\">New session</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border: none; border-radius: 8px; background: #5e9eff; color: #1a1b26; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 200ms ease; } .ds-btn-primary:hover { background: color-mix(in srgb, #5e9eff 90%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, #5e9eff 50%, transparent); }"
+    },
+    {
+      "name": "Ghost Button (dense toolbar)",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The working default in dense toolbars — no resting surface, Raised Slate on hover.",
+      "html": "<button class=\"ds-btn-ghost\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>Add</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 8px; background: transparent; color: #a9b1d6; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 200ms ease; } .ds-btn-ghost:hover { background: #24283b; color: #c0caf5; } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, #5e9eff 50%, transparent); }"
+    },
+    {
+      "name": "Allow Button",
+      "kind": "button",
+      "refersTo": "button-approve",
+      "description": "The approval affirmative — the only other solid saturated button, so Allow is never confused with Deny.",
+      "html": "<button class=\"ds-btn-approve\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg>Allow</button>",
+      "css": ".ds-btn-approve { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 8px; background: #9ece6a; color: #0c0d14; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 200ms ease; } .ds-btn-approve:hover { background: color-mix(in srgb, #9ece6a 90%, transparent); } .ds-btn-approve:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, #9ece6a 50%, transparent); }"
+    },
+    {
+      "name": "Status Pill — Running",
+      "kind": "chip",
+      "refersTo": "status-pill-running",
+      "description": "Session state rendered from the single shared badge config: 15% tint, full-strength text, state icon.",
+      "html": "<span class=\"ds-pill ds-pill-running\"><svg class=\"ds-pill-spin\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83\"/></svg>Running</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; } .ds-pill-running { background: color-mix(in srgb, #73daca 15%, transparent); color: #73daca; } .ds-pill-spin { animation: ds-spin 1s linear infinite; } @keyframes ds-spin { to { transform: rotate(360deg); } } @media (prefers-reduced-motion: reduce) { .ds-pill-spin { animation: none; } }"
+    },
+    {
+      "name": "Status Pill — Approval (pulsing)",
+      "kind": "chip",
+      "refersTo": "status-pill-approval",
+      "description": "The blocked state. Amber plus a pulsing ring is reserved for 'an agent is waiting on a human'.",
+      "html": "<span class=\"ds-pill ds-pill-approval\"><span class=\"ds-pill-ring\">?</span>Approval</span>",
+      "css": ".ds-pill-approval { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; background: color-mix(in srgb, #ff9e64 15%, transparent); color: #ff9e64; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; } .ds-pill-ring { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; font-size: 9px; font-weight: 800; } .ds-pill-ring::before { content: \"\"; position: absolute; inset: 0; border-radius: 9999px; box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); animation: ds-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; } @keyframes ds-pulse { 50% { opacity: 0.4; } } @media (prefers-reduced-motion: reduce) { .ds-pill-ring::before { animation: none; } }"
+    },
+    {
+      "name": "Session Row",
+      "kind": "custom",
+      "refersTo": "session-row-active",
+      "description": "The densest object in the product: state badge, title, live pulse line, metadata, and todo bar inside ~32px — with the project's colour as a square-left 2px rail.",
+      "html": "<div class=\"ds-row\"><span class=\"ds-row-dot\"></span><div class=\"ds-row-main\"><span class=\"ds-row-title\">Fix WebSocket reconnect</span><span class=\"ds-row-pulse\">editing ws-client.ts · 12 tool calls</span><span class=\"ds-row-meta\"><span class=\"ds-row-project\">agentique</span><span class=\"ds-row-time\">6m</span></span><div class=\"ds-row-track\"><div class=\"ds-row-bar\"></div></div></div></div>",
+      "css": ".ds-row { display: flex; gap: 6px; align-items: flex-start; width: 320px; padding: 6px 8px; border-left: 2px solid #7aa2f7; border-radius: 0 8px 8px 0; background: #292e42; font-family: Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: background 200ms ease; } .ds-row:hover { background: color-mix(in srgb, #292e42 70%, transparent); } .ds-row-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 9999px; background: #73daca; box-shadow: 0 0 6px 1px color-mix(in srgb, #73daca 50%, transparent); } .ds-row-main { min-width: 0; flex: 1; } .ds-row-title { display: block; font-size: 14px; font-weight: 600; color: #c0caf5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-row-pulse { display: block; font-size: 10px; color: #565f89; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-row-meta { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #565f89; } .ds-row-project { color: #7aa2f7; font-weight: 500; } .ds-row-time { margin-left: auto; font-variant-numeric: tabular-nums; } .ds-row-track { margin-top: 4px; height: 4px; border-radius: 9999px; background: color-mix(in srgb, #24283b 50%, transparent); overflow: hidden; } .ds-row-bar { width: 43%; height: 100%; border-radius: 9999px; background: color-mix(in srgb, #5e9eff 40%, transparent); transition: width 300ms ease; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Transparent field with a hairline stroke; focus shifts the border to Signal Blue and blooms a 3px ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Filter projects...\" />",
+      "css": ".ds-input { width: 260px; height: 36px; padding: 4px 12px; border: 1px solid #3b4261; border-radius: 8px; background: color-mix(in srgb, #3b4261 20%, transparent); color: #a9b1d6; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; transition: color 200ms ease, box-shadow 200ms ease; } .ds-input::placeholder { color: #6b7394; } .ds-input:focus-visible { outline: none; border-color: #5e9eff; box-shadow: 0 0 0 3px color-mix(in srgb, #5e9eff 50%, transparent); }"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "card",
+      "refersTo": "card-panel",
+      "description": "10px uppercase caption over a 1.5rem tabular figure; the number takes colour only when it is itself a signal.",
+      "html": "<div class=\"ds-tile\"><span class=\"ds-tile-label\">Needs attention</span><span class=\"ds-tile-value\">3</span></div>",
+      "css": ".ds-tile { display: flex; flex-direction: column; gap: 4px; width: 200px; padding: 16px; border: 1px solid color-mix(in srgb, #3b4261 60%, transparent); border-radius: 10px; background: #16161e; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-tile-label { font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6b7394; } .ds-tile-value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; color: #ff9e64; }"
+    },
+    {
+      "name": "Tool-Use Block (collapsed)",
+      "kind": "custom",
+      "refersTo": "tool-block",
+      "description": "Machine work folded into one quiet row — icon, tool name, mono target, success check, chevron. Folded is the default state of noise.",
+      "html": "<div class=\"ds-tool\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m18 16 4-4-4-4M6 8l-4 4 4 4M14.5 4l-5 16\"/></svg><span class=\"ds-tool-name\">Edit</span><span class=\"ds-tool-arg\">frontend/src/lib/ws-client.ts</span><svg class=\"ds-tool-ok\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg></div>",
+      "css": ".ds-tool { display: flex; align-items: center; gap: 8px; width: 420px; padding: 4px 8px; border: 1px solid color-mix(in srgb, #3b4261 60%, transparent); border-radius: 8px; background: color-mix(in srgb, #24283b 50%, transparent); color: #a9b1d6; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; cursor: pointer; transition: background 200ms ease; } .ds-tool:hover { background: color-mix(in srgb, #24283b 75%, transparent); } .ds-tool-name { flex: none; font-weight: 500; } .ds-tool-arg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: \"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace; color: #565f89; } .ds-tool-ok { flex: none; margin-left: auto; color: color-mix(in srgb, #9ece6a 70%, transparent); }"
+    },
+    {
+      "name": "Approval Banner",
+      "kind": "custom",
+      "refersTo": "approval-banner",
+      "description": "The product's one true interrupt, docked above the composer — the only element allowed a coloured fill, border, and chip at once.",
+      "html": "<div class=\"ds-approval\"><div class=\"ds-approval-head\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/><path d=\"M12 8v4M12 16h.01\"/></svg><span class=\"ds-approval-chip\">Bash</span><span class=\"ds-approval-desc\">Run WebSocket client tests</span></div><code class=\"ds-approval-cmd\">cd frontend &amp;&amp; npm test -- --run src/lib/ws-client.test.ts</code></div>",
+      "css": ".ds-approval { width: 520px; padding: 10px 12px; border: 1px solid color-mix(in srgb, #e0af68 40%, transparent); border-radius: 8px; background: color-mix(in srgb, #e0af68 10%, transparent); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; color: #a9b1d6; } .ds-approval-head { display: flex; align-items: center; gap: 8px; color: #e0af68; } .ds-approval-chip { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, #e0af68 15%, transparent); font-family: \"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 500; } .ds-approval-desc { color: #6b7394; font-size: 12px; } .ds-approval-cmd { display: block; margin-top: 6px; font-family: \"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: #8891b5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+    },
+    {
+      "name": "Section Label",
+      "kind": "nav",
+      "refersTo": "typography.label",
+      "description": "How structure is announced across every dense surface: chevron, count, then a 10px uppercase label in a dimmed neutral.",
+      "html": "<div class=\"ds-section\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 9 6 6 6-6\"/></svg><span class=\"ds-section-count\">2·4</span><span class=\"ds-section-label\">Developer tools</span></div>",
+      "css": ".ds-section { display: flex; align-items: center; gap: 6px; width: 260px; padding: 4px 8px; color: #6b7394; font-family: Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: color 200ms ease; } .ds-section:hover { color: #8891b5; } .ds-section-count { font-size: 10px; font-variant-numeric: tabular-nums; color: #565f89; } .ds-section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Aurora Workshop",
+    "overview": "Agentique is a near-black workshop lit from behind by colored light. The chrome — sidebar, headers, rows, panels — is a flat blue-black field with a fixed film of grain over it; the life comes from what the agents are doing to it. A project's color tints the frosted glass behind its chat. A running session glows teal. A session that needs a human turns amber and pulses. Todo bars throw sparks when a task lands, and the brain flares when it learns something. The atmosphere is alive because the agents are; nothing decorative moves on its own.\n\nThe voice is a warm terminal, not a dashboard. JetBrains Mono carries every path, command, diff, and tool name. Inter carries prose at 14px and drops to 10px for the structural labels that organize a dense sidebar. Surfaces are tinted-transparent rather than solid, controls are 24–36px tall, and numbers are tabular so a value changing in place doesn't shift the row. Craft here is meant to be noticed up close — the grain, the analogous frost blobs, the 2px project rail on a session row — never from across the room.\n\nTwo rejections are binding. This is not a pastel SaaS dashboard: no light-first surfaces, no generous whitespace, no muted brand tints or illustration spots — the operator watches many sessions at once and density is the product. And it is not AI-startup marketing chrome: the one gradient in the entire system is the wordmark, glow is a state signal rather than an aesthetic, and there are no mesh backgrounds, hero treatments, or purple-to-pink flourishes.",
+    "keyCharacteristics": [
+      "Deep blue-black (#0c0d14) ground with a fixed grain + gradient film at 7% opacity",
+      "Saturated color reserved for state and project identity; chrome is blue-grey",
+      "Status color always appears as a ~15% tint behind full-strength text — never a solid fill",
+      "Two live themes: Tokyo Night (dark, default) and Catppuccin Latte (light)",
+      "Compact controls (24 / 32 / 36px), 10px uppercase section labels, tabular numerals everywhere",
+      "Depth from blur, grain, and colored light — not from shadows (in dark mode)",
+      "Every project owns a hue; it enters the UI as a 2px rail and a text pill, never as a flooded surface"
+    ],
+    "rules": [
+      { "name": "The Meaning-Only Color Rule", "body": "Saturated hue is reserved for two things: session state and project identity. Chrome, structure, and typography are blue-grey. If a color can't answer \"what does this tell the operator,\" it doesn't ship.", "section": "colors" },
+      { "name": "The 15% Tint Rule", "body": "Status color reaches the screen as color/15 (or /20) behind full-strength text and icon of the same hue. Solid saturated fills are reserved for exactly two roles: the primary action button and the Allow button. This is what lets a dozen colored states coexist in one sidebar without shouting.", "section": "colors" },
+      { "name": "The Amber Monopoly", "body": "Amber and its pulse mean one thing — an agent is blocked on a human. Never use amber for warnings, tips, or emphasis; spending it elsewhere costs the operator the one signal they actually have to answer.", "section": "colors" },
+      { "name": "The Space Grotesk Is The Logo Rule", "body": "The display face appears in the wordmark and the login screen. Nowhere else. A new heading is Inter.", "section": "typography" },
+      { "name": "The Tabular Numerals Rule", "body": "Any number that updates in place — session counts, elapsed time, todo ratios, diff stats, token bars — is tabular-nums. Rows must never twitch as values change.", "section": "typography" },
+      { "name": "The 10px Label Rule", "body": "Structural labels are 10px/600/uppercase/tracking-wider in a dimmed neutral. They organize the densest surfaces without ever competing with content; making them larger or brighter is how this UI starts to look like a dashboard.", "section": "typography" },
+      { "name": "The Two Screens Rule", "body": "Desk and phone are equally weighted (PRODUCT.md). A surface that is only good on a wide screen is unfinished — and the phone version is not a smaller copy: it trades hover affordances for permanently visible ones.", "section": "layout" },
+      { "name": "The Glass Over Grain Rule", "body": "Panels sit on grain and are lit from behind; they are not lifted off the page by shadow. Reach for backdrop-blur + a tint before reaching for elevation.", "section": "elevation" },
+      { "name": "The Frost Is Identity Rule", "body": "The colored blobs behind a chat are derived from the project's color (--frost-base, with warm/cool analogues at ±25° hue and compensated saturation). They are ambience with a job: knowing which project you're in without reading a label.", "section": "elevation" },
+      { "name": "The Rail Rule", "body": "When a row carries a project accent, it becomes a 2px left border with rounded-r-md — square on the rail side so the color reads as a rail rather than a stray edge. This shape is the sidebar's primary identity device.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do render every session state through the shared badge config — one state, one tint, one icon, one label, everywhere it appears.",
+      "Do use color/15 tints behind full-strength text for status, and reserve solid saturated fills for the primary action and Allow.",
+      "Do keep saturated hue tied to state or project identity; structure stays blue-grey.",
+      "Do set tabular-nums on every number that updates in place.",
+      "Do use JetBrains Mono for anything the machine produced — paths, commands, branches, diffs, tool names, IDs.",
+      "Do build depth from backdrop-blur, tonal steps, and the grain film first; add a shadow only where light mode needs it.",
+      "Do grow decision controls to 40px under max-md: and reveal hover-only affordances under @media (hover: none).",
+      "Do gate every ambient animation behind prefers-reduced-motion: reduce — the spark, the flash, the particles, the shimmer, the mic pulse, and the brain flare all already are.",
+      "Do honor both themes when adding a color: dark gets the neon value, light gets the jewel-tone one at lower lightness and higher saturation."
+    ],
+    "donts": [
+      "Don't spend Attention Amber or its pulse on anything but \"an agent is blocked on a human.\"",
+      "Don't introduce a fourth typeface, or use Space Grotesk anywhere except the wordmark and login.",
+      "Don't enlarge or brighten the 10px section labels to make them \"readable\" — their recession is what makes the sidebar scannable.",
+      "Don't add a decorative gradient. The wordmark is the system's only one.",
+      "Don't use a solid saturated background for an informational surface; it reads as an action.",
+      "Don't rely on hover to reveal anything essential — the same product runs on a phone.",
+      "Don't animate anything that isn't reporting a state change.",
+      "Don't add whitespace to \"let the design breathe\" in list, row, or tree surfaces; density is the product, and the operator is watching many sessions at once.",
+      "Don't load a font, icon, or asset from a CDN — the app ships as one self-contained binary (PRODUCT.md)."
+    ]
+  }
+}
