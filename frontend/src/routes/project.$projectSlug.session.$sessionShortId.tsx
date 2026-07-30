@@ -8,6 +8,8 @@ import { useChatStore } from "~/stores/chat-store";
 
 const searchSchema = z.object({
   tab: z.enum(["chat", "todos", "git", "changes", "loops"]).optional(),
+  /** Deep-link target: persisted turn index to scroll to (run "view turn"). */
+  turn: z.coerce.number().int().nonnegative().optional(),
 });
 
 export const Route = createFileRoute("/project/$projectSlug/session/$sessionShortId")({
@@ -17,7 +19,7 @@ export const Route = createFileRoute("/project/$projectSlug/session/$sessionShor
 
 function SessionPage() {
   const { projectSlug, sessionShortId } = Route.useParams();
-  const { tab } = Route.useSearch();
+  const { tab, turn } = Route.useSearch();
   const navigate = useNavigate();
   const project = useAppStore((s) => s.projects.find((p) => p.slug === projectSlug));
   const projectId = project?.id;
@@ -62,6 +64,7 @@ function SessionPage() {
       projectId={project.id}
       sessionId={sessionId}
       tab={tab}
+      targetTurn={turn}
       onTabChange={handleTabChange}
     />
   );

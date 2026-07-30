@@ -1,9 +1,11 @@
+import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
   ChevronDown,
   ChevronRight,
   Clock,
+  ExternalLink,
   Loader2,
   Pause,
   Pencil,
@@ -46,7 +48,8 @@ import {
   resumeSchedule,
   runScheduleNow,
 } from "~/lib/schedule-actions";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 import { EMPTY_RUNS, useScheduleStore } from "~/stores/schedule-store";
 
@@ -546,6 +549,10 @@ function RunStrip({ runs, now }: { runs: ScheduleRunInfo[]; now: Date }) {
 function RunRow({ run, now }: { run: ScheduleRunInfo; now: Date }) {
   const meta = runStatusMeta(run);
   const when = run.firedAt || run.scheduledFor || run.createdAt;
+  const navigate = useNavigate();
+  const projectId = useChatStore((s) => s.sessions[run.sessionId]?.meta.projectId);
+  const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.slug);
+  const canViewTurn = run.turnIndex >= 0 && !!projectSlug;
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
       <span className={cn("size-1.5 shrink-0 rounded-full", meta.dotClass)} />
@@ -560,6 +567,25 @@ function RunRow({ run, now }: { run: ScheduleRunInfo; now: Date }) {
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           {run.summary || run.error || run.reason}
         </span>
+      )}
+      {canViewTurn && (
+        <button
+          type="button"
+          onClick={() =>
+            navigate({
+              to: "/project/$projectSlug/session/$sessionShortId",
+              params: {
+                projectSlug: projectSlug ?? "",
+                sessionShortId: sessionShortId(run.sessionId),
+              },
+              search: { turn: run.turnIndex },
+            })
+          }
+          className="inline-flex shrink-0 items-center gap-0.5 text-primary hover:underline"
+        >
+          <ExternalLink className="h-2.5 w-2.5" />
+          view turn
+        </button>
       )}
     </li>
   );

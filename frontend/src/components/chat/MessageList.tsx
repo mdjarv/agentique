@@ -263,6 +263,9 @@ interface MessageListProps {
   isLoadingHistory?: boolean;
   /** True when we have a tail cache and are loading the full history in the background. */
   isBackfilling?: boolean;
+  /** Deep-link target (?turn=): scroll to this persisted turn index, force-
+   * mounting it and suspending scroll-memory restore for the navigation. */
+  targetTurnIndex?: number;
   /** Incremented by the parent when a local send should re-engage bottom follow mode. */
   followRequest?: number;
   onFollowRequestConsumed?: () => void;
@@ -277,6 +280,7 @@ export function MessageList({
   worktreePath,
   isLoadingHistory,
   isBackfilling,
+  targetTurnIndex,
   followRequest,
   onFollowRequestConsumed,
 }: MessageListProps) {
@@ -297,8 +301,9 @@ export function MessageList({
     },
     [animateRef],
   );
-  const savedInitial = scrollMemory.get(sessionId);
-  const initialFollowing = !savedInitial || savedInitial.atBottom;
+  const savedInitial = targetTurnIndex == null ? scrollMemory.get(sessionId) : undefined;
+  // A ?turn= deep-link owns the viewport: no memory restore, no bottom follow.
+  const initialFollowing = targetTurnIndex == null && (!savedInitial || savedInitial.atBottom);
   const [following, setFollowing] = useState(initialFollowing);
   const followingRef = useRef(following);
   followingRef.current = following;
@@ -511,6 +516,29 @@ export function MessageList({
 
   const hasScheduledTurns = useMemo(() => turns.some(isScheduledTurn), [turns]);
 
+  // Deep-link scroll: find the target turn's anchor once it mounts (force-
+  // mounted via `eager`, groups auto-expanded via `expandTurnIndex`) and
+  // center it with a brief highlight. Bounded retries cover mount latency.
+  useEffect(() => {
+    if (targetTurnIndex == null) return;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tryScroll = () => {
+      const root = scrollRef.current;
+      const el = root?.querySelector<HTMLElement>(`[data-turn-index="${targetTurnIndex}"]`);
+      if (el) {
+        el.scrollIntoView({ block: "center" });
+        el.classList.add("deep-link-flash");
+        timer = setTimeout(() => el.classList.remove("deep-link-flash"), 2400);
+        return;
+      }
+      attempts++;
+      if (attempts < 20) timer = setTimeout(tryScroll, 100);
+    };
+    tryScroll();
+    return () => clearTimeout(timer);
+  }, [targetTurnIndex]);
+
   const toggleHideScheduled = useCallback(() => {
     const next = !(hideScheduledMemory.get(sessionId) ?? false);
     hideScheduledMemory.set(sessionId, next);
@@ -555,6 +583,7 @@ export function MessageList({
                 <ScheduledTurnGroup
                   key={item.turns[0]?.id ?? "scheduled-group"}
                   turns={item.turns}
+                  expandTurnIndex={targetTurnIndex}
                   sessionId={sessionId}
                   projectId={projectId}
                   sessionState={sessionState}
@@ -564,7 +593,9 @@ export function MessageList({
               );
             }
             const { turn, index: i } = item;
-            const eager = i >= turns.length - EAGER_TURN_COUNT;
+            const eager =
+              i >= turns.length - EAGER_TURN_COUNT ||
+              (targetTurnIndex != null && turn.turnIndex === targetTurnIndex);
             // If this turn has a compact_boundary, find the post-compaction
             // token count from the next turn's result event.
             const hasCompact = turn.events.some((e) => e.type === "compact_boundary");

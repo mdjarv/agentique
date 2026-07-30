@@ -176,7 +176,7 @@ export const TurnBlock = memo(function TurnBlock({
   }
 
   return (
-    <div ref={outerAnimateRef} className="space-y-4">
+    <div ref={outerAnimateRef} className="space-y-4" data-turn-index={turn.turnIndex}>
       <UserMessage
         prompt={turn.prompt}
         attachments={turn.attachments}

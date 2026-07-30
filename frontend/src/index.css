@@ -1013,3 +1013,18 @@
     background: var(--muted-foreground);
   }
 }
+
+/* Deep-link (?turn=) target highlight: brief ring fade on the anchored turn. */
+@keyframes deep-link-flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.deep-link-flash {
+  animation: deep-link-flash 2.4s ease-out;
+  border-radius: 0.5rem;
+}

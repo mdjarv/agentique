@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Clock } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { TurnBlock } from "~/components/chat/TurnBlock";
 import { agoText } from "~/components/schedules/schedule-format";
 import type { Turn } from "~/stores/chat-store";
@@ -12,6 +12,8 @@ interface ScheduledTurnGroupProps {
   sessionState: string;
   projectPath?: string;
   worktreePath?: string;
+  /** Auto-expand when a member turn matches this deep-link target index. */
+  expandTurnIndex?: number;
 }
 
 function firstTimestamp(turn: Turn | undefined): number | undefined {
@@ -42,8 +44,17 @@ export const ScheduledTurnGroup = memo(function ScheduledTurnGroup({
   sessionState,
   projectPath,
   worktreePath,
+  expandTurnIndex,
 }: ScheduledTurnGroupProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // A ?turn= deep-link targeting a member must open the group so the anchor
+  // can mount and be scrolled to.
+  const containsTarget =
+    expandTurnIndex != null && turns.some((t) => t.turnIndex === expandTurnIndex);
+  useEffect(() => {
+    if (containsTarget) setExpanded(true);
+  }, [containsTarget]);
 
   const { title, rangeText } = useMemo(() => {
     const names = new Set<string>();

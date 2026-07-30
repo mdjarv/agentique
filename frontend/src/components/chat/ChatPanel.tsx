@@ -97,6 +97,8 @@ interface ChatPanelProps {
   projectId: string;
   sessionId: string;
   tab?: SessionTab;
+  /** Deep-link target: persisted turn index to scroll to (?turn= search param). */
+  targetTurn?: number;
   onTabChange?: (tab: SessionTab) => void;
 }
 
@@ -108,7 +110,7 @@ const resumePlaceholders: Record<string, string> = {
 
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
-export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelProps) {
+export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }: ChatPanelProps) {
   const navigate = useNavigate();
   const ws = useWebSocket();
   // Pop the workflow panel open when this session launches a live workflow.
@@ -537,6 +539,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
                 worktreePath={meta.worktreePath}
                 isLoadingHistory={isLoadingHistory}
                 isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
+                targetTurnIndex={targetTurn}
                 followRequest={followRequest}
                 onFollowRequestConsumed={handleFollowRequestConsumed}
               />

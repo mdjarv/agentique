@@ -1,5 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Clock, Pause, Play, Trash2, Zap } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { ScheduleRunRow } from "~/components/schedules/ScheduleRunRow";
@@ -31,7 +32,9 @@ import {
   resumeSchedule,
   runScheduleNow,
 } from "~/lib/schedule-actions";
-import { getErrorMessage } from "~/lib/utils";
+import { getErrorMessage, sessionShortId } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
+import { useChatStore } from "~/stores/chat-store";
 import { EMPTY_RUNS, useScheduleStore } from "~/stores/schedule-store";
 
 interface LoopsPanelProps {
@@ -101,6 +104,20 @@ function computeStats(runs: ScheduleRunInfo[], now: number) {
 }
 
 function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
+  const navigate = useNavigate();
+  const projectId = useChatStore((s) => s.sessions[schedule.sessionId]?.meta.projectId);
+  const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.slug);
+  const viewTurn = useCallback(
+    (turnIndex: number) => {
+      if (!projectSlug) return;
+      navigate({
+        to: "/project/$projectSlug/session/$sessionShortId",
+        params: { projectSlug, sessionShortId: sessionShortId(schedule.sessionId) },
+        search: { turn: turnIndex },
+      });
+    },
+    [navigate, projectSlug, schedule.sessionId],
+  );
   const ws = useWebSocket();
   const runs = useScheduleStore((s) => s.runs[schedule.id] ?? EMPTY_RUNS);
   const now = useNow();
@@ -265,7 +282,7 @@ function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
                 <div className="h-px flex-1 bg-primary/30" />
               </div>
             )}
-            <ScheduleRunRow run={run} />
+            <ScheduleRunRow run={run} onViewTurn={() => viewTurn(run.turnIndex)} />
           </Fragment>
         ))}
       </div>
