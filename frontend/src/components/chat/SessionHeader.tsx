@@ -21,6 +21,7 @@ import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useChannelManagement } from "~/hooks/session/useChannelManagement";
 import { useSessionActions } from "~/hooks/session/useSessionActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { useNow } from "~/hooks/useNow";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
@@ -262,14 +263,15 @@ function useNextSchedule(sessionId: string): ScheduleInfo | null {
 // schedule that will resume it — the header must not read as dead.
 function ParkedScheduleChip({ sessionId, state }: { sessionId: string; state: string }) {
   const next = useNextSchedule(sessionId);
+  const now = useNow();
   if (state !== "stopped" || !next) return null;
   return (
     <span
       className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0"
-      title={`Parked — "${next.name}" fires ${untilText(next.nextRunAt)}`}
+      title={`Parked — "${next.name}" fires ${untilText(next.nextRunAt, now)}`}
     >
       <Clock className="h-2.5 w-2.5 shrink-0" />
-      <span>Next {untilText(next.nextRunAt)}</span>
+      <span>Next {untilText(next.nextRunAt, now)}</span>
     </span>
   );
 }
@@ -291,13 +293,14 @@ function MobileSubline({
   // Parked loop session: "Stopped" would read as dead — show the next fire
   // and which schedule owns it instead.
   const nextSchedule = useNextSchedule(meta.id);
+  const now = useNow();
   const parked = meta.state === "stopped" ? nextSchedule : null;
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
       <SessionBadge state={badgeState} size="sm" bare />
       <span className="truncate">
         {parked
-          ? `next ${untilText(parked.nextRunAt)} · ${parked.name}`
+          ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}`
           : `${label}${branch ? ` · ${branch}` : ""}`}
       </span>
       {ahead > 0 && (

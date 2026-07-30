@@ -34,6 +34,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
+import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
   createSession,
   enqueueMessage,
@@ -213,6 +214,25 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
       refreshGitStatus(ws, sessionId).catch((err) => console.error("refreshGitStatus failed", err));
     }
   }, [ws, sessionId]);
+
+  // Design contract (docs/scheduled-loops.md): action_needed attention clears
+  // on *viewing* the session — this panel being mounted is the view. failed
+  // attention is never cleared here (explicit act only; the backend guards
+  // this too). The push flips attention to "" so the effect settles; the ref
+  // set (keyed by id + updatedAt) prevents duplicate RPCs while the ack is in
+  // flight.
+  const clearedAttentionRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const sc of sessionSchedules) {
+      if (sc.attention !== "action_needed") continue;
+      const key = `${sc.id}:${sc.updatedAt}`;
+      if (clearedAttentionRef.current.has(key)) continue;
+      clearedAttentionRef.current.add(key);
+      markScheduleViewed(ws, { id: sc.id }).catch((err) =>
+        console.error("markScheduleViewed failed", err),
+      );
+    }
+  }, [ws, sessionSchedules]);
 
   // Load history on mount or session switch
   const sessionExists = !!meta;
@@ -504,7 +524,7 @@ export function ChatPanel({ projectId, sessionId, tab, onTabChange }: ChatPanelP
               expandFile={expandFile}
               onExpandFileConsumed={handleExpandFileConsumed}
             />
-          ) : effectiveTab === "loops" ? (
+          ) : effectiveTab === "loops" && hasLoops ? (
             <LoopsPanel sessionId={sessionId} />
           ) : (
             <>

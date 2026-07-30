@@ -75,7 +75,10 @@ export function useSessionEventSubscription(ws: ReturnType<typeof useWebSocket>)
         lastTurn.events.length === 0 &&
         lastTurn.prompt === core
       ) {
-        useChatStore.getState().adoptTurnPrompt(sid, payload.prompt);
+        useChatStore.getState().adoptTurnPrompt(sid, payload.prompt, {
+          turnIndex: payload.turnIndex,
+          origin: payload.origin,
+        });
         return;
       }
       const attachments = payload.attachments?.map(fromWireAttachment);

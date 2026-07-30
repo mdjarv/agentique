@@ -17,6 +17,7 @@ import { loadSessionHistory } from "~/lib/session/history";
 import type { TeamInfo } from "~/lib/team-actions";
 import { listAgentProfiles, listPersonaInteractions, listTeams } from "~/lib/team-actions";
 import type { Project } from "~/lib/types";
+import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -112,7 +113,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
       .catch((err) => console.error("listProviderModels failed", err));
     listSchedules(ws)
       .then((schedules) => useScheduleStore.getState().setSchedules(schedules))
-      .catch((err) => console.error("listSchedules failed", err));
+      .catch((err) => {
+        console.error("listSchedules failed", err);
+        useScheduleStore.getState().setLoadError(getErrorMessage(err, "Failed to load schedules"));
+      });
   }, [ws]);
 
   // Subscribe to new projects as they appear
@@ -202,7 +206,12 @@ export function useGlobalSubscriptions(projects: Project[]) {
       // — refetch or the panel goes stale.
       listSchedules(ws)
         .then((schedules) => useScheduleStore.getState().setSchedules(schedules))
-        .catch((err) => console.error("listSchedules (reconnect) failed", err));
+        .catch((err) => {
+          console.error("listSchedules (reconnect) failed", err);
+          useScheduleStore
+            .getState()
+            .setLoadError(getErrorMessage(err, "Failed to load schedules"));
+        });
     });
 
     return () => {

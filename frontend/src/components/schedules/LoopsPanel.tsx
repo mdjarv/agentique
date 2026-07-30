@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
+import { useNow } from "~/hooks/useNow";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { ScheduleInfo, ScheduleRunInfo } from "~/lib/schedule-actions";
 import {
@@ -102,8 +103,10 @@ function computeStats(runs: ScheduleRunInfo[], now: number) {
 function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
   const ws = useWebSocket();
   const runs = useScheduleStore((s) => s.runs[schedule.id] ?? EMPTY_RUNS);
+  const now = useNow();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null);
   // Divider baseline: captured once at mount, BEFORE mark-viewed re-stamps
   // lastViewedAt — otherwise the "since you last looked" line would vanish
   // the instant the server acknowledges the view.
@@ -111,8 +114,14 @@ function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
 
   useEffect(() => {
     listScheduleRuns(ws, { scheduleId: schedule.id, limit: 50 })
-      .then((page) => useScheduleStore.getState().setRuns(schedule.id, page))
-      .catch((err) => console.error("listScheduleRuns failed", err));
+      .then((page) => {
+        setRunsError(null);
+        useScheduleStore.getState().setRuns(schedule.id, page);
+      })
+      .catch((err) => {
+        console.error("listScheduleRuns failed", err);
+        setRunsError("Couldn't load run history");
+      });
     // Viewing the Loops tab clears view-clearable attention and re-stamps the
     // divider baseline server-side (the local baseline above stays pre-view).
     markScheduleViewed(ws, { id: schedule.id }).catch((err) =>
@@ -120,7 +129,7 @@ function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
     );
   }, [ws, schedule.id]);
 
-  const stats = useMemo(() => computeStats(runs, Date.now()), [runs]);
+  const stats = useMemo(() => computeStats(runs, now.getTime()), [runs, now]);
 
   // Index of the first run at-or-before the baseline; runs are newest-first,
   // so the divider goes right above it. Skip when the baseline is empty,
@@ -137,7 +146,7 @@ function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
   }, [runs, viewBaseline]);
 
   const nextFire = schedule.enabled
-    ? untilText(schedule.nextRunAt) || "—"
+    ? untilText(schedule.nextRunAt, now) || "—"
     : pauseReasonText(schedule.pauseReason);
 
   const handleRunNow = async () => {
@@ -239,9 +248,12 @@ function ScheduleCard({ schedule }: { schedule: ScheduleInfo }) {
 
       {/* Run history */}
       <div className="p-2 space-y-1">
-        {runs.length === 0 && (
-          <p className="px-1 py-2 text-xs text-muted-foreground/60">No runs yet.</p>
-        )}
+        {runs.length === 0 &&
+          (runsError ? (
+            <p className="px-1 py-2 text-xs text-destructive/80">{runsError}</p>
+          ) : (
+            <p className="px-1 py-2 text-xs text-muted-foreground/60">No runs yet.</p>
+          ))}
         {runs.map((run, i) => (
           <Fragment key={run.id}>
             {i === dividerIndex && (

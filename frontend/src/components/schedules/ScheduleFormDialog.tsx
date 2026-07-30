@@ -38,9 +38,13 @@ const PRESETS: { id: PresetId; label: string; needsTime: boolean }[] = [
 ];
 
 function presetToCron(preset: PresetId, time: string): string {
-  const [hRaw, mRaw] = time.split(":");
-  const h = String(Number(hRaw ?? "9"));
-  const m = String(Number(mRaw ?? "0"));
+  // Empty/NaN time parts must not silently become 0:00 (midnight) — fall back
+  // to 09:00 instead. canSubmit separately blocks submitting an empty time.
+  const [hRaw = "", mRaw = ""] = time.split(":");
+  const hNum = Number(hRaw);
+  const mNum = Number(mRaw);
+  const h = String(hRaw !== "" && !Number.isNaN(hNum) ? hNum : 9);
+  const m = String(mRaw !== "" && !Number.isNaN(mNum) ? mNum : 0);
   switch (preset) {
     case "15m":
       return "*/15 * * * *";
@@ -142,13 +146,18 @@ export function ScheduleFormDialog({
     tab === "preset" ? presetToCron(preset, presetTime) : tab === "cron" ? rawCron.trim() : "";
   const showFloodWarning = tab !== "once" && !!effectiveCron && cronBelow15m(effectiveCron);
 
+  const selectedPreset = PRESETS.find((p) => p.id === preset);
+  // A time-of-day preset with an empty time input must not submit (it would
+  // silently fall back to the placeholder time).
+  const presetTimeOk = tab !== "preset" || !selectedPreset?.needsTime || presetTime.trim() !== "";
+
   const canSubmit =
     !saving &&
     name.trim() !== "" &&
     prompt.trim() !== "" &&
     (isEdit || sessionId !== "") &&
     (!cadenceEditable ||
-      (tab === "once" ? onceAt !== "" : effectiveCron.split(/\s+/).length === 5));
+      (tab === "once" ? onceAt !== "" : presetTimeOk && effectiveCron.split(/\s+/).length === 5));
 
   const handleSubmit = async () => {
     setServerError("");
@@ -188,8 +197,6 @@ export function ScheduleFormDialog({
       setSaving(false);
     }
   };
-
-  const selectedPreset = PRESETS.find((p) => p.id === preset);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>

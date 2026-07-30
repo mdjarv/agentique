@@ -3,7 +3,9 @@ package schedule
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -753,6 +755,74 @@ func TestFireDue_PauseRaceRollsBack(t *testing.T) {
 	got, _ := f.q.GetSchedule(ctx, sched.ID)
 	if got.NextRunAt != "" {
 		t.Fatalf("paused schedule re-armed by racing fire: %q", got.NextRunAt)
+	}
+}
+
+func TestSweep_ReclaimsStuckFiringRun(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-31T00:00:00Z")
+	ctx := context.Background()
+
+	// A run whose deliverer died right after the claim: firing, no fired_at.
+	if _, err := f.q.CreateScheduleRun(ctx, store.CreateScheduleRunParams{
+		ID: newID(), ScheduleID: sched.ID, SessionID: "s1",
+		ScheduledFor: "2026-07-30T11:00:00Z", CreatedAt: formatTime(f.clock()), Status: RunQueued,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := f.runByStatus(RunQueued)
+	if _, err := f.q.ClaimScheduleRun(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	f.sched.tick() // first observation
+	if got := f.runByStatus(RunFiring); got == nil {
+		t.Fatal("run must still be firing after first observation")
+	}
+	f.advance(3 * time.Minute)
+	f.sched.tick() // past firingReclaimAfter → reclaim
+	waitFor(t, "reclaimed to queued", func() bool { return f.runByStatus(RunQueued) != nil })
+}
+
+func TestAPI_LengthCapsAndPendingProposalCap(t *testing.T) {
+	f := newFixture(t, Options{})
+	ctx := context.Background()
+
+	long := strings.Repeat("x", maxNameLen+1)
+	if _, err := f.sched.Create(ctx, CreateParams{ProjectID: "p1", SessionID: "s1", Name: long, Prompt: "y", Cron: "0 * * * *"}); err == nil {
+		t.Error("over-long name must be rejected")
+	}
+	if _, err := f.sched.Create(ctx, CreateParams{ProjectID: "p1", SessionID: "s1", Name: "n", Prompt: strings.Repeat("p", maxPromptLen+1), Cron: "0 * * * *"}); err == nil {
+		t.Error("over-long prompt must be rejected")
+	}
+
+	for i := 0; i < maxPendingProposals; i++ {
+		if _, err := f.sched.AgentCreate(ctx, "s1", fmt.Sprintf("prop-%d", i), "p", "0 * * * *", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.sched.AgentCreate(ctx, "s1", "one too many", "p", "0 * * * *", ""); err == nil {
+		t.Error("pending-proposal flood must be capped")
+	}
+}
+
+func TestAPI_UpdateAbsentMeansKeep(t *testing.T) {
+	f := newFixture(t, Options{})
+	ctx := context.Background()
+	info, err := f.sched.Create(ctx, CreateParams{
+		ProjectID: "p1", SessionID: "s1", Name: "keep", Prompt: "p",
+		Cron: "0 9 * * *", ExpiresAt: "2026-12-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := f.sched.Update(ctx, UpdateParams{ID: info.ID, Name: "keep2", Prompt: "p2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Cron != "0 9 * * *" || updated.ExpiresAt != "2026-12-01T00:00:00Z" {
+		t.Fatalf("omitted fields must keep stored values: %+v", updated)
 	}
 }
 

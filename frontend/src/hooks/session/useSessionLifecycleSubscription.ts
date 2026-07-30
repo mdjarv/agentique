@@ -9,6 +9,7 @@ import { useChatStore } from "~/stores/chat-store";
 import type { SessionMetadata } from "~/stores/chat-types";
 import { useEventSeqStore } from "~/stores/event-seq";
 import { usePulseStore } from "~/stores/pulse-store";
+import { useScheduleStore } from "~/stores/schedule-store";
 import { useStreamingStore } from "~/stores/streaming-store";
 
 /** Subscribes to session lifecycle WS events: state, created, deleted, renamed, pr-updated. */
@@ -94,6 +95,9 @@ export function useSessionLifecycleSubscription(
       useStreamingStore.getState().clearSession(deletedId);
       // Drop its wire-sequence tracking too.
       useEventSeqStore.getState().clearSession(deletedId);
+      // The backend cascades schedules on session delete; drop them locally
+      // too, or the store keeps ghost loops targeting a dead session.
+      useScheduleStore.getState().removeSchedulesForSession(deletedId);
 
       if (wasActive && deletedSession) {
         const projectId = deletedSession.meta.projectId;

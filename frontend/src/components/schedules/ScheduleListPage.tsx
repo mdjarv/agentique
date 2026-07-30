@@ -35,6 +35,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { useNow } from "~/hooks/useNow";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { ScheduleInfo, ScheduleRunInfo } from "~/lib/schedule-actions";
 import {
@@ -56,7 +57,9 @@ import { EMPTY_RUNS, useScheduleStore } from "~/stores/schedule-store";
 export function ScheduleListPage() {
   const schedules = useScheduleStore((s) => s.schedules);
   const loaded = useScheduleStore((s) => s.loaded);
+  const loadError = useScheduleStore((s) => s.loadError);
   const ws = useWebSocket();
+  const now = useNow();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduleInfo | null>(null);
@@ -129,6 +132,12 @@ export function ScheduleListPage() {
 
           {!loaded ? (
             <EmptyState>Loading…</EmptyState>
+          ) : loadError && total === 0 ? (
+            <EmptyState>
+              {loadError.toLowerCase().includes("disabled")
+                ? "The scheduler is disabled on this server ([scheduler] disabled in config.toml)."
+                : loadError}
+            </EmptyState>
           ) : total === 0 ? (
             <EmptyState>
               <div className="space-y-3">
@@ -148,6 +157,7 @@ export function ScheduleListPage() {
                 <Section title="Needs attention">
                   <ScheduleList
                     schedules={attention}
+                    now={now}
                     onEdit={openEdit}
                     onDelete={setDeleteTarget}
                   />
@@ -155,12 +165,22 @@ export function ScheduleListPage() {
               )}
               {active.length > 0 && (
                 <Section title="Active">
-                  <ScheduleList schedules={active} onEdit={openEdit} onDelete={setDeleteTarget} />
+                  <ScheduleList
+                    schedules={active}
+                    now={now}
+                    onEdit={openEdit}
+                    onDelete={setDeleteTarget}
+                  />
                 </Section>
               )}
               {parked.length > 0 && (
                 <Section title="Paused & finished">
-                  <ScheduleList schedules={parked} onEdit={openEdit} onDelete={setDeleteTarget} />
+                  <ScheduleList
+                    schedules={parked}
+                    now={now}
+                    onEdit={openEdit}
+                    onDelete={setDeleteTarget}
+                  />
                 </Section>
               )}
             </>
@@ -216,10 +236,12 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 function ScheduleList({
   schedules,
+  now,
   onEdit,
   onDelete,
 }: {
   schedules: ScheduleInfo[];
+  now: Date;
   onEdit: (s: ScheduleInfo) => void;
   onDelete: (s: ScheduleInfo) => void;
 }) {
@@ -229,6 +251,7 @@ function ScheduleList({
         <ScheduleRow
           key={s.id}
           schedule={s}
+          now={now}
           onEdit={() => onEdit(s)}
           onDelete={() => onDelete(s)}
         />
@@ -249,10 +272,12 @@ function accentClass(s: ScheduleInfo): string {
 
 function ScheduleRow({
   schedule,
+  now,
   onEdit,
   onDelete,
 }: {
   schedule: ScheduleInfo;
+  now: Date;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -362,7 +387,7 @@ function ScheduleRow({
             <span>{humanCadence(schedule)}</span>
             {schedule.enabled &&
               (schedule.nextRunAt ? (
-                <span>next {untilText(schedule.nextRunAt)}</span>
+                <span>next {untilText(schedule.nextRunAt, now)}</span>
               ) : (
                 <span>parked</span>
               ))}
@@ -370,12 +395,12 @@ function ScheduleRow({
               <span className="inline-flex items-center gap-1.5">
                 <span className={cn("size-1.5 rounded-full", runStatusMeta(newestRun).dotClass)} />
                 {runStatusMeta(newestRun).label}
-                {schedule.lastRunAt && ` · ${agoText(schedule.lastRunAt)}`}
+                {schedule.lastRunAt && ` · ${agoText(schedule.lastRunAt, now)}`}
               </span>
             ) : (
-              schedule.lastRunAt && <span>last run {agoText(schedule.lastRunAt)}</span>
+              schedule.lastRunAt && <span>last run {agoText(schedule.lastRunAt, now)}</span>
             )}
-            {runs.length > 1 && <RunStrip runs={runs} />}
+            {runs.length > 1 && <RunStrip runs={runs} now={now} />}
           </div>
         </button>
 
@@ -490,7 +515,7 @@ function ScheduleRow({
           ) : (
             <ul className="space-y-1">
               {runs.slice(0, 10).map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunRow key={run.id} run={run} now={now} />
               ))}
             </ul>
           )}
@@ -503,7 +528,7 @@ function ScheduleRow({
 // ─── Run history ────────────────────────────────────────
 
 /** Last-10-runs strip, oldest → newest left to right. */
-function RunStrip({ runs }: { runs: ScheduleRunInfo[] }) {
+function RunStrip({ runs, now }: { runs: ScheduleRunInfo[]; now: Date }) {
   const strip = useMemo(() => [...runs.slice(0, 10)].reverse(), [runs]);
   return (
     <span className="inline-flex items-center gap-1">
@@ -511,21 +536,21 @@ function RunStrip({ runs }: { runs: ScheduleRunInfo[] }) {
         <span
           key={run.id}
           className={cn("size-1.5 rounded-full", runStatusMeta(run).dotClass)}
-          title={`${runStatusMeta(run).label}${run.finishedAt ? ` · ${agoText(run.finishedAt)}` : ""}`}
+          title={`${runStatusMeta(run).label}${run.finishedAt ? ` · ${agoText(run.finishedAt, now)}` : ""}`}
         />
       ))}
     </span>
   );
 }
 
-function RunRow({ run }: { run: ScheduleRunInfo }) {
+function RunRow({ run, now }: { run: ScheduleRunInfo; now: Date }) {
   const meta = runStatusMeta(run);
   const when = run.firedAt || run.scheduledFor || run.createdAt;
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
       <span className={cn("size-1.5 shrink-0 rounded-full", meta.dotClass)} />
       <span className={cn("w-16 shrink-0", meta.textClass)}>{meta.label}</span>
-      <span className="text-muted-foreground tabular-nums">{when ? agoText(when) : ""}</span>
+      <span className="text-muted-foreground tabular-nums">{when ? agoText(when, now) : ""}</span>
       {run.durationMs > 0 && (
         <span className="text-muted-foreground tabular-nums">
           {formatRunDuration(run.durationMs)}

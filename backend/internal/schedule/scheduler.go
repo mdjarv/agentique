@@ -99,6 +99,13 @@ const pendingHumanGrace = time.Minute
 // insert so nothing fires on a paused loop.
 var errSchedulePausedRace = errors.New("schedule paused mid-tick")
 
+// firingReclaimAfter is how long a run may sit in `firing` with no fired_at
+// before the sweep reclaims it to queued. A firing row is transitional for
+// milliseconds; one surviving this long lost its deliverer to a write
+// failure after the claim, and without reclaim the loop wedges on
+// "previous run still running" until the next server restart.
+const firingReclaimAfter = 2 * time.Minute
+
 // Gateway is the narrow session-facing surface the scheduler needs.
 // Implemented by sessionGateway over session.Service; faked in tests.
 type Gateway interface {
@@ -192,6 +199,11 @@ type Scheduler struct {
 	spawnMu sync.RWMutex
 	stopped bool
 
+	// firingSeen tracks when the sweep first observed each firing-status run,
+	// for stuck-firing reclamation. Touched only from the tick goroutine —
+	// no lock needed.
+	firingSeen map[string]time.Time
+
 	done     chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
@@ -225,6 +237,7 @@ func NewScheduler(db *sql.DB, q *store.Queries, gw Gateway, broadcast func(strin
 		gw:           gw,
 		broadcast:    broadcast,
 		sessionLocks: make(map[string]*sync.Mutex),
+		firingSeen:   make(map[string]time.Time),
 		done:         make(chan struct{}),
 	}
 }
@@ -531,23 +544,31 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 	default:
 	}
 
-	rows, err := s.q.ClaimScheduleRun(ctx, runID)
-	if err != nil || rows == 0 {
+	var rows int64
+	if err := sqliteops.RetryWrite(func() error {
+		var werr error
+		rows, werr = s.q.ClaimScheduleRun(ctx, runID)
+		return werr
+	}); err != nil || rows == 0 {
 		return
 	}
 	// Re-read after winning the claim: the row loaded before the per-session
 	// lock may be stale (another deliverer bumped attempts/backoff meanwhile).
-	run, err = s.q.GetScheduleRun(ctx, runID)
-	if err != nil {
+	run, runErr := s.q.GetScheduleRun(ctx, runID)
+	if runErr != nil {
 		return
 	}
 	if run.NextAttemptAt != "" && run.NextAttemptAt > formatTime(s.opts.Now().UTC()) {
 		// Delivery backoff still pending — hand the claim back.
-		if rqErr := s.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{
-			Attempts: run.Attempts, NextAttemptAt: run.NextAttemptAt, ID: runID,
-		}); rqErr != nil {
-			slog.Error("scheduler: backoff requeue failed", "run_id", runID, "error", rqErr)
-		}
+		s.requeueRun(ctx, runID, run.Attempts, run.NextAttemptAt)
+		return
+	}
+
+	// Re-read the schedule under the claim: a Delete/Update racing the
+	// pre-lock load must not fire a stale prompt (a deleted schedule
+	// cascade-removed this run; nothing to resolve).
+	sched, schedErr := s.q.GetSchedule(ctx, run.ScheduleID)
+	if schedErr != nil {
 		return
 	}
 
@@ -581,39 +602,33 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 		if errors.Is(err, session.ErrBusy) || errors.Is(err, session.ErrNotLive) {
 			// Transient: back to queued without consuming an attempt; the
 			// idle-boundary callback or the next tick retries.
-			if rqErr := s.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{
-				Attempts:      run.Attempts,
-				NextAttemptAt: "",
-				ID:            runID,
-			}); rqErr != nil {
-				slog.Error("scheduler: requeue failed", "run_id", runID, "error", rqErr)
-			}
+			s.requeueRun(ctx, runID, run.Attempts, "")
 			return
 		}
 		attempts := run.Attempts + 1
 		if attempts >= maxDeliveryAttempts {
-			s.resolveRun(ctx, runID, resolution{status: RunError, errText: fmt.Sprintf("delivery failed after %d attempts: %v", attempts, err)})
+			s.resolveRun(ctx, runID, resolution{status: RunError, errText: firstLine(fmt.Sprintf("delivery failed after %d attempts: %v", attempts, err), 500)})
 			s.countFailure(ctx, sched.ID, runID)
 			return
 		}
 		backoff := deliveryBackoff[min(int(attempts)-1, len(deliveryBackoff)-1)]
-		if rqErr := s.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{
-			Attempts:      attempts,
-			NextAttemptAt: formatTime(now.Add(backoff)),
-			ID:            runID,
-		}); rqErr != nil {
-			slog.Error("scheduler: requeue with backoff failed", "run_id", runID, "error", rqErr)
-		}
+		s.requeueRun(ctx, runID, attempts, formatTime(now.Add(backoff)))
 		s.pushRun(ctx, runID)
 		return
 	}
 
-	if err := s.q.MarkScheduleRunFired(ctx, store.MarkScheduleRunFiredParams{
-		FiredAt:   formatTime(now),
-		TurnIndex: int64(turnIndex),
-		Attempts:  run.Attempts + 1,
-		ID:        runID,
+	if err := sqliteops.RetryWrite(func() error {
+		return s.q.MarkScheduleRunFired(ctx, store.MarkScheduleRunFiredParams{
+			FiredAt:   formatTime(now),
+			TurnIndex: int64(turnIndex),
+			Attempts:  run.Attempts + 1,
+			ID:        runID,
+		})
 	}); err != nil {
+		// Turn delivered but the row stayed `firing` with no fired_at: the
+		// outcome waiter still resolves it (ResolveScheduleRun accepts
+		// firing), and the stuck-firing reclaim's redelivery converges via
+		// the busy refusal. Rare^2; log and continue.
 		slog.Error("scheduler: mark fired failed", "run_id", runID, "error", err)
 	}
 	s.pushRun(ctx, runID)
@@ -678,9 +693,42 @@ func (s *Scheduler) retryAndOverduePass(ctx context.Context, now time.Time) {
 		slog.Error("scheduler: list unfinished runs failed", "error", err)
 		return
 	}
+	// Stuck-firing reclamation bookkeeping: rebuild the observation set each
+	// pass so entries for runs that moved on don't accumulate.
+	currentFiring := make(map[string]struct{})
+	for _, r := range runs {
+		if r.Status == RunFiring {
+			currentFiring[r.ID] = struct{}{}
+		}
+	}
+	for id := range s.firingSeen {
+		if _, still := currentFiring[id]; !still {
+			delete(s.firingSeen, id)
+		}
+	}
+
 	nowStr := formatTime(now)
 	for _, r := range runs {
 		switch r.Status {
+		case RunFiring:
+			// A firing row is transitional for milliseconds; one that
+			// survives multiple sweeps lost its deliverer to a write failure
+			// after the claim. Reclaim to queued so the loop doesn't wedge on
+			// "previous run still running" until a restart. Delivered runs
+			// (fired_at set) are owned by their outcome waiter — skip.
+			if r.FiredAt != "" {
+				continue
+			}
+			first, seen := s.firingSeen[r.ID]
+			if !seen {
+				s.firingSeen[r.ID] = now
+				continue
+			}
+			if now.Sub(first) < firingReclaimAfter {
+				continue
+			}
+			delete(s.firingSeen, r.ID)
+			s.requeueRun(ctx, r.ID, r.Attempts, "")
 		case RunQueued:
 			if r.NextAttemptAt != "" && r.NextAttemptAt > nowStr {
 				continue
@@ -713,7 +761,9 @@ func (s *Scheduler) retryAndOverduePass(ctx context.Context, now time.Time) {
 			if r.Overdue != 0 || elapsed < s.opts.MaxRunDuration {
 				continue
 			}
-			if err := s.q.SetScheduleRunOverdue(ctx, r.ID); err != nil {
+			if err := sqliteops.RetryWrite(func() error {
+				return s.q.SetScheduleRunOverdue(ctx, r.ID)
+			}); err != nil {
 				slog.Error("scheduler: set overdue failed", "run_id", r.ID, "error", err)
 				continue
 			}
@@ -764,7 +814,7 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 			errKind:    out.ErrorKind,
 			durationMS: out.Duration.Milliseconds(),
 		}
-		if resolved := s.resolveRun(ctx, runID, res); resolved {
+		if resolved, resErr := s.resolveRun(ctx, runID, res); resErr == nil && resolved {
 			// Enabled-guarded: a pause landing after the fire must keep the
 			// schedule parked — a deferred reschedule must not re-arm it.
 			// (A racing cadence advance can still overwrite this anchor;
@@ -793,13 +843,21 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 		res = resolution{status: RunOK, summary: firstLine(out.FinalText, 240), durationMS: out.Duration.Milliseconds()}
 	}
 
-	resolved := s.resolveRun(ctx, runID, res)
+	resolved, resErr := s.resolveRun(ctx, runID, res)
+	if resErr != nil {
+		// The write itself failed — the run is NOT terminal; annotating it as
+		// a late completion would be a lie. The stuck-firing/overdue sweeps
+		// and the boot sweep own reconciliation from here.
+		return
+	}
 	if !resolved {
 		// Terminal-once guard hit: the run was already resolved (overdue →
 		// action_needed, or the boot sweep). Record the late outcome as an
 		// annotation without touching status or counters.
 		late := fmt.Sprintf("late completion (%s): %s", res.status, firstLine(out.FinalText, 240))
-		if err := s.q.AppendScheduleRunLateReport(ctx, store.AppendScheduleRunLateReportParams{LateReport: late, ID: runID}); err != nil {
+		if err := sqliteops.RetryWrite(func() error {
+			return s.q.AppendScheduleRunLateReport(ctx, store.AppendScheduleRunLateReportParams{LateReport: late, ID: runID})
+		}); err != nil {
 			slog.Error("scheduler: append late report failed", "run_id", runID, "error", err)
 		}
 		return
@@ -836,27 +894,48 @@ type resolution struct {
 	durationMS int64
 }
 
-// resolveRun writes a terminal status. Returns false when the run was already
-// terminal (the DB-level one-way guard), in which case nothing was written.
-func (s *Scheduler) resolveRun(ctx context.Context, runID string, res resolution) bool {
-	rows, err := s.q.ResolveScheduleRun(ctx, store.ResolveScheduleRunParams{
-		Status:     res.status,
-		FinishedAt: formatTime(s.opts.Now().UTC()),
-		Summary:    res.summary,
-		Reason:     res.reason,
-		Error:      res.errText,
-		ErrorKind:  res.errKind,
-		DurationMs: res.durationMS,
-		ID:         runID,
+// resolveRun writes a terminal status through the write-retry layer. The
+// bool is true when THIS call resolved the run; false with a nil error means
+// the run was already terminal (the DB-level one-way guard). A non-nil error
+// means the write itself failed — callers must not treat that as "already
+// terminal" (the late-report path would annotate a still-running run).
+func (s *Scheduler) resolveRun(ctx context.Context, runID string, res resolution) (bool, error) {
+	var rows int64
+	err := sqliteops.RetryWrite(func() error {
+		var werr error
+		rows, werr = s.q.ResolveScheduleRun(ctx, store.ResolveScheduleRunParams{
+			Status:     res.status,
+			FinishedAt: formatTime(s.opts.Now().UTC()),
+			Summary:    res.summary,
+			Reason:     res.reason,
+			Error:      res.errText,
+			ErrorKind:  res.errKind,
+			DurationMs: res.durationMS,
+			ID:         runID,
+		})
+		return werr
 	})
 	if err != nil {
 		slog.Error("scheduler: resolve run failed", "run_id", runID, "error", err)
-		return false
+		return false, err
 	}
 	if rows > 0 {
 		s.pushRun(ctx, runID)
 	}
-	return rows > 0
+	return rows > 0, nil
+}
+
+// requeueRun writes a run back to queued through the write-retry layer.
+func (s *Scheduler) requeueRun(ctx context.Context, runID string, attempts int64, nextAttemptAt string) {
+	if err := sqliteops.RetryWrite(func() error {
+		return s.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{
+			Attempts:      attempts,
+			NextAttemptAt: nextAttemptAt,
+			ID:            runID,
+		})
+	}); err != nil {
+		slog.Error("scheduler: requeue failed", "run_id", runID, "error", err)
+	}
 }
 
 func (s *Scheduler) countFailure(ctx context.Context, scheduleID, runID string) {

@@ -14,6 +14,32 @@ import (
 // unknown mode) as opposed to infrastructure failures.
 var ErrValidation = errors.New("invalid schedule")
 
+// Input bounds. Name lands in the sidebar and every push; prompt is
+// re-broadcast on ScheduleInfo with each run transition and re-sent to the
+// CLI each fire; cron is re-parsed each fire. Reject, never silently truncate.
+const (
+	maxNameLen   = 120
+	maxPromptLen = 64 * 1024
+	maxCronLen   = 256
+	// maxPendingProposals bounds agent-created pending-approval schedules per
+	// session — ScheduleCreate is auto-allowed, so an over-eager (or
+	// prompt-injected) agent must not be able to flood the approval queue.
+	maxPendingProposals = 3
+)
+
+func validateLengths(name, prompt, cron string) error {
+	if len(name) > maxNameLen {
+		return fmt.Errorf("%w: name exceeds %d characters", ErrValidation, maxNameLen)
+	}
+	if len(prompt) > maxPromptLen {
+		return fmt.Errorf("%w: prompt exceeds %d bytes", ErrValidation, maxPromptLen)
+	}
+	if len(cron) > maxCronLen {
+		return fmt.Errorf("%w: cron expression exceeds %d characters", ErrValidation, maxCronLen)
+	}
+	return nil
+}
+
 // CreateParams describes a new schedule. Exactly one of Cron (recurring) or
 // At (once) must be set; Mode is derived. Dynamic mode arrives with M2's
 // ScheduleNext tool and is not creatable yet.
@@ -42,8 +68,11 @@ func (s *Scheduler) Create(ctx context.Context, p CreateParams) (ScheduleInfo, e
 	if p.Name == "" || p.Prompt == "" {
 		return ScheduleInfo{}, fmt.Errorf("%w: name and prompt are required", ErrValidation)
 	}
-	if p.ProjectID == "" || p.SessionID == "" {
-		return ScheduleInfo{}, fmt.Errorf("%w: project and session are required", ErrValidation)
+	if err := validateLengths(p.Name, p.Prompt, p.Cron); err != nil {
+		return ScheduleInfo{}, err
+	}
+	if p.SessionID == "" {
+		return ScheduleInfo{}, fmt.Errorf("%w: session is required", ErrValidation)
 	}
 	if (p.Cron == "") == (p.At == "") {
 		return ScheduleInfo{}, fmt.Errorf("%w: exactly one of cron or at is required", ErrValidation)
@@ -51,6 +80,14 @@ func (s *Scheduler) Create(ctx context.Context, p CreateParams) (ScheduleInfo, e
 	if p.CreatedBy == "" {
 		p.CreatedBy = "user"
 	}
+	// The session row is the authority for the owning project — a
+	// client-supplied mismatched pair would file the schedule under a project
+	// whose deletion cascades away a schedule targeting a live session.
+	sess, err := s.q.GetSession(ctx, p.SessionID)
+	if err != nil {
+		return ScheduleInfo{}, fmt.Errorf("%w: session not found", ErrValidation)
+	}
+	p.ProjectID = sess.ProjectID
 
 	now := s.opts.Now().UTC()
 	mode := ModeRecurring
@@ -133,6 +170,17 @@ func (s *Scheduler) Update(ctx context.Context, p UpdateParams) (ScheduleInfo, e
 	p.Prompt = strings.TrimSpace(p.Prompt)
 	if p.Name == "" || p.Prompt == "" {
 		return ScheduleInfo{}, fmt.Errorf("%w: name and prompt are required", ErrValidation)
+	}
+	if err := validateLengths(p.Name, p.Prompt, p.Cron); err != nil {
+		return ScheduleInfo{}, err
+	}
+	// Absent-means-keep semantics: an omitted cron/expiry preserves the
+	// stored value (clearing an expiry is not supported over this RPC).
+	if p.Cron == "" {
+		p.Cron = sched.Cron
+	}
+	if p.ExpiresAt == "" {
+		p.ExpiresAt = sched.ExpiresAt
 	}
 	now := s.opts.Now().UTC()
 
@@ -285,11 +333,14 @@ func (s *Scheduler) RunNow(ctx context.Context, id string) (ScheduleRunInfo, err
 	}
 	s.pushRun(ctx, runID)
 	s.pruneRuns(ctx, id)
-	s.spawn(func() { s.deliverRunNow(context.Background(), runID) })
+	// Read the response row BEFORE spawning delivery: an instant resolution
+	// (e.g. skipped on a finished session) could otherwise broadcast the
+	// terminal state and then lose to this stale queued snapshot client-side.
 	run, err := s.q.GetScheduleRun(ctx, runID)
 	if err != nil {
 		return ScheduleRunInfo{}, err
 	}
+	s.spawn(func() { s.deliverRunNow(context.Background(), runID) })
 	return ToScheduleRunInfo(run), nil
 }
 
@@ -382,6 +433,20 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 	sess, err := s.q.GetSession(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("session not found: %w", err)
+	}
+	// Flood guard: ScheduleCreate is auto-allowed, so bound how many
+	// unapproved proposals one session can stack up.
+	existing, err := s.q.ListSchedulesBySession(ctx, sessionID)
+	if err == nil {
+		pending := 0
+		for _, sc := range existing {
+			if sc.PauseReason == PausePendingApproval {
+				pending++
+			}
+		}
+		if pending >= maxPendingProposals {
+			return "", fmt.Errorf("%w: %d schedule proposals are already awaiting approval — ask the user to approve or deny them first", ErrValidation, pending)
+		}
 	}
 	info, err := s.Create(ctx, CreateParams{
 		ProjectID: sess.ProjectID,
