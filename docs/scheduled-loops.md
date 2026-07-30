@@ -5,9 +5,11 @@ refactor + full frontend; see the CLAUDE.md "Scheduled Loops" section for the
 operational invariants). Grounding research 2026-07-29 (live probe of the
 Claude Code CLI scheduler over stream-json); adversarial design review
 2026-07-30 (four reviewers, dispositions in the review log at the bottom);
-implementation review workflow ran over the M1 diff before merge. M2
-(ScheduleReport/ScheduleNext, deep-links, standing consent, codex rotation)
-and M3 are not yet started.
+implementation review workflow ran over the M1 diff before merge. **M2
+shipped 2026-07-30** via the feature's own scheduled loop (ScheduleReport,
+ScheduleNext + dynamic mode, turn deep-links, standing consent); codex
+context rotation and server-side history elision moved to M3, which is not
+yet started.
 
 ## Goal
 
