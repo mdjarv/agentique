@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/allbin/agentkit/sqliteops"
 	"strings"
 	"time"
 
@@ -462,6 +463,78 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 		return "", err
 	}
 	return fmt.Sprintf("Schedule %q created and awaiting the user's approval in the UI (id %s). It will not fire until approved — do not wait for it; mention it to the user and continue.", info.Name, info.ID), nil
+}
+
+// agentReport is a ScheduleReport outcome held until the run's turn resolves.
+type agentReport struct {
+	status  string // RunOK | RunActionNeeded | RunError
+	summary string
+}
+
+// takeReport pops the pending report for a run, if any.
+func (s *Scheduler) takeReport(runID string) (agentReport, bool) {
+	s.reportMu.Lock()
+	defer s.reportMu.Unlock()
+	rep, ok := s.pendingReports[runID]
+	if ok {
+		delete(s.pendingReports, runID)
+	}
+	return rep, ok
+}
+
+// AgentReport is the ScheduleReport MCP tool backend: an agent-volunteered
+// outcome for one scheduled run. runId is mandatory and must belong to a run
+// fired into the calling session — with several schedules (and humans) on one
+// session, per-session attribution would misfile outcomes. Reports for
+// in-flight runs are consumed at turn resolution (they win over the
+// final-text fallback); reports for already-terminal runs land in
+// late_report and never rewrite the terminal status.
+func (s *Scheduler) AgentReport(ctx context.Context, sessionID, runID, status, summary string) (string, error) {
+	var runStatus string
+	switch status {
+	case "ok":
+		runStatus = RunOK
+	case "action-needed", "action_needed":
+		runStatus = RunActionNeeded
+	case "failed":
+		runStatus = RunError
+	default:
+		return "", fmt.Errorf("%w: status must be ok, action-needed, or failed", ErrValidation)
+	}
+	summary = strings.TrimSpace(summary)
+	if runID == "" || summary == "" {
+		return "", fmt.Errorf("%w: runId and summary are required", ErrValidation)
+	}
+	if len(summary) > 500 {
+		summary = summary[:500]
+	}
+
+	run, err := s.q.GetScheduleRun(ctx, runID)
+	if err != nil {
+		return "", fmt.Errorf("%w: run not found", ErrValidation)
+	}
+	if run.SessionID != sessionID {
+		return "", fmt.Errorf("%w: run %s does not belong to this session", ErrValidation, runID)
+	}
+
+	switch run.Status {
+	case RunQueued, RunFiring, RunRunning:
+		s.reportMu.Lock()
+		s.pendingReports[runID] = agentReport{status: runStatus, summary: summary}
+		s.reportMu.Unlock()
+		return "Report recorded; it will resolve this run when the turn completes.", nil
+	default:
+		// Terminal already (overdue → action_needed, boot sweep, …): annotate,
+		// never rewrite. Counters are untouched by design.
+		late := fmt.Sprintf("agent report (%s): %s", status, summary)
+		if err := sqliteops.RetryWrite(func() error {
+			return s.q.AppendScheduleRunLateReport(ctx, store.AppendScheduleRunLateReportParams{LateReport: late, ID: runID})
+		}); err != nil {
+			return "", fmt.Errorf("record late report: %w", err)
+		}
+		s.pushRun(ctx, runID)
+		return "The run was already resolved; your report was recorded as a late annotation.", nil
+	}
 }
 
 // validateCron parses the expression and enforces the cadence floor over

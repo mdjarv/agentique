@@ -49,6 +49,10 @@ const (
 	// the human approval happens in the UI banner, never in the tool call
 	// (the CLI's MCP client timeout forbids blocking handlers).
 	AgentiqueScheduleCreateTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleCreate"
+	// AgentiqueScheduleReportTool reports a scheduled run's outcome. Safe
+	// (scoped to the calling session's own runs, annotate-only after
+	// terminal), so it auto-allows.
+	AgentiqueScheduleReportTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleReport"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

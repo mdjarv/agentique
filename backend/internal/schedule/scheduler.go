@@ -204,6 +204,13 @@ type Scheduler struct {
 	// no lock needed.
 	firingSeen map[string]time.Time
 
+	// pendingReports holds agent-volunteered ScheduleReport outcomes for
+	// in-flight runs, consumed by resolveOutcome (the report wins over the
+	// final-text fallback). In-memory on purpose: the outcome always resolves
+	// in this process or the boot sweep supersedes it. Guarded by reportMu.
+	reportMu       sync.Mutex
+	pendingReports map[string]agentReport
+
 	done     chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
@@ -231,14 +238,15 @@ func NewScheduler(db *sql.DB, q *store.Queries, gw Gateway, broadcast func(strin
 		broadcast = func(string, any) {}
 	}
 	return &Scheduler{
-		opts:         opts.withDefaults(),
-		db:           db,
-		q:            q,
-		gw:           gw,
-		broadcast:    broadcast,
-		sessionLocks: make(map[string]*sync.Mutex),
-		firingSeen:   make(map[string]time.Time),
-		done:         make(chan struct{}),
+		opts:           opts.withDefaults(),
+		db:             db,
+		q:              q,
+		gw:             gw,
+		broadcast:      broadcast,
+		sessionLocks:   make(map[string]*sync.Mutex),
+		firingSeen:     make(map[string]time.Time),
+		pendingReports: make(map[string]agentReport),
+		done:           make(chan struct{}),
 	}
 }
 
@@ -587,7 +595,7 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 		RunID:        runID,
 		ScheduleName: sched.Name,
 	}
-	turnIndex, outcome, err := s.gw.Deliver(ctx, run.SessionID, sched.Prompt, origin)
+	turnIndex, outcome, err := s.gw.Deliver(ctx, run.SessionID, sched.Prompt+reportFooter(runID), origin)
 	now := s.opts.Now().UTC()
 	if err != nil {
 		if errors.Is(err, session.ErrSessionFinished) {
@@ -843,6 +851,23 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 		res = resolution{status: RunOK, summary: firstLine(out.FinalText, 240), durationMS: out.Duration.Milliseconds()}
 	}
 
+	// An agent-volunteered ScheduleReport wins over the ok/error text
+	// fallback — never over transient deferral, a human interrupt, or a
+	// closed session (those classify infrastructure, not the work's outcome).
+	if rep, ok := s.takeReport(runID); ok {
+		switch res.status {
+		case RunOK, RunError, RunActionNeeded:
+			res.status = rep.status
+			res.summary = rep.summary
+			res.reason = "reported by agent"
+			res.errText = ""
+			if rep.status == RunError {
+				res.errText = rep.summary
+			}
+			countsAsFailure = rep.status == RunError
+		}
+	}
+
 	resolved, resErr := s.resolveRun(ctx, runID, res)
 	if resErr != nil {
 		// The write itself failed — the run is NOT terminal; annotating it as
@@ -1096,6 +1121,14 @@ func (s *Scheduler) insertRunRow(ctx context.Context, sched store.Schedule, slot
 func mustParse(s string) time.Time {
 	t, _ := parseTime(s)
 	return t
+}
+
+// reportFooter is appended to every fired prompt so the agent can volunteer
+// a structured outcome via the ScheduleReport MCP tool. The [scheduled-run:…]
+// marker is machine-recognizable for future frontend peeling; the runId makes
+// attribution exact even when human turns interleave on the shared session.
+func reportFooter(runID string) string {
+	return fmt.Sprintf("\n\n[scheduled-run:%s] When this run's work is done, call the ScheduleReport tool with runId %q, status ok|action-needed|failed, and a one-line summary of the outcome.", runID, runID)
 }
 
 // firstLine compresses text into a single-line summary of at most maxLen

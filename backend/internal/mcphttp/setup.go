@@ -38,6 +38,7 @@ const (
 	ToolMemoryUsed     = "MemoryUsed"
 	ToolSuggestPrompt  = "SuggestSessionPrompt"
 	ToolScheduleCreate = "ScheduleCreate"
+	ToolScheduleReport = "ScheduleReport"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -81,12 +82,12 @@ type MemoryStore interface {
 	MemoryUsed(ctx context.Context, sessionID, id string) (string, error)
 }
 
-// ScheduleCreator creates an agent-proposed scheduled loop in a paused,
-// pending-approval state and returns the message shown to the agent.
-// Implemented by schedule.Scheduler. May be nil — the ScheduleCreate tool is
-// then not registered.
+// ScheduleCreator is the scheduled-loops tool surface: propose a schedule
+// (paused, pending approval) and report a run's outcome. Implemented by
+// schedule.Scheduler. May be nil — the schedule tools are then not registered.
 type ScheduleCreator interface {
 	AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string) (string, error)
+	AgentReport(ctx context.Context, sessionID, runID, status, summary string) (string, error)
 }
 
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
@@ -248,6 +249,34 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 			msg, err := sched.AgentCreate(ctx, sid, args.Name, args.Prompt, args.Cron, args.At)
 			if err != nil {
 				return akmcp.ErrorResultf("schedule create failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
+
+	type reportArgs struct {
+		RunID   string `json:"runId"`
+		Status  string `json:"status"`
+		Summary string `json:"summary"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolScheduleReport,
+		Description: "Report the outcome of the scheduled run you are currently executing (the runId is in the [scheduled-run:…] footer of the prompt that started this turn). Call it once, when the run's work is done: status `ok` (worked), `action-needed` (a human must look — this raises attention without failing the loop), or `failed` (the run genuinely failed). The summary becomes the run's one-line history entry. Only valid for runs fired into THIS session.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"runId": akmcp.StringProp{Description: "The run id from the [scheduled-run:…] footer of this turn's prompt."},
+				"status": akmcp.StringProp{
+					Enum:        []string{"ok", "action-needed", "failed"},
+					Description: "Outcome of this run.",
+				},
+				"summary": akmcp.StringProp{Description: "One line: what happened / what needs the human."},
+			},
+			Required: []string{"runId", "status", "summary"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args reportArgs) akmcp.Result {
+			msg, err := sched.AgentReport(ctx, sid, args.RunID, args.Status, args.Summary)
+			if err != nil {
+				return akmcp.ErrorResultf("schedule report failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),

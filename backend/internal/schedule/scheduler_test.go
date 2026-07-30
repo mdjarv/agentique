@@ -187,8 +187,11 @@ func TestFire_RecurringDeliversAndResolvesOK(t *testing.T) {
 	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
 
 	d := f.gw.lastDelivery()
-	if d.sessionID != "s1" || d.prompt != "do the thing" {
+	if d.sessionID != "s1" || !strings.HasPrefix(d.prompt, "do the thing") {
 		t.Errorf("unexpected delivery %+v", d)
+	}
+	if !strings.Contains(d.prompt, "[scheduled-run:") {
+		t.Error("fired prompt must carry the ScheduleReport footer")
 	}
 	if d.origin.Kind != "schedule" || d.origin.ScheduleID != sched.ID || d.origin.RunID == "" {
 		t.Errorf("unexpected origin %+v", d.origin)
@@ -823,6 +826,84 @@ func TestAPI_UpdateAbsentMeansKeep(t *testing.T) {
 	}
 	if updated.Cron != "0 9 * * *" || updated.ExpiresAt != "2026-12-01T00:00:00Z" {
 		t.Fatalf("omitted fields must keep stored values: %+v", updated)
+	}
+}
+
+func TestAgentReport_WinsOverTextFallback(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	if !strings.Contains(d.prompt, "[scheduled-run:"+d.origin.RunID+"]") {
+		t.Errorf("fired prompt must carry the report footer, got tail %q", d.prompt[len(d.prompt)-80:])
+	}
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+
+	// Agent reports action-needed mid-turn; the turn later completes "ok".
+	if _, err := f.sched.AgentReport(context.Background(), "s1", d.origin.RunID, "action-needed", "PR needs a human rebase"); err != nil {
+		t.Fatal(err)
+	}
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "did things"}
+
+	waitFor(t, "report wins", func() bool {
+		r := f.runByStatus(RunActionNeeded)
+		return r != nil && r.Summary == "PR needs a human rebase" && r.Reason == "reported by agent"
+	})
+	got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+	if got.Attention != AttentionActionNeeded {
+		t.Errorf("reported action-needed must raise attention, got %q", got.Attention)
+	}
+}
+
+func TestAgentReport_FailedCountsTowardAutoPause(t *testing.T) {
+	f := newFixture(t, Options{MaxConsecutiveFailures: 1})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+	if _, err := f.sched.AgentReport(context.Background(), "s1", d.origin.RunID, "failed", "could not reach the API"); err != nil {
+		t.Fatal(err)
+	}
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "gave up"}
+
+	waitFor(t, "auto-paused via reported failure", func() bool {
+		got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+		return got.Enabled == 0 && got.PauseReason == PauseAutoFailures
+	})
+}
+
+func TestAgentReport_LateAndScopeValidation(t *testing.T) {
+	f := newFixture(t, Options{})
+	f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+	ctx := context.Background()
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+
+	// Wrong session is refused.
+	if _, err := f.sched.AgentReport(ctx, "someone-else", d.origin.RunID, "ok", "x"); err == nil {
+		t.Error("cross-session report must be refused")
+	}
+	// Bad status is refused.
+	if _, err := f.sched.AgentReport(ctx, "s1", d.origin.RunID, "amazing", "x"); err == nil {
+		t.Error("unknown status must be refused")
+	}
+
+	// Resolve the run, then report late → annotation, status untouched.
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "fine"}
+	waitFor(t, "resolved ok", func() bool { return f.runByStatus(RunOK) != nil })
+	if _, err := f.sched.AgentReport(ctx, "s1", d.origin.RunID, "failed", "actually it broke"); err != nil {
+		t.Fatal(err)
+	}
+	run := f.runByStatus(RunOK)
+	if run == nil || run.LateReport == "" || !strings.Contains(run.LateReport, "actually it broke") {
+		t.Fatalf("late report must annotate without rewriting the terminal: %+v", run)
 	}
 }
 
