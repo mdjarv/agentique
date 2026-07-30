@@ -206,10 +206,14 @@ type Scheduler struct {
 
 	// pendingReports holds agent-volunteered ScheduleReport outcomes for
 	// in-flight runs, consumed by resolveOutcome (the report wins over the
-	// final-text fallback). In-memory on purpose: the outcome always resolves
-	// in this process or the boot sweep supersedes it. Guarded by reportMu.
+	// final-text fallback). pendingPaces holds ScheduleNext calls the same
+	// way — next_run_at is written immediately, the pace reason is stamped on
+	// the run row at resolution. In-memory on purpose: the outcome always
+	// resolves in this process or the boot sweep supersedes it. Guarded by
+	// reportMu.
 	reportMu       sync.Mutex
 	pendingReports map[string]agentReport
+	pendingPaces   map[string]agentPace
 
 	done     chan struct{}
 	stopOnce sync.Once
@@ -246,6 +250,7 @@ func NewScheduler(db *sql.DB, q *store.Queries, gw Gateway, broadcast func(strin
 		sessionLocks:   make(map[string]*sync.Mutex),
 		firingSeen:     make(map[string]time.Time),
 		pendingReports: make(map[string]agentReport),
+		pendingPaces:   make(map[string]agentPace),
 		done:           make(chan struct{}),
 	}
 }
@@ -595,7 +600,7 @@ func (s *Scheduler) deliverClaimed(ctx context.Context, run store.ScheduleRun, s
 		RunID:        runID,
 		ScheduleName: sched.Name,
 	}
-	turnIndex, outcome, err := s.gw.Deliver(ctx, run.SessionID, sched.Prompt+reportFooter(runID), origin)
+	turnIndex, outcome, err := s.gw.Deliver(ctx, run.SessionID, sched.Prompt+reportFooter(runID, sched.Mode == ModeDynamic), origin)
 	now := s.opts.Now().UTC()
 	if err != nil {
 		if errors.Is(err, session.ErrSessionFinished) {
@@ -868,6 +873,23 @@ func (s *Scheduler) resolveOutcome(ctx context.Context, runID, scheduleID string
 		}
 	}
 
+	// Dynamic pacing: a ScheduleNext call stamps its reason on the run row
+	// (rendered persistently — "next in 25m — waiting for CI"). A dynamic run
+	// that did NOT reschedule relies on the fallback pre-write; if the
+	// *previous* dynamic fire didn't reschedule either, this fire WAS the
+	// fallback and the loop has stopped pacing itself — park it visibly
+	// (CC's v2.1.202 semantics, minus the silence).
+	if sched.Mode == ModeDynamic {
+		if pace, ok := s.takePace(runID); ok {
+			res.reason = pace.describe()
+		} else if run.Reason != runNowReason && s.previousDynamicFireUnpaced(ctx, scheduleID, runID) {
+			res.reason = "loop stopped rescheduling"
+			if err := s.pauseSchedule(ctx, scheduleID, PauseDynamicEnded, ""); err != nil {
+				slog.Error("scheduler: dynamic-ended park failed", "schedule_id", scheduleID, "error", err)
+			}
+		}
+	}
+
 	resolved, resErr := s.resolveRun(ctx, runID, res)
 	if resErr != nil {
 		// The write itself failed — the run is NOT terminal; annotating it as
@@ -1123,12 +1145,44 @@ func mustParse(s string) time.Time {
 	return t
 }
 
+// previousDynamicFireUnpaced reports whether the most recent terminal cadence
+// fire before runID neither paced (reason "next in …") nor was stopped —
+// i.e. whether the current fire was already the fallback. Run-now runs are
+// outside the pacing chain and skipped. DB-backed so restarts don't grant
+// unbounded fallback cycles (at most one extra after a restart clears the
+// in-flight maps).
+func (s *Scheduler) previousDynamicFireUnpaced(ctx context.Context, scheduleID, runID string) bool {
+	rows, err := s.q.ListScheduleRuns(ctx, store.ListScheduleRunsParams{
+		ScheduleID: scheduleID, Limit: 10, Offset: 0,
+	})
+	if err != nil {
+		return false
+	}
+	for _, r := range rows {
+		if r.ID == runID || r.Reason == runNowReason {
+			continue
+		}
+		switch r.Status {
+		case RunQueued, RunFiring, RunRunning:
+			continue
+		}
+		// First terminal cadence fire before this one decides the chain.
+		return !strings.HasPrefix(r.Reason, "next in ") && r.Reason != "stopped by agent"
+	}
+	return false // no previous fire: the fallback cycle is still ahead
+}
+
 // reportFooter is appended to every fired prompt so the agent can volunteer
-// a structured outcome via the ScheduleReport MCP tool. The [scheduled-run:…]
-// marker is machine-recognizable for future frontend peeling; the runId makes
+// a structured outcome via the ScheduleReport MCP tool — and, on dynamic
+// loops, pace itself via ScheduleNext. The [scheduled-run:…] marker is
+// machine-recognizable for future frontend peeling; the runId makes
 // attribution exact even when human turns interleave on the shared session.
-func reportFooter(runID string) string {
-	return fmt.Sprintf("\n\n[scheduled-run:%s] When this run's work is done, call the ScheduleReport tool with runId %q, status ok|action-needed|failed, and a one-line summary of the outcome.", runID, runID)
+func reportFooter(runID string, dynamic bool) string {
+	f := fmt.Sprintf("\n\n[scheduled-run:%s] When this run's work is done, call the ScheduleReport tool with runId %q, status ok|action-needed|failed, and a one-line summary of the outcome.", runID, runID)
+	if dynamic {
+		f += fmt.Sprintf(" This is a self-paced loop: also call ScheduleNext with runId %q and delaySeconds + a short reason for when you should run again (or stop=true if the loop's goal is complete).", runID)
+	}
+	return f
 }
 
 // firstLine compresses text into a single-line summary of at most maxLen

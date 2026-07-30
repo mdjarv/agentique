@@ -800,11 +800,11 @@ func TestAPI_LengthCapsAndPendingProposalCap(t *testing.T) {
 	}
 
 	for i := 0; i < maxPendingProposals; i++ {
-		if _, err := f.sched.AgentCreate(ctx, "s1", fmt.Sprintf("prop-%d", i), "p", "0 * * * *", ""); err != nil {
+		if _, err := f.sched.AgentCreate(ctx, "s1", fmt.Sprintf("prop-%d", i), "p", "0 * * * *", "", false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := f.sched.AgentCreate(ctx, "s1", "one too many", "p", "0 * * * *", ""); err == nil {
+	if _, err := f.sched.AgentCreate(ctx, "s1", "one too many", "p", "0 * * * *", "", false); err == nil {
 		t.Error("pending-proposal flood must be capped")
 	}
 }
@@ -851,10 +851,11 @@ func TestAgentReport_WinsOverTextFallback(t *testing.T) {
 		r := f.runByStatus(RunActionNeeded)
 		return r != nil && r.Summary == "PR needs a human rebase" && r.Reason == "reported by agent"
 	})
-	got, _ := f.q.GetSchedule(context.Background(), sched.ID)
-	if got.Attention != AttentionActionNeeded {
-		t.Errorf("reported action-needed must raise attention, got %q", got.Attention)
-	}
+	// Attention is a separate write after resolution — poll, don't snapshot.
+	waitFor(t, "attention raised", func() bool {
+		got, _ := f.q.GetSchedule(context.Background(), sched.ID)
+		return got.Attention == AttentionActionNeeded
+	})
 }
 
 func TestAgentReport_FailedCountsTowardAutoPause(t *testing.T) {
@@ -905,6 +906,127 @@ func TestAgentReport_LateAndScopeValidation(t *testing.T) {
 	if run == nil || run.LateReport == "" || !strings.Contains(run.LateReport, "actually it broke") {
 		t.Fatalf("late report must annotate without rewriting the terminal: %+v", run)
 	}
+}
+
+func (f *fixture) createDynamic(t *testing.T) ScheduleInfo {
+	t.Helper()
+	info, err := f.sched.Create(context.Background(), CreateParams{
+		ProjectID: "p1", SessionID: "s1", Name: "self-paced", Prompt: "watch things", Dynamic: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info
+}
+
+func TestDynamic_PaceWritesNextRunAndStampsReason(t *testing.T) {
+	f := newFixture(t, Options{MinInterval: time.Minute, DynamicMaxDelay: 6 * time.Hour})
+	info := f.createDynamic(t) // next_run_at = now → due immediately
+	ctx := context.Background()
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	if !strings.Contains(d.prompt, "ScheduleNext") {
+		t.Error("dynamic fire footer must mention ScheduleNext")
+	}
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+
+	msg, err := f.sched.AgentPace(ctx, "s1", d.origin.RunID, 1500, "waiting for CI run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "25m") {
+		t.Errorf("pace ack = %q", msg)
+	}
+	got, _ := f.q.GetSchedule(ctx, info.ID)
+	if got.NextRunAt != formatTime(f.clock().Add(25*time.Minute)) {
+		t.Errorf("next_run_at not written immediately: %q", got.NextRunAt)
+	}
+
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "checked"}
+	waitFor(t, "reason stamped", func() bool {
+		r := f.runByStatus(RunOK)
+		return r != nil && r.Reason == "next in 25m0s — waiting for CI run"
+	})
+
+	// Clamping: 5s → floor.
+	f.sched.tick() // nothing due yet; just exercise
+	if _, err := f.sched.AgentPace(ctx, "s1", d.origin.RunID, 5, "x", false); err == nil {
+		t.Error("pacing a resolved run must be refused")
+	}
+}
+
+func TestDynamic_StopParksLoop(t *testing.T) {
+	f := newFixture(t, Options{})
+	info := f.createDynamic(t)
+	ctx := context.Background()
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+
+	if _, err := f.sched.AgentPace(ctx, "s1", d.origin.RunID, 0, "", true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := f.q.GetSchedule(ctx, info.ID)
+	if got.Enabled != 0 || got.PauseReason != PauseDynamicEnded {
+		t.Fatalf("stop must park the loop: %+v", got)
+	}
+	d.outcome <- session.TurnOutcome{TurnIndex: d.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "done"}
+	waitFor(t, "stopped reason", func() bool {
+		r := f.runByStatus(RunOK)
+		return r != nil && r.Reason == "stopped by agent"
+	})
+}
+
+func TestDynamic_UnpacedTwiceParksAsEnded(t *testing.T) {
+	f := newFixture(t, Options{DynamicFallback: 20 * time.Minute})
+	info := f.createDynamic(t)
+	ctx := context.Background()
+
+	// Fire 1: no ScheduleNext call → fallback pre-write stands.
+	f.sched.tick()
+	waitFor(t, "delivery 1", func() bool { return f.gw.deliveryCount() == 1 })
+	d1 := f.gw.lastDelivery()
+	waitFor(t, "running 1", func() bool { return f.runByStatus(RunRunning) != nil })
+	d1.outcome <- session.TurnOutcome{TurnIndex: d1.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "r1"}
+	waitFor(t, "resolved 1", func() bool { return f.runByStatus(RunRunning) == nil })
+
+	got, _ := f.q.GetSchedule(ctx, info.ID)
+	if got.Enabled != 1 {
+		t.Fatal("one unpaced run must only consume the fallback, not park")
+	}
+
+	// Fire 2 (the fallback): still no ScheduleNext → park dynamic-ended.
+	f.advance(21 * time.Minute)
+	f.sched.tick()
+	waitFor(t, "delivery 2", func() bool { return f.gw.deliveryCount() == 2 })
+	d2 := f.gw.lastDelivery()
+	waitFor(t, "running 2", func() bool { return f.runByStatus(RunRunning) != nil })
+	d2.outcome <- session.TurnOutcome{TurnIndex: d2.turnIndex, Status: runtime.TurnStatusCompleted, FinalText: "r2"}
+
+	waitFor(t, "parked dynamic-ended", func() bool {
+		got, _ := f.q.GetSchedule(ctx, info.ID)
+		return got.Enabled == 0 && got.PauseReason == PauseDynamicEnded
+	})
+}
+
+func TestDynamic_PaceValidation(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-30T11:00:00Z")
+
+	f.sched.tick()
+	waitFor(t, "delivery", func() bool { return f.gw.deliveryCount() == 1 })
+	d := f.gw.lastDelivery()
+	waitFor(t, "running", func() bool { return f.runByStatus(RunRunning) != nil })
+
+	// Pacing a fixed-cadence schedule is refused.
+	if _, err := f.sched.AgentPace(context.Background(), "s1", d.origin.RunID, 600, "x", false); err == nil {
+		t.Error("pacing a recurring schedule must be refused")
+	}
+	_ = sched
 }
 
 func TestExpiry_PausesVisibly(t *testing.T) {

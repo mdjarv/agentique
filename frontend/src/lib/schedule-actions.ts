@@ -11,9 +11,11 @@ export interface ScheduleCreateParams {
   sessionId: string;
   name: string;
   prompt: string;
-  /** Exactly one of cron (recurring) or at (one-shot RFC3339) is required. */
+  /** Exactly one of cron (recurring), at (one-shot RFC3339), or dynamic
+   * (self-paced via ScheduleNext) is required. */
   cron?: string;
   at?: string;
+  dynamic?: boolean;
   expiresAt?: string;
 }
 

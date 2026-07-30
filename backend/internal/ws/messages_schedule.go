@@ -9,9 +9,11 @@ type ScheduleCreatePayload struct {
 	SessionID string `json:"sessionId"`
 	Name      string `json:"name"`
 	Prompt    string `json:"prompt"`
-	// Exactly one of Cron (recurring) or At (one-shot, RFC3339) is required.
+	// Exactly one of Cron (recurring), At (one-shot, RFC3339), or Dynamic
+	// (self-paced) is required.
 	Cron      string `json:"cron"`
 	At        string `json:"at"`
+	Dynamic   bool   `json:"dynamic"`
 	ExpiresAt string `json:"expiresAt"`
 }
 

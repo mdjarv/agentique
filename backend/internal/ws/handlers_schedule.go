@@ -31,6 +31,7 @@ func (c *conn) handleScheduleCreate(msg ClientMessage) {
 			Prompt:    p.Prompt,
 			Cron:      p.Cron,
 			At:        p.At,
+			Dynamic:   p.Dynamic,
 			ExpiresAt: p.ExpiresAt,
 			CreatedBy: "user",
 		})

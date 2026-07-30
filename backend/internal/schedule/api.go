@@ -41,9 +41,8 @@ func validateLengths(name, prompt, cron string) error {
 	return nil
 }
 
-// CreateParams describes a new schedule. Exactly one of Cron (recurring) or
-// At (once) must be set; Mode is derived. Dynamic mode arrives with M2's
-// ScheduleNext tool and is not creatable yet.
+// CreateParams describes a new schedule. Exactly one of Cron (recurring),
+// At (once), or Dynamic must be set; Mode is derived.
 type CreateParams struct {
 	ProjectID string
 	SessionID string
@@ -51,7 +50,11 @@ type CreateParams struct {
 	Prompt    string
 	Cron      string
 	// At is the one-shot fire time (RFC3339) for reminders.
-	At        string
+	At string
+	// Dynamic creates a self-paced loop: the first fire is immediate and the
+	// agent chooses each subsequent delay via ScheduleNext (fallback cadence
+	// when it forgets; dynamic-ended parking when it stops entirely).
+	Dynamic   bool
 	ExpiresAt string
 	// CreatedBy is "user" (UI form) or "agent" (ScheduleCreate MCP tool).
 	CreatedBy string
@@ -75,8 +78,14 @@ func (s *Scheduler) Create(ctx context.Context, p CreateParams) (ScheduleInfo, e
 	if p.SessionID == "" {
 		return ScheduleInfo{}, fmt.Errorf("%w: session is required", ErrValidation)
 	}
-	if (p.Cron == "") == (p.At == "") {
-		return ScheduleInfo{}, fmt.Errorf("%w: exactly one of cron or at is required", ErrValidation)
+	cadences := 0
+	for _, set := range []bool{p.Cron != "", p.At != "", p.Dynamic} {
+		if set {
+			cadences++
+		}
+	}
+	if cadences != 1 {
+		return ScheduleInfo{}, fmt.Errorf("%w: exactly one of cron, at, or dynamic is required", ErrValidation)
 	}
 	if p.CreatedBy == "" {
 		p.CreatedBy = "user"
@@ -93,13 +102,17 @@ func (s *Scheduler) Create(ctx context.Context, p CreateParams) (ScheduleInfo, e
 	now := s.opts.Now().UTC()
 	mode := ModeRecurring
 	var nextRun string
-	if p.Cron != "" {
+	switch {
+	case p.Cron != "":
 		next, err := s.validateCron(p.Cron, now)
 		if err != nil {
 			return ScheduleInfo{}, err
 		}
 		nextRun = formatTime(next)
-	} else {
+	case p.Dynamic:
+		mode = ModeDynamic
+		nextRun = formatTime(now) // first fire immediate, then agent-paced
+	default:
 		mode = ModeOnce
 		at, ok := parseTime(p.At)
 		if !ok {
@@ -430,7 +443,7 @@ func (s *Scheduler) Approve(ctx context.Context, id string) (ScheduleInfo, error
 // client times out per call (~60s) and agentkit's POST-only transport cannot
 // extend it with progress, so the handler must never park waiting for a
 // human. The schedule is created paused; the approval banner enables it.
-func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string) (string, error) {
+func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string, dynamic bool) (string, error) {
 	sess, err := s.q.GetSession(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("session not found: %w", err)
@@ -456,6 +469,7 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 		Prompt:    prompt,
 		Cron:      cron,
 		At:        at,
+		Dynamic:   dynamic,
 		CreatedBy: "agent",
 		Paused:    true,
 	})
@@ -469,6 +483,108 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 type agentReport struct {
 	status  string // RunOK | RunActionNeeded | RunError
 	summary string
+}
+
+// agentPace is a ScheduleNext call held until the run resolves; next_run_at
+// is written immediately, the description is stamped on the run row.
+type agentPace struct {
+	delay  time.Duration
+	reason string
+	stop   bool
+}
+
+func (p agentPace) describe() string {
+	if p.stop {
+		return "stopped by agent"
+	}
+	d := p.delay.Round(time.Second)
+	if p.reason == "" {
+		return fmt.Sprintf("next in %s", d)
+	}
+	return fmt.Sprintf("next in %s — %s", d, p.reason)
+}
+
+// takePace pops the pending pace for a run, if any.
+func (s *Scheduler) takePace(runID string) (agentPace, bool) {
+	s.reportMu.Lock()
+	defer s.reportMu.Unlock()
+	p, ok := s.pendingPaces[runID]
+	if ok {
+		delete(s.pendingPaces, runID)
+	}
+	return p, ok
+}
+
+// AgentPace is the ScheduleNext MCP tool backend: the agent of a dynamic
+// loop chooses its own next fire (clamped to [min-interval,
+// dynamic-max-delay]) with a human-readable reason, or stops the loop.
+// runId is mandatory and must belong to an in-flight run fired into the
+// calling session on a dynamic-mode schedule. next_run_at is written
+// immediately (enabled-guarded) so the UI shows the new countdown right
+// away; the reason lands on the run row at resolution.
+func (s *Scheduler) AgentPace(ctx context.Context, sessionID, runID string, delaySeconds int, reason string, stop bool) (string, error) {
+	if runID == "" {
+		return "", fmt.Errorf("%w: runId is required", ErrValidation)
+	}
+	run, err := s.q.GetScheduleRun(ctx, runID)
+	if err != nil {
+		return "", fmt.Errorf("%w: run not found", ErrValidation)
+	}
+	if run.SessionID != sessionID {
+		return "", fmt.Errorf("%w: run %s does not belong to this session", ErrValidation, runID)
+	}
+	switch run.Status {
+	case RunQueued, RunFiring, RunRunning:
+	default:
+		return "", fmt.Errorf("%w: the run is already resolved — pacing applies to the run in flight", ErrValidation)
+	}
+	sched, err := s.q.GetSchedule(ctx, run.ScheduleID)
+	if err != nil {
+		return "", fmt.Errorf("%w: schedule not found", ErrValidation)
+	}
+	if sched.Mode != ModeDynamic {
+		return "", fmt.Errorf("%w: schedule %q is %s-mode, not dynamic — its cadence is fixed", ErrValidation, sched.Name, sched.Mode)
+	}
+
+	now := s.opts.Now().UTC()
+	if stop {
+		s.reportMu.Lock()
+		s.pendingPaces[runID] = agentPace{stop: true}
+		s.reportMu.Unlock()
+		if err := s.pauseSchedule(ctx, run.ScheduleID, PauseDynamicEnded, ""); err != nil {
+			return "", fmt.Errorf("stop loop: %w", err)
+		}
+		return "Loop stopped; the schedule is parked (resumable from the UI).", nil
+	}
+
+	delay := time.Duration(delaySeconds) * time.Second
+	clamped := ""
+	if delay < s.opts.MinInterval {
+		delay = s.opts.MinInterval
+		clamped = fmt.Sprintf(" (clamped up to the %s floor)", s.opts.MinInterval)
+	}
+	if delay > s.opts.DynamicMaxDelay {
+		delay = s.opts.DynamicMaxDelay
+		clamped = fmt.Sprintf(" (clamped down to the %s ceiling)", s.opts.DynamicMaxDelay)
+	}
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+
+	if _, err := s.q.AdvanceScheduleNextRunIfEnabled(ctx, store.AdvanceScheduleNextRunIfEnabledParams{
+		NextRunAt: formatTime(now.Add(delay)),
+		LastRunAt: sched.LastRunAt,
+		UpdatedAt: formatTime(now),
+		ID:        run.ScheduleID,
+	}); err != nil {
+		return "", fmt.Errorf("apply pacing: %w", err)
+	}
+	s.reportMu.Lock()
+	s.pendingPaces[runID] = agentPace{delay: delay, reason: reason}
+	s.reportMu.Unlock()
+	s.pushSchedule(ctx, run.ScheduleID)
+	return fmt.Sprintf("Next fire in %s%s.", delay.Round(time.Second), clamped), nil
 }
 
 // takeReport pops the pending report for a run, if any.

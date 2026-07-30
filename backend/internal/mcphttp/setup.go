@@ -39,6 +39,7 @@ const (
 	ToolSuggestPrompt  = "SuggestSessionPrompt"
 	ToolScheduleCreate = "ScheduleCreate"
 	ToolScheduleReport = "ScheduleReport"
+	ToolScheduleNext   = "ScheduleNext"
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -86,8 +87,9 @@ type MemoryStore interface {
 // (paused, pending approval) and report a run's outcome. Implemented by
 // schedule.Scheduler. May be nil — the schedule tools are then not registered.
 type ScheduleCreator interface {
-	AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string) (string, error)
+	AgentCreate(ctx context.Context, sessionID, name, prompt, cron, at string, dynamic bool) (string, error)
 	AgentReport(ctx context.Context, sessionID, runID, status, summary string) (string, error)
+	AgentPace(ctx context.Context, sessionID, runID string, delaySeconds int, reason string, stop bool) (string, error)
 }
 
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
@@ -228,25 +230,27 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 
 func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 	type createArgs struct {
-		Name   string `json:"name"`
-		Prompt string `json:"prompt"`
-		Cron   string `json:"cron"`
-		At     string `json:"at"`
+		Name    string `json:"name"`
+		Prompt  string `json:"prompt"`
+		Cron    string `json:"cron"`
+		At      string `json:"at"`
+		Dynamic bool   `json:"dynamic"`
 	}
 	register(h, akmcp.Tool{
 		Name:        ToolScheduleCreate,
-		Description: "Propose a scheduled loop on THIS session: agentique will re-send the prompt as a fresh turn on the schedule, durably (survives restarts and idle eviction). The schedule is created PAUSED, awaiting the user's approval in the UI — it never fires before approval, and this call returns immediately (do not wait for approval; tell the user and move on). Provide exactly one of `cron` (recurring) or `at` (one-shot reminder).",
+		Description: "Propose a scheduled loop on THIS session: agentique will re-send the prompt as a fresh turn on the schedule, durably (survives restarts and idle eviction). The schedule is created PAUSED, awaiting the user's approval in the UI — it never fires before approval, and this call returns immediately (do not wait for approval; tell the user and move on). Provide exactly one of `cron` (recurring), `at` (one-shot reminder), or `dynamic: true` (self-paced: first fire immediate, then the agent picks each delay via ScheduleNext).",
 		InputSchema: akmcp.ObjectProp{
 			Properties: map[string]akmcp.Property{
-				"name":   akmcp.StringProp{Description: "Short human-readable name for the loop (shown in the schedules UI)."},
-				"prompt": akmcp.StringProp{Description: "The prompt to run each fire. Self-contained: it is re-sent verbatim every time."},
-				"cron":   akmcp.StringProp{Description: "5-field cron expression in the server's local timezone (e.g. \"*/30 * * * *\", \"0 9 * * 1-5\"). Supported: wildcards, values, steps, ranges, lists. No names/L/W."},
-				"at":     akmcp.StringProp{Description: "RFC3339 time for a one-shot reminder (e.g. \"2026-07-31T15:00:00+02:00\"). Mutually exclusive with cron."},
+				"name":    akmcp.StringProp{Description: "Short human-readable name for the loop (shown in the schedules UI)."},
+				"prompt":  akmcp.StringProp{Description: "The prompt to run each fire. Self-contained: it is re-sent verbatim every time."},
+				"cron":    akmcp.StringProp{Description: "5-field cron expression in the server's local timezone (e.g. \"*/30 * * * *\", \"0 9 * * 1-5\"). Supported: wildcards, values, steps, ranges, lists. No names/L/W."},
+				"at":      akmcp.StringProp{Description: "RFC3339 time for a one-shot reminder (e.g. \"2026-07-31T15:00:00+02:00\"). Mutually exclusive with cron/dynamic."},
+				"dynamic": akmcp.BoolProp{Description: "Self-paced loop: the running agent chooses each next delay with ScheduleNext; a forgotten reschedule falls back to a fixed delay, and a loop that stops rescheduling parks visibly."},
 			},
 			Required: []string{"name", "prompt"},
 		},
 		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args createArgs) akmcp.Result {
-			msg, err := sched.AgentCreate(ctx, sid, args.Name, args.Prompt, args.Cron, args.At)
+			msg, err := sched.AgentCreate(ctx, sid, args.Name, args.Prompt, args.Cron, args.At, args.Dynamic)
 			if err != nil {
 				return akmcp.ErrorResultf("schedule create failed: %v", err)
 			}
@@ -277,6 +281,33 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 			msg, err := sched.AgentReport(ctx, sid, args.RunID, args.Status, args.Summary)
 			if err != nil {
 				return akmcp.ErrorResultf("schedule report failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
+
+	type paceArgs struct {
+		RunID        string `json:"runId"`
+		DelaySeconds int    `json:"delaySeconds"`
+		Reason       string `json:"reason"`
+		Stop         bool   `json:"stop"`
+	}
+	register(h, akmcp.Tool{
+		Name:        ToolScheduleNext,
+		Description: "Self-paced loops only: choose when this loop should fire again (the runId is in the [scheduled-run:…] footer of this turn's prompt). Pass delaySeconds + a short reason shown to the user (\"waiting for CI run to finish\"), or stop=true when the loop's goal is complete — the loop then parks visibly and the user can resume it later. Delays are clamped to the server's configured bounds. Without a call, one fallback fire happens; a loop that stops rescheduling is parked.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"runId":        akmcp.StringProp{Description: "The run id from the [scheduled-run:…] footer of this turn's prompt."},
+				"delaySeconds": akmcp.NumberProp{Description: "Seconds until the next fire (ignored when stop=true)."},
+				"reason":       akmcp.StringProp{Description: "Short human-readable reason for the chosen delay, rendered in the UI."},
+				"stop":         akmcp.BoolProp{Description: "End the loop: park the schedule instead of scheduling another fire."},
+			},
+			Required: []string{"runId"},
+		},
+		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args paceArgs) akmcp.Result {
+			msg, err := sched.AgentPace(ctx, sid, args.RunID, args.DelaySeconds, args.Reason, args.Stop)
+			if err != nil {
+				return akmcp.ErrorResultf("schedule next failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),

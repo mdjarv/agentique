@@ -53,6 +53,9 @@ const (
 	// (scoped to the calling session's own runs, annotate-only after
 	// terminal), so it auto-allows.
 	AgentiqueScheduleReportTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleReport"
+	// AgentiqueScheduleNextTool paces a self-paced loop (clamped delays,
+	// session-scoped runs; stop parks visibly). Auto-allowed.
+	AgentiqueScheduleNextTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleNext"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio
