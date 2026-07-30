@@ -174,6 +174,7 @@ export interface BehaviorPresets {
   planFirst: boolean;
   terse: boolean;
   customInstructions?: string;
+  selfSchedule?: boolean;
 }
 
 export interface PresetDefinition {

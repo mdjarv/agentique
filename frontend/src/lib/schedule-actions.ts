@@ -33,7 +33,9 @@ export const updateSchedule = define<ScheduleInfo, ScheduleUpdateParams>("schedu
 export const deleteSchedule = define<void, { id: string }>("schedule.delete");
 export const pauseSchedule = define<ScheduleInfo, { id: string }>("schedule.pause");
 export const resumeSchedule = define<ScheduleInfo, { id: string }>("schedule.resume");
-export const approveSchedule = define<ScheduleInfo, { id: string }>("schedule.approve");
+export const approveSchedule = define<ScheduleInfo, { id: string; alwaysAllow?: boolean }>(
+  "schedule.approve",
+);
 export const runScheduleNow = define<ScheduleRunInfo, { id: string }>("schedule.run-now");
 export const listScheduleRuns = define<
   ScheduleRunInfo[],

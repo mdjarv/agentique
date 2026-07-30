@@ -15,6 +15,8 @@ export interface AgentProfileConfig {
     planFirst: boolean;
     terse: boolean;
     customInstructions?: string;
+    /** Standing consent for agent-created schedules (selfSchedule preset). */
+    selfSchedule?: boolean;
   };
   systemPromptAdditions?: string;
   capabilities?: string[];

@@ -22,18 +22,23 @@ export function ScheduleApprovalBanner({ schedule }: ScheduleApprovalBannerProps
   const ws = useWebSocket();
   const [resolving, setResolving] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [alwaysAllow, setAlwaysAllow] = useState(false);
 
   const handleApprove = useCallback(async () => {
     setResolving(true);
     try {
-      const updated = await approveSchedule(ws, { id: schedule.id });
+      const updated = await approveSchedule(ws, { id: schedule.id, alwaysAllow });
       useScheduleStore.getState().upsertSchedule(updated);
-      toast.success(`Schedule "${schedule.name}" approved`);
+      toast.success(
+        alwaysAllow
+          ? `Approved — this session may now schedule itself`
+          : `Schedule "${schedule.name}" approved`,
+      );
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to approve schedule"));
       setResolving(false);
     }
-  }, [ws, schedule.id, schedule.name]);
+  }, [ws, schedule.id, schedule.name, alwaysAllow]);
 
   const handleDeny = useCallback(async () => {
     setResolving(true);
@@ -76,7 +81,7 @@ export function ScheduleApprovalBanner({ schedule }: ScheduleApprovalBannerProps
         </div>
       </button>
 
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
         <Button size="xs" disabled={resolving} onClick={handleApprove}>
           <Check className="h-3 w-3" />
           Approve
@@ -85,6 +90,15 @@ export function ScheduleApprovalBanner({ schedule }: ScheduleApprovalBannerProps
           <X className="h-3 w-3" />
           Deny
         </Button>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={alwaysAllow}
+            onChange={(e) => setAlwaysAllow(e.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          Always allow this session to schedule itself
+        </label>
       </div>
     </div>
   );

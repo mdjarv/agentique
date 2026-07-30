@@ -43,6 +43,20 @@ type ScheduleIDPayload struct {
 	ID string `json:"id"`
 }
 
+type ScheduleApprovePayload struct {
+	ID string `json:"id"`
+	// AlwaysAllow additionally grants the session standing self-schedule
+	// consent (the selfSchedule behavior preset).
+	AlwaysAllow bool `json:"alwaysAllow"`
+}
+
+func (p *ScheduleApprovePayload) Validate() error {
+	if p.ID == "" {
+		return errors.New("id is required")
+	}
+	return nil
+}
+
 func (p *ScheduleIDPayload) Validate() error {
 	if p.ID == "" {
 		return errors.New("id is required")

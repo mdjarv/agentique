@@ -176,6 +176,7 @@ export const BehaviorPresetsSchema = z.object({
   planFirst: z.boolean(),
   terse: z.boolean(),
   customInstructions: z.string().optional(),
+  selfSchedule: z.boolean().optional(),
 });
 
 export const PresetDefinitionSchema = z.object({

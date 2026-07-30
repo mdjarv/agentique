@@ -579,14 +579,14 @@ func TestAPI_PendingApprovalCreateAndApprove(t *testing.T) {
 		t.Fatalf("pending-approval create: %+v", info)
 	}
 
-	approved, err := f.sched.Approve(ctx, info.ID)
+	approved, err := f.sched.Approve(ctx, info.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !approved.Enabled || approved.NextRunAt == "" {
 		t.Errorf("approved: %+v", approved)
 	}
-	if _, err := f.sched.Approve(ctx, info.ID); err == nil {
+	if _, err := f.sched.Approve(ctx, info.ID, false); err == nil {
 		t.Error("double-approve must fail")
 	}
 }
@@ -1027,6 +1027,51 @@ func TestDynamic_PaceValidation(t *testing.T) {
 		t.Error("pacing a recurring schedule must be refused")
 	}
 	_ = sched
+}
+
+func TestStandingConsent_ActivatesWithoutApprovalUpToCap(t *testing.T) {
+	f := newFixture(t, Options{})
+	ctx := context.Background()
+
+	// Grant standing consent via approve-with-always-allow on a proposal.
+	first, err := f.sched.AgentCreate(ctx, "s1", "loop-0", "p", "0 * * * *", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first, "awaiting the user's approval") {
+		t.Fatalf("without consent, proposals must await approval: %q", first)
+	}
+	pending, _ := f.q.ListSchedulesBySession(ctx, "s1")
+	if _, err := f.sched.Approve(ctx, pending[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := f.q.GetSession(ctx, "s1")
+	if !session.ParsePresets(sess.BehaviorPresets).SelfSchedule {
+		t.Fatal("always-allow approve must persist the selfSchedule preset")
+	}
+
+	// Subsequent proposals activate immediately.
+	msg, err := f.sched.AgentCreate(ctx, "s1", "loop-1", "p", "30 * * * *", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "ACTIVE") {
+		t.Fatalf("standing consent must activate directly: %q", msg)
+	}
+
+	// Beyond the active cap, fall back to pending-approval.
+	for i := 2; i < maxStandingActive+1; i++ {
+		if _, err := f.sched.AgentCreate(ctx, "s1", fmt.Sprintf("loop-%d", i), "p", fmt.Sprintf("%d * * * *", i), "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	over, err := f.sched.AgentCreate(ctx, "s1", "one over cap", "p", "45 * * * *", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(over, "awaiting the user's approval") {
+		t.Fatalf("beyond the active cap, proposals must fall back to approval: %q", over)
+	}
 }
 
 func TestExpiry_PausesVisibly(t *testing.T) {

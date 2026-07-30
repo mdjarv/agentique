@@ -50,6 +50,9 @@ UPDATE sessions SET worktree_base_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M
 -- name: UpdateSessionPRUrl :exec
 UPDATE sessions SET pr_url = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateSessionBehaviorPresets :exec
+UPDATE sessions SET behavior_presets = ? WHERE id = ?;
+
 -- name: RecoverStaleSessions :exec
 UPDATE sessions SET state = 'stopped', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 WHERE state IN ('running', 'merging');

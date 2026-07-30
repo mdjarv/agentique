@@ -146,6 +146,7 @@ type Querier interface {
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) error
 	UpdateScheduleNextRun(ctx context.Context, arg UpdateScheduleNextRunParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error
+	UpdateSessionBehaviorPresets(ctx context.Context, arg UpdateSessionBehaviorPresetsParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error

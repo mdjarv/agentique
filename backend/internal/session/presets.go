@@ -10,6 +10,12 @@ type BehaviorPresets struct {
 	PlanFirst          bool   `json:"planFirst"`
 	Terse              bool   `json:"terse"`
 	CustomInstructions string `json:"customInstructions,omitempty"`
+	// SelfSchedule is the standing consent for agent-created schedules on
+	// this session: ScheduleCreate proposals activate immediately instead of
+	// waiting for per-call approval (still self-target only, cadence-floored,
+	// and bounded by the active-schedule cap). Granted via "always allow" on
+	// the schedule approval banner.
+	SelfSchedule bool `json:"selfSchedule,omitempty"`
 }
 
 // DefaultPresets returns presets matching the previously hardcoded behavior:

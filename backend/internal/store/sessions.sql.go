@@ -444,6 +444,20 @@ func (q *Queries) UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSe
 	return err
 }
 
+const updateSessionBehaviorPresets = `-- name: UpdateSessionBehaviorPresets :exec
+UPDATE sessions SET behavior_presets = ? WHERE id = ?
+`
+
+type UpdateSessionBehaviorPresetsParams struct {
+	BehaviorPresets string `json:"behavior_presets"`
+	ID              string `json:"id"`
+}
+
+func (q *Queries) UpdateSessionBehaviorPresets(ctx context.Context, arg UpdateSessionBehaviorPresetsParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionBehaviorPresets, arg.BehaviorPresets, arg.ID)
+	return err
+}
+
 const updateSessionLastQueryAt = `-- name: UpdateSessionLastQueryAt :exec
 UPDATE sessions SET last_query_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

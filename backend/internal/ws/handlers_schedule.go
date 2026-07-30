@@ -95,12 +95,12 @@ func (c *conn) handleScheduleResume(msg ClientMessage) {
 }
 
 func (c *conn) handleScheduleApprove(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p ScheduleIDPayload) (schedule.ScheduleInfo, error) {
+	handleRequest(c, msg, func(ctx context.Context, p ScheduleApprovePayload) (schedule.ScheduleInfo, error) {
 		svc, err := c.requireScheduler()
 		if err != nil {
 			return schedule.ScheduleInfo{}, err
 		}
-		return svc.Approve(ctx, p.ID)
+		return svc.Approve(ctx, p.ID, p.AlwaysAllow)
 	})
 }
 

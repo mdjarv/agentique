@@ -2,12 +2,14 @@ package schedule
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/allbin/agentkit/sqliteops"
 	"strings"
 	"time"
 
+	"github.com/allbin/agentkit/sqliteops"
+	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -26,6 +28,10 @@ const (
 	// session — ScheduleCreate is auto-allowed, so an over-eager (or
 	// prompt-injected) agent must not be able to flood the approval queue.
 	maxPendingProposals = 3
+	// maxStandingActive bounds ENABLED schedules per session under standing
+	// consent (the selfSchedule behavior preset): beyond it, proposals fall
+	// back to the pending-approval flow instead of activating silently.
+	maxStandingActive = 5
 )
 
 func validateLengths(name, prompt, cron string) error {
@@ -427,7 +433,7 @@ func (s *Scheduler) Runs(ctx context.Context, scheduleID string, limit, offset i
 }
 
 // Approve enables an agent-created pending-approval schedule; Deny deletes it.
-func (s *Scheduler) Approve(ctx context.Context, id string) (ScheduleInfo, error) {
+func (s *Scheduler) Approve(ctx context.Context, id string, alwaysAllow bool) (ScheduleInfo, error) {
 	sched, err := s.q.GetSchedule(ctx, id)
 	if err != nil {
 		return ScheduleInfo{}, fmt.Errorf("schedule not found: %w", err)
@@ -435,7 +441,40 @@ func (s *Scheduler) Approve(ctx context.Context, id string) (ScheduleInfo, error
 	if sched.PauseReason != PausePendingApproval {
 		return ScheduleInfo{}, fmt.Errorf("%w: schedule is not awaiting approval", ErrValidation)
 	}
+	if alwaysAllow {
+		// Standing consent: future ScheduleCreate proposals from this session
+		// activate without per-call approval (bounded by maxStandingActive).
+		if err := s.grantSelfSchedule(ctx, sched.SessionID); err != nil {
+			return ScheduleInfo{}, err
+		}
+	}
 	return s.Resume(ctx, id)
+}
+
+// grantSelfSchedule persists the selfSchedule behavior preset on the session.
+func (s *Scheduler) grantSelfSchedule(ctx context.Context, sessionID string) error {
+	sess, err := s.q.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+	presets := session.ParsePresets(sess.BehaviorPresets)
+	if presets.SelfSchedule {
+		return nil
+	}
+	presets.SelfSchedule = true
+	raw, err := json.Marshal(presets)
+	if err != nil {
+		return fmt.Errorf("marshal presets: %w", err)
+	}
+	if err := sqliteops.RetryWrite(func() error {
+		return s.q.UpdateSessionBehaviorPresets(ctx, store.UpdateSessionBehaviorPresetsParams{
+			BehaviorPresets: string(raw),
+			ID:              sessionID,
+		})
+	}); err != nil {
+		return fmt.Errorf("persist standing consent: %w", err)
+	}
+	return nil
 }
 
 // AgentCreate is the ScheduleCreate MCP tool backend: a self-targeting,
@@ -449,16 +488,26 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 		return "", fmt.Errorf("session not found: %w", err)
 	}
 	// Flood guard: ScheduleCreate is auto-allowed, so bound how many
-	// unapproved proposals one session can stack up.
+	// unapproved proposals one session can stack up. Standing consent
+	// (the selfSchedule behavior preset, granted via "always allow" on the
+	// approval banner) skips per-call approval — bounded by its own cap on
+	// ACTIVE schedules so a runaway agent can't silently stack loops.
+	standing := session.ParsePresets(sess.BehaviorPresets).SelfSchedule
 	existing, err := s.q.ListSchedulesBySession(ctx, sessionID)
 	if err == nil {
-		pending := 0
+		pending, active := 0, 0
 		for _, sc := range existing {
 			if sc.PauseReason == PausePendingApproval {
 				pending++
 			}
+			if sc.Enabled != 0 {
+				active++
+			}
 		}
-		if pending >= maxPendingProposals {
+		if standing && active >= maxStandingActive {
+			standing = false // fall back to per-call approval beyond the cap
+		}
+		if !standing && pending >= maxPendingProposals {
 			return "", fmt.Errorf("%w: %d schedule proposals are already awaiting approval — ask the user to approve or deny them first", ErrValidation, pending)
 		}
 	}
@@ -471,10 +520,13 @@ func (s *Scheduler) AgentCreate(ctx context.Context, sessionID, name, prompt, cr
 		At:        at,
 		Dynamic:   dynamic,
 		CreatedBy: "agent",
-		Paused:    true,
+		Paused:    !standing,
 	})
 	if err != nil {
 		return "", err
+	}
+	if standing {
+		return fmt.Sprintf("Schedule %q created and ACTIVE (id %s) — this session has standing self-schedule consent. It fires per its cadence; the user manages it on /schedules.", info.Name, info.ID), nil
 	}
 	return fmt.Sprintf("Schedule %q created and awaiting the user's approval in the UI (id %s). It will not fire until approved — do not wait for it; mention it to the user and continue.", info.Name, info.ID), nil
 }
