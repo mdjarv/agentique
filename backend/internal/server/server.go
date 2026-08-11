@@ -201,6 +201,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		if cfg.Claude.AutoCompact != "" {
 			claudeOpts = append(claudeOpts, claudecli.WithAutoCompact(cfg.Claude.AutoCompact))
 		}
+		if cfg.Claude.ForwardSubagentText {
+			claudeOpts = append(claudeOpts, claudecli.WithForwardSubagentText())
+		}
 		connector = claudeadapter.NewConnector(claudeOpts...)
 		runner = session.RealBlockingRunner()
 	}

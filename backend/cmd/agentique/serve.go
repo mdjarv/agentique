@@ -406,6 +406,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			fileCfg.Claude.ExcludeDynamicSystemPromptSections,
 		),
 		AutoCompact: firstNonEmpty(os.Getenv("AGENTIQUE_CLAUDE_AUTOCOMPACT"), fileCfg.Claude.AutoCompact),
+		ForwardSubagentText: envBoolOr(
+			"AGENTIQUE_CLAUDE_FORWARD_SUBAGENT_TEXT",
+			fileCfg.Claude.ForwardSubagentText,
+		),
 	}
 	if err := claudeCfg.Validate(); err != nil {
 		slog.Error("invalid [claude] config", "error", err)

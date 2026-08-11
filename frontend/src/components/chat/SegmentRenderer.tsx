@@ -183,7 +183,10 @@ const ActivitySegmentView = memo(function ActivitySegmentView({
                 (item.taskEvents.some((e) => e.taskType === "local_workflow") ? (
                   <WorkflowActivity taskEvents={item.taskEvents} />
                 ) : (
-                  <SubagentActivity taskEvents={item.taskEvents} />
+                  <SubagentActivity
+                    taskEvents={item.taskEvents}
+                    subagentEvents={item.subagentEvents}
+                  />
                 ))}
             </div>
           ),

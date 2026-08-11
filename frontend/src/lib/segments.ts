@@ -20,7 +20,19 @@ const SUGGEST_SESSION_TOOL = "mcp__agentique__SuggestSessionPrompt";
 
 export type ActivityItem =
   | { kind: "thinking"; event: ThinkingEvent }
-  | { kind: "tool"; use: ToolUseEvent; result?: ToolResultEvent; taskEvents?: TaskEvent[] };
+  | {
+      kind: "tool";
+      use: ToolUseEvent;
+      result?: ToolResultEvent;
+      taskEvents?: TaskEvent[];
+      /**
+       * Events the subagent behind this tool call produced, forwarded by the
+       * CLI with parentToolUseId set ([claude] forward-subagent-text). They are
+       * kept off the main stream and rendered nested under the Task block — a
+       * subagent's narration is not the main agent's answer.
+       */
+      subagentEvents?: ChatEvent[];
+    };
 
 export interface ActivitySegment {
   kind: "activity";
@@ -138,6 +150,8 @@ export function buildSegments(
   // First pass: collect task events indexed by parent toolUseId,
   // and identify channel-send tool IDs so we can suppress their results.
   const taskEventsByToolUseId = new Map<string, TaskEvent[]>();
+  // Forwarded subagent output, bucketed by the Task tool call that spawned it.
+  const subagentEventsByParent = new Map<string, ChatEvent[]>();
   // Tool IDs whose tool_result we suppress because the tool_use is rendered as a
   // custom segment (channel send, session suggestion), not a generic tool block.
   const suppressedResultToolIds = new Set<string>();
@@ -156,6 +170,14 @@ export function buildSegments(
     ) {
       suppressedResultToolIds.add(event.toolId);
     }
+    if (event.parentToolUseId) {
+      let nested = subagentEventsByParent.get(event.parentToolUseId);
+      if (!nested) {
+        nested = [];
+        subagentEventsByParent.set(event.parentToolUseId, nested);
+      }
+      nested.push(event);
+    }
   }
 
   for (const event of events) {
@@ -165,6 +187,9 @@ export function buildSegments(
       continue;
     }
     if (kind === "skip") continue;
+    // Forwarded subagent output never joins the main stream — it is attached to
+    // the Task tool call below and rendered nested there.
+    if (event.parentToolUseId) continue;
 
     // Intercept channel SendMessage tool_use → channel_send segment
     if (event.type === "tool_use" && event.toolName === CHANNEL_SEND_TOOL) {
@@ -222,12 +247,14 @@ export function buildSegments(
       if (existing) {
         existing.use = event;
         existing.taskEvents ??= taskEventsByToolUseId.get(event.toolId);
+        existing.subagentEvents ??= subagentEventsByParent.get(event.toolId);
         continue;
       }
       const item: Extract<ActivityItem, { kind: "tool" }> = {
         kind: "tool",
         use: event,
         taskEvents: taskEventsByToolUseId.get(event.toolId),
+        subagentEvents: subagentEventsByParent.get(event.toolId),
       };
       toolItemsById.set(event.toolId, item);
       if (last?.kind === "activity") {

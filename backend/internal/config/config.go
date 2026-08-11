@@ -180,6 +180,12 @@ type ClaudeConfig struct {
 	// or a token count between 100000 and 1000000. "" (the default) leaves the
 	// CLI's own behavior alone. Env: AGENTIQUE_CLAUDE_AUTOCOMPACT.
 	AutoCompact string `toml:"autocompact"`
+	// ForwardSubagentText surfaces what subagents say, not just that they ran:
+	// the CLI forwards their text and thinking as ordinary events carrying
+	// ParentToolUseID, and the frontend nests those under the spawning Task
+	// block. Off by default because it is a real increase in event volume on
+	// subagent-heavy turns. Env: AGENTIQUE_CLAUDE_FORWARD_SUBAGENT_TEXT.
+	ForwardSubagentText bool `toml:"forward-subagent-text"`
 }
 
 // AutoCompactMin and AutoCompactMax bound the --autocompact token window the

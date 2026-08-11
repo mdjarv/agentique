@@ -1,10 +1,43 @@
-import { Bot, Check, Loader2 } from "lucide-react";
-import { memo } from "react";
+import { Bot, Check, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { memo, useState } from "react";
 import { ToolIcon } from "~/components/chat/ToolIcons";
-import type { TaskEvent } from "~/stores/chat-store";
+import type { ChatEvent, TaskEvent } from "~/stores/chat-store";
 
 interface SubagentActivityProps {
   taskEvents: TaskEvent[];
+  /**
+   * The subagent's own text/thinking/tool events, forwarded by the CLI when
+   * [claude] forward-subagent-text is on. Collapsed by default: the point of
+   * the card is the task's status, and a chatty subagent would otherwise bury
+   * the parent turn.
+   */
+  subagentEvents?: ChatEvent[];
+}
+
+/** One forwarded subagent event, rendered as a compact transcript line. */
+function NestedEventLine({ event }: { event: ChatEvent }) {
+  if (event.type === "text" || event.type === "thinking") {
+    return (
+      <div
+        className={
+          event.type === "thinking"
+            ? "whitespace-pre-wrap text-muted-foreground-faint italic"
+            : "whitespace-pre-wrap text-muted-foreground-dim"
+        }
+      >
+        {event.content}
+      </div>
+    );
+  }
+  if (event.type === "tool_use") {
+    return (
+      <div className="flex items-center gap-1.5 text-muted-foreground-faint min-w-0">
+        <ToolIcon name={event.toolName} />
+        <span className="truncate">{event.toolName}</span>
+      </div>
+    );
+  }
+  return null;
 }
 
 function formatDuration(ms: number): string {
@@ -14,7 +47,9 @@ function formatDuration(ms: number): string {
 
 export const SubagentActivity = memo(function SubagentActivity({
   taskEvents,
+  subagentEvents,
 }: SubagentActivityProps) {
+  const [expanded, setExpanded] = useState(false);
   const started = taskEvents.find((e) => e.taskSubtype === "task_started");
   const progress = taskEvents.findLast((e) => e.taskSubtype === "task_progress");
   const notification = taskEvents.find((e) => e.taskSubtype === "task_notification");
@@ -34,6 +69,10 @@ export const SubagentActivity = memo(function SubagentActivity({
   if (toolCount > 0) statusParts.push(`${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
   if (duration > 0) statusParts.push(formatDuration(duration));
   const statusLine = statusParts.join(", ");
+  // tool_result carries no standalone line — it is folded into its tool_use row.
+  const nested = (subagentEvents ?? []).filter(
+    (e) => e.type === "text" || e.type === "thinking" || e.type === "tool_use",
+  );
 
   return (
     <div className="ml-5 border-l-2 border-agent/20 pl-2.5">
@@ -64,6 +103,33 @@ export const SubagentActivity = memo(function SubagentActivity({
           <div className="border-t px-2 py-1.5 text-muted-foreground-dim whitespace-pre-wrap">
             {notification.taskSummary}
           </div>
+        )}
+
+        {nested.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1.5 w-full border-t px-2 py-1.5 text-muted-foreground-faint hover:text-muted-foreground hover:bg-muted/30 transition-colors cursor-pointer"
+            >
+              {expanded ? (
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              ) : (
+                <ChevronRight className="h-3 w-3 shrink-0" />
+              )}
+              <span>
+                {expanded ? "Hide" : "Show"} {nested.length} subagent{" "}
+                {nested.length === 1 ? "step" : "steps"}
+              </span>
+            </button>
+            {expanded && (
+              <div className="border-t px-2 py-1.5 space-y-1">
+                {nested.map((e) => (
+                  <NestedEventLine key={e.id} event={e} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

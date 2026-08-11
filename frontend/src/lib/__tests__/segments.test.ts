@@ -290,3 +290,53 @@ describe("buildTurnSections", () => {
     expect(sections[0]?.kind).toBe("agent");
   });
 });
+
+describe("buildSegments forwarded subagent events", () => {
+  const nested = (e: ChatEvent, parentToolUseId: string): ChatEvent => ({ ...e, parentToolUseId });
+
+  it("attaches parented events to their Task tool call instead of the main stream", () => {
+    const events: ChatEvent[] = [
+      text("Delegating the search."),
+      toolUse("task_1", "Agent", { prompt: "find the bug" }),
+      nested({ id: rid(), type: "thinking", content: "checking handlers" }, "task_1"),
+      nested({ id: rid(), type: "text", content: "Found it in wire.go" }, "task_1"),
+      nested(toolUse("sub_1", "Grep", { pattern: "classifyTool" }), "task_1"),
+      toolResult("task_1", "done"),
+      text("The subagent found it."),
+    ];
+
+    const { segments } = buildSegments(events, true);
+
+    // The parent's own turn reads exactly as it did before forwarding was on.
+    const texts = segments.filter((s) => s.kind === "text").map((s) => s.content);
+    expect(texts).toEqual(["Delegating the search.", "The subagent found it."]);
+
+    // Nothing nested leaked into the main activity stream.
+    const tools = toolItems(segments);
+    expect(tools.map((t) => t.use.toolId)).toEqual(["task_1"]);
+
+    // ...and all three landed on the Task call, in order.
+    const task = tools[0];
+    expect(task?.subagentEvents?.map((e) => e.type)).toEqual(["thinking", "text", "tool_use"]);
+  });
+
+  it("leaves subagentEvents undefined when nothing was forwarded", () => {
+    const { segments } = buildSegments(
+      [toolUse("task_1", "Agent", {}), toolResult("task_1", "ok")],
+      true,
+    );
+    expect(toolItems(segments)[0]?.subagentEvents).toBeUndefined();
+  });
+
+  it("attaches nested events when the parent tool_use arrives twice", () => {
+    // The dedupe path (codex pending → started) must not drop the bucket.
+    const events: ChatEvent[] = [
+      toolUse("task_1", "Agent", {}),
+      nested({ id: rid(), type: "text", content: "working" }, "task_1"),
+      toolUse("task_1", "Agent", { prompt: "full" }),
+    ];
+    const tools = toolItems(buildSegments(events, true).segments);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.subagentEvents).toHaveLength(1);
+  });
+});
