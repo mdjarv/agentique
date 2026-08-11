@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const certPath = path.resolve(__dirname, "../certs");
+const certPath = path.resolve(import.meta.dirname, "../certs");
 const useTls = process.env.VITE_TLS !== "false" && fs.existsSync(path.join(certPath, "server.crt"));
 
 // Backend port: default 9201 (local dev). Override via VITE_BACKEND_PORT (e.g.
@@ -100,7 +100,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "~": path.resolve(__dirname, "src"),
+      "~": path.resolve(import.meta.dirname, "src"),
     },
   },
   server: {

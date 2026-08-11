@@ -9,56 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
-import { Route as TemplatesRouteImport } from "./routes/templates";
-import { Route as TeamsRouteImport } from "./routes/teams";
-import { Route as StorageRouteImport } from "./routes/storage";
-import { Route as SchedulesRouteImport } from "./routes/schedules";
-import { Route as ProjectsRouteImport } from "./routes/projects";
-import { Route as DiscussionsRouteImport } from "./routes/discussions";
-import { Route as BrainRouteImport } from "./routes/brain";
 import { Route as IndexRouteImport } from "./routes/index";
-import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
-import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
-import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
-import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
+import { Route as BrainRouteImport } from "./routes/brain";
+import { Route as DiscussionsRouteImport } from "./routes/discussions";
+import { Route as ProjectsRouteImport } from "./routes/projects";
+import { Route as SchedulesRouteImport } from "./routes/schedules";
+import { Route as StorageRouteImport } from "./routes/storage";
+import { Route as TeamsRouteImport } from "./routes/teams";
+import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
+import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
+import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
+import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
+import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index";
-import { Route as TeamsPersonasNewRouteImport } from "./routes/teams_.personas.new";
-import { Route as TeamsPersonasProfileIdRouteImport } from "./routes/teams_.personas.$profileId";
-import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings";
 import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files";
-import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/project.$projectSlug.session.new";
-import { Route as ProjectProjectSlugSessionSessionShortIdRouteImport } from "./routes/project.$projectSlug.session.$sessionShortId";
+import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings";
+import { Route as TeamsPersonasProfileIdRouteImport } from "./routes/teams_.personas.$profileId";
+import { Route as TeamsPersonasNewRouteImport } from "./routes/teams_.personas.new";
 import { Route as ProjectProjectSlugChannelChannelIdRouteImport } from "./routes/project.$projectSlug.channel.$channelId";
+import { Route as ProjectProjectSlugSessionSessionShortIdRouteImport } from "./routes/project.$projectSlug.session.$sessionShortId";
+import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/project.$projectSlug.session.new";
 
-const TemplatesRoute = TemplatesRouteImport.update({
-  id: "/templates",
-  path: "/templates",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const TeamsRoute = TeamsRouteImport.update({
-  id: "/teams",
-  path: "/teams",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const StorageRoute = StorageRouteImport.update({
-  id: "/storage",
-  path: "/storage",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const SchedulesRoute = SchedulesRouteImport.update({
-  id: "/schedules",
-  path: "/schedules",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ProjectsRoute = ProjectsRouteImport.update({
-  id: "/projects",
-  path: "/projects",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const DiscussionsRoute = DiscussionsRouteImport.update({
-  id: "/discussions",
-  path: "/discussions",
+const IndexRoute = IndexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const BrainRoute = BrainRouteImport.update({
@@ -66,29 +41,34 @@ const BrainRoute = BrainRouteImport.update({
   path: "/brain",
   getParentRoute: () => rootRouteImport,
 } as any);
-const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+const DiscussionsRoute = DiscussionsRouteImport.update({
+  id: "/discussions",
+  path: "/discussions",
   getParentRoute: () => rootRouteImport,
 } as any);
-const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
-  id: "/project/$projectSlug",
-  path: "/project/$projectSlug",
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
   getParentRoute: () => rootRouteImport,
 } as any);
-const DiscussionsChannelIdRoute = DiscussionsChannelIdRouteImport.update({
-  id: "/discussions_/$channelId",
-  path: "/discussions/$channelId",
+const SchedulesRoute = SchedulesRouteImport.update({
+  id: "/schedules",
+  path: "/schedules",
   getParentRoute: () => rootRouteImport,
 } as any);
-const DevToolGroupsRoute = DevToolGroupsRouteImport.update({
-  id: "/dev/tool-groups",
-  path: "/dev/tool-groups",
+const StorageRoute = StorageRouteImport.update({
+  id: "/storage",
+  path: "/storage",
   getParentRoute: () => rootRouteImport,
 } as any);
-const DevContextBarRoute = DevContextBarRouteImport.update({
-  id: "/dev/context-bar",
-  path: "/dev/context-bar",
+const TeamsRoute = TeamsRouteImport.update({
+  id: "/teams",
+  path: "/teams",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: "/templates",
+  path: "/templates",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevBubblesRoute = DevBubblesRouteImport.update({
@@ -96,20 +76,35 @@ const DevBubblesRoute = DevBubblesRouteImport.update({
   path: "/dev/bubbles",
   getParentRoute: () => rootRouteImport,
 } as any);
+const DevContextBarRoute = DevContextBarRouteImport.update({
+  id: "/dev/context-bar",
+  path: "/dev/context-bar",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevToolGroupsRoute = DevToolGroupsRouteImport.update({
+  id: "/dev/tool-groups",
+  path: "/dev/tool-groups",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DiscussionsChannelIdRoute = DiscussionsChannelIdRouteImport.update({
+  id: "/discussions_/$channelId",
+  path: "/discussions/$channelId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
+  id: "/project/$projectSlug",
+  path: "/project/$projectSlug",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => ProjectProjectSlugRoute,
 } as any);
-const TeamsPersonasNewRoute = TeamsPersonasNewRouteImport.update({
-  id: "/teams_/personas/new",
-  path: "/teams/personas/new",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const TeamsPersonasProfileIdRoute = TeamsPersonasProfileIdRouteImport.update({
-  id: "/teams_/personas/$profileId",
-  path: "/teams/personas/$profileId",
-  getParentRoute: () => rootRouteImport,
+const ProjectProjectSlugFilesRoute = ProjectProjectSlugFilesRouteImport.update({
+  id: "/files",
+  path: "/files",
+  getParentRoute: () => ProjectProjectSlugRoute,
 } as any);
 const ProjectProjectSlugSettingsRoute =
   ProjectProjectSlugSettingsRouteImport.update({
@@ -117,15 +112,20 @@ const ProjectProjectSlugSettingsRoute =
     path: "/project/$projectSlug/settings",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ProjectProjectSlugFilesRoute = ProjectProjectSlugFilesRouteImport.update({
-  id: "/files",
-  path: "/files",
-  getParentRoute: () => ProjectProjectSlugRoute,
+const TeamsPersonasProfileIdRoute = TeamsPersonasProfileIdRouteImport.update({
+  id: "/teams_/personas/$profileId",
+  path: "/teams/personas/$profileId",
+  getParentRoute: () => rootRouteImport,
 } as any);
-const ProjectProjectSlugSessionNewRoute =
-  ProjectProjectSlugSessionNewRouteImport.update({
-    id: "/session/new",
-    path: "/session/new",
+const TeamsPersonasNewRoute = TeamsPersonasNewRouteImport.update({
+  id: "/teams_/personas/new",
+  path: "/teams/personas/new",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ProjectProjectSlugChannelChannelIdRoute =
+  ProjectProjectSlugChannelChannelIdRouteImport.update({
+    id: "/channel/$channelId",
+    path: "/channel/$channelId",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any);
 const ProjectProjectSlugSessionSessionShortIdRoute =
@@ -134,10 +134,10 @@ const ProjectProjectSlugSessionSessionShortIdRoute =
     path: "/session/$sessionShortId",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any);
-const ProjectProjectSlugChannelChannelIdRoute =
-  ProjectProjectSlugChannelChannelIdRouteImport.update({
-    id: "/channel/$channelId",
-    path: "/channel/$channelId",
+const ProjectProjectSlugSessionNewRoute =
+  ProjectProjectSlugSessionNewRouteImport.update({
+    id: "/session/new",
+    path: "/session/new",
     getParentRoute: () => ProjectProjectSlugRoute,
   } as any);
 
@@ -302,46 +302,11 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/templates": {
-      id: "/templates";
-      path: "/templates";
-      fullPath: "/templates";
-      preLoaderRoute: typeof TemplatesRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/teams": {
-      id: "/teams";
-      path: "/teams";
-      fullPath: "/teams";
-      preLoaderRoute: typeof TeamsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/storage": {
-      id: "/storage";
-      path: "/storage";
-      fullPath: "/storage";
-      preLoaderRoute: typeof StorageRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/schedules": {
-      id: "/schedules";
-      path: "/schedules";
-      fullPath: "/schedules";
-      preLoaderRoute: typeof SchedulesRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/projects": {
-      id: "/projects";
-      path: "/projects";
-      fullPath: "/projects";
-      preLoaderRoute: typeof ProjectsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/discussions": {
-      id: "/discussions";
-      path: "/discussions";
-      fullPath: "/discussions";
-      preLoaderRoute: typeof DiscussionsRouteImport;
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/brain": {
@@ -351,39 +316,46 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof BrainRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
+    "/discussions": {
+      id: "/discussions";
+      path: "/discussions";
+      fullPath: "/discussions";
+      preLoaderRoute: typeof DiscussionsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/project/$projectSlug": {
-      id: "/project/$projectSlug";
-      path: "/project/$projectSlug";
-      fullPath: "/project/$projectSlug";
-      preLoaderRoute: typeof ProjectProjectSlugRouteImport;
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof ProjectsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/discussions_/$channelId": {
-      id: "/discussions_/$channelId";
-      path: "/discussions/$channelId";
-      fullPath: "/discussions/$channelId";
-      preLoaderRoute: typeof DiscussionsChannelIdRouteImport;
+    "/schedules": {
+      id: "/schedules";
+      path: "/schedules";
+      fullPath: "/schedules";
+      preLoaderRoute: typeof SchedulesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/dev/tool-groups": {
-      id: "/dev/tool-groups";
-      path: "/dev/tool-groups";
-      fullPath: "/dev/tool-groups";
-      preLoaderRoute: typeof DevToolGroupsRouteImport;
+    "/storage": {
+      id: "/storage";
+      path: "/storage";
+      fullPath: "/storage";
+      preLoaderRoute: typeof StorageRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/dev/context-bar": {
-      id: "/dev/context-bar";
-      path: "/dev/context-bar";
-      fullPath: "/dev/context-bar";
-      preLoaderRoute: typeof DevContextBarRouteImport;
+    "/teams": {
+      id: "/teams";
+      path: "/teams";
+      fullPath: "/teams";
+      preLoaderRoute: typeof TeamsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/templates": {
+      id: "/templates";
+      path: "/templates";
+      fullPath: "/templates";
+      preLoaderRoute: typeof TemplatesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/bubbles": {
@@ -393,6 +365,34 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof DevBubblesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/dev/context-bar": {
+      id: "/dev/context-bar";
+      path: "/dev/context-bar";
+      fullPath: "/dev/context-bar";
+      preLoaderRoute: typeof DevContextBarRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/tool-groups": {
+      id: "/dev/tool-groups";
+      path: "/dev/tool-groups";
+      fullPath: "/dev/tool-groups";
+      preLoaderRoute: typeof DevToolGroupsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/discussions_/$channelId": {
+      id: "/discussions_/$channelId";
+      path: "/discussions/$channelId";
+      fullPath: "/discussions/$channelId";
+      preLoaderRoute: typeof DiscussionsChannelIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/project/$projectSlug": {
+      id: "/project/$projectSlug";
+      path: "/project/$projectSlug";
+      fullPath: "/project/$projectSlug";
+      preLoaderRoute: typeof ProjectProjectSlugRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/project/$projectSlug/": {
       id: "/project/$projectSlug/";
       path: "/";
@@ -400,11 +400,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectProjectSlugIndexRouteImport;
       parentRoute: typeof ProjectProjectSlugRoute;
     };
-    "/teams_/personas/new": {
-      id: "/teams_/personas/new";
-      path: "/teams/personas/new";
-      fullPath: "/teams/personas/new";
-      preLoaderRoute: typeof TeamsPersonasNewRouteImport;
+    "/project/$projectSlug/files": {
+      id: "/project/$projectSlug/files";
+      path: "/files";
+      fullPath: "/project/$projectSlug/files";
+      preLoaderRoute: typeof ProjectProjectSlugFilesRouteImport;
+      parentRoute: typeof ProjectProjectSlugRoute;
+    };
+    "/project/$projectSlug_/settings": {
+      id: "/project/$projectSlug_/settings";
+      path: "/project/$projectSlug/settings";
+      fullPath: "/project/$projectSlug/settings";
+      preLoaderRoute: typeof ProjectProjectSlugSettingsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/teams_/personas/$profileId": {
@@ -414,25 +421,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof TeamsPersonasProfileIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/project/$projectSlug_/settings": {
-      id: "/project/$projectSlug_/settings";
-      path: "/project/$projectSlug/settings";
-      fullPath: "/project/$projectSlug/settings";
-      preLoaderRoute: typeof ProjectProjectSlugSettingsRouteImport;
+    "/teams_/personas/new": {
+      id: "/teams_/personas/new";
+      path: "/teams/personas/new";
+      fullPath: "/teams/personas/new";
+      preLoaderRoute: typeof TeamsPersonasNewRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/project/$projectSlug/files": {
-      id: "/project/$projectSlug/files";
-      path: "/files";
-      fullPath: "/project/$projectSlug/files";
-      preLoaderRoute: typeof ProjectProjectSlugFilesRouteImport;
-      parentRoute: typeof ProjectProjectSlugRoute;
-    };
-    "/project/$projectSlug/session/new": {
-      id: "/project/$projectSlug/session/new";
-      path: "/session/new";
-      fullPath: "/project/$projectSlug/session/new";
-      preLoaderRoute: typeof ProjectProjectSlugSessionNewRouteImport;
+    "/project/$projectSlug/channel/$channelId": {
+      id: "/project/$projectSlug/channel/$channelId";
+      path: "/channel/$channelId";
+      fullPath: "/project/$projectSlug/channel/$channelId";
+      preLoaderRoute: typeof ProjectProjectSlugChannelChannelIdRouteImport;
       parentRoute: typeof ProjectProjectSlugRoute;
     };
     "/project/$projectSlug/session/$sessionShortId": {
@@ -442,11 +442,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectProjectSlugSessionSessionShortIdRouteImport;
       parentRoute: typeof ProjectProjectSlugRoute;
     };
-    "/project/$projectSlug/channel/$channelId": {
-      id: "/project/$projectSlug/channel/$channelId";
-      path: "/channel/$channelId";
-      fullPath: "/project/$projectSlug/channel/$channelId";
-      preLoaderRoute: typeof ProjectProjectSlugChannelChannelIdRouteImport;
+    "/project/$projectSlug/session/new": {
+      id: "/project/$projectSlug/session/new";
+      path: "/session/new";
+      fullPath: "/project/$projectSlug/session/new";
+      preLoaderRoute: typeof ProjectProjectSlugSessionNewRouteImport;
       parentRoute: typeof ProjectProjectSlugRoute;
     };
   }

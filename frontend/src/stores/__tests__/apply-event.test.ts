@@ -148,22 +148,24 @@ describe("applyServerEvent — streaming buffer", () => {
     const res = applyServerEvent(session, text("b"), true);
     expect(res?.patch.turns).toBeUndefined(); // turns untouched while streaming
     expect(res?.patch.streamingEvents).toHaveLength(2);
-    expect((res?.patch.streamingEvents?.[1] as { content: string }).content).toBe("b");
+    expect((res?.patch.streamingEvents?.[1] as { content: string } | undefined)?.content).toBe("b");
   });
 
   it("stamps a user_message with deliveryStatus=sending (or queued when queued)", () => {
     const session = makeSession({ turns: [makeTurn()] });
     const sending = applyServerEvent(session, userMsg({ messageId: "m1", content: "x" }), true);
-    expect((sending?.patch.streamingEvents?.[0] as UserMessageEvent).deliveryStatus).toBe(
-      "sending",
-    );
+    expect(
+      (sending?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus,
+    ).toBe("sending");
 
     const queued = applyServerEvent(
       session,
       userMsg({ messageId: "m2", content: "x", queued: true }),
       true,
     );
-    expect((queued?.patch.streamingEvents?.[0] as UserMessageEvent).deliveryStatus).toBe("queued");
+    expect(
+      (queued?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus,
+    ).toBe("queued");
   });
 
   it("upserts task_progress in place by toolUseId instead of duplicating", () => {
@@ -173,7 +175,9 @@ describe("applyServerEvent — streaming buffer", () => {
     });
     const res = applyServerEvent(session, taskProgress("t1", "second"), true);
     expect(res?.patch.streamingEvents).toHaveLength(1);
-    expect((res?.patch.streamingEvents?.[0] as { taskSummary: string }).taskSummary).toBe("second");
+    expect(
+      (res?.patch.streamingEvents?.[0] as { taskSummary: string } | undefined)?.taskSummary,
+    ).toBe("second");
   });
 
   it("appends task_progress for a new toolUseId", () => {
@@ -219,7 +223,7 @@ describe("applyServerEvent — result merge", () => {
     expect(res?.patch.turns?.[0]?.events.map((e) => e.type)).toEqual(["text", "result"]);
     // ...but the queued message survives for the next (replayed) turn.
     expect(res?.patch.streamingEvents).toHaveLength(1);
-    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent).messageId).toBe("q1");
+    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.messageId).toBe("q1");
   });
 
   it("sets hasUnseenCompletion only when the session is not being viewed", () => {
@@ -282,7 +286,9 @@ describe("applyServerEvent — message_delivery acks", () => {
       { id: rid(), type: "message_delivery", messageId: "m1" },
       true,
     );
-    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent).deliveryStatus).toBe("delivered");
+    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus).toBe(
+      "delivered",
+    );
     expect(res?.patch.turns).toBeUndefined();
   });
 
@@ -295,7 +301,9 @@ describe("applyServerEvent — message_delivery acks", () => {
       { id: rid(), type: "message_delivery", messageId: "m2" },
       true,
     );
-    expect((res?.patch.turns?.[0]?.events[0] as UserMessageEvent).deliveryStatus).toBe("delivered");
+    expect((res?.patch.turns?.[0]?.events[0] as UserMessageEvent | undefined)?.deliveryStatus).toBe(
+      "delivered",
+    );
     expect(res?.patch.streamingEvents).toBeUndefined();
   });
 
