@@ -1,24 +1,46 @@
-import { test, expect } from "@playwright/test";
-import fs from "fs";
-import os from "os";
-import path from "path";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { expect, test } from "@playwright/test";
+
+// Smoke coverage for the app shell and project CRUD — the parts the hybrid
+// suite does not touch, since it seeds projects through the test API instead of
+// the UI. Tests share one server and run in order: the project created below is
+// the subject of the later tests and is deleted by the last one.
+
+const NEW_PROJECT_NAME = "Test Project";
+
+/**
+ * Open a project and return its slug. Navigation goes through the dashboard's
+ * project link: the sidebar's project name is a toggle for the session list,
+ * not a router link.
+ */
+async function openProject(page: import("@playwright/test").Page, name: string): Promise<string> {
+  await page.goto("/");
+  await page.getByRole("link", { name: new RegExp(`^${name}\\b`) }).click();
+  await expect(page).toHaveURL(/\/project\//);
+  return new URL(page.url()).pathname.split("/")[2] as string;
+}
 
 test.describe("App loads", () => {
   test("shows sidebar with Agentique title", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Agentique", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Agentique", exact: true })).toBeVisible();
   });
 
-  test("shows empty state message", async ({ page }) => {
+  test("root route shows the sessions dashboard", async ({ page }) => {
     await page.goto("/");
-    await expect(
-      page.getByText("Select a project or create one to get started"),
-    ).toBeVisible();
+    // "/" is a dashboard, not an empty state: it summarises projects and
+    // sessions even before anything is running.
+    const main = page.getByRole("main");
+    await expect(main.getByRole("heading", { name: "Sessions", level: 1 })).toBeVisible();
+    await expect(main.getByText("Needs attention")).toBeVisible();
   });
 
-  test("shows New Project button", async ({ page }) => {
+  test("shows the new-project button", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("New Project")).toBeVisible();
+    // Icon-only button — identified by its accessible name, not by its text.
+    await expect(page.getByRole("button", { name: "New project" })).toBeVisible();
   });
 });
 
@@ -34,128 +56,91 @@ test.describe("Health check", () => {
 test.describe("Project management", () => {
   test("starts with default project from cwd", async ({ page }) => {
     await page.goto("/");
-    // Default project is auto-created from cwd on first launch
-    await expect(page.getByText("agentique", { exact: true })).toBeVisible();
+    // Default project is auto-created from cwd on first launch.
+    await expect(page.getByText("agentique", { exact: true }).first()).toBeVisible();
   });
 
   test("can create a project via the dialog", async ({ page }) => {
     await page.goto("/");
 
-    // Open the new project dialog
-    await page.getByText("New Project").click();
-    await expect(page.getByText("Create New Project")).toBeVisible();
+    await page.getByRole("button", { name: "New project" }).click();
+    await expect(page.getByRole("heading", { name: "Create New Project" })).toBeVisible();
 
-    // Create button should be disabled without a path
-    await expect(page.getByRole("button", { name: "Create" })).toBeDisabled();
+    // Create button should be disabled without a path.
+    await expect(page.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
 
-    // Fill in the directory -- name should auto-fill from path
+    // Fill in the directory — name auto-fills from the path.
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentique-test-"));
     await page.getByLabel("Directory").fill(tempDir);
 
-    // Override the auto-filled name
-    await page.getByLabel("Name").fill("Test Project");
+    // Override the auto-filled name.
+    await page.getByLabel("Name").fill(NEW_PROJECT_NAME);
 
-    // Create button should now be enabled
-    await expect(page.getByRole("button", { name: "Create" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Create", exact: true }).click();
 
-    // Submit
-    await page.getByRole("button", { name: "Create" }).click();
+    // Dialog closes and the project appears in the sidebar.
+    await expect(page.getByText(NEW_PROJECT_NAME).first()).toBeVisible();
 
-    // Dialog should close and project should appear in sidebar
-    await expect(page.getByText("Test Project")).toBeVisible();
-
-    // Should navigate to the project's chat view with message composer
-    await expect(page.getByPlaceholder("Send a message...")).toBeVisible();
-
-    // Clean up temp dir
     fs.rmdirSync(tempDir);
   });
 
   test("project appears in sidebar after creation", async ({ page }) => {
     await page.goto("/");
-
-    // The project created in the previous test persists via SQLite
-    await expect(page.getByText("Test Project")).toBeVisible({ timeout: 5000 });
+    // The project created in the previous test persists via SQLite.
+    await expect(page.getByText(NEW_PROJECT_NAME).first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("can click a project to see chat panel", async ({ page }) => {
-    await page.goto("/");
+  test("clicking a project opens its overview", async ({ page }) => {
+    await openProject(page, NEW_PROJECT_NAME);
 
-    // Wait for project list to load and click the project
-    await page.getByText("Test Project").click();
-
-    // Verify chat panel components render
-    await expect(page.getByPlaceholder("Send a message...")).toBeVisible();
+    // A project with no sessions lands on the project overview, not a chat —
+    // the composer lives on a session route.
+    await expect(page.getByRole("main").getByText(NEW_PROJECT_NAME).first()).toBeVisible();
   });
 });
 
 test.describe("Chat UI", () => {
-  test("shows empty chat state", async ({ page }) => {
-    await page.goto("/");
-    await page.getByText("Test Project").click();
-
-    // Should show "Send a message to start chatting" empty state
-    await expect(page.getByText("Send a message to start chatting")).toBeVisible();
-  });
-
-  test("message composer is visible and enabled", async ({ page }) => {
-    await page.goto("/");
-    await page.getByText("Test Project").click();
+  test("new-session route shows an enabled composer", async ({ page }) => {
+    const slug = await openProject(page, NEW_PROJECT_NAME);
+    await page.goto(`/project/${slug}/session/new`);
 
     const textarea = page.getByPlaceholder("Send a message...");
     await expect(textarea).toBeVisible();
-    // Composer should not be disabled (it's only disabled while running)
+    // Only disabled while a turn is running.
     await expect(textarea).not.toBeDisabled();
-  });
-
-  test("new session button visible on project hover", async ({ page }) => {
-    await page.goto("/");
-
-    // Hover over the Test Project to reveal new session button
-    const projectItem = page.getByText("Test Project").first();
-    await projectItem.hover();
-
-    await expect(page.getByLabel("New session").first()).toBeVisible();
   });
 });
 
 test.describe("SPA routing", () => {
   test("handles direct navigation to project route", async ({ page }) => {
-    // Navigate directly to a project URL -- should not 404
+    // Navigate directly to a project URL — should not 404.
     await page.goto("/project/nonexistent-id");
-
-    // The SPA should load (sidebar should be visible)
-    await expect(page.getByText("Agentique", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Agentique", exact: true })).toBeVisible();
   });
 
   test("handles page refresh on project route", async ({ page }) => {
-    await page.goto("/");
-    await page.getByText("Test Project").click();
-
-    // Reload the page
+    await openProject(page, NEW_PROJECT_NAME);
     await page.reload();
-
-    // SPA should re-render correctly
-    await expect(page.getByText("Agentique", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Agentique", exact: true })).toBeVisible();
   });
 });
 
 test.describe("Delete project", () => {
-  test("can delete a project from the sidebar", async ({ page }) => {
-    await page.goto("/");
+  test("can delete a project from its settings page", async ({ page }) => {
+    const slug = await openProject(page, NEW_PROJECT_NAME);
 
-    // Wait for the project to appear
-    await expect(page.getByText("Test Project")).toBeVisible();
+    // Deleting moved out of the sidebar hover row and behind project settings,
+    // where it is confirmed by a dialog.
+    await page.goto(`/project/${slug}/settings`);
 
-    // Hover over the project to reveal the delete button
-    const projectItem = page.getByText("Test Project").first();
-    await projectItem.hover();
+    await page.getByRole("button", { name: "Delete project" }).click();
+    await expect(page.getByRole("heading", { name: "Delete project" })).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Delete/ })
+      .last()
+      .click();
 
-    // Click the delete button scoped to Test Project row
-    const projectRow = page.getByText("Test Project").first().locator("..").locator("..");
-    await projectRow.getByLabel("Delete project").click({ force: true });
-
-    // Test Project should be gone (default project may still exist)
-    await expect(page.getByText("Test Project")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(NEW_PROJECT_NAME)).toHaveCount(0, { timeout: 5000 });
   });
 });

@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { compactChatSeed, resetFixture, seedFixture, COMPACT_SESSION_ID } from "./fixtures";
+import { expect, test } from "@playwright/test";
+import { COMPACT_SESSION_ID, compactChatSeed, resetFixture, seedFixture } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
 
 test.beforeEach(async ({ request }) => {

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { resetFixture, seedFixture } from "./fixtures";
 import type { SeedRequest } from "./fixtures";
+import { resetFixture, seedFixture } from "./fixtures";
 
 const FB_PROJECT_ID = "eee00010-0000-4000-8000-000000000010";
 
@@ -20,18 +20,12 @@ test.beforeEach(async ({ request }) => {
   fs.mkdirSync(path.join(tempDir, ".git")); // should be hidden
 
   // Files
-  fs.writeFileSync(
-    path.join(tempDir, "README.md"),
-    "# Test Project\n\nHello world.",
-  );
+  fs.writeFileSync(path.join(tempDir, "README.md"), "# Test Project\n\nHello world.");
   fs.writeFileSync(
     path.join(tempDir, "main.go"),
     'package main\n\nfunc main() {\n\tfmt.Println("hi")\n}',
   );
-  fs.writeFileSync(
-    path.join(tempDir, "src", "app.ts"),
-    'export const greeting = "hello";',
-  );
+  fs.writeFileSync(path.join(tempDir, "src", "app.ts"), 'export const greeting = "hello";');
 
   const seed: SeedRequest = {
     projects: [
@@ -129,9 +123,7 @@ test("file browser: deep link to file via URL", async ({ page }) => {
   });
 });
 
-test("file browser: mobile back button navigates from preview to list", async ({
-  page,
-}) => {
+test("file browser: mobile back button navigates from preview to list", async ({ page }) => {
   // Set mobile viewport.
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto("/project/file-browser-test/files");

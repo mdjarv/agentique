@@ -6,9 +6,19 @@ const isWindows = process.platform === "win32";
 const binaryName = isWindows ? "agentique.exe" : "agentique";
 const binaryPath = path.resolve(import.meta.dirname, "..", binaryName);
 
-// Data dir for the run. Must exist before the server starts — the storage
-// endpoint statfs's it and 500s on a missing directory.
-const dataDir = path.resolve(import.meta.dirname, "..", "tmp", "e2e-home");
+// Data dir + DB for the run, wiped first so every run is a fresh install.
+// app.spec.ts asserts first-launch behaviour (the default project created from
+// cwd), and without the wipe each run also inherits the previous run's
+// projects — the paths are fixed, so state accumulates silently. The dir must
+// then exist before the server starts: the storage endpoint statfs's it and
+// 500s on a missing directory.
+const tmpDir = path.resolve(import.meta.dirname, "..", "tmp");
+const dataDir = path.join(tmpDir, "e2e-home");
+const dbPath = path.join(tmpDir, "test-e2e.db");
+fs.rmSync(dataDir, { recursive: true, force: true });
+for (const suffix of ["", "-shm", "-wal"]) {
+  fs.rmSync(`${dbPath}${suffix}`, { force: true });
+}
 fs.mkdirSync(dataDir, { recursive: true });
 
 export default defineConfig({
@@ -43,7 +53,7 @@ export default defineConfig({
     env: {
       ...process.env,
       AGENTIQUE_HOME: dataDir,
-      AGENTIQUE_DB: path.resolve(import.meta.dirname, "..", "tmp", "test-e2e.db"),
+      AGENTIQUE_DB: dbPath,
     },
   },
 });

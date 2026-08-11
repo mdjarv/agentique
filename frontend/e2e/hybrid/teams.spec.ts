@@ -1,20 +1,25 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
+  immediate,
+  resetFixture,
+  result,
   type Scenario,
   type SeedRequest,
+  seedFixture,
   TEST_PROJECT,
   TEST_PROJECT_ID,
   text,
   thinking,
-  toolUse,
   toolResult,
-  result,
+  toolUse,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
 } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
+
+// Teams were renamed to channels, and the per-session "Team" tab was removed —
+// channel state now shows up in the session action menu (Create/Join flips to
+// Leave once you are in one), on the /teams page, and as messages delivered
+// into the recipient session's own chat. These specs follow that UI.
 
 // --- Constants ---
 
@@ -22,7 +27,8 @@ const SESSION_1_ID = "eee00070-0000-4000-8000-000000000070";
 const SESSION_2_ID = "eee00071-0000-4000-8000-000000000071";
 const SESSION_1_NAME = "Lead Agent";
 const SESSION_2_NAME = "Worker Agent";
-const TEAM_NAME = "Alpha Squad";
+const CHANNEL_NAME = "Alpha Squad";
+const DELEGATED_WORK = "Please write tests for the main function in src/app.ts";
 
 // --- Scenarios ---
 
@@ -39,9 +45,13 @@ const SCENARIO_SEND_MESSAGE: Scenario = {
     withDelay(20, text("Delegating test writing to Worker Agent.")),
     withDelay(
       30,
-      toolUse("team-send-001", "SendMessage", {
+      // Must be the MCP-qualified name. The pipeline routes on
+      // AgentiqueSendMessageTool / ChannelSendMessageTool
+      // ("mcp__agentique__SendMessage", "mcp__agentique-channel__SendMessage");
+      // a bare "SendMessage" renders as a tool call and routes nothing.
+      toolUse("team-send-001", "mcp__agentique__SendMessage", {
         to: SESSION_2_NAME,
-        content: "Please write tests for the main function in src/app.ts",
+        content: DELEGATED_WORK,
       }),
     ),
     withDelay(20, toolResult("team-send-001", "Message sent to Worker Agent")),
@@ -72,7 +82,11 @@ function teamSeed(): SeedRequest {
         workDir: "/tmp/fixture-project",
         live: true,
         behavior: [SCENARIO_SEND_MESSAGE],
-        autoApproveMode: "auto",
+        // fullAuto, not auto: mcp__ tools classify as "mcp", which is not in
+        // autoSafeCategories, so under auto the replay parks on an approval
+        // banner and never reaches the delegation. Permission behaviour is
+        // covered in permissions.spec.ts; this file is about routing.
+        autoApproveMode: "fullAuto",
       },
       {
         id: SESSION_2_ID,
@@ -91,37 +105,68 @@ function teamSeed(): SeedRequest {
 
 /** Open the session header overflow menu (MoreHorizontal button). */
 async function openOverflowMenu(page: Page) {
-  // The overflow trigger is the last button in the header actions (no accessible name, just an icon).
   const header = page.locator("header");
-  // Wait for header to render.
   await expect(header).toBeVisible({ timeout: 5_000 });
-  // The overflow button is in the right-side group, after "Mark done".
-  // Use a CSS class-based selector since the button has no accessible name.
+  // The overflow trigger is the last button in the header actions and carries
+  // no accessible name, just an icon. Retry the click: the trigger toggles, so
+  // a click that lands while a previous menu is still closing shuts it again.
   const trigger = header.locator("button").last();
-  await trigger.click();
+  const items = page.getByRole("menuitem");
+  await expect(async () => {
+    if ((await items.count()) === 0) {
+      await trigger.click();
+    }
+    await expect(items.first()).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
 }
 
-/** Create a team from the currently active session. */
-async function createTeamFromUI(page: Page, name: string, role = "") {
+/** Create a channel from the currently active session. */
+async function createChannelFromUI(page: Page, name: string, role = "") {
   await openOverflowMenu(page);
-  await page.getByText("Create team...").click();
-  await page.getByPlaceholder("Team name").fill(name);
+  await page.getByRole("menuitem", { name: "Create channel..." }).click();
+  await page.getByPlaceholder("Channel name").fill(name);
   if (role) {
     await page.getByPlaceholder("Your role (optional)").fill(role);
   }
   await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByText("Team created")).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("Channel created")).toBeVisible({ timeout: 5_000 });
 }
 
-/** Join an existing team from the currently active session. */
-async function joinTeamFromUI(page: Page, role = "") {
+/** Join an existing channel from the currently active session. */
+async function joinChannelFromUI(page: Page, role = "") {
   await openOverflowMenu(page);
-  await page.getByText("Join team...").click();
+  await page.getByRole("menuitem", { name: "Join channel..." }).click();
   if (role) {
     await page.getByPlaceholder("Your role (optional)").fill(role);
   }
   await page.getByRole("button", { name: "Join" }).click();
-  await expect(page.getByText("Joined team")).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("Joined channel")).toBeVisible({ timeout: 5_000 });
+}
+
+/** Dismiss the overflow menu and wait for it to actually be gone. */
+async function closeOverflowMenu(page: Page) {
+  await page.keyboard.press("Escape");
+  // Without waiting for the close, the next openOverflowMenu click lands on a
+  // still-open menu and toggles it shut instead of reopening it.
+  await expect(page.getByRole("menuitem").first()).toHaveCount(0, { timeout: 5_000 });
+}
+
+/**
+ * Assert whether the active session is in a channel. The action menu is the
+ * observable: membership replaces Create/Join with Leave.
+ */
+async function expectChannelMembership(page: Page, member: boolean) {
+  await openOverflowMenu(page);
+  const leave = page.getByRole("menuitem", { name: "Leave channel" });
+  const create = page.getByRole("menuitem", { name: "Create channel..." });
+  if (member) {
+    await expect(leave).toBeVisible({ timeout: 5_000 });
+    await expect(create).toHaveCount(0);
+  } else {
+    await expect(create).toBeVisible({ timeout: 5_000 });
+    await expect(leave).toHaveCount(0);
+  }
+  await closeOverflowMenu(page);
 }
 
 // --- Tests ---
@@ -130,126 +175,90 @@ test.beforeEach(async ({ request }) => {
   await resetFixture(request);
 });
 
-test.describe("Team lifecycle", () => {
-  test("create team and join session via UI", async ({ page, request }) => {
+test.describe("Channel lifecycle", () => {
+  test("create channel from a session", async ({ page, request }) => {
     await seedFixture(request, teamSeed());
     await navigateToSession(page, SESSION_1_NAME);
 
-    await createTeamFromUI(page, TEAM_NAME, "lead");
+    await createChannelFromUI(page, CHANNEL_NAME, "lead");
 
-    // Team tab should now be visible.
-    await expect(page.getByRole("button", { name: "Team", exact: true })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expectChannelMembership(page, true);
   });
 
-  test("second session can join existing team", async ({ page, request }) => {
+  test("second session can join existing channel", async ({ page, request }) => {
     await seedFixture(request, teamSeed());
 
-    // Session 1 creates the team.
     await navigateToSession(page, SESSION_1_NAME);
-    await createTeamFromUI(page, TEAM_NAME, "lead");
+    await createChannelFromUI(page, CHANNEL_NAME, "lead");
 
-    // Navigate to session 2 and join.
     await navigateToSession(page, SESSION_2_NAME);
-    await joinTeamFromUI(page, "worker");
+    await joinChannelFromUI(page, "worker");
 
-    // Team tab should appear.
-    await expect(page.getByRole("button", { name: "Team", exact: true })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expectChannelMembership(page, true);
   });
 
-  test("team view shows all members with correct state", async ({ page, request }) => {
+  test("channel creator is marked as lead once a worker joins", async ({ page, request }) => {
     await seedFixture(request, teamSeed());
 
-    // Create team and join both sessions.
     await navigateToSession(page, SESSION_1_NAME);
-    await createTeamFromUI(page, TEAM_NAME, "lead");
+    await createChannelFromUI(page, CHANNEL_NAME, "lead");
     await navigateToSession(page, SESSION_2_NAME);
-    await joinTeamFromUI(page, "worker");
+    await joinChannelFromUI(page, "worker");
 
-    // Open Team tab.
-    await page.getByRole("button", { name: "Team", exact: true }).click();
+    // The project sidebar does not group by channel — membership surfaces as a
+    // worker-count badge on the creator's row. (The channel-grouped sidebar is
+    // the /teams variant, which only populates after its own subscription
+    // settles, so asserting it here races the page load.)
+    await expect(page.getByTitle("Lead of 1 worker")).toBeVisible({ timeout: 5_000 });
+  });
 
-    // Both members should be visible with roles (scope to main to avoid sidebar/select matches).
-    const main = page.getByRole("main");
-    await expect(main.getByText(SESSION_1_NAME, { exact: true })).toBeVisible({ timeout: 5_000 });
-    await expect(main.getByText(`${SESSION_2_NAME} (you)`)).toBeVisible();
-    await expect(main.getByText("lead", { exact: true })).toBeVisible();
-    await expect(main.getByText("worker", { exact: true })).toBeVisible();
+  test("leave channel returns the session to unjoined", async ({ page, request }) => {
+    await seedFixture(request, teamSeed());
+
+    await navigateToSession(page, SESSION_1_NAME);
+    await createChannelFromUI(page, CHANNEL_NAME);
+    await expectChannelMembership(page, true);
+
+    await openOverflowMenu(page);
+    await page.getByRole("menuitem", { name: "Leave channel" }).click();
+    await expect(page.getByText("Left channel")).toBeVisible({ timeout: 5_000 });
+
+    await expectChannelMembership(page, false);
   });
 });
 
-test.describe("Team message routing", () => {
-  test("SendMessage tool routes message to teammate", async ({ page, request }) => {
+test.describe("Channel message routing", () => {
+  // Delivery is deliberately asymmetric (see writeLegacyAgentMessageEvents and
+  // tryLiveDelivery in session/channel.go): the sender keeps an inline
+  // agent_message event so the call is visible in its own turn, while the
+  // recipient's copy goes to the messages table and a channel.message WS event
+  // — explicitly *not* into its transcript, so a routed message can never be
+  // mistaken for something the user typed. This test locks both halves.
+  test("SendMessage routes without polluting the recipient's transcript", async ({
+    page,
+    request,
+  }) => {
     await seedFixture(request, teamSeed());
 
-    // Create team and join both sessions.
     await navigateToSession(page, SESSION_1_NAME);
-    await createTeamFromUI(page, TEAM_NAME, "lead");
+    await createChannelFromUI(page, CHANNEL_NAME, "lead");
     await navigateToSession(page, SESSION_2_NAME);
-    await joinTeamFromUI(page, "worker");
+    await joinChannelFromUI(page, "worker");
 
-    // Go to session 1 and trigger the scenario with SendMessage.
-    await navigateToSession(page, SESSION_1_NAME);
-    const composer = page.getByPlaceholder("Send a message...");
+    // Run the lead's scenario, which calls SendMessage targeting the worker.
+    const composer = await navigateToSession(page, SESSION_1_NAME);
     await sendQuery(page, composer, "Check app.ts and delegate tests");
 
-    // SendMessage tool_use should render in session 1's chat.
+    // Sender side: the delegation is part of the lead's own turn.
+    await expect(page.getByText(DELEGATED_WORK)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Delegated to the worker")).toBeVisible({ timeout: 10_000 });
     await waitForState(request, SESSION_1_ID, "idle");
 
-    // Navigate to session 2 and check the Team tab for the received message.
+    // Recipient side: nothing lands in the worker's transcript.
     await navigateToSession(page, SESSION_2_NAME);
-    await page.getByRole("button", { name: "Team", exact: true }).click();
-
-    // The routed message should appear in the team timeline.
-    await expect(
-      page.getByText("Please write tests for the main function"),
-    ).toBeVisible({ timeout: 10_000 });
-  });
-
-  test("user can send message to teammate via Team view", async ({ page, request }) => {
-    await seedFixture(request, teamSeed());
-
-    // Set up team with both sessions.
-    await navigateToSession(page, SESSION_1_NAME);
-    await createTeamFromUI(page, TEAM_NAME);
-    await navigateToSession(page, SESSION_2_NAME);
-    await joinTeamFromUI(page);
-
-    // Open Team tab from session 2.
-    await page.getByRole("button", { name: "Team", exact: true }).click();
-
-    // Select session 1 as target from dropdown.
-    await page.locator("select").selectOption({ label: SESSION_1_NAME });
-
-    // Type and send a message.
-    await page.getByPlaceholder("Message...").fill("Status update: tests are passing");
-    await page.getByPlaceholder("Message...").press("Enter");
-
-    // Message should appear in the timeline.
-    await expect(page.getByText("Status update: tests are passing")).toBeVisible({ timeout: 5_000 });
-  });
-
-  test("leave team removes team tab", async ({ page, request }) => {
-    await seedFixture(request, teamSeed());
-
-    await navigateToSession(page, SESSION_1_NAME);
-    await createTeamFromUI(page, TEAM_NAME);
-    await expect(page.getByRole("button", { name: "Team", exact: true })).toBeVisible({
-      timeout: 5_000,
+    await expect(page.getByText("Send a message to start chatting")).toBeVisible({
+      timeout: 10_000,
     });
-
-    // Leave team via overflow menu.
-    await openOverflowMenu(page);
-    await page.getByText("Leave team").click();
-    await expect(page.getByText("Left team")).toBeVisible({ timeout: 5_000 });
-
-    // Team tab should disappear.
-    await expect(page.getByRole("button", { name: "Team", exact: true })).not.toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.getByText(DELEGATED_WORK)).toHaveCount(0);
   });
 });

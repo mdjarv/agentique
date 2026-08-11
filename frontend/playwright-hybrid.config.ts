@@ -6,9 +6,16 @@ import { defineConfig } from "@playwright/test";
 // real state machine — only the Claude CLI subprocess is mocked.
 // Requires `just build` first (same as regular e2e).
 
-// Data dir for the run. Must exist before the server starts — the storage
-// endpoint statfs's it and 500s on a missing directory.
-const dataDir = path.resolve(import.meta.dirname, "..", "tmp", "hybrid-home");
+// Data dir + DB for the run, wiped first so state never carries over between
+// runs (see playwright.config.ts). The dir must then exist before the server
+// starts: the storage endpoint statfs's it and 500s on a missing directory.
+const tmpDir = path.resolve(import.meta.dirname, "..", "tmp");
+const dataDir = path.join(tmpDir, "hybrid-home");
+const dbPath = path.join(tmpDir, "test-hybrid.db");
+fs.rmSync(dataDir, { recursive: true, force: true });
+for (const suffix of ["", "-shm", "-wal"]) {
+  fs.rmSync(`${dbPath}${suffix}`, { force: true });
+}
 fs.mkdirSync(dataDir, { recursive: true });
 
 const isWindows = process.platform === "win32";
@@ -38,7 +45,7 @@ export default defineConfig({
     env: {
       ...process.env,
       AGENTIQUE_HOME: dataDir,
-      AGENTIQUE_DB: path.resolve(import.meta.dirname, "..", "tmp", "test-hybrid.db"),
+      AGENTIQUE_DB: dbPath,
     },
   },
 });

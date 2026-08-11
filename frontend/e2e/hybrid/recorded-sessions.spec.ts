@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetFixture, seedFixture, getTestState } from "./fixtures";
-import { loadFixture, fixtureToSeed, fixturePrompts } from "./fixture-loader";
+import { expect, test } from "@playwright/test";
+import { fixturePrompts, fixtureToSeed, loadFixture } from "./fixture-loader";
+import { getTestState, resetFixture, seedFixture } from "./fixtures";
 
 test.beforeEach(async ({ request }) => {
   await resetFixture(request);
@@ -144,7 +144,9 @@ test.describe("Recorded session replay", () => {
 
     // Verify assistant text from the real session renders.
     // Use heading role to avoid strict-mode violation (text appears in both <h2> and <p>).
-    await expect(page.getByRole("heading", { name: "Sub-agent visibility" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Sub-agent visibility" })).toBeVisible({
+      timeout: 30_000,
+    });
 
     // Verify tool calls rendered (turn 0 has 48 tool calls).
     await expect(page.getByText(/\d+ tool calls?/)).toBeVisible({ timeout: 30_000 });

@@ -1,18 +1,18 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
+  BASIC_SCENARIO,
+  immediate,
+  resetFixture,
+  result,
   type Scenario,
   type SeedRequest,
+  seedFixture,
+  TEST_BASE,
   TEST_PROJECT,
   TEST_PROJECT_ID,
-  BASIC_SCENARIO,
   text,
   thinking,
-  result,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
-  TEST_BASE,
 } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
 
@@ -84,6 +84,12 @@ test.describe("Session stop and resume", () => {
     const markDoneBtn = page.getByTitle("Mark done");
     await expect(markDoneBtn).toBeVisible();
     await markDoneBtn.click();
+
+    // Marking done finishes the session and drops you on the new-session panel,
+    // so the banner is only observable on the way back in. Navigate by URL: a
+    // completed session is no longer in the sidebar's active list.
+    await waitForState(request, STOP_SESSION_ID, "done");
+    await page.goto(`/project/${TEST_PROJECT.slug}/session/${STOP_SESSION_ID.slice(0, 8)}`);
 
     // Resume banner should show "Session complete" with "Continue" button.
     await expect(page.getByText("Session complete")).toBeVisible({ timeout: 10_000 });

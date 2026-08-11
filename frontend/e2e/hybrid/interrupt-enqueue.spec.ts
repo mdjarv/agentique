@@ -1,17 +1,17 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
+  immediate,
+  resetFixture,
+  result,
   type Scenario,
+  seedFixture,
   TEST_PROJECT,
   TEST_PROJECT_ID,
   text,
   thinking,
-  toolUse,
   toolResult,
-  result,
+  toolUse,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
 } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
 
@@ -152,10 +152,7 @@ test.describe("Enqueue", () => {
   });
 
   test("queued message executes after current turn completes", async ({ page, request }) => {
-    await seedFixture(
-      request,
-      interruptSeed({ behavior: [SCENARIO_QUICK, SCENARIO_FOLLOWUP] }),
-    );
+    await seedFixture(request, interruptSeed({ behavior: [SCENARIO_QUICK, SCENARIO_FOLLOWUP] }));
     const composer = await navigateToSession(page, SESSION_NAME);
 
     // Start the first turn.

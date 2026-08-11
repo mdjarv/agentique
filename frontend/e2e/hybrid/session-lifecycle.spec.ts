@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { TEST_API, resetFixture } from "./fixtures";
+import { expect, test } from "@playwright/test";
+import { resetFixture, TEST_API } from "./fixtures";
 
 test.beforeEach(async ({ request }) => {
   await resetFixture(request);
@@ -20,7 +20,13 @@ test.describe("Test mode endpoints", () => {
           { id: "p1", name: "Test Project", path: "/tmp/test-project", slug: "test-project" },
         ],
         sessions: [
-          { id: "s1", projectId: "p1", name: "Test Session", workDir: "/tmp/test-project", live: true },
+          {
+            id: "s1",
+            projectId: "p1",
+            name: "Test Session",
+            workDir: "/tmp/test-project",
+            live: true,
+          },
         ],
       },
     });

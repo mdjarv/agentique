@@ -1,11 +1,11 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   BASIC_SCENARIO,
+  resetFixture,
+  seedFixture,
+  TEST_BASE,
   TEST_PROJECT,
   TEST_PROJECT_ID,
-  seedFixture,
-  resetFixture,
-  TEST_BASE,
 } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
 

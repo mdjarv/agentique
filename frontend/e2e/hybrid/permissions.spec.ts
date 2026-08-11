@@ -1,22 +1,23 @@
-import { test, expect, type Page, type Locator, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page, test } from "@playwright/test";
 import {
+  BASIC_SCENARIO,
+  getTestState,
+  immediate,
+  resetFixture,
+  result,
+  type Scenario,
   type SeedRequest,
   type SeedSession,
-  type Scenario,
+  seedFixture,
   TEST_PROJECT,
   TEST_PROJECT_ID,
-  BASIC_SCENARIO,
   text,
   thinking,
-  toolUse,
   toolResult,
-  result,
+  toolUse,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
-  getTestState,
 } from "./fixtures";
+import { permissionTrigger, setPermissionMode } from "./helpers";
 
 // --- Constants ---
 
@@ -141,7 +142,7 @@ test.describe("Permission selector", () => {
     const composer = await navigateToSession(page);
 
     // Verify mode indicator.
-    await expect(page.getByRole("button", { name: "Manual" })).toBeVisible();
+    await expect(permissionTrigger(page, "Manual")).toBeVisible();
 
     await sendQuery(page, composer, "Run the tests");
 
@@ -162,7 +163,7 @@ test.describe("Permission selector", () => {
     await seedFixture(request, seed);
     const composer = await navigateToSession(page);
 
-    await expect(page.getByRole("button", { name: "Auto" })).toBeVisible();
+    await expect(permissionTrigger(page, "Auto")).toBeVisible();
 
     await sendQuery(page, composer, "Read config and build");
 
@@ -195,8 +196,7 @@ test.describe("Permission selector", () => {
     await waitForIdle(request);
 
     // Switch to auto.
-    await page.getByRole("button", { name: "Manual" }).click();
-    await expect(page.getByRole("button", { name: "Auto" })).toBeVisible();
+    await setPermissionMode(page, "Manual", "Auto");
 
     // Turn 2: auto mode. Read auto-approves, Bash needs approval.
     await sendQuery(page, composer, "Read and build");
@@ -226,8 +226,7 @@ test.describe("Permission selector", () => {
     await waitForIdle(request);
 
     // Switch auto -> fullAuto.
-    await page.getByRole("button", { name: "Auto" }).click();
-    await expect(page.getByRole("button", { name: "Full Auto" })).toBeVisible();
+    await setPermissionMode(page, "Auto", "Full Auto");
 
     // Turn 2: fullAuto, Bash auto-approves — no banner.
     await sendQuery(page, composer, "Run tests again");
@@ -265,7 +264,7 @@ test.describe("Permission selector", () => {
     await seedFixture(request, seed);
     const composer = await navigateToSession(page);
 
-    await expect(page.getByRole("button", { name: "Manual" })).toBeVisible();
+    await expect(permissionTrigger(page, "Manual")).toBeVisible();
 
     await sendQuery(page, composer, "Run tests");
 
@@ -275,7 +274,7 @@ test.describe("Permission selector", () => {
     await allowAllBtn.click();
 
     // Mode should change to auto.
-    await expect(page.getByRole("button", { name: "Auto" })).toBeVisible({ timeout: 5_000 });
+    await expect(permissionTrigger(page, "Auto")).toBeVisible({ timeout: 5_000 });
 
     await expect(page.getByText("Tests completed successfully.")).toBeVisible({ timeout: 10_000 });
     await waitForIdle(request);
@@ -290,7 +289,7 @@ test.describe("Chat/Plan toggle", () => {
 
     // Toggle from Chat to Plan.
     await page.getByRole("button", { name: "Chat", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible();
 
     await sendQuery(page, composer, "Create a login page");
 
@@ -319,7 +318,7 @@ test.describe("Chat/Plan toggle", () => {
 
     // Toggle to plan mode.
     await page.getByRole("button", { name: "Chat", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible();
 
     // Turn 2: plan mode.
     await sendQuery(page, composer, "Create a login page");
@@ -340,7 +339,9 @@ test.describe("Chat/Plan toggle", () => {
     await sendQuery(page, composer, "Run tests");
 
     // Wait for approval banner (session is running).
-    await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Plan toggle should be disabled.
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeDisabled();
@@ -361,7 +362,7 @@ test.describe("Chat/Plan toggle", () => {
     const composer = await navigateToSession(page);
 
     // Session starts in plan mode.
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible();
 
     await sendQuery(page, composer, "Read and lint");
 
@@ -432,7 +433,7 @@ test.describe("Plan approval", () => {
     await waitForIdle(request);
 
     // Plan toggle should still show "Plan" (session stayed in plan mode).
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible();
   });
 
   test("fullAuto auto-approves ExitPlanMode without banner", async ({ page, request }) => {

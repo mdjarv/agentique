@@ -1,11 +1,11 @@
-import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page } from "@playwright/test";
 import {
+  getTestState,
+  type Scenario,
   type SeedRequest,
   type SeedSession,
-  type Scenario,
   TEST_PROJECT,
   TEST_PROJECT_ID,
-  getTestState,
 } from "./fixtures";
 
 // --- Session factory ---
@@ -17,9 +17,7 @@ let sessionCounter = 0;
  * Each call increments a counter to generate unique IDs when tests
  * create multiple seeds within a single spec file.
  */
-export function seed(
-  overrides: Partial<SeedSession> & { behavior: Scenario[] },
-): SeedRequest {
+export function seed(overrides: Partial<SeedSession> & { behavior: Scenario[] }): SeedRequest {
   const suffix = String(++sessionCounter).padStart(4, "0");
   return {
     projects: [TEST_PROJECT],
@@ -62,6 +60,39 @@ export async function navigateToSession(page: Page, sessionName: string): Promis
   const composer = page.getByPlaceholder("Send a message...");
   await expect(composer).toBeVisible({ timeout: 5_000 });
   return composer;
+}
+
+/** Escape a literal for embedding in an accessible-name RegExp. */
+function nameStartsWith(literal: string): RegExp {
+  return new RegExp(`^${literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+}
+
+export type PermissionLabel = "Manual" | "Auto" | "Full Auto";
+
+/**
+ * Locate the composer's permission-mode control, which displays the mode
+ * currently in effect. Anchored because "Auto" is a prefix of "Full Auto".
+ */
+export function permissionTrigger(page: Page, mode: PermissionLabel): Locator {
+  return page.getByRole("button", { name: nameStartsWith(mode) });
+}
+
+/**
+ * Switch the session's permission mode and wait for the control to reflect it.
+ *
+ * The control is a dropdown, not a click-to-cycle toggle: the trigger is a
+ * button showing the active mode, and the options are menuitems whose
+ * accessible name is the label followed by its description ("Auto Auto-approve
+ * reads and writes, ..."), hence the anchored prefix match.
+ */
+export async function setPermissionMode(
+  page: Page,
+  from: PermissionLabel,
+  to: PermissionLabel,
+): Promise<void> {
+  await permissionTrigger(page, from).click();
+  await page.getByRole("menuitem", { name: nameStartsWith(to) }).click();
+  await expect(permissionTrigger(page, to)).toBeVisible();
 }
 
 /**

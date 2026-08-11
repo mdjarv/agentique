@@ -55,7 +55,7 @@ export const TEST_PROJECT: SeedProject = {
   slug: "fixture-project",
 };
 
-export { TEST_PROJECT_ID, TEST_SESSION_ID, COMPACT_SESSION_ID };
+export { COMPACT_SESSION_ID, TEST_PROJECT_ID, TEST_SESSION_ID };
 
 // --- Event builders ---
 
@@ -122,7 +122,10 @@ export const BASIC_SCENARIO: Scenario = {
     withDelay(20, text("I'll start by reading the main configuration file.")),
     withDelay(30, toolUse(TOOL_ID_READ, "Read", { file_path: "/tmp/fixture-project/config.ts" })),
     withDelay(40, toolResult(TOOL_ID_READ, "export default { port: 3000, env: 'test' };")),
-    withDelay(20, text("The configuration looks good. The project is set up correctly with port 3000.")),
+    withDelay(
+      20,
+      text("The configuration looks good. The project is set up correctly with port 3000."),
+    ),
     withDelay(10, result()),
   ],
 };

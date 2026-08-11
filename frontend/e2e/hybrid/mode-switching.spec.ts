@@ -1,20 +1,26 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
+  immediate,
+  resetFixture,
+  result,
   type Scenario,
+  seedFixture,
+  TEST_BASE,
   TEST_PROJECT,
   TEST_PROJECT_ID,
   text,
   thinking,
-  toolUse,
   toolResult,
-  result,
+  toolUse,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
-  TEST_BASE,
 } from "./fixtures";
-import { navigateToSession, sendQuery, waitForState } from "./helpers";
+import {
+  navigateToSession,
+  permissionTrigger,
+  sendQuery,
+  setPermissionMode,
+  waitForState,
+} from "./helpers";
 
 // --- Constants ---
 
@@ -148,7 +154,10 @@ test.beforeEach(async ({ request }) => {
 test.describe("Permission level toggling", () => {
   test("fullAuto to manual: next tool requires approval", async ({ page, request }) => {
     // Start in fullAuto with two Bash turns. First auto-approves, switch to manual, second needs approval.
-    await seedFixture(request, modeSeed({ behavior: [SCENARIO_BASH, SCENARIO_BASH], autoApproveMode: "fullAuto" }));
+    await seedFixture(
+      request,
+      modeSeed({ behavior: [SCENARIO_BASH, SCENARIO_BASH], autoApproveMode: "fullAuto" }),
+    );
     const composer = await navigateToSession(page, SESSION_NAME);
 
     // Turn 1: fullAuto, Bash auto-approves.
@@ -157,8 +166,7 @@ test.describe("Permission level toggling", () => {
     await waitForIdle(request);
 
     // Downgrade: fullAuto → manual (two clicks: fullAuto → manual cycles).
-    await page.getByRole("button", { name: "Full Auto" }).click();
-    await expect(page.getByRole("button", { name: "Manual" })).toBeVisible();
+    await setPermissionMode(page, "Full Auto", "Manual");
 
     // Turn 2: manual, Bash needs approval.
     await sendQuery(page, composer, "Build again");
@@ -182,9 +190,7 @@ test.describe("Permission level toggling", () => {
     await expect(allowBtn).toBeVisible({ timeout: 10_000 });
 
     // Switch manual → auto → fullAuto (two clicks).
-    await page.getByRole("button", { name: "Manual" }).click();
-    await page.getByRole("button", { name: "Auto" }).click();
-    await expect(page.getByRole("button", { name: "Full Auto" })).toBeVisible();
+    await setPermissionMode(page, "Manual", "Full Auto");
 
     // Approval should auto-resolve — banner should disappear and scenario should complete.
     await expect(allowBtn).not.toBeVisible({ timeout: 5_000 });
@@ -193,13 +199,14 @@ test.describe("Permission level toggling", () => {
   });
 
   test("permission mode persists after stop and reopen", async ({ page, request }) => {
-    await seedFixture(request, modeSeed({ behavior: [SCENARIO_READ_ONLY], autoApproveMode: "manual" }));
+    await seedFixture(
+      request,
+      modeSeed({ behavior: [SCENARIO_READ_ONLY], autoApproveMode: "manual" }),
+    );
     const composer = await navigateToSession(page, SESSION_NAME);
 
     // Switch to fullAuto.
-    await page.getByRole("button", { name: "Manual" }).click();
-    await page.getByRole("button", { name: "Auto" }).click();
-    await expect(page.getByRole("button", { name: "Full Auto" })).toBeVisible();
+    await setPermissionMode(page, "Manual", "Full Auto");
 
     // Complete a turn so there's state to persist.
     await sendQuery(page, composer, "Check config");
@@ -216,7 +223,7 @@ test.describe("Permission level toggling", () => {
     await page.getByText(SESSION_NAME).click();
 
     // Mode should still be fullAuto.
-    await expect(page.getByRole("button", { name: "Full Auto" })).toBeVisible({ timeout: 5_000 });
+    await expect(permissionTrigger(page, "Full Auto")).toBeVisible({ timeout: 5_000 });
   });
 });
 
@@ -326,14 +333,16 @@ test.describe("Agent-initiated mode switching", () => {
     await sendQuery(page, composer, "Plan the refactoring");
 
     // After EnterPlanMode, UI should switch to Plan indicator.
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Session should complete.
     await expect(page.getByText("outline the approach")).toBeVisible({ timeout: 10_000 });
     await waitForIdle(request);
 
     // Plan mode should persist after turn completes.
-    await expect(page.getByRole("button", { name: "Plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Plan", exact: true })).toBeVisible();
   });
 
   test("full plan cycle: agent enters plan, exits, user approves, back to Chat", async ({

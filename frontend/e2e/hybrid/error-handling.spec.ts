@@ -1,17 +1,17 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
+  errorEvent,
+  immediate,
+  resetFixture,
+  result,
   type Scenario,
   type SeedRequest,
+  seedFixture,
   TEST_PROJECT,
   TEST_PROJECT_ID,
   text,
   thinking,
-  errorEvent,
-  result,
   withDelay,
-  immediate,
-  seedFixture,
-  resetFixture,
 } from "./fixtures";
 import { navigateToSession, sendQuery, waitForState } from "./helpers";
 

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Scenario, SeedProject, SeedRequest, SeedSession } from "./fixtures";
 
@@ -51,8 +51,13 @@ export function fixtureToSeed(
     maxDelay?: number;
   },
 ): SeedRequest {
-  const projectId = overrides?.projectId ?? "fix-proj-0000-0000-000000000001";
-  const sessionId = overrides?.sessionId ?? "fix-sess-0000-0000-000000000001";
+  // Must be well-formed UUIDs: the backend validates projectId on every
+  // project.subscribe / session.list / git-status / channel.list, so a
+  // malformed one leaves the page permanently empty rather than failing loudly.
+  // Distinct from fixtures.ts's eee0…  ids so a recorded replay and a
+  // hand-written seed never collide.
+  const projectId = overrides?.projectId ?? "fff00001-0000-4000-8000-000000000001";
+  const sessionId = overrides?.sessionId ?? "fff00002-0000-4000-8000-000000000002";
   const slug = overrides?.projectSlug ?? slugify(fixture.metadata.projectName);
 
   const project: SeedProject = {
