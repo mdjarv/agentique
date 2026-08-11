@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -1321,6 +1322,11 @@ func (s *Service) injectChannelContext(ctx context.Context, sess *Session, chann
 		}
 		if wt := nullStr(m.WorktreePath); wt != "" {
 			line += fmt.Sprintf(" — worktree: %s", wt)
+			// Make the "you can read teammates' worktrees" line below true at
+			// the CLI level too, rather than leaving it to per-read permission
+			// prompts. Startup --add-dir cannot cover this: a teammate's
+			// worktree does not exist yet when the lead's session starts.
+			registerTeammateRoot(sess, wt)
 		}
 		msg += line + "\n"
 	}
@@ -1329,5 +1335,19 @@ func (s *Service) injectChannelContext(ctx context.Context, sess *Session, chann
 
 	if err := injectMessageOrQuery(sess, msg); err != nil {
 		slog.Warn("channel context injection failed", "session_id", sess.ID, "error", err)
+	}
+}
+
+// registerTeammateRoot adds a teammate's worktree to sess's CLI workspace
+// roots, best-effort. Every failure mode here is non-fatal — the teammate's
+// files stay readable through ordinary tool permissions either way — so an
+// unsupported provider is silent and a real error is a debug line, not a warn
+// that would fire once per teammate per refresh.
+func registerTeammateRoot(sess *Session, worktree string) {
+	switch err := sess.RegisterRepoRoot(worktree); {
+	case err == nil, errors.Is(err, ErrRepoRootUnsupported):
+	default:
+		slog.Debug("register teammate worktree as repo root",
+			"session_id", sess.ID, "worktree", worktree, "error", err)
 	}
 }

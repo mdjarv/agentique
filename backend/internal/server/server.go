@@ -63,6 +63,10 @@ type Config struct {
 	// idle-evict-timeout (or AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT).
 	IdleEvictTimeout time.Duration
 
+	// Claude carries connector-wide flags for the claude provider, resolved
+	// from the [claude] config section with AGENTIQUE_CLAUDE_* env overrides.
+	Claude config.ClaudeConfig
+
 	// SchedulerDisabled turns scheduled loops off entirely (schedules persist
 	// but never fire). Resolved from [scheduler] disabled
 	// (or AGENTIQUE_SCHEDULER_DISABLED).
@@ -185,10 +189,19 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
-		connector = claudeadapter.NewConnector(
+		claudeOpts := []claudecli.Option{
 			claudecli.WithIncludePartialMessages(),
 			claudecli.WithReplayUserMessages(),
-		)
+		}
+		// [claude] flags. Both are additive and default to the CLI's own
+		// behavior, so an unset section leaves the connector exactly as it was.
+		if cfg.Claude.ExcludeDynamicSystemPromptSections {
+			claudeOpts = append(claudeOpts, claudecli.WithExcludeDynamicSystemPromptSections())
+		}
+		if cfg.Claude.AutoCompact != "" {
+			claudeOpts = append(claudeOpts, claudecli.WithAutoCompact(cfg.Claude.AutoCompact))
+		}
+		connector = claudeadapter.NewConnector(claudeOpts...)
 		runner = session.RealBlockingRunner()
 	}
 

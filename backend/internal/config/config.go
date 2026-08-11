@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/BurntSushi/toml"
 
@@ -24,6 +25,7 @@ type Config struct {
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
 	Experimental ExperimentalConfig `toml:"experimental"`
+	Claude       ClaudeConfig       `toml:"claude"`
 	Brain        BrainConfig        `toml:"brain"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
 	// Models overrides the auto-detected model catalog, keyed by provider
@@ -155,6 +157,53 @@ func ValidateDevURLs(slots []DevURLSlot) error {
 type ExperimentalConfig struct {
 	Teams   bool `toml:"teams"`
 	Browser bool `toml:"browser"`
+}
+
+// ClaudeConfig carries flags handed to the claude CLI when a session's provider
+// is "claude". They are connector-wide defaults, not per-session settings.
+// Env overrides follow AGENTIQUE_CLAUDE_<KEY>.
+//
+// Deliberately absent: --safe-mode (it disables MCP servers, and agentique's own
+// tools reach sessions over MCP, so a safe-mode session loses SendMessage,
+// memory, dev URLs and the browser) and --plugin-url (agentique has no plugin
+// story to point it at).
+type ClaudeConfig struct {
+	// ExcludeDynamicSystemPromptSections moves the per-machine system-prompt
+	// sections (cwd, env info, memory paths, git status) into the first user
+	// message, so the cached prefix ahead of agentique's own appended preamble
+	// is shared between sessions instead of diverging at each worktree's path
+	// and git status. Off by default: it changes prompt structure, and the win
+	// is bounded by how much sits between those sections and the append point.
+	// Env: AGENTIQUE_CLAUDE_EXCLUDE_DYNAMIC_SYSTEM_PROMPT_SECTIONS.
+	ExcludeDynamicSystemPromptSections bool `toml:"exclude-dynamic-system-prompt-sections"`
+	// AutoCompact sets the auto-compact window: "auto" to let the CLI choose,
+	// or a token count between 100000 and 1000000. "" (the default) leaves the
+	// CLI's own behavior alone. Env: AGENTIQUE_CLAUDE_AUTOCOMPACT.
+	AutoCompact string `toml:"autocompact"`
+}
+
+// AutoCompactMin and AutoCompactMax bound the --autocompact token window the
+// CLI accepts.
+const (
+	AutoCompactMin = 100_000
+	AutoCompactMax = 1_000_000
+)
+
+// Validate reports a malformed [claude] section. Callers should treat this as
+// fatal at startup: the CLI rejects a bad --autocompact at spawn time, where
+// the failure surfaces as a session that dies instead of a config error.
+func (c ClaudeConfig) Validate() error {
+	if c.AutoCompact == "" || c.AutoCompact == "auto" {
+		return nil
+	}
+	n, err := strconv.Atoi(c.AutoCompact)
+	if err != nil {
+		return fmt.Errorf("claude autocompact %q: must be \"auto\" or a token count", c.AutoCompact)
+	}
+	if n < AutoCompactMin || n > AutoCompactMax {
+		return fmt.Errorf("claude autocompact %d: must be between %d and %d", n, AutoCompactMin, AutoCompactMax)
+	}
+	return nil
 }
 
 type SetupConfig struct {

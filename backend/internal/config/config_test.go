@@ -251,3 +251,60 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestLoadClaudeConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg := Default()
+	cfg.Claude = ClaudeConfig{ExcludeDynamicSystemPromptSections: true, AutoCompact: "200000"}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Claude != cfg.Claude {
+		t.Fatalf("claude config did not round-trip:\n got %+v\nwant %+v", got.Claude, cfg.Claude)
+	}
+
+	// No [claude] section means both flags stay off, so the connector is built
+	// exactly as it was before the section existed.
+	plain := filepath.Join(dir, "plain.toml")
+	if err := Save(Default(), plain); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := Load(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.Claude != (ClaudeConfig{}) {
+		t.Fatalf("missing [claude] section should yield zero config, got %+v", got2.Claude)
+	}
+}
+
+func TestClaudeConfigValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		val     string
+		wantErr bool
+	}{
+		{"unset leaves the CLI alone", "", false},
+		{"auto", "auto", false},
+		{"lower bound", "100000", false},
+		{"upper bound", "1000000", false},
+		{"below range", "99999", true},
+		{"above range", "1000001", true},
+		{"not a number", "loads", true},
+		{"empty-ish garbage", " ", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ClaudeConfig{AutoCompact: tt.val}.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate(%q) error = %v, wantErr %v", tt.val, err, tt.wantErr)
+			}
+		})
+	}
+}

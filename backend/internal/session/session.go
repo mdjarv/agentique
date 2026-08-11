@@ -118,6 +118,12 @@ type Session struct {
 	state      State
 	queryCount int
 
+	// repoRoots is the set of directories already handed to the CLI via
+	// RegisterRepoRoot. The control request is not idempotent, so this is what
+	// keeps a repeated channel-context refresh from erroring on every teammate
+	// worktree it has already registered. Guarded by mu; nil until first use.
+	repoRoots map[string]struct{}
+
 	// lastActiveAt is the wall-clock time of the last turn start / state
 	// transition. For an idle session it is "idle since"; the idle-eviction
 	// sweep measures now-lastActiveAt against the configured TTL. Stamped in
@@ -270,6 +276,10 @@ func (s *Session) setRuntime(rt *runtime.Session, cli runtime.CLISession) {
 	s.mu.Lock()
 	s.rt = rt
 	s.cli = cli
+	// A new CLI process holds none of the previous one's workspace roots, so
+	// drop the set rather than let it suppress re-registration after a
+	// resume/reconnect (or an idle-evict round trip).
+	s.repoRoots = nil
 	s.mu.Unlock()
 }
 
@@ -522,6 +532,55 @@ func (s *Session) ReconnectMCP(serverName string) error {
 		return fmt.Errorf("session not connected or provider does not support MCP reconnect")
 	}
 	return cli.ReconnectMCPServer(serverName)
+}
+
+// RegisterRepoRoot adds dir to the CLI's workspace roots mid-run — the runtime
+// equivalent of /add-dir. WithAddDirs only applies at startup, so a directory
+// that comes into existence after the session started (a teammate's worktree,
+// created when the lead spawns workers) is otherwise unreachable without
+// tearing the session down and losing its context.
+//
+// Only supported when the session's provider is "claude"; codex sessions get
+// ErrRepoRootUnsupported, which callers are expected to ignore rather than log.
+//
+// Registration is tracked per session because the control request is not
+// idempotent — the CLI rejects a directory it already holds. The set lives with
+// the CLI process, so it resets on reconnect/resume, which is correct: the new
+// CLI holds none of the old registrations.
+func (s *Session) RegisterRepoRoot(dir string) error {
+	// Already-registered wins over every other check: it is the common case on
+	// a channel-context refresh, and it must stay a no-op regardless of what
+	// the session's provider is now.
+	s.mu.Lock()
+	_, done := s.repoRoots[dir]
+	s.mu.Unlock()
+	if done {
+		return nil
+	}
+
+	cli := s.claudeSession()
+	if cli == nil {
+		return ErrRepoRootUnsupported
+	}
+
+	// Called without the lock: this is a round-trip to the CLI, and the event
+	// pump needs s.mu to keep draining while it is in flight.
+	resolved, err := cli.RegisterRepoRoot(dir)
+	if err != nil {
+		return fmt.Errorf("register repo root %q: %w", dir, err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.repoRoots == nil {
+		s.repoRoots = make(map[string]struct{})
+	}
+	// Record both spellings. The CLI resolves relative paths against its own
+	// working directory, so the value it returns is authoritative and is what a
+	// later caller may hand us.
+	s.repoRoots[dir] = struct{}{}
+	s.repoRoots[resolved] = struct{}{}
+	return nil
 }
 
 // ReconnectMCPWait reconnects a named MCP server and blocks until it reports

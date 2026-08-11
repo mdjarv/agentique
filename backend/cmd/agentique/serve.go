@@ -397,6 +397,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 		idleEvictTimeout = d
 	}
 
+	// [claude] connector flags: env wins over the config file. An out-of-range
+	// autocompact window is a hard config error rather than a flag the CLI
+	// rejects at spawn time, when the failure would surface as a dead session.
+	claudeCfg := config.ClaudeConfig{
+		ExcludeDynamicSystemPromptSections: envBoolOr(
+			"AGENTIQUE_CLAUDE_EXCLUDE_DYNAMIC_SYSTEM_PROMPT_SECTIONS",
+			fileCfg.Claude.ExcludeDynamicSystemPromptSections,
+		),
+		AutoCompact: firstNonEmpty(os.Getenv("AGENTIQUE_CLAUDE_AUTOCOMPACT"), fileCfg.Claude.AutoCompact),
+	}
+	if err := claudeCfg.Validate(); err != nil {
+		slog.Error("invalid [claude] config", "error", err)
+		os.Exit(1)
+	}
+
 	// Scheduled loops ([scheduler], docs/scheduled-loops.md): env wins over the
 	// config file; unset fields take the scheduler's documented defaults. An
 	// unparseable duration is a hard config error, same as idle-evict.
@@ -433,6 +448,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		IdleEvictTimeout:    idleEvictTimeout,
+		Claude:              claudeCfg,
 		SchedulerDisabled:   schedulerDisabled,
 		SchedulerOptions:    schedulerOpts,
 		DevURLSlots:         fileCfg.DevURLs,

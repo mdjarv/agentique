@@ -37,6 +37,11 @@ var (
 	// session is user-finished (completed or merged). Checked atomically at
 	// turn start so a fire cannot reopen a session the user considers done.
 	ErrSessionFinished = errors.New("session finished")
+	// ErrRepoRootUnsupported means the session's provider has no runtime
+	// add-dir equivalent (everything except claude, or a session with no live
+	// CLI). It is an expected outcome, not a failure — callers registering
+	// teammate worktrees opportunistically should skip it silently.
+	ErrRepoRootUnsupported = errors.New("provider does not support registering repo roots")
 )
 
 // WireQuestionOption is a selectable option within a question.
