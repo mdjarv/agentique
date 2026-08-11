@@ -114,3 +114,34 @@ func TestShouldBypassPermission(t *testing.T) {
 		})
 	}
 }
+
+// A plan is not a tool call, so ExitPlanMode does not follow the tool ladder:
+// only fullAuto is broad enough to approve one on the user's behalf. This must
+// agree with the ExitPlanMode rows in TestShouldBypassPermission — two code
+// paths answering the same question differently is the bug this guards.
+func TestPlanReviewRequired(t *testing.T) {
+	tests := []struct {
+		mode string
+		want bool
+	}{
+		{"manual", true},
+		{"auto", true},
+		{"fullAuto", false},
+		{"", true}, // unset behaves as manual
+	}
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			got := planReviewRequired(tt.mode)
+			if got != tt.want {
+				t.Fatalf("planReviewRequired(%q) = %v, want %v", tt.mode, got, tt.want)
+			}
+			// The synthetic plan review and the permission ladder must not
+			// disagree about whether the user still gets a say.
+			bypass := shouldBypassPermission(tt.mode, "plan", "ExitPlanMode")
+			if bypass == got {
+				t.Fatalf("planReviewRequired(%q)=%v contradicts shouldBypassPermission=%v",
+					tt.mode, got, bypass)
+			}
+		})
+	}
+}

@@ -120,6 +120,20 @@ func (s *Session) transitionPlanMode(mode string) {
 	s.broadcast("session.permission-mode-changed", PushPermissionModeChanged{SessionID: s.ID, PermissionMode: mode})
 }
 
+// planReviewRequired reports whether ExitPlanMode should stop for the user's
+// confirmation under the given auto-approve mode.
+//
+// A plan is not a tool call, so it does not follow the tool-permission ladder:
+// only fullAuto ("auto-approve all operations including shell commands") is
+// broad enough to cover approving a plan on the user's behalf. auto is
+// documented as "auto-approve reads and writes, prompt for shell commands" —
+// and shouldBypassPermission agrees, refusing to bypass ExitPlanMode under auto
+// — so letting auto skip the review here would be a second, contradictory
+// answer to the same question.
+func planReviewRequired(autoApproveMode string) bool {
+	return autoApproveMode != "fullAuto"
+}
+
 // requestPlanReview creates a synthetic pending approval for ExitPlanMode so
 // the user can review the plan before execution begins. Interrupts the session
 // to prevent tool calls between ExitPlanMode and user confirmation.

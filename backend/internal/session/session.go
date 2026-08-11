@@ -405,10 +405,10 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			s.mu.Lock()
 			aam := s.autoApproveMode
 			s.mu.Unlock()
-			if aam == "fullAuto" || aam == "auto" {
-				s.transitionPlanMode("default")
-			} else {
+			if planReviewRequired(aam) {
 				go s.requestPlanReview(input)
+			} else {
+				s.transitionPlanMode("default")
 			}
 		},
 		OnSendMessage: func(toolUseID, targetName, content, msgType string) {
