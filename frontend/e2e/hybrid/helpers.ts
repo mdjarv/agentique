@@ -49,7 +49,12 @@ export function resetCounter(): void {
 export async function navigateToSession(page: Page, sessionName: string): Promise<Locator> {
   await page.goto(`/project/${TEST_PROJECT.slug}`);
   // Use button role for reliable sidebar click (avoids matching text elsewhere).
-  const sessionBtn = page.getByRole("button", { name: sessionName, exact: true });
+  // The row's accessible name is the session name plus a relative timestamp
+  // ("Lead Agent now"), so anchor at the start instead of matching exactly —
+  // and anchoring keeps us off the project row, whose name concatenates every
+  // child session name.
+  const escaped = sessionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sessionBtn = page.getByRole("button", { name: new RegExp(`^${escaped}\\b`) });
   await expect(sessionBtn).toBeVisible({ timeout: 10_000 });
   await sessionBtn.click();
   // Wait for URL to change to session path (prevents race with previously loaded session).
