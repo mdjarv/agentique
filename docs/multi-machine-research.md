@@ -374,18 +374,33 @@ Recommendation: **a user-selectable grouping axis — group by project
   revocation; `agentique pair` CLI. Independently useful (proper tokens for
   the PWA on the phone, replacing per-host passkey friction for secondary
   devices).
-- **M1 — client fan-out**: WS registry + per-machine supervisor; machine
-  catalog + pair UI; scoped refs in stores; machine route segment; sessions
-  from remote machines render read-write in the existing chat view.
-- **M2 — full remote panes**: files, git (status/branches/diff/merge),
-  storage, and browser panes work against remote sessions. Mostly threading
-  the machine-scoped client through each pane's hooks/REST calls (the RPCs
-  are the same); browser preview URLs need the remote machine's origin.
-- **M3 — project grouping + Run-on**: `remote_url` column + normalization;
-  client-side grouping in the folder sidebar; "Run on" picker at new-session.
-- **M4 — polish**: offline cache + `cached` states, tailnet peer discovery
-  pre-fill, per-machine usage/disk in the footer, palette search unioning
-  machine labels.
+- **M1 — client fan-out** (**SHIPPED 2026-08-20**, f10689a + 759f52a +
+  1e02281): RoutingWsClient facade behind useWebSocket() (requests route by
+  payload entity → owning machine; subscriptions fan in; lifecycle stays
+  primary-only), per-machine ticket-authenticated sockets, machine
+  indicators everywhere a session appears, Run-on picker, token-less
+  no-auth machines, mock-server e2e path.
+- **M2 — full remote panes** (**SHIPPED 2026-08-20**, 1056e1f + 08ae4b7):
+  machine-aware REST (lib/machines/api.ts) — project files/content, image
+  previews via blob object URLs, session-file links, filesystem
+  browse/validate, project mutations; add-project machine picker with
+  remote directory browsing. Git/changes/browser panes were WS-routed
+  already.
+- **M3 — project grouping + Run-on** (**SHIPPED 2026-08-20**, c535d41):
+  `projects.remote_url` canonical key (SSH/HTTPS-equivalent, GitHub-biased,
+  `::subpath` qualifier for monorepo subdirs) + display-only client-side
+  merging; primary copy drives name/color/icon; Run-on in 1e02281.
+- **M4 — polish** (**mostly SHIPPED 2026-08-20**): per-machine offline
+  cache + status-colored badges (b0d049c); tailnet peer discovery
+  suggestions in Add-machine (660d752); **server-mastered machine catalog**
+  (3b7d08e — pairing is account state; localStorage is only an offline
+  cache, so every device logging into the primary sees the same machines).
+  Still open: per-machine usage/disk in the footer, palette/sidebar search
+  matching machine labels.
+
+Validated in real use 2026-08-20: remote sessions driven from the phone
+PWA, and the same paired machines/sessions visible from desktop and phone
+after the catalog-sync fix.
 
 ### 3.9 Decisions so far + open questions
 
