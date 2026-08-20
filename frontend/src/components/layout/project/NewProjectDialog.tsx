@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Plus, TriangleAlert } from "lucide-react";
+import { FolderOpen, FolderPlus, Monitor, Plus, Server, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
 import { Button } from "~/components/ui/button";
@@ -16,11 +16,16 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { reloadMachineProjects } from "~/hooks/useMachineConnections";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createProject, type PathValidation, validatePath } from "~/lib/api";
+import { remoteSlug } from "~/lib/machines/slug";
 import { setProjectPinned } from "~/lib/project-actions";
+import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
+import { useFeatureStore } from "~/stores/feature-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { useUIStore } from "~/stores/ui-store";
 
 /** Extract the last directory component from a path (cross-platform). */
@@ -58,6 +63,39 @@ interface NewProjectDialogProps {
   trigger?: React.ReactNode;
 }
 
+function MachineOption({
+  selected,
+  onSelect,
+  icon,
+  label,
+  disabled,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onSelect}
+      title={disabled ? `${label} is not connected` : undefined}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer",
+        selected
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+        disabled && "opacity-50 cursor-not-allowed",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -72,6 +110,24 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
   const isMobile = useIsMobile();
   const ws = useWebSocket();
   const [showBrowser, setShowBrowser] = useState(!isMobile);
+
+  // Target machine: "" = the primary. The path input, directory browser,
+  // validation, and the create all run against the chosen machine.
+  const [machineId, setMachineId] = useState("");
+  const machines = useMachineStore((s) => s.machines);
+  const statuses = useMachineStore((s) => s.statuses);
+  const primaryLabel = useFeatureStore((s) => s.machineLabel);
+  const machineEntries = Object.values(machines).sort((a, b) => a.label.localeCompare(b.label));
+
+  const handleMachineChange = (id: string) => {
+    if (id === machineId) return;
+    setMachineId(id);
+    // Paths and validation are machine-local — start fresh on the new target.
+    setPath("");
+    setValidation(null);
+    setError("");
+    if (!nameManuallySet) setName("");
+  };
 
   const handlePathChange = useCallback(
     (newPath: string) => {
@@ -96,7 +152,7 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
       const controller = new AbortController();
       validationController.current = controller;
 
-      validatePath(trimmed)
+      validatePath(trimmed, machineId || undefined)
         .then((result) => {
           if (!controller.signal.aborted) {
             setValidation(result);
@@ -113,7 +169,7 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
     return () => {
       clearTimeout(timer);
     };
-  }, [path]);
+  }, [path, machineId]);
 
   const handleNameChange = (newName: string) => {
     setName(newName);
@@ -124,23 +180,33 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
     e.preventDefault();
     setError("");
     try {
-      const project = await createProject(name, path);
-      saveLastParentDir(path);
-      addProject(project);
-      const focusMode =
-        useAuthStore.getState().user?.sidebarFocusMode ?? useUIStore.getState().sidebarFocusMode;
-      if (focusMode) {
-        setProjectPinned(ws, project.id, true)
-          .then((updated) => updateProjectStore(updated))
-          .catch((err) => console.error("auto-pin new project failed", err));
+      const project = await createProject(name, path, machineId || undefined);
+
+      let slug = project.slug;
+      if (machineId) {
+        // Remote create: re-sync that machine's projects (tags machineId +
+        // qualifies the slug) instead of inserting the raw wire object.
+        await reloadMachineProjects(machineId);
+        slug = remoteSlug(project.slug, machineId);
+      } else {
+        saveLastParentDir(path);
+        addProject(project);
+        const focusMode =
+          useAuthStore.getState().user?.sidebarFocusMode ?? useUIStore.getState().sidebarFocusMode;
+        if (focusMode) {
+          setProjectPinned(ws, project.id, true)
+            .then((updated) => updateProjectStore(updated))
+            .catch((err) => console.error("auto-pin new project failed", err));
+        }
       }
+
       setName("");
       setPath("");
       setNameManuallySet(false);
       setOpen(false);
       navigate({
         to: "/project/$projectSlug",
-        params: { projectSlug: project.slug },
+        params: { projectSlug: slug },
       });
     } catch {
       setError("Failed to create project.");
@@ -156,6 +222,7 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
       setError("");
       setValidation(null);
       setShowBrowser(!isMobile);
+      setMachineId("");
     }
   };
 
@@ -190,6 +257,29 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
           <DialogTitle>Create New Project</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {machineEntries.length > 0 && (
+            <div className="space-y-2">
+              <Label>Machine</Label>
+              <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5 w-fit">
+                <MachineOption
+                  selected={machineId === ""}
+                  onSelect={() => handleMachineChange("")}
+                  icon={<Monitor className="size-3" />}
+                  label={primaryLabel || "This machine"}
+                />
+                {machineEntries.map((m) => (
+                  <MachineOption
+                    key={m.machineId}
+                    selected={machineId === m.machineId}
+                    onSelect={() => handleMachineChange(m.machineId)}
+                    icon={<Server className="size-3" />}
+                    label={m.label}
+                    disabled={statuses[m.machineId] !== "connected"}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="project-path">Directory</Label>
             <div className="flex gap-2">
@@ -224,7 +314,13 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
             )}
           </div>
           {showBrowser && (
-            <DirectoryBrowser initialPath={getLastParentDir()} onSelect={handlePathChange} />
+            <DirectoryBrowser
+              key={machineId}
+              // The remembered parent dir is a primary-machine path.
+              initialPath={machineId ? undefined : getLastParentDir()}
+              onSelect={handlePathChange}
+              machineId={machineId || undefined}
+            />
           )}
           <div className="space-y-2">
             <Label htmlFor="project-name">Name</Label>

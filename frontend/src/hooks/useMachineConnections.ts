@@ -18,6 +18,12 @@ import { useMachineStore } from "~/stores/machine-store";
  * primary streaming state.
  */
 
+/** Re-syncs one machine's projects + sessions on demand (e.g. after creating
+ *  a project on it from the primary UI). */
+export function reloadMachineProjects(machineId: string): Promise<void> {
+  return loadMachine(machineId, getMachineClient(machineId));
+}
+
 async function loadMachine(machineId: string, client: WsClient): Promise<void> {
   const resp = await machineFetch(machineId, "/api/projects");
   if (!resp.ok) throw new Error(`projects fetch failed (${resp.status})`);

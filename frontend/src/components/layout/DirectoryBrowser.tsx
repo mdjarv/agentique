@@ -6,9 +6,11 @@ import { type BrowseResult, browseDirectory } from "~/lib/api";
 interface DirectoryBrowserProps {
   initialPath?: string;
   onSelect: (path: string) => void;
+  /** Browse a paired remote machine's filesystem; undefined = the primary. */
+  machineId?: string;
 }
 
-export function DirectoryBrowser({ initialPath, onSelect }: DirectoryBrowserProps) {
+export function DirectoryBrowser({ initialPath, onSelect, machineId }: DirectoryBrowserProps) {
   const [browsePath, setBrowsePath] = useState<string | undefined>(initialPath || undefined);
   const [result, setResult] = useState<BrowseResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export function DirectoryBrowser({ initialPath, onSelect }: DirectoryBrowserProp
     setLoading(true);
     setError("");
 
-    browseDirectory(browsePath)
+    browseDirectory(browsePath, machineId)
       .then((data) => {
         if (!cancelled) {
           setResult(data);
@@ -46,7 +48,7 @@ export function DirectoryBrowser({ initialPath, onSelect }: DirectoryBrowserProp
     return () => {
       cancelled = true;
     };
-  }, [browsePath]);
+  }, [browsePath, machineId]);
 
   const pathSegments = result?.path.split("/").filter(Boolean) ?? [];
 

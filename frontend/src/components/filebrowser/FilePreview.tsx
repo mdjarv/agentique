@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
-import { fileContentUrl, getFileContent } from "~/lib/api";
+import { getFileBlob, getFileContent } from "~/lib/api";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import {
   getLanguageForSpecialFile,
@@ -40,6 +40,31 @@ export function FilePreview({ projectId, filePath, onClose, hideHeader }: FilePr
   const [error, setError] = useState("");
   const { copied, copy } = useCopyToClipboard();
   const { resolvedTheme } = useTheme();
+
+  // Images load as blob object URLs: an <img src> cannot carry the bearer
+  // header remote machines require, and the blob path works identically for
+  // the primary (cookie) machine.
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isImage) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setImageUrl(null);
+    setError("");
+    getFileBlob(projectId, filePath)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load image");
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [projectId, filePath, isImage]);
 
   useEffect(() => {
     if (isImage || !canPreview) return;
@@ -114,10 +139,10 @@ export function FilePreview({ projectId, filePath, onClose, hideHeader }: FilePr
           </div>
         )}
 
-        {isImage && (
+        {isImage && imageUrl && (
           <div className="p-4 flex items-center justify-center">
             <img
-              src={fileContentUrl(projectId, filePath)}
+              src={imageUrl}
               alt={name}
               className="max-w-full max-h-[70vh] object-contain rounded"
             />

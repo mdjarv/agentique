@@ -5,6 +5,7 @@ import type {
   StorageUsage,
 } from "~/lib/generated-types";
 import { throwIfNotOk } from "~/lib/http";
+import { apiFetch, machineIdForProject } from "~/lib/machines/api";
 import type { Project } from "~/lib/types";
 
 const BASE = "/api";
@@ -14,10 +15,25 @@ async function fetchWithRetry(
   init?: RequestInit,
   maxRetries = 2,
 ): Promise<Response> {
+  return retrying(() => fetch(input, init), maxRetries);
+}
+
+/** fetchWithRetry against the machine owning the target (multi-machine M2);
+ *  machineId undefined = the primary, same-origin. */
+async function machineFetchWithRetry(
+  machineId: string | undefined,
+  path: string,
+  init?: RequestInit,
+  maxRetries = 2,
+): Promise<Response> {
+  return retrying(() => apiFetch(machineId, path, init), maxRetries);
+}
+
+async function retrying(doFetch: () => Promise<Response>, maxRetries: number): Promise<Response> {
   let lastError: Error | undefined;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await fetch(input, init);
+      const res = await doFetch();
       if (res.ok || res.status < 500) return res;
       lastError = new Error(`Server error: ${res.status}`);
     } catch (err) {
@@ -36,8 +52,12 @@ export async function listProjects(): Promise<Project[]> {
   return res.json();
 }
 
-export async function createProject(name: string, path: string): Promise<Project> {
-  const res = await fetch(`${BASE}/projects`, {
+export async function createProject(
+  name: string,
+  path: string,
+  machineId?: string,
+): Promise<Project> {
+  const res = await apiFetch(machineId, `${BASE}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, path }),
@@ -121,15 +141,18 @@ export interface PathValidation {
   parentExists: boolean;
 }
 
-export async function validatePath(path: string): Promise<PathValidation> {
-  const res = await fetchWithRetry(`${BASE}/filesystem/validate?path=${encodeURIComponent(path)}`);
+export async function validatePath(path: string, machineId?: string): Promise<PathValidation> {
+  const res = await machineFetchWithRetry(
+    machineId,
+    `${BASE}/filesystem/validate?path=${encodeURIComponent(path)}`,
+  );
   await throwIfNotOk(res, "Failed to validate path");
   return res.json();
 }
 
-export async function browseDirectory(path?: string): Promise<BrowseResult> {
+export async function browseDirectory(path?: string, machineId?: string): Promise<BrowseResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
-  const res = await fetchWithRetry(`${BASE}/filesystem/browse${params}`);
+  const res = await machineFetchWithRetry(machineId, `${BASE}/filesystem/browse${params}`);
   await throwIfNotOk(res, "Failed to browse directory");
   return res.json();
 }
@@ -150,19 +173,31 @@ export interface FileListResult {
 
 export async function listProjectFiles(projectId: string, path = ""): Promise<FileListResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
-  const res = await fetchWithRetry(`${BASE}/projects/${projectId}/files${params}`);
+  const res = await machineFetchWithRetry(
+    machineIdForProject(projectId),
+    `${BASE}/projects/${projectId}/files${params}`,
+  );
   await throwIfNotOk(res, "Failed to list files");
   return res.json();
 }
 
 export async function getFileContent(projectId: string, path: string): Promise<string> {
-  const res = await fetchWithRetry(
+  const res = await machineFetchWithRetry(
+    machineIdForProject(projectId),
     `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`,
   );
   await throwIfNotOk(res, "Failed to fetch file content");
   return res.text();
 }
 
-export function fileContentUrl(projectId: string, path: string): string {
-  return `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`;
+/** Fetches a project file as a Blob — used for <img> previews, which cannot
+ *  carry the Authorization header a remote machine needs. Callers own the
+ *  object URL lifecycle. */
+export async function getFileBlob(projectId: string, path: string): Promise<Blob> {
+  const res = await machineFetchWithRetry(
+    machineIdForProject(projectId),
+    `${BASE}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`,
+  );
+  await throwIfNotOk(res, "Failed to fetch file");
+  return res.blob();
 }
