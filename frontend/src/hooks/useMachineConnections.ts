@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { subscribeAndLoad } from "~/hooks/useGlobalSubscriptions";
+import { clearMachineCache, hydrateMachineCache, saveMachineCache } from "~/lib/machines/cache";
 import { disconnectMachine, getMachineClient, machineFetch } from "~/lib/machines/registry";
 import { remoteSlug } from "~/lib/machines/slug";
 import type { Project } from "~/lib/types";
@@ -38,6 +39,10 @@ async function loadMachine(machineId: string, client: WsClient): Promise<void> {
   for (const project of projects) {
     subscribeAndLoad(client, project.id, true);
   }
+  // Refresh the offline cache once the live project list has landed. Session
+  // metas trickle in via the per-project loads above; the disconnect-time
+  // snapshot catches those, and this one guarantees the project set is fresh.
+  saveMachineCache(machineId);
 }
 
 export function useMachineConnections(): void {
@@ -50,6 +55,12 @@ export function useMachineConnections(): void {
     for (const machineId of Object.keys(machines)) {
       if (teardowns.has(machineId)) continue;
 
+      // Last-known projects + session metadata render immediately — a
+      // suspended laptop's half of the sidebar stays visible and navigable
+      // while its connection state shows why nothing is live. The live load
+      // below is authoritative and replaces all of it.
+      hydrateMachineCache(machineId);
+
       const client = getMachineClient(machineId);
       const load = () =>
         loadMachine(machineId, client).catch((err) =>
@@ -57,12 +68,18 @@ export function useMachineConnections(): void {
         );
 
       const unsub = client.onConnect(load);
+      // Snapshot at disconnect — the freshest state this machine will have
+      // until it comes back.
+      const unsubDisconnect = client.onDisconnect(() => saveMachineCache(machineId));
       // getMachineClient connects asynchronously (ticket mint), so attaching
       // onConnect here normally races nothing — but if the socket is somehow
       // already up (re-add after remove), load immediately.
       if (client.connectionState === "connected") load();
 
-      teardowns.set(machineId, unsub);
+      teardowns.set(machineId, () => {
+        unsub();
+        unsubDisconnect();
+      });
     }
 
     for (const [machineId, teardown] of teardowns) {
@@ -83,6 +100,7 @@ export function useMachineConnections(): void {
         if (projectIds.has(data.meta.projectId)) chat.removeSession(sessionId);
       }
       useAppStore.getState().removeMachineProjects(machineId);
+      clearMachineCache(machineId);
       teardowns.delete(machineId);
     }
   }, [machines]);

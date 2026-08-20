@@ -148,15 +148,25 @@ export const ProjectContent = memo(function ProjectContent({
   );
 });
 
-/** Small server glyph marking a project that lives on a paired remote machine. */
+/** Small server glyph marking a project that lives on a paired remote
+ *  machine. Colored by that machine's live connection state so a suspended
+ *  laptop's cached rows read as "there, but unreachable right now". */
 function RemoteMachineBadge({ machineId }: { machineId: string }) {
   const label = useMachineStore((s) => s.machines[machineId]?.label);
+  const status = useMachineStore((s) => s.statuses[machineId] ?? "disconnected");
+  const title =
+    (label ? `On ${label}` : "Remote machine") + (status === "connected" ? "" : ` — ${status}`);
   return (
     <Server
-      className="size-3 shrink-0 text-muted-foreground/70"
-      aria-label={label ? `On ${label}` : "Remote machine"}
+      className={cn(
+        "size-3 shrink-0",
+        status === "connected" && "text-muted-foreground/70",
+        status === "reconnecting" && "text-warning animate-pulse",
+        status === "disconnected" && "text-destructive/70",
+      )}
+      aria-label={title}
     >
-      <title>{label ? `On ${label}` : "Remote machine"}</title>
+      <title>{title}</title>
     </Server>
   );
 }
