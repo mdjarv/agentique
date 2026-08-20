@@ -4,7 +4,7 @@ import { Markdown } from "~/components/chat/Markdown";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { apiFetch, machineIdForSession } from "~/lib/machines/api";
+import { apiFetch, sessionFileMachineId } from "~/lib/machines/api";
 
 interface MarkdownFileLinkProps {
   href: string;
@@ -21,17 +21,13 @@ function fileNameFromHref(href: string): string {
   }
 }
 
-const SESSION_FILE_PATH = /^\/api\/sessions\/([0-9a-fA-F-]+)\/files\//;
-
 /** Session-file links from a remote machine's agent must be fetched from
  *  that machine (with its bearer), not the primary — resolve by session id. */
 function fetchFileHref(href: string): Promise<Response> {
   try {
     const url = new URL(href, window.location.origin);
     if (url.origin === window.location.origin) {
-      const match = SESSION_FILE_PATH.exec(url.pathname);
-      const machineId = match?.[1] ? machineIdForSession(match[1]) : undefined;
-      return apiFetch(machineId, url.pathname + url.search);
+      return apiFetch(sessionFileMachineId(href), url.pathname + url.search);
     }
   } catch {
     // fall through to a plain fetch

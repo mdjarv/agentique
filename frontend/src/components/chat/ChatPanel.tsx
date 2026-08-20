@@ -15,6 +15,7 @@ import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageC
 import { MessageList } from "~/components/chat/MessageList";
 import { finishActionKind, SessionFinishAction } from "~/components/chat/SessionFinishAction";
 import { SessionHeader } from "~/components/chat/SessionHeader";
+import { SessionMachineContext } from "~/components/chat/SessionMachineContext";
 import { SessionTabBar } from "~/components/chat/SessionTabBar";
 import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
 import { TodosView } from "~/components/chat/TodosView";
@@ -470,195 +471,197 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   ) : null;
 
   return (
-    <div
-      className="flex flex-col h-full chat-frost"
-      data-project-id={projectId}
-      style={
-        agentColor
-          ? ({ "--agent": agentColor, background: `${agentColor}08` } as React.CSSProperties)
-          : undefined
-      }
-    >
-      <SessionHeader
-        meta={meta}
-        hasPendingInput={!!pendingApproval || !!pendingQuestion}
-        tabBar={tabBarElement}
-        accentColor={agentColor}
-        git={git}
-        projectGitStatus={projectGitStatus}
-      />
+    <SessionMachineContext.Provider value={project?.machineId ?? null}>
+      <div
+        className="flex flex-col h-full chat-frost"
+        data-project-id={projectId}
+        style={
+          agentColor
+            ? ({ "--agent": agentColor, background: `${agentColor}08` } as React.CSSProperties)
+            : undefined
+        }
+      >
+        <SessionHeader
+          meta={meta}
+          hasPendingInput={!!pendingApproval || !!pendingQuestion}
+          tabBar={tabBarElement}
+          accentColor={agentColor}
+          git={git}
+          projectGitStatus={projectGitStatus}
+        />
 
-      {/* Tab strip — mobile only (desktop renders tabs inline in the header).
+        {/* Tab strip — mobile only (desktop renders tabs inline in the header).
           Also hosts the state-aware finish action on its right edge. */}
-      {isMobile && (showTabs || finishKind) && (
-        <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b text-xs">
-          <div className="flex-1 min-w-0 flex gap-1 overflow-x-auto">
-            {showTabs ? tabBarElement : null}
-          </div>
-          {finishKind && (
-            <SessionFinishAction
-              meta={meta}
-              git={git}
-              projectGitStatus={projectGitStatus}
-              onMarkDone={handleMarkDone}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Tab content + optional desktop todo sidebar */}
-      <div className="flex-1 flex min-h-0 min-w-0">
-        <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {effectiveTab === "todos" && hasTodos ? (
-            <TodosView todos={todos} />
-          ) : effectiveTab === "changes" && hasGitContent ? (
-            <ChangesView
-              meta={meta}
-              git={git}
-              mainBranch={mainBranch}
-              projectGitStatus={projectGitStatus}
-              projectGitActions={projectGitActions}
-              committedDiff={git.diffResult}
-              uncommittedDiff={git.uncommittedDiffResult}
-              sessionState={sessionState}
-              onSendMessage={handleSend}
-              onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
-              expandFile={expandFile}
-              onExpandFileConsumed={handleExpandFileConsumed}
-            />
-          ) : effectiveTab === "loops" && hasLoops ? (
-            <LoopsPanel sessionId={sessionId} />
-          ) : (
-            <>
-              <MessageList
-                turns={turns}
-                sessionId={sessionId}
-                projectId={projectId}
-                sessionState={sessionState}
-                projectPath={project?.path}
-                worktreePath={meta.worktreePath}
-                isLoadingHistory={isLoadingHistory}
-                isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
-                targetTurnIndex={targetTurn}
-                followRequest={followRequest}
-                onFollowRequestConsumed={handleFollowRequestConsumed}
+        {isMobile && (showTabs || finishKind) && (
+          <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b text-xs">
+            <div className="flex-1 min-w-0 flex gap-1 overflow-x-auto">
+              {showTabs ? tabBarElement : null}
+            </div>
+            {finishKind && (
+              <SessionFinishAction
+                meta={meta}
+                git={git}
+                projectGitStatus={projectGitStatus}
+                onMarkDone={handleMarkDone}
               />
-              {pendingApproval && (
-                <ApprovalBannerSwitch
+            )}
+          </div>
+        )}
+
+        {/* Tab content + optional desktop todo sidebar */}
+        <div className="flex-1 flex min-h-0 min-w-0">
+          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+            {effectiveTab === "todos" && hasTodos ? (
+              <TodosView todos={todos} />
+            ) : effectiveTab === "changes" && hasGitContent ? (
+              <ChangesView
+                meta={meta}
+                git={git}
+                mainBranch={mainBranch}
+                projectGitStatus={projectGitStatus}
+                projectGitActions={projectGitActions}
+                committedDiff={git.diffResult}
+                uncommittedDiff={git.uncommittedDiffResult}
+                sessionState={sessionState}
+                onSendMessage={handleSend}
+                onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
+                expandFile={expandFile}
+                onExpandFileConsumed={handleExpandFileConsumed}
+              />
+            ) : effectiveTab === "loops" && hasLoops ? (
+              <LoopsPanel sessionId={sessionId} />
+            ) : (
+              <>
+                <MessageList
+                  turns={turns}
                   sessionId={sessionId}
-                  approval={pendingApproval}
-                  onStartFresh={handleStartFresh}
+                  projectId={projectId}
+                  sessionState={sessionState}
                   projectPath={project?.path}
                   worktreePath={meta.worktreePath}
+                  isLoadingHistory={isLoadingHistory}
+                  isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
+                  targetTurnIndex={targetTurn}
+                  followRequest={followRequest}
+                  onFollowRequestConsumed={handleFollowRequestConsumed}
                 />
-              )}
-              {pendingQuestion && (
-                <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
-              )}
-              {pendingApprovalSchedules.map((sc) => (
-                <ScheduleApprovalBanner key={sc.id} schedule={sc} />
-              ))}
-
-              {(contextUsage || compacting) && (
-                <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
-              )}
-              {/* Suppressed while parked: the schedule will resume this session. */}
-              {isResumable && !isParkedLoop && (
-                <ResumeBanner
-                  state={sessionState as "stopped" | "failed" | "done"}
-                  onResume={handleResume}
-                  resuming={resuming}
-                  branchMissing={meta?.branchMissing}
-                  resumeUnsupported={!resumeSupported}
-                />
-              )}
-              <MessageComposer
-                key={sessionId}
-                projectId={projectId}
-                ref={composerRef}
-                onSend={handleSend}
-                initialText={draft}
-                onTextPersist={handleTextPersist}
-                disabled={sessionState === "merging" || compacting || blockedMidTurn}
-                isRunning={sessionState === "running"}
-                onInterrupt={handleInterrupt}
-                attachmentsSupported={attachmentsSupported}
-                focusMode
-                placeholder={
-                  compacting
-                    ? "Compacting context..."
-                    : sessionState === "merging"
-                      ? "Git operation in progress..."
-                      : blockedMidTurn
-                        ? "Provider can't accept mid-turn messages — wait for the turn to finish"
-                        : resumePlaceholders[sessionState]
-                }
-                worktree={isWorktree}
-                planMode={planModeSupported ? planMode : undefined}
-                onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
-                autoApproveMode={autoApproveMode}
-                onAutoApproveModeChange={handleAutoApproveModeChange}
-                provider={(meta.provider as ProviderId) || undefined}
-                model={(meta.model as ModelId) ?? undefined}
-                onModelChange={modelSwitchSupported ? handleModelChange : undefined}
-                effort={(meta.effort as EffortLevel) ?? ""}
-                onEmptySubmit={isResumable ? handleResume : undefined}
-                stashedText={stashedText || undefined}
-                stashDepth={stashDepth}
-                onStash={handleStash}
-                onUnstash={handleUnstash}
-                templatePicker={
-                  <TemplatePicker
-                    onSelect={handleTemplateSelect}
-                    disabled={sessionState === "merging" || compacting}
+                {pendingApproval && (
+                  <ApprovalBannerSwitch
+                    sessionId={sessionId}
+                    approval={pendingApproval}
+                    onStartFresh={handleStartFresh}
+                    projectPath={project?.path}
+                    worktreePath={meta.worktreePath}
                   />
-                }
-              />
-            </>
-          )}
-        </div>
-        {showTodoSidebar &&
-          todos &&
-          (todoSidebarCollapsed ? (
-            <CollapsedTodoStrip todos={todos} onExpand={() => setTodoSidebarCollapsed(false)} />
-          ) : (
-            <TodoPanel todos={todos} onCollapse={() => setTodoSidebarCollapsed(true)} />
-          ))}
-      </div>
+                )}
+                {pendingQuestion && (
+                  <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
+                )}
+                {pendingApprovalSchedules.map((sc) => (
+                  <ScheduleApprovalBanner key={sc.id} schedule={sc} />
+                ))}
 
-      {/* Dialogs */}
-      <CreatePRDialog
-        open={activeDialog === "pr"}
-        onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
-        sessionId={sessionId}
-        defaultTitle={meta.name}
-        onSubmit={async (title, body) => {
-          const ok = await git.handlePRSubmit(title, body);
-          if (ok) setActiveDialog("none");
-        }}
-        loading={git.creatingPR}
-      />
-      <CommitDialog
-        open={activeDialog === "commit"}
-        onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
-        sessionId={sessionId}
-        defaultTitle={meta.name}
-        onSubmit={async (message) => {
-          const ok = await git.handleCommit(message);
-          if (ok) setActiveDialog("none");
-        }}
-        loading={git.committing}
-      />
-      {pendingTemplate && (
-        <VariableDialog
-          open
-          templateName={pendingTemplate.template.name}
-          variables={pendingTemplate.variables}
-          content={pendingTemplate.template.content}
-          onSubmit={handleVariableSubmit}
-          onCancel={handleVariableCancel}
+                {(contextUsage || compacting) && (
+                  <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
+                )}
+                {/* Suppressed while parked: the schedule will resume this session. */}
+                {isResumable && !isParkedLoop && (
+                  <ResumeBanner
+                    state={sessionState as "stopped" | "failed" | "done"}
+                    onResume={handleResume}
+                    resuming={resuming}
+                    branchMissing={meta?.branchMissing}
+                    resumeUnsupported={!resumeSupported}
+                  />
+                )}
+                <MessageComposer
+                  key={sessionId}
+                  projectId={projectId}
+                  ref={composerRef}
+                  onSend={handleSend}
+                  initialText={draft}
+                  onTextPersist={handleTextPersist}
+                  disabled={sessionState === "merging" || compacting || blockedMidTurn}
+                  isRunning={sessionState === "running"}
+                  onInterrupt={handleInterrupt}
+                  attachmentsSupported={attachmentsSupported}
+                  focusMode
+                  placeholder={
+                    compacting
+                      ? "Compacting context..."
+                      : sessionState === "merging"
+                        ? "Git operation in progress..."
+                        : blockedMidTurn
+                          ? "Provider can't accept mid-turn messages — wait for the turn to finish"
+                          : resumePlaceholders[sessionState]
+                  }
+                  worktree={isWorktree}
+                  planMode={planModeSupported ? planMode : undefined}
+                  onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
+                  autoApproveMode={autoApproveMode}
+                  onAutoApproveModeChange={handleAutoApproveModeChange}
+                  provider={(meta.provider as ProviderId) || undefined}
+                  model={(meta.model as ModelId) ?? undefined}
+                  onModelChange={modelSwitchSupported ? handleModelChange : undefined}
+                  effort={(meta.effort as EffortLevel) ?? ""}
+                  onEmptySubmit={isResumable ? handleResume : undefined}
+                  stashedText={stashedText || undefined}
+                  stashDepth={stashDepth}
+                  onStash={handleStash}
+                  onUnstash={handleUnstash}
+                  templatePicker={
+                    <TemplatePicker
+                      onSelect={handleTemplateSelect}
+                      disabled={sessionState === "merging" || compacting}
+                    />
+                  }
+                />
+              </>
+            )}
+          </div>
+          {showTodoSidebar &&
+            todos &&
+            (todoSidebarCollapsed ? (
+              <CollapsedTodoStrip todos={todos} onExpand={() => setTodoSidebarCollapsed(false)} />
+            ) : (
+              <TodoPanel todos={todos} onCollapse={() => setTodoSidebarCollapsed(true)} />
+            ))}
+        </div>
+
+        {/* Dialogs */}
+        <CreatePRDialog
+          open={activeDialog === "pr"}
+          onOpenChange={(open) => setActiveDialog(open ? "pr" : "none")}
+          sessionId={sessionId}
+          defaultTitle={meta.name}
+          onSubmit={async (title, body) => {
+            const ok = await git.handlePRSubmit(title, body);
+            if (ok) setActiveDialog("none");
+          }}
+          loading={git.creatingPR}
         />
-      )}
-    </div>
+        <CommitDialog
+          open={activeDialog === "commit"}
+          onOpenChange={(open) => setActiveDialog(open ? "commit" : "none")}
+          sessionId={sessionId}
+          defaultTitle={meta.name}
+          onSubmit={async (message) => {
+            const ok = await git.handleCommit(message);
+            if (ok) setActiveDialog("none");
+          }}
+          loading={git.committing}
+        />
+        {pendingTemplate && (
+          <VariableDialog
+            open
+            templateName={pendingTemplate.template.name}
+            variables={pendingTemplate.variables}
+            content={pendingTemplate.template.content}
+            onSubmit={handleVariableSubmit}
+            onCancel={handleVariableCancel}
+          />
+        )}
+      </div>
+    </SessionMachineContext.Provider>
   );
 }

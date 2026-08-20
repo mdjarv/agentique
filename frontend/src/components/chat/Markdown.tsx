@@ -19,8 +19,10 @@ import { MarkdownFileLink } from "~/components/chat/MarkdownFileLink";
 import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
 import { RunBlockButton } from "~/components/chat/RunBlockButton";
+import { useSessionMachineId } from "~/components/chat/SessionMachineContext";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+import { apiFetch, rewriteRemoteLocalhost, sessionFileMachineId } from "~/lib/machines/api";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import { cn } from "~/lib/utils";
 
@@ -187,19 +189,71 @@ function isInternalMarkdownHref(href: string | undefined): href is string {
   return false;
 }
 
+function MarkdownLink({
+  href,
+  children,
+  ...props
+}: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
+  const { node: _, ...rest } = props;
+  const machineId = useSessionMachineId();
+  if (isInternalMarkdownHref(href)) {
+    return <MarkdownFileLink href={href}>{children}</MarkdownFileLink>;
+  }
+  const resolved = href ? rewriteRemoteLocalhost(href, machineId) : href;
+  return (
+    <a
+      href={resolved}
+      {...rest}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={resolved !== href ? `${href} on the session's machine` : undefined}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** Inline images: a session-file src (screenshots agents embed) belonging to
+ *  a remote machine loads as a blob object URL — an <img src> cannot carry
+ *  the bearer header that machine requires. Everything else renders as-is. */
+function MarkdownImage({
+  src,
+  alt,
+  ...props
+}: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
+  const { node: _, ...rest } = props;
+  const machineId = typeof src === "string" ? sessionFileMachineId(src) : undefined;
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!machineId || typeof src !== "string") return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    const url = new URL(src, window.location.origin);
+    apiFetch(machineId, url.pathname + url.search)
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`${res.status}`))))
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [machineId, src]);
+
+  if (!machineId) return <img src={src} alt={alt ?? ""} {...rest} />;
+  if (!blobUrl) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
+  return <img src={blobUrl} alt={alt ?? ""} {...rest} />;
+}
+
 const COMPONENTS: Components = {
   pre: PreBlock,
   code: InlineCode,
-  a: ({ node: _, href, children, ...props }) => {
-    if (isInternalMarkdownHref(href)) {
-      return <MarkdownFileLink href={href}>{children}</MarkdownFileLink>;
-    }
-    return (
-      <a href={href} {...props} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    );
-  },
+  a: MarkdownLink,
+  img: MarkdownImage,
 };
 
 export const Markdown = memo(function Markdown({
