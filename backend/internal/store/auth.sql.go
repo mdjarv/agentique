@@ -10,6 +10,28 @@ import (
 	"database/sql"
 )
 
+const consumePairingToken = `-- name: ConsumePairingToken :one
+UPDATE pairing_tokens
+SET used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE token = ?
+  AND used_at IS NULL
+  AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+RETURNING token, user_id, expires_at, used_at, created_at
+`
+
+func (q *Queries) ConsumePairingToken(ctx context.Context, token string) (PairingToken, error) {
+	row := q.db.QueryRowContext(ctx, consumePairingToken, token)
+	var i PairingToken
+	err := row.Scan(
+		&i.Token,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `
@@ -33,17 +55,27 @@ func (q *Queries) CountWebAuthnCredentials(ctx context.Context) (int64, error) {
 }
 
 const createAuthSession = `-- name: CreateAuthSession :exec
-INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)
+INSERT INTO auth_sessions (token, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateAuthSessionParams struct {
-	Token     string `json:"token"`
-	UserID    string `json:"user_id"`
-	ExpiresAt string `json:"expires_at"`
+	Token     string         `json:"token"`
+	ID        sql.NullString `json:"id"`
+	UserID    string         `json:"user_id"`
+	ExpiresAt string         `json:"expires_at"`
+	Label     string         `json:"label"`
+	Kind      string         `json:"kind"`
 }
 
 func (q *Queries) CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error {
-	_, err := q.db.ExecContext(ctx, createAuthSession, arg.Token, arg.UserID, arg.ExpiresAt)
+	_, err := q.db.ExecContext(ctx, createAuthSession,
+		arg.Token,
+		arg.ID,
+		arg.UserID,
+		arg.ExpiresAt,
+		arg.Label,
+		arg.Kind,
+	)
 	return err
 }
 
@@ -59,6 +91,21 @@ type CreateInviteTokenParams struct {
 
 func (q *Queries) CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error {
 	_, err := q.db.ExecContext(ctx, createInviteToken, arg.Token, arg.CreatedBy, arg.ExpiresAt)
+	return err
+}
+
+const createPairingToken = `-- name: CreatePairingToken :exec
+INSERT INTO pairing_tokens (token, user_id, expires_at) VALUES (?, ?, ?)
+`
+
+type CreatePairingTokenParams struct {
+	Token     string `json:"token"`
+	UserID    string `json:"user_id"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+func (q *Queries) CreatePairingToken(ctx context.Context, arg CreatePairingTokenParams) error {
+	_, err := q.db.ExecContext(ctx, createPairingToken, arg.Token, arg.UserID, arg.ExpiresAt)
 	return err
 }
 
@@ -144,12 +191,33 @@ func (q *Queries) DeleteAuthSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteAuthSessionByID = `-- name: DeleteAuthSessionByID :execrows
+DELETE FROM auth_sessions WHERE id = ?
+`
+
+func (q *Queries) DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuthSessionByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteExpiredAuthSessions = `-- name: DeleteExpiredAuthSessions :exec
 DELETE FROM auth_sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `
 
 func (q *Queries) DeleteExpiredAuthSessions(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, deleteExpiredAuthSessions)
+	return err
+}
+
+const deleteExpiredPairingTokens = `-- name: DeleteExpiredPairingTokens :exec
+DELETE FROM pairing_tokens WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+`
+
+func (q *Queries) DeleteExpiredPairingTokens(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredPairingTokens)
 	return err
 }
 
@@ -162,8 +230,25 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) error {
 	return err
 }
 
+const getAdminUser = `-- name: GetAdminUser :one
+SELECT id, display_name, is_admin, created_at, sidebar_focus_mode FROM users WHERE is_admin = 1 ORDER BY created_at LIMIT 1
+`
+
+func (q *Queries) GetAdminUser(ctx context.Context) (User, error) {
+	row := q.db.QueryRowContext(ctx, getAdminUser)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.IsAdmin,
+		&i.CreatedAt,
+		&i.SidebarFocusMode,
+	)
+	return i, err
+}
+
 const getAuthSession = `-- name: GetAuthSession :one
-SELECT s.token, s.user_id, s.expires_at, s.created_at,
+SELECT s.token, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
        u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
@@ -171,13 +256,16 @@ WHERE s.token = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `
 
 type GetAuthSessionRow struct {
-	Token            string `json:"token"`
-	UserID           string `json:"user_id"`
-	ExpiresAt        string `json:"expires_at"`
-	CreatedAt        string `json:"created_at"`
-	DisplayName      string `json:"display_name"`
-	IsAdmin          int64  `json:"is_admin"`
-	SidebarFocusMode int64  `json:"sidebar_focus_mode"`
+	Token            string         `json:"token"`
+	ID               sql.NullString `json:"id"`
+	Label            string         `json:"label"`
+	Kind             string         `json:"kind"`
+	UserID           string         `json:"user_id"`
+	ExpiresAt        string         `json:"expires_at"`
+	CreatedAt        string         `json:"created_at"`
+	DisplayName      string         `json:"display_name"`
+	IsAdmin          int64          `json:"is_admin"`
+	SidebarFocusMode int64          `json:"sidebar_focus_mode"`
 }
 
 func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error) {
@@ -185,6 +273,9 @@ func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSess
 	var i GetAuthSessionRow
 	err := row.Scan(
 		&i.Token,
+		&i.ID,
+		&i.Label,
+		&i.Kind,
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -267,6 +358,54 @@ func (q *Queries) GetUserByDisplayName(ctx context.Context, displayName string) 
 		&i.SidebarFocusMode,
 	)
 	return i, err
+}
+
+const listAuthSessions = `-- name: ListAuthSessions :many
+SELECT s.id, s.user_id, s.label, s.kind, s.expires_at, s.created_at, u.display_name
+FROM auth_sessions s
+JOIN users u ON u.id = s.user_id
+ORDER BY s.created_at DESC
+`
+
+type ListAuthSessionsRow struct {
+	ID          sql.NullString `json:"id"`
+	UserID      string         `json:"user_id"`
+	Label       string         `json:"label"`
+	Kind        string         `json:"kind"`
+	ExpiresAt   string         `json:"expires_at"`
+	CreatedAt   string         `json:"created_at"`
+	DisplayName string         `json:"display_name"`
+}
+
+func (q *Queries) ListAuthSessions(ctx context.Context) ([]ListAuthSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAuthSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuthSessionsRow{}
+	for rows.Next() {
+		var i ListAuthSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Label,
+			&i.Kind,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCredentialsByUser = `-- name: ListCredentialsByUser :many

@@ -26,6 +26,16 @@ func (s *Service) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/auth/invite", s.handleCreateInvite)
 	mux.HandleFunc("GET /api/auth/invite/{token}", s.handleValidateInvite)
+
+	// Multi-machine pairing + bearer sessions (pairing.go). All under
+	// /api/auth/ (exempt from the middleware) — each handler enforces its own
+	// auth: mint/list/revoke require an admin session or the data-dir admin
+	// secret; exchange is authenticated by the pairing token itself.
+	mux.HandleFunc("POST /api/auth/pairing-tokens", s.handleMintPairingToken)
+	mux.HandleFunc("POST /api/auth/pair", s.handlePairExchange)
+	mux.HandleFunc("POST /api/auth/ws-ticket", s.handleCreateWSTicket)
+	mux.HandleFunc("GET /api/auth/sessions", s.handleListSessions)
+	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.handleRevokeSession)
 }
 
 // handleStatus returns the current auth state.
@@ -48,7 +58,7 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"credentialCount": credCount,
 	}
 
-	session, err := s.validateSession(r)
+	session, err := s.authenticateRequest(r)
 	if err == nil && session != nil {
 		resp["authenticated"] = true
 		resp["user"] = map[string]any{
@@ -223,7 +233,7 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create auth session.
-	token, err := s.createSession(ctx, user.ID)
+	token, err := s.createSession(ctx, user.ID, "", "cookie")
 	if err != nil {
 		httperror.RespondError(w, httperror.Internal("create session", err))
 		return
@@ -296,7 +306,7 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := validatedUser.(*User)
-	token, err := s.createSession(r.Context(), user.ID)
+	token, err := s.createSession(r.Context(), user.ID, "", "cookie")
 	if err != nil {
 		httperror.RespondError(w, httperror.Internal("create session", err))
 		return

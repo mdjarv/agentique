@@ -21,10 +21,13 @@ type AgentProfile struct {
 }
 
 type AuthSession struct {
-	Token     string `json:"token"`
-	UserID    string `json:"user_id"`
-	ExpiresAt string `json:"expires_at"`
-	CreatedAt string `json:"created_at"`
+	Token     string         `json:"token"`
+	UserID    string         `json:"user_id"`
+	ExpiresAt string         `json:"expires_at"`
+	CreatedAt string         `json:"created_at"`
+	ID        sql.NullString `json:"id"`
+	Label     string         `json:"label"`
+	Kind      string         `json:"kind"`
 }
 
 type BrainJob struct {
@@ -84,6 +87,14 @@ type ModelResolution struct {
 	Slug       string `json:"slug"`
 	ResolvedID string `json:"resolved_id"`
 	LastSeenAt string `json:"last_seen_at"`
+}
+
+type PairingToken struct {
+	Token     string         `json:"token"`
+	UserID    string         `json:"user_id"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedAt    sql.NullString `json:"used_at"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type PersonaInteraction struct {

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	goruntime "runtime"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
@@ -42,6 +43,18 @@ type Config struct {
 	AuthEnabled bool
 	RPID        string
 	RPOrigins   []string
+
+	// MachineID is this server's stable identity (internal/machine), served
+	// unauthenticated at /.well-known/agentique/environment so clients can
+	// probe and pin it. Empty in tests that don't care about identity.
+	MachineID string
+	// MachineLabel is the human-friendly machine name shown in clients.
+	MachineLabel string
+	// Version is the build version string ("dev" for non-release builds).
+	Version string
+	// AdminSecret arms the data-dir-secret auth path for the pairing and
+	// session-management endpoints (CLI `agentique pair`). Empty = disabled.
+	AdminSecret string
 
 	// TestMode enables mock CLI connector and test-only HTTP routes.
 	TestMode bool
@@ -253,8 +266,33 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		httperror.JSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
+			"status":       "ok",
+			"machineId":    cfg.MachineID,
+			"machineLabel": cfg.MachineLabel,
+			"version":      cfg.Version,
 			"features": map[string]bool{
+				"browser": cfg.ExperimentalBrowser,
+				"teams":   cfg.ExperimentalTeams,
+			},
+		})
+	})
+
+	// Machine descriptor (docs/multi-machine-research.md): unauthenticated by
+	// design — it is the universal "is an agentique server here, and which
+	// one" probe. Clients pin MachineID and verify it on every connect.
+	// Capabilities are optional booleans; clients treat a missing key as
+	// unsupported, so features degrade per-feature without version checks.
+	mux.HandleFunc("GET /.well-known/agentique/environment", func(w http.ResponseWriter, r *http.Request) {
+		httperror.JSON(w, http.StatusOK, map[string]any{
+			"machineId": cfg.MachineID,
+			"label":     cfg.MachineLabel,
+			"version":   cfg.Version,
+			"platform": map[string]string{
+				"os":   goruntime.GOOS,
+				"arch": goruntime.GOARCH,
+			},
+			"capabilities": map[string]bool{
+				"pairing": cfg.AuthEnabled,
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
 			},
@@ -557,6 +595,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("auth service: %w", err)
 		}
+		authSvc.SetAdminSecret(cfg.AdminSecret)
 		authSvc.RegisterRoutes(mux)
 		authSvc.RegisterUserRoutes(mux)
 		s.authSvc = authSvc
@@ -640,15 +679,18 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		origin := r.Header.Get("Origin")
-		if origin != "" {
-			// When auth is enabled, only allow configured origins.
-			if len(s.allowedOrigins) > 0 && !s.allowedOrigins[origin] {
-				httperror.RespondError(w, httperror.Forbidden("origin not allowed"))
-				return
-			}
+		switch {
+		case origin != "" && s.allowedOrigins[origin]:
+			// Configured (RP) origins get credentialed CORS — cookies work.
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-		} else {
+		default:
+			// Every other origin gets non-credentialed CORS: the browser will
+			// never attach cookies (no Allow-Credentials), so ambient
+			// authority cannot leak — but a cross-origin client presenting an
+			// Authorization: Bearer header can reach the API. This is what
+			// lets one machine's SPA talk to another machine's server
+			// (multi-machine, docs/multi-machine-research.md).
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

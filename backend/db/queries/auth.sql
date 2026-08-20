@@ -33,10 +33,10 @@ SELECT * FROM webauthn_credentials WHERE id = ?;
 UPDATE webauthn_credentials SET sign_count = ?, backup_eligible = ?, backup_state = ? WHERE id = ?;
 
 -- name: CreateAuthSession :exec
-INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?);
+INSERT INTO auth_sessions (token, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetAuthSession :one
-SELECT s.token, s.user_id, s.expires_at, s.created_at,
+SELECT s.token, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
        u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
@@ -59,6 +59,32 @@ UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', '
 
 -- name: ListInviteTokens :many
 SELECT * FROM invite_tokens WHERE created_by = ? ORDER BY created_at DESC;
+
+-- name: ListAuthSessions :many
+SELECT s.id, s.user_id, s.label, s.kind, s.expires_at, s.created_at, u.display_name
+FROM auth_sessions s
+JOIN users u ON u.id = s.user_id
+ORDER BY s.created_at DESC;
+
+-- name: DeleteAuthSessionByID :execrows
+DELETE FROM auth_sessions WHERE id = ?;
+
+-- name: CreatePairingToken :exec
+INSERT INTO pairing_tokens (token, user_id, expires_at) VALUES (?, ?, ?);
+
+-- name: ConsumePairingToken :one
+UPDATE pairing_tokens
+SET used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE token = ?
+  AND used_at IS NULL
+  AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+RETURNING *;
+
+-- name: DeleteExpiredPairingTokens :exec
+DELETE FROM pairing_tokens WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
+
+-- name: GetAdminUser :one
+SELECT * FROM users WHERE is_admin = 1 ORDER BY created_at LIMIT 1;
 
 -- name: CountWebAuthnCredentials :one
 SELECT COUNT(*) FROM webauthn_credentials;

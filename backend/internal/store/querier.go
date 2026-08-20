@@ -17,6 +17,7 @@ type Querier interface {
 	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
 	ClaimScheduleRun(ctx context.Context, id string) (int64, error)
 	ClearScheduleActionAttention(ctx context.Context, arg ClearScheduleActionAttentionParams) error
+	ConsumePairingToken(ctx context.Context, token string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
@@ -27,6 +28,7 @@ type Querier interface {
 	CreateBrainJob(ctx context.Context, arg CreateBrainJobParams) (BrainJob, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
+	CreatePairingToken(ctx context.Context, arg CreatePairingTokenParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreatePromptTemplate(ctx context.Context, arg CreatePromptTemplateParams) (PromptTemplate, error)
 	// Scheduled loops (docs/scheduled-loops.md). All timestamps are UTC RFC3339
@@ -41,9 +43,11 @@ type Querier interface {
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
 	DeleteAuthSession(ctx context.Context, token string) error
+	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
 	DeleteBrainJob(ctx context.Context, id string) error
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
+	DeleteExpiredPairingTokens(ctx context.Context) error
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
 	DeleteProject(ctx context.Context, id string) error
 	DeletePromptTemplate(ctx context.Context, id string) error
@@ -52,6 +56,7 @@ type Querier interface {
 	DeleteTeam(ctx context.Context, id string) error
 	DeleteUser(ctx context.Context, id string) error
 	GetActiveSessionByAgentProfile(ctx context.Context, agentProfileID sql.NullString) (Session, error)
+	GetAdminUser(ctx context.Context) (User, error)
 	GetAgentProfile(ctx context.Context, id string) (AgentProfile, error)
 	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
 	GetChannel(ctx context.Context, id string) (Channel, error)
@@ -75,6 +80,7 @@ type Querier interface {
 	ListAgentMessagesByChannel(ctx context.Context, channelID string) ([]SessionEvent, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
+	ListAuthSessions(ctx context.Context) ([]ListAuthSessionsRow, error)
 	ListBrainJobs(ctx context.Context) ([]BrainJob, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
 	ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]Channel, error)

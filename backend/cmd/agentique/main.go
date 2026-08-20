@@ -22,6 +22,10 @@ var (
 	commit  = "none"
 	date    = "unknown"
 	addr    string
+	// addrChanged records whether --addr was explicitly passed (set in the
+	// root PersistentPreRun — baseURL cannot ask rootCmd directly without an
+	// initialization cycle).
+	addrChanged bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,6 +38,9 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.SetVersionTemplate("agentique {{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&addr, "addr", "localhost:9201", "server address")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		addrChanged = cmd.Flags().Changed("addr")
+	}
 }
 
 func main() {
@@ -157,8 +164,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 func baseURL() string {
 	cfg, _ := config.Load(config.Path())
+	// Flag beats file (same precedence as serve) — config.Default() always
+	// sets Server.Addr, so "non-empty config value" alone would silently
+	// swallow an explicit --addr.
 	a := addr
-	if cfg.Server.Addr != "" {
+	if !addrChanged && cfg.Server.Addr != "" {
 		a = cfg.Server.Addr
 	}
 	if !strings.Contains(a, "://") {
@@ -221,6 +231,45 @@ func postJSON(client *http.Client, url string, body any) error {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func newJSONRequest(method, url string, body any) (*http.Request, error) {
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			return nil, err
+		}
+	}
+	req, err := http.NewRequest(method, url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req, nil
+}
+
+func decodeJSONResponse[T any](resp *http.Response) (T, error) {
+	var zero T
+	if resp.StatusCode >= 400 {
+		return zero, fmt.Errorf("%s", readErrorBody(resp))
+	}
+	var result T
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return zero, err
+	}
+	return result, nil
+}
+
+func readErrorBody(resp *http.Response) string {
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp.Error != "" {
+		return errResp.Error
+	}
+	return fmt.Sprintf("unexpected status %d", resp.StatusCode)
 }
 
 func doRequest(client *http.Client, method, url string) error {

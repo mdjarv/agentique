@@ -223,6 +223,10 @@ type ServerConfig struct {
 	TLSKey      string `toml:"tls-key"`
 	RPID        string `toml:"rp-id"`
 	RPOrigin    string `toml:"rp-origin"`
+	// MachineLabel overrides the machine name shown to multi-machine clients
+	// (default: PRETTY_HOSTNAME, else the OS hostname). Env override:
+	// AGENTIQUE_MACHINE_LABEL.
+	MachineLabel string `toml:"machine-label"`
 }
 
 type LoggingConfig struct {

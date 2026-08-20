@@ -36,6 +36,14 @@ func (h *Handler) upgrader() websocket.Upgrader {
 			if len(h.AllowedOrigins) == 0 {
 				return true
 			}
+			// A wsTicket-bearing upgrade is authenticated by the one-time
+			// ticket (validated by the auth middleware before this handler
+			// runs), not by origin — cross-origin multi-machine clients
+			// connect this way. The origin allowlist only guards
+			// cookie-authenticated upgrades against cross-site hijacking.
+			if r.URL.Query().Get("wsTicket") != "" {
+				return true
+			}
 			return h.AllowedOrigins[r.Header.Get("Origin")]
 		},
 	}

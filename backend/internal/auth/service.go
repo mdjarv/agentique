@@ -32,9 +32,11 @@ const userContextKey contextKey = 0
 
 // Service handles WebAuthn authentication flows and session management.
 type Service struct {
-	queries    *store.Queries
-	webauthn   *webauthn.WebAuthn
-	ceremonies sync.Map // key: string -> *ceremonyEntry
+	queries     *store.Queries
+	webauthn    *webauthn.WebAuthn
+	ceremonies  sync.Map // key: string -> *ceremonyEntry
+	wsTickets   sync.Map // key: string -> *wsTicket
+	adminSecret string   // data-dir secret authorizing CLI pairing/session management; "" = disabled
 }
 
 type ceremonyEntry struct {
@@ -98,9 +100,16 @@ func (s *Service) loadUserByHandle(rawID, userHandle []byte) (webauthn.User, err
 	return s.loadUser(context.Background(), string(userHandle))
 }
 
-// createSession creates a new auth session and returns the token.
-func (s *Service) createSession(ctx context.Context, userID string) (string, error) {
+// createSession creates a new auth session and returns the token. kind is
+// "cookie" (WebAuthn login) or "bearer" (pairing exchange); label is a
+// human-readable client name shown in session listings.
+func (s *Service) createSession(ctx context.Context, userID, label, kind string) (string, error) {
 	token, err := generateToken(32)
+	if err != nil {
+		return "", err
+	}
+	// Public identifier for list/revoke — never the token itself.
+	id, err := generateToken(9)
 	if err != nil {
 		return "", err
 	}
@@ -108,8 +117,11 @@ func (s *Service) createSession(ctx context.Context, userID string) (string, err
 
 	err = s.queries.CreateAuthSession(ctx, store.CreateAuthSessionParams{
 		Token:     token,
+		ID:        sql.NullString{String: id, Valid: true},
 		UserID:    userID,
 		ExpiresAt: expiresAt,
+		Label:     label,
+		Kind:      kind,
 	})
 	if err != nil {
 		return "", err
@@ -201,8 +213,18 @@ func (s *Service) cleanupLoop() {
 			return true
 		})
 
+		s.wsTickets.Range(func(key, val any) bool {
+			if entry, ok := val.(*wsTicket); ok && time.Now().After(entry.expiresAt) {
+				s.wsTickets.Delete(key)
+			}
+			return true
+		})
+
 		if err := s.queries.DeleteExpiredAuthSessions(context.Background()); err != nil {
 			slog.Error("failed to clean expired sessions", "error", err)
+		}
+		if err := s.queries.DeleteExpiredPairingTokens(context.Background()); err != nil {
+			slog.Error("failed to clean expired pairing tokens", "error", err)
 		}
 	}
 }
@@ -225,14 +247,30 @@ func (s *Service) validateSession(r *http.Request) (*store.GetAuthSessionRow, er
 	if err != nil {
 		return nil, err
 	}
+	return s.lookupSession(r.Context(), cookie.Value)
+}
 
-	row, err := s.queries.GetAuthSession(r.Context(), cookie.Value)
+// authenticateRequest resolves the request's credential to a session row. An
+// explicit Authorization: Bearer header wins and does not fall back to the
+// cookie on failure — a presented credential must be the one judged.
+func (s *Service) authenticateRequest(r *http.Request) (*store.GetAuthSessionRow, error) {
+	if h := r.Header.Get("Authorization"); h != "" {
+		token, ok := strings.CutPrefix(h, "Bearer ")
+		if !ok {
+			return nil, errors.New("unsupported authorization scheme")
+		}
+		return s.lookupSession(r.Context(), strings.TrimSpace(token))
+	}
+	return s.validateSession(r)
+}
+
+func (s *Service) lookupSession(ctx context.Context, token string) (*store.GetAuthSessionRow, error) {
+	row, err := s.queries.GetAuthSession(ctx, token)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("session not found")
 		}
 		return nil, err
 	}
-
 	return &row, nil
 }

@@ -20,9 +20,11 @@ import (
 	"github.com/spf13/cobra"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/doctor"
 	"github.com/mdjarv/agentique/backend/internal/logging"
+	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/project"
@@ -443,8 +445,35 @@ func runServe(cmd *cobra.Command, args []string) error {
 		RunHistory:             envIntOr("AGENTIQUE_SCHEDULER_RUN_HISTORY", fileCfg.Scheduler.RunHistory),
 	}
 
+	// Machine identity + pairing admin secret (docs/multi-machine-research.md
+	// M0). Both are small read-or-create files in the data dir — created here
+	// at serve startup, never in server.New (no filesystem side effects in
+	// constructors), and skipped in test mode so test servers pointed at
+	// scratch DBs never touch the real data dir.
+	machineID := ""
+	adminSecret := ""
+	if !testMode {
+		machineID, err = machine.LoadOrCreateID(paths.DataDir())
+		if err != nil {
+			slog.Error("failed to resolve machine identity", "error", err)
+			os.Exit(1)
+		}
+		if !disableAuth {
+			adminSecret, err = auth.LoadOrCreateAdminSecret(paths.DataDir())
+			if err != nil {
+				slog.Error("failed to resolve admin secret", "error", err)
+				os.Exit(1)
+			}
+		}
+	}
+	machineLabel := machine.Label(firstNonEmpty(os.Getenv("AGENTIQUE_MACHINE_LABEL"), fileCfg.Server.MachineLabel))
+
 	cfg := server.Config{
 		AuthEnabled:         !disableAuth,
+		MachineID:           machineID,
+		MachineLabel:        machineLabel,
+		Version:             version,
+		AdminSecret:         adminSecret,
 		TestMode:            testMode,
 		DevMode:             !isRelease(),
 		DBPath:              dbFile,
