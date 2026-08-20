@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mdjarv/agentique/backend/internal/config"
+	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
@@ -110,18 +113,69 @@ func runPair(cmd *cobra.Command, args []string) error {
 	if envErr == nil && env.Label != "" {
 		fmt.Printf("  Machine:  %s (%s)\n", env.Label, shortID(env.MachineID))
 	}
-	fmt.Printf("  Server:   %s\n", baseURL())
+	for _, ep := range pairingEndpoints() {
+		fmt.Printf("  %-9s %s\n", ep.kind+":", ep.url)
+	}
 	fmt.Printf("  Token:    %s\n", minted.Token)
 	fmt.Printf("  Expires:  %s\n", minted.ExpiresAt)
 	fmt.Println()
-	fmt.Println("  In the client, add this machine using the server address and token above.")
-	fmt.Println("  When pairing from another device, use an address it can reach")
-	fmt.Println("  (e.g. this machine's tailnet name), not localhost.")
+	fmt.Println("  In the client, add this machine using an address it can reach")
+	fmt.Println("  from where it runs (prefer the tailnet or public URL when pairing")
+	fmt.Println("  another device) together with the token above.")
 	fmt.Println()
 	fmt.Println("  The token is single-use. Revoke paired clients later with:")
 	fmt.Println("    agentique auth sessions")
 	fmt.Println("    agentique auth revoke <session-id>")
 	return nil
+}
+
+type pairingEndpoint struct {
+	kind string
+	url  string
+}
+
+// pairingEndpoints lists the addresses a client could plausibly reach this
+// server on, most-local first: the configured listen address, the public
+// (reverse-proxy) origin when one is configured, and the tailnet MagicDNS
+// URL when Tailscale is detected. These are hints — the client's connection
+// attempt decides what actually works.
+func pairingEndpoints() []pairingEndpoint {
+	// 0.0.0.0 is a bind address, not a dialable URL — show the loopback form.
+	serverURL := baseURL()
+	if u, err := url.Parse(serverURL); err == nil && (u.Hostname() == "0.0.0.0" || u.Hostname() == "") {
+		host := "localhost"
+		if port := u.Port(); port != "" {
+			host += ":" + port
+		}
+		u.Host = host
+		serverURL = u.String()
+	}
+	eps := []pairingEndpoint{{kind: "Server", url: serverURL}}
+
+	cfg, _ := config.Load(config.Path())
+	if origin := strings.TrimRight(cfg.Server.RPOrigin, "/"); origin != "" && origin != baseURL() {
+		eps = append(eps, pairingEndpoint{kind: "Public", url: origin})
+	}
+
+	if name := machine.TailnetName(); name != "" {
+		if u, err := url.Parse(baseURL()); err == nil && !loopbackHost(u.Hostname()) {
+			// A loopback-bound server is not reachable on its tailnet name,
+			// so the hint would be a lie — the reverse-proxy Public line is
+			// the reachable address in that setup.
+			tailnet := u.Scheme + "://" + name
+			if port := u.Port(); port != "" {
+				tailnet += ":" + port
+			}
+			if tailnet != baseURL() {
+				eps = append(eps, pairingEndpoint{kind: "Tailnet", url: tailnet})
+			}
+		}
+	}
+	return eps
+}
+
+func loopbackHost(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func runAuthSessions(cmd *cobra.Command, args []string) error {
