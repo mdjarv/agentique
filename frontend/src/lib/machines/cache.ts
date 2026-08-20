@@ -4,7 +4,7 @@ import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 
 /**
- * Per-machine offline cache (multi-machine M4). Machines come and go — a
+ * Per-machine offline cache (multi-machine). Machines come and go — a
  * laptop suspends in a bag while the VPS keeps serving the PWA — so each
  * machine's last-known projects and session metadata persist locally and
  * hydrate the stores at startup. The machine's half of the sidebar stays

@@ -4,7 +4,7 @@ import type { ConnectionState } from "~/lib/ws-client";
 
 /**
  * Catalog of paired remote machines (multi-machine,
- * docs/multi-machine-research.md M1). Each entry is one remote agentique
+ * docs/multi-machine.md). Each entry is one remote agentique
  * server reached by base URL + bearer token (minted via `agentique pair` on
  * that machine). The primary machine — the one serving this SPA — is implicit
  * and never in this catalog; its identity lives in feature-store.

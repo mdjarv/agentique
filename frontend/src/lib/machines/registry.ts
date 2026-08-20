@@ -3,7 +3,7 @@ import { useMachineStore } from "~/stores/machine-store";
 
 /**
  * Per-machine WebSocket clients + authenticated REST for remote machines
- * (multi-machine M1). One WsClient per machine, created once and reconnected
+ * (multi-machine). One WsClient per machine, created once and reconnected
  * in place, never replaced — components hold clients via useRef, so a swapped
  * instance would strand them on a dead socket (same constraint as the primary
  * client in useWebSocket.ts).

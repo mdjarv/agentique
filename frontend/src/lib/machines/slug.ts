@@ -1,5 +1,5 @@
 /**
- * Slug qualifier for remote machines' projects (multi-machine M1). Slugs are
+ * Slug qualifier for remote machines' projects (multi-machine). Slugs are
  * unique per-server only — both machines can own a "agentique" project — so
  * remote projects get a stable machine-derived suffix at ingest and routes
  * stay slug-addressed with no machine segment. The primary machine's slugs

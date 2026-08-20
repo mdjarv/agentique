@@ -4,7 +4,7 @@ import { useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Machine-aware REST (multi-machine M2). WS traffic routes through the
+ * Machine-aware REST (multi-machine). WS traffic routes through the
  * facade in router.ts; plain REST resolves its target here — by project or
  * session id — and reaches remote machines via machineFetch (bearer +
  * absolute base URL). undefined machineId = the primary, same-origin.

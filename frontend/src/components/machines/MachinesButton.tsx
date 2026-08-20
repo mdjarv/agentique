@@ -19,7 +19,7 @@ import type { MachineStatus } from "~/stores/machine-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Sidebar-footer entry point for paired machines (multi-machine M1): a server
+ * Sidebar-footer entry point for paired machines (multi-machine): a server
  * icon opening a popover with this machine, each paired machine with its live
  * connection dot and a remove action, and the Add-machine pairing dialog.
  */

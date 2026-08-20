@@ -1,5 +1,5 @@
 -- +goose Up
--- Cross-machine project identity (docs/multi-machine-research.md M3): the
+-- Cross-machine project identity (docs/multi-machine.md): the
 -- canonical key of the checkout's primary git remote (host/org/repo,
 -- normalized by gitops.CanonicalizeRemoteURL so SSH and HTTPS clones of the
 -- same GitHub repo match). '' = no usable remote; such projects never group.

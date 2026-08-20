@@ -1,7 +1,7 @@
 import type { Project } from "~/lib/types";
 
 /**
- * Cross-machine project grouping (multi-machine M3). Projects on different
+ * Cross-machine project grouping (multi-machine). Projects on different
  * machines whose primary git remotes canonicalize to the same key
  * (`remote_url`, e.g. "github.com/org/repo") are one logical project. The
  * grouping is display-only — commands always target a physical member — and

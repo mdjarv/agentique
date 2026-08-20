@@ -205,6 +205,45 @@ release.** What that costs a change here:
 - Layers are weakest-first (base → learned → CLI-advertised → `[models]` config
   override) and each degrades to the one below; `ListModels` never fails.
 
+## Multi-Machine
+
+One UI controls agentique servers on several machines: client-side fan-out to
+sovereign servers, no federation — the SPA-serving server is the **primary**,
+remotes are paired via `agentique pair`. Design: `docs/multi-machine.md`.
+Invariants a change here must keep:
+
+- **The server is the authorization boundary.** Reachability (tailnet, LAN)
+  never substitutes for auth; peer discovery (`/api/machines/discover`) is a
+  hint layer that grants nothing. Bearer tokens never ride URLs — WebSockets
+  redeem a one-time 5-min ticket whose redemption re-checks the DB, and an
+  explicit `Authorization: Bearer` never falls back to the cookie.
+- **Machine identity is pinned.** `<datadir>/machine-id` (created in
+  `serve.go`, never in constructors) is served on the unauthenticated
+  `/.well-known/agentique/environment` descriptor; clients verify it on pair
+  and connect. Capabilities on the descriptor are optional booleans — absent
+  = unsupported, no version comparisons.
+- **Requests route by owning entity.** `useWebSocket()` returns the
+  `RoutingWsClient` facade: payload `projectId` (or `sessionId` → its
+  project) picks the machine; subscriptions fan in from every machine's
+  socket; lifecycle delegates to the primary ONLY — a flaky remote re-syncs
+  just its own machine (`useMachineConnections`) and must never reset primary
+  streaming state. REST routes the same way via `lib/machines/api.ts`.
+- **Only `Project` carries a client-side `machineId` tag**; sessions derive
+  their machine via `meta.projectId`. Remote slugs get a `~<machineId8>`
+  suffix at ingest; primary slugs are never rewritten.
+- **Cross-machine project identity is `projects.remote_url`**
+  (`gitops.CanonicalRemoteURL`: upstream > origin > alphabetical, SSH ≡
+  HTTPS, `::subpath` for repo-subdir projects; `''` never groups). Grouping
+  (`lib/machines/grouping.ts`) is display-only — commands always target one
+  physical (machine, project, session); the primary member drives the
+  group's name/color/icon/slug.
+- **The machine catalog is account state** (primary's `machines` table,
+  `/api/machines`); client localStorage is only an offline cache, as is the
+  per-machine projects/sessions cache (`lib/machines/cache.ts`) — cached
+  snapshots sanitize live-ness and the live re-sync is authoritative.
+- Per-machine `WsClient`s are created once and reconnected **in place**,
+  never replaced (components hold them via `useRef`).
+
 ## Brain / Memory
 
 The persistent agent memory ("brain") is a major subsystem. Design docs:

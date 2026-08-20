@@ -4,7 +4,7 @@ import type { MachineEntry } from "~/stores/machine-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Client side of the pairing flow (multi-machine M1): probe the machine's
+ * Client side of the pairing flow (multi-machine): probe the machine's
  * descriptor, exchange the one-time token from `agentique pair` for a bearer
  * session, save the catalog entry, and start the connection.
  */

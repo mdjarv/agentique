@@ -340,7 +340,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Tailnet peer discovery (multi-machine M4): probe online tailnet peers
+	// Tailnet peer discovery (multi-machine): probe online tailnet peers
 	// for agentique descriptors so Add-machine can suggest them. A hint layer
 	// only — pairing still authorizes. Auth-guarded like all /api routes.
 	mux.HandleFunc("GET /api/machines/discover", func(w http.ResponseWriter, r *http.Request) {
@@ -351,7 +351,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		httperror.JSON(w, http.StatusOK, peers)
 	})
 
-	// Machine descriptor (docs/multi-machine-research.md): unauthenticated by
+	// Machine descriptor (docs/multi-machine.md): unauthenticated by
 	// design — it is the universal "is an agentique server here, and which
 	// one" probe. Clients pin MachineID and verify it on every connect.
 	// Capabilities are optional booleans; clients treat a missing key as
@@ -764,7 +764,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			// authority cannot leak — but a cross-origin client presenting an
 			// Authorization: Bearer header can reach the API. This is what
 			// lets one machine's SPA talk to another machine's server
-			// (multi-machine, docs/multi-machine-research.md).
+			// (multi-machine, docs/multi-machine.md).
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

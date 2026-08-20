@@ -10,7 +10,7 @@ import { useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Routing facade over the per-machine WebSocket clients (multi-machine M1).
+ * Routing facade over the per-machine WebSocket clients (multi-machine).
  *
  * The entire codebase threads one `ws` handle through its RPC helpers
  * (~/lib/ws-rpc.ts) and subscription hooks. Instead of teaching every call

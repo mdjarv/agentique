@@ -10,7 +10,7 @@ import { useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Drives connections to paired remote machines (multi-machine M1). For each
+ * Drives connections to paired remote machines (multi-machine). For each
  * catalog entry: ensures its WebSocket client exists, and on every (re)connect
  * loads that machine's projects — tagged with machineId and a qualified slug —
  * then subscribes + loads sessions per project over that machine's own socket.

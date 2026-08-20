@@ -18,7 +18,7 @@ async function fetchWithRetry(
   return retrying(() => fetch(input, init), maxRetries);
 }
 
-/** fetchWithRetry against the machine owning the target (multi-machine M2);
+/** fetchWithRetry against the machine owning the target (multi-machine);
  *  machineId undefined = the primary, same-origin. */
 async function machineFetchWithRetry(
   machineId: string | undefined,

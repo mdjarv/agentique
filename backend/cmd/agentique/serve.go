@@ -445,7 +445,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		RunHistory:             envIntOr("AGENTIQUE_SCHEDULER_RUN_HISTORY", fileCfg.Scheduler.RunHistory),
 	}
 
-	// Machine identity + pairing admin secret (docs/multi-machine-research.md
+	// Machine identity + pairing admin secret (docs/multi-machine.md
 	// M0). Both are small read-or-create files in the data dir — created here
 	// at serve startup, never in server.New (no filesystem side effects in
 	// constructors). Identity is resolved in test mode too (multi-machine e2e
@@ -567,7 +567,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Cross-machine project identity: recompute each project's canonical git
-	// remote key (multi-machine M3). Non-destructive metadata refresh (one
+	// remote key (multi-machine). Non-destructive metadata refresh (one
 	// read-only git call per project) off the boot critical path — runs in
 	// test mode too so multi-machine e2e can exercise grouping with mocks.
 	go project.RefreshRemoteURLs(context.Background(), queries)

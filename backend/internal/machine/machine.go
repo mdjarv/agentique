@@ -1,5 +1,5 @@
 // Package machine provides the server's stable machine identity for the
-// multi-machine feature (docs/multi-machine-research.md). The identity is a
+// multi-machine feature (docs/multi-machine.md). The identity is a
 // UUID persisted in the data directory — stable across restarts, ports, IPs,
 // and access methods, so the same machine reached via LAN or tailnet is one
 // machine, not several. Clients verify it on every connect.

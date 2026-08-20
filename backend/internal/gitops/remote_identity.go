@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Cross-machine project identity (docs/multi-machine-research.md M3): two
+// Cross-machine project identity (docs/multi-machine.md): two
 // checkouts on different machines are "the same project" when their primary
 // git remotes canonicalize to the same key. The key is host/path, lowercased,
 // with credentials, ports, and the ".git" suffix stripped — so the same

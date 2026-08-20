@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Tailnet peer discovery (multi-machine M4): enumerate online tailnet peers
+// Tailnet peer discovery (multi-machine): enumerate online tailnet peers
 // via `tailscale status --json` and probe each for an agentique descriptor,
 // so the Add-machine dialog can offer one-click suggestions instead of a
 // typed URL. Discovery is a HINT layer only — it never grants access

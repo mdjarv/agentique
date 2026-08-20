@@ -14,7 +14,7 @@ export function reconnectWebSocket(): void {
 }
 
 /**
- * The app-wide WS handle. Since multi-machine M1 this is a routing facade:
+ * The app-wide WS handle — a routing facade over the per-machine clients:
  * requests dispatch to the machine that owns the entity in the payload
  * (session/project id), subscriptions fan in from every paired machine, and
  * connection lifecycle reflects the primary machine. See

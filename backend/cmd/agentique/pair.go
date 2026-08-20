@@ -16,7 +16,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
-// Multi-machine pairing (docs/multi-machine-research.md M0). `agentique pair`
+// Multi-machine pairing (docs/multi-machine.md). `agentique pair`
 // talks to the *running* server over HTTP, proving data-dir access with the
 // admin secret the server persisted at startup — deliberately not a second
 // writer to the live SQLite database.

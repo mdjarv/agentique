@@ -19,7 +19,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
-// Multi-machine pairing (docs/multi-machine-research.md M0): a one-time,
+// Multi-machine pairing (docs/multi-machine.md): a one-time,
 // short-lived, human-typeable token is minted on the server (CLI `agentique
 // pair`, or an admin session) and exchanged by a remote client for a
 // long-lived bearer auth session. WebSocket upgrades never carry the bearer
