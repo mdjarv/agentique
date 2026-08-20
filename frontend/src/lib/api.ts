@@ -78,7 +78,7 @@ export async function updateProject(
     maxSessions?: number;
   },
 ): Promise<Project> {
-  const res = await fetch(`${BASE}/projects/${id}`, {
+  const res = await apiFetch(machineIdForProject(id), `${BASE}/projects/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -88,7 +88,9 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/projects/${id}`, { method: "DELETE" });
+  const res = await apiFetch(machineIdForProject(id), `${BASE}/projects/${id}`, {
+    method: "DELETE",
+  });
   await throwIfNotOk(res, "Failed to delete project");
 }
 

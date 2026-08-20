@@ -5,6 +5,7 @@ import { remoteSlug } from "~/lib/machines/slug";
 import type { Project } from "~/lib/types";
 import type { WsClient } from "~/lib/ws-client";
 import { useAppStore } from "~/stores/app-store";
+import { useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
@@ -68,6 +69,19 @@ export function useMachineConnections(): void {
       if (machines[machineId]) continue;
       teardown();
       disconnectMachine(machineId);
+
+      // Drop the machine's sessions before its projects — the project list is
+      // how we know which sessions were its (sessions carry no machine tag).
+      const projectIds = new Set(
+        useAppStore
+          .getState()
+          .projects.filter((p) => p.machineId === machineId)
+          .map((p) => p.id),
+      );
+      const chat = useChatStore.getState();
+      for (const [sessionId, data] of Object.entries(chat.sessions)) {
+        if (projectIds.has(data.meta.projectId)) chat.removeSession(sessionId);
+      }
       useAppStore.getState().removeMachineProjects(machineId);
       teardowns.delete(machineId);
     }
