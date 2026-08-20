@@ -1,10 +1,26 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Brain, Clock, Cpu, FileText, Hash, LayoutList, MessagesSquare } from "lucide-react";
+import {
+  Brain,
+  Clock,
+  Cpu,
+  Ellipsis,
+  FileText,
+  HardDrive,
+  Hash,
+  LayoutList,
+  MessagesSquare,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { cn } from "~/lib/utils";
 import { useBrainStore } from "~/stores/brain-store";
 import { useChannelStore } from "~/stores/channel-store";
@@ -61,55 +77,62 @@ function SidebarHeader() {
       </Link>
       <div className="flex items-center gap-1">
         <NewProjectDialog />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/brain"
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="More tools"
               className={cn(
-                "size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50",
+                "size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50 cursor-pointer",
+                // The brain-alive pulse survives the collapse: it flares the
+                // trigger when the menu is the only thing visible.
                 flaring
                   ? "text-primary brain-flare"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <Brain className="size-4" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Brain (persistent memory)</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/templates"
-              className="size-7 rounded-md flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            >
-              <FileText className="size-4" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Prompt templates</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/discussions"
-              className="size-7 rounded-md flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            >
-              <MessagesSquare className="size-4" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Discussion groups</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/schedules"
-              className="size-7 rounded-md flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            >
-              <Clock className="size-4" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Schedules</TooltipContent>
-        </Tooltip>
+              <Ellipsis className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/brain">
+                <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
+                Brain
+                <span className="ml-auto text-muted-foreground-faint">persistent memory</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/templates">
+                <FileText className="size-3.5" />
+                Templates
+                <span className="ml-auto text-muted-foreground-faint">prompts</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/discussions">
+                <MessagesSquare className="size-3.5" />
+                Discussions
+                <span className="ml-auto text-muted-foreground-faint">groups</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/schedules">
+                <Clock className="size-3.5" />
+                Schedules
+                <span className="ml-auto text-muted-foreground-faint">loops</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/storage">
+                <HardDrive className="size-3.5" />
+                Storage
+                <span className="ml-auto text-muted-foreground-faint">disk & worktrees</span>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
