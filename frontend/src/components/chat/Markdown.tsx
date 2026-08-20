@@ -22,7 +22,12 @@ import { RunBlockButton } from "~/components/chat/RunBlockButton";
 import { useSessionMachineId } from "~/components/chat/SessionMachineContext";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
-import { apiFetch, rewriteRemoteLocalhost, sessionFileMachineId } from "~/lib/machines/api";
+import {
+  apiFetch,
+  rewriteRemoteLocalhost,
+  sessionFileMachineId,
+  sessionFilePath,
+} from "~/lib/machines/api";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import { cn } from "~/lib/utils";
 
@@ -223,14 +228,14 @@ function MarkdownImage({
 }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
   const { node: _, ...rest } = props;
   const machineId = typeof src === "string" ? sessionFileMachineId(src) : undefined;
+  const filePath = typeof src === "string" ? sessionFilePath(src) : undefined;
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!machineId || typeof src !== "string") return;
+    if (!machineId || !filePath) return;
     let cancelled = false;
     let objectUrl: string | null = null;
-    const url = new URL(src, window.location.origin);
-    apiFetch(machineId, url.pathname + url.search)
+    apiFetch(machineId, filePath)
       .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`${res.status}`))))
       .then((blob) => {
         if (cancelled) return;
@@ -242,9 +247,13 @@ function MarkdownImage({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [machineId, src]);
+  }, [machineId, filePath]);
 
-  if (!machineId) return <img src={src} alt={alt ?? ""} {...rest} />;
+  if (!machineId) {
+    // A primary session's file: normalize an absolute-localhost variant to
+    // the relative form so it loads from any device (cookie auth applies).
+    return <img src={filePath ?? src} alt={alt ?? ""} {...rest} />;
+  }
   if (!blobUrl) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
   return <img src={blobUrl} alt={alt ?? ""} {...rest} />;
 }

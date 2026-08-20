@@ -53,15 +53,35 @@ export function rewriteRemoteLocalhost(href: string, machineId: string | null): 
 
 const SESSION_FILE_PATH = /^\/api\/sessions\/([0-9a-fA-F-]+)\/files\//;
 
-/** For a same-origin session-file URL (agents link/embed their session files
- *  as `/api/sessions/{id}/files/…`), the owning machine's id — undefined for
- *  anything else, including the primary's own sessions. */
+/** For a session-file URL (agents embed their session files as
+ *  `/api/sessions/{id}/files/…` per the preamble), the owning machine's id —
+ *  undefined for anything else, including the primary's own sessions. Besides
+ *  the instructed relative form, absolute variants agents sometimes write are
+ *  tolerated when the session id resolves: viewer-origin and
+ *  localhost/127.0.0.1 (the agent's idea of "this server"). */
 export function sessionFileMachineId(href: string): string | undefined {
+  const parsed = parseSessionFileHref(href);
+  return parsed ? machineIdForSession(parsed.sessionId) : undefined;
+}
+
+/** The origin-relative path of a recognized session-file URL, or undefined.
+ *  Lets renderers normalize an absolute-localhost variant to a relative URL
+ *  that works from any device (cookie-authenticated against the primary). */
+export function sessionFilePath(href: string): string | undefined {
+  return parseSessionFileHref(href)?.path;
+}
+
+function parseSessionFileHref(href: string): { sessionId: string; path: string } | undefined {
   try {
     const url = new URL(href, window.location.origin);
-    if (url.origin !== window.location.origin) return undefined;
+    const recognizedHost =
+      url.origin === window.location.origin ||
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1";
+    if (!recognizedHost) return undefined;
     const match = SESSION_FILE_PATH.exec(url.pathname);
-    return match?.[1] ? machineIdForSession(match[1]) : undefined;
+    if (!match?.[1]) return undefined;
+    return { sessionId: match[1], path: url.pathname + url.search };
   } catch {
     return undefined;
   }

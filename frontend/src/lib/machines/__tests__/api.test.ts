@@ -66,6 +66,15 @@ describe("sessionFileMachineId", () => {
     expect(sessionFileMachineId(`/api/sessions/${SESSION}/files/shot.png`)).toBe(ZBOOK);
   });
 
+  it("tolerates the absolute localhost form agents sometimes write", () => {
+    expect(sessionFileMachineId(`http://localhost:19201/api/sessions/${SESSION}/files/a.png`)).toBe(
+      ZBOOK,
+    );
+    expect(sessionFileMachineId(`http://127.0.0.1:9201/api/sessions/${SESSION}/files/a.png`)).toBe(
+      ZBOOK,
+    );
+  });
+
   it("returns undefined for unknown sessions, foreign origins, and non-file paths", () => {
     expect(
       sessionFileMachineId("/api/sessions/99999999-0000-4000-8000-000000000000/files/a.png"),
