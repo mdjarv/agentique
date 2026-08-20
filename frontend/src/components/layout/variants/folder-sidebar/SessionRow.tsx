@@ -1,6 +1,7 @@
-import { Hash } from "lucide-react";
+import { Hash, Server } from "lucide-react";
 import { memo } from "react";
 import { ProviderBadge } from "~/components/chat/ProviderBadge";
+import { useProjectMachine } from "~/components/machines/MachineChip";
 import { cn, relativeTime } from "~/lib/utils";
 import type { SessionData } from "~/stores/chat-store";
 import { PulseStatus } from "../../session/PulseStatus";
@@ -73,11 +74,25 @@ function SessionRowLayout({
         {data.meta.state === "running" && <PulseStatus sessionId={data.meta.id} />}
       </div>
       <span className="flex items-center gap-1.5 shrink-0 ml-auto">
+        <SessionMachineGlyph projectId={data.meta.projectId} />
         <ProviderBadge provider={data.meta.provider} />
         {extraMeta}
         {showTimestamp ? <TimeStamp meta={data.meta} /> : <RightIndicator data={data} />}
       </span>
     </>
+  );
+}
+
+/** Server glyph on sessions living on a paired remote machine; nothing for
+ *  local sessions. Matters most once same-repo projects merge across machines
+ *  and one project row holds sessions from several machines. */
+function SessionMachineGlyph({ projectId }: { projectId: string }) {
+  const machine = useProjectMachine(projectId);
+  if (!machine) return null;
+  return (
+    <Server className="size-3 shrink-0 text-muted-foreground/70">
+      <title>{`On ${machine.label}`}</title>
+    </Server>
   );
 }
 

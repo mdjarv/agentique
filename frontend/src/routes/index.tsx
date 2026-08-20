@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
+import { MachineChip } from "~/components/machines/MachineChip";
 import { Button } from "~/components/ui/button";
 import type { Project } from "~/lib/generated-types";
 import { cn, relativeTime, sessionShortId } from "~/lib/utils";
@@ -216,7 +217,10 @@ function ProjectCard({ project, activeCount }: { project: Project; activeCount: 
           {project.icon && <span className="text-lg shrink-0">{project.icon}</span>}
           <div className="min-w-0">
             <div className="font-medium text-sm truncate">{project.name}</div>
-            <div className="text-[11px] text-muted-foreground truncate">{project.slug}</div>
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+              <span className="truncate">{project.slug}</span>
+              <MachineChip projectId={project.id} />
+            </div>
           </div>
         </div>
         {activeCount > 0 && (
@@ -255,6 +259,7 @@ function RecentSessionRow({
           <div className="truncate text-[11px] text-muted-foreground">{meta.worktreeBranch}</div>
         )}
       </div>
+      <MachineChip projectId={meta.projectId} />
       {hasPending && (
         <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
           Needs input

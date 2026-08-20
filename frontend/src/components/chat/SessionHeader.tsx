@@ -1,4 +1,14 @@
-import { ArrowUp, Check, Clock, FolderGit2, Gauge, GitBranch, Globe, Workflow } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  Clock,
+  FolderGit2,
+  Gauge,
+  GitBranch,
+  Globe,
+  Server,
+  Workflow,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
@@ -15,6 +25,7 @@ import {
   SessionBadge,
 } from "~/components/layout/session/SessionBadge";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
+import { MachineChip, useProjectMachine } from "~/components/machines/MachineChip";
 import { untilText } from "~/components/schedules/schedule-format";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
@@ -156,6 +167,7 @@ export function SessionHeader({
             {/* Actions zone */}
             <div className="ml-auto flex items-center gap-1.5">
               <ParkedScheduleChip sessionId={meta.id} state={meta.state} />
+              <MachineChip projectId={meta.projectId} />
               <ReadOnlyIndicators
                 effort={meta.effort as EffortLevel | undefined}
                 isWorktree={isWorktree}
@@ -290,6 +302,7 @@ function MobileSubline({
   const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
   const branch = meta.worktreeBranch;
   const ahead = meta.commitsAhead ?? 0;
+  const machine = useProjectMachine(meta.projectId);
   // Parked loop session: "Stopped" would read as dead — show the next fire
   // and which schedule owns it instead.
   const nextSchedule = useNextSchedule(meta.id);
@@ -303,6 +316,12 @@ function MobileSubline({
           ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}`
           : `${label}${branch ? ` · ${branch}` : ""}`}
       </span>
+      {machine && (
+        <span className="flex items-center gap-0.5 shrink-0" title={`Runs on ${machine.label}`}>
+          <Server className="size-2.5" />
+          <span className="truncate max-w-[10ch]">{machine.label}</span>
+        </span>
+      )}
       {ahead > 0 && (
         <span className="flex items-center gap-0.5 shrink-0 text-success">
           <ArrowUp className="size-2.5" />

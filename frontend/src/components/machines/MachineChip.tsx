@@ -1,0 +1,61 @@
+import { Server } from "lucide-react";
+import { cn } from "~/lib/utils";
+import { useAppStore } from "~/stores/app-store";
+import type { MachineEntry, MachineStatus } from "~/stores/machine-store";
+import { useMachineStore } from "~/stores/machine-store";
+
+/**
+ * Resolves the remote machine a project lives on, or null for the primary.
+ * Selectors return primitives/store references only (stable across renders).
+ */
+export function useProjectMachine(projectId: string | undefined): MachineEntry | null {
+  const machineId = useAppStore((s) =>
+    projectId ? s.projects.find((p) => p.id === projectId)?.machineId : undefined,
+  );
+  return useMachineStore((s) => (machineId ? (s.machines[machineId] ?? null) : null));
+}
+
+export function useMachineStatus(machineId: string | undefined): MachineStatus {
+  return useMachineStore((s) =>
+    machineId ? (s.statuses[machineId] ?? "disconnected") : "connected",
+  );
+}
+
+/**
+ * Read-only pill naming the machine a session/project lives on. Renders
+ * nothing for the primary machine — multi-machine chrome stays invisible
+ * until a session actually runs elsewhere. The dot mirrors that machine's
+ * live connection state.
+ */
+export function MachineChip({
+  projectId,
+  className,
+}: {
+  projectId: string | undefined;
+  className?: string;
+}) {
+  const machine = useProjectMachine(projectId);
+  const status = useMachineStatus(machine?.machineId);
+  if (!machine) return null;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0",
+        className,
+      )}
+      title={`Runs on ${machine.label} (${machine.baseUrl})${status === "connected" ? "" : ` — ${status}`}`}
+    >
+      <Server className="h-2.5 w-2.5 shrink-0" />
+      <span className="truncate max-w-[10ch]">{machine.label}</span>
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full shrink-0",
+          status === "connected" && "bg-success",
+          status === "reconnecting" && "bg-warning animate-pulse",
+          status === "disconnected" && "bg-destructive",
+        )}
+      />
+    </span>
+  );
+}
