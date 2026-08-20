@@ -565,6 +565,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		sched.Start()
 	}
 
+	// Cross-machine project identity: recompute each project's canonical git
+	// remote key (multi-machine M3). Non-destructive metadata refresh, one git
+	// call per project, off the boot critical path.
+	if !testMode {
+		go project.RefreshRemoteURLs(context.Background(), queries)
+	}
+
 	if !testMode && ownsDataDir(dbFile) {
 		go srv.SweepOrphans(context.Background())
 

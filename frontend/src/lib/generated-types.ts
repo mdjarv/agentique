@@ -409,6 +409,7 @@ export interface Project {
   folder: string;
   max_sessions: number;
   pinned: number;
+  remote_url: string;
 }
 
 export interface PromptTemplate {

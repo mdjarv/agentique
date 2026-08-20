@@ -130,6 +130,7 @@ type Project struct {
 	Folder                 string `json:"folder"`
 	MaxSessions            int64  `json:"max_sessions"`
 	Pinned                 int64  `json:"pinned"`
+	RemoteUrl              string `json:"remote_url"`
 }
 
 type PromptTemplate struct {

@@ -13,7 +13,8 @@ import { PageHeader } from "~/components/layout/PageHeader";
 import { SessionStatusBadge } from "~/components/layout/session/SessionStatusBadge";
 import { MachineChip } from "~/components/machines/MachineChip";
 import { Button } from "~/components/ui/button";
-import type { Project } from "~/lib/generated-types";
+import { groupProjects } from "~/lib/machines/grouping";
+import type { Project } from "~/lib/types";
 import { cn, relativeTime, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
@@ -31,6 +32,7 @@ function HomePage() {
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   const sessionList = useMemo(() => Object.values(sessions), [sessions]);
+  const logicalProjects = useMemo(() => groupProjects(projects), [projects]);
 
   const { active, running, pending, recent, perProject } = useMemo(() => {
     const activeSessions = sessionList.filter(
@@ -89,7 +91,7 @@ function HomePage() {
 
           {/* ── Stats ─────────────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Projects" value={projects.length} icon={FolderGit2} />
+            <StatCard label="Projects" value={logicalProjects.length} icon={FolderGit2} />
             <StatCard label="Active" value={active} icon={LayoutList} />
             <StatCard label="Running" value={running} icon={Play} accent={running > 0} />
             <StatCard
@@ -104,8 +106,13 @@ function HomePage() {
           {/* ── Projects ──────────────────────────────── */}
           <Section title="Projects">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {projects.map((p) => (
-                <ProjectCard key={p.id} project={p} activeCount={perProject.get(p.id) ?? 0} />
+              {logicalProjects.map((lp) => (
+                <ProjectCard
+                  key={lp.project.id}
+                  project={lp.project}
+                  members={lp.members}
+                  activeCount={lp.members.reduce((n, m) => n + (perProject.get(m.id) ?? 0), 0)}
+                />
               ))}
             </div>
           </Section>
@@ -205,7 +212,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function ProjectCard({ project, activeCount }: { project: Project; activeCount: number }) {
+function ProjectCard({
+  project,
+  members,
+  activeCount,
+}: {
+  project: Project;
+  members?: Project[];
+  activeCount: number;
+}) {
+  const machineCount = members ? new Set(members.map((m) => m.machineId ?? "")).size : 1;
   return (
     <Link
       to="/project/$projectSlug"
@@ -220,6 +236,9 @@ function ProjectCard({ project, activeCount }: { project: Project; activeCount: 
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
               <span className="truncate">{project.slug}</span>
               <MachineChip projectId={project.id} />
+              {machineCount > 1 && (
+                <span className="shrink-0 text-muted-foreground/70">{machineCount} machines</span>
+              )}
             </div>
           </div>
         </div>

@@ -40,5 +40,8 @@ UPDATE projects SET folder = ?, updated_at = datetime('now') WHERE id = ? RETURN
 -- name: UpdateProjectMaxSessions :one
 UPDATE projects SET max_sessions = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateProjectRemoteURL :exec
+UPDATE projects SET remote_url = ? WHERE id = ?;
+
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?;

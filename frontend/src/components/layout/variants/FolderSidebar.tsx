@@ -122,8 +122,11 @@ export function FolderSidebar() {
 
   const { displayFolders, displayUngrouped } = useMemo(() => {
     if (!isSearching) return { displayFolders: orderedFolders, displayUngrouped: ungrouped };
+    // Every member of a merged cross-machine group is searchable, so typing
+    // another machine's slug (or its ~machine suffix) still finds the row.
     const matchEntry = (e: ProjectEntry) =>
-      e.project.name.toLowerCase().includes(query) || e.project.slug.toLowerCase().includes(query);
+      e.project.name.toLowerCase().includes(query) ||
+      e.members.some((m) => m.slug.toLowerCase().includes(query));
     const displayFolders = orderedFolders
       // A folder-name match surfaces the whole folder; otherwise filter its projects.
       .map((f) =>

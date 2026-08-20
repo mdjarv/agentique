@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { useShallow } from "zustand/shallow";
 import { useTheme } from "~/hooks/useTheme";
+import { groupProjects } from "~/lib/machines/grouping";
 import { getProjectColor } from "~/lib/project-colors";
 import { getWorstSessionState } from "~/lib/session/priority";
 import { useAppStore } from "~/stores/app-store";
@@ -71,14 +72,18 @@ export function useFolderGroups(): {
     const sessions = useChatStore.getState().sessions;
     const entries: ProjectEntry[] = [];
 
-    for (const project of projects) {
+    // Same-repo projects across machines collapse into one logical row: the
+    // primary machine's copy drives name/color/icon/folder, and sessions from
+    // every member interleave under it (each row carries its machine glyph).
+    for (const { project, members } of groupProjects(projects)) {
+      const memberIds = new Set(members.map((m) => m.id));
       const color = getProjectColor(project.color, project.id, projectIds, resolvedTheme);
       const active: Array<{ id: string; data: SessionData }> = [];
       const completed: Array<{ id: string; data: SessionData }> = [];
 
       for (const id of Object.keys(summaries)) {
         const data = sessions[id];
-        if (!data || data.meta.projectId !== project.id) continue;
+        if (!data || !memberIds.has(data.meta.projectId)) continue;
         if (data.meta.completedAt) completed.push({ id, data });
         else active.push({ id, data });
       }
@@ -100,7 +105,7 @@ export function useFolderGroups(): {
       );
 
       const worstState = getWorstSessionState(active);
-      entries.push({ project, color, active, completed, worstState });
+      entries.push({ project, members, color, active, completed, worstState });
     }
 
     const folderMap = new Map<string, ProjectEntry[]>();

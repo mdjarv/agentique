@@ -9,7 +9,11 @@ export interface FolderGroup {
 }
 
 export interface ProjectEntry {
+  /** Representative project (the primary machine's copy for merged groups). */
   project: Project;
+  /** All physical members of the logical project, representative first —
+   *  several when the same repo exists on multiple paired machines. */
+  members: Project[];
   color: ProjectColor;
   active: SessionItem[];
   completed: SessionItem[];

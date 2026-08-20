@@ -145,7 +145,44 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cross-machine identity: record the canonical remote key. Best-effort —
+	// a project without a usable remote simply never groups across machines.
+	if remote := gitops.CanonicalRemoteURL(project.Path); remote != "" {
+		if err := h.Queries.UpdateProjectRemoteURL(r.Context(), store.UpdateProjectRemoteURLParams{
+			RemoteUrl: remote,
+			ID:        project.ID,
+		}); err == nil {
+			project.RemoteUrl = remote
+		}
+	}
+
 	httperror.JSON(w, http.StatusCreated, project)
+}
+
+// RefreshRemoteURLs recomputes every project's canonical remote key and
+// persists changes (both directions — a remote can be added, changed, or
+// removed). Invoked from serve startup in a goroutine; one git call per
+// project, so it stays off the boot critical path.
+func RefreshRemoteURLs(ctx context.Context, queries *store.Queries) {
+	projects, err := queries.ListProjects(ctx)
+	if err != nil {
+		slog.Warn("remote-url refresh: list projects", "error", err)
+		return
+	}
+	for _, p := range projects {
+		remote := gitops.CanonicalRemoteURL(p.Path)
+		if remote == p.RemoteUrl {
+			continue
+		}
+		if err := queries.UpdateProjectRemoteURL(ctx, store.UpdateProjectRemoteURLParams{
+			RemoteUrl: remote,
+			ID:        p.ID,
+		}); err != nil {
+			slog.Warn("remote-url refresh: update", "project", p.Slug, "error", err)
+			continue
+		}
+		slog.Info("remote-url refresh", "project", p.Slug, "remote", remote)
+	}
 }
 
 // HandleUpdate updates mutable project fields (slug, behaviorPresets).

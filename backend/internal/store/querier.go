@@ -146,6 +146,7 @@ type Querier interface {
 	UpdateProjectMaxSessions(ctx context.Context, arg UpdateProjectMaxSessionsParams) (Project, error)
 	UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) (Project, error)
 	UpdateProjectPinned(ctx context.Context, arg UpdateProjectPinnedParams) (Project, error)
+	UpdateProjectRemoteURL(ctx context.Context, arg UpdateProjectRemoteURLParams) error
 	UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error)
 	UpdateProjectSortOrder(ctx context.Context, arg UpdateProjectSortOrderParams) error
 	UpdatePromptTemplate(ctx context.Context, arg UpdatePromptTemplateParams) (PromptTemplate, error)
