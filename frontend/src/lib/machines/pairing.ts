@@ -44,6 +44,25 @@ export async function pairMachine(address: string, token: string): Promise<Machi
     throw new Error("That address is this machine — pairing targets other machines");
   }
 
+  // An auth-disabled machine (trusted-tailnet setup, e2e mocks) has no
+  // pairing endpoint and needs no credential: save it token-less. machineFetch
+  // and the WS connect skip Authorization/tickets for empty tokens.
+  if (descriptor.capabilities?.pairing === false) {
+    if (token.trim() !== "") {
+      throw new Error(`${descriptor.label} runs without auth — leave the token empty to add it`);
+    }
+    return saveEntry({
+      machineId: descriptor.machineId,
+      label: descriptor.label,
+      baseUrl,
+      token: "",
+      addedAt: new Date().toISOString(),
+    });
+  }
+  if (token.trim() === "") {
+    throw new Error(`${descriptor.label} requires a pairing token — run "agentique pair" there`);
+  }
+
   const primaryLabel = useFeatureStore.getState().machineLabel || "agentique";
   const resp = await fetch(`${baseUrl}/api/auth/pair`, {
     method: "POST",
@@ -60,16 +79,19 @@ export async function pairMachine(address: string, token: string): Promise<Machi
   }
   const { token: bearer } = (await resp.json()) as { token: string };
 
-  const entry: MachineEntry = {
+  return saveEntry({
     machineId: descriptor.machineId,
     label: descriptor.label,
     baseUrl,
     token: bearer,
     addedAt: new Date().toISOString(),
-  };
-  // Re-pairing an already-known machine refreshes its token in place. The
-  // ticket minter reads the token from the store per attempt, so an existing
-  // client picks the new credential up on its next connect.
+  });
+}
+
+// Re-pairing an already-known machine refreshes its token in place. The
+// ticket minter reads the token from the store per attempt, so an existing
+// client picks the new credential up on its next connect.
+function saveEntry(entry: MachineEntry): MachineEntry {
   useMachineStore.getState().addMachine(entry);
   const existing = peekMachineClient(entry.machineId);
   if (existing) existing.forceReconnect();

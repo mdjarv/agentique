@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { GitBranch, Loader2, Plus, Users2 } from "lucide-react";
+import { GitBranch, Loader2, Monitor, Plus, Server, Users2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -16,13 +16,17 @@ import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
+import { groupProjects } from "~/lib/machines/grouping";
 import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
+import type { Project } from "~/lib/types";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
+import { useFeatureStore } from "~/stores/feature-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { DEFAULT_SESSION_DEFAULTS, useUIStore } from "~/stores/ui-store";
 
 const DEFAULT_PRESETS: BehaviorPresets = {
@@ -100,6 +104,21 @@ export function NewChatPanel({
   const [pendingTemplate, setPendingTemplate] = useState<PendingTemplate | null>(null);
   const projectPresets = parseProjectPresets(project?.default_behavior_presets ?? "");
 
+  // "Run on": when this logical project spans machines, the session targets
+  // one physical member — defaulting to the primary machine's copy (the
+  // representative this panel was opened for). Choice locks at send; the
+  // created session belongs to the member, so all follow-up traffic routes
+  // to its machine.
+  const allProjects = useAppStore((s) => s.projects);
+  const members = useMemo(
+    () =>
+      groupProjects(allProjects).find((g) => g.members.some((m) => m.id === projectId))?.members ??
+      [],
+    [allProjects, projectId],
+  );
+  const [targetProjectId, setTargetProjectId] = useState(projectId);
+  const target = members.find((m) => m.id === targetProjectId) ?? project;
+
   const handleSwarmCreated = useCallback(
     (_channelId: string, firstSessionId: string) => {
       navigate({
@@ -126,7 +145,7 @@ export function NewChatPanel({
     try {
       const behaviorPresets = projectPresets ?? DEFAULT_PRESETS;
 
-      const sessionId = await createSession(ws, projectId, "", worktree, {
+      const sessionId = await createSession(ws, target?.id ?? projectId, "", worktree, {
         provider,
         model,
         planMode,
@@ -138,7 +157,12 @@ export function NewChatPanel({
       useUIStore.getState().clearDraft(draftKey);
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
-        params: { projectSlug, sessionShortId: sessionShortId(sessionId) },
+        // The session lives in the chosen member's project — its slug, not
+        // necessarily the representative's, resolves the route.
+        params: {
+          projectSlug: target?.slug ?? projectSlug,
+          sessionShortId: sessionShortId(sessionId),
+        },
         replace: true,
       });
       return true;
@@ -256,6 +280,14 @@ export function NewChatPanel({
                   {gitStatus.branch}
                 </div>
               )}
+              {members.length > 1 && (
+                <RunOnPicker
+                  members={members}
+                  value={targetProjectId}
+                  onChange={setTargetProjectId}
+                  disabled={sending}
+                />
+              )}
               <p className="text-xs text-muted-foreground-faint pt-1">
                 Describe what you want to work on below
               </p>
@@ -305,6 +337,57 @@ export function NewChatPanel({
           onCancel={handleVariableCancel}
         />
       )}
+    </div>
+  );
+}
+
+/** Segmented "Run on" control for logical projects spanning several
+ *  machines — one option per physical member, primary first. */
+function RunOnPicker({
+  members,
+  value,
+  onChange,
+  disabled,
+}: {
+  members: Project[];
+  value: string;
+  onChange: (projectId: string) => void;
+  disabled?: boolean;
+}) {
+  const machines = useMachineStore((s) => s.machines);
+  const primaryLabel = useFeatureStore((s) => s.machineLabel);
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground-faint">
+        Run on
+      </span>
+      <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
+        {members.map((m) => {
+          const label = m.machineId
+            ? (machines[m.machineId]?.label ?? "remote")
+            : primaryLabel || "This machine";
+          const selected = m.id === value;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(m.id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer",
+                selected
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title={m.path}
+            >
+              {m.machineId ? <Server className="size-3" /> : <Monitor className="size-3" />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

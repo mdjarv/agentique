@@ -167,12 +167,12 @@ function AddMachineDialog({
             <Label htmlFor="machine-token">Pairing token</Label>
             <Input
               id="machine-token"
-              placeholder="ABCD2345WXYZ"
+              placeholder="ABCD2345WXYZ (empty for auth-disabled machines)"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               disabled={busy}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && address && token && !busy) submit();
+                if (e.key === "Enter" && address && !busy) submit();
               }}
             />
           </div>
@@ -182,7 +182,7 @@ function AddMachineDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={busy || !address.trim() || !token.trim()}>
+          <Button onClick={submit} disabled={busy || !address.trim()}>
             {busy ? "Pairing…" : "Pair"}
           </Button>
         </DialogFooter>

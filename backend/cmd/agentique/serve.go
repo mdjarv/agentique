@@ -448,22 +448,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Machine identity + pairing admin secret (docs/multi-machine-research.md
 	// M0). Both are small read-or-create files in the data dir — created here
 	// at serve startup, never in server.New (no filesystem side effects in
-	// constructors), and skipped in test mode so test servers pointed at
-	// scratch DBs never touch the real data dir.
-	machineID := ""
+	// constructors). Identity is resolved in test mode too (multi-machine e2e
+	// pairs mock servers); it is a non-destructive read-or-create, and e2e
+	// isolates the data dir anyway. The admin secret only exists with auth on
+	// (test mode forces auth off, so it is skipped there implicitly).
+	machineID, err := machine.LoadOrCreateID(paths.DataDir())
+	if err != nil {
+		slog.Error("failed to resolve machine identity", "error", err)
+		os.Exit(1)
+	}
 	adminSecret := ""
-	if !testMode {
-		machineID, err = machine.LoadOrCreateID(paths.DataDir())
+	if !disableAuth {
+		adminSecret, err = auth.LoadOrCreateAdminSecret(paths.DataDir())
 		if err != nil {
-			slog.Error("failed to resolve machine identity", "error", err)
+			slog.Error("failed to resolve admin secret", "error", err)
 			os.Exit(1)
-		}
-		if !disableAuth {
-			adminSecret, err = auth.LoadOrCreateAdminSecret(paths.DataDir())
-			if err != nil {
-				slog.Error("failed to resolve admin secret", "error", err)
-				os.Exit(1)
-			}
 		}
 	}
 	machineLabel := machine.Label(firstNonEmpty(os.Getenv("AGENTIQUE_MACHINE_LABEL"), fileCfg.Server.MachineLabel))
@@ -566,11 +565,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Cross-machine project identity: recompute each project's canonical git
-	// remote key (multi-machine M3). Non-destructive metadata refresh, one git
-	// call per project, off the boot critical path.
-	if !testMode {
-		go project.RefreshRemoteURLs(context.Background(), queries)
-	}
+	// remote key (multi-machine M3). Non-destructive metadata refresh (one
+	// read-only git call per project) off the boot critical path — runs in
+	// test mode too so multi-machine e2e can exercise grouping with mocks.
+	go project.RefreshRemoteURLs(context.Background(), queries)
 
 	if !testMode && ownsDataDir(dbFile) {
 		go srv.SweepOrphans(context.Background())

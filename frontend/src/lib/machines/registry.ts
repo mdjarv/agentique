@@ -48,17 +48,22 @@ export async function machineFetch(
 ): Promise<Response> {
   const entry = machineEntry(machineId);
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${entry.token}`);
+  // Token-less entries are auth-disabled machines — no credential to send.
+  if (entry.token) headers.set("Authorization", `Bearer ${entry.token}`);
   return fetch(entry.baseUrl + path, { ...init, headers });
 }
 
-/** Mints a one-time WebSocket ticket and builds the wss URL for one attempt. */
+/** Mints a one-time WebSocket ticket and builds the wss URL for one attempt.
+ *  Auth-disabled machines connect without a ticket. */
 async function resolveTicketUrl(machineId: string): Promise<string> {
+  const entry = machineEntry(machineId);
+  const base = new URL(entry.baseUrl);
+  const protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  if (!entry.token) return `${protocol}//${base.host}/ws`;
+
   const resp = await machineFetch(machineId, "/api/auth/ws-ticket", { method: "POST" });
   if (!resp.ok) throw new Error(`ws-ticket mint failed (${resp.status})`);
   const { ticket } = (await resp.json()) as { ticket: string };
-  const base = new URL(machineEntry(machineId).baseUrl);
-  const protocol = base.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${base.host}/ws?wsTicket=${encodeURIComponent(ticket)}`;
 }
 
