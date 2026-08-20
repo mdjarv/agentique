@@ -1,297 +1,168 @@
 # CLAUDE.md
 
+How to work in this repo. Facts about what the product is, how to run and
+configure it live in README.md; subsystem designs live in `docs/*.md` — this
+file holds only behavior: conventions, invariants, and gotchas you cannot
+infer by reading the code.
+
 ## Task Completion
 
 - `just check` (biome + tsc) must pass before considering tasks completed.
-- `cd backend && go test ./... -count=1 -short` for Go changes — run directly, not via justfile. `-short` skips the integration test that needs a live provider CLI.
-- After editing SQL in `backend/db/queries/` or migrations in `backend/db/migrations/`, run `just sqlc` to regenerate `backend/internal/store/*.sql.go`. After changing wire types in Go, run `just typegen` to refresh `frontend/src/lib/generated-{types,schemas}.ts`.
-- ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the correct directory. Running `npx biome` from the project root fails silently.
+- `cd backend && go test ./... -count=1 -short` for Go changes — run
+  directly, not via justfile. `-short` skips the integration test that needs
+  a live provider CLI.
+- After editing SQL under `backend/db/`, run `just sqlc`. After changing Go
+  wire types, run `just typegen`. Generated files are never edited by hand.
+- ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the
+  correct directory. Running `npx biome` from the project root fails
+  silently.
 
 ## Core Priorities
 
 1. Performance first.
 2. Reliability first.
-3. Keep behavior predictable under load and during failures (session restarts, reconnects, partial streams).
+3. Keep behavior predictable under load and during failures (session
+   restarts, reconnects, partial streams).
 4. Fix structural problems when found, don't work around them.
 
-If a tradeoff is required, choose correctness and robustness over short-term convenience.
+If a tradeoff is required, choose correctness and robustness over short-term
+convenience.
 
 ## Domain Context
 
-- **Costs are irrelevant.** We use API subscriptions. Don't surface costs/prices in UI, CLI output, or mockups. The `totalCost` field exists in the data model but should not be shown to users.
+**Costs are irrelevant.** We use API subscriptions. Don't surface
+costs/prices in UI, CLI output, or mockups. The `totalCost` field exists in
+the data model but should not be shown to users.
 
 ## Database Access
 
-The live SQLite database is at `~/.local/share/agentique/agentique.db`. Sessions running in Agentique share this file with the running server.
-
-**Reads are encouraged.** Use `sqlite3 ~/.local/share/agentique/agentique.db` for read-only queries when it helps answer questions about sessions, projects, events, or state. Key tables: `projects`, `sessions`, `session_events`, `teams`, `tags`, `project_tags`.
-
-**Writes require explicit user approval.** Never INSERT, UPDATE, DELETE, DROP, or ALTER without asking first. A bad write to the live DB causes immediate data loss for all running sessions. If you need to test write operations, use a copy or an in-memory DB.
+The live SQLite database is at `~/.local/share/agentique/agentique.db` and is
+shared with the running server. **Reads are encouraged** (`sqlite3` for
+read-only queries). **Writes require explicit user approval** — a bad write
+causes immediate data loss for all running sessions. To test writes, use a
+copy or an in-memory DB.
 
 ## Engineering Practices
 
-**Separation of concerns.** Each module/function/component has one job. Don't mix IO with logic, state management with rendering, or transport with business rules.
+**Separation of concerns.** Each module/function/component has one job. Don't
+mix IO with logic, state management with rendering, or transport with
+business rules.
 
-**Guard clauses and early returns.** Handle error/edge cases at the top. Never nest happy-path logic inside conditionals when you can return early.
+**Guard clauses and early returns.** Handle error/edge cases at the top.
+Never nest happy-path logic inside conditionals when you can return early.
 
-**Error handling is not optional.** Don't swallow errors silently. Don't panic for recoverable failures. Propagate context with errors.
+**Error handling is not optional.** Don't swallow errors silently. Don't
+panic for recoverable failures. Propagate context with errors.
 
-## Frontend Conventions
+**No destructive side effects in constructors.** Startup sweeps, reapers,
+identity/secret file creation, and boot reconciliation run from the serve
+command's production block — never from `server.New` or any constructor a
+test might call. (A stray sweep in a constructor once nuked real worktrees
+from a test run.)
 
-- Path alias: `~/` maps to `src/`.
-- `routeTree.gen.ts` is auto-generated — do not edit.
-- **Zustand selectors must return stable references.** Never return `{}`, `[]`, or the result of `.map()`/`.filter()`/`Object.values()` etc. as a fallback or computed value — these create a new reference every render, causing infinite re-render loops. Use a module-level constant (e.g. `const EMPTY_FOO: Foo[] = []`) for fallbacks. For computed arrays/objects, use `useShallow` or memoize outside the selector.
+**Zustand selectors must return stable references.** Never return `{}`,
+`[]`, or the result of `.map()`/`.filter()`/`Object.values()` as a fallback
+or computed value — these create a new reference every render and cause
+infinite re-render loops. Use a module-level constant for fallbacks; for
+computed values use `useShallow` or memoize outside the selector.
 
-## Backend Conventions
+## Running a second server locally
 
-- sqlc generates type-safe query code from SQL in `backend/db/queries/` — do not edit generated files.
-- Migrations in `backend/db/migrations/` (goose, sequential numbering).
+Single-instance is enforced on the **data directory** (flock), not the
+listen address — two servers on different ports still share one data dir's
+DB, worktrees, and CLI subprocesses, and a scratch-DB server has an empty
+picture of what the data dir owns (a sandboxed verify server once reaped
+every live session of the running service). Always isolate with
+`AGENTIQUE_HOME=<tmp>`; `--db`/`--addr` alone do **not** isolate. `just dev`
+targets the production data dir and fails fast against the running service.
+`--test-mode` swaps in the mock CLI connector — it is not a sandbox flag.
 
-## CLI Subprocess Lifecycle
+## Subsystem invariants
 
-Each session drives a provider CLI (`claude`/`codex`) in its **own process group**
-(`Setpgid`), spawned with `context.Background()` so it outlives the request. It is
-only closed cooperatively (Stop/Delete/Evict/Shutdown). Two safeguards prevent
-leaks — design in `docs/process-lifecycle.md`:
-- **Orphan reaper** (`internal/procctl`): a startup sweep in `serve.go` (production
-  block next to `SweepOrphans`, **never** in `server.New` — no destructive side
-  effects in constructors) kills process groups orphaned by an ungraceful prior
-  exit, plus a shutdown backstop. A process is matched only when **all three**
-  hold: the `CLIProcessMarker` appears as the `--append-system-prompt` value, it
-  is its own group leader, and its environment carries
-  `AGENTIQUE_OWNER_DATADIR` (`procctl.OwnerEnvVar`) equal to *this* server's
-  data dir. "Orphan" = `PPID != os.Getpid()` (robust to the systemd `--user`
-  subreaper — not `PPID == 1`). The owner stamp is set once via
-  `procctl.StampOwner` in `serve.go` and reaches every provider CLI by ordinary
-  env inheritance, so it needs no per-provider plumbing. Matching **fails
-  closed**: an unreadable or absent environ never matches, so CLIs spawned
-  before this stamp existed are invisible to the reaper (`KillMode=control-group`
-  covers them on a service restart).
-- **Idle eviction** (`internal/session/idle_evict.go`, opt-in via `[session]
-  idle-evict-timeout`): stops idle-past-TTL sessions to reclaim the CLI + browser
-  subtree; they lazy-resume on the next message.
+Each subsystem's full design lives in its doc; what follows is only the rules
+a change must not break.
 
-### Running a second server locally
+### CLI subprocess lifecycle — `docs/process-lifecycle.md`
 
-Destructive startup reclaim (`SweepOrphans` + the orphan reaper) runs **only**
-when `ownsDataDir(dbFile)` holds — the opened DB is the data dir's own
-`agentique.db`. A server pointed at a scratch DB has no picture of what the data
-dir legitimately owns, so it reclaims nothing. Three rules follow:
+Each session's provider CLI runs in its own process group, spawned with a
+background context so it outlives requests, and is only closed cooperatively.
+The orphan reaper matches a process only when the CLI marker, group
+leadership, and this server's data-dir owner stamp all hold — matching fails
+closed, and "orphan" means reparented away from us, not `PPID == 1` (systemd
+subreaper). Idle eviction is opt-in and lazy-resumes on the next message.
 
-- **Isolate the data dir, not just the DB and port.** `AGENTIQUE_HOME=<tmp>`
-  gives a verification server its own worktrees, session files, instance lock,
-  and reaper authority. `--db`/`--addr` alone do **not** isolate the process
-  table.
-- **`just dev` targets the production data dir.** It now fails fast against the
-  running service (both hold the same data-dir lock, `procctl.AcquireInstanceLock`)
-  rather than starting alongside it. Use an isolated `AGENTIQUE_HOME` to run a
-  second server.
-- **`--test-mode` is not a sandbox flag** — it swaps in the mock CLI connector
-  (`server.go`), so it cannot verify real session behavior.
+### Channels / teams — `docs/discussion-sessionless-personas.md`
 
-Single-instance is enforced on the **data directory** (flock on
-`<datadir>/agentique.lock`), not the listen address. The address probe
-(`isServerRunning`) is kept as a nicer early error, but it is not the guard: two
-servers on different ports still share one data dir's DB, worktrees, and CLI
-subprocesses. On 2026-07-29 a sandboxed verify server on another port reaped
-every live session of the running service; the lock plus the owner stamp are what
-prevent that.
+The `messages` table is the source of truth for channel timelines.
+Informational channel metadata (introductions, spawn notices) is **not**
+mirrored into session events — new informational message types must extend
+the existing skip list. **Additive principle:** channel features must not
+modify session rendering, event-pipeline mutations, or turn management for
+sessions outside a channel. Web-only discussion personas are sessionless and
+claude-only, must be driven through `runtime.Manager` (a bare connector
+bypasses the permission pump and tools block forever), post as the third
+`sender_type: "persona"` (skipped by the legacy event mirror), and live in
+project-less channels whose WS events fan out on the global topic.
 
-## Channels, Hierarchy, and Coordination
+### Scheduled loops — `docs/scheduled-loops.md`
 
-The `messages` table is the source of truth for channel timelines. `session_events` is maintained for legacy agent-message display, but informational channel metadata (`messageType: "introduction"`, `messageType: "spawn"`) is **not** written to session events — see `writeLegacyAgentMessageEvents` in `session/channel.go`. When adding a new informational message type, extend that skip list.
+Delivery is idle-gated and fresh-turn-only — never mid-turn injection; busy
+refusals requeue without consuming an attempt, and evicted sessions
+lazy-resume on fire. Turn identity comes from the turn registry (atomic
+subscribe with turn start), never state polling. Run lifecycle is one-way to
+a terminal; late reports never rewrite terminals; auto-pause counts only
+real error terminals. All schedule timestamps are UTC RFC3339 seconds —
+SQLite compares TEXT lexicographically. Schedule-origin turns skip brain
+recall, activity bumps, and unseen-completion; schedule attention is its own
+channel, not the orange pulse. The MCP schedule-create tool must stay
+non-blocking (CLI MCP clients time out). Boot sweep runs from serve strictly
+before the scheduler starts.
 
-**Introductions.** Every session join emits one intro message per (session, channel) pair, deduped via `CountSessionIntroductionsInChannel`. Intro metadata carries `name`, `role`, `worktreePath`, `capabilities`, `agentProfileId`, `avatar`. Capabilities come from the session's linked agent profile (`PersonaConfig.capabilities`).
+### Provider abstraction
 
-**Agent-initiated spawning (`@spawn`).** Authorization runs before UI approval via `SpawnAuthCallback`:
-- Channel lead (any channel) → auto-approve, no UI prompt
-- Worker (member but not lead) → reject with "ask your lead" deny message
-- Not in any channel → existing UI approval flow
+Sessions are driven via agentkit/runtime's neutral contract — never import a
+provider-native event type inside the session pipeline (the two legitimate
+exceptions are marked at their sites and gated on provider == claude). New
+consumer code switches on neutral events and gates provider-specific
+features via `runtime.Capabilities()`. Codex mid-turn send is emulated
+(queued, replayed at idle) — the wire capability is deliberately `true`
+while the adapter capability is `false`.
 
-`SpawnWorkersRequest.channelId` is optional — when set, the lead must already be a lead in that channel and workers join it; when empty, a fresh channel is created. Every successful spawn (auto or UI-approved) emits `messageType: "spawn"` to the target channel.
+### Model catalog — `docs/model-catalog.md`
 
-**Hierarchy.** `sessions.parent_session_id` populated by `CreateSwarm` and `extendSwarm` with the lead's ID. `DeleteSession` walks descendants depth-first, calling itself recursively so each child gets its full cleanup pass (stop, worktree, branch, files, broadcast) before the parent row is removed. The `ON DELETE CASCADE` FK is a safety net, not the primary cleanup mechanism — relying on it alone would leave worktrees orphaned on disk.
+**A new upstream model release must not require an agentique release.**
+Never add a version number to a label literal — labels are derived from the
+model ID the CLI reports; the alias list is stable, versions are learned.
+The resolved-model learning loop must never be fatal to a session. The
+frontend `ModelId` is deliberately `string`. Catalog layers degrade
+weakest-first; listing models never fails.
 
-**Dissolve vs. Delete (leads).** Two distinct teardown paths:
-- `DissolveChannel` — stops workers, removes their worktrees/branches, deletes the channel; **lead survives as a regular session** with its worktree and history intact. Use when you want to keep the lead's output.
-- `DeleteSession` on a lead — cascades through `parent_session_id` and wipes the entire subtree including the lead. Use when the whole branch of work is done.
+### Multi-machine — `docs/multi-machine.md`
 
-Both are exposed on each lead node in the `/teams` hierarchy tree.
+The server is the authorization boundary — network reachability (tailnet)
+and peer discovery never substitute for auth; bearer tokens never ride URLs
+(sockets redeem one-time tickets, re-checked against the DB); an explicit
+credential never falls back to another. Clients pin `machineId` and verify
+it on pair and connect. Requests route by owning entity through the routing
+facade; only `Project` carries a client-side machine tag (sessions derive
+theirs via the project); remote slugs get a machine suffix, primary slugs
+are never rewritten. Cross-machine grouping (by canonical git remote) is
+display-only — commands always target one physical entity. The machine
+catalog is account state on the primary; localStorage and the per-machine
+data cache are offline caches, and cached snapshots sanitize live-ness. A
+flaky remote re-syncs only itself and must never reset primary state.
+Per-machine WS clients reconnect in place, never get replaced.
 
-**Additive principle.** All team coordination features are channel-only and must not modify existing session rendering, event pipeline mutations, or turn management for sessions outside a channel.
+### Brain / memory — `docs/brain-memory.md` (+ `docs/brain-*.md`)
 
-**Sessionless web-only discussion personas.** Discussion groups (`session/discussion.go`) split execution by `DiscussionScope`. **repo-backed** personas are full agentique sessions on a shared worktree (unchanged). **web-only** personas are *sessionless*: a raw `runtime.Manager`-driven CLI subprocess (`StartPersonaRuntime` / `sessionlessPersona` in `session/persona_runtime.go`) with no `sessions` row, worktree, project, MCP server, or brain recall — the orchestrator owns the lifecycle. Both scopes drive turns through the `personaRuntime` interface (`Query`/`Close`). Design: `docs/discussion-sessionless-personas.md`. Invariants a change here must keep:
-- **Go through `runtime.Manager.Create`, not a bare `connector.Connect`.** The claude adapter ignores `ConnectParams.AutoApprove`; only the runtime `Session`'s permission pump enforces fullAuto, so bypassing it makes tools block forever. The manager path also gives the state machine, watchdog, and pump for free. Sessionless personas are **claude-only** for v1.
-- **Persona messages post `sender_type: "persona"`, `sender_id: <agent_profile id>`** (no session). This is a third `sender_type`: `writeLegacyAgentMessageEvents` **skips** it (a persona has no per-session timeline and its sender_id is not a session id — writing one would target a nonexistent session). Web-only personas are **not** `channel_members`; the orchestrator holds the roster in memory and emits a `sender_type:"persona"` introduction directly (no `CountSessionIntroductionsInChannel` dedup — each persona is created once).
-- **Web-only channels are project-less.** `channels.project_id` is nullable (migration 038, kept `ON DELETE CASCADE` — *not* `SET NULL`, which would orphan repo-backed channels). Their WS events fan out on the empty/global topic `""`, which every conn joins (`ws/conn.go`); repo-backed channels stay on their project topic. Read `channels.project_id` via `nullStr(ch.ProjectID)`.
-- **Lean preamble.** `buildPersonaPreamble` is identity + the persona's system-prompt additions + global safety only — it drops delegation/@spawn, channel/team coordination, session-files, dev URLs, browser, and all memory/recall blocks.
-
-## Scheduled Loops
-
-Agentique-owned recurring/one-shot prompts fired into sessions as fresh turns
-(`internal/schedule`; design + review log: `docs/scheduled-loops.md`). Never
-the CLI's own cron (session-only, dies on evict/stop/restart — verified live).
-Invariants a change here must respect:
-
-- **Delivery is idle-gated, fresh-turn-only** — never `EnqueueMessage` (its
-  running-session branch is mid-turn injection). The scheduler delivers via
-  `QuerySessionWithOutcome` behind a per-session mutex + `queued→firing` CAS
-  on the run row; busy refusals (`session.ErrBusy`/`ErrNotLive`) requeue
-  without consuming a delivery attempt. Evicted sessions lazy-resume on fire —
-  idle eviction is the *feature* that makes long loops free between fires.
-- **Turn identity comes from the registry** (`session/turn_registry.go`):
-  `QueryWithOutcome` subscribes atomically with the turn start, keyed by
-  `turnIndex`; `Session.Close` resolves open subscriptions as SessionClosed.
-  Never observe completions via state polling or a single shared hook.
-- **Run lifecycle is one-way** (`queued→firing→running→` terminal), enforced
-  by `ResolveScheduleRun`'s WHERE clause; late completions/reports land in
-  `late_report`, never rewrite terminals. Timeout is the `overdue` *flag* +
-  attention, not a status. Auto-pause counts only real `error` terminals:
-  `deferred` (rate-limit/overload → rescheduled at ResetsAt), `interrupted`,
-  `action_needed` (blocked-on-human via `PendingHumanInput`), sweep errors,
-  and SessionClosed are excluded.
-- **Timestamps are pinned** to UTC RFC3339 seconds (`schedule.formatTime`) —
-  SQLite compares TEXT lexicographically; a stray offset/precision breaks
-  `next_run_at <=` ordering. `next_run_at = ''` means parked.
-- **Session-lifecycle seams**: auto-pause hooks user intent only (mark-done
-  RPC + merge finalize via `SetOnSessionFinished`) — never runtime `StateDone`
-  (a clean CLI exit is not user intent). The fire path re-checks
-  completed/merged at delivery (a `Query` would otherwise *unset* those flags).
-- **Schedule-origin turns are second-class ambient citizens**: they skip brain
-  recall (`QueryOrigin` — uses-inflation), skip `postQuery` (no Active-sort
-  bump/auto-name), skip `hasUnseenCompletion`, and collapse in the timeline.
-  Schedule attention (`schedules.attention`) is the dedicated channel:
-  `action_needed` clears on viewing/next-ok, `failed` only on explicit act;
-  neither uses the orange pulse (that means "agent blocked right now").
-- **`ScheduleCreate` (MCP) must stay non-blocking** — the CLI's MCP client
-  times out ~60s and the POST-only transport can't extend; it creates a
-  *paused pending-approval* schedule and returns immediately.
-- Pushes use `Broadcast` (global page), like teams/brain. Boot sweep
-  (queued re-arm, delivered→error excluded from failure counts) runs from
-  `serve.go` strictly before `Scheduler.Start` — never in `server.New`.
-
-## Provider Abstraction
-
-Sessions are driven via `agentkit/runtime`'s neutral `CLISession` / `CLIConnector` contract — agentique never imports a provider-native event type inside the session pipeline. The current providers:
-
-- **claude** (default) — `runtime/cli/claude` adapter over `claudecli-go`. `NewConnector` accepts variadic `claudecli.Option` defaults (e.g. `WithIncludePartialMessages`, `WithReplayUserMessages`). Full feature set: resume, fork, mid-turn `SendMessage`, plan mode, thinking, subagent events, rate-limit / compaction events, live MCP reconnect, tool-progress ticks, partial-message streaming.
-- **codex** — `runtime/cli/codex` adapter over `codexcli-go`. Supports: resume, rate-limit events, effort, approvals, AskUserQuestion, granular permissions, sandbox modes, ping, content delta streaming (tool output, reasoning, turn diffs). Does not support natively: fork, mid-turn send, plan mode, thinking, subagents, compaction events, MCP reconnect, tool-progress ticks.
-
-  **Emulated mid-turn send.** The codex protocol has no mid-turn channel, but agentique emulates one: a message sent while a turn is running is buffered (`Session.QueuePendingMessage`) and replayed as a single coalesced turn at the next idle boundary (`flushPendingMessages`, triggered from `handleRuntimeStateChange` on `→StateIdle`). The wire capability `MidTurnSendMessage` is therefore `true` for codex (drives the live-composer UI) even though the runtime adapter capability is `false` (gates native-vs-emulated in `Service.EnqueueMessage` via `supportsNativeMidTurn`). The queued echo is transient (`WireUserMessageEvent.Queued`); the durable record is the prompt written by the replay `Query`. Frontend renders queued messages as a pending "queued" bubble that is excluded from the turn-complete merge (`apply-event.ts`) and cleared when the replayed turn starts.
-
-Provider routing lives in `session.Manager` via `capturingConnector.hintNext`: each `Create` / `Resume` / `Reconnect` reads `CreateParams.Provider` (or `ResumeParams.Provider`), points the connector at the matching adapter, and persists the choice in `sessions.provider` (migration 036). Both providers support resume via `ProviderSessionID` in `ConnectParams`.
-
-**Don't reach for `claudecli` types in `internal/session/`.** The single legitimate import is the `claudecli.Session` type-assertion in `session.go` (`claudeSession()`) and the error-sentinel switch in `wire.go`'s `errorDetail` / `wireErrorEvent` — both gated on provider == claude. New consumer code switches on `runtime.CLIEvent` variants and uses `runtime.Capabilities()` to gate provider-specific features.
-
-**Known gaps vs. pre-migration claude behavior** (see `docs/tech-debt.md`): `AgentResult` metadata doesn't surface today because the neutral event set omits it. `ToolOutputDeltaEvent` and `ToolProgressEvent` are rendered on in-flight tool blocks via the streaming store. `ReasoningDeltaEvent` and `TurnDiffEvent` are wired through the backend pipeline but still classified as transient/skip with no frontend renderers.
-
-## Model Catalog
-
-Every model picker is driven by the `providers.models` request
-(`internal/providers`), never by a hard-coded list. Design: `docs/model-catalog.md`.
-The invariant: **a new upstream model release must not require an agentique
-release.** What that costs a change here:
-
-- **Never add a version number to a label literal.** Claude labels are derived
-  from the concrete model ID the CLI reports (`providers.ModelDisplayName`
-  parses structure, not a lookup table — so an unannounced family renders too).
-  The alias list (`opus`, `sonnet`, …) is stable and stays; versions are learned.
-- **`EventPipeline.handleInit` → `OnResolvedModel` → `persistResolvedModel`** is
-  the learning loop. It writes `sessions.resolved_model` (history) and upserts
-  `model_resolutions` (the catalog signal). Don't make it fatal: a session must
-  never die because a catalog hint could not be stored.
-- **`ModelId` is `string` on the frontend**, deliberately. A union type would put
-  the release dependency straight back.
-- Layers are weakest-first (base → learned → CLI-advertised → `[models]` config
-  override) and each degrades to the one below; `ListModels` never fails.
-
-## Multi-Machine
-
-One UI controls agentique servers on several machines: client-side fan-out to
-sovereign servers, no federation — the SPA-serving server is the **primary**,
-remotes are paired via `agentique pair`. Design: `docs/multi-machine.md`.
-Invariants a change here must keep:
-
-- **The server is the authorization boundary.** Reachability (tailnet, LAN)
-  never substitutes for auth; peer discovery (`/api/machines/discover`) is a
-  hint layer that grants nothing. Bearer tokens never ride URLs — WebSockets
-  redeem a one-time 5-min ticket whose redemption re-checks the DB, and an
-  explicit `Authorization: Bearer` never falls back to the cookie.
-- **Machine identity is pinned.** `<datadir>/machine-id` (created in
-  `serve.go`, never in constructors) is served on the unauthenticated
-  `/.well-known/agentique/environment` descriptor; clients verify it on pair
-  and connect. Capabilities on the descriptor are optional booleans — absent
-  = unsupported, no version comparisons.
-- **Requests route by owning entity.** `useWebSocket()` returns the
-  `RoutingWsClient` facade: payload `projectId` (or `sessionId` → its
-  project) picks the machine; subscriptions fan in from every machine's
-  socket; lifecycle delegates to the primary ONLY — a flaky remote re-syncs
-  just its own machine (`useMachineConnections`) and must never reset primary
-  streaming state. REST routes the same way via `lib/machines/api.ts`.
-- **Only `Project` carries a client-side `machineId` tag**; sessions derive
-  their machine via `meta.projectId`. Remote slugs get a `~<machineId8>`
-  suffix at ingest; primary slugs are never rewritten.
-- **Cross-machine project identity is `projects.remote_url`**
-  (`gitops.CanonicalRemoteURL`: upstream > origin > alphabetical, SSH ≡
-  HTTPS, `::subpath` for repo-subdir projects; `''` never groups). Grouping
-  (`lib/machines/grouping.ts`) is display-only — commands always target one
-  physical (machine, project, session); the primary member drives the
-  group's name/color/icon/slug.
-- **The machine catalog is account state** (primary's `machines` table,
-  `/api/machines`); client localStorage is only an offline cache, as is the
-  per-machine projects/sessions cache (`lib/machines/cache.ts`) — cached
-  snapshots sanitize live-ness and the live re-sync is authoritative.
-- Per-machine `WsClient`s are created once and reconnected **in place**,
-  never replaced (components hold them via `useRef`).
-
-## Brain / Memory
-
-The persistent agent memory ("brain") is a major subsystem. Design docs:
-`docs/brain-memory.md` (core), `docs/brain-graph-layer.md` (graph/links),
-`docs/brain-learning-dynamics.md` (feedback loops), `docs/brain-cross-scope-areas.md`
-(areas + semantic similarity), `docs/brain-outcome-signal.md` (the outcome/feedback loop:
-MemoryUsed + calibration + operating contract), `docs/brain-semantic-recall.md` (recall
-precision + the embedder path). Liftable core in `internal/memory` (stdlib + yaml/uuid
-only); agentique policy in `internal/brain`; markdown source-of-truth in
-`internal/memory/filestore`, fronted by a read-through cache (`internal/memory/cachestore`).
-
-Operational facts a change here must respect:
-- **Recall is fluid + per-turn.** `Session.injectRecall` runs `Service.RecallBlock` on
-  *every* turn against the prompt, passing a session seen-set so only newly-relevant facts
-  inject (delta). A low-content gate (`memory.TokenCount`) skips trivial turns. Don't
-  reintroduce first-turn-only behavior.
-- **Areas vs communities.** `Record.Community` is scope-local; `Record.Area` is the
-  cross-scope topic sibling (`memory/areas.go`, `AssignAreas`), recomputed on the
-  scheduled-consolidation/consolidate/global pass. Both are rebuildable indexes, never source of truth.
-- **Similarity is pluggable** (`memory/similarity.go`): Jaccard + optional embedding
-  cosine via two thresholds (`jaccard≥lexThresh OR cosine≥cosThresh`), threaded as a
-  variadic `SimOption`. Now threaded through `ApplyPlan` (per-scope links/communities),
-  `DetectInterference`, and `ApplyGlobal`'s area refresh too — not just `AssignAreas`
-  (`docs/brain-semantic-recall.md` #2). Still **dormant without an embedder**
-  (`AGENTIQUE_BRAIN_*` + Chroma); everything degrades cleanly to keyword/Jaccard. Live
-  runs `semantic=false` until that env is set.
-- **Stopwords matter for precision** (`memory/tokenize.go`): drop conversational filler,
-  but never domain terms (e.g. `just` is the build tool, not filler).
-- **Recall precision: lone-token guard + the semantic cure** (`memory/recall.go`). The
-  lexical guard (`singleTokenMinShare`) is the `semantic=false` safeguard: a multi-token
-  query matching on a *single* distinct token must have that token dominate the query's
-  idf mass, else it's dropped. In hybrid mode the **semantic cure** now ships
-  (`docs/brain-semantic-recall.md`): the **vector veto** (`Query.VectorVetoScore`/
-  `DefaultVectorVetoScore` 0.15) drops a candidate the embedder scores as actively
-  unrelated regardless of keyword (the multi-token survivor); the **vouch bar**
-  (`Query.VectorVouchScore` = `cosThresh`) overrides the lone-token guard only when the
-  vector clears the *related* line, not the much lower `minVectorScore` — which is what
-  let the github fact (cosine ~0.36, all-MiniLM) leak the hybrid path. Veto + vouch cover
-  disjoint classes; both are model-specific (calibrated for all-MiniLM, verified live).
-- **Outcome signal closes the loop** (`docs/brain-outcome-signal.md`, RFC-LD D2): strength
-  changes on *outcome*, not just injection. `MemoryUsed` (positive, `memory.MarkHelped`,
-  `Record.Helped`) raises confidence toward a 0.95 corroboration ceiling (< human ground
-  truth); `MemoryFlag` (negative, `MarkContradicted`) weakens into the review band. Both are
-  agent-volunteered MCP tools, scope-checked, auto-allowed. `uses` accrues on injection/
-  `MemorySearch`; `helped` only via `MemoryUsed`.
-- **Operating contract** (`Service.OperatingContract`): preferences at confidence
-  ≥ `ActOnConfidence` (0.85) inject into the system preamble as *acted-on directives*, not
-  soft context. A fresh inferred pref (0.8) must earn it via human `Confirm` (→1.0) or
-  outcome corroboration; low-confidence prefs stay advisory / in the confirm queue.
-- After changing the brain, populate/refresh on demand with `agentique brain assign-areas`
-  / `consolidate`.
+Liftable core in `internal/memory` (stdlib + yaml/uuid only); agentique
+policy in `internal/brain`; markdown is the source of truth, everything else
+(graph, areas, vectors) is a rebuildable index. Recall is fluid and
+per-turn with a session seen-set (delta injection) — don't reintroduce
+first-turn-only recall. Semantic similarity is pluggable and everything
+degrades cleanly to keyword/Jaccard without an embedder; the recall
+thresholds (veto/vouch) are embedding-model-specific. Stopwords drop
+conversational filler but never domain terms (`just` is the build tool).
+Strength changes on outcome, not injection; human confirmation outranks
+corroboration, which is capped below it. Model choice is a required caller
+parameter in the memory core, never a library default.

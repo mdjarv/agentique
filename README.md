@@ -113,6 +113,19 @@ Guidelines for a safe deployment:
 
 `--disable-auth` allows **anonymous access** — only use it on a trusted, non-exposed host. `localhost` is treated as a secure context by browsers, so passkeys work there over plain HTTP; every other origin needs HTTPS.
 
+## Multi-machine
+
+One UI can control agentique servers on several machines (e.g. a VPS serving the web app plus a laptop). The server you open in the browser is the **primary**; other machines are paired to it and their projects and sessions appear alongside local ones — same-repo projects merge into a single entry (matched by git remote, SSH and HTTPS clones of the same repo count as one), with a **Run on** picker when starting a session and per-session machine indicators everywhere.
+
+Pairing:
+
+1. On the machine to add, run `agentique pair` — it prints a single-use token (5-minute default, `--ttl` to change) plus the addresses the machine is reachable on.
+2. In the UI: sidebar footer → server icon → **Add machine**. Machines running agentique on your tailnet are auto-discovered and offered as one-click suggestions; otherwise enter the address, then the token. Machines running with `--disable-auth` pair token-less.
+
+Paired machines are stored on the primary, so every device that signs into it (phone PWA, desktop) sees the same machines — pair once, use everywhere. Machines may come and go: a suspended laptop's projects and sessions stay visible from cache (marked with its connection state) and re-sync automatically when it returns. Manage paired clients from the remote machine with `agentique auth sessions` / `agentique auth revoke <id>`.
+
+Remote machines need to listen on an address the browser can reach (not `localhost`) with TLS for HTTPS pages — a Tailscale cert (`tailscale cert`) works well. Creating projects, browsing files, and git operations all work across machines; teams, schedules, and the brain remain per-machine.
+
 ## Configuration
 
 Settings resolve in this order (highest precedence first): **CLI flags → config file → built-in defaults**.
@@ -129,6 +142,7 @@ tls-cert     = ""                # path to TLS cert; with tls-key, enables HTTPS
 tls-key      = ""
 rp-id        = ""                # WebAuthn relying party ID (default: host from addr)
 rp-origin    = ""                # WebAuthn origin (default: derived from addr)
+machine-label = ""               # name shown to multi-machine clients (default: hostname)
 
 [logging]
 level  = "info"   # trace, debug, info, warn, error
@@ -218,6 +232,8 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 | Command | Purpose |
 |---------|---------|
 | `agentique` | Status: address, TLS/auth, health, session summary. |
+| `agentique pair` | Mint a single-use pairing token for connecting another device or machine. |
+| `agentique auth sessions` / `auth revoke <id>` | List / revoke paired clients and web logins. |
 | `agentique projects` | List projects. |
 | `agentique sessions` | List sessions. |
 | `agentique worktrees` | List sessions with active worktrees. |
