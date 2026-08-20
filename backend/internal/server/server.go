@@ -24,6 +24,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/persona"
@@ -50,6 +51,10 @@ type Config struct {
 	MachineID string
 	// MachineLabel is the human-friendly machine name shown in clients.
 	MachineLabel string
+	// ListenPort is this server's listen port — the first port candidate when
+	// probing tailnet peers for discovery (peers tend to mirror each other's
+	// setup).
+	ListenPort string
 	// Version is the build version string ("dev" for non-release builds).
 	Version string
 	// AdminSecret arms the data-dir-secret auth path for the pairing and
@@ -275,6 +280,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"teams":   cfg.ExperimentalTeams,
 			},
 		})
+	})
+
+	// Tailnet peer discovery (multi-machine M4): probe online tailnet peers
+	// for agentique descriptors so Add-machine can suggest them. A hint layer
+	// only — pairing still authorizes. Auth-guarded like all /api routes.
+	mux.HandleFunc("GET /api/machines/discover", func(w http.ResponseWriter, r *http.Request) {
+		peers := machine.DiscoverPeers(r.Context(), cfg.MachineID, cfg.ListenPort)
+		if peers == nil {
+			peers = []machine.DiscoveredPeer{}
+		}
+		httperror.JSON(w, http.StatusOK, peers)
 	})
 
 	// Machine descriptor (docs/multi-machine-research.md): unauthenticated by

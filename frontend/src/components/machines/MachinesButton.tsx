@@ -1,5 +1,5 @@
 import { Plus, Server, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -115,6 +115,14 @@ function StatusDot({ status }: { status: MachineStatus }) {
   );
 }
 
+interface DiscoveredPeer {
+  machineId: string;
+  label: string;
+  url: string;
+  version: string;
+  pairing: boolean;
+}
+
 function AddMachineDialog({
   open,
   onOpenChange,
@@ -126,6 +134,31 @@ function AddMachineDialog({
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tailnet peer discovery: the primary probes online peers for agentique
+  // descriptors; hits become one-click suggestions. Purely a hint —
+  // pairing/auth is unchanged.
+  const paired = useMachineStore((s) => s.machines);
+  const [discovered, setDiscovered] = useState<DiscoveredPeer[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setDiscovering(true);
+    fetch("/api/machines/discover")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((peers: DiscoveredPeer[]) => {
+        if (!cancelled) setDiscovered(peers);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setDiscovering(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+  const suggestions = discovered.filter((p) => !paired[p.machineId]);
 
   const submit = async () => {
     setBusy(true);
@@ -153,6 +186,38 @@ function AddMachineDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
+          {(suggestions.length > 0 || discovering) && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Found on your tailnet</Label>
+              {discovering && suggestions.length === 0 && (
+                <p className="text-xs text-muted-foreground">Scanning…</p>
+              )}
+              {suggestions.map((p) => (
+                <button
+                  key={p.machineId}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setAddress(p.url);
+                    setError(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer",
+                    address === p.url
+                      ? "border-primary/50 bg-primary/10"
+                      : "border-border/60 hover:bg-muted/40",
+                  )}
+                >
+                  <Server className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="font-medium">{p.label}</span>
+                  <span className="truncate text-muted-foreground">{p.url}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground-faint">
+                    {p.pairing ? "needs token" : "no auth"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="machine-address">Address</Label>
             <Input

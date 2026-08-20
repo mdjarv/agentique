@@ -468,9 +468,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	machineLabel := machine.Label(firstNonEmpty(os.Getenv("AGENTIQUE_MACHINE_LABEL"), fileCfg.Server.MachineLabel))
 
 	cfg := server.Config{
-		AuthEnabled:         !disableAuth,
-		MachineID:           machineID,
-		MachineLabel:        machineLabel,
+		AuthEnabled:  !disableAuth,
+		MachineID:    machineID,
+		MachineLabel: machineLabel,
+		ListenPort:   mcpPort, // the port split from --addr above
+
 		Version:             version,
 		AdminSecret:         adminSecret,
 		TestMode:            testMode,
