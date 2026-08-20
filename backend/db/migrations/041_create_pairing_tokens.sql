@@ -1,5 +1,5 @@
 -- +goose Up
--- Multi-machine M0 (docs/multi-machine.md): one-time pairing tokens
+-- Multi-machine pairing (docs/multi-machine.md): one-time pairing tokens
 -- exchanged for bearer auth sessions, plus session metadata so sessions can be
 -- listed and revoked individually. Timestamps use UTC RFC3339 seconds
 -- precision — SQLite compares TEXT lexicographically.
