@@ -375,10 +375,10 @@ function RunOnPicker({
               disabled={disabled}
               onClick={() => onChange(m.id)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer border",
                 selected
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "border-primary/50 bg-primary/15 text-primary font-medium shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
               title={m.path}
             >
