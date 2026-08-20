@@ -1,10 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Pin, Plus, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, Plus, Server, Settings } from "lucide-react";
 import { memo, useCallback } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import type { ProjectColor } from "~/lib/project-colors";
 import { cn } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { type BadgeState, SessionBadge } from "../../session/SessionBadge";
 import { IconSlot } from "./IconSlot";
 import { ProjectGitPill } from "./ProjectGitPill";
@@ -18,6 +19,7 @@ export const ProjectContent = memo(function ProjectContent({
   color,
   expanded,
   isPinned,
+  machineId,
   onToggle,
   onExpand,
   onTogglePin,
@@ -36,6 +38,7 @@ export const ProjectContent = memo(function ProjectContent({
   onTogglePin?: () => void;
   worstState: BadgeState | null;
   gitStatus: ProjectGitStatus | undefined;
+  machineId?: string;
 }) {
   const navigate = useNavigate();
   const Icon = useProjectIcon(icon);
@@ -97,6 +100,7 @@ export const ProjectContent = memo(function ProjectContent({
         <span className="text-sm font-semibold truncate" style={{ color: color.fg }}>
           {name}
         </span>
+        {machineId && <RemoteMachineBadge machineId={machineId} />}
         {!expanded && worstState && <SessionBadge state={worstState} size="md" pulse />}
       </button>
 
@@ -143,3 +147,16 @@ export const ProjectContent = memo(function ProjectContent({
     </>
   );
 });
+
+/** Small server glyph marking a project that lives on a paired remote machine. */
+function RemoteMachineBadge({ machineId }: { machineId: string }) {
+  const label = useMachineStore((s) => s.machines[machineId]?.label);
+  return (
+    <Server
+      className="size-3 shrink-0 text-muted-foreground/70"
+      aria-label={label ? `On ${label}` : "Remote machine"}
+    >
+      <title>{label ? `On ${label}` : "Remote machine"}</title>
+    </Server>
+  );
+}

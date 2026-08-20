@@ -436,4 +436,53 @@ describe("WsClient", () => {
       expect(handler).toHaveBeenCalledTimes(1000);
     });
   });
+
+  describe("async url provider (remote machines)", () => {
+    it("resolves the provider per attempt and connects with its URL", async () => {
+      let attempt = 0;
+      const client = new WsClient(async () => `ws://remote/ws?wsTicket=t${++attempt}`);
+      clients.push(client);
+
+      client.connect();
+      expect(MockWebSocket.instances).toHaveLength(0); // async — not same tick
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.last().url).toBe("ws://remote/ws?wsTicket=t1");
+      MockWebSocket.last().simulateOpen();
+
+      // Each reconnect mints a fresh URL (tickets are single-use).
+      MockWebSocket.last().simulateClose(1006);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(MockWebSocket.last().url).toBe("ws://remote/ws?wsTicket=t2");
+    });
+
+    it("schedules a backoff retry when URL resolution fails", async () => {
+      let calls = 0;
+      const client = new WsClient(async () => {
+        calls++;
+        if (calls === 1) throw new Error("ticket mint failed");
+        return "ws://remote/ws?wsTicket=ok";
+      });
+      clients.push(client);
+
+      client.connect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.instances).toHaveLength(0);
+      expect(client.connectionState).toBe("reconnecting");
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(calls).toBe(2);
+      expect(MockWebSocket.last().url).toBe("ws://remote/ws?wsTicket=ok");
+    });
+
+    it("does not open a socket when disconnected during resolution", async () => {
+      const client = new WsClient(async () => "ws://remote/ws?wsTicket=late");
+      clients.push(client);
+
+      client.connect();
+      client.disconnect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.instances).toHaveLength(0);
+      expect(client.connectionState).toBe("disconnected");
+    });
+  });
 });

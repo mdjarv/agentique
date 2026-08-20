@@ -1,5 +1,6 @@
 import { Bot, RefreshCw, User } from "lucide-react";
 import { useEffect, useState } from "react";
+import { MachinesButton } from "~/components/machines/MachinesButton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +33,7 @@ export function SidebarFooter() {
       <DiskUsageBar />
       <div className="flex items-center gap-2">
         <ConnectionIndicator />
+        <MachinesButton />
         <ThemeToggle />
         <UserButton authEnabled={authEnabled} user={user} clearAuth={clearAuth} />
       </div>

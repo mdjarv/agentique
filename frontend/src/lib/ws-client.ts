@@ -15,9 +15,17 @@ interface PendingRequest {
 
 export type ConnectionState = "connected" | "reconnecting" | "disconnected";
 
+/**
+ * Resolves the WebSocket URL for a connection attempt. Async so remote
+ * machines can mint a fresh one-time wsTicket per attempt (tickets are
+ * single-use — a static URL would only ever connect once).
+ */
+export type WsUrlProvider = () => Promise<string> | string;
+
 export class WsClient {
   private ws: WebSocket | null = null;
-  private url: string;
+  private urlProvider: WsUrlProvider;
+  private connecting = false;
   private requestId = 0;
   private pending = new Map<string, PendingRequest>();
   private pushHandlers = new Map<string, Set<AnyPushHandler>>();
@@ -41,8 +49,8 @@ export class WsClient {
   // unbounded between microtasks, so once it reaches this size we flush inline.
   private static readonly MAX_PUSH_BUFFER = 1000;
 
-  constructor(url: string) {
-    this.url = url;
+  constructor(url: string | WsUrlProvider) {
+    this.urlProvider = typeof url === "string" ? () => url : url;
   }
 
   get connectionState(): ConnectionState {
@@ -61,9 +69,56 @@ export class WsClient {
   }
 
   connect(): void {
-    if (this.ws) return;
+    if (this.ws || this.connecting) return;
+    this.shouldReconnect = true;
     this.setupVisibilityHandler();
-    this.ws = new WebSocket(this.url);
+
+    // Synchronous fast path when the provider yields a plain string (the
+    // primary client) — preserves the original open-in-same-tick behavior.
+    // Remote machines resolve asynchronously (a fresh one-time wsTicket is
+    // minted per attempt); a resolution failure counts as a failed attempt
+    // and schedules a normal backoff retry rather than silently going dead.
+    let resolved: Promise<string> | string;
+    try {
+      resolved = this.urlProvider();
+    } catch (err) {
+      this.scheduleRetryAfterResolveFailure(err);
+      return;
+    }
+    if (typeof resolved === "string") {
+      this.open(resolved);
+      return;
+    }
+
+    this.connecting = true;
+    resolved
+      .then((url) => {
+        this.connecting = false;
+        if (this.ws || !this.shouldReconnect) return;
+        this.open(url);
+      })
+      .catch((err) => {
+        this.connecting = false;
+        this.scheduleRetryAfterResolveFailure(err);
+      });
+  }
+
+  private scheduleRetryAfterResolveFailure(err: unknown): void {
+    console.warn("[WsClient] url resolution failed:", err);
+    if (!this.shouldReconnect) {
+      this.setConnectionState("disconnected");
+      return;
+    }
+    this.setConnectionState("reconnecting");
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+  }
+
+  private open(url: string): void {
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       this.reconnectDelay = 500;

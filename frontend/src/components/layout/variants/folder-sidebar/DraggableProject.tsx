@@ -70,6 +70,7 @@ export const DraggableProject = memo(function DraggableProject({
           color={entry.color}
           expanded={expanded}
           isPinned={isPinned}
+          machineId={entry.project.machineId}
           onToggle={onToggle}
           onExpand={onExpand}
           onTogglePin={onTogglePin}
@@ -157,6 +158,7 @@ export function DragOverlayProject({ entry }: { entry: ProjectEntry }) {
         icon={entry.project.icon}
         color={entry.color}
         expanded={false}
+        machineId={entry.project.machineId}
         onToggle={() => {}}
         onExpand={() => {}}
         worstState={entry.worstState}

@@ -37,7 +37,9 @@ function loadPersonaInteractions(ws: ReturnType<typeof useWebSocket>, teams: Tea
   }
 }
 
-function subscribeAndLoad(
+// Also drives per-project loading for remote machines (useMachineConnections
+// passes that machine's own client instead of the routing facade).
+export function subscribeAndLoad(
   ws: ReturnType<typeof useWebSocket>,
   projectId: string,
   forceHistory = false,

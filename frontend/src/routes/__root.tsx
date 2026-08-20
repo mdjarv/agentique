@@ -13,6 +13,7 @@ import { useProjectGitPolling } from "~/hooks/git/useProjectGitPolling";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { useMachineConnections } from "~/hooks/useMachineConnections";
 import { usePreventViewportScroll } from "~/hooks/usePreventViewportScroll";
 import { useProjects } from "~/hooks/useProjects";
 import { useTheme } from "~/hooks/useTheme";
@@ -52,6 +53,7 @@ function RootLayout() {
 function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
+  useMachineConnections();
   useProjectGitPolling(projects);
   useActiveProjectFetch();
   usePreventViewportScroll();
