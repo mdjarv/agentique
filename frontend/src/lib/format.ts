@@ -1,4 +1,13 @@
 /**
+ * Format a token count compactly: "742" / "12k" / "1.4M".
+ */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
+}
+
+/**
  * Format milliseconds into a human-readable duration string.
  * - <1s: "0.Xs"
  * - 1-59s: "Xs" or "X.Xs"

@@ -17,6 +17,7 @@ import { Route as SchedulesRouteImport } from "./routes/schedules";
 import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as TemplatesRouteImport } from "./routes/templates";
+import { Route as DevAgentsRouteImport } from "./routes/dev.agents";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
@@ -69,6 +70,11 @@ const TeamsRoute = TeamsRouteImport.update({
 const TemplatesRoute = TemplatesRouteImport.update({
   id: "/templates",
   path: "/templates",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevAgentsRoute = DevAgentsRouteImport.update({
+  id: "/dev/agents",
+  path: "/dev/agents",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevBubblesRoute = DevBubblesRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/tool-groups"
@@ -290,6 +302,7 @@ export interface RootRouteChildren {
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
+  DevAgentsRoute: typeof DevAgentsRoute;
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
   DevToolGroupsRoute: typeof DevToolGroupsRoute;
@@ -356,6 +369,13 @@ declare module "@tanstack/react-router" {
       path: "/templates";
       fullPath: "/templates";
       preLoaderRoute: typeof TemplatesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/agents": {
+      id: "/dev/agents";
+      path: "/dev/agents";
+      fullPath: "/dev/agents";
+      preLoaderRoute: typeof DevAgentsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/bubbles": {
@@ -482,6 +502,7 @@ const rootRouteChildren: RootRouteChildren = {
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
+  DevAgentsRoute: DevAgentsRoute,
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,
   DevToolGroupsRoute: DevToolGroupsRoute,

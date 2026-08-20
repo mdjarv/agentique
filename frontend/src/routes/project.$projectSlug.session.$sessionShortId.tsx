@@ -7,7 +7,7 @@ import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 const searchSchema = z.object({
-  tab: z.enum(["chat", "todos", "git", "changes", "loops"]).optional(),
+  tab: z.enum(["chat", "todos", "git", "changes", "agents", "loops"]).optional(),
   /** Deep-link target: persisted turn index to scroll to (run "view turn"). */
   turn: z.coerce.number().int().nonnegative().optional(),
 });

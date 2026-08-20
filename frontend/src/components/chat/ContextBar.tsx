@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { Progress } from "~/components/ui/progress";
+import { formatTokens } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import type { ContextUsage } from "~/stores/chat-store";
 
@@ -8,12 +9,6 @@ interface ContextBarProps {
   compacting?: boolean;
   /** Slim variant for mobile — thinner bar, tighter padding, smaller label. */
   compact?: boolean;
-}
-
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-  return String(n);
 }
 
 interface Tier {

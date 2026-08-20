@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { AgentsView } from "~/components/chat/AgentsView";
 import { ApprovalBanner } from "~/components/chat/banners/ApprovalBanner";
 import { PlanReviewBanner } from "~/components/chat/banners/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/banners/QuestionBanner";
@@ -27,6 +28,7 @@ import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
 import { useSessionState } from "~/hooks/session/useSessionState";
+import { useAgentRuns } from "~/hooks/useAgentRuns";
 import { useAutoOpenWorkflowPanel } from "~/hooks/useAutoOpenWorkflowPanel";
 import { useIsLarge } from "~/hooks/useIsLarge";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -92,7 +94,7 @@ function ApprovalBannerSwitch({
 
 import { useUIStore } from "~/stores/ui-store";
 
-export type SessionTab = "chat" | "todos" | "git" | "changes" | "loops"; // "git" kept for backward compat URLs
+export type SessionTab = "chat" | "todos" | "git" | "changes" | "agents" | "loops"; // "git" kept for backward compat URLs
 
 interface ChatPanelProps {
   projectId: string;
@@ -133,6 +135,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     contextUsage,
     compacting,
   } = useSessionState(sessionId);
+  const agentRuns = useAgentRuns(sessionId);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   // Schedules targeting this session (loops). Element refs are stable in the
   // store, so useShallow keeps the selector reference-stable across renders.
@@ -437,6 +440,8 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const effectiveTab: SessionTab = hideTodosTab && activeTab === "todos" ? "chat" : activeTab;
   const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
   const hasLoops = sessionSchedules.length > 0;
+  const hasAgents = agentRuns.length > 0;
+  const agentsRunning = agentRuns.filter((r) => r.state === "running").length;
   const pendingApprovalSchedules = sessionSchedules.filter(
     (sc) => sc.pauseReason === "pending-approval",
   );
@@ -444,7 +449,8 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   // scheduler resumes it on the next fire, so don't offer manual resume.
   const isParkedLoop =
     sessionState === "stopped" && sessionSchedules.some((sc) => sc.enabled && sc.nextRunAt !== "");
-  const showTabs = (hasTodos && !hideTodosTab) || hasGitContent || hasChanges || hasLoops;
+  const showTabs =
+    (hasTodos && !hideTodosTab) || hasGitContent || hasChanges || hasAgents || hasLoops;
   // The mobile finish action shares the tab strip; compute it here so the strip
   // renders even when there are no tabs (e.g. a clean session that can be marked done).
   const finishKind = isMobile ? finishActionKind(meta, git) : null;
@@ -466,6 +472,8 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
       totalAdd={totalAdd}
       totalDel={totalDel}
       hasLoops={hasLoops}
+      agentCount={agentRuns.length}
+      agentsRunning={agentsRunning}
       accentColor={agentColor}
     />
   ) : null;
@@ -528,6 +536,8 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                 expandFile={expandFile}
                 onExpandFileConsumed={handleExpandFileConsumed}
               />
+            ) : effectiveTab === "agents" && hasAgents ? (
+              <AgentsView runs={agentRuns} />
             ) : effectiveTab === "loops" && hasLoops ? (
               <LoopsPanel sessionId={sessionId} />
             ) : (

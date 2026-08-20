@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowUp, Circle, Clock, FileDiff, ListTodo, MessageSquare } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Bot,
+  Circle,
+  Clock,
+  FileDiff,
+  ListTodo,
+  MessageSquare,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { SessionTab } from "./ChatPanel";
 
@@ -17,6 +26,10 @@ interface SessionTabBarProps {
   totalDel?: number;
   /** Session has schedules — shows the Loops tab. */
   hasLoops?: boolean;
+  /** Subagents spawned in this session — shows the Agents tab. */
+  agentCount?: number;
+  /** Subagents still running, if any — pulses the Agents tab count. */
+  agentsRunning?: number;
   /** Project accent color hex — used for active tab indicator. */
   accentColor?: string;
 }
@@ -35,6 +48,8 @@ export function SessionTabBar({
   totalAdd = 0,
   totalDel = 0,
   hasLoops = false,
+  agentCount = 0,
+  agentsRunning = 0,
   accentColor,
 }: SessionTabBarProps) {
   const showChangesTab = hasGitContent || hasChanges;
@@ -112,6 +127,21 @@ export function SessionTabBar({
               )}
             </span>
           )}
+        </Tab>
+      )}
+
+      {agentCount > 0 && (
+        <Tab tab="agents">
+          <Bot className="size-3.5" />
+          Agents
+          <span
+            className={cn(
+              "text-xs tabular-nums",
+              agentsRunning > 0 ? "text-agent" : "text-muted-foreground",
+            )}
+          >
+            {agentCount}
+          </span>
         </Tab>
       )}
 

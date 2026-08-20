@@ -1,7 +1,6 @@
 import { ArrowRight, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { AgentMessage } from "~/components/chat/AgentMessage";
-import { formatTokens } from "~/components/chat/ContextBar";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { Markdown } from "~/components/chat/Markdown";
 import {
@@ -16,7 +15,7 @@ import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { WorkflowActivity } from "~/components/chat/WorkflowActivity";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
-import { formatDuration, formatTurnTime } from "~/lib/format";
+import { formatDuration, formatTokens, formatTurnTime } from "~/lib/format";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import type {
   ActivityItem,
