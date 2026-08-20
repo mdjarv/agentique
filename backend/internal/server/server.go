@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -280,6 +281,63 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"teams":   cfg.ExperimentalTeams,
 			},
 		})
+	})
+
+	// Machine catalog (multi-machine): paired machines are ACCOUNT state, not
+	// device state — a phone PWA and a desktop logging into this primary see
+	// the same machines. Clients sync their localStorage cache from here.
+	// Auth-guarded like all /api routes; the rows carry each remote's bearer
+	// token, peer material to the auth sessions already stored in this DB.
+	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
+		rows, err := queries.ListMachines(r.Context())
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("list machines", err))
+			return
+		}
+		out := make([]map[string]any, 0, len(rows))
+		for _, m := range rows {
+			out = append(out, map[string]any{
+				"machineId": m.MachineID,
+				"label":     m.Label,
+				"baseUrl":   m.BaseUrl,
+				"token":     m.Token,
+				"addedAt":   m.AddedAt,
+			})
+		}
+		httperror.JSON(w, http.StatusOK, out)
+	})
+	mux.HandleFunc("PUT /api/machines/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Label   string `json:"label"`
+			BaseURL string `json:"baseUrl"`
+			Token   string `json:"token"`
+			AddedAt string `json:"addedAt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.BaseURL == "" {
+			httperror.RespondError(w, httperror.BadRequest("label/baseUrl/token body required"))
+			return
+		}
+		if req.AddedAt == "" {
+			req.AddedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		if err := queries.UpsertMachine(r.Context(), store.UpsertMachineParams{
+			MachineID: r.PathValue("id"),
+			Label:     req.Label,
+			BaseUrl:   req.BaseURL,
+			Token:     req.Token,
+			AddedAt:   req.AddedAt,
+		}); err != nil {
+			httperror.RespondError(w, httperror.Internal("save machine", err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("DELETE /api/machines/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := queries.DeleteMachine(r.Context(), r.PathValue("id")); err != nil {
+			httperror.RespondError(w, httperror.Internal("delete machine", err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	// Tailnet peer discovery (multi-machine M4): probe online tailnet peers

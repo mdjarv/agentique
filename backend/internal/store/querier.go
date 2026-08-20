@@ -48,6 +48,7 @@ type Querier interface {
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
 	DeleteExpiredPairingTokens(ctx context.Context) error
+	DeleteMachine(ctx context.Context, machineID string) error
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
 	DeleteProject(ctx context.Context, id string) error
 	DeletePromptTemplate(ctx context.Context, id string) error
@@ -90,6 +91,7 @@ type Querier interface {
 	ListEnabledSchedulesBySession(ctx context.Context, sessionID string) ([]Schedule, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]SessionEvent, error)
 	ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error)
+	ListMachines(ctx context.Context) ([]Machine, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]Message, error)
 	ListModelResolutions(ctx context.Context) ([]ModelResolution, error)
 	ListPendingDeliveriesForSession(ctx context.Context, recipientSessionID string) ([]ListPendingDeliveriesForSessionRow, error)
@@ -165,6 +167,7 @@ type Querier interface {
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
+	UpsertMachine(ctx context.Context, arg UpsertMachineParams) error
 	UpsertModelResolution(ctx context.Context, arg UpsertModelResolutionParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }

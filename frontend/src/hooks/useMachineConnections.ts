@@ -49,6 +49,17 @@ export function useMachineConnections(): void {
   const machines = useMachineStore((s) => s.machines);
   const teardownsRef = useRef(new Map<string, () => void>());
 
+  // The catalog is account state mastered on the primary: reconcile once at
+  // startup so a machine paired from another device (desktop vs phone PWA)
+  // appears here too. The cached copy connects immediately; the server sync
+  // then adds/removes entries and the effect below reacts.
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (syncedRef.current) return;
+    syncedRef.current = true;
+    useMachineStore.getState().syncFromServer();
+  }, []);
+
   useEffect(() => {
     const teardowns = teardownsRef.current;
 

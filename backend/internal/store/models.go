@@ -63,6 +63,14 @@ type InviteToken struct {
 	CreatedAt string         `json:"created_at"`
 }
 
+type Machine struct {
+	MachineID string `json:"machine_id"`
+	Label     string `json:"label"`
+	BaseUrl   string `json:"base_url"`
+	Token     string `json:"token"`
+	AddedAt   string `json:"added_at"`
+}
+
 type Message struct {
 	ID          string `json:"id"`
 	ChannelID   string `json:"channel_id"`
