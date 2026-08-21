@@ -72,9 +72,10 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     const open: ThreadRowVM[] = [];
     const stale: ThreadRowVM[] = [];
     const archived: ThreadRowVM[] = [];
-    // Pin order is only meaningful within the pinned section, tracked aside
-    // so the VM stays free of it.
+    // Pin order and archival time only matter within their own sections,
+    // tracked aside so the VM stays free of them.
     const pinOrderById = new Map<string, number>();
+    const archivedAtById = new Map<string, number>();
 
     for (const data of Object.values(sessions)) {
       const meta = data.meta;
@@ -140,6 +141,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         pinOrderById.set(meta.id, meta.pinOrder);
         pinned.push(vm);
       } else if (meta.completedAt) {
+        archivedAtById.set(meta.id, Date.parse(meta.completedAt) || 0);
         archived.push(vm);
       } else if (
         // A search flattens the shelf so matches never hide behind it.
@@ -159,8 +161,13 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     );
     open.sort(compareOpenRows);
     stale.sort((a, b) => b.lastActivity - a.lastActivity);
-    // Most recently archived first.
-    archived.sort((a, b) => b.lastActivity - a.lastActivity);
+    // Most recently *archived* first — an old session swept today surfaces
+    // on top, so a sweep (or a mistake) is easy to find and reverse.
+    archived.sort(
+      (a, b) =>
+        (archivedAtById.get(b.sessionId) ?? 0) - (archivedAtById.get(a.sessionId) ?? 0) ||
+        b.lastActivity - a.lastActivity,
+    );
 
     return { pinned, open, stale, archived };
   }, [sessions, projects, machines, pulses, resolvedTheme, searchQuery]);
