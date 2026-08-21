@@ -1,14 +1,16 @@
 export {
   compareOpenRows,
   type DeriveBadgeInput,
-  type DeriveMachineLineInput,
+  type DeriveLivePhraseInput,
+  type DeriveRestTokenInput,
   deriveBadge,
-  deriveMachineLine,
+  deriveLivePhrase,
+  deriveRestToken,
+  isAwake,
   isStale,
   STALE_AFTER_MS,
 } from "./derive";
 export { NewSessionButton } from "./NewSessionButton";
-export { RowStateBadge } from "./RowStateBadge";
 export { ThreadRow } from "./ThreadRow";
 export { CollapsibleBlock, ThreadSection } from "./ThreadSection";
 export { ThreadSidebar } from "./ThreadSidebar";

@@ -32,34 +32,22 @@ export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
   return null;
 }
 
-export interface DeriveMachineLineInput {
-  state: string;
+/** A row is awake — and earns its color + third line — for every badge except
+ *  rest ("off" = evicted counts as rest; its story is the rest token). */
+export function isAwake(badge: ThreadBadge): boolean {
+  return badge !== null && badge !== "off";
+}
+
+export interface DeriveLivePhraseInput {
   badge: ThreadBadge;
   /** Live narration while the agent works (e.g. "editing AppSidebar.tsx"). */
   liveStatus?: string;
   /** Short summary of the pending approval (e.g. "go test -race ./ws/..."). */
   approvalSummary?: string;
-  branch?: string;
-  merged: boolean;
-  completedAt?: string;
-  remoteMachineLabel?: string;
 }
 
-/**
- * The mono second line: a live state phrase in the state hue when something
- * is happening, otherwise branch or outcome in faint. Remote sessions weave
- * the machine in as a prefix ("on <label> · <rest>") — never a separate glyph.
- */
-export function deriveMachineLine(input: DeriveMachineLineInput): MachineLine {
-  const body = machineLineBody(input);
-  if (!input.remoteMachineLabel) return body;
-  const text = body.text
-    ? `on ${input.remoteMachineLabel} · ${body.text}`
-    : `on ${input.remoteMachineLabel}`;
-  return { text, tone: body.tone };
-}
-
-function machineLineBody(input: DeriveMachineLineInput): MachineLine {
+/** The third line of an awake row: the state phrase in its tone. Null at rest. */
+export function deriveLivePhrase(input: DeriveLivePhraseInput): MachineLine | null {
   switch (input.badge) {
     case "attention":
       return input.approvalSummary
@@ -77,17 +65,24 @@ function machineLineBody(input: DeriveMachineLineInput): MachineLine {
       return { text: "finished — unread", tone: "unread" };
     case "draft":
       return { text: "draft — not sent", tone: "draft" };
-    case "off":
-      return { text: "resumes on next message", tone: "muted" };
     default:
-      break;
+      return null;
   }
-  // At rest: outcome outranks branch, branch outranks the archive fallback.
-  if (input.merged) return { text: "merged", tone: "muted" };
-  if (input.state === "stopped") return { text: "stopped by you", tone: "muted" };
-  if (input.branch) return { text: input.branch, tone: "muted" };
-  if (input.completedAt) return { text: "archived", tone: "muted" };
-  return { text: "", tone: "muted" };
+}
+
+export interface DeriveRestTokenInput {
+  state: string;
+  merged: boolean;
+  connected: boolean;
+}
+
+/** The one-word outcome a resting row folds into its repo line. */
+export function deriveRestToken(input: DeriveRestTokenInput): string {
+  if (input.merged) return "merged";
+  if (input.state === "stopped") return "stopped";
+  if (input.state === "done") return "done";
+  if (!input.connected) return "evicted";
+  return "";
 }
 
 /** How long a terminal, seen session may rest in Open before the stale shelf collects it. */

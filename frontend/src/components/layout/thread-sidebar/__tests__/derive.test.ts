@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   compareOpenRows,
   type DeriveBadgeInput,
-  type DeriveMachineLineInput,
   deriveBadge,
-  deriveMachineLine,
+  deriveLivePhrase,
+  deriveRestToken,
+  isAwake,
   isStale,
   STALE_AFTER_MS,
 } from "../derive";
@@ -75,109 +76,77 @@ describe("deriveBadge", () => {
   });
 });
 
-function lineInput(overrides: Partial<DeriveMachineLineInput> = {}): DeriveMachineLineInput {
-  return { state: "idle", badge: null, merged: false, ...overrides };
-}
-
-describe("deriveMachineLine", () => {
+describe("deriveLivePhrase", () => {
   it("phrases a pending approval with its summary", () => {
     expect(
-      deriveMachineLine(
-        lineInput({ badge: "attention", approvalSummary: "go test -race ./ws/..." }),
-      ),
+      deriveLivePhrase({ badge: "attention", approvalSummary: "go test -race ./ws/..." }),
     ).toEqual({ text: "approve · go test -race ./ws/...", tone: "attn" });
   });
 
   it("falls back to a generic attention phrase without a summary", () => {
-    expect(deriveMachineLine(lineInput({ badge: "attention" }))).toEqual({
+    expect(deriveLivePhrase({ badge: "attention" })).toEqual({
       text: "needs your input",
       tone: "attn",
     });
   });
 
   it("uses live narration while working, with a fallback", () => {
-    expect(
-      deriveMachineLine(
-        lineInput({ state: "running", badge: "working", liveStatus: "editing AppSidebar.tsx" }),
-      ),
-    ).toEqual({ text: "editing AppSidebar.tsx", tone: "work" });
-    expect(deriveMachineLine(lineInput({ state: "running", badge: "working" }))).toEqual({
-      text: "working…",
+    expect(deriveLivePhrase({ badge: "working", liveStatus: "editing AppSidebar.tsx" })).toEqual({
+      text: "editing AppSidebar.tsx",
       tone: "work",
     });
+    expect(deriveLivePhrase({ badge: "working" })).toEqual({ text: "working…", tone: "work" });
   });
 
-  it("phrases planning, merging, failed, unread, draft, and off", () => {
-    expect(deriveMachineLine(lineInput({ badge: "planning" }))).toEqual({
+  it("phrases planning, merging, failed, unread, and draft", () => {
+    expect(deriveLivePhrase({ badge: "planning" })).toEqual({
       text: "drafting a plan",
       tone: "work",
     });
-    expect(deriveMachineLine(lineInput({ badge: "merging" }))).toEqual({
-      text: "merging…",
-      tone: "merge",
-    });
-    expect(deriveMachineLine(lineInput({ badge: "failed", liveStatus: "exit 1" }))).toEqual({
+    expect(deriveLivePhrase({ badge: "merging" })).toEqual({ text: "merging…", tone: "merge" });
+    expect(deriveLivePhrase({ badge: "failed", liveStatus: "exit 1" })).toEqual({
       text: "exit 1",
       tone: "fail",
     });
-    expect(deriveMachineLine(lineInput({ badge: "unread" }))).toEqual({
+    expect(deriveLivePhrase({ badge: "unread" })).toEqual({
       text: "finished — unread",
       tone: "unread",
     });
-    expect(deriveMachineLine(lineInput({ badge: "draft" }))).toEqual({
+    expect(deriveLivePhrase({ badge: "draft" })).toEqual({
       text: "draft — not sent",
       tone: "draft",
     });
-    expect(deriveMachineLine(lineInput({ badge: "off" }))).toEqual({
-      text: "resumes on next message",
-      tone: "muted",
-    });
   });
 
-  it("shows outcome over branch at rest", () => {
-    expect(deriveMachineLine(lineInput({ merged: true, branch: "session-5f2209dd" }))).toEqual({
-      text: "merged",
-      tone: "muted",
-    });
-    expect(deriveMachineLine(lineInput({ state: "stopped", branch: "session-5f2209dd" }))).toEqual({
-      text: "stopped by you",
-      tone: "muted",
-    });
+  it("is silent at rest — resting rows have no third line", () => {
+    expect(deriveLivePhrase({ badge: null })).toBeNull();
+    expect(deriveLivePhrase({ badge: "off" })).toBeNull();
+  });
+});
+
+describe("isAwake", () => {
+  it("treats every badge except rest and evicted as awake", () => {
+    expect(isAwake("working")).toBe(true);
+    expect(isAwake("attention")).toBe(true);
+    expect(isAwake("unread")).toBe(true);
+    expect(isAwake(null)).toBe(false);
+    expect(isAwake("off")).toBe(false);
+  });
+});
+
+describe("deriveRestToken", () => {
+  it("ranks merged over stopped over done", () => {
+    expect(deriveRestToken({ state: "stopped", merged: true, connected: true })).toBe("merged");
+    expect(deriveRestToken({ state: "stopped", merged: false, connected: true })).toBe("stopped");
+    expect(deriveRestToken({ state: "done", merged: false, connected: true })).toBe("done");
   });
 
-  it("falls back to branch, then archived, then empty at rest", () => {
-    expect(deriveMachineLine(lineInput({ branch: "session-5f2209dd" }))).toEqual({
-      text: "session-5f2209dd",
-      tone: "muted",
-    });
-    expect(deriveMachineLine(lineInput({ completedAt: "2026-08-01T00:00:00Z" }))).toEqual({
-      text: "archived",
-      tone: "muted",
-    });
-    expect(deriveMachineLine(lineInput())).toEqual({ text: "", tone: "muted" });
+  it("marks a disconnected idle session as evicted", () => {
+    expect(deriveRestToken({ state: "idle", merged: false, connected: false })).toBe("evicted");
   });
 
-  it("prefixes the machine label for remote sessions", () => {
-    expect(
-      deriveMachineLine(lineInput({ branch: "session-5f2209dd", remoteMachineLabel: "epsilon" })),
-    ).toEqual({ text: "on epsilon · session-5f2209dd", tone: "muted" });
-    // Tone follows the body, not the prefix.
-    expect(
-      deriveMachineLine(
-        lineInput({
-          badge: "attention",
-          approvalSummary: "rm -rf dist",
-          remoteMachineLabel: "epsilon",
-        }),
-      ),
-    ).toEqual({ text: "on epsilon · approve · rm -rf dist", tone: "attn" });
-  });
-
-  it("shows just the machine when there is nothing else to say", () => {
-    expect(deriveMachineLine(lineInput({ remoteMachineLabel: "epsilon" }))).toEqual({
-      text: "on epsilon",
-      tone: "muted",
-    });
+  it("says nothing for a connected idle session", () => {
+    expect(deriveRestToken({ state: "idle", merged: false, connected: true })).toBe("");
   });
 });
 
@@ -191,7 +160,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     projectColorBg: "#5e9eff",
     projectColorFg: "#5e9eff",
     badge: null,
-    machineLine: { text: "", tone: "muted" },
+    restToken: "",
     timeLabel: "1h",
     struck: false,
     unread: false,

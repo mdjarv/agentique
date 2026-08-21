@@ -39,7 +39,10 @@ export interface ThreadRowVM {
   projectColorFg: string;
   projectIconId?: string;
   badge: ThreadBadge;
-  machineLine: MachineLine;
+  /** Line 3, live rows only — the state phrase in its tone. Absent at rest. */
+  livePhrase?: MachineLine;
+  /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */
+  restToken: string;
   timeLabel: string;
   struck: boolean;
   unread: boolean;

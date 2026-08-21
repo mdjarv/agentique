@@ -197,6 +197,7 @@ export function ThreadSidebar() {
                 key={vm.sessionId}
                 vm={vm}
                 selected={vm.sessionId === activeSessionId}
+                compact
                 onClick={() => openSession(vm)}
                 onTogglePin={() => togglePin(vm)}
                 onArchive={() => archive(vm)}
@@ -218,6 +219,7 @@ export function ThreadSidebar() {
                 key={vm.sessionId}
                 vm={vm}
                 selected={vm.sessionId === activeSessionId}
+                compact
                 onClick={() => openSession(vm)}
                 onTogglePin={() => togglePin(vm)}
                 onArchive={() => unarchive(vm)}

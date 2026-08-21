@@ -2,7 +2,7 @@ import { Archive, Hash, Pin, PinOff } from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { cn } from "~/lib/utils";
-import { RowStateBadge } from "./RowStateBadge";
+import { isAwake } from "./derive";
 import type { MachineTone, ThreadBadge, ThreadRowVM } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
@@ -24,12 +24,14 @@ const BADGE_ARIA: Record<Exclude<ThreadBadge, null>, string> = {
   failed: "failed",
   merging: "merging",
   draft: "draft",
-  off: "disconnected",
+  off: "evicted",
 };
 
 interface ThreadRowProps {
   vm: ThreadRowVM;
   selected: boolean;
+  /** One-line settled row for the shelf and Archived sections. */
+  compact?: boolean;
   onClick: () => void;
   onTogglePin: () => void;
   onArchive: () => void;
@@ -37,57 +39,145 @@ interface ThreadRowProps {
 
 function rowAriaLabel(vm: ThreadRowVM): string {
   const name = vm.untitled ? "Untitled" : vm.name;
-  const state = vm.badge ? BADGE_ARIA[vm.badge] : "at rest";
+  const state = vm.badge ? BADGE_ARIA[vm.badge] : vm.restToken || "at rest";
   return [name, state, vm.projectSlug, vm.timeLabel].filter(Boolean).join(", ");
 }
 
-function ProjectIconGlyph({ vm }: { vm: ThreadRowVM }) {
+/**
+ * The 14px inline project chip on the repo line. Awake rows carry the
+ * project's hue; resting rows are grey, evicted rows fainter still — the
+ * wake model's identity color lives here and on the slug, nowhere else.
+ */
+function Chip({ vm, awake }: { vm: ThreadRowVM; awake: boolean }) {
   const Icon = useProjectIcon(vm.projectIconId ?? "");
-  if (Icon) return <Icon className="size-3.5" />;
-  return <>{vm.projectInitials}</>;
+  const evicted = vm.badge === "off";
+  return (
+    <span
+      className={cn(
+        "flex size-3.5 shrink-0 items-center justify-center rounded",
+        !awake &&
+          (evicted
+            ? "bg-border/25 text-muted-foreground-faint"
+            : "bg-border/40 text-muted-foreground"),
+      )}
+      style={
+        awake ? { backgroundColor: `${vm.projectColorBg}26`, color: vm.projectColorFg } : undefined
+      }
+    >
+      {Icon ? (
+        <Icon className="size-2.5" />
+      ) : (
+        <span className="text-[7px] font-bold">{vm.projectInitials}</span>
+      )}
+    </span>
+  );
 }
 
-function RowActionButton({
-  label,
-  onAction,
-  children,
+function RowActions({
+  pinned,
+  onTogglePin,
+  onArchive,
 }: {
-  label: string;
-  onAction: () => void;
-  children: React.ReactNode;
+  pinned: boolean;
+  onTogglePin: () => void;
+  onArchive: () => void;
 }) {
+  const PinIcon = pinned ? PinOff : Pin;
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={(e) => {
-        e.stopPropagation();
-        onAction();
-      }}
-      className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground-bright"
-    >
-      {children}
-    </button>
+    <span className="absolute right-2 top-1.5 hidden gap-0.5 md:group-hover/thread:flex">
+      {[
+        {
+          label: pinned ? "Unpin" : "Pin",
+          action: onTogglePin,
+          icon: <PinIcon className="size-3" />,
+        },
+        { label: "Archive", action: onArchive, icon: <Archive className="size-3" /> },
+      ].map(({ label, action, icon }) => (
+        <span
+          key={label}
+          role="button"
+          tabIndex={0}
+          aria-label={label}
+          title={label}
+          onClick={(e) => {
+            e.stopPropagation();
+            action();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              action();
+            }
+          }}
+          className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground-bright"
+        >
+          {icon}
+        </span>
+      ))}
+    </span>
   );
 }
 
 /**
- * Icon-anchor session row: 26px project icon (the only identity color) with an
- * 11px corner state dot, name + relative time on line 1, mono machine line +
- * counters on line 2. Presentational only — all data arrives via the VM.
- *
- * The hover pin/archive actions are siblings of the row button (absolutely
- * positioned over the time slot) so no button ever nests inside another.
+ * Full-wake adaptive session row (C1):
+ * - resting rows: two grey lines — repo line (chip · slug · @machine · outcome
+ *   · time) over the title;
+ * - awake rows: identity wakes into the project hue and a third line appears —
+ *   the state phrase in its tone, todo/worker counters right, and the pulsing
+ *   amber dot reserved for blocked-on-you.
+ * Presentational only — all data arrives via the VM.
  */
 export const ThreadRow = memo(function ThreadRow({
   vm,
   selected,
+  compact = false,
   onClick,
   onTogglePin,
   onArchive,
 }: ThreadRowProps) {
-  const PinIcon = vm.pinned ? PinOff : Pin;
+  if (compact) {
+    return (
+      <div className="group/thread relative">
+        <button
+          type="button"
+          aria-label={rowAriaLabel(vm)}
+          onClick={onClick}
+          className={cn(
+            "flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+            "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
+            "max-md:min-h-11",
+            selected ? "bg-sidebar-accent" : "group-hover/thread:bg-sidebar-accent/60",
+          )}
+        >
+          <Chip vm={vm} awake={false} />
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground",
+              vm.struck && "line-through decoration-muted-foreground/50",
+              vm.untitled && "italic",
+            )}
+          >
+            {vm.untitled ? "Untitled" : vm.name}
+          </span>
+          <span className="min-w-0 shrink truncate font-mono text-[10px] text-muted-foreground-faint">
+            {vm.projectSlug}
+          </span>
+          {vm.remoteMachineLabel && (
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
+              @{vm.remoteMachineLabel}
+            </span>
+          )}
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
+            {vm.timeLabel}
+          </span>
+        </button>
+        <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
+      </div>
+    );
+  }
+
+  const awake = isAwake(vm.badge);
+  const evicted = vm.badge === "off";
   const showTodo = vm.todo && vm.todo.total > 0;
 
   return (
@@ -97,59 +187,68 @@ export const ThreadRow = memo(function ThreadRow({
         aria-label={rowAriaLabel(vm)}
         onClick={onClick}
         className={cn(
-          "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+          "block w-full cursor-pointer select-none rounded-lg px-2.5 py-1.5 text-left transition-colors",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
           "max-md:min-h-11",
           selected ? "bg-sidebar-accent" : "group-hover/thread:bg-sidebar-accent/60",
         )}
       >
-        {/* Project icon — the only place identity color appears */}
-        <span
-          className={cn(
-            "relative flex size-[26px] shrink-0 items-center justify-center rounded-md text-[10px] font-bold",
-            vm.struck && "opacity-50",
-            vm.badge === "off" && "opacity-60",
+        {/* Repo line: chip · slug · @machine · rest outcome · time */}
+        <span className="flex items-center gap-1.5">
+          <Chip vm={vm} awake={awake} />
+          <span
+            className={cn(
+              "min-w-0 shrink truncate font-mono text-[10px] font-medium",
+              !awake && "text-muted-foreground",
+              evicted && "opacity-80",
+            )}
+            style={awake ? { color: vm.projectColorFg } : undefined}
+          >
+            {vm.projectSlug}
+          </span>
+          {vm.remoteMachineLabel && (
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
+              @{vm.remoteMachineLabel}
+            </span>
           )}
-          style={{ backgroundColor: `${vm.projectColorBg}1f`, color: vm.projectColorFg }}
-        >
-          <ProjectIconGlyph vm={vm} />
-          <RowStateBadge badge={vm.badge} selected={selected} />
+          {!awake && vm.restToken && (
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
+              · {vm.restToken}
+            </span>
+          )}
+          <span className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
+            {vm.timeLabel}
+          </span>
         </span>
 
-        <span className="min-w-0 flex-1">
-          {/* Line 1: name + time (time yields to hover actions on desktop) */}
-          <span className="flex items-baseline gap-2">
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate text-[13px] font-medium text-foreground",
-                selected && "text-foreground-bright",
-                vm.unread && "font-semibold text-foreground-bright",
-                vm.untitled && "font-normal italic text-muted-foreground",
-                vm.struck &&
-                  "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
-              )}
-            >
-              {vm.untitled ? "Untitled" : vm.name}
-            </span>
-            <span
-              className={cn(
-                "shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint",
-                "md:group-hover/thread:opacity-0",
-              )}
-            >
-              {vm.timeLabel}
-            </span>
-          </span>
+        {/* Title line */}
+        <span
+          className={cn(
+            "mt-px block truncate text-[13px] font-medium text-foreground",
+            selected && "text-foreground-bright",
+            vm.unread && "font-semibold text-foreground-bright",
+            vm.untitled && "font-normal italic text-muted-foreground",
+            evicted && "text-muted-foreground",
+            vm.struck &&
+              "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
+          )}
+        >
+          {vm.untitled ? "Untitled" : vm.name}
+        </span>
 
-          {/* Line 2: machine line + counters */}
+        {/* State line — awake rows only */}
+        {awake && vm.livePhrase && (
           <span className="mt-px flex items-center gap-2">
+            {vm.badge === "attention" && (
+              <span className="size-[7px] shrink-0 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
+            )}
             <span
               className={cn(
                 "min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]",
-                TONE_CLASS[vm.machineLine.tone],
+                TONE_CLASS[vm.livePhrase.tone],
               )}
             >
-              {vm.machineLine.text || " "}
+              {vm.livePhrase.text}
             </span>
             {showTodo && vm.todo && (
               <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
@@ -166,18 +265,10 @@ export const ThreadRow = memo(function ThreadRow({
               </span>
             )}
           </span>
-        </span>
+        )}
       </button>
 
-      {/* Desktop-only hover actions, swapped into the time slot */}
-      <span className="absolute right-2 top-1.5 hidden gap-0.5 md:group-hover/thread:flex">
-        <RowActionButton label={vm.pinned ? "Unpin" : "Pin"} onAction={onTogglePin}>
-          <PinIcon className="size-3" />
-        </RowActionButton>
-        <RowActionButton label="Archive" onAction={onArchive}>
-          <Archive className="size-3" />
-        </RowActionButton>
-      </span>
+      <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
     </div>
   );
 });
