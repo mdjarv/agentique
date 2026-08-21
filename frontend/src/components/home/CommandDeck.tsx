@@ -1,12 +1,13 @@
 /**
  * The landing page's triage bands — needs-you (with inline resolve), live
- * now, and unread-to-review. Every band renders only when non-empty; when
- * all three are empty the deck reduces to a single all-quiet line and the
- * wire below owns the page.
+ * now, unread-to-review, and repos drifted from origin. Every band renders
+ * only when non-empty; when all are empty the deck reduces to a single
+ * all-quiet line and the wire below owns the page.
  */
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
 import { formatPulse } from "~/components/layout/session/PulseStatus";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { resolveApproval } from "~/lib/session/actions";
@@ -152,10 +153,45 @@ function LiveCard({ data }: { data: SessionData }) {
   );
 }
 
+/**
+ * A repo whose main checkout has drifted from origin. The flat sidebar has no
+ * project rows any more, so the deck is where "master is 3 ahead" becomes
+ * visible and one click away from pushed.
+ */
+function RepoRow({ project }: { project: { id: string; slug: string } }) {
+  const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
+  return (
+    <span className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12.5px]">
+      <span className="font-mono text-[10px] text-muted-foreground">{project.slug}</span>
+      <span className="font-mono text-[10px] text-muted-foreground-faint">{gitStatus?.branch}</span>
+      <ProjectGitPill
+        projectId={project.id}
+        projectSlug={project.slug}
+        gitStatus={gitStatus}
+        labelled
+      />
+    </span>
+  );
+}
+
+function useDriftedRepos() {
+  const projects = useAppStore((s) => s.projects);
+  const gitStatus = useAppStore((s) => s.projectGitStatus);
+  return useMemo(
+    () =>
+      projects.filter((p) => {
+        const st = gitStatus[p.id];
+        return !!st?.hasRemote && (st.aheadRemote > 0 || st.behindRemote > 0);
+      }),
+    [projects, gitStatus],
+  );
+}
+
 export function CommandDeck() {
   const sessions = useChatStore((s) => s.sessions);
   const open = useOpenSession();
   const projects = useAppStore((s) => s.projects);
+  const repos = useDriftedRepos();
 
   const { needs, live, review } = useMemo(() => {
     const all = Object.values(sessions).filter((d) => !d.meta.completedAt);
@@ -168,7 +204,7 @@ export function CommandDeck() {
     };
   }, [sessions]);
 
-  if (needs.length === 0 && live.length === 0 && review.length === 0) {
+  if (needs.length === 0 && live.length === 0 && review.length === 0 && repos.length === 0) {
     return (
       <div className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
         <span className="size-2 rounded-full bg-success opacity-70" />
@@ -229,6 +265,20 @@ export function CommandDeck() {
                   {d.meta.lastQueryAt ? relativeTime(d.meta.lastQueryAt) : ""}
                 </span>
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {repos.length > 0 && (
+        <div>
+          <SectionLabel>
+            Repos out of sync{" "}
+            <span className="font-mono text-muted-foreground-faint">{repos.length}</span>
+          </SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            {repos.map((p) => (
+              <RepoRow key={p.id} project={p} />
             ))}
           </div>
         </div>

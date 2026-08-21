@@ -294,6 +294,8 @@ The signature component. One config maps twelve session states (`idle`, `running
 
 ### Navigation
 - **Sidebar:** `sidebar/80` with `backdrop-blur-md`, a 48px brand header (wordmark, primary New-session launcher, More menu), a search bar, then a flat session list: Pinned (drag-orderable) / Open (attention-first) / Archived (collapsed count). Rows are icon-anchored: a 26px project-color icon with an 11px corner state dot, name + tabular time, and a mono machine line. Selection is a raised surface plus a brighter name — never an accent bar.
+- **New-session palette:** the launcher's popover is also the product's only per-project surface, so its rows carry the project affordances the folder sidebar used to own — remote-sync pills (`↑N` push / `↓N` pull), settings, favorite — beside the project pill. It is a collision-aware popover, not a hand-placed panel: it is wider than the space to its left inside the 288px rail.
+- **Remote-sync pills:** `↑N` in Ready Green pushes on click; `↓N` in Signal Blue fast-forwards, or turns Attention Amber and opens a local session with a rebase prompt when the pull is non-FF. Same component wherever a project is identifiable — palette row, session header, landing deck — so the gesture never changes meaning.
 - **Section labels:** chevron, optional icon, faint count, then the 10px uppercase label — count *before* label, so the numbers form a scannable column.
 - **Row actions** appear on `group-hover` at full opacity and are permanently visible on touch.
 

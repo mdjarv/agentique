@@ -18,6 +18,7 @@ import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
+import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
 import { PageHeader } from "~/components/layout/PageHeader";
 import {
   resolveSessionState,
@@ -140,6 +141,13 @@ export function SessionHeader({
               subline={<MobileSubline meta={meta} hasPendingApproval={hasPendingInput} />}
             />
             <div className="ml-auto flex items-center gap-1 shrink-0">
+              {projectSlug && (
+                <ProjectGitPill
+                  projectId={meta.projectId}
+                  projectSlug={projectSlug}
+                  gitStatus={projectGitStatus}
+                />
+              )}
               <ConnectionIndicator />
               {actionMenu}
             </div>
@@ -188,6 +196,18 @@ export function SessionHeader({
                       ? "bg-success/10 text-success border-success/30 hover:bg-success/20"
                       : "hover:bg-accent",
                   )}
+                />
+              )}
+
+              {/* The repo's own remote sync — the project checkout, not the
+                  worktree. It is how a merged branch (or a local session's
+                  commits) reaches origin without leaving the session. */}
+              {projectSlug && (
+                <ProjectGitPill
+                  projectId={meta.projectId}
+                  projectSlug={projectSlug}
+                  gitStatus={projectGitStatus}
+                  labelled
                 />
               )}
 
