@@ -16,7 +16,14 @@ import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { usePulseStore } from "~/stores/pulse-store";
-import { compareOpenRows, deriveBadge, deriveLivePhrase, deriveRestToken, isStale } from "./derive";
+import {
+  compareOpenRows,
+  deriveBadge,
+  deriveLivePhrase,
+  deriveRestToken,
+  isAwake,
+  isStale,
+} from "./derive";
 import type { ThreadGroups, ThreadRowVM } from "./types";
 
 function projectInitials(slug: string): string {
@@ -117,6 +124,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         projectColorFg: color.fg,
         projectIconId: project.icon || undefined,
         badge,
+        awake: isAwake(badge) || meta.connected,
         livePhrase:
           deriveLivePhrase({
             badge,

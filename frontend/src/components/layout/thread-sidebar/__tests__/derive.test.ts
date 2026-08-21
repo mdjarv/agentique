@@ -161,6 +161,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     projectColorFg: "#5e9eff",
     badge: null,
     restToken: "",
+    awake: false,
     timeLabel: "1h",
     struck: false,
     unread: false,

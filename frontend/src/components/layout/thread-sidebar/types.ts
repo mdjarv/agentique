@@ -39,6 +39,9 @@ export interface ThreadRowVM {
   projectColorFg: string;
   projectIconId?: string;
   badge: ThreadBadge;
+  /** Identity wakes (project hue) for any live badge OR a connected CLI —
+   *  an idle session with its claude process alive is active, just quiet. */
+  awake: boolean;
   /** Line 3, live rows only — the state phrase in its tone. Absent at rest. */
   livePhrase?: MachineLine;
   /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */

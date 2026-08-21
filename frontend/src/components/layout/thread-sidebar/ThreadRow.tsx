@@ -2,7 +2,6 @@ import { Archive, Hash, Pin, PinOff } from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { cn } from "~/lib/utils";
-import { isAwake } from "./derive";
 import type { MachineTone, ThreadBadge, ThreadRowVM } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
@@ -176,7 +175,7 @@ export const ThreadRow = memo(function ThreadRow({
     );
   }
 
-  const awake = isAwake(vm.badge);
+  const awake = vm.awake;
   const evicted = vm.badge === "off";
   const showTodo = vm.todo && vm.todo.total > 0;
 
