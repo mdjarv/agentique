@@ -54,6 +54,11 @@ type PipelineConfig struct {
 	OnFatalError    func(err error)
 	OnSendMessage   func(toolUseID, targetName, content, msgType string)
 	OnActivityEvent func(wireEvent any) // called for result/error events (activity feed)
+	// OnContextStale fires when the per-turn context-window number stops
+	// describing the session: a turn completed, or the provider compacted the
+	// transcript. Dispatched from the event-loop goroutine, so it must not
+	// block — contextMeter.Refresh is the intended implementation.
+	OnContextStale func()
 }
 
 // pulseState holds in-memory activity counters for the session pulse broadcast.
@@ -98,9 +103,14 @@ type EventPipeline struct {
 	// non-persisted transient like the codex "queued" echo lost permanently).
 	emitMu sync.Mutex
 
-	mu                sync.Mutex
-	claudeSessionID   string
-	resolvedModel     string // upstream-reported model ID from the first InitEvent (e.g. "claude-opus-4-8")
+	mu              sync.Mutex
+	claudeSessionID string
+	resolvedModel   string // upstream-reported model ID from the first InitEvent (e.g. "claude-opus-4-8")
+	// cliCapabilities are the optional protocol features the provider CLI
+	// advertised in its init event (e.g. "interrupt_cancel_queued_v1"). The
+	// init event is the only place they are reported, so latch them here.
+	// Gate optional behavior on HasCLICapability — never on a version string.
+	cliCapabilities   []string
 	turnIndex         int
 	seqInTurn         int
 	toolCategories    map[string]string
@@ -138,6 +148,7 @@ type EventPipeline struct {
 	onFatalError      func(error)
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
+	onContextStale    func()
 }
 
 // NewEventPipeline creates an event pipeline. Does not start any goroutines.
@@ -159,6 +170,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onFatalError:      cfg.OnFatalError,
 		onSendMessage:     cfg.OnSendMessage,
 		onActivityEvent:   cfg.OnActivityEvent,
+		onContextStale:    cfg.OnContextStale,
 	}
 }
 
@@ -214,6 +226,13 @@ func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 
 	// Stage 8: State transitions on result/fatal-error.
 	p.handleTerminalEvents(event)
+
+	// Stage 9: a compaction rewrites the transcript out from under the
+	// per-turn context number, which only ever describes the last API call —
+	// remeasure so the meter drops instead of staying pinned near full.
+	if _, ok := event.(runtime.CompactBoundaryEvent); ok && p.onContextStale != nil {
+		p.onContextStale()
+	}
 }
 
 // EmitSessionEvent stamps the wire event with this pipeline's epoch and the
@@ -285,6 +304,33 @@ func (p *EventPipeline) PushPendingMessage(id string) {
 	p.mu.Lock()
 	p.pendingMessageIDs = append(p.pendingMessageIDs, id)
 	p.mu.Unlock()
+}
+
+// CancelPendingMessages drains the replay-confirmation queue and returns the
+// messageIds that will now never be confirmed. Callers broadcast the
+// cancellation themselves so the UI's pending bubbles resolve instead of
+// hanging. Used by Session.Interrupt when a stop drops the provider's queue.
+func (p *EventPipeline) CancelPendingMessages() []string {
+	p.mu.Lock()
+	ids := p.pendingMessageIDs
+	p.pendingMessageIDs = nil
+	p.mu.Unlock()
+	return ids
+}
+
+// HasCLICapability reports whether the provider CLI advertised the named
+// optional protocol feature in its init event. Empty capabilities mean the CLI
+// advertised none — an older build — so this correctly answers false and the
+// caller falls back rather than assuming support.
+func (p *EventPipeline) HasCLICapability(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.cliCapabilities {
+		if c == name {
+			return true
+		}
+	}
+	return false
 }
 
 // handleReplayConfirmation pops the oldest pending messageId and broadcasts
@@ -510,6 +556,10 @@ func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
 	if captureModel {
 		p.resolvedModel = initEv.Model
 	}
+	// Always replace: a resume/reconnect can land on a different CLI build, and
+	// the newest init event is the only truth about what it can do. An empty
+	// list means "advertised nothing", not "supports nothing".
+	p.cliCapabilities = initEv.Capabilities
 	p.mu.Unlock()
 
 	if captureSession {
@@ -721,6 +771,11 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 		if p.onTurnComplete != nil {
 			p.onTurnComplete(outcome)
 		}
+		// outcome.ContextWindow is the last API call's window, not the
+		// session's — remeasure now that the turn is settled.
+		if p.onContextStale != nil {
+			p.onContextStale()
+		}
 	}
 
 	if rle, ok := event.(runtime.RateLimitEvent); ok && rle.Status == "rejected" {
@@ -871,7 +926,7 @@ func isTransient(wireEvent any) bool {
 	switch e := wireEvent.(type) {
 	case WireRateLimitEvent, WireCompactStatusEvent,
 		WireContextManagementEvent, WireStreamEvent,
-		WireMessageDeliveryEvent,
+		WireMessageDeliveryEvent, WireContextUsageEvent,
 		WireToolOutputDeltaEvent, WireReasoningDeltaEvent,
 		WireToolProgressEvent:
 		return true

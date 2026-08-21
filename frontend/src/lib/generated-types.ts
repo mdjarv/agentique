@@ -110,6 +110,16 @@ export interface WireContextManagementEvent {
   raw: unknown;
 }
 
+export interface WireContextUsageEvent {
+  type: "context_usage";
+  contextWindow: number;
+  usedTokens: number;
+  percentage: number;
+  rawContextWindow?: number;
+  autoCompactEnabled?: boolean;
+  autoCompactThreshold?: number;
+}
+
 export interface WireUserMessageEvent {
   type: "user_message";
   content: string;
@@ -974,6 +984,7 @@ export type WireEvent =
   | WireCompactStatusEvent
   | WireCompactBoundaryEvent
   | WireContextManagementEvent
+  | WireContextUsageEvent
   | WireUserMessageEvent;
 
 export interface PushEventMap {

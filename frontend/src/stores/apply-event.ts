@@ -57,7 +57,25 @@ export function applyServerEvent(
   if (event.type === "result" && event.workflowPending) return null;
 
   if (event.type === "message_delivery" && event.messageId) {
-    return { patch: applyMessageDelivery(session, event.messageId) };
+    const status = event.deliveryStatus === "cancelled" ? "cancelled" : "delivered";
+    return { patch: applyMessageDelivery(session, event.messageId, status) };
+  }
+
+  // A live measurement of the real transcript. It supersedes the per-turn
+  // numbers (which describe only the last API call and so survive compaction
+  // unchanged) until the next turn or stream signal speaks.
+  if (event.type === "context_usage") {
+    if (event.contextWindow <= 0) return null;
+    return {
+      patch: {
+        contextUsage: {
+          contextWindow: event.contextWindow,
+          usedTokens: event.usedTokens,
+          inputTokens: session.contextUsage?.inputTokens ?? 0,
+          outputTokens: session.contextUsage?.outputTokens ?? 0,
+        },
+      },
+    };
   }
 
   if (event.type === "compact_status") {
@@ -91,10 +109,16 @@ export function applyServerEvent(
       session.turns[session.turns.length - 1]?.origin?.kind === "schedule";
     if (!completesScheduledTurn) patch.hasUnseenCompletion = !isViewing;
     if (event.contextWindow && event.contextWindow > 0) {
+      const inputTokens = event.inputTokens ?? session.contextUsage?.inputTokens ?? 0;
+      const outputTokens = event.outputTokens ?? session.contextUsage?.outputTokens ?? 0;
+      // This turn's numbers are the freshest signal, so they claim usedTokens
+      // from any earlier live measurement. A live one follows within a
+      // round-trip (contextMeter refreshes on turn completion) and reclaims it.
       patch.contextUsage = {
         contextWindow: event.contextWindow,
-        inputTokens: event.inputTokens ?? session.contextUsage?.inputTokens ?? 0,
-        outputTokens: event.outputTokens ?? session.contextUsage?.outputTokens ?? 0,
+        inputTokens,
+        outputTokens,
+        usedTokens: inputTokens + outputTokens,
       };
     }
   }
@@ -168,14 +192,18 @@ export function applyServerEvent(
 
 // --- Helpers ---
 
-function applyMessageDelivery(session: SessionData, messageId: string): Partial<SessionData> {
+function applyMessageDelivery(
+  session: SessionData,
+  messageId: string,
+  status: "delivered" | "cancelled",
+): Partial<SessionData> {
   // Check streamingEvents first (most likely location for recent messages).
   const bufIdx = session.streamingEvents.findIndex(
     (e) => e.type === "user_message" && e.messageId === messageId,
   );
   if (bufIdx >= 0) {
     const streamingEvents = session.streamingEvents.map((e, i) =>
-      i === bufIdx ? { ...e, deliveryStatus: "delivered" as const } : e,
+      i === bufIdx ? { ...e, deliveryStatus: status } : e,
     );
     return { streamingEvents };
   }
@@ -185,9 +213,7 @@ function applyMessageDelivery(session: SessionData, messageId: string): Partial<
       (e) => e.type === "user_message" && e.messageId === messageId,
     );
     if (idx < 0) return turn;
-    const events = turn.events.map((e, i) =>
-      i === idx ? { ...e, deliveryStatus: "delivered" as const } : e,
-    );
+    const events = turn.events.map((e, i) => (i === idx ? { ...e, deliveryStatus: status } : e));
     return { ...turn, events };
   });
   return { turns };

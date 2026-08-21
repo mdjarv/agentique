@@ -8,6 +8,7 @@ import type {
   CompactBoundaryEvent,
   CompactStatusEvent,
   ContextManagementEvent,
+  ContextUsageEvent,
   ErrorEvent,
   MessageDeliveryEvent,
   RateLimitEvent,
@@ -39,6 +40,7 @@ const KNOWN_EVENT_TYPES = new Set<ChatEventType>([
   "compact_status",
   "compact_boundary",
   "context_management",
+  "context_usage",
   "user_message",
   "message_delivery",
   "agent_message",
@@ -185,6 +187,20 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         parentToolUseId,
       } satisfies ContextManagementEvent;
 
+    case "context_usage":
+      return {
+        id,
+        type: "context_usage",
+        contextWindow: typeof raw.contextWindow === "number" ? raw.contextWindow : 0,
+        usedTokens: typeof raw.usedTokens === "number" ? raw.usedTokens : 0,
+        percentage: raw.percentage as number | undefined,
+        rawContextWindow: raw.rawContextWindow as number | undefined,
+        autoCompactEnabled: raw.autoCompactEnabled as boolean | undefined,
+        autoCompactThreshold: raw.autoCompactThreshold as number | undefined,
+        timestamp,
+        parentToolUseId,
+      } satisfies ContextUsageEvent;
+
     case "user_message":
       return {
         id,
@@ -212,7 +228,9 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         id,
         type: "message_delivery",
         messageId: raw.messageId as string | undefined,
-        deliveryStatus: raw.deliveryStatus as "sending" | "delivered" | undefined,
+        // The wire field is `status` (WireMessageDeliveryEvent.Status), not
+        // `deliveryStatus` — the ChatEvent name is the frontend's own.
+        deliveryStatus: raw.status as "sending" | "delivered" | "cancelled" | undefined,
         timestamp,
         parentToolUseId,
       } satisfies MessageDeliveryEvent;

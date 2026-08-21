@@ -55,7 +55,7 @@ export interface UserMessageSegment {
   kind: "user_message";
   content: string;
   attachments?: Attachment[];
-  deliveryStatus?: "sending" | "delivered" | "queued";
+  deliveryStatus?: "sending" | "delivered" | "queued" | "cancelled";
   timestamp?: number;
 }
 export interface AgentMessageSegment {

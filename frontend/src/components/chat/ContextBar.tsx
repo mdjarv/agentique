@@ -67,7 +67,10 @@ export function ContextBar({ usage, compacting, compact }: ContextBarProps) {
 
   if (!usage) return null;
 
-  const used = usage.inputTokens + usage.outputTokens;
+  // usedTokens is whichever signal spoke last — a live measurement after a
+  // compaction, the turn/stream numbers otherwise. It is absent only for usage
+  // restored from history predating the field.
+  const used = usage.usedTokens ?? usage.inputTokens + usage.outputTokens;
   const pct = Math.min(Math.round((used / usage.contextWindow) * 100), 100);
   const tier = getTier(pct);
 

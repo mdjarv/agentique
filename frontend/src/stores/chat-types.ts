@@ -96,12 +96,30 @@ export interface ContextManagementEvent extends BaseChatEvent {
   type: "context_management";
 }
 
+/**
+ * A live context-window measurement taken against the provider's current
+ * transcript. ResultEvent.contextWindow only describes the last API call, so it
+ * does not shrink when the provider compacts — this one does, and supersedes it.
+ */
+export interface ContextUsageEvent extends BaseChatEvent {
+  type: "context_usage";
+  /** The window usage is reported against. Render against this, not rawContextWindow. */
+  contextWindow: number;
+  /** Unclamped — can exceed contextWindow when the session is over the limit. */
+  usedTokens: number;
+  percentage?: number;
+  /** The model's hard limit; larger than contextWindow under a narrower compaction policy. */
+  rawContextWindow?: number;
+  autoCompactEnabled?: boolean;
+  autoCompactThreshold?: number;
+}
+
 export interface UserMessageEvent extends BaseChatEvent {
   type: "user_message";
   content?: string;
   fromUser?: boolean;
   messageId?: string;
-  deliveryStatus?: "sending" | "delivered" | "queued";
+  deliveryStatus?: "sending" | "delivered" | "queued" | "cancelled";
   // queued marks a message buffered for delivery as the next turn (providers
   // without native mid-turn injection). Drives the "queued" delivery status.
   queued?: boolean;
@@ -111,7 +129,8 @@ export interface UserMessageEvent extends BaseChatEvent {
 export interface MessageDeliveryEvent extends BaseChatEvent {
   type: "message_delivery";
   messageId?: string;
-  deliveryStatus?: "sending" | "delivered";
+  /** "delivered" — the CLI read it; "cancelled" — a stop dropped it before it ran. */
+  deliveryStatus?: "sending" | "delivered" | "cancelled";
 }
 
 export interface AgentMessageEvent extends BaseChatEvent {
@@ -219,6 +238,7 @@ export type ChatEvent =
   | CompactStatusEvent
   | CompactBoundaryEvent
   | ContextManagementEvent
+  | ContextUsageEvent
   | UserMessageEvent
   | MessageDeliveryEvent
   | AgentMessageEvent
@@ -306,6 +326,14 @@ export interface ContextUsage {
   contextWindow: number;
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Authoritative used-token count, set by whichever signal spoke most
+   * recently. A live measurement (context_usage) sets it directly and is the
+   * only source that survives compaction; turn and stream signals set it to
+   * inputTokens + outputTokens. Undefined only for usage restored from history
+   * before this field existed — render `usedTokens ?? inputTokens + outputTokens`.
+   */
+  usedTokens?: number;
 }
 
 // --- Session data ---

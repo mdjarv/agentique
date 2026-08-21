@@ -326,6 +326,7 @@ func main() {
 	compactStatusEvt := g.register(session.WireCompactStatusEvent{}, "WireCompactStatusEvent")
 	compactBoundaryEvt := g.register(session.WireCompactBoundaryEvent{}, "WireCompactBoundaryEvent")
 	ctxMgmtEvt := g.register(session.WireContextManagementEvent{}, "WireContextManagementEvent")
+	ctxUsageEvt := g.register(session.WireContextUsageEvent{}, "WireContextUsageEvent")
 	userMsgEvt := g.register(session.WireUserMessageEvent{}, "WireUserMessageEvent")
 
 	g.addUnion("WireEvent", "type", []unionVariant{
@@ -340,6 +341,7 @@ func main() {
 		{"compact_status", compactStatusEvt},
 		{"compact_boundary", compactBoundaryEvt},
 		{"context_management", ctxMgmtEvt},
+		{"context_usage", ctxUsageEvt},
 		{"user_message", userMsgEvt},
 	})
 

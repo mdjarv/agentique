@@ -49,15 +49,18 @@ type WireToolResultEvent struct {
 }
 
 type WireResultEvent struct {
-	Type          string  `json:"type"`
-	Cost          float64 `json:"cost"`
-	Duration      int64   `json:"duration"`
-	Usage         any     `json:"usage"`
-	StopReason    string  `json:"stopReason"`
-	ContextWindow int     `json:"contextWindow,omitempty"`
-	InputTokens   int     `json:"inputTokens,omitempty"`
-	OutputTokens  int     `json:"outputTokens,omitempty"`
-	Timestamp     int64   `json:"timestamp"` // epoch ms — set by pipeline
+	Type       string  `json:"type"`
+	Cost       float64 `json:"cost"`
+	Duration   int64   `json:"duration"`
+	Usage      any     `json:"usage"`
+	StopReason string  `json:"stopReason"`
+	// ContextWindow describes the last API call, so it does not shrink when the
+	// provider compacts. WireContextUsageEvent carries the live measurement and
+	// supersedes it whenever the provider can answer one.
+	ContextWindow int   `json:"contextWindow,omitempty"`
+	InputTokens   int   `json:"inputTokens,omitempty"`
+	OutputTokens  int   `json:"outputTokens,omitempty"`
+	Timestamp     int64 `json:"timestamp"` // epoch ms — set by pipeline
 	// WorkflowPending marks the placeholder "running in the background" result a
 	// dynamic workflow emits when it launches. It is NOT the final answer — a
 	// later result with WorkflowPending=false carries that. The frontend must not
@@ -101,6 +104,34 @@ type WireCompactBoundaryEvent struct {
 type WireContextManagementEvent struct {
 	Type string          `json:"type"`
 	Raw  json.RawMessage `json:"raw"`
+}
+
+// WireContextUsageEvent carries a live context-window measurement taken against
+// the provider's current transcript.
+//
+// It exists because WireResultEvent.ContextWindow describes the *last API call*:
+// it does not shrink when the provider compacts, and drifts upward until the
+// next turn — so the meter is simply wrong after a compaction. This event is
+// measured on demand (see contextMeter) and stays correct across one.
+//
+// Transient: broadcast-only, never persisted. It is a point-in-time measurement
+// of the session, not part of the conversation, so replaying history must not
+// resurrect a stale one.
+type WireContextUsageEvent struct {
+	Type string `json:"type"` // "context_usage"
+	// ContextWindow is the window usage is reported against — runtime's
+	// MaxTokens, which is what ContextUsage.Remaining() tracks. Render
+	// against this one, not RawContextWindow.
+	ContextWindow int `json:"contextWindow"`
+	// UsedTokens is unclamped and can exceed ContextWindow when the session is
+	// over the limit.
+	UsedTokens int     `json:"usedTokens"`
+	Percentage float64 `json:"percentage"`
+	// RawContextWindow is the model's believed hard limit. Larger than
+	// ContextWindow when a narrower compaction-policy window applies.
+	RawContextWindow     int  `json:"rawContextWindow,omitempty"`
+	AutoCompactEnabled   bool `json:"autoCompactEnabled,omitempty"`
+	AutoCompactThreshold int  `json:"autoCompactThreshold,omitempty"`
 }
 
 type WireToolOutputDeltaEvent struct {
@@ -179,11 +210,17 @@ type WireUserMessageEvent struct {
 	Queued bool `json:"queued,omitempty"`
 }
 
-// WireMessageDeliveryEvent confirms that the CLI has read a user message
-// sent via SendMessage. Transient — broadcast only, not persisted.
+// WireMessageDeliveryEvent resolves the fate of a user message sent via
+// SendMessage or buffered by QueuePendingMessage. Transient — broadcast only,
+// not persisted.
+//
+// Without it a queued message's UI bubble stays pending forever, so every path
+// that removes a message from a queue must emit one.
 type WireMessageDeliveryEvent struct {
-	Type      string `json:"type"`   // "message_delivery"
-	Status    string `json:"status"` // "delivered"
+	Type string `json:"type"`
+	// Status is "delivered" (the CLI read it) or "cancelled" (a stop dropped
+	// it before it ran — see Session.Interrupt).
+	Status    string `json:"status"`
 	MessageID string `json:"messageId"`
 }
 
@@ -283,6 +320,7 @@ func (e WireStreamEvent) WireType() string            { return e.Type }
 func (e WireCompactStatusEvent) WireType() string     { return e.Type }
 func (e WireCompactBoundaryEvent) WireType() string   { return e.Type }
 func (e WireContextManagementEvent) WireType() string { return e.Type }
+func (e WireContextUsageEvent) WireType() string      { return e.Type }
 func (e WireAgentMessageEvent) WireType() string      { return e.Type }
 func (e WireUserMessageEvent) WireType() string       { return e.Type }
 func (e WireMessageDeliveryEvent) WireType() string   { return e.Type }

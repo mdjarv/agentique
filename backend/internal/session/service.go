@@ -1339,12 +1339,16 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 }
 
 // InterruptSession stops the current generation without killing the session.
+//
+// This is the stop button's only path (ws "session.interrupt"), so it cancels
+// queued work too: a stop that lets the next queued command start immediately
+// is not a stop.
 func (s *Service) InterruptSession(sessionID string) error {
 	sess, err := s.getLiveSession(sessionID)
 	if err != nil {
 		return err
 	}
-	return sess.Interrupt()
+	return sess.Interrupt(true)
 }
 
 // recoverWorktree restores or recreates a session's worktree if its work directory

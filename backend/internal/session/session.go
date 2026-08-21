@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -22,6 +23,12 @@ import (
 func sqlNullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
+
+// cliCapabilityInterruptCancelQueued is the protocol token a provider CLI
+// advertises when its interrupt honors "also drop the queue". agentkit passes
+// provider capability tokens through verbatim, so this is claudecli's constant;
+// a provider that advertises nothing simply never matches and falls back.
+const cliCapabilityInterruptCancelQueued = claudecli.CapabilityInterruptCancelQueued
 
 // QueryAttachment represents a base64-encoded file (image or PDF) attached to a query.
 type QueryAttachment struct {
@@ -133,8 +140,12 @@ type Session struct {
 	// evicting is set by beginIdleEvict to atomically claim an idle session for
 	// resource-reclaiming eviction; validateAndPrepareQuery refuses while it is
 	// set, so a turn can never start on a session being torn down. Guarded by mu.
-	evicting       bool
-	pipeline       *EventPipeline
+	evicting bool
+	pipeline *EventPipeline
+	// meter measures the live context window on demand so the frontend's
+	// meter survives compaction. Signal-driven, never polled; see
+	// context_meter.go. Immutable after newSession.
+	meter          *contextMeter
 	queries        sessionQueries
 	broadcast      func(pushType string, payload any)
 	completedAt    string        // ISO8601 timestamp or "" if not completed
@@ -265,8 +276,29 @@ func newSession(p sessionParams) *Session {
 			gitStatus:  p.gitStatus,
 		},
 	}
+	s.meter = newContextMeter(p.id, s.queryContextUsage, s.emitContextUsage)
 	s.pipeline = NewEventPipeline(buildPipelineConfig(s, p))
 	return s
+}
+
+// queryContextUsage measures the live context window against the provider's
+// current transcript. ErrNotLive while the session has no runtime (evicted,
+// resuming, closing) — transient, so the meter stays armed.
+func (s *Session) queryContextUsage(ctx context.Context) (*runtime.ContextUsage, error) {
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
+		return nil, ErrNotLive
+	}
+	return rt.ContextUsage(ctx)
+}
+
+// emitContextUsage publishes a live measurement. It routes through the
+// pipeline's serialized emitter like every other off-loop session.event so the
+// frontend's wire sequence stays gap-free.
+func (s *Session) emitContextUsage(ev WireContextUsageEvent) {
+	s.broadcastSessionEvent(ev)
 }
 
 // setRuntime attaches a runtime.Session and the underlying CLISession to this
@@ -436,6 +468,7 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				"session_id", s.ID, "target", targetName)
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
+		OnContextStale:    func() { s.meter.Refresh() },
 		OnTurnComplete: func(outcome TurnOutcome) {
 			// Runtime drives Running→Idle from ResultEvent; agentique observes
 			// via the broadcast hook. The registry resolves whoever subscribed
@@ -1074,7 +1107,14 @@ func parseDataUrl(dataUrl string) (mediaType string, data []byte, err error) {
 // Interrupt stops the current generation without killing the session.
 // Pending approvals and questions are torn down so the UI doesn't keep
 // banners visible after the runtime has forgotten about them.
-func (s *Session) Interrupt() error {
+//
+// cancelQueued makes stop mean stop. A bare interrupt aborts only the running
+// turn: the provider starts the next queued command the instant it aborts, and
+// agentique replays its own emulated queue at the following idle boundary — so
+// the user watches work continue after pressing the button. Pass true from any
+// user-facing stop; pass false only for an internal interrupt that is a step in
+// some larger flow, where the queue is meant to survive.
+func (s *Session) Interrupt(cancelQueued bool) error {
 	s.mu.Lock()
 	rt := s.rt
 	s.mu.Unlock()
@@ -1093,8 +1133,34 @@ func (s *Session) Interrupt() error {
 		}
 	}
 
-	if err := rt.Interrupt(context.Background()); err != nil {
+	// Take agentique's emulated queue (codex) BEFORE interrupting: the
+	// interrupt drives the session to Idle, and flushPendingMessages replays
+	// the queue on that very transition. Taking it afterwards is a lost race.
+	// Restored on failure so a refused interrupt costs the user nothing.
+	var takenPending []pendingMessage
+	if cancelQueued {
+		takenPending = s.takePendingMessages()
+	}
+
+	cancelledProviderQueue, err := s.interruptRuntime(rt, cancelQueued)
+	if err != nil {
+		s.restorePendingMessages(takenPending)
 		return err
+	}
+
+	// Resolve the UI bubbles for everything the stop just dropped, so no
+	// message is left rendering as pending forever.
+	for _, m := range takenPending {
+		s.broadcastSessionEvent(WireMessageDeliveryEvent{
+			Type: "message_delivery", Status: "cancelled", MessageID: m.id,
+		})
+	}
+	if cancelledProviderQueue {
+		for _, id := range s.pipeline.CancelPendingMessages() {
+			s.broadcastSessionEvent(WireMessageDeliveryEvent{
+				Type: "message_delivery", Status: "cancelled", MessageID: id,
+			})
+		}
 	}
 
 	// Drain agentique-side synthetic approvals (plan-review, spawn UI
@@ -1112,6 +1178,70 @@ func (s *Session) Interrupt() error {
 		s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: rtQuestionID})
 	}
 	return nil
+}
+
+// interruptRuntime aborts the running turn and reports whether the provider's
+// own queue was actually dropped.
+//
+// Two things can make that false even with cancelQueued set: an adapter with no
+// queued-interrupt support at all (runtime.ErrNotSupported — testmode, codex),
+// and a CLI old enough to ignore the flag, which answers with an empty receipt
+// rather than an error. The second is indistinguishable from "nothing was
+// queued" by the receipt alone, so it is settled by the advertised capability —
+// never by comparing CLI version strings. Both fall back to a plain interrupt's
+// behavior, and the caller must not then tell the UI anything was cancelled.
+func (s *Session) interruptRuntime(rt *runtime.Session, cancelQueued bool) (cancelledQueue bool, err error) {
+	if !cancelQueued {
+		return false, rt.Interrupt(context.Background())
+	}
+
+	supported := s.pipeline.HasCLICapability(cliCapabilityInterruptCancelQueued)
+	receipt, err := rt.InterruptWithQueued(context.Background(), supported)
+	if errors.Is(err, runtime.ErrNotSupported) {
+		return false, rt.Interrupt(context.Background())
+	}
+	if err != nil {
+		return false, err
+	}
+	if !supported {
+		slog.Debug("provider CLI cannot cancel queued work on interrupt; queue survives the stop",
+			"session_id", s.ID)
+		return false, nil
+	}
+	if receipt != nil {
+		// StillQueued covers only id-stamped main-thread messages, and can
+		// name ids agentique never sent (cron triggers, auto-resume
+		// continuations) — it is a diagnostic, not a set to reconcile against.
+		slog.Info("interrupt cancelled queued work",
+			"session_id", s.ID,
+			"cancelled", len(receipt.Cancelled),
+			"still_queued", len(receipt.StillQueued),
+		)
+	}
+	return true, nil
+}
+
+// takePendingMessages removes and returns agentique's emulated mid-turn queue
+// (providers without native mid-turn injection). Returns nil when empty, which
+// is the only case for claude.
+func (s *Session) takePendingMessages() []pendingMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	taken := s.pendingMessages
+	s.pendingMessages = nil
+	return taken
+}
+
+// restorePendingMessages puts a taken queue back at the front, preserving FIFO
+// order against anything queued in the meantime. Mirrors flushPendingMessages'
+// own failure path.
+func (s *Session) restorePendingMessages(msgs []pendingMessage) {
+	if len(msgs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.pendingMessages = append(msgs, s.pendingMessages...)
+	s.mu.Unlock()
 }
 
 // drainSyntheticApprovals denies and removes every pending agentique-side
@@ -1154,6 +1284,7 @@ func (s *Session) Close() {
 	s.cancelCtx()
 	s.stopGitRefreshTimer()
 	s.pipeline.StopPulseTimer()
+	s.meter.Stop()
 
 	s.mu.Lock()
 	rt := s.rt

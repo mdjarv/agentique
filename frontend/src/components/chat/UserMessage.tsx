@@ -1,4 +1,4 @@
-import { Check, Clock, Copy, FileText, Loader2, User } from "lucide-react";
+import { Ban, Check, Clock, Copy, FileText, Loader2, User } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrainCard } from "~/components/chat/BrainCard";
@@ -13,7 +13,7 @@ import type { Attachment } from "~/stores/chat-store";
 interface UserMessageProps {
   prompt: string;
   attachments?: Attachment[];
-  deliveryStatus?: "sending" | "delivered" | "queued";
+  deliveryStatus?: "sending" | "delivered" | "queued" | "cancelled";
   timestamp?: number;
   /** Turn origin — schedule-origin prompts render a Clock + schedule-name badge. */
   origin?: QueryOrigin;
@@ -111,6 +111,14 @@ export const UserMessage = memo(function UserMessage({
                   <>
                     <Clock className="h-3 w-3 text-primary/40" />
                     <span className="text-[10px] text-primary/40">Queued</span>
+                  </>
+                ) : deliveryStatus === "cancelled" ? (
+                  // Stop dropped this one before it ran. Say so rather than
+                  // letting the bubble vanish — the user should see what their
+                  // stop actually took with it.
+                  <>
+                    <Ban className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground">Cancelled</span>
                   </>
                 ) : (
                   <Check className="h-3 w-3 text-primary/60" />

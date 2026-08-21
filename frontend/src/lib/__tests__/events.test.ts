@@ -78,6 +78,41 @@ describe("parseServerEvent", () => {
     }
   });
 
+  it("parses context_usage event", () => {
+    const event = parseServerEvent({
+      type: "context_usage",
+      contextWindow: 967000,
+      usedTokens: 44942,
+      percentage: 5,
+      rawContextWindow: 1000000,
+      autoCompactEnabled: true,
+      autoCompactThreshold: 900000,
+    });
+    expect(event?.type).toBe("context_usage");
+    if (event?.type === "context_usage") {
+      // The resolved window, not the model's hard limit — a narrower
+      // compaction policy is what the meter must render against.
+      expect(event.contextWindow).toBe(967000);
+      expect(event.rawContextWindow).toBe(1000000);
+      expect(event.usedTokens).toBe(44942);
+      expect(event.autoCompactThreshold).toBe(900000);
+    }
+  });
+
+  it("reads message_delivery status off the wire field `status`", () => {
+    // The wire carries `status`; `deliveryStatus` is the frontend's own name.
+    // Reading the wrong one silently drops every delivery ack.
+    const event = parseServerEvent({
+      type: "message_delivery",
+      messageId: "m1",
+      status: "cancelled",
+    });
+    expect(event?.type).toBe("message_delivery");
+    if (event?.type === "message_delivery") {
+      expect(event.deliveryStatus).toBe("cancelled");
+    }
+  });
+
   it("parses error event", () => {
     const event = parseServerEvent({
       type: "error",

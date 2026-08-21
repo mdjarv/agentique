@@ -245,6 +245,7 @@ describe("applyServerEvent — result merge", () => {
       contextWindow: 200_000,
       inputTokens: 1000,
       outputTokens: 500,
+      usedTokens: 1500,
     });
   });
 
@@ -258,6 +259,7 @@ describe("applyServerEvent — result merge", () => {
       contextWindow: 200_000,
       inputTokens: 9,
       outputTokens: 8,
+      usedTokens: 17,
     });
   });
 });
@@ -314,5 +316,85 @@ describe("applyServerEvent — message_delivery acks", () => {
     const res = applyServerEvent(session, { id: rid(), type: "message_delivery" }, true);
     // No messageId → falls through to the generic buffer append path, not the ack path.
     expect(res?.patch.streamingEvents).toBeDefined();
+  });
+
+  it("marks a queued message cancelled when a stop drops it", () => {
+    // Without this the bubble renders as pending forever — the message was
+    // dropped, but nothing ever tells the UI so.
+    const msg = userMsg({ messageId: "m3", content: "x", deliveryStatus: "queued" });
+    const session = makeSession({ turns: [makeTurn()], streamingEvents: [msg] });
+    const res = applyServerEvent(
+      session,
+      { id: rid(), type: "message_delivery", messageId: "m3", deliveryStatus: "cancelled" },
+      true,
+    );
+    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus).toBe(
+      "cancelled",
+    );
+  });
+});
+
+// --- Live context usage ---------------------------------------------------
+
+describe("applyServerEvent — context_usage", () => {
+  const usage = (
+    overrides: Partial<Extract<ChatEvent, { type: "context_usage" }>> = {},
+  ): ChatEvent => ({
+    id: rid(),
+    type: "context_usage",
+    contextWindow: 200_000,
+    usedTokens: 40_000,
+    ...overrides,
+  });
+
+  it("supersedes the stale per-turn number after a compaction", () => {
+    // The turn reported a nearly-full window; the per-turn value cannot shrink
+    // on its own, so only the live measurement can make the meter drop.
+    const session = makeSession({
+      contextUsage: {
+        contextWindow: 200_000,
+        inputTokens: 190_000,
+        outputTokens: 2_000,
+        usedTokens: 192_000,
+      },
+    });
+    const res = applyServerEvent(session, usage({ usedTokens: 40_000 }), true);
+    expect(res?.patch.contextUsage?.usedTokens).toBe(40_000);
+    expect(res?.patch.contextUsage?.contextWindow).toBe(200_000);
+  });
+
+  it("keeps usage unclamped when the session is over the window", () => {
+    const session = makeSession();
+    const res = applyServerEvent(session, usage({ usedTokens: 250_000 }), true);
+    expect(res?.patch.contextUsage?.usedTokens).toBe(250_000);
+  });
+
+  it("ignores a zero window rather than publishing a divide-by-zero", () => {
+    const session = makeSession();
+    expect(applyServerEvent(session, usage({ contextWindow: 0 }), true)).toBeNull();
+  });
+
+  it("does not append to the turn buffer (measurement, not conversation)", () => {
+    const session = makeSession({ turns: [makeTurn()] });
+    const res = applyServerEvent(session, usage(), true);
+    expect(res?.patch.streamingEvents).toBeUndefined();
+    expect(res?.patch.turns).toBeUndefined();
+  });
+
+  it("yields to the next turn's numbers, which are already post-compaction", () => {
+    const session = makeSession({
+      contextUsage: {
+        contextWindow: 200_000,
+        inputTokens: 0,
+        outputTokens: 0,
+        usedTokens: 40_000,
+      },
+    });
+    const res = applyServerEvent(
+      session,
+      result({ contextWindow: 200_000, inputTokens: 45_000, outputTokens: 900 }),
+      true,
+    );
+    expect(res?.patch.contextUsage?.usedTokens).toBe(45_900);
   });
 });

@@ -135,10 +135,13 @@ export function extractContextUsageFromTurns(turns: Turn[]): ContextUsage | null
       const event = events[j];
       if (event?.type === "compact_boundary") return null;
       if (event?.type === "result" && event.contextWindow && event.contextWindow > 0) {
+        const inputTokens = event.inputTokens ?? 0;
+        const outputTokens = event.outputTokens ?? 0;
         return {
           contextWindow: event.contextWindow,
-          inputTokens: event.inputTokens ?? 0,
-          outputTokens: event.outputTokens ?? 0,
+          inputTokens,
+          outputTokens,
+          usedTokens: inputTokens + outputTokens,
         };
       }
     }

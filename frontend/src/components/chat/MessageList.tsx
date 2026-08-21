@@ -396,7 +396,9 @@ export function MessageList({
     return streamingEvents.filter(
       (e): e is UserMessageEvent =>
         e.type === "user_message" &&
-        (e.deliveryStatus === "sending" || e.deliveryStatus === "queued"),
+        (e.deliveryStatus === "sending" ||
+          e.deliveryStatus === "queued" ||
+          e.deliveryStatus === "cancelled"),
     );
   }, [streamingEvents]);
 
@@ -637,7 +639,11 @@ export function MessageList({
               key={msg.messageId ?? `pending-${msg.deliveryStatus}-${msg.content ?? ""}`}
               prompt={msg.content ?? ""}
               attachments={msg.attachments}
-              deliveryStatus={msg.deliveryStatus === "queued" ? "queued" : "sending"}
+              deliveryStatus={
+                msg.deliveryStatus === "queued" || msg.deliveryStatus === "cancelled"
+                  ? msg.deliveryStatus
+                  : "sending"
+              }
             />
           ))}
           <ScrollAnchor

@@ -444,11 +444,17 @@ export const useChatStore = create<ChatState>((set) => ({
       const prev = session.contextUsage;
       const contextWindow =
         prev?.contextWindow ?? (session.meta.model?.endsWith("[1m]") ? 1_000_000 : 200_000);
+      const inputTokens = patch.inputTokens ?? prev?.inputTokens ?? 0;
+      const outputTokens = patch.outputTokens ?? prev?.outputTokens ?? 0;
+      // message_start reports the tokens the API call actually carried, so
+      // after a compaction it is already the compacted number — it may claim
+      // usedTokens from an earlier live measurement without going stale.
       return updateSession(s, sessionId, {
         contextUsage: {
           contextWindow,
-          inputTokens: patch.inputTokens ?? prev?.inputTokens ?? 0,
-          outputTokens: patch.outputTokens ?? prev?.outputTokens ?? 0,
+          inputTokens,
+          outputTokens,
+          usedTokens: inputTokens + outputTokens,
         },
       });
     }),

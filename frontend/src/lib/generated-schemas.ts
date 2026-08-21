@@ -112,6 +112,16 @@ export const WireContextManagementEventSchema = z.object({
   raw: z.unknown(),
 });
 
+export const WireContextUsageEventSchema = z.object({
+  type: z.literal("context_usage"),
+  contextWindow: z.number(),
+  usedTokens: z.number(),
+  percentage: z.number(),
+  rawContextWindow: z.number().optional(),
+  autoCompactEnabled: z.boolean().optional(),
+  autoCompactThreshold: z.number().optional(),
+});
+
 export const WireUserMessageEventSchema = z.object({
   type: z.literal("user_message"),
   content: z.string(),
@@ -976,6 +986,7 @@ export const WireEventSchema = z.discriminatedUnion("type", [
   WireCompactStatusEventSchema,
   WireCompactBoundaryEventSchema,
   WireContextManagementEventSchema,
+  WireContextUsageEventSchema,
   WireUserMessageEventSchema,
 ]);
 

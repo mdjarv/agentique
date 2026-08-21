@@ -198,6 +198,7 @@ describe("extractContextUsageFromTurns", () => {
       contextWindow: 200_000,
       inputTokens: 20,
       outputTokens: 10,
+      usedTokens: 30,
     });
   });
 
@@ -225,6 +226,7 @@ describe("extractContextUsageFromTurns", () => {
       contextWindow: 150_000,
       inputTokens: 7,
       outputTokens: 3,
+      usedTokens: 10,
     });
   });
 });
