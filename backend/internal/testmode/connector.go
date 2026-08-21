@@ -125,6 +125,14 @@ type Session struct {
 	scenarios   []Scenario
 	scenarioIdx int
 	permission  runtime.ToolPermissionFunc
+
+	// turnCtx is handed to the permission callback for the running turn, and
+	// turnCancel ends it on interrupt or close. A real provider cancels a
+	// parked prompt's context when the prompt is withdrawn or the session
+	// ends; substituting context.Background() here compiles fine and silently
+	// strands both the approval and this replay goroutine.
+	turnCtx    context.Context
+	turnCancel context.CancelFunc
 }
 
 // NewSession creates a mock CLI session with a buffered event channel.
@@ -166,6 +174,8 @@ func (s *Session) Query(_ context.Context, prompt string, _ ...runtime.Attachmen
 	s.mu.Lock()
 	s.queries = append(s.queries, prompt)
 	s.interrupted = false
+	s.startTurnLocked()
+	turnCtx := s.turnCtx
 	// Check for scripted scenario.
 	var scenario *Scenario
 	if s.scenarioIdx < len(s.scenarios) {
@@ -175,7 +185,7 @@ func (s *Session) Query(_ context.Context, prompt string, _ ...runtime.Attachmen
 	s.mu.Unlock()
 
 	if scenario != nil {
-		go s.replayScenario(scenario)
+		go s.replayScenario(turnCtx, scenario)
 	} else {
 		// No scenario to replay — emit an immediate TurnCompletedEvent so
 		// the session transitions back to idle instead of hanging in
@@ -209,16 +219,34 @@ func (s *Session) SetModel(_ context.Context, model string) error {
 // SetPlanMode implements the optional PlanModeCapable runtime capability.
 func (s *Session) SetPlanMode(_ context.Context, _ runtime.PlanMode) error { return nil }
 
+// startTurnLocked replaces the turn context, ending any previous turn's.
+// Callers must hold mu.
+func (s *Session) startTurnLocked() {
+	s.endTurnLocked()
+	s.turnCtx, s.turnCancel = context.WithCancel(context.Background())
+}
+
+// endTurnLocked cancels the running turn's context, unblocking a permission
+// callback parked on a human. Callers must hold mu.
+func (s *Session) endTurnLocked() {
+	if s.turnCancel != nil {
+		s.turnCancel()
+		s.turnCancel = nil
+	}
+}
+
 func (s *Session) Interrupt(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interrupted = true
+	s.endTurnLocked()
 	return nil
 }
 
 func (s *Session) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.endTurnLocked()
 	if !s.closed {
 		s.closed = true
 		close(s.events)
@@ -248,7 +276,7 @@ func (s *Session) InjectEvent(event runtime.CLIEvent) error {
 // then the permission callback is invoked if set. This mirrors the real CLI
 // behavior where the event stream shows tool_use before permission is
 // resolved.
-func (s *Session) replayScenario(sc *Scenario) {
+func (s *Session) replayScenario(ctx context.Context, sc *Scenario) {
 	for _, se := range sc.Events {
 		if se.Delay > 0 {
 			time.Sleep(time.Duration(se.Delay) * time.Millisecond)
@@ -273,9 +301,10 @@ func (s *Session) replayScenario(sc *Scenario) {
 		// After pushing a tool_use event, invoke the permission callback.
 		// This blocks until the user resolves the approval (or
 		// auto-approves), pausing the replay just like the real CLI pauses
-		// before executing.
+		// before executing. turnCtx is what lets an interrupt or a close
+		// unpark it, matching how a real provider withdraws a prompt.
 		if toolUse, ok := event.(runtime.ToolUseEvent); ok && permission != nil {
-			_, _ = permission(context.Background(), runtime.ToolPermissionRequest{
+			_, _ = permission(ctx, runtime.ToolPermissionRequest{
 				ToolName: toolUse.Name,
 				Input:    toolUse.Input,
 				Provider: "testmode",

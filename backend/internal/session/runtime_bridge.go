@@ -205,7 +205,17 @@ func handleWatchdogEvent(s *Session, ev runtime.WatchdogEvent) {
 // broadcasts the rest to the UI as session.tool-permission. Runs on a
 // goroutine — runtime fires PendingChangeEvent inline and we don't want the
 // SubmitApproval round-trip to block runtime's broadcast loop.
+//
+// Serialized on pendingMu because the goroutines are otherwise unordered: two
+// in flight could read PendingState in either order and leave the surfaced-id
+// tracking (see resolveWithdrawnPrompts) describing a state that has already
+// passed. Taking the lock first and reading PendingState inside it means every
+// critical section sees the current truth, so a late goroutine is a no-op
+// rather than a rewind.
 func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+
 	s.mu.Lock()
 	rt := s.rt
 	autoMode := s.autoApproveMode
@@ -216,6 +226,13 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 	}
 
 	rtA, rtQ := rt.PendingState()
+
+	// A pending prompt can now leave the queue with no user answer — the
+	// runtime withdraws it and fires this event, after which SubmitApproval
+	// answers ErrPendingNotFound forever. Nothing else tells the UI, so
+	// without this a withdrawn prompt leaves its banner up for good and every
+	// click on it fails.
+	s.resolveWithdrawnPrompts(rtA, rtQ)
 
 	if rtA != nil {
 		handled := false
@@ -272,6 +289,45 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 			QuestionID: rtQ.ID,
 			Questions:  wireQs,
 		})
+	}
+}
+
+// resolveWithdrawnPrompts broadcasts a resolution for any prompt agentique has
+// put in front of the user that the runtime no longer has pending, so the UI
+// clears it. rtA/rtQ are the live pending state; either being nil — or carrying
+// a different id — means whatever was surfaced before is gone.
+//
+// It fires for ordinary resolutions too (the user answered, or a bypass
+// auto-approved), where the RPC has already broadcast the same resolution. That
+// duplicate is deliberate: making the clear pending-state-driven rather than
+// reply-path-driven is what covers the withdrawal case, which has no reply path
+// at all. Callers must hold pendingMu.
+func (s *Session) resolveWithdrawnPrompts(rtA *runtime.PendingApproval, rtQ *runtime.PendingQuestion) {
+	var liveApprovalID, liveQuestionID string
+	if rtA != nil {
+		liveApprovalID = rtA.ID
+	}
+	if rtQ != nil {
+		liveQuestionID = rtQ.ID
+	}
+
+	s.mu.Lock()
+	goneApproval, goneQuestion := "", ""
+	if s.surfacedApprovalID != "" && s.surfacedApprovalID != liveApprovalID {
+		goneApproval = s.surfacedApprovalID
+	}
+	if s.surfacedQuestionID != "" && s.surfacedQuestionID != liveQuestionID {
+		goneQuestion = s.surfacedQuestionID
+	}
+	s.surfacedApprovalID = liveApprovalID
+	s.surfacedQuestionID = liveQuestionID
+	s.mu.Unlock()
+
+	if goneApproval != "" {
+		s.broadcast("session.approval-resolved", PushApprovalResolved{SessionID: s.ID, ApprovalID: goneApproval})
+	}
+	if goneQuestion != "" {
+		s.broadcast("session.question-resolved", PushQuestionResolved{SessionID: s.ID, QuestionID: goneQuestion})
 	}
 }
 

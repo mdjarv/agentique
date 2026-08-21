@@ -165,6 +165,20 @@ type Session struct {
 	permissionMode     string // "default", "plan", "acceptEdits"
 	syntheticApprovals map[string]*syntheticApproval
 
+	// surfacedApprovalID / surfacedQuestionID are the runtime prompts the UI is
+	// currently showing. A prompt can leave the runtime's queue with no user
+	// answer (withdrawal), which has no reply path to broadcast a resolution on
+	// — these let handlePendingChange notice the disappearance and clear the
+	// banner. Guarded by mu; only ever written under pendingMu.
+	surfacedApprovalID string
+	surfacedQuestionID string
+
+	// pendingMu serializes PendingChangeEvent handling. The handlers run on
+	// unordered goroutines, so without it two could observe the pending state
+	// in either order and leave the surfaced ids describing a state that has
+	// already passed. Always acquired before mu, never the reverse.
+	pendingMu sync.Mutex
+
 	git     sessionGitState
 	channel sessionChannelState
 	persona sessionPersonaState
