@@ -5,6 +5,7 @@ import { LoginPage } from "~/components/auth/LoginPage";
 import { BrowserPanel } from "~/components/browser/BrowserPanel";
 import { WorkflowPanel } from "~/components/chat/WorkflowPanel";
 import { ErrorBoundary } from "~/components/ErrorBoundary";
+import { useWireCapture } from "~/components/home/use-wire-capture";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
@@ -53,6 +54,7 @@ function RootLayout() {
 function AuthenticatedLayout() {
   const projects = useProjects();
   useGlobalSubscriptions(projects);
+  useWireCapture();
   useMachineConnections();
   useProjectGitPolling(projects);
   useActiveProjectFetch();

@@ -5,6 +5,7 @@ import {
   Cpu,
   Ellipsis,
   FileText,
+  FolderGit2,
   FolderPlus,
   HardDrive,
   Hash,
@@ -97,6 +98,13 @@ function SidebarHeader() {
               <span className="ml-auto text-muted-foreground-faint">add a repo</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/projects">
+                <FolderGit2 className="size-3.5" />
+                Projects
+                <span className="ml-auto text-muted-foreground-faint">all repos</span>
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild className="text-xs gap-2">
               <Link to="/teams">
                 <Hash className="size-3.5" />
