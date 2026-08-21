@@ -5,6 +5,8 @@ import {
   type DeriveMachineLineInput,
   deriveBadge,
   deriveMachineLine,
+  isStale,
+  STALE_AFTER_MS,
 } from "../derive";
 import type { ThreadRowVM } from "../types";
 
@@ -227,5 +229,31 @@ describe("compareOpenRows", () => {
     const a = makeRow({ sessionId: "a", lastActivity: 100 });
     const b = makeRow({ sessionId: "b", lastActivity: 100 });
     expect([b, a].sort(compareOpenRows).map((r) => r.sessionId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isStale", () => {
+  const DAY = STALE_AFTER_MS;
+  const base = { state: "stopped", unread: false, lastActivity: 0, now: DAY + 1 };
+
+  it("collects a terminal, seen session after a quiet day", () => {
+    expect(isStale(base)).toBe(true);
+    expect(isStale({ ...base, state: "done" })).toBe(true);
+    expect(isStale({ ...base, state: "failed" })).toBe(true);
+  });
+
+  it("never collects non-terminal sessions — merge alone is not end-of-life", () => {
+    // An early-merged session that keeps working stays idle/running, not terminal.
+    expect(isStale({ ...base, state: "idle" })).toBe(false);
+    expect(isStale({ ...base, state: "running" })).toBe(false);
+  });
+
+  it("keeps unread outcomes visible regardless of age", () => {
+    expect(isStale({ ...base, unread: true })).toBe(false);
+  });
+
+  it("waits out the quiet period", () => {
+    expect(isStale({ ...base, now: DAY - 1 })).toBe(false);
+    expect(isStale({ ...base, now: DAY + 1 })).toBe(true);
   });
 });

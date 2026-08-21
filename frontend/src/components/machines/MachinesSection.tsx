@@ -11,7 +11,6 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { pairMachine } from "~/lib/machines/pairing";
 import { cn } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
@@ -19,86 +18,53 @@ import type { MachineStatus } from "~/stores/machine-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * Sidebar-footer entry point for paired machines (multi-machine): a server
- * icon opening a popover with this machine, each paired machine with its live
- * connection dot and a remove action, and the Add-machine pairing dialog.
+ * The machines block of the sidebar-footer popover (multi-machine): this
+ * machine, each paired machine with its live connection dot and a remove
+ * action, and an Add-machine entry. The caller owns the AddMachineDialog.
  */
-export function MachinesButton() {
+export function MachinesSection({ onAddMachine }: { onAddMachine: () => void }) {
   const machines = useMachineStore((s) => s.machines);
   const statuses = useMachineStore((s) => s.statuses);
   const removeMachine = useMachineStore((s) => s.removeMachine);
   const primaryLabel = useFeatureStore((s) => s.machineLabel);
-  const [open, setOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
 
   const entries = Object.values(machines).sort((a, b) => a.label.localeCompare(b.label));
-  const anyOffline = entries.some((m) => statuses[m.machineId] !== "connected");
 
   return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <StatusDot status="connected" />
+        <span className="text-xs text-foreground truncate flex-1">
+          {primaryLabel || "This machine"}
+        </span>
+        <span className="text-[10px] text-muted-foreground">this machine</span>
+      </div>
+      {entries.map((m) => (
+        <div key={m.machineId} className="flex items-center gap-2 px-3 py-2">
+          <StatusDot status={statuses[m.machineId] ?? "disconnected"} />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-foreground truncate">{m.label}</div>
+            <div className="text-[10px] text-muted-foreground truncate">{m.baseUrl}</div>
+          </div>
           <button
             type="button"
-            title="Machines"
-            className="relative flex items-center rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            title="Remove machine"
+            onClick={() => removeMachine(m.machineId)}
+            className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
           >
-            <Server className="size-3.5" />
-            {entries.length > 0 && (
-              <span
-                className={cn(
-                  "absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full",
-                  anyOffline ? "bg-warning animate-pulse" : "bg-success",
-                )}
-              />
-            )}
+            <X className="size-3" />
           </button>
-        </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-72 p-0">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2 px-3 py-2.5">
-              <StatusDot status="connected" />
-              <span className="text-xs text-foreground truncate flex-1">
-                {primaryLabel || "This machine"}
-              </span>
-              <span className="text-[10px] text-muted-foreground">this machine</span>
-            </div>
-            {entries.map((m) => (
-              <div
-                key={m.machineId}
-                className="flex items-center gap-2 px-3 py-2.5 border-t border-border"
-              >
-                <StatusDot status={statuses[m.machineId] ?? "disconnected"} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-foreground truncate">{m.label}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{m.baseUrl}</div>
-                </div>
-                <button
-                  type="button"
-                  title="Remove machine"
-                  onClick={() => removeMachine(m.machineId)}
-                  className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setAddOpen(true);
-              }}
-              className="flex items-center gap-2 px-3 py-2.5 border-t border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-            >
-              <Plus className="size-3.5" />
-              Add machine
-            </button>
-          </div>
-        </PopoverContent>
-      </Popover>
-      <AddMachineDialog open={addOpen} onOpenChange={setAddOpen} />
-    </>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={onAddMachine}
+        className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer rounded-md"
+      >
+        <Plus className="size-3.5" />
+        Add machine
+      </button>
+    </div>
   );
 }
 
@@ -123,7 +89,7 @@ interface DiscoveredPeer {
   pairing: boolean;
 }
 
-function AddMachineDialog({
+export function AddMachineDialog({
   open,
   onOpenChange,
 }: {

@@ -16,7 +16,7 @@ import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { usePulseStore } from "~/stores/pulse-store";
-import { compareOpenRows, deriveBadge, deriveMachineLine } from "./derive";
+import { compareOpenRows, deriveBadge, deriveMachineLine, isStale } from "./derive";
 import type { ThreadGroups, ThreadRowVM } from "./types";
 
 function projectInitials(slug: string): string {
@@ -67,8 +67,10 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     }
 
     const query = searchQuery.trim().toLowerCase();
+    const now = Date.now();
     const pinned: ThreadRowVM[] = [];
     const open: ThreadRowVM[] = [];
+    const stale: ThreadRowVM[] = [];
     const archived: ThreadRowVM[] = [];
     // Pin order is only meaningful within the pinned section, tracked aside
     // so the VM stays free of it.
@@ -139,6 +141,12 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         pinned.push(vm);
       } else if (meta.completedAt) {
         archived.push(vm);
+      } else if (
+        // A search flattens the shelf so matches never hide behind it.
+        !query &&
+        isStale({ state: meta.state, unread: vm.unread, lastActivity: vm.lastActivity, now })
+      ) {
+        stale.push(vm);
       } else {
         open.push(vm);
       }
@@ -150,9 +158,10 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         a.sessionId.localeCompare(b.sessionId),
     );
     open.sort(compareOpenRows);
+    stale.sort((a, b) => b.lastActivity - a.lastActivity);
     // Most recently archived first.
     archived.sort((a, b) => b.lastActivity - a.lastActivity);
 
-    return { pinned, open, archived };
+    return { pinned, open, stale, archived };
   }, [sessions, projects, machines, pulses, resolvedTheme, searchQuery]);
 }

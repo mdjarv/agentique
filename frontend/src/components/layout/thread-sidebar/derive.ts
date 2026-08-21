@@ -90,6 +90,29 @@ function machineLineBody(input: DeriveMachineLineInput): MachineLine {
   return { text: "", tone: "muted" };
 }
 
+/** How long a terminal, seen session may rest in Open before the stale shelf collects it. */
+export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+export interface StaleInput {
+  state: string;
+  /** Unseen completion — the operator hasn't looked yet, so it must stay visible. */
+  unread: boolean;
+  lastActivity: number;
+  now: number;
+}
+
+/**
+ * A session is stale when its run reached a terminal state, the operator has
+ * seen the outcome, and nothing has happened for a day. Deliberately NOT
+ * keyed on merge: an early merge mid-session is normal, and a merged session
+ * that keeps working is never terminal anyway.
+ */
+export function isStale(input: StaleInput): boolean {
+  const terminal = input.state === "done" || input.state === "stopped" || input.state === "failed";
+  if (!terminal || input.unread) return false;
+  return input.now - input.lastActivity > STALE_AFTER_MS;
+}
+
 /**
  * Open-section comparator: sessions blocked on a human first, then
  * last-activity desc, then sessionId for a stable order.

@@ -54,5 +54,7 @@ export interface ThreadRowVM {
 export interface ThreadGroups {
   pinned: ThreadRowVM[];
   open: ThreadRowVM[];
+  /** Terminal + seen + quiet for a day — collected by the shelf below Open. */
+  stale: ThreadRowVM[];
   archived: ThreadRowVM[];
 }

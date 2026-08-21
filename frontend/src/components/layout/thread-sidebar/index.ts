@@ -4,11 +4,13 @@ export {
   type DeriveMachineLineInput,
   deriveBadge,
   deriveMachineLine,
+  isStale,
+  STALE_AFTER_MS,
 } from "./derive";
 export { NewSessionButton } from "./NewSessionButton";
 export { RowStateBadge } from "./RowStateBadge";
 export { ThreadRow } from "./ThreadRow";
-export { ArchivedBlock, ThreadSection } from "./ThreadSection";
+export { CollapsibleBlock, ThreadSection } from "./ThreadSection";
 export { ThreadSidebar } from "./ThreadSidebar";
 export type {
   MachineLine,
