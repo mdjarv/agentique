@@ -1,12 +1,18 @@
 /**
- * Feeds the wire from store transitions — mounted once at the root so the
- * feed accumulates whether or not the landing page is open. Pure observer:
- * it subscribes to the chat / pulse / schedule / brain stores and emits
- * entries on meaningful deltas; it never mutates them.
+ * Feeds the wire — mounted once at the root so the feed accumulates
+ * whether or not the landing page is open.
+ *
+ * The backend owns the durable coarse tier: `wire.list` backfills 48h of
+ * persisted activity and `project.activity-item` streams live approvals,
+ * results, and errors. The client adds what only it derives: schedule runs,
+ * brain flares, commits — and the fine-resolution tier, where the ACTIVE
+ * session streams at file granularity (focus = resolution).
  */
 import { useEffect } from "react";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import type { ActivityItem } from "~/lib/generated-types";
 import { useBrainStore } from "~/stores/brain-store";
-import { type SessionData, useChatStore } from "~/stores/chat-store";
+import { useChatStore } from "~/stores/chat-store";
 import { usePulseStore } from "~/stores/pulse-store";
 import { useScheduleStore } from "~/stores/schedule-store";
 import { useWireStore, type WireEntry } from "./wire-store";
@@ -16,13 +22,44 @@ function sessionName(sessionId: string): string {
   return data?.meta.name || "Untitled";
 }
 
-function approvalMono(sessionId: string): string | undefined {
-  const data = useChatStore.getState().sessions[sessionId];
-  const approval = data?.pendingApproval;
-  if (!approval) return undefined;
-  const input = approval.input as Record<string, unknown> | null;
-  const command = input && typeof input.command === "string" ? input.command : "";
-  return command ? `${approval.toolName} · ${command}` : approval.toolName;
+/**
+ * Curated mapping from the backend feed. Tiering happens here: tool_use
+ * items only survive for the active session; everything else is coarse
+ * signal worth keeping for any session. Channel messages are not wire
+ * material. Stable ids let backfill and live pushes converge.
+ */
+function mapActivityItem(item: ActivityItem, activeSessionId: string | null): WireEntry | null {
+  if (item.kind !== "event") return null;
+  const at = Date.parse(item.createdAt) || Date.now();
+  const base = {
+    id: `act-${item.itemId}`,
+    at,
+    sessionId: item.sourceId,
+    strong: item.sourceName || "Untitled",
+  };
+  switch (item.eventType) {
+    case "approval":
+      return {
+        ...base,
+        kind: "attn",
+        rest: "is waiting on approval",
+        mono: item.content || undefined,
+      };
+    case "error":
+      return { ...base, kind: "fail", rest: "errored", mono: item.content || undefined };
+    case "result":
+      return { ...base, kind: "state", rest: "finished a turn" };
+    case "tool_use":
+      if (item.sourceId !== activeSessionId) return null;
+      return {
+        ...base,
+        kind: "tool",
+        rest: "ran",
+        mono: item.filePath || item.content || undefined,
+      };
+    default:
+      return null;
+  }
 }
 
 interface SessionSnapshot {
@@ -33,33 +70,29 @@ interface SessionSnapshot {
 }
 
 export function useWireCapture(): void {
+  const ws = useWebSocket();
+
   useEffect(() => {
     const add = useWireStore.getState().add;
 
-    // First load: seed from recent completions so the river isn't empty.
-    // Lazy — session.list lands per project after mount, so keep trying on
-    // every store tick until a seed actually takes (the store being
-    // non-empty is what stops it).
-    const trySeed = (sessions: Record<string, SessionData>) => {
-      if (useWireStore.getState().entries.length > 0) return;
-      if (Object.keys(sessions).length === 0) return;
-      const now = Date.now();
-      const seedEntries: Omit<WireEntry, "id">[] = [];
-      for (const data of Object.values(sessions)) {
-        const completedAt = data.meta.completedAt ? Date.parse(data.meta.completedAt) : 0;
-        if (completedAt && now - completedAt < 48 * 3600_000) {
-          seedEntries.push({
-            at: completedAt,
-            kind: "state",
-            sessionId: data.meta.id,
-            strong: data.meta.name || "Untitled",
-            rest: "was archived",
-          });
-        }
-      }
-      useWireStore.getState().seed(seedEntries);
-    };
-    trySeed(useChatStore.getState().sessions);
+    // Backfill the coarse tier from the backend, then keep it live below.
+    ws.request("wire.list", { hours: 48, limit: 200 })
+      .then((result) => {
+        const items = result as ActivityItem[];
+        const activeId = useChatStore.getState().activeSessionId;
+        const mapped = items
+          .map((item) => mapActivityItem(item, activeId))
+          .filter((e): e is WireEntry => e !== null);
+        useWireStore.getState().backfill(mapped);
+      })
+      .catch(() => {
+        // Older servers without wire.list: the feed degrades to live-only.
+      });
+
+    const unsubActivity = ws.subscribe("project.activity-item", (item: ActivityItem) => {
+      const entry = mapActivityItem(item, useChatStore.getState().activeSessionId);
+      if (entry) useWireStore.getState().add(entry);
+    });
 
     // ── chat store: state / approval / question / unseen transitions ──
     const snapshots = new Map<string, SessionSnapshot>();
@@ -72,7 +105,6 @@ export function useWireCapture(): void {
       });
     }
     const unsubChat = useChatStore.subscribe((s) => {
-      trySeed(s.sessions);
       for (const [id, data] of Object.entries(s.sessions)) {
         const prev = snapshots.get(id);
         const next: SessionSnapshot = {
@@ -84,16 +116,6 @@ export function useWireCapture(): void {
         snapshots.set(id, next);
         if (!prev) continue;
 
-        if (!prev.approval && next.approval) {
-          add({
-            at: Date.now(),
-            kind: "attn",
-            sessionId: id,
-            strong: sessionName(id),
-            rest: "is waiting on approval",
-            mono: approvalMono(id),
-          });
-        }
         if (!prev.question && next.question) {
           add({
             at: Date.now(),
@@ -112,22 +134,18 @@ export function useWireCapture(): void {
             rest: "finished · unreviewed",
           });
         }
-        if (prev.state !== "failed" && next.state === "failed") {
-          add({
-            at: Date.now(),
-            kind: "attn",
-            sessionId: id,
-            strong: sessionName(id),
-            rest: "failed",
-          });
-        }
       }
     });
 
-    // ── pulse store: commits and turn starts ──
+    // ── pulse store: commits, turn starts, and the fine-resolution tier ──
+    // The active (selected) session streams at file resolution — every
+    // touched file becomes an entry; every other session stays coarse
+    // (turn starts only). Focus = resolution.
     const commitCounts = new Map<string, number>();
     const seenTurns = new Map<string, number>();
+    const seenFiles = new Map<string, string>();
     const unsubPulse = usePulseStore.subscribe((s) => {
+      const activeId = useChatStore.getState().activeSessionId;
       for (const [id, pulse] of Object.entries(s.pulses)) {
         const prevCommits = commitCounts.get(id) ?? 0;
         if (pulse.commitCount > prevCommits) {
@@ -155,6 +173,18 @@ export function useWireCapture(): void {
             });
           }
           seenTurns.set(id, pulse.turnStartedAt);
+        }
+
+        if (id === activeId && pulse.lastFilePath && pulse.lastFilePath !== seenFiles.get(id)) {
+          seenFiles.set(id, pulse.lastFilePath);
+          add({
+            at: Date.now(),
+            kind: "tool",
+            sessionId: id,
+            strong: sessionName(id),
+            rest: "touched",
+            mono: pulse.lastFilePath,
+          });
         }
       }
     });
@@ -194,10 +224,11 @@ export function useWireCapture(): void {
     });
 
     return () => {
+      unsubActivity();
       unsubChat();
       unsubPulse();
       unsubSched();
       unsubBrain();
     };
-  }, []);
+  }, [ws]);
 }

@@ -17,6 +17,7 @@ const DOT_CLASS: Record<WireKind, string> = {
   brain: "bg-agent",
   state: "bg-muted-foreground-faint",
   attn: "bg-orange animate-pulse motion-reduce:animate-none",
+  fail: "bg-destructive",
 };
 
 const FILTERS: { key: WireKind | "all"; label: string }[] = [
