@@ -20,9 +20,14 @@ export interface DeriveBadgeInput {
  * priorities: blocked-on-human first (the amber monopoly), then live work,
  * then outcomes; `off` only when an idle session lost its CLI (evicted /
  * disconnected) — a running session's live state always wins.
+ *
+ * The two blocked states share amber but not their glyph: an approval halts
+ * the agent mid-tool, a question waits on an answer. Approval wins when both
+ * are somehow pending — it is the one holding the process.
  */
 export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
-  if (input.hasPendingApproval || input.hasPendingQuestion) return "attention";
+  if (input.hasPendingApproval) return "attention";
+  if (input.hasPendingQuestion) return "question";
   if (input.isDraft) return "draft";
   if (input.state === "running") return input.isPlanning ? "planning" : "working";
   if (input.state === "merging") return "merging";
@@ -38,33 +43,46 @@ export function isAwake(badge: ThreadBadge): boolean {
   return badge !== null && badge !== "off";
 }
 
+/** Blocked on a human — the two amber states, sorted to the top of Open. */
+export function isBlocked(badge: ThreadBadge): boolean {
+  return badge === "attention" || badge === "question";
+}
+
 export interface DeriveLivePhraseInput {
   badge: ThreadBadge;
   /** Live narration while the agent works (e.g. "editing AppSidebar.tsx"). */
   liveStatus?: string;
   /** Short summary of the pending approval (e.g. "go test -race ./ws/..."). */
   approvalSummary?: string;
+  /** The question being asked, when one is pending. */
+  questionSummary?: string;
 }
 
-/** The third line of an awake row: the state phrase in its tone. Null at rest. */
+/**
+ * The third line of an awake row: the state phrase in its tone. Null at rest.
+ *
+ * The row's glyph names the state, so this line never repeats it — it carries
+ * only what the glyph cannot say (the file, the command, the question), and
+ * falls back to one bare word when there is nothing specific to report.
+ */
 export function deriveLivePhrase(input: DeriveLivePhraseInput): MachineLine | null {
   switch (input.badge) {
     case "attention":
-      return input.approvalSummary
-        ? { text: `approve · ${input.approvalSummary}`, tone: "attn" }
-        : { text: "needs your input", tone: "attn" };
+      return { text: input.approvalSummary || "needs you", tone: "attn" };
+    case "question":
+      return { text: input.questionSummary || "needs an answer", tone: "attn" };
     case "working":
-      return { text: input.liveStatus || "working…", tone: "work" };
+      return { text: input.liveStatus || "working", tone: "work" };
     case "planning":
-      return { text: input.liveStatus || "drafting a plan", tone: "work" };
+      return { text: input.liveStatus || "planning", tone: "work" };
     case "merging":
-      return { text: input.liveStatus || "merging…", tone: "merge" };
+      return { text: input.liveStatus || "merging", tone: "merge" };
     case "failed":
       return { text: input.liveStatus || "failed", tone: "fail" };
     case "unread":
-      return { text: "finished — unread", tone: "unread" };
+      return { text: "new", tone: "unread" };
     case "draft":
-      return { text: "draft — not sent", tone: "draft" };
+      return { text: "draft", tone: "draft" };
     default:
       return null;
   }
@@ -113,8 +131,8 @@ export function isStale(input: StaleInput): boolean {
  * last-activity desc, then sessionId for a stable order.
  */
 export function compareOpenRows(a: ThreadRowVM, b: ThreadRowVM): number {
-  const aBlocked = a.badge === "attention" ? 0 : 1;
-  const bBlocked = b.badge === "attention" ? 0 : 1;
+  const aBlocked = isBlocked(a.badge) ? 0 : 1;
+  const bBlocked = isBlocked(b.badge) ? 0 : 1;
   if (aBlocked !== bBlocked) return aBlocked - bBlocked;
   if (a.lastActivity !== b.lastActivity) return b.lastActivity - a.lastActivity;
   return a.sessionId.localeCompare(b.sessionId);

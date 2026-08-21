@@ -20,6 +20,7 @@ import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as DevAgentsRouteImport } from "./routes/dev.agents";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
+import { Route as DevRowsRouteImport } from "./routes/dev.rows";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
 import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
@@ -85,6 +86,11 @@ const DevBubblesRoute = DevBubblesRouteImport.update({
 const DevContextBarRoute = DevContextBarRouteImport.update({
   id: "/dev/context-bar",
   path: "/dev/context-bar",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevRowsRoute = DevRowsRouteImport.update({
+  id: "/dev/rows",
+  path: "/dev/rows",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevToolGroupsRoute = DevToolGroupsRouteImport.update({
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
+  "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
@@ -183,6 +190,7 @@ export interface FileRoutesByTo {
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
+  "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
+  "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions_/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
+    | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions/$channelId"
     | "/project/$projectSlug"
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
+    | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions/$channelId"
     | "/project/$projectSlug/files"
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
+    | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions_/$channelId"
     | "/project/$projectSlug"
@@ -305,6 +317,7 @@ export interface RootRouteChildren {
   DevAgentsRoute: typeof DevAgentsRoute;
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
+  DevRowsRoute: typeof DevRowsRoute;
   DevToolGroupsRoute: typeof DevToolGroupsRoute;
   DiscussionsChannelIdRoute: typeof DiscussionsChannelIdRoute;
   ProjectProjectSlugRoute: typeof ProjectProjectSlugRouteWithChildren;
@@ -390,6 +403,13 @@ declare module "@tanstack/react-router" {
       path: "/dev/context-bar";
       fullPath: "/dev/context-bar";
       preLoaderRoute: typeof DevContextBarRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/rows": {
+      id: "/dev/rows";
+      path: "/dev/rows";
+      fullPath: "/dev/rows";
+      preLoaderRoute: typeof DevRowsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/tool-groups": {
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevAgentsRoute: DevAgentsRoute,
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,
+  DevRowsRoute: DevRowsRoute,
   DevToolGroupsRoute: DevToolGroupsRoute,
   DiscussionsChannelIdRoute: DiscussionsChannelIdRoute,
   ProjectProjectSlugRoute: ProjectProjectSlugRouteWithChildren,

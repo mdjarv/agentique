@@ -44,6 +44,11 @@ function approvalSummary(data: SessionData): string | undefined {
   return command || approval.toolName;
 }
 
+/** The question itself while one is pending — the row's most useful string. */
+function questionSummary(data: SessionData): string | undefined {
+  return data.pendingQuestion?.questions[0]?.question || undefined;
+}
+
 function sessionTime(meta: SessionData["meta"]): string {
   const ts = meta.completedAt || meta.lastQueryAt || meta.updatedAt;
   return ts ? relativeTime(ts) : "";
@@ -130,6 +135,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
             badge,
             liveStatus: pulse ? formatPulse(pulse) : undefined,
             approvalSummary: approvalSummary(data),
+            questionSummary: questionSummary(data),
           }) ?? undefined,
         restToken: deriveRestToken({
           state: meta.state,

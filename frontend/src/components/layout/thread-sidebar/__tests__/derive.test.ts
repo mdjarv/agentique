@@ -30,10 +30,18 @@ describe("deriveBadge", () => {
     );
   });
 
-  it("maps a pending question to attention", () => {
+  it("maps a pending question to its own badge", () => {
     expect(deriveBadge(badgeInput({ state: "running", hasPendingQuestion: true }))).toBe(
-      "attention",
+      "question",
     );
+  });
+
+  it("ranks an approval above a question — the approval holds the process", () => {
+    expect(
+      deriveBadge(
+        badgeInput({ state: "running", hasPendingApproval: true, hasPendingQuestion: true }),
+      ),
+    ).toBe("attention");
   });
 
   it("keeps attention above planning (plan-review pulses amber)", () => {
@@ -77,15 +85,28 @@ describe("deriveBadge", () => {
 });
 
 describe("deriveLivePhrase", () => {
-  it("phrases a pending approval with its summary", () => {
+  // The glyph names the state, so the phrase never repeats it: an approval
+  // line is the command itself, not "approve · <command>".
+  it("phrases a pending approval as its summary alone", () => {
     expect(
       deriveLivePhrase({ badge: "attention", approvalSummary: "go test -race ./ws/..." }),
-    ).toEqual({ text: "approve · go test -race ./ws/...", tone: "attn" });
+    ).toEqual({ text: "go test -race ./ws/...", tone: "attn" });
   });
 
-  it("falls back to a generic attention phrase without a summary", () => {
+  it("phrases a pending question as the question itself", () => {
+    expect(deriveLivePhrase({ badge: "question", questionSummary: "Which auth method?" })).toEqual({
+      text: "Which auth method?",
+      tone: "attn",
+    });
+  });
+
+  it("falls back to one bare word per blocked state", () => {
     expect(deriveLivePhrase({ badge: "attention" })).toEqual({
-      text: "needs your input",
+      text: "needs you",
+      tone: "attn",
+    });
+    expect(deriveLivePhrase({ badge: "question" })).toEqual({
+      text: "needs an answer",
       tone: "attn",
     });
   });
@@ -95,25 +116,25 @@ describe("deriveLivePhrase", () => {
       text: "editing AppSidebar.tsx",
       tone: "work",
     });
-    expect(deriveLivePhrase({ badge: "working" })).toEqual({ text: "working…", tone: "work" });
+    expect(deriveLivePhrase({ badge: "working" })).toEqual({ text: "working", tone: "work" });
   });
 
   it("phrases planning, merging, failed, unread, and draft", () => {
     expect(deriveLivePhrase({ badge: "planning" })).toEqual({
-      text: "drafting a plan",
+      text: "planning",
       tone: "work",
     });
-    expect(deriveLivePhrase({ badge: "merging" })).toEqual({ text: "merging…", tone: "merge" });
+    expect(deriveLivePhrase({ badge: "merging" })).toEqual({ text: "merging", tone: "merge" });
     expect(deriveLivePhrase({ badge: "failed", liveStatus: "exit 1" })).toEqual({
       text: "exit 1",
       tone: "fail",
     });
     expect(deriveLivePhrase({ badge: "unread" })).toEqual({
-      text: "finished — unread",
+      text: "new",
       tone: "unread",
     });
     expect(deriveLivePhrase({ badge: "draft" })).toEqual({
-      text: "draft — not sent",
+      text: "draft",
       tone: "draft",
     });
   });
@@ -187,6 +208,12 @@ describe("compareOpenRows", () => {
       "mid",
       "old",
     ]);
+  });
+
+  it("treats a pending question as blocked too", () => {
+    const q = makeRow({ sessionId: "q", badge: "question", lastActivity: 100 });
+    const fresh = makeRow({ sessionId: "b", badge: "working", lastActivity: 9999 });
+    expect([fresh, q].sort(compareOpenRows).map((r) => r.sessionId)).toEqual(["q", "b"]);
   });
 
   it("orders attention rows among themselves by recency", () => {

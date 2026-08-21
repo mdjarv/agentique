@@ -1,4 +1,17 @@
-import { Archive, Hash, Pin, PinOff } from "lucide-react";
+import {
+  Archive,
+  Check,
+  CircleHelp,
+  Diamond,
+  GitMerge,
+  Hash,
+  Pin,
+  PinOff,
+  SquareDashed,
+  Terminal,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { cn } from "~/lib/utils";
@@ -18,13 +31,45 @@ const TONE_CLASS: Record<MachineTone, string> = {
 const BADGE_ARIA: Record<Exclude<ThreadBadge, null>, string> = {
   working: "working",
   planning: "planning",
-  attention: "needs your attention",
+  attention: "needs your approval",
+  question: "waiting on your answer",
   unread: "finished, unread",
   failed: "failed",
   merging: "merging",
   draft: "draft",
   off: "evicted",
 };
+
+/**
+ * The state's glyph — one marker per row, and the only thing naming the state
+ * now that the phrase carries specifics instead. It replaces the standalone
+ * amber ball: the blocked glyphs are the ones that pulse.
+ */
+const BADGE_GLYPH: Record<Exclude<ThreadBadge, null | "off">, typeof Check> = {
+  working: Terminal,
+  planning: Diamond,
+  attention: TriangleAlert,
+  question: CircleHelp,
+  unread: Check,
+  failed: X,
+  merging: GitMerge,
+  draft: SquareDashed,
+};
+
+/** Only a row blocked on a human pulses — the amber monopoly, on the glyph. */
+function stateGlyph(badge: ThreadBadge) {
+  if (badge === null || badge === "off") return null;
+  const Glyph = BADGE_GLYPH[badge];
+  return (
+    <Glyph
+      className={cn(
+        "size-[11px] shrink-0",
+        (badge === "attention" || badge === "question") &&
+          "animate-pulse motion-reduce:animate-none",
+      )}
+    />
+  );
+}
 
 interface ThreadRowProps {
   vm: ThreadRowVM;
@@ -233,18 +278,12 @@ export const ThreadRow = memo(function ThreadRow({
           {vm.untitled ? "Untitled" : vm.name}
         </span>
 
-        {/* State line — awake rows only */}
+        {/* State line — awake rows only: glyph names the state, words carry
+            the specifics. */}
         {awake && vm.livePhrase && (
-          <span className="mt-px flex items-center gap-2">
-            {vm.badge === "attention" && (
-              <span className="size-[7px] shrink-0 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
-            )}
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]",
-                TONE_CLASS[vm.livePhrase.tone],
-              )}
-            >
+          <span className={cn("mt-px flex items-center gap-1.5", TONE_CLASS[vm.livePhrase.tone])}>
+            {stateGlyph(vm.badge)}
+            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
               {vm.livePhrase.text}
             </span>
             {showTodo && vm.todo && !selected && (

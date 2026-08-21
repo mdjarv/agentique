@@ -11,7 +11,10 @@
 export type ThreadBadge =
   | "working"
   | "planning"
+  /** Blocked on a tool approval. */
   | "attention"
+  /** Blocked on an answer — same amber, its own glyph. */
+  | "question"
   | "unread"
   | "failed"
   | "merging"
