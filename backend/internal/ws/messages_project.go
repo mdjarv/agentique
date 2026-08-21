@@ -79,6 +79,13 @@ type ProjectActivityPayload struct {
 	ProjectID string `json:"projectId"`
 }
 
+// WireListPayload parameterizes the global activity feed (wire.list).
+// Zero values are usable: Validate defaults and clamps both fields.
+type WireListPayload struct {
+	Hours int64 `json:"hours"`
+	Limit int64 `json:"limit"`
+}
+
 // --- Project validation errors ---
 
 var (
@@ -178,4 +185,22 @@ func (p *ProjectGenerateCommitMsgPayload) Validate() error {
 
 func (p *ProjectActivityPayload) Validate() error {
 	return validateProjectID(p.ProjectID)
+}
+
+// Validate defaults and clamps rather than rejecting: hours <= 0 → 48
+// (capped at 168 = 7 days), limit <= 0 → 200 (capped at 500).
+func (p *WireListPayload) Validate() error {
+	if p.Hours <= 0 {
+		p.Hours = 48
+	}
+	if p.Hours > 168 {
+		p.Hours = 168
+	}
+	if p.Limit <= 0 {
+		p.Limit = 200
+	}
+	if p.Limit > 500 {
+		p.Limit = 500
+	}
+	return nil
 }

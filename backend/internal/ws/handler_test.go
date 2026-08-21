@@ -2,6 +2,7 @@ package ws_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
@@ -21,6 +22,14 @@ import (
 func newID() string { return uuid.New().String() }
 
 func setupTestServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
+	t.Helper()
+	ts, _, queries, cleanup := setupTestServerWithDB(t)
+	return ts, queries, cleanup
+}
+
+// setupTestServerWithDB is setupTestServer plus the raw *sql.DB handle, for
+// tests that need direct SQL (e.g. backdating created_at defaults).
+func setupTestServerWithDB(t *testing.T) (*httptest.Server, *sql.DB, *store.Queries, func()) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
@@ -42,7 +51,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
 		ts.Close()
 		db.Close()
 	}
-	return ts, queries, cleanup
+	return ts, db, queries, cleanup
 }
 
 func dialWS(t *testing.T, ts *httptest.Server) *websocket.Conn {
@@ -757,5 +766,190 @@ func TestSessionQueryRequiresFields(t *testing.T) {
 		ws.SessionQueryPayload{SessionID: "something", Prompt: ""})
 	if resp.Error == nil {
 		t.Fatal("expected error for empty prompt")
+	}
+}
+
+// wireListItems sends a wire.list request and decodes the result.
+func wireListItems(t *testing.T, conn *websocket.Conn, id string, payload ws.WireListPayload) []session.ActivityItem {
+	t.Helper()
+	resp := sendAndReceive(t, conn, "wire.list", id, payload)
+	if resp.Error != nil {
+		t.Fatalf("wire.list error: %s", resp.Error.Message)
+	}
+	raw, err := json.Marshal(resp.Payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var items []session.ActivityItem
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatalf("unmarshal items: %v", err)
+	}
+	return items
+}
+
+func TestWireList(t *testing.T) {
+	ts, db, queries, cleanup := setupTestServerWithDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Two projects with distinct slugs.
+	projA, err := queries.CreateProject(ctx, store.CreateProjectParams{
+		ID: newID(), Name: "Wire A", Path: t.TempDir(), Slug: "wire-a",
+	})
+	if err != nil {
+		t.Fatalf("create project A: %v", err)
+	}
+	projB, err := queries.CreateProject(ctx, store.CreateProjectParams{
+		ID: newID(), Name: "Wire B", Path: t.TempDir(), Slug: "wire-b",
+	})
+	if err != nil {
+		t.Fatalf("create project B: %v", err)
+	}
+
+	sessA := insertTestSession(t, queries, projA.ID, "Sess A", projA.Path, "idle")
+	sessB := insertTestSession(t, queries, projB.ID, "Sess B", projB.Path, "idle")
+
+	// tool_use event in project A.
+	if err := queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: sessA, TurnIndex: 0, Seq: 0, Type: "tool_use",
+		Data: `{"toolName":"Edit","category":"file_write","toolInput":{"file_path":"/tmp/x.go"}}`,
+	}); err != nil {
+		t.Fatalf("insert tool_use event: %v", err)
+	}
+	// error event in project B.
+	if err := queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: sessB, TurnIndex: 0, Seq: 0, Type: "error",
+		Data: `{"content":"boom"}`,
+	}); err != nil {
+		t.Fatalf("insert error event: %v", err)
+	}
+	// Old event in project A — backdated far outside any hours window.
+	if err := queries.InsertEvent(ctx, store.InsertEventParams{
+		SessionID: sessA, TurnIndex: 0, Seq: 1, Type: "tool_use",
+		Data: `{"toolName":"OldTool","category":"execution"}`,
+	}); err != nil {
+		t.Fatalf("insert old event: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE session_events SET created_at = '2000-01-01T00:00:00.000'
+		 WHERE json_extract(data, '$.toolName') = 'OldTool'`,
+	); err != nil {
+		t.Fatalf("backdate old event: %v", err)
+	}
+
+	// Channel message in project B.
+	ch, err := queries.CreateChannel(ctx, store.CreateChannelParams{
+		ID: newID(), Name: "general",
+		ProjectID: sql.NullString{String: projB.ID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if _, err := queries.InsertMessage(ctx, store.InsertMessageParams{
+		ID: newID(), ChannelID: ch.ID, SenderType: "user", SenderID: "u1",
+		SenderName: "mathias", Content: "hello wire", MessageType: "message",
+		Metadata: "{}",
+	}); err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	items := wireListItems(t, conn, "70", ws.WireListPayload{Hours: 48, Limit: 200})
+
+	// Merged across projects, hours filter excludes the backdated row.
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d: %+v", len(items), items)
+	}
+
+	// Newest-first ordering (non-strict: same-millisecond inserts tie).
+	for i := 1; i < len(items); i++ {
+		if items[i-1].CreatedAt < items[i].CreatedAt {
+			t.Fatalf("items not newest-first at %d: %q < %q", i, items[i-1].CreatedAt, items[i].CreatedAt)
+		}
+	}
+
+	byContent := make(map[string]session.ActivityItem, len(items))
+	for _, it := range items {
+		byContent[it.Content] = it
+	}
+
+	toolUse, ok := byContent["Edit"]
+	if !ok {
+		t.Fatalf("missing tool_use item, got %+v", items)
+	}
+	if toolUse.Kind != "event" || toolUse.EventType != "tool_use" {
+		t.Fatalf("tool_use item wrong shape: %+v", toolUse)
+	}
+	if toolUse.ProjectSlug != "wire-a" {
+		t.Fatalf("expected tool_use projectSlug wire-a, got %q", toolUse.ProjectSlug)
+	}
+	if toolUse.Category != "file_write" || toolUse.FilePath != "/tmp/x.go" {
+		t.Fatalf("tool_use JSON extraction wrong: %+v", toolUse)
+	}
+	if toolUse.SourceID != sessA || toolUse.SourceName != "Sess A" {
+		t.Fatalf("tool_use source wrong: %+v", toolUse)
+	}
+
+	errItem, ok := byContent["boom"]
+	if !ok {
+		t.Fatalf("missing error item, got %+v", items)
+	}
+	if errItem.Kind != "event" || errItem.EventType != "error" {
+		t.Fatalf("error item wrong shape: %+v", errItem)
+	}
+	if errItem.ProjectSlug != "wire-b" {
+		t.Fatalf("expected error projectSlug wire-b, got %q", errItem.ProjectSlug)
+	}
+
+	msgItem, ok := byContent["hello wire"]
+	if !ok {
+		t.Fatalf("missing message item, got %+v", items)
+	}
+	if msgItem.Kind != "message" || msgItem.SourceID != ch.ID || msgItem.SourceName != "mathias" {
+		t.Fatalf("message item wrong shape: %+v", msgItem)
+	}
+	if msgItem.ProjectSlug != "wire-b" {
+		t.Fatalf("expected message projectSlug wire-b, got %q", msgItem.ProjectSlug)
+	}
+
+	// Limit is respected.
+	limited := wireListItems(t, conn, "71", ws.WireListPayload{Hours: 48, Limit: 2})
+	if len(limited) != 2 {
+		t.Fatalf("expected 2 items with limit 2, got %d", len(limited))
+	}
+
+	// Defaulted payload (zero values clamp to 48h/200) still sees all rows.
+	defaulted := wireListItems(t, conn, "72", ws.WireListPayload{})
+	if len(defaulted) != 3 {
+		t.Fatalf("expected 3 items with defaults, got %d", len(defaulted))
+	}
+}
+
+func TestWireListPayloadValidate(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        ws.WireListPayload
+		wantHours int64
+		wantLimit int64
+	}{
+		{"zero defaults", ws.WireListPayload{}, 48, 200},
+		{"negative defaults", ws.WireListPayload{Hours: -5, Limit: -1}, 48, 200},
+		{"caps", ws.WireListPayload{Hours: 1000, Limit: 1000}, 168, 500},
+		{"in range unchanged", ws.WireListPayload{Hours: 24, Limit: 100}, 24, 100},
+		{"boundary unchanged", ws.WireListPayload{Hours: 168, Limit: 500}, 168, 500},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := tc.in
+			if err := p.Validate(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.Hours != tc.wantHours || p.Limit != tc.wantLimit {
+				t.Fatalf("got {hours:%d limit:%d}, want {hours:%d limit:%d}",
+					p.Hours, p.Limit, tc.wantHours, tc.wantLimit)
+			}
+		})
 	}
 }

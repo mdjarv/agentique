@@ -455,6 +455,7 @@ func main() {
 	g.register(ws.ProjectUncommittedFilesPayload{}, "ProjectUncommittedFilesPayload")
 	g.register(ws.ProjectDiscardPayload{}, "ProjectDiscardPayload")
 	g.register(ws.ProjectActivityPayload{}, "ProjectActivityPayload")
+	g.register(ws.WireListPayload{}, "WireListPayload")
 
 	// ── Push event payload types ──
 

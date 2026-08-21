@@ -152,15 +152,16 @@ type PushBrowserProvisioning struct {
 // ActivityItem is a single entry in the project activity feed.
 // Covers both channel messages and significant session events.
 type ActivityItem struct {
-	Kind       string `json:"kind"`               // "message" or "event"
-	ItemID     string `json:"itemId"`             // message UUID or event row ID
-	SourceID   string `json:"sourceId"`           // channel_id (message) or session_id (event)
-	SourceName string `json:"sourceName"`         // sender_name or session name
-	Content    string `json:"content"`            // message text / tool name / error text
-	EventType  string `json:"eventType"`          // message_type or event type (tool_use/result/error)
-	Category   string `json:"category,omitempty"` // tool category for tool_use events
-	FilePath   string `json:"filePath,omitempty"` // extracted file path for tool_use events
-	CreatedAt  string `json:"createdAt"`
+	Kind        string `json:"kind"`                  // "message" or "event"
+	ItemID      string `json:"itemId"`                // message UUID or event row ID
+	SourceID    string `json:"sourceId"`              // channel_id (message) or session_id (event)
+	SourceName  string `json:"sourceName"`            // sender_name or session name
+	Content     string `json:"content"`               // message text / tool name / error text
+	EventType   string `json:"eventType"`             // message_type or event type (tool_use/result/error)
+	Category    string `json:"category,omitempty"`    // tool category for tool_use events
+	FilePath    string `json:"filePath,omitempty"`    // extracted file path for tool_use events
+	ProjectSlug string `json:"projectSlug,omitempty"` // owning project slug ('' for project-less channels)
+	CreatedAt   string `json:"createdAt"`
 }
 
 // PushSessionPulse carries a compact activity snapshot for a running session.

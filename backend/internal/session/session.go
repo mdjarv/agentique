@@ -459,6 +459,9 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			if dbSess, err := s.queries.GetSession(context.Background(), s.ID); err == nil {
 				item.SourceName = dbSess.Name
 			}
+			if proj, err := s.queries.GetProject(context.Background(), s.ProjectID); err == nil {
+				item.ProjectSlug = proj.Slug
+			}
 			switch e := wireEvent.(type) {
 			case WireResultEvent:
 				item.ItemID = fmt.Sprintf("ev-%d", time.Now().UnixMilli())

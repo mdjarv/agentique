@@ -101,6 +101,7 @@ type Querier interface {
 	ListPromptTemplates(ctx context.Context) ([]PromptTemplate, error)
 	ListQueuedRunsBySession(ctx context.Context, sessionID string) ([]ScheduleRun, error)
 	ListRecentActivityByProject(ctx context.Context, arg ListRecentActivityByProjectParams) ([]ListRecentActivityByProjectRow, error)
+	ListRecentActivityGlobal(ctx context.Context, arg ListRecentActivityGlobalParams) ([]ListRecentActivityGlobalRow, error)
 	ListRecentEventsBySession(ctx context.Context, arg ListRecentEventsBySessionParams) ([]SessionEvent, error)
 	ListRunsSince(ctx context.Context, arg ListRunsSinceParams) (ListRunsSinceRow, error)
 	ListScheduleRuns(ctx context.Context, arg ListScheduleRunsParams) ([]ScheduleRun, error)

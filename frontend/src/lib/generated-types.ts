@@ -697,6 +697,11 @@ export interface ProjectActivityPayload {
   projectId: string;
 }
 
+export interface WireListPayload {
+  hours: number;
+  limit: number;
+}
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -894,6 +899,7 @@ export interface ActivityItem {
   eventType: string;
   category?: string;
   filePath?: string;
+  projectSlug?: string;
   createdAt: string;
 }
 

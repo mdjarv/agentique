@@ -180,6 +180,9 @@ var handlerRegistry = map[string]handlerFunc{
 	"project.set-pinned":              (*conn).handleProjectSetPinned,
 	"project.activity":                (*conn).handleProjectActivity,
 
+	// wire.* — global (cross-project) activity feed.
+	"wire.list": (*conn).handleWireList,
+
 	// session.*
 	"session.create":                  (*conn).handleSessionCreate,
 	"session.query":                   (*conn).handleSessionQuery,

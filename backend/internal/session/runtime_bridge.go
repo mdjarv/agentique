@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/allbin/agentkit/runtime"
 )
@@ -247,6 +249,7 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 				ToolName:   rtA.ToolName,
 				Input:      rtA.Input,
 			})
+			s.broadcast("project.activity-item", approvalActivityItem(s, rtA.ID, rtA.ToolName, rtA.Input))
 		}
 	}
 
@@ -270,4 +273,35 @@ func handlePendingChange(s *Session, ev runtime.PendingChangeEvent) {
 			Questions:  wireQs,
 		})
 	}
+}
+
+// approvalActivityItem builds the live wire-feed entry for a pending tool
+// approval surfacing to the user. Approvals never reach session_events —
+// they are pump-side PushToolPermission broadcasts, not CLI wire events, so
+// persistEvent never sees them. These items therefore exist only on the live
+// "project.activity-item" push; wire.list backfill will not include them.
+func approvalActivityItem(s *Session, approvalID, toolName string, input json.RawMessage) ActivityItem {
+	content := toolName
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input, &fields); err == nil {
+		var cmd string
+		if raw, ok := fields["command"]; ok && json.Unmarshal(raw, &cmd) == nil && cmd != "" {
+			content = truncate(toolName+": "+cmd, 200)
+		}
+	}
+	item := ActivityItem{
+		Kind:      "event",
+		ItemID:    "appr-" + approvalID,
+		SourceID:  s.ID,
+		Content:   content,
+		EventType: "approval",
+		CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000"),
+	}
+	if dbSess, err := s.queries.GetSession(context.Background(), s.ID); err == nil {
+		item.SourceName = dbSess.Name
+	}
+	if proj, err := s.queries.GetProject(context.Background(), s.ProjectID); err == nil {
+		item.ProjectSlug = proj.Slug
+	}
+	return item
 }

@@ -699,6 +699,11 @@ export const ProjectActivityPayloadSchema = z.object({
   projectId: z.string(),
 });
 
+export const WireListPayloadSchema = z.object({
+  hours: z.number(),
+  limit: z.number(),
+});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -896,6 +901,7 @@ export const ActivityItemSchema = z.object({
   eventType: z.string(),
   category: z.string().optional(),
   filePath: z.string().optional(),
+  projectSlug: z.string().optional(),
   createdAt: z.string(),
 });
 

@@ -111,3 +111,112 @@ func (q *Queries) ListRecentActivityByProject(ctx context.Context, arg ListRecen
 	}
 	return items, nil
 }
+
+const listRecentActivityGlobal = `-- name: ListRecentActivityGlobal :many
+SELECT
+  'message' AS kind,
+  m.id AS item_id,
+  m.channel_id AS source_id,
+  m.sender_name AS source_name,
+  SUBSTR(m.content, 1, 200) AS content,
+  m.message_type AS event_type,
+  '' AS category,
+  '' AS file_path,
+  COALESCE(p.slug, '') AS project_slug,
+  -- Explicit alias: with a LEFT JOIN in the compound's first SELECT, SQLite
+  -- (modernc build) drops the short output name and the trailing ORDER BY
+  -- can no longer resolve a bare created_at.
+  m.created_at AS created_at
+FROM messages m
+JOIN channels c ON c.id = m.channel_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE m.created_at >= ?2
+
+UNION ALL
+
+SELECT
+  'event' AS kind,
+  CAST(e.id AS TEXT) AS item_id,
+  e.session_id AS source_id,
+  s.name AS source_name,
+  CASE e.type
+    WHEN 'tool_use' THEN COALESCE(json_extract(e.data, '$.toolName'), '')
+    WHEN 'error' THEN COALESCE(SUBSTR(json_extract(e.data, '$.content'), 1, 200), '')
+    ELSE ''
+  END AS content,
+  e.type AS event_type,
+  CASE e.type
+    WHEN 'tool_use' THEN COALESCE(json_extract(e.data, '$.category'), '')
+    ELSE ''
+  END AS category,
+  CASE e.type
+    WHEN 'tool_use' THEN COALESCE(
+      json_extract(e.data, '$.toolInput.file_path'),
+      json_extract(e.data, '$.toolInput.path'),
+      ''
+    )
+    ELSE ''
+  END AS file_path,
+  p.slug AS project_slug,
+  e.created_at AS created_at
+FROM session_events e
+JOIN sessions s ON s.id = e.session_id
+JOIN projects p ON p.id = s.project_id
+WHERE e.type IN ('tool_use', 'result', 'error')
+  AND e.created_at >= ?2
+
+ORDER BY created_at DESC
+LIMIT ?1
+`
+
+type ListRecentActivityGlobalParams struct {
+	Lim   int64  `json:"lim"`
+	Since string `json:"since"`
+}
+
+type ListRecentActivityGlobalRow struct {
+	Kind        string `json:"kind"`
+	ItemID      string `json:"item_id"`
+	SourceID    string `json:"source_id"`
+	SourceName  string `json:"source_name"`
+	Content     string `json:"content"`
+	EventType   string `json:"event_type"`
+	Category    string `json:"category"`
+	FilePath    string `json:"file_path"`
+	ProjectSlug string `json:"project_slug"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) ListRecentActivityGlobal(ctx context.Context, arg ListRecentActivityGlobalParams) ([]ListRecentActivityGlobalRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentActivityGlobal, arg.Lim, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentActivityGlobalRow{}
+	for rows.Next() {
+		var i ListRecentActivityGlobalRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.ItemID,
+			&i.SourceID,
+			&i.SourceName,
+			&i.Content,
+			&i.EventType,
+			&i.Category,
+			&i.FilePath,
+			&i.ProjectSlug,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

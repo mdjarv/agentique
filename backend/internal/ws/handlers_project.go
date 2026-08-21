@@ -136,6 +136,37 @@ func (c *conn) handleProjectActivity(msg ClientMessage) {
 	})
 }
 
+// handleWireList serves the global activity feed: the per-project activity
+// query's shape, unfiltered across projects, with project_slug on every row.
+func (c *conn) handleWireList(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p WireListPayload) ([]session.ActivityItem, error) {
+		since := time.Now().UTC().Add(-time.Duration(p.Hours) * time.Hour).Format("2006-01-02T15:04:05.000")
+		rows, err := c.queries.ListRecentActivityGlobal(ctx, store.ListRecentActivityGlobalParams{
+			Since: since,
+			Lim:   p.Limit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list global activity: %w", err)
+		}
+		items := make([]session.ActivityItem, len(rows))
+		for i, r := range rows {
+			items[i] = session.ActivityItem{
+				Kind:        r.Kind,
+				ItemID:      r.ItemID,
+				SourceID:    r.SourceID,
+				SourceName:  r.SourceName,
+				Content:     r.Content,
+				EventType:   r.EventType,
+				Category:    r.Category,
+				FilePath:    r.FilePath,
+				ProjectSlug: r.ProjectSlug,
+				CreatedAt:   r.CreatedAt,
+			}
+		}
+		return items, nil
+	})
+}
+
 func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p ProjectSetFavoritePayload) (store.Project, error) {
 		var fav int64
