@@ -144,6 +144,9 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         pinned: meta.pinned,
         remoteMachineLabel,
         lastActivity: lastActivity(meta),
+        branch: meta.worktreeBranch || undefined,
+        model: meta.model || undefined,
+        turns: meta.turnCount || undefined,
       };
 
       if (meta.pinned) {

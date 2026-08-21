@@ -55,6 +55,10 @@ export interface ThreadRowVM {
   remoteMachineLabel?: string;
   /** Epoch ms of last activity — drives the recency half of the Open sort. */
   lastActivity: number;
+  /** Focused-card extras — rendered only on the selected row. */
+  branch?: string;
+  model?: string;
+  turns?: number;
 }
 
 export interface ThreadGroups {

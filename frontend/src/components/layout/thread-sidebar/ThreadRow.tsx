@@ -92,26 +92,19 @@ function RowActions({
         },
         { label: "Archive", action: onArchive, icon: <Archive className="size-3" /> },
       ].map(({ label, action, icon }) => (
-        <span
+        <button
           key={label}
-          role="button"
-          tabIndex={0}
+          type="button"
           aria-label={label}
           title={label}
           onClick={(e) => {
             e.stopPropagation();
             action();
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.stopPropagation();
-              action();
-            }
-          }}
           className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground-bright"
         >
           {icon}
-        </span>
+        </button>
       ))}
     </span>
   );
@@ -180,7 +173,7 @@ export const ThreadRow = memo(function ThreadRow({
   const showTodo = vm.todo && vm.todo.total > 0;
 
   return (
-    <div className="group/thread relative">
+    <div className={cn("group/thread relative", selected && "rounded-lg bg-sidebar-accent")}>
       <button
         type="button"
         aria-label={rowAriaLabel(vm)}
@@ -189,7 +182,7 @@ export const ThreadRow = memo(function ThreadRow({
           "block w-full cursor-pointer select-none rounded-lg px-2.5 py-1.5 text-left transition-colors",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
           "max-md:min-h-11",
-          selected ? "bg-sidebar-accent" : "group-hover/thread:bg-sidebar-accent/60",
+          !selected && "group-hover/thread:bg-sidebar-accent/60",
         )}
       >
         {/* Repo line: chip · slug · @machine · rest outcome · time */}
@@ -249,7 +242,7 @@ export const ThreadRow = memo(function ThreadRow({
             >
               {vm.livePhrase.text}
             </span>
-            {showTodo && vm.todo && (
+            {showTodo && vm.todo && !selected && (
               <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
                 {vm.todo.done}/{vm.todo.total}
               </span>
@@ -265,9 +258,63 @@ export const ThreadRow = memo(function ThreadRow({
             )}
           </span>
         )}
+
+        {/* Focused card (S1) — the row you're inside carries its identity
+            facts, a real todo bar, and persistent actions (also the touch
+            path: the selected row is the one mobile row with buttons). */}
+        {selected && (
+          <>
+            {(vm.branch || vm.model || vm.turns) && (
+              <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground-faint">
+                {[vm.branch, vm.model, vm.turns ? `${vm.turns} turns` : ""]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            )}
+            {showTodo && vm.todo && (
+              <span className="mt-1.5 flex items-center gap-2">
+                <span className="h-[3px] min-w-0 flex-1 overflow-hidden rounded-full bg-border/60">
+                  <span
+                    className="block h-full rounded-full bg-primary"
+                    style={{ width: `${Math.round((vm.todo.done / vm.todo.total) * 100)}%` }}
+                  />
+                </span>
+                <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+                  {vm.todo.done}/{vm.todo.total}
+                </span>
+              </span>
+            )}
+          </>
+        )}
       </button>
 
-      <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
+      {selected ? (
+        <span className="mt-0.5 flex gap-1 px-2.5 pb-1.5">
+          <FocusedAction label={vm.pinned ? "Unpin" : "Pin"} onAction={onTogglePin} />
+          <FocusedAction label="Archive" onAction={onArchive} />
+        </span>
+      ) : (
+        <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
+      )}
     </div>
   );
 });
+
+/** Persistent ghost button on the focused card — no hover gating, all devices. */
+function FocusedAction({ label, onAction }: { label: string; onAction: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onAction();
+      }}
+      className={cn(
+        "cursor-pointer rounded-md border border-border/50 px-2 py-1 text-[10px] font-semibold",
+        "text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground-bright",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
