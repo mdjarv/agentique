@@ -115,6 +115,12 @@ func (c *conn) handleSessionRename(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionSetPinned(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionSetPinnedPayload) (struct{}, error) {
+		return struct{}{}, c.svc.SetSessionPinned(ctx, p.SessionID, p.Pinned, p.PinOrder)
+	})
+}
+
 func (c *conn) handleSessionSetModel(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionSetModelPayload) (struct{}, error) {
 		return struct{}{}, c.svc.SetSessionModel(ctx, p.SessionID, p.Model)
@@ -178,6 +184,12 @@ func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
 func (c *conn) handleSessionMarkDone(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionMarkDonePayload) (struct{}, error) {
 		return struct{}{}, c.svc.MarkSessionDone(ctx, p.SessionID)
+	})
+}
+
+func (c *conn) handleSessionUnmarkDone(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionUnmarkDonePayload) (struct{}, error) {
+		return struct{}{}, c.svc.UnmarkSessionDone(ctx, p.SessionID)
 	})
 }
 

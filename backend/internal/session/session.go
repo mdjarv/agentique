@@ -1198,6 +1198,23 @@ func (s *Session) MarkDone() error {
 	return s.setState(StateDone)
 }
 
+// UnmarkDone clears the completedAt timestamp and broadcasts the change.
+// The state is left untouched — a terminal session stays terminal, it just
+// returns to the non-archived list.
+func (s *Session) UnmarkDone() error {
+	if err := s.queries.UnsetSessionCompleted(context.Background(), s.ID); err != nil {
+		return fmt.Errorf("unset session completed: %w", err)
+	}
+
+	s.mu.Lock()
+	s.completedAt = ""
+	state := s.state
+	s.mu.Unlock()
+
+	s.broadcastState(state)
+	return nil
+}
+
 // MarkCompleted sets the completedAt timestamp on a live session.
 func (s *Session) MarkCompleted() {
 	s.mu.Lock()

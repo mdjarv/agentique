@@ -110,3 +110,29 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 	s.notifySessionFinished(sessionID)
 	return nil
 }
+
+// UnmarkSessionDone clears the completed marker so the session leaves the
+// archived list. The state stays terminal — only completed_at changes.
+// Works for both live (idle) and non-live (stopped/failed) sessions.
+func (s *Service) UnmarkSessionDone(ctx context.Context, sessionID string) error {
+	if sess := s.mgr.Get(sessionID); sess != nil {
+		return sess.UnmarkDone()
+	}
+
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+
+	if err := s.queries.UnsetSessionCompleted(ctx, sessionID); err != nil {
+		return fmt.Errorf("unset completed failed: %w", err)
+	}
+
+	if s.gitSvc != nil {
+		if snap, err := s.gitSvc.computeGitSnapshot(ctx, sessionID); err == nil {
+			s.hub.Publish(dbSess.ProjectID, "session.state", snap)
+		}
+	}
+
+	return nil
+}

@@ -225,6 +225,8 @@ export const SessionInfoSchema = z.object({
   agentProfileName: z.string().optional(),
   agentProfileAvatar: z.string().optional(),
   parentSessionId: z.string().optional(),
+  pinned: z.boolean(),
+  pinOrder: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),
@@ -607,6 +609,16 @@ export const SessionMarkDonePayloadSchema = z.object({
   sessionId: z.string(),
 });
 
+export const SessionUnmarkDonePayloadSchema = z.object({
+  sessionId: z.string(),
+});
+
+export const SessionSetPinnedPayloadSchema = z.object({
+  sessionId: z.string(),
+  pinned: z.boolean(),
+  pinOrder: z.number(),
+});
+
 export const SessionCleanPayloadSchema = z.object({
   sessionId: z.string(),
 });
@@ -707,6 +719,12 @@ export const PushSessionEventSchema = z.object({
 export const PushSessionRenamedSchema = z.object({
   sessionId: z.string(),
   name: z.string(),
+});
+
+export const PushSessionPinnedSchema = z.object({
+  sessionId: z.string(),
+  pinned: z.boolean(),
+  pinOrder: z.number(),
 });
 
 export const PushSessionDeletedSchema = z.object({
@@ -960,6 +978,7 @@ export const pushSchemaMap = {
   "session.state": GitSnapshotSchema,
   "session.created": SessionInfoSchema,
   "session.renamed": PushSessionRenamedSchema,
+  "session.pinned": PushSessionPinnedSchema,
   "session.deleted": PushSessionDeletedSchema,
   "session.pr-updated": PushPRUpdatedSchema,
   "session.tool-permission": PushToolPermissionSchema,

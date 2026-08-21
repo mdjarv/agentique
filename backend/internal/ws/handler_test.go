@@ -613,6 +613,93 @@ func TestSessionRename(t *testing.T) {
 	}
 }
 
+func TestSessionSetPinned(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	proj := createTestProject(t, queries, "pinproj", projDir)
+	sessID := insertTestSession(t, queries, proj.ID, "Pin Me", projDir, "idle")
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.set-pinned", "86",
+		ws.SessionSetPinnedPayload{SessionID: sessID, Pinned: true, PinOrder: 3})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "87",
+		ws.SessionListPayload{ProjectID: proj.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	result := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(result.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(result.Sessions))
+	}
+	if !result.Sessions[0].Pinned {
+		t.Fatal("expected session to be pinned")
+	}
+	if result.Sessions[0].PinOrder != 3 {
+		t.Fatalf("expected pinOrder 3, got %d", result.Sessions[0].PinOrder)
+	}
+
+	resp = sendAndReceive(t, conn, "session.set-pinned", "88",
+		ws.SessionSetPinnedPayload{SessionID: sessID, Pinned: false, PinOrder: 0})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "89",
+		ws.SessionListPayload{ProjectID: proj.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	result = unmarshalPayload[session.ListSessionsResult](t, resp)
+	if result.Sessions[0].Pinned {
+		t.Fatal("expected session to be unpinned")
+	}
+	if result.Sessions[0].PinOrder != 0 {
+		t.Fatalf("expected pinOrder 0, got %d", result.Sessions[0].PinOrder)
+	}
+}
+
+func TestSessionUnmarkDone(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	proj := createTestProject(t, queries, "unmarkproj", projDir)
+	sessID := insertTestSession(t, queries, proj.ID, "Archived", projDir, "done")
+	if err := queries.SetSessionCompleted(context.Background(), sessID); err != nil {
+		t.Fatalf("set completed: %v", err)
+	}
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.unmark-done", "95",
+		ws.SessionUnmarkDonePayload{SessionID: sessID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "96",
+		ws.SessionListPayload{ProjectID: proj.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	result := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(result.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(result.Sessions))
+	}
+	if result.Sessions[0].CompletedAt != "" {
+		t.Fatalf("expected empty completedAt, got %q", result.Sessions[0].CompletedAt)
+	}
+}
+
 func TestHandlerValidation(t *testing.T) {
 	ts, _, cleanup := setupTestServer(t)
 	defer cleanup()
@@ -633,6 +720,8 @@ func TestHandlerValidation(t *testing.T) {
 		{"rename/empty-name", "session.rename", "92", ws.SessionRenamePayload{SessionID: validID, Name: ""}, "name"},
 		{"commit/empty-both", "session.commit", "93", ws.SessionCommitPayload{SessionID: "", Message: ""}, "sessionId"},
 		{"commit/empty-message", "session.commit", "94", ws.SessionCommitPayload{SessionID: validID, Message: ""}, "message"},
+		{"set-pinned/empty-sessionId", "session.set-pinned", "95", ws.SessionSetPinnedPayload{SessionID: "", Pinned: true}, "sessionId"},
+		{"unmark-done/empty-sessionId", "session.unmark-done", "96", ws.SessionUnmarkDonePayload{SessionID: ""}, "sessionId"},
 		{"channel.create/empty-projectId", "channel.create", "98", ws.ChannelCreatePayload{ProjectID: ""}, "projectId"},
 	}
 

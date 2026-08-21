@@ -226,6 +226,8 @@ type Session struct {
 	ParentSessionID sql.NullString `json:"parent_session_id"`
 	Provider        string         `json:"provider"`
 	ResolvedModel   string         `json:"resolved_model"`
+	Pinned          int64          `json:"pinned"`
+	PinOrder        int64          `json:"pin_order"`
 }
 
 type SessionEvent struct {

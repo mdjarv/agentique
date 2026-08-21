@@ -24,6 +24,7 @@ type sessionWriter interface {
 	UpdateClaudeSessionID(ctx context.Context, arg store.UpdateClaudeSessionIDParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	SetSessionCompleted(ctx context.Context, id string) error
+	UnsetSessionCompleted(ctx context.Context, id string) error
 	UpdateSessionResolvedModel(ctx context.Context, arg store.UpdateSessionResolvedModelParams) error
 	UpsertModelResolution(ctx context.Context, arg store.UpsertModelResolutionParams) error
 }
@@ -63,6 +64,7 @@ type serviceQueries interface {
 	UpdateSessionModel(ctx context.Context, arg store.UpdateSessionModelParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg store.UpdateSessionAutoApproveModeParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
+	UpdateSessionPinned(ctx context.Context, arg store.UpdateSessionPinnedParams) (store.Session, error)
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)

@@ -112,6 +112,8 @@ type SessionInfo struct {
 	AgentProfileName   string               `json:"agentProfileName,omitempty"`
 	AgentProfileAvatar string               `json:"agentProfileAvatar,omitempty"`
 	ParentSessionID    string               `json:"parentSessionId,omitempty"`
+	Pinned             bool                 `json:"pinned"`
+	PinOrder           int64                `json:"pinOrder"`
 	CreatedAt          string               `json:"createdAt"`
 	UpdatedAt          string               `json:"updatedAt"`
 	LastQueryAt        string               `json:"lastQueryAt,omitempty"`
@@ -1070,6 +1072,8 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		PrUrl:           ss.PrUrl,
 		BehaviorPresets: ParsePresets(ss.BehaviorPresets),
 		ParentSessionID: nullStr(ss.ParentSessionID),
+		Pinned:          ss.Pinned != 0,
+		PinOrder:        ss.PinOrder,
 		CreatedAt:       ss.CreatedAt,
 		UpdatedAt:       ss.UpdatedAt,
 		LastQueryAt:     nullStr(ss.LastQueryAt),
@@ -1612,6 +1616,27 @@ func (s *Service) RenameSession(ctx context.Context, sessionID, name string) err
 		return fmt.Errorf("rename failed: %w", err)
 	}
 	s.hub.Publish(dbSess.ProjectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
+	return nil
+}
+
+// SetSessionPinned updates the session pin state in DB and broadcasts the change.
+func (s *Service) SetSessionPinned(ctx context.Context, sessionID string, pinned bool, pinOrder int64) error {
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+	var pinnedInt int64
+	if pinned {
+		pinnedInt = 1
+	}
+	if _, err := s.queries.UpdateSessionPinned(ctx, store.UpdateSessionPinnedParams{
+		Pinned:   pinnedInt,
+		PinOrder: pinOrder,
+		ID:       sessionID,
+	}); err != nil {
+		return fmt.Errorf("set pinned failed: %w", err)
+	}
+	s.hub.Publish(dbSess.ProjectID, "session.pinned", PushSessionPinned{SessionID: sessionID, Pinned: pinned, PinOrder: pinOrder})
 	return nil
 }
 

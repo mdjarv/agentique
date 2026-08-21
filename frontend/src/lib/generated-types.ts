@@ -223,6 +223,8 @@ export interface SessionInfo {
   agentProfileName?: string;
   agentProfileAvatar?: string;
   parentSessionId?: string;
+  pinned: boolean;
+  pinOrder: number;
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;
@@ -605,6 +607,16 @@ export interface SessionMarkDonePayload {
   sessionId: string;
 }
 
+export interface SessionUnmarkDonePayload {
+  sessionId: string;
+}
+
+export interface SessionSetPinnedPayload {
+  sessionId: string;
+  pinned: boolean;
+  pinOrder: number;
+}
+
 export interface SessionCleanPayload {
   sessionId: string;
 }
@@ -705,6 +717,12 @@ export interface PushSessionEvent {
 export interface PushSessionRenamed {
   sessionId: string;
   name: string;
+}
+
+export interface PushSessionPinned {
+  sessionId: string;
+  pinned: boolean;
+  pinOrder: number;
 }
 
 export interface PushSessionDeleted {
@@ -957,6 +975,7 @@ export interface PushEventMap {
   "session.state": GitSnapshot;
   "session.created": SessionInfo;
   "session.renamed": PushSessionRenamed;
+  "session.pinned": PushSessionPinned;
   "session.deleted": PushSessionDeleted;
   "session.pr-updated": PushPRUpdated;
   "session.tool-permission": PushToolPermission;

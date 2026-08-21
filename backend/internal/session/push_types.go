@@ -45,6 +45,13 @@ type PushSessionRenamed struct {
 	Name      string `json:"name"`
 }
 
+// PushSessionPinned signals a session pin-state change.
+type PushSessionPinned struct {
+	SessionID string `json:"sessionId"`
+	Pinned    bool   `json:"pinned"`
+	PinOrder  int64  `json:"pinOrder"`
+}
+
 // PushSessionDeleted signals a session was deleted.
 type PushSessionDeleted struct {
 	SessionID string `json:"sessionId"`

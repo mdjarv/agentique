@@ -157,6 +157,16 @@ type SessionMarkDonePayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type SessionUnmarkDonePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SessionSetPinnedPayload struct {
+	SessionID string `json:"sessionId"`
+	Pinned    bool   `json:"pinned"`
+	PinOrder  int64  `json:"pinOrder"`
+}
+
 type SessionCleanPayload struct {
 	SessionID string `json:"sessionId"`
 }
@@ -387,6 +397,14 @@ func (p *SessionGenerateNamePayload) Validate() error {
 }
 
 func (p *SessionMarkDonePayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionUnmarkDonePayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionSetPinnedPayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 

@@ -161,6 +161,7 @@ type Querier interface {
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg UpdateSessionPRUrlParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg UpdateSessionPermissionModeParams) error
+	UpdateSessionPinned(ctx context.Context, arg UpdateSessionPinnedParams) (Session, error)
 	UpdateSessionResolvedModel(ctx context.Context, arg UpdateSessionResolvedModelParams) error
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) error
 	UpdateSessionWorktree(ctx context.Context, arg UpdateSessionWorktreeParams) error
