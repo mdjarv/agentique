@@ -293,7 +293,7 @@ The signature component. One config maps twelve session states (`idle`, `running
 - **Stat tiles** pair a 10px uppercase label with a 1.5rem tabular number, colored only when the number means attention (Attention Amber for "needs attention", Signal Blue for "running").
 
 ### Navigation
-- **Sidebar:** `sidebar/80` with `backdrop-blur-md`, a 48px brand header, a 32px tab strip (Sessions / Teams), then collapsible folder → project → session tree. Active tabs use `primary/10` + Signal Blue; inactive are muted with a `muted/30` hover.
+- **Sidebar:** `sidebar/80` with `backdrop-blur-md`, a 48px brand header (wordmark, primary New-session launcher, More menu), a search bar, then a flat session list: Pinned (drag-orderable) / Open (attention-first) / Archived (collapsed count). Rows are icon-anchored: a 26px project-color icon with an 11px corner state dot, name + tabular time, and a mono machine line. Selection is a raised surface plus a brighter name — never an accent bar.
 - **Section labels:** chevron, optional icon, faint count, then the 10px uppercase label — count *before* label, so the numbers form a scannable column.
 - **Row actions** appear on `group-hover` at full opacity and are permanently visible on touch.
 

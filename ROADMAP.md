@@ -79,6 +79,18 @@ Optional and unscheduled — pick up if the itch is real.
 
 Open design questions, not committed work.
 
+### Teams surface redesign
+
+The 2026-08 session-first sidebar rebuild removed the Sessions/Teams tab strip
+and the sidebar teams tree (`TeamsTab` + `ActivityFeed`); `/teams` survives as
+a page behind the More menu. Teams was underutilized in practice, and several
+surfaces the folder sidebar carried are now gone or different: project
+folders, drag-to-folder, focus mode, pin-project-to-focus, per-project
+expand/collapse, and the activity stream. A dedicated design session should
+decide what teams/channels visibility looks like on the flat sidebar (worker
+counts on lead rows are the only remnant) and which of the removed surfaces
+deserve a new home rather than resurrection.
+
 ### Sibling-session awareness
 
 Sessions knowing about other active sessions in the same project — to avoid
