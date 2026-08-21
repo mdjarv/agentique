@@ -90,6 +90,8 @@ export async function createSession(
     name: result.name,
     state: result.state as SessionMetadata["state"],
     connected: result.connected,
+    pinned: false,
+    pinOrder: 0,
     provider: result.provider,
     capabilities: result.capabilities,
     model: result.model as ModelId,
@@ -348,6 +350,23 @@ export function generateSessionName(ws: WsClient, sessionId: string): Promise<{ 
 const markDoneRpc = define<void, { sessionId: string }>("session.mark-done");
 export function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
   return markDoneRpc(ws, { sessionId });
+}
+
+const unmarkDoneRpc = define<void, { sessionId: string }>("session.unmark-done");
+export function unmarkSessionDone(ws: WsClient, sessionId: string): Promise<void> {
+  return unmarkDoneRpc(ws, { sessionId });
+}
+
+const setPinnedRpc = define<void, { sessionId: string; pinned: boolean; pinOrder: number }>(
+  "session.set-pinned",
+);
+export function setSessionPinned(
+  ws: WsClient,
+  sessionId: string,
+  pinned: boolean,
+  pinOrder: number,
+): Promise<void> {
+  return setPinnedRpc(ws, { sessionId, pinned, pinOrder });
 }
 
 export type CleanResult = { status: "cleaned" } | { status: "error"; error: string };

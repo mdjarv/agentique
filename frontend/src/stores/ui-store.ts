@@ -11,14 +11,6 @@ export type RightPanelView = "browser" | "workflow";
 
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
 
-function readLegacyCollapsedProjects(): string[] {
-  try {
-    const raw = localStorage.getItem(LEGACY_COLLAPSED_KEY);
-    if (raw) return JSON.parse(raw) as string[];
-  } catch {}
-  return [];
-}
-
 export interface SessionDefaults {
   worktree: boolean;
   planMode: boolean;
@@ -38,14 +30,9 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
 interface UIState {
   drafts: Record<string, string>;
   stashes: Record<string, string[]>;
-  expandedProjects: Record<string, boolean>;
-  expandedFolders: Record<string, boolean>;
   /** Pre-migration cache of locally-pinned project IDs.
    *  Drained once on startup and pushed to the server (see usePinnedMigration). */
   legacyPinnedProjectIds: string[];
-  /** Fallback used only when auth is disabled — when a user is signed in,
-   *  the source of truth is `authStore.user.sidebarFocusMode`. */
-  sidebarFocusMode: boolean;
   rightPanelCollapsed: boolean;
   /** Which content the shared right panel shows when expanded. */
   rightPanelView: RightPanelView;
@@ -58,13 +45,7 @@ interface UIState {
   pushStash: (sessionId: string, text: string) => void;
   popStash: (sessionId: string) => string | undefined;
   clearStash: (sessionId: string) => void;
-  setProjectExpanded: (projectId: string, expanded: boolean) => void;
-  setManyProjectsExpanded: (projectIds: string[], expanded: boolean) => void;
-  setFolderExpanded: (folderName: string, expanded: boolean) => void;
-  setManyFoldersExpanded: (folderNames: string[], expanded: boolean) => void;
-  renameFolderExpanded: (oldName: string, newName: string) => void;
   clearLegacyPinnedProjectIds: () => void;
-  setSidebarFocusMode: (enabled: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelView: (view: RightPanelView) => void;
   setTodoSidebarCollapsed: (collapsed: boolean) => void;
@@ -77,10 +58,7 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       drafts: {},
       stashes: {},
-      expandedProjects: Object.fromEntries(readLegacyCollapsedProjects().map((id) => [id, false])),
-      expandedFolders: {},
       legacyPinnedProjectIds: [],
-      sidebarFocusMode: false,
       rightPanelCollapsed: true,
       rightPanelView: "browser" as RightPanelView,
       todoSidebarCollapsed: false,
@@ -132,50 +110,7 @@ export const useUIStore = create<UIState>()(
           return { stashes: rest };
         }),
 
-      setProjectExpanded: (projectId, expanded) =>
-        set((s) => ({ expandedProjects: { ...s.expandedProjects, [projectId]: expanded } })),
-
-      setManyProjectsExpanded: (projectIds, expanded) =>
-        set((s) => {
-          if (projectIds.length === 0) return s;
-          const next = { ...s.expandedProjects };
-          let changed = false;
-          for (const id of projectIds) {
-            if (next[id] !== expanded) {
-              next[id] = expanded;
-              changed = true;
-            }
-          }
-          return changed ? { expandedProjects: next } : s;
-        }),
-
-      setFolderExpanded: (folderName, expanded) =>
-        set((s) => ({ expandedFolders: { ...s.expandedFolders, [folderName]: expanded } })),
-
-      setManyFoldersExpanded: (folderNames, expanded) =>
-        set((s) => {
-          if (folderNames.length === 0) return s;
-          const next = { ...s.expandedFolders };
-          let changed = false;
-          for (const name of folderNames) {
-            if (next[name] !== expanded) {
-              next[name] = expanded;
-              changed = true;
-            }
-          }
-          return changed ? { expandedFolders: next } : s;
-        }),
-
-      renameFolderExpanded: (oldName, newName) =>
-        set((s) => {
-          if (!(oldName in s.expandedFolders)) return s;
-          const { [oldName]: value, ...rest } = s.expandedFolders;
-          return { expandedFolders: { ...rest, [newName]: value ?? true } };
-        }),
-
       clearLegacyPinnedProjectIds: () => set({ legacyPinnedProjectIds: [] }),
-
-      setSidebarFocusMode: (enabled) => set({ sidebarFocusMode: enabled }),
 
       setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
       setRightPanelView: (view) => set({ rightPanelView: view }),
@@ -189,7 +124,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: "agentique:ui",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
@@ -221,15 +156,19 @@ export const useUIStore = create<UIState>()(
           state.legacyPinnedProjectIds = (state.pinnedProjectIds as string[] | undefined) ?? [];
           delete state.pinnedProjectIds;
         }
+        if (version < 5) {
+          // The folder sidebar (and its focus mode) was replaced by the flat
+          // thread sidebar; its per-folder/per-project expand state is gone.
+          delete state.expandedProjects;
+          delete state.expandedFolders;
+          delete state.sidebarFocusMode;
+        }
         return state;
       },
       partialize: (state) => ({
         drafts: state.drafts,
         stashes: state.stashes,
-        expandedProjects: state.expandedProjects,
-        expandedFolders: state.expandedFolders,
         legacyPinnedProjectIds: state.legacyPinnedProjectIds,
-        sidebarFocusMode: state.sidebarFocusMode,
         rightPanelCollapsed: state.rightPanelCollapsed,
         rightPanelView: state.rightPanelView,
         todoSidebarCollapsed: state.todoSidebarCollapsed,

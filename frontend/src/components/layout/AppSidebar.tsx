@@ -1,19 +1,20 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   Brain,
   Clock,
   Cpu,
   Ellipsis,
   FileText,
+  FolderPlus,
   HardDrive,
   Hash,
-  LayoutList,
   MessagesSquare,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
+import { NewSessionButton, ThreadSidebar } from "~/components/layout/thread-sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,9 +24,6 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { cn } from "~/lib/utils";
 import { useBrainStore } from "~/stores/brain-store";
-import { useChannelStore } from "~/stores/channel-store";
-import { FolderSidebar } from "./variants/FolderSidebar";
-import { TeamsTab } from "./variants/folder-sidebar/TeamsTab";
 
 // useBrainFlare returns true for a short window after the brain changes (a memory
 // added/edited/removed, or a consolidation applied — anywhere, any tab), so the
@@ -49,14 +47,10 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className }: AppSidebarProps) {
-  const pathname = useLocation({ select: (l) => l.pathname });
-  const isTeams = pathname.startsWith("/teams");
-
   return (
     <div className={cn("bg-sidebar/80 backdrop-blur-md flex h-full flex-col", className)}>
       <SidebarHeader />
-      <SidebarTabBar isTeams={isTeams} />
-      {isTeams ? <TeamsTab /> : <FolderSidebar />}
+      <ThreadSidebar />
       <SidebarFooter />
     </div>
   );
@@ -64,6 +58,8 @@ export function AppSidebar({ className }: AppSidebarProps) {
 
 function SidebarHeader() {
   const flaring = useBrainFlare();
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+
   return (
     <div className="px-4 border-b flex items-center justify-between h-12">
       <Link to="/" className="flex items-center gap-2.5">
@@ -75,8 +71,8 @@ function SidebarHeader() {
           Agentique
         </span>
       </Link>
-      <div className="flex items-center gap-1">
-        <NewProjectDialog />
+      <div className="flex items-center gap-1.5">
+        <NewSessionButton />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -95,6 +91,19 @@ function SidebarHeader() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem className="text-xs gap-2" onSelect={() => setNewProjectOpen(true)}>
+              <FolderPlus className="size-3.5" />
+              New project
+              <span className="ml-auto text-muted-foreground-faint">add a repo</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/teams">
+                <Hash className="size-3.5" />
+                Teams
+                <span className="ml-auto text-muted-foreground-faint">channels</span>
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild className="text-xs gap-2">
               <Link to="/brain">
                 <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
@@ -133,32 +142,8 @@ function SidebarHeader() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
       </div>
-    </div>
-  );
-}
-
-function SidebarTabBar({ isTeams }: { isTeams: boolean }) {
-  const channelCount = useChannelStore((s) => Object.keys(s.channels).length);
-
-  const baseClass =
-    "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer";
-  const activeClass = "bg-primary/10 text-primary font-medium";
-  const inactiveClass = "text-muted-foreground hover:text-foreground hover:bg-muted/30";
-
-  return (
-    <div className="flex items-center border-b px-2 gap-0.5 h-8 shrink-0">
-      <Link to="/" className={cn(baseClass, !isTeams ? activeClass : inactiveClass)}>
-        <LayoutList className="size-3.5" />
-        Sessions
-      </Link>
-      <Link to="/teams" className={cn(baseClass, isTeams ? activeClass : inactiveClass)}>
-        <Hash className="size-3.5" />
-        Teams
-        {channelCount > 0 && (
-          <span className="text-[10px] tabular-nums text-primary/60 ml-0.5">{channelCount}</span>
-        )}
-      </Link>
     </div>
   );
 }

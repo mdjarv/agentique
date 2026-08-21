@@ -13,6 +13,8 @@ function makeMeta(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
     name: "Test Session",
     state: "running",
     connected: true,
+    pinned: false,
+    pinOrder: 0,
     model: "sonnet",
     permissionMode: "default",
     autoApproveMode: "manual",

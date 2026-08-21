@@ -10,18 +10,6 @@ export interface AuthUser {
   sidebarFocusMode?: boolean;
 }
 
-export async function updateUserPreferences(prefs: {
-  sidebarFocusMode?: boolean;
-}): Promise<{ sidebarFocusMode?: boolean }> {
-  const res = await fetch("/api/user/preferences", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(prefs),
-  });
-  await throwIfNotOk(res, "Failed to update preferences");
-  return res.json();
-}
-
 export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;

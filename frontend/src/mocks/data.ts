@@ -213,6 +213,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.authRefactor,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Refactor auth middleware",
     state: "idle",
     connected: true,
@@ -240,6 +242,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.wsReconnect,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Fix WebSocket reconnect",
     state: "running",
     connected: true,
@@ -265,6 +269,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.darkMode,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Add dark mode support",
     state: "done",
     connected: false,
@@ -288,6 +294,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.migrationBug,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Database migration bug",
     state: "failed",
     connected: false,
@@ -310,6 +318,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.updateDeps,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Update dependencies",
     state: "stopped",
     connected: false,
@@ -329,6 +339,8 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   {
     id: S.queryOptimizer,
     projectId: P.agentique,
+    pinned: false,
+    pinOrder: 0,
     name: "Optimize query planner",
     state: "idle",
     connected: true,
@@ -357,6 +369,8 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
   {
     id: S.paymentFlow,
     projectId: P.thePint,
+    pinned: false,
+    pinOrder: 0,
     name: "Payment flow redesign",
     state: "running",
     connected: true,
@@ -379,6 +393,8 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
   {
     id: S.imageGallery,
     projectId: P.thePint,
+    pinned: false,
+    pinOrder: 0,
     name: "Image gallery component",
     state: "idle",
     connected: true,
@@ -404,6 +420,8 @@ const ALLTIX_SESSIONS: SessionInfo[] = [
   {
     id: S.schedulerTests,
     projectId: P.alltixApi,
+    pinned: false,
+    pinOrder: 0,
     name: "Scheduler test coverage",
     state: "idle",
     connected: true,
@@ -427,6 +445,8 @@ const SENSEVIEW_SESSIONS: SessionInfo[] = [
   {
     id: S.sensorDashboard,
     projectId: P.senseview,
+    pinned: false,
+    pinOrder: 0,
     name: "Sensor dashboard widgets",
     state: "running",
     connected: true,
@@ -449,6 +469,8 @@ const SENSEVIEW_SESSIONS: SessionInfo[] = [
   {
     id: S.alertRules,
     projectId: P.senseview,
+    pinned: false,
+    pinOrder: 0,
     name: "Alert rule configuration",
     state: "running",
     connected: true,
@@ -475,6 +497,8 @@ const WEEKEND_JAM_SESSIONS: SessionInfo[] = [
   {
     id: S.samplerEngine,
     projectId: P.weekendJam,
+    pinned: false,
+    pinOrder: 0,
     name: "Audio sampler engine",
     state: "failed",
     connected: false,
@@ -501,6 +525,8 @@ const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
   {
     id: S.issueSearch,
     projectId: P.youtrackCli,
+    pinned: false,
+    pinOrder: 0,
     name: "Issue search filters",
     state: "done",
     connected: false,
@@ -520,6 +546,8 @@ const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
   {
     id: S.sprintBoard,
     projectId: P.youtrackCli,
+    pinned: false,
+    pinOrder: 0,
     name: "Sprint board layout",
     state: "running",
     connected: true,
@@ -546,6 +574,8 @@ const HK_UI_SESSIONS: SessionInfo[] = [
   {
     id: S.realtimeMap,
     projectId: P.hkUi,
+    pinned: false,
+    pinOrder: 0,
     name: "Realtime vehicle map",
     state: "done",
     connected: false,
@@ -565,6 +595,8 @@ const HK_UI_SESSIONS: SessionInfo[] = [
   {
     id: S.departureTimes,
     projectId: P.hkUi,
+    pinned: false,
+    pinOrder: 0,
     name: "Departure time display",
     state: "done",
     connected: false,

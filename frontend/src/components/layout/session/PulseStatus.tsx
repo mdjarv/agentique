@@ -23,7 +23,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "working",
 };
 
-function formatPulse(pulse: PulseData): string {
+/** One-line narration of a running session ("editing foo.ts · 3 commits"). */
+export function formatPulse(pulse: PulseData): string {
   const parts: string[] = [];
 
   // Activity description

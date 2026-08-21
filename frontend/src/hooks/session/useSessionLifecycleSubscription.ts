@@ -77,6 +77,10 @@ export function useSessionLifecycleSubscription(
       useChatStore.getState().setSessionName(payload.sessionId, payload.name);
     });
 
+    const unsubPinned = ws.subscribe("session.pinned", (payload) => {
+      useChatStore.getState().setSessionPinned(payload.sessionId, payload.pinned, payload.pinOrder);
+    });
+
     const unsubDeleted = ws.subscribe("session.deleted", (payload) => {
       const store = useChatStore.getState();
       const deletedId: string = payload.sessionId;
@@ -124,6 +128,7 @@ export function useSessionLifecycleSubscription(
       unsubState();
       unsubCreated();
       unsubRenamed();
+      unsubPinned();
       unsubDeleted();
       unsubPrUpdated();
       unsubPulse();

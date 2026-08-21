@@ -17,16 +17,12 @@ import { Label } from "~/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { reloadMachineProjects } from "~/hooks/useMachineConnections";
-import { useWebSocket } from "~/hooks/useWebSocket";
 import { createProject, type PathValidation, validatePath } from "~/lib/api";
 import { remoteSlug } from "~/lib/machines/slug";
-import { setProjectPinned } from "~/lib/project-actions";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import { useAuthStore } from "~/stores/auth-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
-import { useUIStore } from "~/stores/ui-store";
 
 /** Extract the last directory component from a path (cross-platform). */
 function dirName(p: string): string {
@@ -61,6 +57,10 @@ function saveLastParentDir(projectPath: string): void {
 
 interface NewProjectDialogProps {
   trigger?: React.ReactNode;
+  /** Controlled mode — the caller owns open state (e.g. a dropdown item);
+   *  no trigger is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function MachineOption({
@@ -96,8 +96,15 @@ function MachineOption({
   );
 }
 
-export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
-  const [open, setOpen] = useState(false);
+export function NewProjectDialog({
+  trigger,
+  open: controlledOpen,
+  onOpenChange,
+}: NewProjectDialogProps) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : localOpen;
+  const setOpen = controlled ? (onOpenChange ?? (() => {})) : setLocalOpen;
   const [name, setName] = useState("");
   const [nameManuallySet, setNameManuallySet] = useState(false);
   const [path, setPath] = useState("");
@@ -105,10 +112,8 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
   const [validation, setValidation] = useState<PathValidation | null>(null);
   const validationController = useRef<AbortController | null>(null);
   const addProject = useAppStore((s) => s.addProject);
-  const updateProjectStore = useAppStore((s) => s.updateProject);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const ws = useWebSocket();
   const [showBrowser, setShowBrowser] = useState(!isMobile);
 
   // Target machine: "" = the primary. The path input, directory browser,
@@ -191,13 +196,6 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
       } else {
         saveLastParentDir(path);
         addProject(project);
-        const focusMode =
-          useAuthStore.getState().user?.sidebarFocusMode ?? useUIStore.getState().sidebarFocusMode;
-        if (focusMode) {
-          setProjectPinned(ws, project.id, true)
-            .then((updated) => updateProjectStore(updated))
-            .catch((err) => console.error("auto-pin new project failed", err));
-        }
       }
 
       setName("");
@@ -232,7 +230,7 @@ export function NewProjectDialog({ trigger }: NewProjectDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
+      {controlled ? null : trigger ? (
         <DialogTrigger asChild>{trigger}</DialogTrigger>
       ) : isMobile ? (
         <DialogTrigger asChild>

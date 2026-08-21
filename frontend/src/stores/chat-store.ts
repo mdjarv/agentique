@@ -158,6 +158,7 @@ export interface ChatState {
   setSessionState: (sessionId: string, state: SessionState, extras?: StateExtras) => void;
   flushPendingState: (sessionId: string) => void;
   setSessionName: (sessionId: string, name: string) => void;
+  setSessionPinned: (sessionId: string, pinned: boolean, pinOrder: number) => void;
   setSessionModel: (sessionId: string, model: string) => void;
   setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
   clearPendingApproval: (sessionId: string) => void;
@@ -380,6 +381,8 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   setSessionName: (sessionId, name) => set((s) => updateMeta(s, sessionId, { name })),
+  setSessionPinned: (sessionId, pinned, pinOrder) =>
+    set((s) => updateMeta(s, sessionId, { pinned, pinOrder })),
   setSessionModel: (sessionId, model) => set((s) => updateMeta(s, sessionId, { model })),
 
   setPendingApproval: (sessionId, approval) =>
