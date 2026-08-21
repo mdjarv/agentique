@@ -29,7 +29,7 @@ const BADGE_ARIA: Record<Exclude<ThreadBadge, null>, string> = {
 interface ThreadRowProps {
   vm: ThreadRowVM;
   selected: boolean;
-  /** One-line settled row for the shelf and Archived sections. */
+  /** Dim settled row (title over identity) for the shelf and Archived sections. */
   compact?: boolean;
   onClick: () => void;
   onTogglePin: () => void;
@@ -128,6 +128,9 @@ export const ThreadRow = memo(function ThreadRow({
   onArchive,
 }: ThreadRowProps) {
   if (compact) {
+    // Two lines, even settled: a long remote slug (`webticket-ui~ad3e932
+    // @zbook`) shares the line with the name and starves it down to "W…".
+    // The title owns line one; identity recedes to a dim mono line under it.
     return (
       <div className="group/thread relative">
         <button
@@ -135,32 +138,34 @@ export const ThreadRow = memo(function ThreadRow({
           aria-label={rowAriaLabel(vm)}
           onClick={onClick}
           className={cn(
-            "flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+            "flex w-full cursor-pointer select-none items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
             "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
             "max-md:min-h-11",
             selected ? "bg-sidebar-accent" : "group-hover/thread:bg-sidebar-accent/60",
           )}
         >
-          <Chip vm={vm} awake={false} />
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground",
-              vm.struck && "line-through decoration-muted-foreground/50",
-              vm.untitled && "italic",
-            )}
-          >
-            {vm.untitled ? "Untitled" : vm.name}
+          <span className="mt-0.5 shrink-0">
+            <Chip vm={vm} awake={false} />
           </span>
-          <span className="min-w-0 shrink truncate font-mono text-[10px] text-muted-foreground-faint">
-            {vm.projectSlug}
-          </span>
-          {vm.remoteMachineLabel && (
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
-              @{vm.remoteMachineLabel}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-2">
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground",
+                  vm.struck && "line-through decoration-muted-foreground/50",
+                  vm.untitled && "italic",
+                )}
+              >
+                {vm.untitled ? "Untitled" : vm.name}
+              </span>
+              <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
+                {vm.timeLabel}
+              </span>
             </span>
-          )}
-          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
-            {vm.timeLabel}
+            <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
+              <span className="min-w-0 truncate">{vm.projectSlug}</span>
+              {vm.remoteMachineLabel && <span className="shrink-0">@{vm.remoteMachineLabel}</span>}
+            </span>
           </span>
         </button>
         <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />

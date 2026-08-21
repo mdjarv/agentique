@@ -14,7 +14,7 @@
  * the left edge of the screen).
  */
 import { useNavigate } from "@tanstack/react-router";
-import { Plus, Search, Settings, Star } from "lucide-react";
+import { Circle, Plus, Search, Settings, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
@@ -53,11 +53,15 @@ export function NewSessionButton() {
   }, [open]);
 
   const go = useCallback(
-    (to: "new" | "settings", slug: string) => {
+    (to: "new" | "settings" | "repo", slug: string) => {
       setOpen(false);
       useAppStore.getState().setSidebarOpen(false);
       if (to === "settings") {
         navigate({ to: "/project/$projectSlug/settings", params: { projectSlug: slug } });
+        return;
+      }
+      if (to === "repo") {
+        navigate({ to: "/project/$projectSlug", params: { projectSlug: slug } });
         return;
       }
       navigate({ to: "/project/$projectSlug/session/new", params: { projectSlug: slug } });
@@ -130,6 +134,7 @@ export function NewSessionButton() {
               onHover={() => setSelectedIdx(i)}
               onLaunch={() => go("new", p.slug)}
               onSettings={() => go("settings", p.slug)}
+              onOpenRepo={() => go("repo", p.slug)}
             />
           ))}
           {filtered.length === 0 && (
@@ -155,16 +160,19 @@ function ProjectPaletteRow({
   onHover,
   onLaunch,
   onSettings,
+  onOpenRepo,
 }: {
   project: PaletteProject;
   active: boolean;
   onHover: () => void;
   onLaunch: () => void;
   onSettings: () => void;
+  onOpenRepo: () => void;
 }) {
   const ws = useWebSocket();
   const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
   const favorite = project.favorite === 1;
+  const dirty = gitStatus?.uncommittedCount ?? 0;
 
   return (
     <div
@@ -181,6 +189,20 @@ function ProjectPaletteRow({
       >
         <ProjectPill slug={project.slug} showIcon size="md" background={false} />
       </button>
+
+      {/* Uncommitted work on the project's own checkout — the only route back
+          to the project git panel now that project rows are gone. */}
+      {dirty > 0 && (
+        <button
+          type="button"
+          onClick={onOpenRepo}
+          title={`${dirty} uncommitted file${dirty === 1 ? "" : "s"} — open project git`}
+          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning transition-colors hover:bg-warning/25"
+        >
+          <Circle className="size-2 fill-current" />
+          {dirty}
+        </button>
+      )}
 
       <ProjectGitPill
         projectId={project.id}
