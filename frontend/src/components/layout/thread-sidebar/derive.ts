@@ -3,7 +3,34 @@
  * The integrator feeds primitives pulled from the chat store; these decide
  * badge, machine-line phrasing, and Open-section ordering.
  */
-import type { MachineLine, ThreadBadge, ThreadRowVM } from "./types";
+import type { MachineLine, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+
+/**
+ * Pulse tool category → work kind. The categories come from the pulse pipeline
+ * (`PulseStatus`'s `CATEGORY_LABELS` names the same set); anything unmapped —
+ * including a session that hasn't reported a tool yet — falls to `generic`, so
+ * a new upstream category degrades to the plain working glyph rather than
+ * blanking the marker.
+ */
+const WORK_KIND_BY_CATEGORY: Record<string, WorkKind> = {
+  command: "run",
+  file_write: "edit",
+  file_read: "read",
+  web: "web",
+  agent: "delegate",
+  task: "task",
+  plan: "plan",
+  meta: "configure",
+  question: "tool",
+  mcp: "tool",
+  other: "generic",
+};
+
+/** What kind of work a running session is doing, from its pulse category. */
+export function deriveWorkKind(category?: string): WorkKind {
+  if (!category) return "generic";
+  return WORK_KIND_BY_CATEGORY[category] ?? "generic";
+}
 
 export interface DeriveBadgeInput {
   state: string;

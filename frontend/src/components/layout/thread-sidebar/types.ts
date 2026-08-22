@@ -22,6 +22,23 @@ export type ThreadBadge =
   | "off"
   | null;
 
+/**
+ * What kind of work a running session is doing — refines the `working` badge's
+ * glyph so the state line says *what sort* of work without spending a word on
+ * it. Derived from the pulse's tool category; `generic` when unknown.
+ */
+export type WorkKind =
+  | "run"
+  | "edit"
+  | "read"
+  | "web"
+  | "delegate"
+  | "task"
+  | "plan"
+  | "configure"
+  | "tool"
+  | "generic";
+
 /** Color tone of the machine line (maps onto the shared state palette tokens). */
 export type MachineTone = "work" | "attn" | "unread" | "fail" | "merge" | "draft" | "muted";
 
@@ -47,6 +64,8 @@ export interface ThreadRowVM {
   awake: boolean;
   /** Line 3, live rows only — the state phrase in its tone. Absent at rest. */
   livePhrase?: MachineLine;
+  /** Refines the `working` glyph; ignored for every other badge. */
+  workKind?: WorkKind;
   /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */
   restToken: string;
   timeLabel: string;

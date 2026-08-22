@@ -5,6 +5,7 @@ import {
   deriveBadge,
   deriveLivePhrase,
   deriveRestToken,
+  deriveWorkKind,
   isAwake,
   isStale,
   STALE_AFTER_MS,
@@ -142,6 +143,23 @@ describe("deriveLivePhrase", () => {
   it("is silent at rest — resting rows have no third line", () => {
     expect(deriveLivePhrase({ badge: null })).toBeNull();
     expect(deriveLivePhrase({ badge: "off" })).toBeNull();
+  });
+});
+
+describe("deriveWorkKind", () => {
+  it("maps the pulse categories to work kinds", () => {
+    expect(deriveWorkKind("command")).toBe("run");
+    expect(deriveWorkKind("file_write")).toBe("edit");
+    expect(deriveWorkKind("file_read")).toBe("read");
+    expect(deriveWorkKind("agent")).toBe("delegate");
+    expect(deriveWorkKind("mcp")).toBe("tool");
+  });
+
+  // A category the frontend has never heard of must not blank the marker.
+  it("falls back to generic for unknown and missing categories", () => {
+    expect(deriveWorkKind("teleportation")).toBe("generic");
+    expect(deriveWorkKind("")).toBe("generic");
+    expect(deriveWorkKind(undefined)).toBe("generic");
   });
 });
 

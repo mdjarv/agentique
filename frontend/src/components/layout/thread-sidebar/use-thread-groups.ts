@@ -21,6 +21,7 @@ import {
   deriveBadge,
   deriveLivePhrase,
   deriveRestToken,
+  deriveWorkKind,
   isAwake,
   isStale,
 } from "./derive";
@@ -137,6 +138,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
             approvalSummary: approvalSummary(data),
             questionSummary: questionSummary(data),
           }) ?? undefined,
+        workKind: deriveWorkKind(pulse?.lastToolCategory),
         restToken: deriveRestToken({
           state: meta.state,
           merged: !!meta.worktreeMerged,

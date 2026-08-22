@@ -1,12 +1,19 @@
 import {
   Archive,
+  BookOpen,
+  Bot,
   Check,
   CircleHelp,
   Diamond,
   GitMerge,
+  Globe,
   Hash,
+  ListChecks,
+  Pencil,
   Pin,
   PinOff,
+  Plug,
+  Settings2,
   SquareDashed,
   Terminal,
   TriangleAlert,
@@ -15,7 +22,7 @@ import {
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { cn } from "~/lib/utils";
-import type { MachineTone, ThreadBadge, ThreadRowVM } from "./types";
+import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
@@ -56,10 +63,28 @@ const BADGE_GLYPH: Record<Exclude<ThreadBadge, null | "off">, typeof Check> = {
   draft: SquareDashed,
 };
 
+/**
+ * A working row refines its glyph by what the agent is actually doing, so the
+ * marker distinguishes a compile from an edit from a delegated subagent
+ * without spending a word. Every other badge ignores the work kind.
+ */
+const WORK_GLYPH: Record<WorkKind, typeof Check> = {
+  run: Terminal,
+  edit: Pencil,
+  read: BookOpen,
+  web: Globe,
+  delegate: Bot,
+  task: ListChecks,
+  plan: Diamond,
+  configure: Settings2,
+  tool: Plug,
+  generic: Terminal,
+};
+
 /** Only a row blocked on a human pulses — the amber monopoly, on the glyph. */
-function stateGlyph(badge: ThreadBadge) {
+function stateGlyph(badge: ThreadBadge, workKind?: WorkKind) {
   if (badge === null || badge === "off") return null;
-  const Glyph = BADGE_GLYPH[badge];
+  const Glyph = badge === "working" ? WORK_GLYPH[workKind ?? "generic"] : BADGE_GLYPH[badge];
   return (
     <Glyph
       className={cn(
@@ -282,7 +307,7 @@ export const ThreadRow = memo(function ThreadRow({
             the specifics. */}
         {awake && vm.livePhrase && (
           <span className={cn("mt-px flex items-center gap-1.5", TONE_CLASS[vm.livePhrase.tone])}>
-            {stateGlyph(vm.badge)}
+            {stateGlyph(vm.badge, vm.workKind)}
             <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
               {vm.livePhrase.text}
             </span>

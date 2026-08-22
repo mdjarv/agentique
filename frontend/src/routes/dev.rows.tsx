@@ -37,6 +37,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
 /** The row reused for the selected-card sample, so the focused extras show. */
 const WORKING_ROW = vm({
   badge: "working",
+  workKind: "edit",
   livePhrase: { text: "editing derive.ts · 12 tool calls", tone: "work" },
   todo: { done: 3, total: 7 },
   branch: "session-b30ab203",
@@ -44,8 +45,70 @@ const WORKING_ROW = vm({
   turns: 12,
 });
 
+/** One row per work kind — the `working` badge's glyph refinements. */
+const WORK_ROWS: { label: string; vm: ThreadRowVM }[] = [
+  {
+    label: "working · run",
+    vm: vm({
+      badge: "working",
+      workKind: "run",
+      livePhrase: { text: "running command · 4 tool calls", tone: "work" },
+    }),
+  },
+  {
+    label: "working · read",
+    vm: vm({
+      badge: "working",
+      workKind: "read",
+      livePhrase: { text: "reading use-thread-groups.ts", tone: "work" },
+    }),
+  },
+  {
+    label: "working · delegate",
+    vm: vm({
+      badge: "working",
+      workKind: "delegate",
+      livePhrase: { text: "delegating · 2 tool calls", tone: "work" },
+      workers: 2,
+    }),
+  },
+  {
+    label: "working · web",
+    vm: vm({
+      badge: "working",
+      workKind: "web",
+      livePhrase: { text: "searching web", tone: "work" },
+    }),
+  },
+  {
+    label: "working · task",
+    vm: vm({
+      badge: "working",
+      workKind: "task",
+      livePhrase: { text: "managing tasks", tone: "work" },
+      todo: { done: 5, total: 9 },
+    }),
+  },
+  {
+    label: "working · tool (mcp)",
+    vm: vm({
+      badge: "working",
+      workKind: "tool",
+      livePhrase: { text: "using tool", tone: "work" },
+    }),
+  },
+  {
+    label: "working · configure",
+    vm: vm({
+      badge: "working",
+      workKind: "configure",
+      livePhrase: { text: "configuring", tone: "work" },
+    }),
+  },
+];
+
 const ROWS: { label: string; vm: ThreadRowVM }[] = [
-  { label: "working — live narration", vm: WORKING_ROW },
+  { label: "working · edit — live narration", vm: WORKING_ROW },
   {
     label: "working — no narration yet",
     vm: vm({ badge: "working", livePhrase: { text: "working", tone: "work" } }),
@@ -154,6 +217,21 @@ function DevRows() {
           ))}
         </div>
         <div className="flex flex-col gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground-faint">
+            work kinds
+          </span>
+          <div className="w-72 rounded-lg bg-sidebar p-1">
+            {WORK_ROWS.map(({ label, vm: rowVm }) => (
+              <ThreadRow
+                key={label}
+                vm={rowVm}
+                selected={false}
+                onClick={noop}
+                onTogglePin={noop}
+                onArchive={noop}
+              />
+            ))}
+          </div>
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground-faint">
             settled (shelf / archived)
           </span>
