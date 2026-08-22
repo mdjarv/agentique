@@ -100,7 +100,9 @@ function useFetchAge(rows: SyncRowVM[], now: number): { oldest: number | null; s
 }
 
 function ageLabel(at: number | null, now: number): string {
-  if (at === null) return "never";
+  // No stamp means nothing has been fetched *this session* — the counts came
+  // from whatever the checkout last knew, which is unverified, not "never".
+  if (at === null) return "unverified";
   const mins = Math.floor((now - at) / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -255,12 +257,16 @@ export function SyncDock() {
           )}
         />
 
+        {/* Staleness only silences the *claim*, never the findings: drift we
+            already know about is real work whether or not it was just
+            re-checked, so an unverified dock still names its repos and marks
+            the age instead. "Sync unknown" is reserved for the one case where
+            the alternative would be a claim we can't back — nothing docked and
+            nothing fetched, where "all in sync" might simply be ignorance. */}
         {clear ? (
           <span className="truncate text-[11.5px] text-muted-foreground">
             {stale ? "Sync unknown" : "All repos in sync"}
           </span>
-        ) : stale ? (
-          <span className="truncate text-[11.5px] text-muted-foreground">Sync unknown</span>
         ) : (
           <>
             <span className="flex shrink-0 items-center pr-1">
