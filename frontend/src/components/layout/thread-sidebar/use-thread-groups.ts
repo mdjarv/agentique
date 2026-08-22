@@ -114,7 +114,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         connected: meta.connected,
       });
       const pulse = pulses[meta.id];
-      const remoteMachineLabel = project.machineId ? machines[project.machineId]?.label : undefined;
+      const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
+      const remoteMachineLabel = remoteMachine?.label;
       const color = getProjectColor(project.color, project.id, projectIds, resolvedTheme);
       const isTerminal =
         meta.state === "done" || meta.state === "stopped" || meta.state === "failed";
@@ -153,6 +154,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         workers: workerCounts.get(meta.id),
         pinned: meta.pinned,
         remoteMachineLabel,
+        remoteMachineIcon: remoteMachine?.icon || undefined,
         lastActivity: lastActivity(meta),
         branch: meta.worktreeBranch || undefined,
         model: meta.model || undefined,

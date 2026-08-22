@@ -34,6 +34,8 @@ export interface SyncRowVM {
   iconId?: string;
   /** Machine label, only when the checkout lives on a remote machine. */
   machineLabel?: string;
+  /** That machine's icon id — this host's presentation of it. */
+  machineIcon?: string;
   ahead: number;
   behind: number;
   uncommitted: number;
@@ -67,6 +69,7 @@ export interface SyncRowInput {
   status: ProjectGitStatus | undefined;
   /** Resolved once by the caller — the VM stays free of store lookups. */
   machineLabel?: string;
+  machineIcon?: string;
   colorBg: string;
   colorFg: string;
 }
@@ -98,7 +101,7 @@ const ACTION_RANK: Record<SyncAction, number> = { push: 0, pull: 1, rebase: 2 };
  */
 export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
   const rows: SyncRowVM[] = [];
-  for (const { project, status, machineLabel, colorBg, colorFg } of inputs) {
+  for (const { project, status, machineLabel, machineIcon, colorBg, colorFg } of inputs) {
     if (!status?.hasRemote) continue;
     if (status.aheadRemote === 0 && status.behindRemote === 0) continue;
     rows.push({
@@ -110,6 +113,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
       colorFg,
       iconId: project.icon || undefined,
       machineLabel,
+      machineIcon,
       ahead: status.aheadRemote,
       behind: status.behindRemote,
       uncommitted: status.uncommittedCount,

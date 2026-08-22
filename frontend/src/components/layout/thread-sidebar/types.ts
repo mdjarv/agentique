@@ -78,6 +78,8 @@ export interface ThreadRowVM {
   workers?: number;
   pinned: boolean;
   remoteMachineLabel?: string;
+  /** Icon id for that machine — this host's presentation of it. */
+  remoteMachineIcon?: string;
   /** Epoch ms of last activity — drives the recency half of the Open sort. */
   lastActivity: number;
   /** Focused-card extras — rendered only on the selected row. */

@@ -22,6 +22,7 @@ import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { fetchSweep, STALE_AFTER_MS } from "~/lib/git/sync-sweep";
+import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { pullProject, pushProject } from "~/lib/project-actions";
 import { getProjectColor } from "~/lib/project-colors";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -64,6 +65,7 @@ function useSyncRows(): SyncRowVM[] {
         project,
         status: gitStatus[project.id],
         machineLabel: project.machineId ? machines[project.machineId]?.label : undefined,
+        machineIcon: project.machineId ? machines[project.machineId]?.icon : undefined,
         colorBg: color.bg,
         colorFg: color.fg,
       };
@@ -384,6 +386,12 @@ export function SyncDock() {
   );
 }
 
+/** The machine's face beside its name — generic glyph when it has no icon. */
+function MachineIcon({ iconId }: { iconId: string }) {
+  const Icon = getMachineIcon(iconId) ?? DEFAULT_MACHINE_ICON;
+  return <Icon className="size-2.5 shrink-0" />;
+}
+
 const ACTION_CLASS: Record<SyncRowVM["action"], string> = {
   push: "border-success/30 bg-success/10 text-success hover:bg-success/20",
   pull: "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20",
@@ -421,8 +429,9 @@ function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: (
         {row.label}
       </span>
       {row.machineLabel && (
-        <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">
-          @{row.machineLabel}
+        <span className="flex shrink-0 items-center gap-0.5 font-mono text-[9.5px] text-muted-foreground-faint">
+          <MachineIcon iconId={row.machineIcon ?? ""} />
+          {row.machineLabel}
         </span>
       )}
       <button

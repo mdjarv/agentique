@@ -1,38 +1,25 @@
 /**
  * Sidebar footer — one 30px line: account identity on the left, a three-column
  * instrument cluster (5h / 7d usage · disk) on the right, and a reconnecting
- * chip that only exists while the socket is down. Everything else — usage
- * detail, disk, machines, Claude account, theme, sign out — lives in one
- * consolidated popover that both the account button and the cluster open.
+ * chip that only exists while the socket is down. Both open one popover.
+ *
+ * The popover is deliberately thin: the meters it fronts, and the way through
+ * to everything else. Machines, theme, the Claude account and sign-out moved
+ * to /settings once they outgrew a 288px column — a popover is a glance, not
+ * a control panel.
  */
 import { Link } from "@tanstack/react-router";
-import { Bot, HardDrive, Monitor, Moon, RefreshCw, Sun, User } from "lucide-react";
+import { HardDrive, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AddMachineDialog, MachinesSection } from "~/components/machines/MachinesSection";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
-import { useTheme } from "~/hooks/useTheme";
-import { logout } from "~/lib/auth-api";
 import { cn, formatBytes } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
-import { useChatStore } from "~/stores/chat-store";
-import { useClaudeAccountStore } from "~/stores/claude-account-store";
 import type { RateLimitEntry } from "~/stores/rate-limit-store";
 import { useRateLimitStore } from "~/stores/rate-limit-store";
 import { useStorageStore } from "~/stores/storage-store";
-import type { Theme } from "~/stores/ui-store";
 import { ClaudeLoginDialog } from "./ClaudeLoginDialog";
 
 // ── Meter tiers (shared by the cluster columns and the popover bars) ──
@@ -78,8 +65,8 @@ function diskTier(freeBytes: number, totalBytes: number): Tier {
 
 export function SidebarFooter() {
   const [open, setOpen] = useState(false);
-  const [addMachineOpen, setAddMachineOpen] = useState(false);
   const connection = useConnectionStatus();
+  const close = () => setOpen(false);
 
   // Disk polling lives here because the cluster shows it permanently.
   const fetchDiskStats = useStorageStore((s) => s.fetchDiskStats);
@@ -115,22 +102,10 @@ export function SidebarFooter() {
           <SectionLabel>Usage</SectionLabel>
           <UsageDetail />
           <Separator />
-          <SectionLabel>Machines</SectionLabel>
-          <MachinesSection
-            onAddMachine={() => {
-              setOpen(false);
-              setAddMachineOpen(true);
-            }}
-          />
-          <Separator />
-          <SectionLabel>Claude</SectionLabel>
-          <ClaudeAccountRow />
-          <Separator />
-          <ThemeRow />
-          <UserRow onNavigate={() => setOpen(false)} />
+          <NavRow to="/settings" icon={SettingsIcon} label="Settings" onNavigate={close} />
+          <NavRow to="/storage" icon={HardDrive} label="Storage" onNavigate={close} />
         </PopoverContent>
       </Popover>
-      <AddMachineDialog open={addMachineOpen} onOpenChange={setAddMachineOpen} />
       <ClaudeLoginDialog />
     </div>
   );
@@ -278,151 +253,26 @@ const AccountButton = ({ ...props }: React.ComponentPropsWithoutRef<"button">) =
   );
 };
 
-const THEME_CYCLE: Record<Theme, Theme> = { dark: "light", light: "system", system: "dark" };
-const THEME_ICONS: Record<Theme, typeof Sun> = { dark: Moon, light: Sun, system: Monitor };
-const THEME_LABELS: Record<Theme, string> = { dark: "Dark", light: "Light", system: "System" };
-
-function ThemeRow() {
-  const { theme, setTheme } = useTheme();
-  const Icon = THEME_ICONS[theme];
+/** A way out of the popover: one line, one destination. */
+function NavRow({
+  to,
+  icon: Icon,
+  label,
+  onNavigate,
+}: {
+  to: string;
+  icon: LucideIcon;
+  label: string;
+  onNavigate: () => void;
+}) {
   return (
-    <button
-      type="button"
-      onClick={() => setTheme(THEME_CYCLE[theme])}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50"
+    <Link
+      to={to}
+      onClick={onNavigate}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50"
     >
       <Icon className="size-3.5 text-muted-foreground" />
-      Theme
-      <span className="ml-auto text-[10px] text-muted-foreground">{THEME_LABELS[theme]}</span>
-    </button>
-  );
-}
-
-function UserRow({ onNavigate }: { onNavigate: () => void }) {
-  const { authEnabled, user, clearAuth } = useAuthStore();
-  if (!authEnabled || !user) return null;
-  return (
-    <div className="flex items-center gap-2 px-3 py-2">
-      <Avatar className="h-5 w-5 shrink-0">
-        <AvatarFallback className="bg-primary/20 text-primary">
-          <User className="h-3 w-3" />
-        </AvatarFallback>
-      </Avatar>
-      <span className="flex-1 truncate text-xs text-foreground">{user.displayName}</span>
-      <button
-        type="button"
-        onClick={async () => {
-          onNavigate();
-          await logout();
-          clearAuth();
-          window.location.reload();
-        }}
-        className="cursor-pointer rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        Sign out
-      </button>
-    </div>
-  );
-}
-
-// ── Claude account (folded in from the previous footer's popover) ──
-
-function ClaudeAccountRow() {
-  const { loggedIn, email, orgName, loading, fetchStatus, switchAccount, loginAccount } =
-    useClaudeAccountStore();
-  const activeSessions = useChatStore((s) => {
-    let count = 0;
-    for (const session of Object.values(s.sessions)) {
-      const st = session.meta.state;
-      if (st === "running" || st === "idle") count++;
-      if (session.pendingApproval || session.pendingQuestion) count++;
-    }
-    return count;
-  });
-
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  if (loading) return null;
-
-  const label = email ? (orgName ? `${email} (${orgName})` : email) : null;
-
-  const handleSwitch = () => {
-    if (activeSessions > 0) {
-      setConfirmOpen(true);
-    } else {
-      switchAccount();
-    }
-  };
-
-  return (
-    <>
-      <div className="flex items-center gap-2 px-3 py-2">
-        <Avatar className="h-5 w-5 shrink-0">
-          <AvatarFallback
-            className={cn(
-              loggedIn
-                ? "bg-orange-500/20 text-orange-700 dark:text-orange-400"
-                : "bg-muted text-muted-foreground",
-            )}
-          >
-            <Bot className="h-3 w-3" />
-          </AvatarFallback>
-        </Avatar>
-        {loggedIn ? (
-          <>
-            <span className="flex-1 truncate text-xs text-foreground" title={label ?? undefined}>
-              {label ?? "Claude"}
-            </span>
-            <button
-              type="button"
-              onClick={handleSwitch}
-              className="shrink-0 cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Switch Claude account"
-            >
-              <RefreshCw className="size-3" />
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="flex-1 text-xs text-muted-foreground-faint">Not authenticated</span>
-            <button
-              type="button"
-              onClick={loginAccount}
-              className="cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-500/10 dark:text-orange-400"
-            >
-              Login
-            </button>
-          </>
-        )}
-      </div>
-
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Switch Claude account?</AlertDialogTitle>
-            <AlertDialogDescription>
-              There {activeSessions === 1 ? "is" : "are"} {activeSessions} active session
-              {activeSessions === 1 ? "" : "s"}. Switching accounts won't stop them, but they may
-              encounter authentication errors.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmOpen(false);
-                switchAccount();
-              }}
-            >
-              Switch
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+      {label}
+    </Link>
   );
 }

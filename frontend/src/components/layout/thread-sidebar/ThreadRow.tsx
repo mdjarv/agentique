@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
+import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { cn } from "~/lib/utils";
 import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
@@ -93,6 +94,22 @@ function stateGlyph(badge: ThreadBadge, workKind?: WorkKind) {
           "animate-pulse motion-reduce:animate-none",
       )}
     />
+  );
+}
+
+/**
+ * The machine a remote session runs on: its face and its name. Presentation
+ * is this host's (docs/multi-machine.md) — the face is a recognition aid, so
+ * an unset icon falls back to the generic server glyph rather than nothing.
+ */
+function MachineTag({ vm }: { vm: ThreadRowVM }) {
+  if (!vm.remoteMachineLabel) return null;
+  const Icon = getMachineIcon(vm.remoteMachineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-muted-foreground-faint">
+      <Icon className="size-2.5 shrink-0" />
+      {vm.remoteMachineLabel}
+    </span>
   );
 }
 
@@ -234,7 +251,7 @@ export const ThreadRow = memo(function ThreadRow({
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
               <span className="min-w-0 truncate">{vm.projectLabel}</span>
-              {vm.remoteMachineLabel && <span className="shrink-0">@{vm.remoteMachineLabel}</span>}
+              <MachineTag vm={vm} />
             </span>
           </span>
         </button>
@@ -273,11 +290,7 @@ export const ThreadRow = memo(function ThreadRow({
           >
             {vm.projectLabel}
           </span>
-          {vm.remoteMachineLabel && (
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
-              @{vm.remoteMachineLabel}
-            </span>
-          )}
+          <MachineTag vm={vm} />
           {!awake && vm.restToken && (
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
               · {vm.restToken}

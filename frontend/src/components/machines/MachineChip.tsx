@@ -1,4 +1,4 @@
-import { Server } from "lucide-react";
+import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { MachineEntry, MachineStatus } from "~/stores/machine-store";
@@ -37,6 +37,7 @@ export function MachineChip({
   const machine = useProjectMachine(projectId);
   const status = useMachineStatus(machine?.machineId);
   if (!machine) return null;
+  const Icon = getMachineIcon(machine.icon ?? "") ?? DEFAULT_MACHINE_ICON;
 
   return (
     <span
@@ -46,7 +47,7 @@ export function MachineChip({
       )}
       title={`Runs on ${machine.label} (${machine.baseUrl})${status === "connected" ? "" : ` — ${status}`}`}
     >
-      <Server className="h-2.5 w-2.5 shrink-0" />
+      <Icon className="h-2.5 w-2.5 shrink-0" />
       <span className="truncate max-w-[10ch]">{machine.label}</span>
       <span
         className={cn(

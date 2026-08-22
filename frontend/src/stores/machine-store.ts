@@ -23,6 +23,9 @@ export interface MachineEntry {
   /** Long-lived bearer session token from the pairing exchange. */
   token: string;
   addedAt: string;
+  /** Icon id (lucide) — this host's presentation of that machine, never the
+   *  machine's own opinion. Empty falls back to the generic server glyph. */
+  icon?: string;
 }
 
 export type MachineStatus = ConnectionState;
@@ -32,6 +35,9 @@ interface MachineState {
   statuses: Record<string, MachineStatus>;
 
   addMachine: (entry: MachineEntry) => void;
+  /** Rename / re-face a paired machine. Presentation is local to this host:
+   *  nothing is written to the machine itself (docs/multi-machine.md). */
+  renameMachine: (machineId: string, patch: { label?: string; icon?: string }) => Promise<void>;
   removeMachine: (machineId: string) => void;
   setStatus: (machineId: string, status: MachineStatus) => void;
   /** Reconcile the catalog from the primary's server-side copy (server
@@ -41,7 +47,7 @@ interface MachineState {
 
 export const useMachineStore = create<MachineState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       machines: {},
       statuses: {},
 
@@ -55,8 +61,32 @@ export const useMachineStore = create<MachineState>()(
             baseUrl: entry.baseUrl,
             token: entry.token,
             addedAt: entry.addedAt,
+            icon: entry.icon ?? "",
           }),
         }).catch((err) => console.error("machine catalog save failed", err));
+      },
+      renameMachine: async (machineId, patch) => {
+        const current = get().machines[machineId];
+        if (!current) return;
+        const next: MachineEntry = { ...current, ...patch };
+        set((s) => ({ machines: { ...s.machines, [machineId]: next } }));
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: next.label,
+            baseUrl: next.baseUrl,
+            token: next.token,
+            addedAt: next.addedAt,
+            icon: next.icon ?? "",
+          }),
+        });
+        if (!res.ok) {
+          // Put the old presentation back rather than leaving the UI claiming
+          // a name the catalog never accepted.
+          set((s) => ({ machines: { ...s.machines, [machineId]: current } }));
+          throw new Error(`rename failed (${res.status})`);
+        }
       },
       removeMachine: (machineId) => {
         set((s) => {

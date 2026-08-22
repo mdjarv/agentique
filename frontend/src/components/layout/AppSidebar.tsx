@@ -10,6 +10,7 @@ import {
   HardDrive,
   Hash,
   MessagesSquare,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -150,6 +151,13 @@ function SidebarHeader() {
                 <HardDrive className="size-3.5" />
                 Storage
                 <span className="ml-auto text-muted-foreground-faint">disk & worktrees</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-xs gap-2">
+              <Link to="/settings">
+                <SettingsIcon className="size-3.5" />
+                Settings
+                <span className="ml-auto text-muted-foreground-faint">machines & account</span>
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>

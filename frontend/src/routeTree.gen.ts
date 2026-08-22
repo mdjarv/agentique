@@ -14,6 +14,7 @@ import { Route as BrainRouteImport } from "./routes/brain";
 import { Route as DiscussionsRouteImport } from "./routes/discussions";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SchedulesRouteImport } from "./routes/schedules";
+import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as TemplatesRouteImport } from "./routes/templates";
@@ -24,6 +25,11 @@ import { Route as DevRowsRouteImport } from "./routes/dev.rows";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
 import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
+import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
+import { Route as SettingsAboutRouteImport } from "./routes/settings.about";
+import { Route as SettingsAccountRouteImport } from "./routes/settings.account";
+import { Route as SettingsAppearanceRouteImport } from "./routes/settings.appearance";
+import { Route as SettingsMachinesRouteImport } from "./routes/settings.machines";
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index";
 import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files";
 import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings";
@@ -56,6 +62,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const SchedulesRoute = SchedulesRouteImport.update({
   id: "/schedules",
   path: "/schedules",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SettingsRoute = SettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
   getParentRoute: () => rootRouteImport,
 } as any);
 const StorageRoute = StorageRouteImport.update({
@@ -108,6 +119,31 @@ const ProjectProjectSlugRoute = ProjectProjectSlugRouteImport.update({
   path: "/project/$projectSlug",
   getParentRoute: () => rootRouteImport,
 } as any);
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: "/about",
+  path: "/about",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: "/account",
+  path: "/account",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: "/appearance",
+  path: "/appearance",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsMachinesRoute = SettingsMachinesRouteImport.update({
+  id: "/machines",
+  path: "/machines",
+  getParentRoute: () => SettingsRoute,
+} as any);
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -159,6 +195,7 @@ export interface FileRoutesByFullPath {
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
   "/schedules": typeof SchedulesRoute;
+  "/settings": typeof SettingsRouteWithChildren;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
@@ -169,6 +206,11 @@ export interface FileRoutesByFullPath {
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
+  "/settings/about": typeof SettingsAboutRoute;
+  "/settings/account": typeof SettingsAccountRoute;
+  "/settings/appearance": typeof SettingsAppearanceRoute;
+  "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings/": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
   "/teams/personas/$profileId": typeof TeamsPersonasProfileIdRoute;
@@ -193,6 +235,11 @@ export interface FileRoutesByTo {
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
+  "/settings/about": typeof SettingsAboutRoute;
+  "/settings/account": typeof SettingsAccountRoute;
+  "/settings/appearance": typeof SettingsAppearanceRoute;
+  "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
   "/teams/personas/$profileId": typeof TeamsPersonasProfileIdRoute;
@@ -209,6 +256,7 @@ export interface FileRoutesById {
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
   "/schedules": typeof SchedulesRoute;
+  "/settings": typeof SettingsRouteWithChildren;
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
@@ -219,6 +267,11 @@ export interface FileRoutesById {
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions_/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
+  "/settings/about": typeof SettingsAboutRoute;
+  "/settings/account": typeof SettingsAccountRoute;
+  "/settings/appearance": typeof SettingsAppearanceRoute;
+  "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings/": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute;
   "/teams_/personas/$profileId": typeof TeamsPersonasProfileIdRoute;
@@ -236,6 +289,7 @@ export interface FileRouteTypes {
     | "/discussions"
     | "/projects"
     | "/schedules"
+    | "/settings"
     | "/storage"
     | "/teams"
     | "/templates"
@@ -246,6 +300,11 @@ export interface FileRouteTypes {
     | "/dev/tool-groups"
     | "/discussions/$channelId"
     | "/project/$projectSlug"
+    | "/settings/about"
+    | "/settings/account"
+    | "/settings/appearance"
+    | "/settings/machines"
+    | "/settings/"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
     | "/teams/personas/$profileId"
@@ -270,6 +329,11 @@ export interface FileRouteTypes {
     | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions/$channelId"
+    | "/settings/about"
+    | "/settings/account"
+    | "/settings/appearance"
+    | "/settings/machines"
+    | "/settings"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
     | "/teams/personas/$profileId"
@@ -285,6 +349,7 @@ export interface FileRouteTypes {
     | "/discussions"
     | "/projects"
     | "/schedules"
+    | "/settings"
     | "/storage"
     | "/teams"
     | "/templates"
@@ -295,6 +360,11 @@ export interface FileRouteTypes {
     | "/dev/tool-groups"
     | "/discussions_/$channelId"
     | "/project/$projectSlug"
+    | "/settings/about"
+    | "/settings/account"
+    | "/settings/appearance"
+    | "/settings/machines"
+    | "/settings/"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug_/settings"
     | "/teams_/personas/$profileId"
@@ -311,6 +381,7 @@ export interface RootRouteChildren {
   DiscussionsRoute: typeof DiscussionsRoute;
   ProjectsRoute: typeof ProjectsRoute;
   SchedulesRoute: typeof SchedulesRoute;
+  SettingsRoute: typeof SettingsRouteWithChildren;
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
@@ -361,6 +432,13 @@ declare module "@tanstack/react-router" {
       path: "/schedules";
       fullPath: "/schedules";
       preLoaderRoute: typeof SchedulesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings": {
+      id: "/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof SettingsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/storage": {
@@ -433,6 +511,41 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectProjectSlugRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/settings/": {
+      id: "/settings/";
+      path: "/";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof SettingsIndexRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/about": {
+      id: "/settings/about";
+      path: "/about";
+      fullPath: "/settings/about";
+      preLoaderRoute: typeof SettingsAboutRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/account": {
+      id: "/settings/account";
+      path: "/account";
+      fullPath: "/settings/account";
+      preLoaderRoute: typeof SettingsAccountRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/appearance": {
+      id: "/settings/appearance";
+      path: "/appearance";
+      fullPath: "/settings/appearance";
+      preLoaderRoute: typeof SettingsAppearanceRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/machines": {
+      id: "/settings/machines";
+      path: "/machines";
+      fullPath: "/settings/machines";
+      preLoaderRoute: typeof SettingsMachinesRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/project/$projectSlug/": {
       id: "/project/$projectSlug/";
       path: "/";
@@ -492,6 +605,26 @@ declare module "@tanstack/react-router" {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAboutRoute: typeof SettingsAboutRoute;
+  SettingsAccountRoute: typeof SettingsAccountRoute;
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute;
+  SettingsMachinesRoute: typeof SettingsMachinesRoute;
+  SettingsIndexRoute: typeof SettingsIndexRoute;
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAboutRoute: SettingsAboutRoute,
+  SettingsAccountRoute: SettingsAccountRoute,
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsMachinesRoute: SettingsMachinesRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+};
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+);
+
 interface ProjectProjectSlugRouteChildren {
   ProjectProjectSlugFilesRoute: typeof ProjectProjectSlugFilesRoute;
   ProjectProjectSlugIndexRoute: typeof ProjectProjectSlugIndexRoute;
@@ -519,6 +652,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiscussionsRoute: DiscussionsRoute,
   ProjectsRoute: ProjectsRoute,
   SchedulesRoute: SchedulesRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
