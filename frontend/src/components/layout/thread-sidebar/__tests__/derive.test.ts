@@ -195,6 +195,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     name: "Row",
     untitled: false,
     projectSlug: "proj",
+    projectLabel: "proj",
     projectInitials: "PR",
     projectColorBg: "#5e9eff",
     projectColorFg: "#5e9eff",

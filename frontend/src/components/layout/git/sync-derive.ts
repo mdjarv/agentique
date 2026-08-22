@@ -8,6 +8,7 @@
  * "which repos" and the list answers "what to do".
  */
 import type { ProjectGitStatus } from "~/lib/generated-types";
+import { displaySlug } from "~/lib/machines/slug";
 import type { Project } from "~/lib/types";
 
 /**
@@ -21,7 +22,10 @@ export type SyncAction = "push" | "pull" | "rebase";
 
 export interface SyncRowVM {
   projectId: string;
+  /** Routing slug — machine-qualified for a remote checkout. */
   slug: string;
+  /** The slug as read; the row's `@machine` already says where it lives. */
+  label: string;
   initials: string;
   /** Bright project color (hex) — tinted for the chip background. */
   colorBg: string;
@@ -42,6 +46,7 @@ export interface SyncRowVM {
 export interface SyncChip {
   repoKey: string;
   slug: string;
+  label: string;
   initials: string;
   colorBg: string;
   colorFg: string;
@@ -99,7 +104,8 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
     rows.push({
       projectId: project.id,
       slug: project.slug,
-      initials: projectInitials(project.slug),
+      label: displaySlug(project.slug),
+      initials: projectInitials(displaySlug(project.slug)),
       colorBg,
       colorFg,
       iconId: project.icon || undefined,
@@ -112,7 +118,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
     });
   }
   return rows.sort(
-    (a, b) => ACTION_RANK[a.action] - ACTION_RANK[b.action] || a.slug.localeCompare(b.slug),
+    (a, b) => ACTION_RANK[a.action] - ACTION_RANK[b.action] || a.label.localeCompare(b.label),
   );
 }
 
@@ -127,6 +133,7 @@ export function summarize(rows: SyncRowVM[]): SyncSummary {
     chips.push({
       repoKey: row.repoKey,
       slug: row.slug,
+      label: row.label,
       initials: row.initials,
       colorBg: row.colorBg,
       colorFg: row.colorFg,

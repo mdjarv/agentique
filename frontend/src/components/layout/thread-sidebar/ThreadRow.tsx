@@ -109,7 +109,7 @@ interface ThreadRowProps {
 function rowAriaLabel(vm: ThreadRowVM): string {
   const name = vm.untitled ? "Untitled" : vm.name;
   const state = vm.badge ? BADGE_ARIA[vm.badge] : vm.restToken || "at rest";
-  return [name, state, vm.projectSlug, vm.timeLabel].filter(Boolean).join(", ");
+  return [name, state, vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
 }
 
 /**
@@ -233,7 +233,7 @@ export const ThreadRow = memo(function ThreadRow({
               </span>
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
-              <span className="min-w-0 truncate">{vm.projectSlug}</span>
+              <span className="min-w-0 truncate">{vm.projectLabel}</span>
               {vm.remoteMachineLabel && <span className="shrink-0">@{vm.remoteMachineLabel}</span>}
             </span>
           </span>
@@ -271,7 +271,7 @@ export const ThreadRow = memo(function ThreadRow({
             )}
             style={awake ? { color: vm.projectColorFg } : undefined}
           >
-            {vm.projectSlug}
+            {vm.projectLabel}
           </span>
           {vm.remoteMachineLabel && (
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">

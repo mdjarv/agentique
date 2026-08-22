@@ -8,3 +8,15 @@
 export function remoteSlug(slug: string, machineId: string): string {
   return `${slug}~${machineId.slice(0, 8)}`;
 }
+
+/**
+ * The slug as a human reads it — the suffix dropped. For display only:
+ * routing, params, and lookups keep the qualified slug, which is the one
+ * that's actually unique. Use this anywhere the machine is already named
+ * beside it (`alltix-ui @zbook`), where the hash is noise repeating a fact
+ * the row has already stated.
+ */
+export function displaySlug(slug: string): string {
+  const cut = slug.lastIndexOf("~");
+  return cut > 0 ? slug.slice(0, cut) : slug;
+}

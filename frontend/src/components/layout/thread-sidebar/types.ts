@@ -51,7 +51,10 @@ export interface ThreadRowVM {
   sessionId: string;
   name: string;
   untitled: boolean;
+  /** Routing slug — qualified with a machine suffix for remote projects. */
   projectSlug: string;
+  /** The slug as read: suffix dropped, since the row names the machine. */
+  projectLabel: string;
   projectInitials: string;
   /** Bright project color (hex) — tinted to ~12% for the icon background. */
   projectColorBg: string;

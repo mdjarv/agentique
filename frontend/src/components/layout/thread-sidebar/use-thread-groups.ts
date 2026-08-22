@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 import { formatPulse } from "~/components/layout/session/PulseStatus";
 import { useTheme } from "~/hooks/useTheme";
+import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
@@ -125,7 +126,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         name: meta.name || "",
         untitled: !meta.name,
         projectSlug: project.slug,
-        projectInitials: projectInitials(project.slug),
+        projectLabel: displaySlug(project.slug),
+        projectInitials: projectInitials(displaySlug(project.slug)),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: project.icon || undefined,

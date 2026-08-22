@@ -19,6 +19,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     name: "Upgrade claudecli-go to v0.3.0",
     untitled: false,
     projectSlug: "agentkit",
+    projectLabel: "agentkit",
     projectInitials: "AK",
     projectColorBg: "#73daca",
     projectColorFg: "#73daca",

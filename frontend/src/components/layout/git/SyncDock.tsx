@@ -42,9 +42,8 @@ const MAX_CHIPS = 3;
 
 /** Rebase prompt for a checkout that can't fast-forward. */
 function buildRebasePrompt(row: SyncRowVM): string {
-  const branch = row.slug;
   return (
-    `Project ${branch} is behind its remote by ${row.behind} commits and ahead by ${row.ahead}` +
+    `Project ${row.label} is behind its remote by ${row.behind} commits and ahead by ${row.ahead}` +
     (row.uncommitted > 0 ? `, with ${row.uncommitted} uncommitted files` : "") +
     `. Pull is non-fast-forward. Please rebase local commits onto upstream, resolve any ` +
     `conflicts, and verify tests pass before pushing.`
@@ -115,7 +114,7 @@ function Chip({ chip, stacked }: { chip: SyncChip; stacked: boolean }) {
   const Icon = useProjectIcon(chip.iconId ?? "");
   return (
     <span
-      title={chip.slug}
+      title={chip.label}
       className={cn(
         "flex size-3.5 shrink-0 items-center justify-center rounded",
         // Overlapped like a stack of faces; the ring keeps them separable
@@ -144,7 +143,17 @@ export function SyncDock() {
   const [refreshing, setRefreshing] = useState(false);
 
   const summary = useMemo(() => summarize(rows), [rows]);
+  // Commits, not checkouts: what the open dock trades the chip stack for.
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, row) => ({ ahead: acc.ahead + row.ahead, behind: acc.behind + row.behind }),
+        { ahead: 0, behind: 0 },
+      ),
+    [rows],
+  );
   const { oldest, stale } = useFetchAge(rows, now);
+  const skipped = summary.total - summary.mechanical;
   const projectsLoaded = useAppStore((s) => s.projectsLoaded);
 
   const markBusy = useCallback((projectId: string, on: boolean) => {
@@ -267,6 +276,28 @@ export function SyncDock() {
           <span className="truncate text-[11.5px] text-muted-foreground">
             {stale ? "Sync unknown" : "All repos in sync"}
           </span>
+        ) : expanded ? (
+          // Open, the list below names every repo — so the header drops the
+          // faces and becomes a section header like Open or Archived, spending
+          // the reclaimed room on the shape of the work instead.
+          <>
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Out of sync
+            </span>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
+              {summary.total}
+            </span>
+            {totals.ahead > 0 && (
+              <span className="shrink-0 font-mono text-[10px] tabular-nums text-success">
+                ↑{totals.ahead}
+              </span>
+            )}
+            {totals.behind > 0 && (
+              <span className="shrink-0 font-mono text-[10px] tabular-nums text-primary">
+                ↓{totals.behind}
+              </span>
+            )}
+          </>
         ) : (
           <>
             <span className="flex shrink-0 items-center pr-1">
@@ -301,7 +332,9 @@ export function SyncDock() {
       </button>
 
       {!clear && expanded && (
-        <div className="mt-0.5 flex flex-col gap-px">
+        // Capped: a long drift list scrolls inside the dock rather than
+        // crushing the session list above it.
+        <div className="mt-0.5 flex max-h-56 flex-col gap-px overflow-y-auto">
           {rows.map((row) => (
             <SyncRow
               key={row.projectId}
@@ -319,10 +352,26 @@ export function SyncDock() {
               <RefreshCw className={cn("size-2.5", refreshing && "animate-spin")} />
               {refreshing ? "fetching…" : "refresh"}
             </button>
+            {/* The bulk action's promise, stated where it can be read: it only
+                ever pushes and fast-forwards. Diverged checkouts are excluded
+                by `mechanicalRows`, and the count says so out loud rather than
+                leaving you to infer it from a smaller number. */}
+            {skipped > 0 && (
+              <span className="font-mono text-[9.5px] text-warning/80">
+                {skipped} need{skipped === 1 ? "s" : ""} a rebase
+              </span>
+            )}
             {summary.mechanical > 0 && (
               <button
                 type="button"
                 onClick={syncAll}
+                title={
+                  skipped > 0
+                    ? `Push and fast-forward ${summary.mechanical} — the ${skipped} diverged ${
+                        skipped === 1 ? "repo is" : "repos are"
+                      } left for a session`
+                    : `Push and fast-forward ${summary.mechanical}`
+                }
                 className="ml-auto cursor-pointer rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success transition-colors hover:bg-success/20"
               >
                 Sync {summary.mechanical}
@@ -369,7 +418,7 @@ function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: (
         )}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-foreground">
-        {row.slug}
+        {row.label}
       </span>
       {row.machineLabel && (
         <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">

@@ -97,6 +97,21 @@ describe("deriveSyncRows", () => {
     expect(rows).toEqual([]);
   });
 
+  // The row already prints "@zbook", so repeating the machine hash in the slug
+  // is noise; routing keeps the qualified slug.
+  it("drops the machine suffix from the label but not the routing slug", () => {
+    const [row] = deriveSyncRows([
+      input({
+        project: project({ id: "p-z", slug: "alltix-ui~ad3e932", machineId: "m-z" }),
+        status: status({ behindRemote: 31 }),
+        machineLabel: "zbook",
+      }),
+    ]);
+    expect(row?.slug).toBe("alltix-ui~ad3e932");
+    expect(row?.label).toBe("alltix-ui");
+    expect(row?.initials).toBe("AU");
+  });
+
   it("orders mechanical work first, messy last, slug-stable within a rank", () => {
     const rows = deriveSyncRows([
       input({
