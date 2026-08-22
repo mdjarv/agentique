@@ -193,6 +193,7 @@ var handlerRegistry = map[string]handlerFunc{
 	"session.history":                 (*conn).handleSessionHistory,
 	"session.diff":                    (*conn).handleSessionDiff,
 	"session.interrupt":               (*conn).handleSessionInterrupt,
+	"session.attention":               (*conn).handleSessionAttention,
 	"session.merge":                   (*conn).handleSessionMerge,
 	"session.create-pr":               (*conn).handleSessionCreatePR,
 	"session.commit":                  (*conn).handleSessionCommit,

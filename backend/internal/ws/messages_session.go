@@ -61,6 +61,13 @@ type SessionInterruptPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// SessionAttentionPayload reports that a client is actively viewing a session,
+// deferring idle eviction. Sent on a heartbeat while the session is open and
+// the tab is visible.
+type SessionAttentionPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionMergePayload struct {
 	SessionID string `json:"sessionId"`
 	Mode      string `json:"mode"` // "merge" | "complete" | "delete"
@@ -282,6 +289,10 @@ func (p *SessionDiffPayload) Validate() error {
 }
 
 func (p *SessionInterruptPayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionAttentionPayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 

@@ -418,6 +418,7 @@ func main() {
 	g.register(ws.SessionHistoryPayload{}, "SessionHistoryPayload")
 	g.register(ws.SessionDiffPayload{}, "SessionDiffPayload")
 	g.register(ws.SessionInterruptPayload{}, "SessionInterruptPayload")
+	g.register(ws.SessionAttentionPayload{}, "SessionAttentionPayload")
 	g.register(ws.SessionMergePayload{}, "SessionMergePayload")
 	g.register(ws.SessionCreatePRPayload{}, "SessionCreatePRPayload")
 	g.register(ws.SessionDeletePayload{}, "SessionDeletePayload")

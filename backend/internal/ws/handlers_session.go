@@ -72,6 +72,16 @@ func (c *conn) handleSessionInterrupt(msg ClientMessage) {
 	})
 }
 
+// handleSessionAttention defers idle eviction for a session the client is
+// viewing. A no-op for sessions that are not live — attention must never
+// lazy-resume, or looking at a sleeping session would spawn a CLI process.
+func (c *conn) handleSessionAttention(msg ClientMessage) {
+	handleRequest(c, msg, func(_ context.Context, p SessionAttentionPayload) (struct{}, error) {
+		c.svc.MarkSessionAttention(p.SessionID)
+		return struct{}{}, nil
+	})
+}
+
 func (c *conn) handleSessionMerge(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionMergePayload) (session.MergeResult, error) {
 		return c.gitSvc.Merge(ctx, p.SessionID, p.Mode)

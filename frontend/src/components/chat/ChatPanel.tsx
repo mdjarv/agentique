@@ -27,6 +27,7 @@ import { TemplatePicker } from "~/components/templates/TemplatePicker";
 import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
+import { useSessionAttention } from "~/hooks/session/useSessionAttention";
 import { useSessionState } from "~/hooks/session/useSessionState";
 import { useAgentRuns } from "~/hooks/useAgentRuns";
 import { useAutoOpenWorkflowPanel } from "~/hooks/useAutoOpenWorkflowPanel";
@@ -118,6 +119,10 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const ws = useWebSocket();
   // Pop the workflow panel open when this session launches a live workflow.
   useAutoOpenWorkflowPanel(sessionId);
+  // Keep the open session out of the idle-eviction sweep: server-side idleness
+  // is measured from the last turn, which says nothing about a user reading or
+  // typing.
+  useSessionAttention(sessionId);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const projectSlug = project?.slug ?? "";
   const mainBranch = useAppStore((s) => s.projectGitStatus[projectId]?.branch);

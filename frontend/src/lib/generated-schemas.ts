@@ -531,6 +531,10 @@ export const SessionInterruptPayloadSchema = z.object({
   sessionId: z.string(),
 });
 
+export const SessionAttentionPayloadSchema = z.object({
+  sessionId: z.string(),
+});
+
 export const SessionMergePayloadSchema = z.object({
   sessionId: z.string(),
   mode: z.string(),

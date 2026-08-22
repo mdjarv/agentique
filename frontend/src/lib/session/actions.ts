@@ -259,6 +259,19 @@ export function interruptSession(ws: WsClient, sessionId: string): Promise<void>
   return interruptRpc(ws, { sessionId });
 }
 
+const attentionRpc = define<void, { sessionId: string }>("session.attention");
+/**
+ * Tell the backend a human is looking at this session, so the idle-eviction
+ * sweep doesn't reclaim it out from under them. Server-side idleness is
+ * measured from the last *turn*, which says nothing about a user reading a long
+ * answer or writing a careful prompt.
+ *
+ * A no-op server-side for sessions that aren't live — it never resumes one.
+ */
+export function markSessionAttention(ws: WsClient, sessionId: string): Promise<void> {
+  return attentionRpc(ws, { sessionId });
+}
+
 export type MergeResult =
   | { status: "merged"; commitHash: string }
   | { status: "needs_rebase" }

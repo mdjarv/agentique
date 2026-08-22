@@ -529,6 +529,10 @@ export interface SessionInterruptPayload {
   sessionId: string;
 }
 
+export interface SessionAttentionPayload {
+  sessionId: string;
+}
+
 export interface SessionMergePayload {
   sessionId: string;
   mode: string;

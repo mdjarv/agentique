@@ -1243,6 +1243,7 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
     case "session.resolve-approval":
     case "session.resolve-question":
     case "session.interrupt":
+    case "session.attention":
     case "project.fetch":
     case "project.push":
       respond(client, msg.id);
