@@ -37,6 +37,8 @@ interface UIState {
   /** Which content the shared right panel shows when expanded. */
   rightPanelView: RightPanelView;
   todoSidebarCollapsed: boolean;
+  /** Sync dock: expansion is a preference, not a gesture — it is remembered. */
+  syncDockExpanded: boolean;
   browserPanelWidth: number;
   theme: Theme;
 
@@ -49,6 +51,7 @@ interface UIState {
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelView: (view: RightPanelView) => void;
   setTodoSidebarCollapsed: (collapsed: boolean) => void;
+  setSyncDockExpanded: (expanded: boolean) => void;
   setBrowserPanelWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
 }
@@ -62,6 +65,7 @@ export const useUIStore = create<UIState>()(
       rightPanelCollapsed: true,
       rightPanelView: "browser" as RightPanelView,
       todoSidebarCollapsed: false,
+      syncDockExpanded: false,
       browserPanelWidth: 500,
       theme: "dark" as Theme,
 
@@ -116,6 +120,7 @@ export const useUIStore = create<UIState>()(
       setRightPanelView: (view) => set({ rightPanelView: view }),
 
       setTodoSidebarCollapsed: (collapsed) => set({ todoSidebarCollapsed: collapsed }),
+      setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
 
       setBrowserPanelWidth: (width) =>
         set({ browserPanelWidth: Math.max(300, Math.min(900, width)) }),
@@ -172,6 +177,7 @@ export const useUIStore = create<UIState>()(
         rightPanelCollapsed: state.rightPanelCollapsed,
         rightPanelView: state.rightPanelView,
         todoSidebarCollapsed: state.todoSidebarCollapsed,
+        syncDockExpanded: state.syncDockExpanded,
         browserPanelWidth: state.browserPanelWidth,
         theme: state.theme,
       }),

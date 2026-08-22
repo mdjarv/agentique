@@ -10,6 +10,12 @@ interface AppState {
   projectsLoaded: boolean;
   sidebarOpen: boolean;
   projectGitStatus: Record<string, ProjectGitStatus>;
+  /**
+   * projectId → epoch ms of the last real `git fetch` for that project.
+   * Ahead/behind is only as true as its last fetch, so the sync dock reports
+   * this age rather than presenting a stale count as fact.
+   */
+  projectGitFetchedAt: Record<string, number>;
 
   setProjects: (projects: Project[]) => void;
   /** Replace one remote machine's projects, leaving all other machines' (and
@@ -21,12 +27,14 @@ interface AppState {
   removeProject: (id: string) => void;
   setSidebarOpen: (open: boolean) => void;
   setProjectGitStatus: (status: ProjectGitStatus) => void;
+  markProjectFetched: (projectId: string, at: number) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   projectsLoaded: false,
   projectGitStatus: {},
+  projectGitFetchedAt: {},
   sidebarOpen: false,
 
   // Primary-machine load: replaces only untagged projects so a primary
@@ -59,5 +67,9 @@ export const useAppStore = create<AppState>((set) => ({
   setProjectGitStatus: (status) =>
     set((state) => ({
       projectGitStatus: { ...state.projectGitStatus, [status.projectId]: status },
+    })),
+  markProjectFetched: (projectId, at) =>
+    set((state) => ({
+      projectGitFetchedAt: { ...state.projectGitFetchedAt, [projectId]: at },
     })),
 }));

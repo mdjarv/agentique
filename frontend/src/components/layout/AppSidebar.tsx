@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { SyncDock } from "~/components/layout/git/SyncDock";
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
 import { SidebarFooter } from "~/components/layout/SidebarFooter";
 import { NewSessionButton, ThreadSidebar } from "~/components/layout/thread-sidebar";
@@ -52,6 +53,9 @@ export function AppSidebar({ className }: AppSidebarProps) {
     <div className={cn("bg-sidebar/80 backdrop-blur-md flex h-full flex-col", className)}>
       <SidebarHeader />
       <ThreadSidebar />
+      {/* Sessions, then settled work, then repos, then system: the dock's
+          growth pushes down into the footer, never into the session list. */}
+      <SyncDock />
       <SidebarFooter />
     </div>
   );

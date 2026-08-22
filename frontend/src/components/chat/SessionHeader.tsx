@@ -141,7 +141,7 @@ export function SessionHeader({
               subline={<MobileSubline meta={meta} hasPendingApproval={hasPendingInput} />}
             />
             <div className="ml-auto flex items-center gap-1 shrink-0">
-              {projectSlug && (
+              {projectSlug && !isWorktree && (
                 <ProjectGitPill
                   projectId={meta.projectId}
                   projectSlug={projectSlug}
@@ -199,10 +199,12 @@ export function SessionHeader({
                 />
               )}
 
-              {/* The repo's own remote sync — the project checkout, not the
-                  worktree. It is how a merged branch (or a local session's
-                  commits) reaches origin without leaving the session. */}
-              {projectSlug && (
+              {/* Push belongs to the checkout you are standing in. A worktree
+                  session has two different "ahead" counts — its branch vs
+                  main, and main vs origin — so it talks only about its own
+                  branch (merge, above) and leaves the project checkout to the
+                  sidebar's sync dock. */}
+              {projectSlug && !isWorktree && (
                 <ProjectGitPill
                   projectId={meta.projectId}
                   projectSlug={projectSlug}

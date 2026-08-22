@@ -10,7 +10,7 @@ import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
 import { useActiveProjectFetch } from "~/hooks/git/useActiveProjectFetch";
-import { useProjectGitPolling } from "~/hooks/git/useProjectGitPolling";
+import { useSyncSweep } from "~/hooks/git/useSyncSweep";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -56,7 +56,7 @@ function AuthenticatedLayout() {
   useGlobalSubscriptions(projects);
   useWireCapture();
   useMachineConnections();
-  useProjectGitPolling(projects);
+  useSyncSweep(projects);
   useActiveProjectFetch();
   usePreventViewportScroll();
 
