@@ -18,8 +18,24 @@ func (q *Queries) DeleteMachine(ctx context.Context, machineID string) error {
 	return err
 }
 
+const getHostPresentation = `-- name: GetHostPresentation :one
+SELECT label, icon FROM host_presentation WHERE id = 1
+`
+
+type GetHostPresentationRow struct {
+	Label string `json:"label"`
+	Icon  string `json:"icon"`
+}
+
+func (q *Queries) GetHostPresentation(ctx context.Context) (GetHostPresentationRow, error) {
+	row := q.db.QueryRowContext(ctx, getHostPresentation)
+	var i GetHostPresentationRow
+	err := row.Scan(&i.Label, &i.Icon)
+	return i, err
+}
+
 const listMachines = `-- name: ListMachines :many
-SELECT machine_id, label, base_url, token, added_at FROM machines ORDER BY label
+SELECT machine_id, label, base_url, token, added_at, icon FROM machines ORDER BY label
 `
 
 func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
@@ -37,6 +53,7 @@ func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
 			&i.BaseUrl,
 			&i.Token,
 			&i.AddedAt,
+			&i.Icon,
 		); err != nil {
 			return nil, err
 		}
@@ -51,13 +68,32 @@ func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
 	return items, nil
 }
 
+const setHostPresentation = `-- name: SetHostPresentation :exec
+INSERT INTO host_presentation (id, label, icon)
+VALUES (1, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  label = excluded.label,
+  icon = excluded.icon
+`
+
+type SetHostPresentationParams struct {
+	Label string `json:"label"`
+	Icon  string `json:"icon"`
+}
+
+func (q *Queries) SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error {
+	_, err := q.db.ExecContext(ctx, setHostPresentation, arg.Label, arg.Icon)
+	return err
+}
+
 const upsertMachine = `-- name: UpsertMachine :exec
-INSERT INTO machines (machine_id, label, base_url, token, added_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO machines (machine_id, label, base_url, token, added_at, icon)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(machine_id) DO UPDATE SET
   label = excluded.label,
   base_url = excluded.base_url,
-  token = excluded.token
+  token = excluded.token,
+  icon = excluded.icon
 `
 
 type UpsertMachineParams struct {
@@ -66,6 +102,7 @@ type UpsertMachineParams struct {
 	BaseUrl   string `json:"base_url"`
 	Token     string `json:"token"`
 	AddedAt   string `json:"added_at"`
+	Icon      string `json:"icon"`
 }
 
 func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) error {
@@ -75,6 +112,7 @@ func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) er
 		arg.BaseUrl,
 		arg.Token,
 		arg.AddedAt,
+		arg.Icon,
 	)
 	return err
 }

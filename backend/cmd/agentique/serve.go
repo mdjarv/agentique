@@ -465,13 +465,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 			os.Exit(1)
 		}
 	}
-	machineLabel := machine.Label(firstNonEmpty(os.Getenv("AGENTIQUE_MACHINE_LABEL"), fileCfg.Server.MachineLabel))
+	// An operator who exported AGENTIQUE_MACHINE_LABEL meant it, so the UI
+	// must not pretend it can rename this host (docs/multi-machine.md).
+	machineLabelEnv := os.Getenv("AGENTIQUE_MACHINE_LABEL")
+	machineLabel := machine.Label(firstNonEmpty(machineLabelEnv, fileCfg.Server.MachineLabel))
 
 	cfg := server.Config{
-		AuthEnabled:  !disableAuth,
-		MachineID:    machineID,
-		MachineLabel: machineLabel,
-		ListenPort:   mcpPort, // the port split from --addr above
+		AuthEnabled:        !disableAuth,
+		MachineID:          machineID,
+		MachineLabel:       machineLabel,
+		MachineLabelPinned: machineLabelEnv != "",
+		ListenPort:         mcpPort, // the port split from --addr above
 
 		Version:             version,
 		AdminSecret:         adminSecret,

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	goruntime "runtime"
+	"strings"
 	"time"
 
 	"github.com/allbin/agentkit/devurls"
@@ -50,8 +51,14 @@ type Config struct {
 	// unauthenticated at /.well-known/agentique/environment so clients can
 	// probe and pin it. Empty in tests that don't care about identity.
 	MachineID string
-	// MachineLabel is the human-friendly machine name shown in clients.
+	// MachineLabel is the human-friendly machine name shown in clients — the
+	// boot default (env, else config, else hostname). A name set from the UI
+	// is stored in host_presentation and wins over it; see effectiveLabel.
 	MachineLabel string
+	// MachineLabelPinned reports that MachineLabel came from
+	// AGENTIQUE_MACHINE_LABEL. An operator who set the env var meant it, so
+	// the UI can neither override it nor pretend it did.
+	MachineLabelPinned bool
 	// ListenPort is this server's listen port — the first port candidate when
 	// probing tailnet peers for discovery (peers tend to mirror each other's
 	// setup).
@@ -270,12 +277,39 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	ph := &project.Handler{Queries: queries}
 
+	// How this host presents itself (docs/multi-machine.md). Presentation is
+	// local: the name and icon are what THIS host shows, stored in its own DB
+	// and never pushed to or pulled from a peer. Read per request rather than
+	// captured at boot, so a rename takes effect without a restart.
+	//
+	// Precedence: AGENTIQUE_MACHINE_LABEL (pinned by an operator who meant it)
+	// → the name set from the UI → config file → hostname. A pinned label is
+	// reported as such, so the UI can show that an edit would do nothing
+	// rather than accepting a write that silently loses.
+	hostPresentation := func(ctx context.Context) (label string, icon string) {
+		label = cfg.MachineLabel
+		if cfg.MachineLabelPinned {
+			return label, ""
+		}
+		row, err := queries.GetHostPresentation(ctx)
+		if err != nil {
+			return label, "" // unset (no row) or unreadable — the boot default stands
+		}
+		if row.Label != "" {
+			label = row.Label
+		}
+		return label, row.Icon
+	}
+
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		machineLabel, machineIcon := hostPresentation(r.Context())
 		httperror.JSON(w, http.StatusOK, map[string]any{
-			"status":       "ok",
-			"machineId":    cfg.MachineID,
-			"machineLabel": cfg.MachineLabel,
-			"version":      cfg.Version,
+			"status":             "ok",
+			"machineId":          cfg.MachineID,
+			"machineLabel":       machineLabel,
+			"machineIcon":        machineIcon,
+			"machineLabelPinned": cfg.MachineLabelPinned,
+			"version":            cfg.Version,
 			"features": map[string]bool{
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
@@ -302,6 +336,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"baseUrl":   m.BaseUrl,
 				"token":     m.Token,
 				"addedAt":   m.AddedAt,
+				"icon":      m.Icon,
 			})
 		}
 		httperror.JSON(w, http.StatusOK, out)
@@ -312,6 +347,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			BaseURL string `json:"baseUrl"`
 			Token   string `json:"token"`
 			AddedAt string `json:"addedAt"`
+			Icon    string `json:"icon"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.BaseURL == "" {
 			httperror.RespondError(w, httperror.BadRequest("label/baseUrl/token body required"))
@@ -326,11 +362,44 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			BaseUrl:   req.BaseURL,
 			Token:     req.Token,
 			AddedAt:   req.AddedAt,
+			Icon:      req.Icon,
 		}); err != nil {
 			httperror.RespondError(w, httperror.Internal("save machine", err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// This host's own name and icon. Deliberately NOT a row in `machines`:
+	// every client consumer of that catalog treats an entry as a reachable
+	// remote (opens a socket to base_url, fetches with its token), so self
+	// belongs beside the catalog, not in it.
+	mux.HandleFunc("PUT /api/machine/presentation", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Label string `json:"label"`
+			Icon  string `json:"icon"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("label/icon body required"))
+			return
+		}
+		req.Label = strings.TrimSpace(req.Label)
+		if len([]rune(req.Label)) > 64 || len([]rune(req.Icon)) > 64 {
+			httperror.RespondError(w, httperror.BadRequest("label and icon must be 64 characters or fewer"))
+			return
+		}
+		if err := queries.SetHostPresentation(r.Context(), store.SetHostPresentationParams{
+			Label: req.Label,
+			Icon:  req.Icon,
+		}); err != nil {
+			httperror.RespondError(w, httperror.Internal("save machine presentation", err))
+			return
+		}
+		label, icon := hostPresentation(r.Context())
+		httperror.JSON(w, http.StatusOK, map[string]any{
+			"machineLabel":       label,
+			"machineIcon":        icon,
+			"machineLabelPinned": cfg.MachineLabelPinned,
+		})
 	})
 	mux.HandleFunc("DELETE /api/machines/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := queries.DeleteMachine(r.Context(), r.PathValue("id")); err != nil {
@@ -357,9 +426,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// Capabilities are optional booleans; clients treat a missing key as
 	// unsupported, so features degrade per-feature without version checks.
 	mux.HandleFunc("GET /.well-known/agentique/environment", func(w http.ResponseWriter, r *http.Request) {
+		label, _ := hostPresentation(r.Context())
 		httperror.JSON(w, http.StatusOK, map[string]any{
 			"machineId": cfg.MachineID,
-			"label":     cfg.MachineLabel,
+			"label":     label,
 			"version":   cfg.Version,
 			"platform": map[string]string{
 				"os":   goruntime.GOOS,

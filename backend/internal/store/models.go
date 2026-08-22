@@ -54,6 +54,12 @@ type ChannelMember struct {
 	JoinedAt  string `json:"joined_at"`
 }
 
+type HostPresentation struct {
+	ID    int64  `json:"id"`
+	Label string `json:"label"`
+	Icon  string `json:"icon"`
+}
+
 type InviteToken struct {
 	Token     string         `json:"token"`
 	CreatedBy string         `json:"created_by"`
@@ -69,6 +75,7 @@ type Machine struct {
 	BaseUrl   string `json:"base_url"`
 	Token     string `json:"token"`
 	AddedAt   string `json:"added_at"`
+	Icon      string `json:"icon"`
 }
 
 type Message struct {

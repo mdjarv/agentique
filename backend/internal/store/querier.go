@@ -62,6 +62,7 @@ type Querier interface {
 	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
 	GetChannel(ctx context.Context, id string) (Channel, error)
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
+	GetHostPresentation(ctx context.Context) (GetHostPresentationRow, error)
 	GetInviteToken(ctx context.Context, token string) (InviteToken, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetProject(ctx context.Context, id string) (Project, error)
@@ -127,6 +128,7 @@ type Querier interface {
 	RequeueScheduleRun(ctx context.Context, arg RequeueScheduleRunParams) error
 	ResolveScheduleRun(ctx context.Context, arg ResolveScheduleRunParams) (int64, error)
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
+	SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error
 	SetScheduleAttention(ctx context.Context, arg SetScheduleAttentionParams) error
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
 	SetScheduleFailures(ctx context.Context, arg SetScheduleFailuresParams) error
