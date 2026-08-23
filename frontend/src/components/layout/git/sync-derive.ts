@@ -36,6 +36,8 @@ export interface SyncRowVM {
   machineLabel?: string;
   /** That machine's icon id — this host's presentation of it. */
   machineIcon?: string;
+  /** That machine is unreachable: the row is real, its buttons are not. */
+  machineOffline?: boolean;
   ahead: number;
   behind: number;
   uncommitted: number;
@@ -58,8 +60,12 @@ export interface SyncChip {
 export interface SyncSummary {
   /** Rows — i.e. actions outstanding, not repos. */
   total: number;
-  /** How many of those are one-click safe (push / fast-forward pull). */
+  /** How many of those are one-click safe AND reachable right now. */
   mechanical: number;
+  /** Diverged rows — real work, but never run from the dock. */
+  diverged: number;
+  /** Rows on a machine that is currently away. Not a failure, just later. */
+  offline: number;
   /** Distinct repos, in row order — the collapsed line's faces. */
   chips: SyncChip[];
 }
@@ -70,6 +76,7 @@ export interface SyncRowInput {
   /** Resolved once by the caller — the VM stays free of store lookups. */
   machineLabel?: string;
   machineIcon?: string;
+  machineOffline?: boolean;
   colorBg: string;
   colorFg: string;
 }
@@ -101,7 +108,15 @@ const ACTION_RANK: Record<SyncAction, number> = { push: 0, pull: 1, rebase: 2 };
  */
 export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
   const rows: SyncRowVM[] = [];
-  for (const { project, status, machineLabel, machineIcon, colorBg, colorFg } of inputs) {
+  for (const {
+    project,
+    status,
+    machineLabel,
+    machineIcon,
+    machineOffline,
+    colorBg,
+    colorFg,
+  } of inputs) {
     if (!status?.hasRemote) continue;
     if (status.aheadRemote === 0 && status.behindRemote === 0) continue;
     rows.push({
@@ -114,6 +129,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
       iconId: project.icon || undefined,
       machineLabel,
       machineIcon,
+      machineOffline,
       ahead: status.aheadRemote,
       behind: status.behindRemote,
       uncommitted: status.uncommittedCount,
@@ -130,8 +146,12 @@ export function summarize(rows: SyncRowVM[]): SyncSummary {
   const chips: SyncChip[] = [];
   const seen = new Set<string>();
   let mechanical = 0;
+  let diverged = 0;
+  let offline = 0;
   for (const row of rows) {
-    if (row.action !== "rebase") mechanical++;
+    if (row.machineOffline) offline++;
+    if (row.action === "rebase") diverged++;
+    else if (!row.machineOffline) mechanical++;
     if (seen.has(row.repoKey)) continue;
     seen.add(row.repoKey);
     chips.push({
@@ -144,10 +164,14 @@ export function summarize(rows: SyncRowVM[]): SyncSummary {
       iconId: row.iconId,
     });
   }
-  return { total: rows.length, mechanical, chips };
+  return { total: rows.length, mechanical, diverged, offline, chips };
 }
 
-/** The rows "Push N" would actually run — mechanical only, never a rebase. */
+/**
+ * The rows "Sync N" would actually run: mechanical, and on a machine that can
+ * answer. A sleeping laptop's checkout is left where it is rather than
+ * counted into a bulk action that can only time out.
+ */
 export function mechanicalRows(rows: SyncRowVM[]): SyncRowVM[] {
-  return rows.filter((r) => r.action !== "rebase");
+  return rows.filter((r) => r.action !== "rebase" && !r.machineOffline);
 }

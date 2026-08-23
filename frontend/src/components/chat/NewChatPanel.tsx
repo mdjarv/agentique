@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { GitBranch, Loader2, Monitor, Plus, Server, Users2 } from "lucide-react";
+import { GitBranch, Loader2, Monitor, Plus, Users2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
@@ -17,6 +17,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
+import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
@@ -355,6 +356,7 @@ function RunOnPicker({
   disabled?: boolean;
 }) {
   const machines = useMachineStore((s) => s.machines);
+  const statuses = useMachineStore((s) => s.statuses);
   const primaryLabel = useFeatureStore((s) => s.machineLabel);
 
   return (
@@ -364,26 +366,36 @@ function RunOnPicker({
       </span>
       <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
         {members.map((m) => {
-          const label = m.machineId
-            ? (machines[m.machineId]?.label ?? "remote")
-            : primaryLabel || "This machine";
+          const entry = m.machineId ? machines[m.machineId] : undefined;
+          const label = m.machineId ? (entry?.label ?? "remote") : primaryLabel || "This machine";
+          // A machine that is merely asleep still belongs in the list — it is
+          // where the repo lives, and knowing that is worth more than a
+          // shorter row. It just can't be picked until it wakes.
+          const offline = !!m.machineId && statuses[m.machineId] !== "connected";
+          const Icon = m.machineId
+            ? (getMachineIcon(entry?.icon ?? "") ?? DEFAULT_MACHINE_ICON)
+            : Monitor;
           const selected = m.id === value;
           return (
             <button
               key={m.id}
               type="button"
-              disabled={disabled}
+              disabled={disabled || offline}
               onClick={() => onChange(m.id)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer border",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors border",
                 selected
                   ? "border-primary/50 bg-primary/15 text-primary font-medium shadow-sm"
                   : "border-transparent text-muted-foreground hover:text-foreground",
+                offline
+                  ? "cursor-not-allowed opacity-45 hover:text-muted-foreground"
+                  : "cursor-pointer",
               )}
-              title={m.path}
+              title={offline ? `${label} is offline — ${m.path}` : m.path}
             >
-              {m.machineId ? <Server className="size-3" /> : <Monitor className="size-3" />}
+              <Icon className="size-3" />
               {label}
+              {offline && <span className="text-[10px] text-muted-foreground-faint">offline</span>}
             </button>
           );
         })}

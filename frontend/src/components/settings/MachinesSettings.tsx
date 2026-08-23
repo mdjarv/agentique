@@ -13,7 +13,7 @@ import { MachineIdentityDialog } from "~/components/settings/MachineIdentityDial
 import { SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import type { MachineStatus } from "~/stores/machine-store";
@@ -100,6 +100,7 @@ function MachineRow({
 export function MachinesSettings() {
   const machines = useMachineStore((s) => s.machines);
   const statuses = useMachineStore((s) => s.statuses);
+  const lastSeenAt = useMachineStore((s) => s.lastSeenAt);
   const renameMachine = useMachineStore((s) => s.renameMachine);
   const removeMachine = useMachineStore((s) => s.removeMachine);
   const projects = useAppStore((s) => s.projects);
@@ -150,7 +151,19 @@ export function MachinesSettings() {
               key={m.machineId}
               face={<MachineFace iconId={m.icon ?? ""} />}
               name={m.label || m.machineId}
-              detail={`${m.baseUrl} · ${projectCount(m.machineId)} projects`}
+              detail={[
+                m.baseUrl,
+                `${projectCount(m.machineId)} projects`,
+                // Away is the everyday state of a laptop, so the row says how
+                // long rather than treating it as a fault.
+                statuses[m.machineId] !== "connected"
+                  ? lastSeenAt[m.machineId]
+                    ? `last seen ${relativeTime(new Date(lastSeenAt[m.machineId] as number).toISOString())}`
+                    : "not seen yet"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               status={statuses[m.machineId] ?? "disconnected"}
               onEdit={() => setEditing(m.machineId)}
               onRemove={() => removeMachine(m.machineId)}

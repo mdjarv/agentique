@@ -44,9 +44,13 @@ export function subscribeAndLoad(
   projectId: string,
   forceHistory = false,
 ) {
+  // Background sync never raises a toast. It is driven by lifecycle, not by
+  // the operator, and its dominant failure is a machine that is simply
+  // asleep — an everyday state, not an error. Connection state already says
+  // so where it matters (the machine's dot, its dimmed rows); a stack of
+  // "Failed to load sessions" popups says it worse, N times per machine.
   ws.request("project.subscribe", { projectId }, 10_000).catch((err) => {
     console.error("project.subscribe failed", err);
-    toast.error("Failed to subscribe to project updates");
   });
   ws.request<ListSessionsResult>("session.list", { projectId }, 10_000)
     .then((result) => {
@@ -64,7 +68,6 @@ export function subscribeAndLoad(
     })
     .catch((err) => {
       console.error("session.list failed", err);
-      toast.error("Failed to load sessions");
     });
   getProjectGitStatus(ws, projectId)
     .then((status) => useAppStore.getState().setProjectGitStatus(status))
@@ -121,9 +124,14 @@ export function useGlobalSubscriptions(projects: Project[]) {
       });
   }, [ws]);
 
-  // Subscribe to new projects as they appear
+  // Subscribe to new projects as they appear — the PRIMARY machine's only.
+  // A remote machine's projects are driven by useMachineConnections on that
+  // machine's own socket, on connect; subscribing to them here as well meant
+  // every cached project of a sleeping laptop fired a doomed request that
+  // could only ever time out.
   useEffect(() => {
     for (const project of projects) {
+      if (project.machineId) continue;
       if (subscribedRef.current.has(project.id)) continue;
       subscribedRef.current.add(project.id);
       subscribeAndLoad(ws, project.id);
@@ -192,6 +200,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
       useEventSeqStore.getState().reset();
       subscribedRef.current.clear();
       for (const project of projectsRef.current) {
+        // This is the PRIMARY's reconnect; a remote machine re-syncs on its
+        // own socket's onConnect and must never be reset from here (a flaky
+        // remote and a flaky primary are separate failures).
+        if (project.machineId) continue;
         subscribedRef.current.add(project.id);
         subscribeAndLoad(ws, project.id, true);
       }

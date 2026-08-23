@@ -80,6 +80,8 @@ export interface ThreadRowVM {
   remoteMachineLabel?: string;
   /** Icon id for that machine — this host's presentation of it. */
   remoteMachineIcon?: string;
+  /** That machine is unreachable right now: the row is a cached snapshot. */
+  remoteMachineOffline?: boolean;
   /** Epoch ms of last activity — drives the recency half of the Open sort. */
   lastActivity: number;
   /** Focused-card extras — rendered only on the selected row. */

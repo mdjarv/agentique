@@ -33,6 +33,10 @@ export type MachineStatus = ConnectionState;
 interface MachineState {
   machines: Record<string, MachineEntry>;
   statuses: Record<string, MachineStatus>;
+  /** machineId → epoch ms this machine was last connected. Machines suspend
+   *  and wake constantly; "last seen 3h ago" is the honest way to say a
+   *  machine is away without treating it as a failure. */
+  lastSeenAt: Record<string, number>;
 
   addMachine: (entry: MachineEntry) => void;
   /** Rename / re-face a paired machine. Presentation is local to this host:
@@ -50,6 +54,7 @@ export const useMachineStore = create<MachineState>()(
     (set, get) => ({
       machines: {},
       statuses: {},
+      lastSeenAt: {},
 
       addMachine: (entry) => {
         set((s) => ({ machines: { ...s.machines, [entry.machineId]: entry } }));
@@ -101,11 +106,21 @@ export const useMachineStore = create<MachineState>()(
         );
       },
       setStatus: (machineId, status) =>
-        set((s) =>
-          s.statuses[machineId] === status
-            ? s
-            : { statuses: { ...s.statuses, [machineId]: status } },
-        ),
+        set((s) => {
+          if (s.statuses[machineId] === status) return s;
+          const next: Partial<MachineState> = {
+            statuses: { ...s.statuses, [machineId]: status },
+          };
+          // Stamp on the way in AND on the way out: while connected "last
+          // seen" is now, and the moment it drops that stamp is when it was
+          // last real.
+          if (status === "connected") {
+            next.lastSeenAt = { ...s.lastSeenAt, [machineId]: Date.now() };
+          } else if (s.statuses[machineId] === "connected") {
+            next.lastSeenAt = { ...s.lastSeenAt, [machineId]: Date.now() };
+          }
+          return next as MachineState;
+        }),
       syncFromServer: async () => {
         let entries: MachineEntry[];
         try {
@@ -127,7 +142,7 @@ export const useMachineStore = create<MachineState>()(
     {
       name: "agentique:machines",
       // Connection status is per-tab runtime state, never persisted.
-      partialize: (s) => ({ machines: s.machines }),
+      partialize: (s) => ({ machines: s.machines, lastSeenAt: s.lastSeenAt }),
     },
   ),
 );

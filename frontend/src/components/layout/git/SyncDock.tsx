@@ -55,6 +55,7 @@ function useSyncRows(): SyncRowVM[] {
   const projects = useAppStore((s) => s.projects);
   const gitStatus = useAppStore((s) => s.projectGitStatus);
   const machines = useMachineStore((s) => s.machines);
+  const machineStatuses = useMachineStore((s) => s.statuses);
   const { resolvedTheme } = useTheme();
 
   return useMemo(() => {
@@ -66,12 +67,15 @@ function useSyncRows(): SyncRowVM[] {
         status: gitStatus[project.id],
         machineLabel: project.machineId ? machines[project.machineId]?.label : undefined,
         machineIcon: project.machineId ? machines[project.machineId]?.icon : undefined,
+        machineOffline: project.machineId
+          ? machineStatuses[project.machineId] !== "connected"
+          : false,
         colorBg: color.bg,
         colorFg: color.fg,
       };
     });
     return deriveSyncRows(inputs);
-  }, [projects, gitStatus, machines, resolvedTheme]);
+  }, [projects, gitStatus, machines, machineStatuses, resolvedTheme]);
 }
 
 /** Age of the oldest fetch behind the rows on screen — the dock's honesty. */
@@ -155,7 +159,7 @@ export function SyncDock() {
     [rows],
   );
   const { oldest, stale } = useFetchAge(rows, now);
-  const skipped = summary.total - summary.mechanical;
+
   const projectsLoaded = useAppStore((s) => s.projectsLoaded);
 
   const markBusy = useCallback((projectId: string, on: boolean) => {
@@ -358,22 +362,23 @@ export function SyncDock() {
                 ever pushes and fast-forwards. Diverged checkouts are excluded
                 by `mechanicalRows`, and the count says so out loud rather than
                 leaving you to infer it from a smaller number. */}
-            {skipped > 0 && (
+            {summary.diverged > 0 && (
               <span className="font-mono text-[9.5px] text-warning/80">
-                {skipped} need{skipped === 1 ? "s" : ""} a rebase
+                {summary.diverged} need{summary.diverged === 1 ? "s" : ""} a rebase
+              </span>
+            )}
+            {summary.offline > 0 && (
+              <span className="font-mono text-[9.5px] text-muted-foreground-faint">
+                {summary.offline} away
               </span>
             )}
             {summary.mechanical > 0 && (
               <button
                 type="button"
                 onClick={syncAll}
-                title={
-                  skipped > 0
-                    ? `Push and fast-forward ${summary.mechanical} — the ${skipped} diverged ${
-                        skipped === 1 ? "repo is" : "repos are"
-                      } left for a session`
-                    : `Push and fast-forward ${summary.mechanical}`
-                }
+                title={`Push and fast-forward ${summary.mechanical}${
+                  summary.diverged > 0 ? ` — ${summary.diverged} diverged, left for a session` : ""
+                }${summary.offline > 0 ? ` — ${summary.offline} on machines that are away` : ""}`}
                 className="ml-auto cursor-pointer rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success transition-colors hover:bg-success/20"
               >
                 Sync {summary.mechanical}
@@ -434,19 +439,30 @@ function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: (
           {row.machineLabel}
         </span>
       )}
-      <button
-        type="button"
-        onClick={onAct}
-        disabled={busy}
-        title={actionTitle(row)}
-        className={cn(
-          "shrink-0 cursor-pointer rounded-full border px-1.5 py-0.5 font-mono text-[10px] font-medium",
-          "transition-colors disabled:opacity-50",
-          ACTION_CLASS[row.action],
-        )}
-      >
-        {busy ? "…" : actionLabel(row)}
-      </button>
+      {row.machineOffline ? (
+        // The drift is still true and still worth seeing; it just can't be
+        // acted on from here until the machine is back.
+        <span
+          title={`${row.machineLabel} is offline — ${actionTitle(row)} when it is back`}
+          className="shrink-0 rounded-full border border-border/50 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground-faint"
+        >
+          {actionLabel(row)}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onAct}
+          disabled={busy}
+          title={actionTitle(row)}
+          className={cn(
+            "shrink-0 cursor-pointer rounded-full border px-1.5 py-0.5 font-mono text-[10px] font-medium",
+            "transition-colors disabled:opacity-50",
+            ACTION_CLASS[row.action],
+          )}
+        >
+          {busy ? "…" : actionLabel(row)}
+        </button>
+      )}
     </div>
   );
 }

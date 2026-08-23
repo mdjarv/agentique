@@ -60,6 +60,7 @@ import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode, PendingApproval } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { useScheduleStore } from "~/stores/schedule-store";
 
 function ApprovalBannerSwitch({
@@ -124,6 +125,17 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   // typing.
   useSessionAttention(sessionId);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
+  // A session on a machine that is currently away: everything about it is
+  // still readable — history, diffs, todos — but it cannot be driven, and
+  // saying so up front beats a send that spins for ten seconds and fails.
+  const machineEntry = useMachineStore((s) =>
+    project?.machineId ? (s.machines[project.machineId] ?? null) : null,
+  );
+  const machineStatus = useMachineStore((s) =>
+    project?.machineId ? (s.statuses[project.machineId] ?? "disconnected") : "connected",
+  );
+  const machineAway = !!project?.machineId && machineStatus !== "connected";
+  const machineName = machineEntry?.label ?? "That machine";
   const projectSlug = project?.slug ?? "";
   const mainBranch = useAppStore((s) => s.projectGitStatus[projectId]?.branch);
   const projectGitStatus = useAppStore((s) => s.projectGitStatus[projectId]);
@@ -596,19 +608,23 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                   onSend={handleSend}
                   initialText={draft}
                   onTextPersist={handleTextPersist}
-                  disabled={sessionState === "merging" || compacting || blockedMidTurn}
+                  disabled={
+                    machineAway || sessionState === "merging" || compacting || blockedMidTurn
+                  }
                   isRunning={sessionState === "running"}
                   onInterrupt={handleInterrupt}
                   attachmentsSupported={attachmentsSupported}
                   focusMode
                   placeholder={
-                    compacting
-                      ? "Compacting context..."
-                      : sessionState === "merging"
-                        ? "Git operation in progress..."
-                        : blockedMidTurn
-                          ? "Provider can't accept mid-turn messages — wait for the turn to finish"
-                          : resumePlaceholders[sessionState]
+                    machineAway
+                      ? `${machineName} is offline — this session picks up when it's back`
+                      : compacting
+                        ? "Compacting context..."
+                        : sessionState === "merging"
+                          ? "Git operation in progress..."
+                          : blockedMidTurn
+                            ? "Provider can't accept mid-turn messages — wait for the turn to finish"
+                            : resumePlaceholders[sessionState]
                   }
                   worktree={isWorktree}
                   planMode={planModeSupported ? planMode : undefined}
