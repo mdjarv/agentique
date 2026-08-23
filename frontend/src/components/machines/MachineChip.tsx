@@ -21,6 +21,11 @@ export function useMachineStatus(machineId: string | undefined): MachineStatus {
   );
 }
 
+/** A proven fault on that machine, or null. Away has none — that's the point. */
+export function useMachineFault(machineId: string | undefined) {
+  return useMachineStore((s) => (machineId ? (s.faults[machineId] ?? null) : null));
+}
+
 /**
  * Read-only pill naming the machine a session/project lives on. Renders
  * nothing for the primary machine — multi-machine chrome stays invisible
@@ -36,25 +41,34 @@ export function MachineChip({
 }) {
   const machine = useProjectMachine(projectId);
   const status = useMachineStatus(machine?.machineId);
+  const fault = useMachineFault(machine?.machineId);
   if (!machine) return null;
   const Icon = getMachineIcon(machine.icon ?? "") ?? DEFAULT_MACHINE_ICON;
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0",
+        "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border shrink-0 min-w-0",
+        fault
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : "border-border/40 bg-muted/40 text-muted-foreground",
         className,
       )}
-      title={`Runs on ${machine.label} (${machine.baseUrl})${status === "connected" ? "" : ` — ${status}`}`}
+      title={
+        fault
+          ? `${machine.label}: ${fault.detail}`
+          : `Runs on ${machine.label} (${machine.baseUrl})${status === "connected" ? "" : ` — ${status}`}`
+      }
     >
       <Icon className="h-2.5 w-2.5 shrink-0" />
       <span className="truncate max-w-[10ch]">{machine.label}</span>
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full shrink-0",
-          status === "connected" && "bg-success",
-          status === "reconnecting" && "bg-warning animate-pulse",
-          status === "disconnected" && "bg-destructive",
+          fault && "bg-destructive",
+          !fault && status === "connected" && "bg-success",
+          !fault && status === "reconnecting" && "bg-warning animate-pulse",
+          !fault && status === "disconnected" && "bg-muted-foreground",
         )}
       />
     </span>

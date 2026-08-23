@@ -8,9 +8,19 @@
 import { Pencil, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { AddMachineDialog } from "~/components/machines/MachinesSection";
+import { AddMachineDialog } from "~/components/machines/AddMachineDialog";
 import { MachineIdentityDialog } from "~/components/settings/MachineIdentityDialog";
 import { SettingsSection } from "~/components/settings/SettingsLayout";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { cn, getErrorMessage, relativeTime } from "~/lib/utils";
@@ -34,15 +44,20 @@ function MachineFace({ iconId, className }: { iconId: string; className?: string
   );
 }
 
-function StatusDot({ status }: { status: MachineStatus }) {
+function StatusDot({ status, fault }: { status: MachineStatus; fault?: boolean }) {
   return (
     <span
-      title={status}
+      title={fault ? "needs attention" : status}
       className={cn(
         "size-2 shrink-0 rounded-full",
-        status === "connected" && "bg-success",
-        status === "reconnecting" && "bg-warning animate-pulse motion-reduce:animate-none",
-        status === "disconnected" && "bg-destructive",
+        // Away is grey, not red: red is reserved for something that will never
+        // come back on its own.
+        fault && "bg-destructive",
+        !fault && status === "connected" && "bg-success",
+        !fault &&
+          status === "reconnecting" &&
+          "bg-warning animate-pulse motion-reduce:animate-none",
+        !fault && status === "disconnected" && "bg-muted-foreground",
       )}
     />
   );
@@ -52,26 +67,48 @@ function MachineRow({
   face,
   name,
   detail,
+  fault,
   status,
   onEdit,
+  onRepair,
   onRemove,
 }: {
   face: React.ReactNode;
   name: string;
   detail: string;
+  /** A proven fault: what is wrong, in a sentence, with its fix. */
+  fault?: string;
   status: MachineStatus;
   onEdit: () => void;
+  onRepair?: () => void;
   onRemove?: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3.5 py-3">
+    <div
+      className={cn(
+        "group flex items-center gap-3 rounded-lg border bg-card px-3.5 py-3",
+        fault ? "border-destructive/40" : "border-border/60",
+      )}
+    >
       {face}
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-[13px] font-medium text-foreground-bright">{name}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground-faint">{detail}</span>
+        <span
+          className={cn(
+            "truncate font-mono text-[11px]",
+            fault ? "text-destructive" : "text-muted-foreground-faint",
+          )}
+        >
+          {fault ?? detail}
+        </span>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <StatusDot status={status} />
+        {fault && onRepair && (
+          <Button size="sm" variant="ghost" onClick={onRepair}>
+            Re-pair
+          </Button>
+        )}
+        <StatusDot status={status} fault={!!fault} />
         <button
           type="button"
           aria-label={`Rename ${name}`}
@@ -101,6 +138,7 @@ export function MachinesSettings() {
   const machines = useMachineStore((s) => s.machines);
   const statuses = useMachineStore((s) => s.statuses);
   const lastSeenAt = useMachineStore((s) => s.lastSeenAt);
+  const faults = useMachineStore((s) => s.faults);
   const renameMachine = useMachineStore((s) => s.renameMachine);
   const removeMachine = useMachineStore((s) => s.removeMachine);
   const projects = useAppStore((s) => s.projects);
@@ -112,6 +150,9 @@ export function MachinesSettings() {
 
   const [editing, setEditing] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // Unpairing drops the pairing, its projects and its cached sessions — worth
+  // one question before a stray click does it.
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const entries = useMemo(
     () => Object.values(machines).sort((a, b) => a.label.localeCompare(b.label)),
@@ -164,9 +205,11 @@ export function MachinesSettings() {
               ]
                 .filter(Boolean)
                 .join(" · ")}
+              fault={faults[m.machineId]?.detail}
               status={statuses[m.machineId] ?? "disconnected"}
               onEdit={() => setEditing(m.machineId)}
-              onRemove={() => removeMachine(m.machineId)}
+              onRepair={() => setAddOpen(true)}
+              onRemove={() => setRemoving(m.machineId)}
             />
           ))}
           {entries.length === 0 && (
@@ -214,6 +257,31 @@ export function MachinesSettings() {
       />
 
       <AddMachineDialog open={addOpen} onOpenChange={setAddOpen} />
+
+      <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {removing ? (machines[removing]?.label ?? "this machine") : "this machine"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Its projects and cached sessions disappear from this device, and you'll need a new
+              pairing token to add it back. Nothing on the machine itself is touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (removing) removeMachine(removing);
+                setRemoving(null);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

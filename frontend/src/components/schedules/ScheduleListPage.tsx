@@ -51,6 +51,7 @@ import {
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { EMPTY_RUNS, useScheduleStore } from "~/stores/schedule-store";
 
 // Global schedules page (docs/scheduled-loops.md "Surfaces"): every scheduled
@@ -265,6 +266,24 @@ function ScheduleList({
 
 // ─── Row ────────────────────────────────────────────────
 
+/**
+ * The label of the machine a schedule's session lives on, when that machine is
+ * currently away — null when it is here (or is this machine). A loop only
+ * fires where its session lives, so an away machine's "next 02:00" is a time
+ * this app knows will not happen.
+ */
+function useScheduleMachineAway(sessionId: string): string | null {
+  const projectId = useChatStore((s) => s.sessions[sessionId]?.meta.projectId);
+  const machineId = useAppStore((s) =>
+    projectId ? s.projects.find((p) => p.id === projectId)?.machineId : undefined,
+  );
+  const label = useMachineStore((s) => (machineId ? (s.machines[machineId]?.label ?? null) : null));
+  const connected = useMachineStore((s) =>
+    machineId ? s.statuses[machineId] === "connected" : true,
+  );
+  return machineId && !connected ? (label ?? "that machine") : null;
+}
+
 function accentClass(s: ScheduleInfo): string {
   if (s.attention === "failed") return "bg-destructive";
   if (s.attention === "action_needed") return "bg-amber-500";
@@ -287,6 +306,10 @@ function ScheduleRow({
   const ws = useWebSocket();
   const runs = useScheduleStore((s) => s.runs[schedule.id] ?? EMPTY_RUNS);
   const sessionName = useChatStore((s) => s.sessions[schedule.sessionId]?.meta.name);
+  // A loop belongs to the machine that owns its session. While that machine is
+  // away the scheduler there isn't running, so a "next 02:00" is a time this
+  // app knows will not happen — say what it is waiting for instead.
+  const awayMachine = useScheduleMachineAway(schedule.sessionId);
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const fetchedRef = useRef(false);
@@ -389,7 +412,11 @@ function ScheduleRow({
             </span>
             <span>{humanCadence(schedule)}</span>
             {schedule.enabled &&
-              (schedule.nextRunAt ? (
+              (awayMachine ? (
+                <span title={`${awayMachine} is offline — its scheduler isn't running`}>
+                  waits for {awayMachine}
+                </span>
+              ) : schedule.nextRunAt ? (
                 <span>next {untilText(schedule.nextRunAt, now)}</span>
               ) : (
                 <span>parked</span>

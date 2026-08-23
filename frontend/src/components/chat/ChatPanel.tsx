@@ -134,6 +134,9 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const machineStatus = useMachineStore((s) =>
     project?.machineId ? (s.statuses[project.machineId] ?? "disconnected") : "connected",
   );
+  const machineFault = useMachineStore((s) =>
+    project?.machineId ? (s.faults[project.machineId] ?? null) : null,
+  );
   const machineAway = !!project?.machineId && machineStatus !== "connected";
   const machineName = machineEntry?.label ?? "That machine";
   const projectSlug = project?.slug ?? "";
@@ -621,7 +624,9 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                   focusMode
                   placeholder={
                     machineAway
-                      ? `${machineName} is offline — this session picks up when it's back`
+                      ? machineFault
+                        ? `${machineName}: ${machineFault.detail}`
+                        : `${machineName} is offline — this session picks up when it's back`
                       : compacting
                         ? "Compacting context..."
                         : sessionState === "merging"

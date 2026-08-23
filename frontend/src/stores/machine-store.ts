@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { MachineFault } from "~/lib/machines/health";
 import type { ConnectionState } from "~/lib/ws-client";
 
 /**
@@ -37,6 +38,12 @@ interface MachineState {
    *  and wake constantly; "last seen 3h ago" is the honest way to say a
    *  machine is away without treating it as a failure. */
   lastSeenAt: Record<string, number>;
+  /**
+   * machineId → a *proven* fault (wrong machine, rejected credential, not an
+   * agentique server). Absent means away, which is ordinary and silent — only
+   * something that can never fix itself earns a place here.
+   */
+  faults: Record<string, MachineFault>;
 
   addMachine: (entry: MachineEntry) => void;
   /** Rename / re-face a paired machine. Presentation is local to this host:
@@ -44,6 +51,8 @@ interface MachineState {
   renameMachine: (machineId: string, patch: { label?: string; icon?: string }) => Promise<void>;
   removeMachine: (machineId: string) => void;
   setStatus: (machineId: string, status: MachineStatus) => void;
+  /** Record or clear a proven fault for a machine. */
+  setFault: (machineId: string, fault: MachineFault | null) => void;
   /** Reconcile the catalog from the primary's server-side copy (server
    *  wins). A failed fetch keeps the local cache — offline still works. */
   syncFromServer: () => Promise<void>;
@@ -55,6 +64,7 @@ export const useMachineStore = create<MachineState>()(
       machines: {},
       statuses: {},
       lastSeenAt: {},
+      faults: {},
 
       addMachine: (entry) => {
         set((s) => ({ machines: { ...s.machines, [entry.machineId]: entry } }));
@@ -99,12 +109,27 @@ export const useMachineStore = create<MachineState>()(
           delete machines[machineId];
           const statuses = { ...s.statuses };
           delete statuses[machineId];
-          return { machines, statuses };
+          const faults = { ...s.faults };
+          delete faults[machineId];
+          return { machines, statuses, faults };
         });
         fetch(`/api/machines/${encodeURIComponent(machineId)}`, { method: "DELETE" }).catch((err) =>
           console.error("machine catalog delete failed", err),
         );
       },
+      setFault: (machineId, fault) =>
+        set((s) => {
+          const current = s.faults[machineId];
+          if (!fault) {
+            if (!current) return s;
+            const faults = { ...s.faults };
+            delete faults[machineId];
+            return { faults };
+          }
+          if (current?.kind === fault.kind) return s; // same fault, don't churn
+          return { faults: { ...s.faults, [machineId]: fault } };
+        }),
+
       setStatus: (machineId, status) =>
         set((s) => {
           if (s.statuses[machineId] === status) return s;
@@ -114,6 +139,10 @@ export const useMachineStore = create<MachineState>()(
           // Stamp on the way in AND on the way out: while connected "last
           // seen" is now, and the moment it drops that stamp is when it was
           // last real.
+          // Deliberately NOT clearing faults here: a socket opening proves
+          // only that something answered. An address that changed hands opens
+          // a socket perfectly happily — the fault clears when the machine is
+          // admitted (identity verified), not when it merely connects.
           if (status === "connected") {
             next.lastSeenAt = { ...s.lastSeenAt, [machineId]: Date.now() };
           } else if (s.statuses[machineId] === "connected") {
@@ -142,6 +171,8 @@ export const useMachineStore = create<MachineState>()(
     {
       name: "agentique:machines",
       // Connection status is per-tab runtime state, never persisted.
+      // Faults are runtime findings — re-proven on the next failed connect,
+      // never restored from a cache that might be describing yesterday.
       partialize: (s) => ({ machines: s.machines, lastSeenAt: s.lastSeenAt }),
     },
   ),

@@ -38,6 +38,8 @@ export interface SyncRowVM {
   machineIcon?: string;
   /** That machine is unreachable: the row is real, its buttons are not. */
   machineOffline?: boolean;
+  /** A proven fault on that machine, if any — the tag says so in rose. */
+  machineFault?: string;
   ahead: number;
   behind: number;
   uncommitted: number;
@@ -77,6 +79,7 @@ export interface SyncRowInput {
   machineLabel?: string;
   machineIcon?: string;
   machineOffline?: boolean;
+  machineFault?: string;
   colorBg: string;
   colorFg: string;
 }
@@ -114,6 +117,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
     machineLabel,
     machineIcon,
     machineOffline,
+    machineFault,
     colorBg,
     colorFg,
   } of inputs) {
@@ -130,6 +134,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
       machineLabel,
       machineIcon,
       machineOffline,
+      machineFault,
       ahead: status.aheadRemote,
       behind: status.behindRemote,
       uncommitted: status.uncommittedCount,

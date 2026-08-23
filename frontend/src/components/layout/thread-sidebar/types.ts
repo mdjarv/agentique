@@ -82,6 +82,8 @@ export interface ThreadRowVM {
   remoteMachineIcon?: string;
   /** That machine is unreachable right now: the row is a cached snapshot. */
   remoteMachineOffline?: boolean;
+  /** A proven fault on that machine — away is silent, this is not. */
+  remoteMachineFault?: string;
   /** Epoch ms of last activity — drives the recency half of the Open sort. */
   lastActivity: number;
   /** Focused-card extras — rendered only on the selected row. */

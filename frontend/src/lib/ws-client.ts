@@ -47,6 +47,8 @@ export class WsClient {
   private pending = new Map<string, PendingRequest>();
   private pushHandlers = new Map<string, Set<AnyPushHandler>>();
   private reconnectDelay = 500;
+  /** Ceiling for backoff. Raised for a machine whose failure is permanent. */
+  private maxReconnectDelay = 30000;
   private shouldReconnect = true;
   /** Bumped per connect attempt so a stale URL resolution can be abandoned. */
   private resolveGeneration = 0;
@@ -140,7 +142,7 @@ export class WsClient {
       this.reconnectTimer = null;
       this.connect();
     }, this.reconnectDelay);
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
   }
 
   private open(url: string): void {
@@ -177,7 +179,7 @@ export class WsClient {
           if (!this.shouldReconnect) return;
           this.connect();
         }, this.reconnectDelay);
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
       } else {
         this.setConnectionState("disconnected");
       }
@@ -356,6 +358,17 @@ export class WsClient {
     if (!this.shouldReconnect) return;
     this.forceReconnect();
   };
+
+  /**
+   * Slow (or restore) this client's retry ceiling. A machine that refused our
+   * credential cannot be fixed by trying again, so hammering it every 30s for
+   * a day is pure noise — but it must still be retried occasionally, or a
+   * re-pair would go unnoticed until reload.
+   */
+  setMaxReconnectDelay(ms: number): void {
+    this.maxReconnectDelay = Math.max(1000, ms);
+    if (this.reconnectDelay > this.maxReconnectDelay) this.reconnectDelay = this.maxReconnectDelay;
+  }
 
   /** Force-close and reconnect. Catches zombie sockets that report OPEN but are dead. */
   forceReconnect(): void {

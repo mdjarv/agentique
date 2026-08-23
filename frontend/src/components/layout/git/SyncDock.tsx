@@ -56,6 +56,7 @@ function useSyncRows(): SyncRowVM[] {
   const gitStatus = useAppStore((s) => s.projectGitStatus);
   const machines = useMachineStore((s) => s.machines);
   const machineStatuses = useMachineStore((s) => s.statuses);
+  const machineFaults = useMachineStore((s) => s.faults);
   const { resolvedTheme } = useTheme();
 
   return useMemo(() => {
@@ -70,12 +71,13 @@ function useSyncRows(): SyncRowVM[] {
         machineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : false,
+        machineFault: project.machineId ? machineFaults[project.machineId]?.detail : undefined,
         colorBg: color.bg,
         colorFg: color.fg,
       };
     });
     return deriveSyncRows(inputs);
-  }, [projects, gitStatus, machines, machineStatuses, resolvedTheme]);
+  }, [projects, gitStatus, machines, machineStatuses, machineFaults, resolvedTheme]);
 }
 
 /** Age of the oldest fetch behind the rows on screen — the dock's honesty. */
@@ -434,7 +436,13 @@ function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: (
         {row.label}
       </span>
       {row.machineLabel && (
-        <span className="flex shrink-0 items-center gap-0.5 font-mono text-[9.5px] text-muted-foreground-faint">
+        <span
+          title={row.machineFault}
+          className={cn(
+            "flex shrink-0 items-center gap-0.5 font-mono text-[9.5px]",
+            row.machineFault ? "text-destructive" : "text-muted-foreground-faint",
+          )}
+        >
           <MachineIcon iconId={row.machineIcon ?? ""} />
           {row.machineLabel}
         </span>

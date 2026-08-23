@@ -1,4 +1,4 @@
-import { Plus, Server, X } from "lucide-react";
+import { Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
@@ -13,74 +13,15 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { pairMachine } from "~/lib/machines/pairing";
 import { cn } from "~/lib/utils";
-import { useFeatureStore } from "~/stores/feature-store";
-import type { MachineStatus } from "~/stores/machine-store";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
- * The machines block of the sidebar-footer popover (multi-machine): this
- * machine, each paired machine with its live connection dot and a remove
- * action, and an Add-machine entry. The caller owns the AddMachineDialog.
+ * Add (pair) a machine: probe an address, exchange the one-time token from
+ * `agentique pair`, save the catalog entry. Lives beside the catalog rather
+ * than inside a settings panel because re-pairing a faulted machine opens the
+ * same dialog.
  */
-export function MachinesSection({ onAddMachine }: { onAddMachine: () => void }) {
-  const machines = useMachineStore((s) => s.machines);
-  const statuses = useMachineStore((s) => s.statuses);
-  const removeMachine = useMachineStore((s) => s.removeMachine);
-  const primaryLabel = useFeatureStore((s) => s.machineLabel);
-
-  const entries = Object.values(machines).sort((a, b) => a.label.localeCompare(b.label));
-
-  return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <StatusDot status="connected" />
-        <span className="text-xs text-foreground truncate flex-1">
-          {primaryLabel || "This machine"}
-        </span>
-        <span className="text-[10px] text-muted-foreground">this machine</span>
-      </div>
-      {entries.map((m) => (
-        <div key={m.machineId} className="flex items-center gap-2 px-3 py-2">
-          <StatusDot status={statuses[m.machineId] ?? "disconnected"} />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-foreground truncate">{m.label}</div>
-            <div className="text-[10px] text-muted-foreground truncate">{m.baseUrl}</div>
-          </div>
-          <button
-            type="button"
-            title="Remove machine"
-            onClick={() => removeMachine(m.machineId)}
-            className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-          >
-            <X className="size-3" />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={onAddMachine}
-        className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer rounded-md"
-      >
-        <Plus className="size-3.5" />
-        Add machine
-      </button>
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: MachineStatus }) {
-  return (
-    <span
-      className={cn(
-        "inline-block h-2 w-2 rounded-full shrink-0",
-        status === "connected" && "bg-success",
-        status === "reconnecting" && "bg-warning animate-pulse",
-        status === "disconnected" && "bg-destructive",
-      )}
-    />
-  );
-}
-
+/** One tailnet peer that answered the descriptor probe — a pairing hint. */
 interface DiscoveredPeer {
   machineId: string;
   label: string;

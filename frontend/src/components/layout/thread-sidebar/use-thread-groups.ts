@@ -67,6 +67,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
   const projects = useAppStore((s) => s.projects);
   const machines = useMachineStore((s) => s.machines);
   const machineStatuses = useMachineStore((s) => s.statuses);
+  const machineFaults = useMachineStore((s) => s.faults);
   const pulses = usePulseStore((s) => s.pulses);
   const { resolvedTheme } = useTheme();
 
@@ -159,6 +160,9 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         remoteMachineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : undefined,
+        remoteMachineFault: project.machineId
+          ? machineFaults[project.machineId]?.detail
+          : undefined,
         lastActivity: lastActivity(meta),
         branch: meta.worktreeBranch || undefined,
         model: meta.model || undefined,
@@ -198,5 +202,14 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     );
 
     return { pinned, open, stale, archived };
-  }, [sessions, projects, machines, machineStatuses, pulses, resolvedTheme, searchQuery]);
+  }, [
+    sessions,
+    projects,
+    machines,
+    machineStatuses,
+    machineFaults,
+    pulses,
+    resolvedTheme,
+    searchQuery,
+  ]);
 }

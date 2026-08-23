@@ -106,16 +106,21 @@ function MachineTag({ vm }: { vm: ThreadRowVM }) {
   if (!vm.remoteMachineLabel) return null;
   const Icon = getMachineIcon(vm.remoteMachineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
   const offline = !!vm.remoteMachineOffline;
+  const fault = vm.remoteMachineFault;
   return (
     <span
       title={
-        offline ? `${vm.remoteMachineLabel} is offline — showing its last known state` : undefined
+        fault ??
+        (offline ? `${vm.remoteMachineLabel} is offline — showing its last known state` : undefined)
       }
       className={cn(
-        "flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-muted-foreground-faint",
+        "flex shrink-0 items-center gap-0.5 font-mono text-[10px]",
         // Away is a dimmer, not an alarm: the row stays readable and
-        // navigable, it just stops claiming to be live.
-        offline && "opacity-55",
+        // navigable, it just stops claiming to be live. A *proven* fault is
+        // the exception — it will never clear on its own, so it gets the one
+        // colour that means something is wrong.
+        fault ? "text-destructive" : "text-muted-foreground-faint",
+        offline && !fault && "opacity-55",
       )}
     >
       <Icon className="size-2.5 shrink-0" />
