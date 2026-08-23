@@ -151,18 +151,15 @@ func TestBuildSteps(t *testing.T) {
 		t.Fatal("last step should be summary")
 	}
 
-	// network mode adds TLS + auth.
-	hasTLS, hasAuth := false, false
+	// Network mode adds TLS and keeps authentication mandatory.
+	hasTLS := false
 	for _, s := range net {
 		if s.kind == stepTLS {
 			hasTLS = true
 		}
-		if s.kind == stepAuth {
-			hasAuth = true
-		}
 	}
-	if !hasTLS || !hasAuth {
-		t.Fatal("network mode should include TLS and auth steps")
+	if !hasTLS || len(net) != len(local)+1 {
+		t.Fatal("network mode should include TLS without an auth-disable choice")
 	}
 }
 
@@ -342,7 +339,7 @@ func TestWizardLocalhostFlow(t *testing.T) {
 		t.Error("auth should be disabled")
 	}
 	for _, s := range wm.steps {
-		if s.kind == stepTLS || s.kind == stepAuth {
+		if s.kind == stepTLS {
 			t.Errorf("localhost should not include TLS/auth (%v)", s.kind)
 		}
 	}
@@ -362,36 +359,17 @@ func TestWizardNetworkFlow(t *testing.T) {
 	if wm.cfg.Server.Addr != "0.0.0.0:9201" {
 		t.Errorf("addr: %q", wm.cfg.Server.Addr)
 	}
-	hasTLS, hasAuth := false, false
+	hasTLS := false
 	for _, s := range wm.steps {
 		if s.kind == stepTLS {
 			hasTLS = true
 		}
-		if s.kind == stepAuth {
-			hasAuth = true
-		}
 	}
-	if !hasTLS || !hasAuth {
-		t.Error("network mode should add TLS + auth steps")
+	if !hasTLS || len(wm.steps) != len(buildSteps(false))+1 {
+		t.Error("network mode should add TLS without an auth-disable choice")
 	}
-}
-
-func TestWizardAuthChoice(t *testing.T) {
-	m := newWizardModel()
-	// Build steps for network mode and position on stepAuth.
-	m.steps = buildSteps(true)
-	for i, s := range m.steps {
-		if s.kind == stepAuth {
-			m.current = i
-			break
-		}
-	}
-
-	// selected=1 means "disable auth".
-	model, _ := m.handleChoiceResult(1)
-	wm := model.(wizardModel)
-	if !wm.cfg.Server.DisableAuth {
-		t.Error("disable-auth not set")
+	if wm.cfg.Server.DisableAuth {
+		t.Error("network mode must keep authentication enabled")
 	}
 }
 
@@ -787,7 +765,7 @@ func TestWizardHandleTLSSelfSigned(t *testing.T) {
 func TestWizardInitStepAll(t *testing.T) {
 	m := newWizardModel()
 	for _, k := range []stepKind{
-		stepNetworkMode, stepAuth, stepProject,
+		stepNetworkMode, stepProject,
 		stepSaveConfig, stepServiceInstall, stepSummary,
 	} {
 		m2 := m
@@ -795,7 +773,7 @@ func TestWizardInitStepAll(t *testing.T) {
 		m2 = positionAt(m2, k)
 		m2, _ = m2.initStep()
 		switch k {
-		case stepNetworkMode, stepAuth, stepServiceInstall:
+		case stepNetworkMode, stepServiceInstall:
 			if m2.phase != phaseChoice {
 				t.Errorf("%v: phase=%v", k, m2.phase)
 			}

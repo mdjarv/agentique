@@ -51,7 +51,7 @@ var (
 func init() {
 	serveCmd.Flags().StringVar(&dbPath, "db", "", "database file path (default: platform data dir)")
 	serveCmd.Flags().StringVar(&logLevel, "log-level", "", "log level: trace, debug, info (default), warn, error")
-	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (allow anonymous access)")
+	serveCmd.Flags().BoolVar(&disableAuth, "disable-auth", false, "disable authentication (loopback listener only)")
 	serveCmd.Flags().StringVar(&rpID, "rp-id", "", "WebAuthn relying party ID (default: hostname from --addr)")
 	serveCmd.Flags().StringVar(&rpOrigin, "rp-origin", "", "WebAuthn relying party origin (default: derived from --addr)")
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to TLS certificate file")
@@ -255,6 +255,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		jsonLog = filepath.Join(paths.DataDir(), "agentique.log.jsonl")
 	}
 	logging.InitWithMode(lvl, jsonLog, logging.OutputMode(logOutput))
+	if testMode {
+		disableAuth = true
+		slog.Info("test mode: auth disabled, mock CLI enabled")
+	}
+	if disableAuth {
+		if err := validateAuthDisabledAddress(addr); err != nil {
+			return fmt.Errorf("refusing unsafe auth-disabled listener: %w", err)
+		}
+	}
 
 	// First-run hint.
 	if !config.Exists() && !fileExists(paths.DBPath()) {
@@ -368,11 +377,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		scheme = "https"
 	}
 
-	if testMode {
-		disableAuth = true
-		slog.Info("test mode: auth disabled, mock CLI enabled")
-	}
-
 	if err := config.ValidateDevURLs(fileCfg.DevURLs); err != nil {
 		slog.Error("invalid dev-urls config", "error", err)
 		os.Exit(1)
@@ -457,6 +461,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		slog.Error("failed to resolve machine identity", "error", err)
 		os.Exit(1)
 	}
+	machineIdentity, err := machine.LoadOrCreateSigningIdentity(paths.DataDir(), machineID)
+	if err != nil {
+		slog.Error("failed to resolve machine signing identity", "error", err)
+		os.Exit(1)
+	}
 	adminSecret := ""
 	if !disableAuth {
 		adminSecret, err = auth.LoadOrCreateAdminSecret(paths.DataDir())
@@ -473,6 +482,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg := server.Config{
 		AuthEnabled:        !disableAuth,
 		MachineID:          machineID,
+		MachineIdentity:    machineIdentity,
 		MachineLabel:       machineLabel,
 		MachineLabelPinned: machineLabelEnv != "",
 		ListenPort:         mcpPort, // the port split from --addr above
@@ -544,16 +554,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 			}
 			cfg.RPID = host
 		}
-		if rpOrigin == "" {
-			host, port, _ := net.SplitHostPort(addr)
-			if host == "" || host == "0.0.0.0" {
-				host = "localhost"
-			}
-			rpOrigin = fmt.Sprintf("%s://%s:%s", scheme, host, port)
-		}
-		fileCfg.Server.RPOrigin = rpOrigin
-		cfg.RPOrigins = fileCfg.AllRPOrigins()
 	}
+	if rpOrigin == "" {
+		host, port, _ := net.SplitHostPort(addr)
+		if host == "" || host == "0.0.0.0" {
+			host = "localhost"
+		}
+		rpOrigin = fmt.Sprintf("%s://%s:%s", scheme, host, port)
+	}
+	fileCfg.Server.RPOrigin = rpOrigin
+	cfg.RPOrigins = fileCfg.AllRPOrigins()
 	srv, err := server.New(queries, cfg)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)
@@ -621,10 +631,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		authStatus = "disabled"
 	}
 
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: srv,
-	}
+	httpServer := newHTTPServer(addr, srv)
 
 	// Record our PID so the tray (or `agentique stop`) can find and stop us.
 	if !testMode {
@@ -689,6 +696,32 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Info("server stopped")
+	return nil
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
+	}
+}
+
+func validateAuthDisabledAddress(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("parse listen address: %w", err)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("--disable-auth requires a loopback --addr, got %q", addr)
+	}
 	return nil
 }
 

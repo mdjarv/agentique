@@ -1,14 +1,20 @@
 package ws_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/allbin/agentkit/eventbus"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
@@ -52,6 +58,36 @@ func setupTestServerWithDB(t *testing.T) (*httptest.Server, *sql.DB, *store.Quer
 		db.Close()
 	}
 	return ts, db, queries, cleanup
+}
+
+func setupAuthenticatedWSServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
+	t.Helper()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
+		db.Close()
+		t.Fatalf("run migrations: %v", err)
+	}
+	queries := store.New(db)
+	srv, err := server.New(queries, server.Config{
+		AuthEnabled: true,
+		RPID:        "localhost",
+		RPOrigins:   []string{"http://trusted.example"},
+		AdminSecret: "test-admin-secret",
+		DB:          db,
+	})
+	if err != nil {
+		db.Close()
+		t.Fatalf("create server: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	return ts, queries, func() {
+		srv.Shutdown()
+		ts.Close()
+		db.Close()
+	}
 }
 
 func dialWS(t *testing.T, ts *httptest.Server) *websocket.Conn {
@@ -166,6 +202,220 @@ func TestWebSocketUpgrade(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error.Message, "unknown") {
 		t.Fatalf("expected error about unknown type, got %q", resp.Error.Message)
+	}
+}
+
+func TestAuthDisabledWebSocketRejectsForeignOrigin(t *testing.T) {
+	ts, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
+	headers := http.Header{"Origin": []string{"http://evil.example"}}
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Fatal("foreign-origin WebSocket unexpectedly connected")
+	}
+	if resp == nil {
+		t.Fatalf("upgrade failed without an HTTP response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestWebSocketConnectionLimit(t *testing.T) {
+	handler := &ws.Handler{Bus: eventbus.New(), MaxConnections: 1}
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http")
+	first, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial first socket: %v", err)
+	}
+	defer first.Close()
+
+	second, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if second != nil {
+		second.Close()
+	}
+	if err == nil {
+		t.Fatal("second socket exceeded the connection limit")
+	}
+	if resp == nil {
+		t.Fatalf("second dial failed without response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestWebSocketRejectsMessageOverConfiguredLimit(t *testing.T) {
+	handler := &ws.Handler{Bus: eventbus.New(), MaxMessageBytes: 1024}
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial socket: %v", err)
+	}
+	defer conn.Close()
+
+	prefix := []byte(`{"id":"large","type":"unknown","payload":"`)
+	suffix := []byte(`"}`)
+	message := make([]byte, 0, 2048)
+	message = append(message, prefix...)
+	message = append(message, bytes.Repeat([]byte("x"), 2048-len(prefix)-len(suffix))...)
+	message = append(message, suffix...)
+	if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+		t.Fatalf("write oversized message: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatal("oversized message was dispatched")
+	}
+	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatalf("server left socket open after oversized message: %v", err)
+	}
+}
+
+func TestRevokingSessionClosesEstablishedWebSocket(t *testing.T) {
+	ts, queries, cleanup := setupAuthenticatedWSServer(t)
+	defer cleanup()
+
+	userID := newID()
+	if _, err := queries.CreateUser(context.Background(), store.CreateUserParams{
+		ID: userID, DisplayName: "operator", IsAdmin: 1,
+	}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	const bearer = "paired-bearer-token"
+	const sessionID = "paired-session-id"
+	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
+		Token: bearer,
+		ID:    sql.NullString{String: sessionID, Valid: true}, UserID: userID,
+		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		Label:     "desktop", Kind: "bearer",
+	}); err != nil {
+		t.Fatalf("create auth session: %v", err)
+	}
+
+	ticketReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/ws-ticket", nil)
+	if err != nil {
+		t.Fatalf("create ticket request: %v", err)
+	}
+	ticketReq.Header.Set("Authorization", "Bearer "+bearer)
+	ticketResp, err := http.DefaultClient.Do(ticketReq)
+	if err != nil {
+		t.Fatalf("mint ticket: %v", err)
+	}
+	defer ticketResp.Body.Close()
+	if ticketResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(ticketResp.Body)
+		t.Fatalf("ticket status = %d: %s", ticketResp.StatusCode, body)
+	}
+	var ticketBody struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(ticketResp.Body).Decode(&ticketBody); err != nil {
+		t.Fatalf("decode ticket: %v", err)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?wsTicket=" + ticketBody.Ticket
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Origin": []string{"http://primary.example"}})
+	if err != nil {
+		t.Fatalf("dial authenticated WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	revokeReq, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/auth/sessions/"+sessionID, nil)
+	if err != nil {
+		t.Fatalf("create revoke request: %v", err)
+	}
+	revokeReq.Header.Set("X-Agentique-Admin-Secret", "test-admin-secret")
+	revokeResp, err := http.DefaultClient.Do(revokeReq)
+	if err != nil {
+		t.Fatalf("revoke session: %v", err)
+	}
+	defer revokeResp.Body.Close()
+	if revokeResp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(revokeResp.Body)
+		t.Fatalf("revoke status = %d: %s", revokeResp.StatusCode, body)
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatal("socket remained readable after revocation")
+	}
+	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatalf("socket remained open after revocation: %v", err)
+	}
+}
+
+func TestExpiredSessionClosesEstablishedWebSocket(t *testing.T) {
+	ts, queries, cleanup := setupAuthenticatedWSServer(t)
+	defer cleanup()
+
+	userID := newID()
+	if _, err := queries.CreateUser(context.Background(), store.CreateUserParams{
+		ID: userID, DisplayName: "operator", IsAdmin: 1,
+	}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	const bearer = "short-lived-bearer-token"
+	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
+		Token: bearer,
+		ID:    sql.NullString{String: "short-lived-session", Valid: true}, UserID: userID,
+		ExpiresAt: time.Now().Add(3 * time.Second).UTC().Format(time.RFC3339),
+		Label:     "desktop", Kind: "bearer",
+	}); err != nil {
+		t.Fatalf("create auth session: %v", err)
+	}
+
+	ticketReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/ws-ticket", nil)
+	if err != nil {
+		t.Fatalf("create ticket request: %v", err)
+	}
+	ticketReq.Header.Set("Authorization", "Bearer "+bearer)
+	ticketResp, err := http.DefaultClient.Do(ticketReq)
+	if err != nil {
+		t.Fatalf("mint ticket: %v", err)
+	}
+	defer ticketResp.Body.Close()
+	var ticketBody struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(ticketResp.Body).Decode(&ticketBody); err != nil {
+		t.Fatalf("decode ticket: %v", err)
+	}
+	if ticketResp.StatusCode != http.StatusOK || ticketBody.Ticket == "" {
+		t.Fatalf("ticket status/body = %d %+v", ticketResp.StatusCode, ticketBody)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?wsTicket=" + ticketBody.Ticket
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Origin": []string{"http://primary.example"}})
+	if err != nil {
+		t.Fatalf("dial authenticated WebSocket: %v", err)
+	}
+	defer conn.Close()
+	if err := conn.SetReadDeadline(time.Now().Add(4 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatal("socket remained readable after session expiry")
+	}
+	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatalf("socket remained open after session expiry: %v", err)
 	}
 }
 
@@ -951,5 +1201,28 @@ func TestWireListPayloadValidate(t *testing.T) {
 					p.Hours, p.Limit, tc.wantHours, tc.wantLimit)
 			}
 		})
+	}
+}
+
+func TestSessionQueryPayloadBoundsAttachments(t *testing.T) {
+	payload := ws.SessionQueryPayload{
+		SessionID: newID(),
+		Prompt:    "inspect these",
+		Attachments: []session.QueryAttachment{
+			{Name: "huge.png", MimeType: "image/png", DataUrl: "data:image/png;base64," + strings.Repeat("A", 8<<20)},
+		},
+	}
+	if err := payload.Validate(); err == nil {
+		t.Fatal("oversized attachment was accepted")
+	}
+
+	payload.Attachments = make([]session.QueryAttachment, 5)
+	for i := range payload.Attachments {
+		payload.Attachments[i] = session.QueryAttachment{
+			Name: "small.png", MimeType: "image/png", DataUrl: "data:image/png;base64,QQ==",
+		}
+	}
+	if err := payload.Validate(); err == nil {
+		t.Fatal("more than four attachments were accepted")
 	}
 }

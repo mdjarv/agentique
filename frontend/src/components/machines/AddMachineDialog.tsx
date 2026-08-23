@@ -65,7 +65,7 @@ export function AddMachineDialog({
       cancelled = true;
     };
   }, [open]);
-  const suggestions = discovered.filter((p) => !paired[p.machineId]);
+  const suggestions = discovered.filter((p) => p.pairing && !paired[p.machineId]);
 
   const submit = async () => {
     setBusy(true);
@@ -139,7 +139,7 @@ export function AddMachineDialog({
             <Label htmlFor="machine-token">Pairing token</Label>
             <Input
               id="machine-token"
-              placeholder="ABCD2345WXYZ (empty for auth-disabled machines)"
+              placeholder="ABCD2345WXYZ"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               disabled={busy}

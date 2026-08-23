@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -62,6 +65,12 @@ func openDB() (*store.Queries, func(), error) {
 }
 
 func runAuthRekey(cmd *cobra.Command, args []string) error {
+	release, err := acquireOfflineAuthWriteLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	queries, cleanup, err := openDB()
 	if err != nil {
 		return err
@@ -106,6 +115,12 @@ func runAuthRekey(cmd *cobra.Command, args []string) error {
 }
 
 func runAuthReset(cmd *cobra.Command, args []string) error {
+	release, err := acquireOfflineAuthWriteLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	queries, cleanup, err := openDB()
 	if err != nil {
 		return err
@@ -131,6 +146,21 @@ func runAuthReset(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stdout, "Deleted %d user(s) and all associated credentials/sessions.\n", len(users))
 	return nil
+}
+
+func acquireOfflineAuthWriteLock() (func(), error) {
+	lock, err := procctl.AcquireInstanceLock(paths.DataDir())
+	if err != nil {
+		if errors.Is(err, procctl.ErrInstanceLocked) {
+			return nil, errors.New("stop the agentique server before rekeying or resetting authentication so live sessions and sockets cannot survive the change")
+		}
+		return nil, fmt.Errorf("acquire auth maintenance lock: %w", err)
+	}
+	return func() {
+		if err := lock.Release(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: release auth maintenance lock: %v\n", err)
+		}
+	}, nil
 }
 
 func runAuthStatus(cmd *cobra.Command, args []string) error {

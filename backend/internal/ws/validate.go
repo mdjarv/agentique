@@ -9,12 +9,14 @@ import (
 
 // Validation limits.
 const (
-	maxPromptLen     = 1 << 20 // 1 MB
-	maxNameLen       = 500
-	maxAttachments   = 50
-	maxContentLen    = 1 << 20 // 1 MB for message/content fields
-	maxCommitMsgLen  = 10_000
-	maxBulkDeleteIDs = 200
+	maxPromptLen            = 1 << 20 // 1 MB
+	maxNameLen              = 500
+	maxAttachments          = 4
+	maxAttachmentBytes      = 5 << 20
+	maxAttachmentDataURLLen = 7 << 20
+	maxContentLen           = 1 << 20 // 1 MB for message/content fields
+	maxCommitMsgLen         = 10_000
+	maxBulkDeleteIDs        = 200
 )
 
 func validateUUID(field, value string) error {

@@ -33,9 +33,11 @@ func (s *Service) RegisterRoutes(mux *http.ServeMux) {
 	// secret; exchange is authenticated by the pairing token itself.
 	mux.HandleFunc("POST /api/auth/pairing-tokens", s.handleMintPairingToken)
 	mux.HandleFunc("POST /api/auth/pair", s.handlePairExchange)
+	mux.HandleFunc("POST /api/auth/identity-proof", s.handleIdentityProof)
 	mux.HandleFunc("POST /api/auth/ws-ticket", s.handleCreateWSTicket)
 	mux.HandleFunc("GET /api/auth/sessions", s.handleListSessions)
 	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.handleRevokeSession)
+	mux.HandleFunc("DELETE /api/auth/session", s.handleRevokeCurrentBearer)
 }
 
 // handleStatus returns the current auth state.
@@ -177,7 +179,10 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ceremonyKey := "reg:" + authUser.ID
-	s.saveCeremony(ceremonyKey, session, authUser.ID)
+	if err := s.saveCeremony(ceremonyKey, session, authUser.ID); err != nil {
+		httperror.RespondError(w, httperror.TooManyRequests(err.Error()))
+		return
+	}
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"options":     creation,
@@ -265,7 +270,10 @@ func (s *Service) handleLoginBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ceremonyKey := "login:" + rawKey
-	s.saveCeremony(ceremonyKey, session, "")
+	if err := s.saveCeremony(ceremonyKey, session, ""); err != nil {
+		httperror.RespondError(w, httperror.TooManyRequests(err.Error()))
+		return
+	}
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"options":     assertion,
@@ -325,12 +333,17 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout clears the auth session.
 func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(cookieName)
-	if err == nil {
-		_ = s.queries.DeleteAuthSession(r.Context(), cookie.Value)
+	session, authErr := s.authenticateRequest(r)
+	if session != nil && authErr == nil {
+		if err := s.queries.DeleteAuthSession(r.Context(), session.Token); err != nil {
+			slog.Warn("failed to delete logout session", "error", err)
+		}
+		if session.ID.Valid {
+			s.closeSessionConnections(session.ID.String)
+		}
 	}
 
-	clearSessionCookie(w, r)
+	s.clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

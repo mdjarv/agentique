@@ -70,12 +70,14 @@ type InviteToken struct {
 }
 
 type Machine struct {
-	MachineID string `json:"machine_id"`
-	Label     string `json:"label"`
-	BaseUrl   string `json:"base_url"`
-	Token     string `json:"token"`
-	AddedAt   string `json:"added_at"`
-	Icon      string `json:"icon"`
+	MachineID   string `json:"machine_id"`
+	Label       string `json:"label"`
+	BaseUrl     string `json:"base_url"`
+	Token       string `json:"token"`
+	AddedAt     string `json:"added_at"`
+	Icon        string `json:"icon"`
+	SessionID   string `json:"session_id"`
+	IdentityKey string `json:"identity_key"`
 }
 
 type Message struct {

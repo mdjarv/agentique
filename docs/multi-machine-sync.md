@@ -204,9 +204,9 @@ once-only.
 **Mutual pairing.** Today `agentique pair` mints a token on the machine being
 added; that machine never learns who redeemed it. The extension: the pairing
 exchange also mints a credential for the other side and returns it with the
-pairing machine's `machineId`, label and base URL. One gesture, both sides
-hold one credential each, and each verifies the other's `machineId` on
-connect.
+pairing machine's `machineId`, signing identity, label and base URL. One
+gesture, both sides hold one credential each, and each verifies the other's
+pinned signing key with a fresh challenge before sending credentials.
 
 **Pair all three pairwise.** Two edges through the always-on node would
 converge everything; the third costs one command and covers "VPS down" and
@@ -230,6 +230,42 @@ Client-mediated relaying (the browser carrying deltas, needing no new inbound
 trust) was rejected: it converges only while a client is open with both
 machines reachable, which for an office-hours laptop and an evenings desktop
 is close to never.
+
+### Security gates for implementation
+
+M2 and M3 do not ship until these properties have regression tests at the
+real HTTP boundary:
+
+- A `kind=peer` credential is accepted only on `/api/sync/*`. A route-matrix
+  test presents one to every other API family, including WebSockets, machine
+  catalog, projects, sessions, files, git, MCP, and administrative auth, and
+  expects denial. Adding a route means updating that explicit matrix.
+- Sync accepts only known entity-key prefixes and field names. UUIDs, origins,
+  booleans, text lengths, batch count, and total request bytes are bounded
+  before a transaction begins. Unknown fields are rejected, not retained for
+  a future version. A single exchange is capped at 256 registers and 1 MiB.
+- Incoming HLC values must have non-negative milliseconds and a counter from
+  zero through the signed 32-bit maximum, and a physical time no more than
+  five minutes ahead of the receiver. Counter overflow advances the physical millisecond; it never
+  wraps. Tests cover far-future clocks, negative values, maximum counters,
+  and repeated same-millisecond writes.
+- `origin` is provenance, so the author signs a canonical encoding of the
+  entity key, field, value, HLC, and origin with its pinned machine identity.
+  Forwarders preserve that signature. Unknown origins or invalid signatures
+  are rejected; if the UI ever displays unsigned provenance, it must label it
+  as an unverified relay assertion rather than authorship.
+- A cursor is committed only through the highest row actually encoded in a
+  successful response, and received registers plus `recv_cursor` commit in
+  one transaction. Empty, partial, retried, duplicated, and response-size-
+  limited batches have dedicated tests. A cursor supplied by a peer can never
+  make this server skip rows it has not emitted.
+- First-union state is durable protocol history, independent of a removable
+  catalog row. Unpairing and re-pairing the same machine identity must not run
+  the lossy first-union rule a second time. Tests exercise interrupted union,
+  retry, unpair, and re-pair.
+- Outbound sync uses a no-redirect HTTP client, verified TLS, the exact pinned
+  machine id and signing key, bounded response bodies, and deadlines. The
+  discovery client and its insecure TLS hint path are never reused.
 
 ## Failure modes
 
@@ -259,6 +295,14 @@ is close to never.
 - **The peer credential stays scoped.** A future feature "just needing" one
   more route is a design change, not a patch.
 - **Identity is pinned in both directions**, and a mismatch fails closed.
+- **Provenance is signed end to end.** A relay cannot forge the author shown
+  to the user.
+- **Cursors describe delivered data, never peer claims.** Cursor advancement
+  and register application are transactional.
+- **Untrusted input is bounded before merge.** Fields are allowlisted; batches,
+  strings, clocks, counters, and bodies have hard limits.
+- **First-union history survives unpairing.** Re-pairing cannot replay the
+  migration rule.
 - **Slugs are server-local.** Nothing replicated may rewrite a route directly.
 - **Local writes never block on a peer.**
 - **Merges are deterministic and idempotent.**

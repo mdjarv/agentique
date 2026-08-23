@@ -2,8 +2,8 @@ import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type EffortLevel = "" | "low" | "medium" | "high" | "xhigh" | "max";
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
-export const MAX_ATTACHMENTS = 8;
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 4;
 export const ACCEPTED_TYPES = "image/*,application/pdf";
 
 export function isAllowedType(mime: string): boolean {

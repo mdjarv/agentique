@@ -21,6 +21,8 @@ beforeEach(() => {
         label: "zbook",
         baseUrl: "https://zbook.tail1.ts.net:19201",
         token: "t",
+        sessionId: "session",
+        identityKey: "identity",
         addedAt: "",
       },
     },

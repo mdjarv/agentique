@@ -26,10 +26,14 @@ import (
 // token in the URL — they redeem a short-lived one-time ticket instead.
 
 const (
-	pairingTokenTTL    = 5 * time.Minute
-	pairingTokenMaxTTL = 24 * time.Hour
-	wsTicketTTL        = 5 * time.Minute
-	adminSecretFile    = "admin-secret"
+	pairingTokenTTL        = 5 * time.Minute
+	pairingTokenMaxTTL     = 24 * time.Hour
+	wsTicketTTL            = 5 * time.Minute
+	maxWSTicketsTotal      = 4096
+	maxWSTicketsPerSession = 32
+	maxPairingLabelRunes   = 128
+	maxAuthSessionIDBytes  = 128
+	adminSecretFile        = "admin-secret"
 
 	// Crockford-ish alphabet without 0/1/I/O — 12 chars ≈ 60 bits, QR- and
 	// transcription-friendly.
@@ -55,6 +59,9 @@ func LoadOrCreateAdminSecret(dataDir string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err == nil {
 		if secret := strings.TrimSpace(string(raw)); secret != "" {
+			if err := os.Chmod(path, 0o600); err != nil {
+				return "", fmt.Errorf("secure admin secret: %w", err)
+			}
 			return secret, nil
 		}
 	} else if !os.IsNotExist(err) {
@@ -67,6 +74,9 @@ func LoadOrCreateAdminSecret(dataDir string) (string, error) {
 	}
 	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
 		return "", fmt.Errorf("persist admin secret: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return "", fmt.Errorf("secure admin secret: %w", err)
 	}
 	return secret, nil
 }
@@ -194,8 +204,10 @@ func (s *Service) handleMintPairingToken(w http.ResponseWriter, r *http.Request)
 // the credential.
 func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Token string `json:"token"`
-		Label string `json:"label"`
+		Token            string `json:"token"`
+		Label            string `json:"label"`
+		Nonce            string `json:"nonce"`
+		ReplaceSessionID string `json:"replaceSessionId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httperror.RespondError(w, httperror.BadRequest("invalid request body"))
@@ -203,8 +215,22 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := normalizePairingToken(req.Token)
-	if token == "" {
-		httperror.RespondError(w, httperror.BadRequest("token is required"))
+	if len(token) != pairingTokenLength {
+		httperror.RespondError(w, httperror.BadRequest("pairing token is invalid"))
+		return
+	}
+	label := strings.TrimSpace(req.Label)
+	if len([]rune(label)) > maxPairingLabelRunes {
+		httperror.RespondError(w, httperror.BadRequest("label must be 128 characters or fewer"))
+		return
+	}
+	if len(req.ReplaceSessionID) > maxAuthSessionIDBytes {
+		httperror.RespondError(w, httperror.BadRequest("replaceSessionId is too long"))
+		return
+	}
+	identityKey, proof, err := s.identityProof(req.Nonce)
+	if err != nil {
+		httperror.RespondError(w, httperror.BadRequest(err.Error()))
 		return
 	}
 
@@ -220,15 +246,8 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	label := strings.TrimSpace(req.Label)
 	if label == "" {
 		label = "paired client"
-	}
-
-	bearer, err := s.createSession(r.Context(), row.UserID, label, "bearer")
-	if err != nil {
-		httperror.RespondError(w, httperror.Internal("create session", err))
-		return
 	}
 
 	user, err := s.queries.GetUser(r.Context(), row.UserID)
@@ -236,16 +255,71 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 		httperror.RespondError(w, httperror.Internal("load user", err))
 		return
 	}
+	bearer, sessionID, err := s.createSessionWithID(r.Context(), row.UserID, label, "bearer")
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("create session", err))
+		return
+	}
+	if req.ReplaceSessionID != "" {
+		n, err := s.queries.DeleteBearerAuthSessionByIDAndUser(r.Context(), store.DeleteBearerAuthSessionByIDAndUserParams{
+			ID: sql.NullString{String: req.ReplaceSessionID, Valid: true}, UserID: row.UserID,
+		})
+		if err != nil {
+			_ = s.queries.DeleteAuthSession(r.Context(), bearer)
+			httperror.RespondError(w, httperror.Internal("rotate previous session", err))
+			return
+		}
+		if n > 0 {
+			s.closeSessionConnections(req.ReplaceSessionID)
+		}
+	}
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
-		"token":     bearer,
-		"expiresAt": time.Now().Add(sessionMaxAge).UTC().Format(time.RFC3339),
+		"token":       bearer,
+		"sessionId":   sessionID,
+		"expiresAt":   time.Now().Add(sessionMaxAge).UTC().Format(time.RFC3339),
+		"machineId":   s.machineID,
+		"identityKey": identityKey,
+		"proof":       proof,
 		"user": map[string]any{
 			"id":          user.ID,
 			"displayName": user.DisplayName,
 			"isAdmin":     user.IsAdmin != 0,
 		},
 	})
+}
+
+// handleIdentityProof signs a fresh client nonce so a paired client can prove
+// it reached the same private key before disclosing its bearer credential.
+func (s *Service) handleIdentityProof(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Nonce string `json:"nonce"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httperror.RespondError(w, httperror.BadRequest("invalid request body"))
+		return
+	}
+	identityKey, proof, err := s.identityProof(req.Nonce)
+	if err != nil {
+		httperror.RespondError(w, httperror.BadRequest(err.Error()))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, map[string]string{
+		"machineId":   s.machineID,
+		"identityKey": identityKey,
+		"proof":       proof,
+	})
+}
+
+func (s *Service) identityProof(nonce string) (string, string, error) {
+	if s.machineID == "" || s.machineSigner == nil || s.machineSigner.PublicKey() == "" {
+		return "", "", errors.New("machine signing identity is unavailable")
+	}
+	proof, err := s.machineSigner.SignChallenge(nonce)
+	if err != nil {
+		return "", "", err
+	}
+	return s.machineSigner.PublicKey(), proof, nil
 }
 
 // handleCreateWSTicket mints a one-time short-lived ticket the client appends
@@ -265,7 +339,15 @@ func (s *Service) handleCreateWSTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expires := time.Now().Add(wsTicketTTL)
-	s.wsTickets.Store(ticket, &wsTicket{sessionToken: session.Token, expiresAt: expires})
+	s.wsTicketMu.Lock()
+	s.deleteExpiredWSTicketsLocked(time.Now())
+	if len(s.wsTickets) >= maxWSTicketsTotal || s.countWSTicketsLocked(session.Token) >= maxWSTicketsPerSession {
+		s.wsTicketMu.Unlock()
+		httperror.RespondError(w, httperror.TooManyRequests("too many outstanding WebSocket tickets"))
+		return
+	}
+	s.wsTickets[ticket] = &wsTicket{sessionToken: session.Token, expiresAt: expires}
+	s.wsTicketMu.Unlock()
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
 		"ticket":    ticket,
@@ -277,11 +359,13 @@ func (s *Service) handleCreateWSTicket(w http.ResponseWriter, r *http.Request) {
 // session. The session is re-validated against the database so a revoked
 // bearer session cannot ride a pre-minted ticket.
 func (s *Service) redeemWSTicket(ctx context.Context, ticket string) (*store.GetAuthSessionRow, error) {
-	val, ok := s.wsTickets.LoadAndDelete(ticket)
+	s.wsTicketMu.Lock()
+	entry, ok := s.wsTickets[ticket]
+	delete(s.wsTickets, ticket)
+	s.wsTicketMu.Unlock()
 	if !ok {
 		return nil, errors.New("ws ticket not found or already used")
 	}
-	entry := val.(*wsTicket)
 	if time.Now().After(entry.expiresAt) {
 		return nil, errors.New("ws ticket expired")
 	}
@@ -291,6 +375,24 @@ func (s *Service) redeemWSTicket(ctx context.Context, ticket string) (*store.Get
 		return nil, errors.New("session for ws ticket no longer valid")
 	}
 	return &row, nil
+}
+
+func (s *Service) countWSTicketsLocked(sessionToken string) int {
+	count := 0
+	for _, ticket := range s.wsTickets {
+		if ticket.sessionToken == sessionToken {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *Service) deleteExpiredWSTicketsLocked(now time.Time) {
+	for ticket, entry := range s.wsTickets {
+		if now.After(entry.expiresAt) {
+			delete(s.wsTickets, ticket)
+		}
+	}
 }
 
 // handleListSessions lists auth sessions (no secrets). GET /api/auth/sessions.
@@ -347,6 +449,30 @@ func (s *Service) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	if n == 0 {
 		httperror.RespondError(w, httperror.NotFound("session not found"))
 		return
+	}
+	s.closeSessionConnections(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRevokeCurrentBearer lets a paired client revoke the exact credential
+// it presents. Machine removal uses this before deleting its local catalog
+// entry, so forgetting a machine does not leave a remote bearer alive.
+func (s *Service) handleRevokeCurrentBearer(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" {
+		httperror.RespondError(w, httperror.Unauthorized("bearer credential required"))
+		return
+	}
+	session, err := s.authenticateRequest(r)
+	if err != nil || session == nil || session.Kind != "bearer" {
+		httperror.RespondError(w, httperror.Unauthorized("valid bearer credential required"))
+		return
+	}
+	if err := s.queries.DeleteAuthSession(r.Context(), session.Token); err != nil {
+		httperror.RespondError(w, httperror.Internal("revoke current session", err))
+		return
+	}
+	if session.ID.Valid {
+		s.closeSessionConnections(session.ID.String)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

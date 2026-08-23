@@ -23,6 +23,10 @@ export interface MachineEntry {
   baseUrl: string;
   /** Long-lived bearer session token from the pairing exchange. */
   token: string;
+  /** Public id of the remote auth session, used for rotation and revocation. */
+  sessionId: string;
+  /** Base64url P-256 SPKI public key pinned during pairing. */
+  identityKey: string;
   addedAt: string;
   /** Icon id (lucide) — this host's presentation of that machine, never the
    *  machine's own opinion. Empty falls back to the generic server glyph. */
@@ -49,11 +53,11 @@ interface MachineState {
    *  (docs/upgrades.md), greyed and with no action offered. */
   versions: Record<string, string>;
 
-  addMachine: (entry: MachineEntry) => void;
+  addMachine: (entry: MachineEntry) => Promise<void>;
   /** Rename / re-face a paired machine. Presentation is local to this host:
    *  nothing is written to the machine itself (docs/multi-machine.md). */
   renameMachine: (machineId: string, patch: { label?: string; icon?: string }) => Promise<void>;
-  removeMachine: (machineId: string) => void;
+  removeMachine: (machineId: string) => Promise<void>;
   setStatus: (machineId: string, status: MachineStatus) => void;
   /** Record or clear a proven fault for a machine. */
   setFault: (machineId: string, fault: MachineFault | null) => void;
@@ -73,33 +77,33 @@ export const useMachineStore = create<MachineState>()(
       faults: {},
       versions: {},
 
-      addMachine: (entry) => {
-        set((s) => ({ machines: { ...s.machines, [entry.machineId]: entry } }));
-        fetch(`/api/machines/${encodeURIComponent(entry.machineId)}`, {
+      addMachine: async (entry) => {
+        const res = await fetch(`/api/machines/${encodeURIComponent(entry.machineId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             label: entry.label,
             baseUrl: entry.baseUrl,
             token: entry.token,
+            sessionId: entry.sessionId,
+            identityKey: entry.identityKey,
             addedAt: entry.addedAt,
             icon: entry.icon ?? "",
           }),
-        }).catch((err) => console.error("machine catalog save failed", err));
+        });
+        if (!res.ok) throw new Error(`machine catalog save failed (${res.status})`);
+        set((s) => ({ machines: { ...s.machines, [entry.machineId]: entry } }));
       },
       renameMachine: async (machineId, patch) => {
         const current = get().machines[machineId];
         if (!current) return;
         const next: MachineEntry = { ...current, ...patch };
         set((s) => ({ machines: { ...s.machines, [machineId]: next } }));
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}`, {
-          method: "PUT",
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/presentation`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             label: next.label,
-            baseUrl: next.baseUrl,
-            token: next.token,
-            addedAt: next.addedAt,
             icon: next.icon ?? "",
           }),
         });
@@ -110,7 +114,17 @@ export const useMachineStore = create<MachineState>()(
           throw new Error(`rename failed (${res.status})`);
         }
       },
-      removeMachine: (machineId) => {
+      removeMachine: async (machineId) => {
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const detail = await res
+            .json()
+            .then((body: { error?: string }) => body.error)
+            .catch(() => undefined);
+          throw new Error(detail ?? `machine removal failed (${res.status})`);
+        }
         set((s) => {
           const machines = { ...s.machines };
           delete machines[machineId];
@@ -122,9 +136,6 @@ export const useMachineStore = create<MachineState>()(
           delete versions[machineId];
           return { machines, statuses, faults, versions };
         });
-        fetch(`/api/machines/${encodeURIComponent(machineId)}`, { method: "DELETE" }).catch((err) =>
-          console.error("machine catalog delete failed", err),
-        );
       },
       setFault: (machineId, fault) =>
         set((s) => {
@@ -187,16 +198,37 @@ export const useMachineStore = create<MachineState>()(
     }),
     {
       name: "agentique:machines",
+      version: 2,
       // Connection status is per-tab runtime state, never persisted.
       // Faults are runtime findings — re-proven on the next failed connect,
       // never restored from a cache that might be describing yesterday.
       // Versions ARE persisted: "what was it running when it left" is the
       // honest answer for an away machine, and it is re-proven on connect.
       partialize: (s) => ({
-        machines: s.machines,
+        machines: Object.fromEntries(
+          Object.entries(s.machines).map(([id, entry]) => [id, { ...entry, token: "" }]),
+        ),
         lastSeenAt: s.lastSeenAt,
         versions: s.versions,
       }),
+      migrate: (persisted) => {
+        const state = persisted as Partial<MachineState>;
+        return {
+          ...state,
+          versions: state.versions ?? {},
+          machines: Object.fromEntries(
+            Object.entries(state.machines ?? {}).map(([id, entry]) => [
+              id,
+              {
+                ...entry,
+                token: "",
+                sessionId: entry.sessionId ?? "",
+                identityKey: entry.identityKey ?? "",
+              },
+            ]),
+          ),
+        } as MachineState;
+      },
     },
   ),
 );

@@ -32,13 +32,18 @@ jobs:
         env:
           GOPRIVATE: github.com/allbin/*
 
+      - name: Go vulnerability check
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0 && cd backend && govulncheck ./...
+        env:
+          GOPRIVATE: github.com/allbin/*
+
       - name: Windows cross-compile
         run: cd backend && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
         env:
           GOPRIVATE: github.com/allbin/*
 
       - name: Go test
-        run: cd backend && go test ./... -count=1 -short
+        run: cd backend && go test ./... -count=1 -race -short
         env:
           GOPRIVATE: github.com/allbin/*
 
@@ -60,6 +65,9 @@ jobs:
 
       - name: Install dependencies
         run: cd frontend && npm ci
+
+      - name: npm audit
+        run: cd frontend && npm audit
 
       - name: Biome check
         run: cd frontend && npx biome check src/

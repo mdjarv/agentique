@@ -203,6 +203,23 @@ func (q *Queries) DeleteAuthSessionByID(ctx context.Context, id sql.NullString) 
 	return result.RowsAffected()
 }
 
+const deleteBearerAuthSessionByIDAndUser = `-- name: DeleteBearerAuthSessionByIDAndUser :execrows
+DELETE FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'bearer'
+`
+
+type DeleteBearerAuthSessionByIDAndUserParams struct {
+	ID     sql.NullString `json:"id"`
+	UserID string         `json:"user_id"`
+}
+
+func (q *Queries) DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteBearerAuthSessionByIDAndUser, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteExpiredAuthSessions = `-- name: DeleteExpiredAuthSessions :exec
 DELETE FROM auth_sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `

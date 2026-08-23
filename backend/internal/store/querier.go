@@ -44,6 +44,7 @@ type Querier interface {
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
 	DeleteAuthSession(ctx context.Context, token string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
+	DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error)
 	DeleteBrainJob(ctx context.Context, id string) error
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
@@ -64,6 +65,7 @@ type Querier interface {
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
 	GetHostPresentation(ctx context.Context) (GetHostPresentationRow, error)
 	GetInviteToken(ctx context.Context, token string) (InviteToken, error)
+	GetMachine(ctx context.Context, machineID string) (Machine, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
@@ -143,6 +145,7 @@ type Querier interface {
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
 	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error
 	UpdateDeliveryStatus(ctx context.Context, arg UpdateDeliveryStatusParams) error
+	UpdateMachinePresentation(ctx context.Context, arg UpdateMachinePresentationParams) (int64, error)
 	UpdateProjectBehaviorPresets(ctx context.Context, arg UpdateProjectBehaviorPresetsParams) (Project, error)
 	UpdateProjectColor(ctx context.Context, arg UpdateProjectColorParams) (Project, error)
 	UpdateProjectFavorite(ctx context.Context, arg UpdateProjectFavoriteParams) (Project, error)

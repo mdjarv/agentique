@@ -265,16 +265,21 @@ export function MachinesSettings() {
               Remove {removing ? (machines[removing]?.label ?? "this machine") : "this machine"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Its projects and cached sessions disappear from this device, and you'll need a new
-              pairing token to add it back. Nothing on the machine itself is touched.
+              Agentique will revoke this pairing on the remote machine before removing its projects
+              and cached sessions. The machine must be reachable.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                if (removing) removeMachine(removing);
-                setRemoving(null);
+              onClick={async () => {
+                if (!removing) return;
+                try {
+                  await removeMachine(removing);
+                  setRemoving(null);
+                } catch (err) {
+                  toast.error(getErrorMessage(err, "Could not remove machine"));
+                }
               }}
             >
               Remove

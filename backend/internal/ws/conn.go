@@ -19,28 +19,31 @@ import (
 )
 
 const (
-	writeTimeout = 10 * time.Second
-	pongTimeout  = 60 * time.Second
-	pingInterval = 30 * time.Second
-	sendBufSize  = 256
+	writeTimeout           = 10 * time.Second
+	pongTimeout            = 60 * time.Second
+	pingInterval           = 30 * time.Second
+	sendBufSize            = 256
+	defaultMaxMessageBytes = 32 << 20
 )
 
 type conn struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	ws            *websocket.Conn
-	svc           *session.Service
-	gitSvc        *session.GitService
-	projectGitSvc *project.GitService
-	queries       *store.Queries
-	bus           *eventbus.Bus
-	teamSvc       *team.Service           // nil when experimental teams is disabled
-	personaSvc    *persona.Service        // nil when experimental teams is disabled
-	browserSvc    *session.BrowserService // nil when browser support is unavailable
-	scheduleSvc   *schedule.Scheduler     // nil when the scheduler is disabled
-	catalog       *providers.Catalog      // model catalog; nil = base aliases only
-	sendCh        chan any
-	mu            sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	ws              *websocket.Conn
+	svc             *session.Service
+	gitSvc          *session.GitService
+	projectGitSvc   *project.GitService
+	queries         *store.Queries
+	bus             *eventbus.Bus
+	teamSvc         *team.Service           // nil when experimental teams is disabled
+	personaSvc      *persona.Service        // nil when experimental teams is disabled
+	browserSvc      *session.BrowserService // nil when browser support is unavailable
+	scheduleSvc     *schedule.Scheduler     // nil when the scheduler is disabled
+	catalog         *providers.Catalog      // model catalog; nil = base aliases only
+	sendCh          chan any
+	maxMessageBytes int64
+	mu              sync.Mutex
+	closeOnce       sync.Once
 
 	// One multi-topic subscription per conn. Membership is owned by the
 	// Subscription itself (AddTopic/RemoveTopic), so each Publish or
@@ -49,23 +52,27 @@ type conn struct {
 	sub *eventbus.Subscription
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, scheduleSvc *schedule.Scheduler, catalog *providers.Catalog) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, scheduleSvc *schedule.Scheduler, catalog *providers.Catalog, maxMessageBytes int64) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
+	if maxMessageBytes <= 0 {
+		maxMessageBytes = defaultMaxMessageBytes
+	}
 	c := &conn{
-		ctx:           ctx,
-		cancel:        cancel,
-		ws:            ws,
-		svc:           svc,
-		gitSvc:        gitSvc,
-		projectGitSvc: projectGitSvc,
-		queries:       queries,
-		bus:           bus,
-		teamSvc:       teamSvc,
-		personaSvc:    personaSvc,
-		browserSvc:    browserSvc,
-		scheduleSvc:   scheduleSvc,
-		catalog:       catalog,
-		sendCh:        make(chan any, sendBufSize),
+		ctx:             ctx,
+		cancel:          cancel,
+		ws:              ws,
+		svc:             svc,
+		gitSvc:          gitSvc,
+		projectGitSvc:   projectGitSvc,
+		queries:         queries,
+		bus:             bus,
+		teamSvc:         teamSvc,
+		personaSvc:      personaSvc,
+		browserSvc:      browserSvc,
+		scheduleSvc:     scheduleSvc,
+		catalog:         catalog,
+		sendCh:          make(chan any, sendBufSize),
+		maxMessageBytes: maxMessageBytes,
 	}
 	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
 	// Join the empty/global topic: project-less events (web-only discussion
@@ -93,16 +100,22 @@ func (c *conn) unsubscribe() {
 func (c *conn) run() {
 	defer func() {
 		c.unsubscribe()
-		c.cancel()
-		c.ws.Close()
+		c.close()
 	}()
 
 	go c.writeLoop()
 	c.readLoop()
 }
 
+func (c *conn) close() {
+	c.closeOnce.Do(func() {
+		c.cancel()
+		_ = c.ws.Close()
+	})
+}
+
 func (c *conn) readLoop() {
-	c.ws.SetReadLimit(128 << 20) // 128 MB – must accommodate base64-encoded image attachments
+	c.ws.SetReadLimit(c.maxMessageBytes)
 	c.ws.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.ws.SetPongHandler(func(string) error {
 		c.ws.SetReadDeadline(time.Now().Add(pongTimeout))

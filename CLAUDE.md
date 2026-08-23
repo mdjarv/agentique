@@ -152,19 +152,22 @@ weakest-first; listing models never fails.
 ### Multi-machine — `docs/multi-machine.md`
 
 The server is the authorization boundary — network reachability (tailnet)
-and peer discovery never substitute for auth; bearer tokens never ride URLs
-(sockets redeem one-time tickets, re-checked against the DB); an explicit
-credential never falls back to another. Clients pin `machineId` and verify
-it on pair and connect. Requests route by owning entity through the routing
-facade; only `Project` carries a client-side machine tag (sessions derive
+and peer discovery never substitute for auth; auth-disabled listeners are
+loopback-only; bearer tokens never ride URLs (sockets redeem bounded one-time
+tickets, re-checked against the DB); an explicit credential never falls back
+to another. Clients pin `machineId` and the signing identity, then verify a
+fresh signed challenge before sending credentials on every pair/connect path.
+Revoking a session closes its established sockets, and unpairing revokes the
+remote bearer before deleting the local catalog row. Requests route by owning
+entity through the routing facade; only `Project` carries a client-side machine tag (sessions derive
 theirs via the project); remote slugs get a machine suffix, primary slugs
 are never rewritten. Cross-machine grouping (by canonical git remote) is
 display-only — commands always target one physical entity. Every surface
 that LISTS projects lists logical ones (`useLogicalProjects`), never
 checkouts; the representative owns presentation (name, colour, icon, star)
 and a remote's own favorite flag is ignored. The machine
-catalog is account state on the primary; localStorage and the per-machine
-data cache are offline caches, and cached snapshots sanitize live-ness. A
+catalog is full-access account state on the primary; localStorage never
+persists bearer credentials, and per-machine data caches sanitize live-ness. A
 flaky remote re-syncs only itself and must never reset primary state.
 Per-machine WS clients reconnect in place, never get replaced.
 

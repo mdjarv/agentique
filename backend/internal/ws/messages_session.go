@@ -1,8 +1,11 @@
 package ws
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/mdjarv/agentique/backend/internal/session"
 )
@@ -211,7 +214,7 @@ var (
 	errApprovalIDRequired         = errors.New("sessionId and approvalId are required")
 	errQuestionIDRequired         = errors.New("sessionId and questionId are required")
 	errSessionIDAndMsgRequired    = errors.New("sessionId and message are required")
-	errTooManyAttachments         = errors.New("too many attachments (max 50)")
+	errTooManyAttachments         = errors.New("too many attachments (max 4)")
 )
 
 // --- Session Validate methods ---
@@ -260,6 +263,37 @@ func (p *SessionQueryPayload) Validate() error {
 	}
 	if len(p.Attachments) > maxAttachments {
 		return errTooManyAttachments
+	}
+	for i, attachment := range p.Attachments {
+		if err := validateQueryAttachment(attachment); err != nil {
+			return fmt.Errorf("attachment %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+func validateQueryAttachment(attachment session.QueryAttachment) error {
+	if attachment.Name == "" || len([]rune(attachment.Name)) > 255 {
+		return errors.New("name must be between 1 and 255 characters")
+	}
+	if len(attachment.MimeType) > 128 ||
+		(!strings.HasPrefix(attachment.MimeType, "image/") && attachment.MimeType != "application/pdf") {
+		return errors.New("mimeType must be an image or PDF")
+	}
+	if len(attachment.DataUrl) > maxAttachmentDataURLLen {
+		return errors.New("dataUrl exceeds the 5 MiB attachment limit")
+	}
+	header, encoded, ok := strings.Cut(attachment.DataUrl, ",")
+	if !ok || header != "data:"+attachment.MimeType+";base64" {
+		return errors.New("dataUrl must be base64 data matching mimeType")
+	}
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
+	n, err := io.Copy(io.Discard, io.LimitReader(decoder, maxAttachmentBytes+1))
+	if err != nil {
+		return errors.New("dataUrl contains invalid base64")
+	}
+	if n > maxAttachmentBytes {
+		return errors.New("decoded attachment exceeds 5 MiB")
 	}
 	return nil
 }

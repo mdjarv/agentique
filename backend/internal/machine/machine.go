@@ -2,7 +2,8 @@
 // multi-machine feature (docs/multi-machine.md). The identity is a
 // UUID persisted in the data directory — stable across restarts, ports, IPs,
 // and access methods, so the same machine reached via LAN or tailnet is one
-// machine, not several. Clients verify it on every connect.
+// machine, not several. Clients verify it together with the signing identity
+// on every connect.
 package machine
 
 import (

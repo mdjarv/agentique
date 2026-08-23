@@ -6,7 +6,7 @@ import {
   hydrateMachineCache,
   saveMachineCache,
 } from "~/lib/machines/cache";
-import { probeIdentity, probeMachine } from "~/lib/machines/health";
+import { probeMachine } from "~/lib/machines/health";
 import {
   disconnectMachine,
   getMachineClient,
@@ -64,32 +64,6 @@ export function reloadMachineProjects(machineId: string): Promise<void> {
 }
 
 /**
- * Enforce the identity pin on connect (docs/multi-machine.md: "Clients pin
- * machineId and verify it on pair and connect").
- *
- * Pairing checks the descriptor, but nothing re-checked it afterwards — so an
- * address that changed hands (re-provisioned host, reused tailnet name) would
- * connect happily and its projects would be ingested under the old machine's
- * identity. Verified here, before a single project is trusted.
- *
- * Returns false when the machine is not who we paired with; the caller must
- * not load anything from it.
- */
-async function verifyIdentity(machineId: string): Promise<boolean> {
-  const entry = useMachineStore.getState().machines[machineId];
-  if (!entry) return false;
-  const { fault, descriptor } = await probeIdentity(entry);
-  if (fault) {
-    useMachineStore.getState().setFault(machineId, fault);
-    return false;
-  }
-  // The descriptor already carries the machine's build version; record it so
-  // the version of every machine is known without an extra call.
-  if (descriptor?.version) useMachineStore.getState().setVersion(machineId, descriptor.version);
-  return true;
-}
-
-/**
  * Forget everything a machine gave us. Used when a machine is removed, and
  * when one is rejected at the gate: its cached projects are how the routing
  * facade finds it, so leaving them behind lets any stray request revive the
@@ -117,16 +91,10 @@ function dropMachineData(machineId: string): void {
  */
 function admit(machineId: string, client: WsClient, load: () => void): void {
   client.setMaxReconnectDelay(NORMAL_RETRY_MS);
-  void verifyIdentity(machineId).then((ok) => {
-    if (!ok) {
-      disconnectMachine(machineId);
-      dropMachineData(machineId);
-      return;
-    }
-    // Admitted: whoever this is, it is who we paired with.
-    useMachineStore.getState().setFault(machineId, null);
-    load();
-  });
+  // The registry proved the pinned signing key before minting the ticket that
+  // opened this socket. No socket can reach this callback while quarantined.
+  useMachineStore.getState().setFault(machineId, null);
+  load();
 }
 
 async function loadMachine(machineId: string, client: WsClient): Promise<void> {

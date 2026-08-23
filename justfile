@@ -20,7 +20,8 @@ dev-tls:
 
 # Go backend
 dev-backend *args:
-    cd backend && go run ./cmd/agentique serve --addr 0.0.0.0:9201 --disable-auth {{args}}
+    cd backend && go run ./cmd/agentique serve --addr 127.0.0.1:9201 \
+        --disable-auth --rp-origin http://localhost:9200 {{args}}
 
 # Go backend with TLS
 dev-backend-tls *args:

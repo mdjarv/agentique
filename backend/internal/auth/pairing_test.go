@@ -3,17 +3,26 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
+
+const testMachineID = "10000000-0000-4000-8000-000000000001"
+
+var testPairingNonce = base64.RawURLEncoding.EncodeToString(make([]byte, 32))
 
 func newTestService(t *testing.T) (*Service, *store.Queries) {
 	t.Helper()
@@ -30,6 +39,11 @@ func newTestService(t *testing.T) (*Service, *store.Queries) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+	identity, err := machine.LoadOrCreateSigningIdentity(t.TempDir(), testMachineID)
+	if err != nil {
+		t.Fatalf("create machine signing identity: %v", err)
+	}
+	svc.SetMachineIdentity(testMachineID, identity)
 	return svc, queries
 }
 
@@ -106,6 +120,29 @@ func TestRequireAdminFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateAdminSecretSecuresExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, adminSecretFile)
+	if err := os.WriteFile(path, []byte("existing-secret\n"), 0o644); err != nil {
+		t.Fatalf("write existing secret: %v", err)
+	}
+
+	secret, err := LoadOrCreateAdminSecret(dir)
+	if err != nil {
+		t.Fatalf("load existing secret: %v", err)
+	}
+	if secret != "existing-secret" {
+		t.Fatalf("secret = %q, want existing value", secret)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat secret: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("secret mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
 // mintToken drives the real handler with the admin secret and returns the token.
 func mintToken(t *testing.T, svc *Service, body string) string {
 	t.Helper()
@@ -127,7 +164,9 @@ func mintToken(t *testing.T, svc *Service, body string) string {
 
 func exchangeToken(t *testing.T, svc *Service, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"token": token, "label": "test client"})
+	body, _ := json.Marshal(map[string]string{
+		"token": token, "label": "test client", "nonce": testPairingNonce,
+	})
 	r := httptest.NewRequest(http.MethodPost, "/api/auth/pair", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	svc.handlePairExchange(w, r)
@@ -147,13 +186,26 @@ func TestPairingExchangeFlow(t *testing.T) {
 		t.Fatalf("exchange status = %d, body %s", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Token string `json:"token"`
+		Token       string `json:"token"`
+		SessionID   string `json:"sessionId"`
+		MachineID   string `json:"machineId"`
+		IdentityKey string `json:"identityKey"`
+		Proof       string `json:"proof"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode exchange response: %v", err)
 	}
 	if resp.Token == "" {
 		t.Fatal("expected bearer token")
+	}
+	if resp.SessionID == "" {
+		t.Fatal("expected public auth session id")
+	}
+	if resp.MachineID != testMachineID || resp.IdentityKey == "" || resp.Proof == "" {
+		t.Fatalf("incomplete machine identity response: %+v", resp)
+	}
+	if err := machine.VerifyChallenge(resp.IdentityKey, resp.MachineID, testPairingNonce, resp.Proof); err != nil {
+		t.Fatalf("verify pairing identity proof: %v", err)
 	}
 
 	// The bearer authenticates requests.
@@ -180,6 +232,65 @@ func TestPairingExchangeFlow(t *testing.T) {
 	}
 }
 
+func TestPairingExchangeRejectsOversizedFieldsWithoutConsumingToken(t *testing.T) {
+	svc, queries := newTestService(t)
+	createAdminUser(t, queries)
+	svc.SetAdminSecret("test-secret")
+
+	for name, field := range map[string]string{
+		"label":          "label",
+		"replacement id": "replaceSessionId",
+	} {
+		t.Run(name, func(t *testing.T) {
+			token := mintToken(t, svc, "")
+			body, err := json.Marshal(map[string]string{
+				"token": token, "label": "client", "nonce": testPairingNonce,
+				field: strings.Repeat("x", 129),
+			})
+			if err != nil {
+				t.Fatalf("encode request: %v", err)
+			}
+			r := httptest.NewRequest(http.MethodPost, "/api/auth/pair", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			svc.handlePairExchange(w, r)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("oversized %s status = %d, want 400: %s", field, w.Code, w.Body.String())
+			}
+
+			if retry := exchangeToken(t, svc, token); retry.Code != http.StatusOK {
+				t.Fatalf("rejected request consumed token: status = %d: %s", retry.Code, retry.Body.String())
+			}
+		})
+	}
+}
+
+func TestSessionCookieIsSecureBehindConfiguredHTTPSReverseProxy(t *testing.T) {
+	_, queries := newTestService(t)
+	svc, err := NewService(queries, "public.example", []string{
+		"https://public.example", "http://localhost:9201",
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	proxied := httptest.NewRequest(http.MethodPost, "http://public.example/api/auth/login/finish", nil)
+	proxied.Host = "public.example"
+	w := httptest.NewRecorder()
+	svc.setSessionCookie(w, proxied, "token")
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("proxied HTTPS cookie must be Secure: %+v", cookies)
+	}
+
+	local := httptest.NewRequest(http.MethodPost, "http://localhost:9201/api/auth/login/finish", nil)
+	w = httptest.NewRecorder()
+	svc.setSessionCookie(w, local, "token")
+	cookies = w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Secure {
+		t.Fatalf("loopback HTTP cookie must remain usable without Secure: %+v", cookies)
+	}
+}
+
 func TestPairingTokenExpiry(t *testing.T) {
 	svc, queries := newTestService(t)
 	admin := createAdminUser(t, queries)
@@ -197,6 +308,57 @@ func TestPairingTokenExpiry(t *testing.T) {
 
 	if w := exchangeToken(t, svc, token); w.Code != http.StatusUnauthorized {
 		t.Fatalf("expired token status = %d, want 401", w.Code)
+	}
+}
+
+func TestRepairRevokesPreviousBearerSession(t *testing.T) {
+	svc, queries := newTestService(t)
+	admin := createAdminUser(t, queries)
+	svc.SetAdminSecret("test-secret")
+	oldBearer, oldSessionID, err := svc.createSessionWithID(context.Background(), admin.ID, "old client", "bearer")
+	if err != nil {
+		t.Fatalf("create old session: %v", err)
+	}
+	pairingToken := mintToken(t, svc, "")
+	body, _ := json.Marshal(map[string]string{
+		"token": pairingToken, "label": "replacement client", "nonce": testPairingNonce,
+		"replaceSessionId": oldSessionID,
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/pair", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	svc.handlePairExchange(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("re-pair status = %d: %s", w.Code, w.Body.String())
+	}
+
+	lookup := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
+	lookup.Header.Set("Authorization", "Bearer "+oldBearer)
+	if _, err := svc.authenticateRequest(lookup); err == nil {
+		t.Fatal("re-pair left the replaced bearer session valid")
+	}
+}
+
+func TestBearerCanRevokeItsOwnSession(t *testing.T) {
+	svc, queries := newTestService(t)
+	admin := createAdminUser(t, queries)
+	bearer, err := svc.createSession(context.Background(), admin.ID, "client", "bearer")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	mux := http.NewServeMux()
+	svc.RegisterRoutes(mux)
+	req := httptest.NewRequest(http.MethodDelete, "/api/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("self-revoke status = %d: %s", w.Code, w.Body.String())
+	}
+
+	lookup := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
+	lookup.Header.Set("Authorization", "Bearer "+bearer)
+	if _, err := svc.authenticateRequest(lookup); err == nil {
+		t.Fatal("self-revoked bearer remained valid")
 	}
 }
 
@@ -267,6 +429,46 @@ func TestWSTicketFlow(t *testing.T) {
 	}
 	if _, err := svc.redeemWSTicket(context.Background(), resp2.Ticket); err == nil {
 		t.Fatal("ticket for a revoked session must fail")
+	}
+}
+
+func TestWSTicketMintIsBoundedPerSession(t *testing.T) {
+	svc, queries := newTestService(t)
+	admin := createAdminUser(t, queries)
+	bearer, err := svc.createSession(context.Background(), admin.ID, "client", "bearer")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	const ticketLimit = 32
+	for i := 0; i < ticketLimit; i++ {
+		r := httptest.NewRequest(http.MethodPost, "/api/auth/ws-ticket", nil)
+		r.Header.Set("Authorization", "Bearer "+bearer)
+		w := httptest.NewRecorder()
+		svc.handleCreateWSTicket(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("ticket %d status = %d, body %s", i+1, w.Code, w.Body.String())
+		}
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/ws-ticket", nil)
+	r.Header.Set("Authorization", "Bearer "+bearer)
+	w := httptest.NewRecorder()
+	svc.handleCreateWSTicket(w, r)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("overflow ticket status = %d, want 429: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebAuthnCeremoniesAreBounded(t *testing.T) {
+	svc, _ := newTestService(t)
+	for i := 0; i < 1024; i++ {
+		if err := svc.saveCeremony(fmt.Sprintf("login:%d", i), &webauthn.SessionData{}, ""); err != nil {
+			t.Fatalf("save ceremony %d: %v", i, err)
+		}
+	}
+	if err := svc.saveCeremony("login:overflow", &webauthn.SessionData{}, ""); err == nil {
+		t.Fatal("unbounded WebAuthn ceremony was accepted")
 	}
 }
 

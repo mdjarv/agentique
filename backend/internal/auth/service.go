@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ const (
 	cookieName     = "agentique_session"
 	sessionMaxAge  = 30 * 24 * time.Hour
 	ceremonyTTL    = 5 * time.Minute
+	maxCeremonies  = 1024
 	inviteTokenTTL = 7 * 24 * time.Hour
 )
 
@@ -34,9 +36,30 @@ const userContextKey contextKey = 0
 type Service struct {
 	queries     *store.Queries
 	webauthn    *webauthn.WebAuthn
-	ceremonies  sync.Map // key: string -> *ceremonyEntry
-	wsTickets   sync.Map // key: string -> *wsTicket
-	adminSecret string   // data-dir secret authorizing CLI pairing/session management; "" = disabled
+	adminSecret string // data-dir secret authorizing CLI pairing/session management; "" = disabled
+	ceremonyMu  sync.Mutex
+	ceremonies  map[string]*ceremonyEntry
+	wsTicketMu  sync.Mutex
+	wsTickets   map[string]*wsTicket
+
+	connectionMu      sync.Mutex
+	connections       map[string]map[uint64]*trackedConnection
+	nextConnectionID  uint64
+	machineID         string
+	machineSigner     MachineSigner
+	secureCookieHosts map[string]bool
+}
+
+// MachineSigner proves the server's persistent identity without exposing its
+// private key to the auth module.
+type MachineSigner interface {
+	PublicKey() string
+	SignChallenge(nonce string) (string, error)
+}
+
+type trackedConnection struct {
+	close func()
+	timer *time.Timer
 }
 
 type ceremonyEntry struct {
@@ -57,9 +80,20 @@ func NewService(queries *store.Queries, rpID string, rpOrigins []string) (*Servi
 		return nil, fmt.Errorf("webauthn config: %w", err)
 	}
 
+	secureCookieHosts := make(map[string]bool)
+	for _, origin := range rpOrigins {
+		u, err := url.Parse(origin)
+		if err == nil && strings.EqualFold(u.Scheme, "https") && u.Host != "" {
+			secureCookieHosts[strings.ToLower(u.Host)] = true
+		}
+	}
 	s := &Service{
-		queries:  queries,
-		webauthn: w,
+		queries:           queries,
+		webauthn:          w,
+		ceremonies:        make(map[string]*ceremonyEntry),
+		wsTickets:         make(map[string]*wsTicket),
+		connections:       make(map[string]map[uint64]*trackedConnection),
+		secureCookieHosts: secureCookieHosts,
 	}
 
 	go s.cleanupLoop()
@@ -75,6 +109,81 @@ func UserFromContext(ctx context.Context) *store.GetAuthSessionRow {
 
 func (s *Service) setUserContext(ctx context.Context, u *store.GetAuthSessionRow) context.Context {
 	return context.WithValue(ctx, userContextKey, u)
+}
+
+// SetMachineIdentity configures the identity returned by pairing and proof
+// endpoints. The signer is loaded by serve.go, never by this constructor.
+func (s *Service) SetMachineIdentity(machineID string, signer MachineSigner) {
+	s.machineID = machineID
+	s.machineSigner = signer
+}
+
+// TrackWebSocket binds a live socket to the auth session that opened it. The
+// returned function removes the connection from the registry. Revocation and
+// expiry close every tracked socket for that session.
+func (s *Service) TrackWebSocket(session *store.GetAuthSessionRow, closeConnection func()) (func(), error) {
+	if session == nil || !session.ID.Valid || session.ID.String == "" {
+		return nil, errors.New("auth session has no public id")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse auth session expiry: %w", err)
+	}
+	untilExpiry := time.Until(expiresAt)
+	if untilExpiry <= 0 {
+		closeConnection()
+		return nil, errors.New("auth session expired")
+	}
+
+	s.connectionMu.Lock()
+	s.nextConnectionID++
+	connectionID := s.nextConnectionID
+	sessionID := session.ID.String
+	entry := &trackedConnection{close: closeConnection}
+	entry.timer = time.AfterFunc(untilExpiry, func() {
+		s.closeSessionConnections(sessionID)
+	})
+	if s.connections[sessionID] == nil {
+		s.connections[sessionID] = make(map[uint64]*trackedConnection)
+	}
+	s.connections[sessionID][connectionID] = entry
+	s.connectionMu.Unlock()
+
+	// Close the registration race with revocation. Add first, then re-read the
+	// database. Either a concurrent revoker sees this entry, or this lookup sees
+	// the deletion and closes it here.
+	if _, err := s.lookupSession(context.Background(), session.Token); err != nil {
+		s.closeSessionConnections(sessionID)
+		return nil, errors.New("auth session was revoked during WebSocket setup")
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.connectionMu.Lock()
+			defer s.connectionMu.Unlock()
+			bySession := s.connections[sessionID]
+			if tracked := bySession[connectionID]; tracked != nil {
+				tracked.timer.Stop()
+				delete(bySession, connectionID)
+			}
+			if len(bySession) == 0 {
+				delete(s.connections, sessionID)
+			}
+		})
+	}, nil
+}
+
+func (s *Service) closeSessionConnections(sessionID string) {
+	s.connectionMu.Lock()
+	bySession := s.connections[sessionID]
+	delete(s.connections, sessionID)
+	s.connectionMu.Unlock()
+
+	for _, tracked := range bySession {
+		tracked.timer.Stop()
+		tracked.close()
+	}
 }
 
 // loadUser loads a User with credentials from the database.
@@ -104,14 +213,19 @@ func (s *Service) loadUserByHandle(rawID, userHandle []byte) (webauthn.User, err
 // "cookie" (WebAuthn login) or "bearer" (pairing exchange); label is a
 // human-readable client name shown in session listings.
 func (s *Service) createSession(ctx context.Context, userID, label, kind string) (string, error) {
+	token, _, err := s.createSessionWithID(ctx, userID, label, kind)
+	return token, err
+}
+
+func (s *Service) createSessionWithID(ctx context.Context, userID, label, kind string) (string, string, error) {
 	token, err := generateToken(32)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	// Public identifier for list/revoke — never the token itself.
 	id, err := generateToken(9)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	expiresAt := time.Now().Add(sessionMaxAge).UTC().Format(time.RFC3339)
 
@@ -124,10 +238,10 @@ func (s *Service) createSession(ctx context.Context, userID, label, kind string)
 		Kind:      kind,
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	return token, id, nil
 }
 
 // setSessionCookie sets the auth session cookie on the response.
@@ -138,46 +252,67 @@ func (s *Service) setSessionCookie(w http.ResponseWriter, r *http.Request, token
 		Path:     "/",
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   s.requestUsesHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 // clearSessionCookie removes the auth session cookie.
-func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (s *Service) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   s.requestUsesHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
+func (s *Service) requestUsesHTTPS(r *http.Request) bool {
+	return r.TLS != nil || s.secureCookieHosts[strings.ToLower(r.Host)]
+}
+
 // saveCeremony stores WebAuthn session data for the duration of a begin/finish flow.
-func (s *Service) saveCeremony(key string, session *webauthn.SessionData, userID string) {
-	s.ceremonies.Store(key, &ceremonyEntry{
+func (s *Service) saveCeremony(key string, session *webauthn.SessionData, userID string) error {
+	s.ceremonyMu.Lock()
+	defer s.ceremonyMu.Unlock()
+	s.deleteExpiredCeremoniesLocked(time.Now())
+	if _, replacing := s.ceremonies[key]; !replacing && len(s.ceremonies) >= maxCeremonies {
+		return errors.New("too many authentication ceremonies in progress")
+	}
+	s.ceremonies[key] = &ceremonyEntry{
 		session:   session,
 		userID:    userID,
 		expiresAt: time.Now().Add(ceremonyTTL),
-	})
+	}
+	return nil
 }
 
 // loadCeremony retrieves and deletes ceremony session data.
 func (s *Service) loadCeremony(key string) (*ceremonyEntry, error) {
-	val, ok := s.ceremonies.LoadAndDelete(key)
+	s.ceremonyMu.Lock()
+	entry, ok := s.ceremonies[key]
+	delete(s.ceremonies, key)
+	s.ceremonyMu.Unlock()
 	if !ok {
 		return nil, errors.New("ceremony not found or expired")
 	}
 
-	entry := val.(*ceremonyEntry)
 	if time.Now().After(entry.expiresAt) {
 		return nil, errors.New("ceremony expired")
 	}
 
 	return entry, nil
+}
+
+func (s *Service) deleteExpiredCeremoniesLocked(now time.Time) {
+	for key, entry := range s.ceremonies {
+		if now.After(entry.expiresAt) {
+			delete(s.ceremonies, key)
+		}
+	}
 }
 
 // storeCredential persists a webauthn.Credential to the database.
@@ -206,19 +341,13 @@ func (s *Service) cleanupLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s.ceremonies.Range(func(key, val any) bool {
-			if entry, ok := val.(*ceremonyEntry); ok && time.Now().After(entry.expiresAt) {
-				s.ceremonies.Delete(key)
-			}
-			return true
-		})
+		s.ceremonyMu.Lock()
+		s.deleteExpiredCeremoniesLocked(time.Now())
+		s.ceremonyMu.Unlock()
 
-		s.wsTickets.Range(func(key, val any) bool {
-			if entry, ok := val.(*wsTicket); ok && time.Now().After(entry.expiresAt) {
-				s.wsTickets.Delete(key)
-			}
-			return true
-		})
+		s.wsTicketMu.Lock()
+		s.deleteExpiredWSTicketsLocked(time.Now())
+		s.wsTicketMu.Unlock()
 
 		if err := s.queries.DeleteExpiredAuthSessions(context.Background()); err != nil {
 			slog.Error("failed to clean expired sessions", "error", err)

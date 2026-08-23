@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,5 +50,41 @@ func TestLabelOverrideWins(t *testing.T) {
 	}
 	if got := Label(""); got == "" {
 		t.Fatal("Label must never be empty")
+	}
+}
+
+func TestSigningIdentityIsStableAndVerifiable(t *testing.T) {
+	dir := t.TempDir()
+	machineID := uuid.New().String()
+	identity, err := LoadOrCreateSigningIdentity(dir, machineID)
+	if err != nil {
+		t.Fatalf("create signing identity: %v", err)
+	}
+
+	nonce := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	proof, err := identity.SignChallenge(nonce)
+	if err != nil {
+		t.Fatalf("sign challenge: %v", err)
+	}
+	if err := VerifyChallenge(identity.PublicKey(), machineID, nonce, proof); err != nil {
+		t.Fatalf("verify challenge: %v", err)
+	}
+	if err := VerifyChallenge(identity.PublicKey(), uuid.New().String(), nonce, proof); err == nil {
+		t.Fatal("proof verified for a different machine id")
+	}
+
+	reloaded, err := LoadOrCreateSigningIdentity(dir, machineID)
+	if err != nil {
+		t.Fatalf("reload signing identity: %v", err)
+	}
+	if reloaded.PublicKey() != identity.PublicKey() {
+		t.Fatal("public key changed across reload")
+	}
+	info, err := os.Stat(filepath.Join(dir, signingKeyFileName))
+	if err != nil {
+		t.Fatalf("stat signing key: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("signing key mode = %o, want 600", info.Mode().Perm())
 	}
 }

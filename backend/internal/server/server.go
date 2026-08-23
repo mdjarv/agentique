@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	goruntime "runtime"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	claudeadapter "github.com/allbin/agentkit/runtime/cli/claude"
 	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
 	claudecli "github.com/allbin/claudecli-go"
+	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/brain"
 	"github.com/mdjarv/agentique/backend/internal/browser"
@@ -26,6 +29,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
 	"github.com/mdjarv/agentique/backend/internal/filesystem"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/memory"
@@ -53,6 +57,12 @@ type Config struct {
 	// unauthenticated at /.well-known/agentique/environment so clients can
 	// probe and pin it. Empty in tests that don't care about identity.
 	MachineID string
+	// MachineIdentity signs fresh client challenges. It is loaded from the data
+	// directory by serve.go and pinned by clients during pairing.
+	MachineIdentity *machine.SigningIdentity
+	// MachineHTTPClient performs identity verification and bearer revocation
+	// when a remote machine is removed. Nil uses a bounded no-redirect client.
+	MachineHTTPClient *http.Client
 	// MachineLabel is the human-friendly machine name shown in clients — the
 	// boot default (env, else config, else hostname). A name set from the UI
 	// is stored in host_presentation and wins over it; see effectiveLabel.
@@ -225,6 +235,7 @@ type Server struct {
 	updateChecker  *update.Checker
 	updateApplier  *update.Applier
 	allowedOrigins map[string]bool
+	authEnabled    bool
 }
 
 // UpdateChecker exposes the version checker so serve.go can start its poll
@@ -241,6 +252,23 @@ func (s *Server) Scheduler() *schedule.Scheduler { return s.scheduler }
 func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	bus := eventbus.New()
+	allowedOrigins := make(map[string]bool, len(cfg.RPOrigins))
+	for _, origin := range cfg.RPOrigins {
+		allowedOrigins[origin] = true
+	}
+	machineHTTPClient := cfg.MachineHTTPClient
+	if machineHTTPClient == nil {
+		machineHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	} else {
+		copy := *machineHTTPClient
+		machineHTTPClient = &copy
+		if machineHTTPClient.Timeout == 0 {
+			machineHTTPClient.Timeout = 10 * time.Second
+		}
+	}
+	machineHTTPClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 
 	var connector runtime.CLIConnector
 	var runner session.BlockingRunner
@@ -353,6 +381,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			},
 		})
 	})
+	requireFullAccess := func(w http.ResponseWriter, r *http.Request) bool {
+		if !cfg.AuthEnabled {
+			return true
+		}
+		session := auth.UserFromContext(r.Context())
+		if session == nil || session.IsAdmin == 0 {
+			httperror.RespondError(w, httperror.Forbidden("full-access operator required"))
+			return false
+		}
+		return true
+	}
 
 	// In-app upgrades (docs/upgrades.md): each server checks for ITSELF —
 	// only it knows its platform, its install method and whether it is busy.
@@ -398,10 +437,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	// Machine catalog (multi-machine): paired machines are ACCOUNT state, not
 	// device state — a phone PWA and a desktop logging into this primary see
-	// the same machines. Clients sync their localStorage cache from here.
+	// the same machines. Clients cache public metadata locally but reload bearer
+	// credentials from this full-access endpoint into memory.
 	// Auth-guarded like all /api routes; the rows carry each remote's bearer
 	// token, peer material to the auth sessions already stored in this DB.
 	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
+		if !requireFullAccess(w, r) {
+			return
+		}
 		rows, err := queries.ListMachines(r.Context())
 		if err != nil {
 			httperror.RespondError(w, httperror.Internal("list machines", err))
@@ -410,40 +453,103 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		out := make([]map[string]any, 0, len(rows))
 		for _, m := range rows {
 			out = append(out, map[string]any{
-				"machineId": m.MachineID,
-				"label":     m.Label,
-				"baseUrl":   m.BaseUrl,
-				"token":     m.Token,
-				"addedAt":   m.AddedAt,
-				"icon":      m.Icon,
+				"machineId":   m.MachineID,
+				"label":       m.Label,
+				"baseUrl":     m.BaseUrl,
+				"token":       m.Token,
+				"addedAt":     m.AddedAt,
+				"icon":        m.Icon,
+				"sessionId":   m.SessionID,
+				"identityKey": m.IdentityKey,
 			})
 		}
 		httperror.JSON(w, http.StatusOK, out)
 	})
 	mux.HandleFunc("PUT /api/machines/{id}", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Label   string `json:"label"`
-			BaseURL string `json:"baseUrl"`
-			Token   string `json:"token"`
-			AddedAt string `json:"addedAt"`
-			Icon    string `json:"icon"`
+		if !requireFullAccess(w, r) {
+			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.BaseURL == "" {
-			httperror.RespondError(w, httperror.BadRequest("label/baseUrl/token body required"))
+		var req struct {
+			Label       string `json:"label"`
+			BaseURL     string `json:"baseUrl"`
+			Token       string `json:"token"`
+			SessionID   string `json:"sessionId"`
+			IdentityKey string `json:"identityKey"`
+			AddedAt     string `json:"addedAt"`
+			Icon        string `json:"icon"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("invalid request body"))
+			return
+		}
+		machineID := r.PathValue("id")
+		if uuid.Validate(machineID) != nil || machineID == cfg.MachineID {
+			httperror.RespondError(w, httperror.BadRequest("a remote machine UUID is required"))
+			return
+		}
+		if req.BaseURL == "" || req.Token == "" || req.SessionID == "" || req.IdentityKey == "" {
+			httperror.RespondError(w, httperror.BadRequest("baseUrl, token, sessionId, and identityKey are required"))
+			return
+		}
+		baseURL, err := machine.NormalizeRemoteBaseURL(req.BaseURL)
+		if err != nil {
+			httperror.RespondError(w, httperror.BadRequest(err.Error()))
+			return
+		}
+		if len([]rune(req.Label)) > 64 || len([]rune(req.Icon)) > 64 || len(req.Token) > 512 || len(req.SessionID) > 128 || len(req.IdentityKey) > 1024 {
+			httperror.RespondError(w, httperror.BadRequest("machine catalog field is too long"))
+			return
+		}
+		if err := machine.ValidateIdentityPublicKey(req.IdentityKey); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("identityKey is invalid"))
 			return
 		}
 		if req.AddedAt == "" {
 			req.AddedAt = time.Now().UTC().Format(time.RFC3339)
+		} else if _, err := time.Parse(time.RFC3339, req.AddedAt); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("addedAt must be RFC3339"))
+			return
 		}
 		if err := queries.UpsertMachine(r.Context(), store.UpsertMachineParams{
-			MachineID: r.PathValue("id"),
-			Label:     req.Label,
-			BaseUrl:   req.BaseURL,
-			Token:     req.Token,
-			AddedAt:   req.AddedAt,
-			Icon:      req.Icon,
+			MachineID:   machineID,
+			Label:       req.Label,
+			BaseUrl:     baseURL,
+			Token:       req.Token,
+			AddedAt:     req.AddedAt,
+			Icon:        req.Icon,
+			SessionID:   req.SessionID,
+			IdentityKey: req.IdentityKey,
 		}); err != nil {
 			httperror.RespondError(w, httperror.Internal("save machine", err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("PATCH /api/machines/{id}/presentation", func(w http.ResponseWriter, r *http.Request) {
+		if !requireFullAccess(w, r) {
+			return
+		}
+		var req struct {
+			Label string `json:"label"`
+			Icon  string `json:"icon"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("invalid request body"))
+			return
+		}
+		if len([]rune(req.Label)) > 64 || len([]rune(req.Icon)) > 64 {
+			httperror.RespondError(w, httperror.BadRequest("label and icon must be 64 characters or fewer"))
+			return
+		}
+		n, err := queries.UpdateMachinePresentation(r.Context(), store.UpdateMachinePresentationParams{
+			MachineID: r.PathValue("id"), Label: req.Label, Icon: req.Icon,
+		})
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("save machine presentation", err))
+			return
+		}
+		if n == 0 {
+			httperror.RespondError(w, httperror.NotFound("machine not found"))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -481,7 +587,24 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		})
 	})
 	mux.HandleFunc("DELETE /api/machines/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if err := queries.DeleteMachine(r.Context(), r.PathValue("id")); err != nil {
+		if !requireFullAccess(w, r) {
+			return
+		}
+		machineID := r.PathValue("id")
+		entry, err := queries.GetMachine(r.Context(), machineID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				httperror.RespondError(w, httperror.NotFound("machine not found"))
+				return
+			}
+			httperror.RespondError(w, httperror.Internal("load machine", err))
+			return
+		}
+		if err := machine.RevokeRemoteBearer(r.Context(), machineHTTPClient, entry.BaseUrl, entry.MachineID, entry.IdentityKey, entry.Token); err != nil {
+			httperror.RespondError(w, httperror.BadGateway("remote credential could not be revoked; the machine was not removed", err))
+			return
+		}
+		if err := queries.DeleteMachine(r.Context(), machineID); err != nil {
 			httperror.RespondError(w, httperror.Internal("delete machine", err))
 			return
 		}
@@ -492,6 +615,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// for agentique descriptors so Add-machine can suggest them. A hint layer
 	// only — pairing still authorizes. Auth-guarded like all /api routes.
 	mux.HandleFunc("GET /api/machines/discover", func(w http.ResponseWriter, r *http.Request) {
+		if !requireFullAccess(w, r) {
+			return
+		}
 		peers := machine.DiscoverPeers(r.Context(), cfg.MachineID, cfg.ListenPort)
 		if peers == nil {
 			peers = []machine.DiscoveredPeer{}
@@ -501,15 +627,21 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	// Machine descriptor (docs/multi-machine.md): unauthenticated by
 	// design — it is the universal "is an agentique server here, and which
-	// one" probe. Clients pin MachineID and verify it on every connect.
+	// one" probe. Clients pin MachineID and the signing key, then verify a
+	// fresh signed challenge before sending credentials on every connect.
 	// Capabilities are optional booleans; clients treat a missing key as
 	// unsupported, so features degrade per-feature without version checks.
 	mux.HandleFunc("GET /.well-known/agentique/environment", func(w http.ResponseWriter, r *http.Request) {
 		label, _ := hostPresentation(r.Context())
+		identityKey := ""
+		if cfg.MachineIdentity != nil {
+			identityKey = cfg.MachineIdentity.PublicKey()
+		}
 		httperror.JSON(w, http.StatusOK, map[string]any{
-			"machineId": cfg.MachineID,
-			"label":     label,
-			"version":   cfg.Version,
+			"machineId":   cfg.MachineID,
+			"identityKey": identityKey,
+			"label":       label,
+			"version":     cfg.Version,
 			"platform": map[string]string{
 				"os":   goruntime.GOOS,
 				"arch": goruntime.GOARCH,
@@ -586,7 +718,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		slog.Info("experimental teams feature enabled")
 	}
 
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: modelCatalog(queries, cfg.ModelOverrides)}
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: modelCatalog(queries, cfg.ModelOverrides), AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
 	mux.Handle("GET /ws", wsh)
 
 	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is
@@ -811,7 +943,18 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched, updateChecker: updateChecker, updateApplier: updateApplier}
+	s := &Server{
+		mux:            mux,
+		mgr:            mgr,
+		svc:            svc,
+		browserSvc:     browserSvc,
+		brainAuto:      brainAuto,
+		scheduler:      sched,
+		updateChecker:  updateChecker,
+		updateApplier:  updateApplier,
+		allowedOrigins: allowedOrigins,
+		authEnabled:    cfg.AuthEnabled,
+	}
 
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
@@ -819,14 +962,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("auth service: %w", err)
 		}
 		authSvc.SetAdminSecret(cfg.AdminSecret)
+		authSvc.SetMachineIdentity(cfg.MachineID, cfg.MachineIdentity)
 		authSvc.RegisterRoutes(mux)
 		authSvc.RegisterUserRoutes(mux)
 		s.authSvc = authSvc
-		s.allowedOrigins = make(map[string]bool, len(cfg.RPOrigins))
-		for _, o := range cfg.RPOrigins {
-			s.allowedOrigins[o] = true
-		}
-		wsh.AllowedOrigins = s.allowedOrigins
+		wsh.SessionTracker = authSvc
 	} else {
 		// When auth is disabled, serve a static status endpoint.
 		mux.HandleFunc("GET /api/auth/status", func(w http.ResponseWriter, r *http.Request) {
@@ -885,6 +1025,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		chain = s.authSvc.Middleware(chain)
 	}
 	chain = maxBodySize(chain)
+	chain = requireJSONBodies(chain)
+	chain = preventSensitiveCaching(chain)
 	s.corsMiddleware(chain).ServeHTTP(w, r)
 }
 
@@ -900,29 +1042,80 @@ func maxBodySize(next http.Handler) http.Handler {
 	})
 }
 
+// requireJSONBodies stops browsers from smuggling JSON through a CORS-simple
+// text/plain request. Bodyless action endpoints remain valid without a
+// Content-Type header.
+func requireJSONBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.ContentLength == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch:
+		default:
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			httperror.RespondError(w, httperror.UnsupportedMediaType("request body must use application/json"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func preventSensitiveCaching(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/auth/") || r.URL.Path == "/api/machines" || strings.HasPrefix(r.URL.Path, "/api/machines/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.authEnabled && !httpsecurity.RequestHostIsLoopback(r) {
+			httperror.RespondError(w, httperror.Forbidden("auth-disabled access requires a loopback Host"))
+			return
+		}
 		if r.Header.Get("Upgrade") == "websocket" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		origin := r.Header.Get("Origin")
+		w.Header().Add("Vary", "Origin")
+		originAllowed := httpsecurity.OriginAllowed(r, s.allowedOrigins)
+		publicCrossOrigin := crossOriginPublicPath(r.URL.Path)
+		bearerRequest := httpsecurity.RequestsBearer(r)
+		if r.Method == http.MethodOptions {
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
+			bearerRequest = httpsecurity.PreflightRequestsBearer(r)
+		}
+
+		if !originAllowed && !publicCrossOrigin && !bearerRequest {
+			httperror.RespondError(w, httperror.Forbidden("origin is not allowed"))
+			return
+		}
+
 		switch {
-		case origin != "" && s.allowedOrigins[origin]:
+		case origin != "" && originAllowed:
 			// Configured (RP) origins get credentialed CORS — cookies work.
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		default:
-			// Every other origin gets non-credentialed CORS: the browser will
-			// never attach cookies (no Allow-Credentials), so ambient
-			// authority cannot leak — but a cross-origin client presenting an
-			// Authorization: Bearer header can reach the API. This is what
-			// lets one machine's SPA talk to another machine's server
-			// (multi-machine, docs/multi-machine.md).
+			// An untrusted origin reaches this branch only for the explicit
+			// public surface or when it proposes bearer authority. Omitting
+			// Allow-Credentials prevents ambient cookies from riding along;
+			// auth still validates any bearer before the handler runs.
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
@@ -932,6 +1125,15 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func crossOriginPublicPath(path string) bool {
+	switch path {
+	case "/.well-known/agentique/environment", "/api/health", "/api/auth/pair", "/api/auth/identity-proof", "/api/auth/status":
+		return true
+	default:
+		return false
+	}
 }
 
 // statusWriter wraps http.ResponseWriter to capture the status code.

@@ -34,8 +34,28 @@ func (q *Queries) GetHostPresentation(ctx context.Context) (GetHostPresentationR
 	return i, err
 }
 
+const getMachine = `-- name: GetMachine :one
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key FROM machines WHERE machine_id = ?
+`
+
+func (q *Queries) GetMachine(ctx context.Context, machineID string) (Machine, error) {
+	row := q.db.QueryRowContext(ctx, getMachine, machineID)
+	var i Machine
+	err := row.Scan(
+		&i.MachineID,
+		&i.Label,
+		&i.BaseUrl,
+		&i.Token,
+		&i.AddedAt,
+		&i.Icon,
+		&i.SessionID,
+		&i.IdentityKey,
+	)
+	return i, err
+}
+
 const listMachines = `-- name: ListMachines :many
-SELECT machine_id, label, base_url, token, added_at, icon FROM machines ORDER BY label
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key FROM machines ORDER BY label
 `
 
 func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
@@ -54,6 +74,8 @@ func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
 			&i.Token,
 			&i.AddedAt,
 			&i.Icon,
+			&i.SessionID,
+			&i.IdentityKey,
 		); err != nil {
 			return nil, err
 		}
@@ -86,23 +108,45 @@ func (q *Queries) SetHostPresentation(ctx context.Context, arg SetHostPresentati
 	return err
 }
 
+const updateMachinePresentation = `-- name: UpdateMachinePresentation :execrows
+UPDATE machines SET label = ?, icon = ? WHERE machine_id = ?
+`
+
+type UpdateMachinePresentationParams struct {
+	Label     string `json:"label"`
+	Icon      string `json:"icon"`
+	MachineID string `json:"machine_id"`
+}
+
+func (q *Queries) UpdateMachinePresentation(ctx context.Context, arg UpdateMachinePresentationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateMachinePresentation, arg.Label, arg.Icon, arg.MachineID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertMachine = `-- name: UpsertMachine :exec
-INSERT INTO machines (machine_id, label, base_url, token, added_at, icon)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO machines (machine_id, label, base_url, token, added_at, icon, session_id, identity_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(machine_id) DO UPDATE SET
   label = excluded.label,
   base_url = excluded.base_url,
   token = excluded.token,
-  icon = excluded.icon
+  icon = excluded.icon,
+  session_id = excluded.session_id,
+  identity_key = excluded.identity_key
 `
 
 type UpsertMachineParams struct {
-	MachineID string `json:"machine_id"`
-	Label     string `json:"label"`
-	BaseUrl   string `json:"base_url"`
-	Token     string `json:"token"`
-	AddedAt   string `json:"added_at"`
-	Icon      string `json:"icon"`
+	MachineID   string `json:"machine_id"`
+	Label       string `json:"label"`
+	BaseUrl     string `json:"base_url"`
+	Token       string `json:"token"`
+	AddedAt     string `json:"added_at"`
+	Icon        string `json:"icon"`
+	SessionID   string `json:"session_id"`
+	IdentityKey string `json:"identity_key"`
 }
 
 func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) error {
@@ -113,6 +157,8 @@ func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) er
 		arg.Token,
 		arg.AddedAt,
 		arg.Icon,
+		arg.SessionID,
+		arg.IdentityKey,
 	)
 	return err
 }

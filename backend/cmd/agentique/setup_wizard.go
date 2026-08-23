@@ -166,14 +166,6 @@ func (m wizardModel) initStep() (wizardModel, tea.Cmd) {
 		m.phase = phaseChoice
 		return m, nil
 
-	case stepAuth:
-		m.choice = newChoiceModel(s.title, []string{
-			"Yes, enable passkey authentication (recommended)",
-			"No, disable authentication (trusted network only)",
-		}, 0)
-		m.phase = phaseChoice
-		return m, nil
-
 	case stepProject:
 		m.input = newInputModel(
 			s.title,
@@ -321,6 +313,7 @@ func (m wizardModel) handleChoiceResult(selected int) (tea.Model, tea.Cmd) {
 		m.networkMode = selected == 1
 		if m.networkMode {
 			m.cfg.Server.Addr = "0.0.0.0:9201"
+			m.cfg.Server.DisableAuth = false
 		} else {
 			m.cfg.Server.Addr = "localhost:9201"
 			m.cfg.Server.DisableAuth = true
@@ -333,10 +326,6 @@ func (m wizardModel) handleChoiceResult(selected int) (tea.Model, tea.Cmd) {
 
 	case stepTLS:
 		return m.handleTLSChoice(selected)
-
-	case stepAuth:
-		m.cfg.Server.DisableAuth = selected == 1
-		return m.advance()
 
 	case stepCompletion:
 		if selected == 1 {

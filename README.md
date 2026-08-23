@@ -56,7 +56,8 @@ It walks you through:
 
 - **Listen address** (localhost vs. binding to a LAN/Tailscale hostname),
 - **TLS** — can generate a self-signed `localhost` certificate for you, or point at your own cert/key,
-- **Authentication** (WebAuthn passkeys; see [below](#authentication--security)),
+- safe **authentication defaults** (network mode always uses passkeys;
+  localhost-only mode may run without auth),
 - an **initial project** to register, and
 - optionally installing the **background service**.
 
@@ -100,18 +101,30 @@ Add it to login autostart alongside the service with `agentique service install 
 
 Authentication is **on by default** and uses **WebAuthn passkeys** (Touch ID, security keys, platform authenticators) — there are no passwords.
 
+Agentique is a **single-operator trust domain**, not a multi-tenant service.
+Every authenticated user can drive agents that have deep access to the host and
+must therefore be as trusted as the machine owner. The admin bit protects
+credential and catalog administration; it is not a sandbox around ordinary
+users. A future read-only role needs an explicit capability design before it
+is safe to treat as less trusted.
+
 - **First visitor becomes admin.** The first browser to complete registration is registered as the admin user, no invite required. **Register immediately after first start**, especially if the server is reachable beyond localhost — otherwise anyone who reaches the page first claims the admin account.
-- **Additional users need an invite.** The admin generates invite tokens from the UI; new users register against a token (valid 7 days).
-- **Manage auth from the CLI** with `agentique auth status` (list users/credentials/sessions), `agentique auth rekey` (clear credentials + sessions so everyone re-registers their passkey), and `agentique auth reset` (wipe all users — start over).
+- **Additional trusted operators need an invite.** The admin generates invite tokens from the UI; new users register against a token (valid 7 days). Do not invite an untrusted or merely read-only viewer.
+- **Manage auth from the CLI** with `agentique auth status` (list users/credentials/sessions), `agentique auth rekey` (clear credentials + sessions so everyone re-registers their passkey), and `agentique auth reset` (wipe all users — start over). Stop the server before `rekey` or `reset`; the CLI enforces this so no established socket can survive a direct database reset.
 
 Guidelines for a safe deployment:
 
 | Scenario | Recommended config |
 |----------|--------------------|
-| Local only, single user | Default (`localhost:9201`, auth on). Or `--disable-auth` for zero friction on a trusted machine. |
+| Local only, single user | Default (`localhost:9201`, auth on). Or `--disable-auth` for zero friction on the same machine only. |
 | LAN / Tailscale / remote | **Keep auth on, enable TLS.** WebAuthn requires a secure context (HTTPS) for any non-`localhost` origin. Set `--rp-id`/`--rp-origin` (or the config equivalents) to the hostname users connect to, or passkeys won't validate. |
 
-`--disable-auth` allows **anonymous access** — only use it on a trusted, non-exposed host. `localhost` is treated as a secure context by browsers, so passkeys work there over plain HTTP; every other origin needs HTTPS.
+`--disable-auth` allows **anonymous, full machine access** and is therefore
+accepted only on a loopback listener (`localhost`, `127.0.0.1`, or `::1`).
+Requests must also carry a loopback Host, preventing a hostile DNS name from
+rebinding a browser to the local server. Network listeners always require authentication. `localhost` is treated as a
+secure context by browsers, so passkeys work there over plain HTTP; every
+other origin needs HTTPS.
 
 ## Multi-machine
 
@@ -120,9 +133,9 @@ One UI can control agentique servers on several machines (e.g. a VPS serving the
 Pairing:
 
 1. On the machine to add, run `agentique pair` — it prints a single-use token (5-minute default, `--ttl` to change) plus the addresses the machine is reachable on.
-2. In the UI: sidebar footer → server icon → **Add machine**. Machines running agentique on your tailnet are auto-discovered and offered as one-click suggestions; otherwise enter the address, then the token. Machines running with `--disable-auth` pair token-less.
+2. In the UI: sidebar footer → server icon → **Add machine**. Machines running agentique on your tailnet are auto-discovered and offered as suggestions; otherwise enter the HTTPS address, then the token. Pairing pins the server's signing identity before accepting the bearer credential. Auth-disabled servers are local-only and cannot be paired.
 
-Paired machines are stored on the primary, so every device that signs into it (phone PWA, desktop) sees the same machines — pair once, use everywhere. Machines may come and go: a suspended laptop's projects and sessions stay visible from cache (marked with its connection state) and re-sync automatically when it returns. Manage paired clients from the remote machine with `agentique auth sessions` / `agentique auth revoke <id>`.
+Paired machines are stored on the primary, so every device that signs into it (phone PWA, desktop) sees the same machines — pair once, use everywhere. Bearer credentials remain in memory in the browser and are never persisted to localStorage. Machines may come and go: a suspended laptop's projects and sessions stay visible from cache (marked with its connection state) and re-sync automatically when it returns. Removing a machine revokes its credential on the remote before deleting the local entry; the remote must therefore be reachable. Manage paired clients from the remote machine with `agentique auth sessions` / `agentique auth revoke <id>`.
 
 Remote machines need to listen on an address the browser can reach (not `localhost`) with TLS for HTTPS pages — a Tailscale cert (`tailscale cert`) works well. Creating projects, browsing files, and git operations all work across machines; teams, schedules, and the brain remain per-machine.
 
@@ -137,7 +150,7 @@ Settings resolve in this order (highest precedence first): **CLI flags → confi
 ```toml
 [server]
 addr         = "localhost:9201"  # listen address
-disable-auth = false             # true = anonymous access (trusted hosts only)
+disable-auth = false             # true = anonymous access (loopback listener only)
 tls-cert     = ""                # path to TLS cert; with tls-key, enables HTTPS
 tls-key      = ""
 rp-id        = ""                # WebAuthn relying party ID (default: host from addr)
@@ -182,7 +195,7 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 |------|---------|-------------|
 | `--addr` | `localhost:9201` | Listen address (`host:port`). Use `0.0.0.0:9201` to bind all interfaces. |
 | `--db` | platform data dir | Database file path. |
-| `--disable-auth` | `false` | Disable WebAuthn — allow anonymous access. Trusted hosts only. |
+| `--disable-auth` | `false` | Disable WebAuthn — allow anonymous access. Loopback listeners only. |
 | `--tls-cert` / `--tls-key` | — | Enable HTTPS (both required). |
 | `--rp-id` | host from `--addr` | WebAuthn relying party ID. |
 | `--rp-origin` | derived from `--addr` | WebAuthn relying party origin. |
@@ -380,7 +393,7 @@ Subsystem designs — **designed, not built** (decisions settled, no code yet):
 ```bash
 just dev            # run both servers in parallel (auto-stops previous)
 just dev-frontend   # Vite HMR on :9200
-just dev-backend    # Go server on :9201 (binds 0.0.0.0, auth disabled)
+just dev-backend    # Go server on 127.0.0.1:9201 (auth disabled)
 just dev-mock       # frontend with MSW mocks on :9210 (no backend needed)
 ```
 

@@ -12,21 +12,28 @@ depends on it — any address the client can reach works.
 ### Machine identity
 
 Each server has a stable identity: a UUID read-or-created in
-`<datadir>/machine-id`, plus a human label (`[server] machine-label` /
-`AGENTIQUE_MACHINE_LABEL`, else `PRETTY_HOSTNAME`, else hostname). Both are
-resolved in `serve.go` — never in `server.New` (constructors have no
-filesystem side effects) — and served on two surfaces:
+`<datadir>/machine-id`, a P-256 signing key in
+`<datadir>/machine-identity-key.pem`, and a human label (`[server]
+machine-label` / `AGENTIQUE_MACHINE_LABEL`, else `PRETTY_HOSTNAME`, else
+hostname). They are resolved in `serve.go` — never in `server.New`
+(constructors have no filesystem side effects). Existing corrupt key material
+is fatal; silently replacing it would turn an attack or disk failure into an
+unnoticed identity change.
 
 - `GET /.well-known/agentique/environment` (unauthenticated): the universal
   "is an agentique server here, and which one" probe. Carries
-  `{machineId, label, version, platform, capabilities}`. Capabilities are
+  `{machineId, identityKey, label, version, platform, capabilities}`. Capabilities are
   optional booleans; clients treat a missing key as unsupported, so features
   degrade per-feature without version comparisons.
 - `/api/health` repeats `machineId`/`machineLabel`/`version` for
   authenticated consumers.
 
-Clients pin `machineId` and verify it when pairing and connecting — a saved
-machine can never silently reattach to a different server at the same URL.
+Clients pin both `machineId` and `identityKey`. Before sending a bearer or
+opening a socket, the client sends a fresh random nonce to the public identity
+proof endpoint and verifies the P-256 signature. A saved machine therefore
+cannot silently reattach to a different server at the same URL. Verified TLS
+is still mandatory for remote URLs: the proof binds identity, while TLS
+protects the rest of the exchange from a live relay.
 
 ### Pairing and auth
 
@@ -40,31 +47,49 @@ authorization boundary.
   (`X-Agentique-Admin-Secret`) — deliberately not a second writer to the live
   database. An admin web session can mint too.
 - `POST /api/auth/pair` exchanges the token for a 30-day bearer session (a
-  row in `auth_sessions` with `kind=bearer`; the public `id` column is what
-  listings and revocation use — the token itself is never echoed back).
+  row in `auth_sessions` with `kind=bearer`) and returns its public session
+  id plus a signed proof of the caller's nonce. Re-pairing sends the old
+  session id so the server can replace that user's bearer instead of
+  accumulating live bearers.
 - The auth middleware accepts `Authorization: Bearer` as a peer of the
   session cookie. An invalid bearer never falls back to the cookie: a
   presented credential is the one judged.
 - WebSockets never carry the bearer in a URL. Clients redeem a one-time
   5-minute ticket (`POST /api/auth/ws-ticket` → `/ws?wsTicket=`); redemption
   re-validates the session against the database, so revoking a bearer also
-  kills pre-minted tickets.
+  kills pre-minted tickets. Established sockets are tracked by session and
+  closed on revocation or expiry. Outstanding tickets and live sockets are
+  capped so unauthenticated or compromised clients cannot grow memory without
+  bound.
 - `agentique auth sessions` / `agentique auth revoke <id>` manage sessions.
-- CORS: allowlisted (RP) origins keep credentialed CORS; every other origin
-  gets `Access-Control-Allow-Origin: *` **without** `Allow-Credentials` —
-  cookies can never ride cross-site, bearer headers can. WS upgrades carrying
-  a `wsTicket` skip the origin allowlist (the ticket is the proof).
-- A server running `--disable-auth` advertises `pairing: false` and is
-  addable token-less; clients then omit Authorization and tickets entirely.
+- `DELETE /api/auth/session` lets a bearer revoke itself without granting it
+  access to administrative session management.
+- CORS/CSRF: same-origin and configured RP origins may use cookies. Other
+  origins fail closed unless the request explicitly carries a bearer; an
+  accompanying cookie is ignored and never used as fallback authority. Only
+  the small public descriptor/pairing surface is otherwise cross-origin. JSON
+  mutation endpoints reject browser-simple content types.
+  A WebSocket from another origin must redeem a valid one-time ticket.
+- `--disable-auth` is accepted only on a loopback listener, and requests with
+  a non-loopback Host are rejected to prevent DNS rebinding. Such a server
+  advertises `pairing: false`; it is not a multi-machine peer.
 
 ### Machine catalog
 
 Paired machines are **account state, not device state**: the catalog lives in
-the primary's `machines` table (`GET/PUT/DELETE /api/machines`,
-auth-guarded), including each remote's bearer token — peer material to the
-auth sessions already stored in that database. Any client that signs into the
-primary inherits every paired machine; the browser's localStorage copy is
-only an offline cache.
+the primary's `machines` table (`GET/PUT/PATCH/DELETE /api/machines`, guarded
+by the current full-access/admin role), including each remote's bearer token,
+public session id, and pinned identity key. Any full-access client that signs
+into the primary inherits every paired machine. Browser localStorage keeps
+only public metadata; bearer tokens are held in memory and reloaded from the
+primary after authentication.
+
+Catalog writes accept only HTTPS remote origins (HTTP is limited to loopback),
+reject URL credentials, paths, queries, and fragments, and bound every field.
+Presentation-only edits use a separate PATCH surface that cannot overwrite
+credentials. Removing a machine proves its pinned identity and revokes the
+remote bearer first; failure keeps the local row so an unreachable machine
+cannot leave a silently orphaned credential.
 
 ### Cross-machine project identity
 
@@ -89,7 +114,9 @@ status --json` Peer map) and probes each concurrently for the well-known
 descriptor (https-then-http on the server's own port plus the 9201/19201
 defaults; TLS unverified — discovery only reads the public descriptor).
 Discovery is a **hint layer**: it feeds Add-machine suggestions and grants
-nothing; pairing still authorizes.
+nothing; pairing still authorizes. Probe bodies, descriptor fields, redirects,
+and deadlines are bounded. An insecure discovery hint is never an acceptable
+remote address for pairing.
 
 ## Client side
 
@@ -170,12 +197,15 @@ machine clears its cache and drops its sessions from the stores.
 
 ## Invariants a change here must keep
 
-- **Verify `machineId` on pair and connect**; refuse mismatches.
+- **Verify the pinned `machineId` and signing key before credentials on every
+  pair/connect path**; refuse mismatches.
 - **The server is the authorization boundary** — endpoint reachability
   (tailnet or otherwise) never substitutes for auth, and discovery never
   grants access.
 - **Bearer tokens never appear in URLs**; sockets use one-time tickets whose
   redemption re-checks the database.
+- **Revocation is live**: it closes established sockets, and removing a
+  catalog entry revokes the remote bearer before forgetting it locally.
 - **An explicit credential never falls back to another** (bad bearer ≠ try
   the cookie).
 - **Primary lifecycle isolation**: remote reconnects re-sync only their own
@@ -184,6 +214,7 @@ machine clears its cache and drops its sessions from the stores.
 - **Identity/secret files are created from `serve.go`**, never in
   constructors.
 - **Cached data never impersonates live data.**
+- **Auth-disabled means loopback-only**; network listeners always authenticate.
 
 ## Out of scope (deliberate)
 

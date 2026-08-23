@@ -1,3 +1,4 @@
+import { checkMachineIdentity, readBoundedMachineJSON } from "~/lib/machines/health";
 import { WsClient } from "~/lib/ws-client";
 import { useMachineStore } from "~/stores/machine-store";
 
@@ -47,23 +48,35 @@ export async function machineFetch(
   init: RequestInit = {},
 ): Promise<Response> {
   const entry = machineEntry(machineId);
+  const identity = await checkMachineIdentity(entry);
+  if (identity.status !== "verified") {
+    if (identity.status === "fault") {
+      useMachineStore.getState().setFault(machineId, identity.fault);
+    }
+    throw new Error(
+      identity.status === "unavailable"
+        ? "machine identity proof is unavailable"
+        : identity.fault.detail,
+    );
+  }
+  useMachineStore.getState().setFault(machineId, null);
+  if (identity.descriptor?.version) {
+    useMachineStore.getState().setVersion(machineId, identity.descriptor.version);
+  }
   const headers = new Headers(init.headers);
-  // Token-less entries are auth-disabled machines — no credential to send.
-  if (entry.token) headers.set("Authorization", `Bearer ${entry.token}`);
+  headers.set("Authorization", `Bearer ${entry.token}`);
   return fetch(entry.baseUrl + path, { ...init, headers });
 }
 
-/** Mints a one-time WebSocket ticket and builds the wss URL for one attempt.
- *  Auth-disabled machines connect without a ticket. */
+/** Mints a one-time WebSocket ticket and builds the wss URL for one attempt. */
 async function resolveTicketUrl(machineId: string): Promise<string> {
   const entry = machineEntry(machineId);
   const base = new URL(entry.baseUrl);
   const protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  if (!entry.token) return `${protocol}//${base.host}/ws`;
-
   const resp = await machineFetch(machineId, "/api/auth/ws-ticket", { method: "POST" });
   if (!resp.ok) throw new Error(`ws-ticket mint failed (${resp.status})`);
-  const { ticket } = (await resp.json()) as { ticket: string };
+  const { ticket } = await readBoundedMachineJSON<{ ticket: string }>(resp);
+  if (!ticket) throw new Error("ws-ticket response did not contain a ticket");
   return `${protocol}//${base.host}/ws?wsTicket=${encodeURIComponent(ticket)}`;
 }
 

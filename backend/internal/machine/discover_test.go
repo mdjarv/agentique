@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -56,12 +57,13 @@ func TestCandidateURLs(t *testing.T) {
 }
 
 func TestProbeDescriptor(t *testing.T) {
+	const machineID = "30000000-0000-4000-8000-000000000003"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/.well-known/agentique/environment" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Write([]byte(`{"machineId":"abc-123","label":"zbook","version":"v1","capabilities":{"pairing":true}}`))
+		w.Write([]byte(`{"machineId":"` + machineID + `","label":"zbook","version":"v1","capabilities":{"pairing":true}}`))
 	}))
 	defer srv.Close()
 
@@ -69,7 +71,7 @@ func TestProbeDescriptor(t *testing.T) {
 	if !ok {
 		t.Fatal("probe should succeed")
 	}
-	if peer.MachineID != "abc-123" || peer.Label != "zbook" || !peer.Pairing {
+	if peer.MachineID != machineID || peer.Label != "zbook" || !peer.Pairing {
 		t.Fatalf("unexpected peer: %+v", peer)
 	}
 	if peer.URL != srv.URL {
@@ -86,5 +88,15 @@ func TestProbeDescriptor(t *testing.T) {
 	}
 	if _, err := url.Parse(notOurs.URL); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProbeDescriptorRejectsOversizedResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"machineId":"30000000-0000-4000-8000-000000000003","label":"` + strings.Repeat("x", 70<<10) + `"}`))
+	}))
+	defer srv.Close()
+	if _, ok := probeDescriptor(context.Background(), srv.Client(), srv.URL); ok {
+		t.Fatal("oversized discovery response was accepted")
 	}
 }

@@ -69,6 +69,9 @@ ORDER BY s.created_at DESC;
 -- name: DeleteAuthSessionByID :execrows
 DELETE FROM auth_sessions WHERE id = ?;
 
+-- name: DeleteBearerAuthSessionByIDAndUser :execrows
+DELETE FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'bearer';
+
 -- name: CreatePairingToken :exec
 INSERT INTO pairing_tokens (token, user_id, expires_at) VALUES (?, ?, ?);
 

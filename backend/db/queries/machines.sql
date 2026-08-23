@@ -2,13 +2,21 @@
 SELECT * FROM machines ORDER BY label;
 
 -- name: UpsertMachine :exec
-INSERT INTO machines (machine_id, label, base_url, token, added_at, icon)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO machines (machine_id, label, base_url, token, added_at, icon, session_id, identity_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(machine_id) DO UPDATE SET
   label = excluded.label,
   base_url = excluded.base_url,
   token = excluded.token,
-  icon = excluded.icon;
+  icon = excluded.icon,
+  session_id = excluded.session_id,
+  identity_key = excluded.identity_key;
+
+-- name: GetMachine :one
+SELECT * FROM machines WHERE machine_id = ?;
+
+-- name: UpdateMachinePresentation :execrows
+UPDATE machines SET label = ?, icon = ? WHERE machine_id = ?;
 
 -- name: DeleteMachine :exec
 DELETE FROM machines WHERE machine_id = ?;

@@ -34,7 +34,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `"${binaryPath}" serve --addr :8085 --test-mode`,
+    command: `"${binaryPath}" serve --addr 127.0.0.1:8085 --test-mode`,
     url: "http://localhost:8085/api/health",
     cwd: path.resolve(import.meta.dirname, ".."),
     reuseExistingServer: false,

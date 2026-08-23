@@ -99,7 +99,9 @@ brain; templates; storage.
   `[experimental] teams` / `browser` in `config.toml`. Team coordination features are
   **additive**: they must not change rendering or turn management for sessions outside a channel.
 - **Auth.** WebAuthn passkeys only, no passwords; first visitor becomes admin; further users
-  join by invite token. `--disable-auth` exists for trusted single-user hosts.
+  join by invite token. Every authenticated user is a trusted full operator;
+  the admin bit controls credential/catalog administration, not host access.
+  `--disable-auth` exists only for loopback-only, single-user use.
 - **Stack:** React 19, Vite, TanStack Router, Zustand, Tailwind 4, shadcn/ui, PWA with an
   auto-updating service worker. User-selectable theme (light / dark / system), dark by default.
 

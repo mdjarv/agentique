@@ -43,7 +43,7 @@ export function useAttachments() {
     const added: Attachment[] = [];
     for (const file of batch) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
-        toast.error(`${file.name} exceeds 10 MB limit`);
+        toast.error(`${file.name} exceeds 5 MB limit`);
         continue;
       }
       try {

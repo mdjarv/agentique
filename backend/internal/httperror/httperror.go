@@ -71,6 +71,18 @@ func Conflict(msg string) *Error {
 	return &Error{Status: http.StatusConflict, Message: msg}
 }
 
+func UnsupportedMediaType(msg string) *Error {
+	return &Error{Status: http.StatusUnsupportedMediaType, Message: msg}
+}
+
+func TooManyRequests(msg string) *Error {
+	return &Error{Status: http.StatusTooManyRequests, Message: msg}
+}
+
+func BadGateway(msg string, cause error) *Error {
+	return &Error{Status: http.StatusBadGateway, Message: msg, Cause: cause}
+}
+
 func Internal(msg string, cause error) *Error {
 	return &Error{Status: http.StatusInternalServerError, Message: msg, Cause: cause}
 }

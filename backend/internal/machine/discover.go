@@ -5,11 +5,14 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Tailnet peer discovery (multi-machine): enumerate online tailnet peers
@@ -90,6 +93,9 @@ func DiscoverPeers(ctx context.Context, selfID, ownPort string) []DiscoveredPeer
 	ports := []string{ownPort, "9201", "19201"}
 	client := &http.Client{
 		Timeout: 1 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 		// Discovery only reads the public descriptor; a self-signed peer is
 		// still worth suggesting (the pairing flow decides trust).
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec
@@ -161,7 +167,14 @@ func probeDescriptor(ctx context.Context, client *http.Client, base string) (Dis
 		Version      string          `json:"version"`
 		Capabilities map[string]bool `json:"capabilities"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&desc); err != nil || desc.MachineID == "" {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIdentityResponseBytes+1))
+	if err != nil || len(raw) > maxIdentityResponseBytes {
+		return DiscoveredPeer{}, false
+	}
+	if err := json.Unmarshal(raw, &desc); err != nil || uuid.Validate(desc.MachineID) != nil {
+		return DiscoveredPeer{}, false
+	}
+	if len([]rune(desc.Label)) > 64 || len([]rune(desc.Version)) > 128 || len(desc.Capabilities) > 64 {
 		return DiscoveredPeer{}, false
 	}
 	return DiscoveredPeer{

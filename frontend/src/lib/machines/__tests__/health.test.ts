@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { classifyProbe, faultLabel } from "../health";
+import {
+  classifyProbe,
+  createIdentityNonce,
+  faultLabel,
+  readBoundedMachineJSON,
+  verifyIdentityProof,
+} from "../health";
 
 const ME = "machine-a";
 
@@ -50,5 +56,39 @@ describe("classifyProbe", () => {
     expect(faultLabel("wrong-machine")).toBe("wrong machine");
     expect(faultLabel("credential-rejected")).toBe("needs re-pairing");
     expect(faultLabel("not-agentique")).toBe("not agentique");
+  });
+});
+
+describe("verifyIdentityProof", () => {
+  it("accepts only a proof for the pinned key, machine id, and nonce", async () => {
+    const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+      "sign",
+      "verify",
+    ]);
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("spki", keys.publicKey));
+    const encode = (bytes: Uint8Array) => {
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    };
+    const nonce = createIdentityNonce();
+    const message = new TextEncoder().encode(`agentique-machine-proof-v1\n${ME}\n${nonce}`);
+    const signature = new Uint8Array(
+      await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keys.privateKey, message),
+    );
+
+    await expect(
+      verifyIdentityProof(encode(publicKey), ME, nonce, encode(signature)),
+    ).resolves.toBe(true);
+    await expect(
+      verifyIdentityProof(encode(publicKey), "machine-b", nonce, encode(signature)),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("readBoundedMachineJSON", () => {
+  it("rejects an oversized untrusted machine response", async () => {
+    const response = new Response(JSON.stringify({ padding: "x".repeat(70 << 10) }));
+    await expect(readBoundedMachineJSON(response)).rejects.toThrow(/too large/i);
   });
 });

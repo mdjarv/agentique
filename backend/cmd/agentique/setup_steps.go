@@ -6,7 +6,6 @@ const (
 	stepDoctor stepKind = iota
 	stepNetworkMode
 	stepTLS
-	stepAuth
 	stepProject
 	stepSaveConfig
 	stepCompletion
@@ -26,10 +25,7 @@ func buildSteps(networkMode bool) []step {
 		{stepNetworkMode, "Network mode", "How will you access Agentique?"},
 	}
 	if networkMode {
-		steps = append(steps,
-			step{stepTLS, "TLS configuration", "How will you handle HTTPS?"},
-			step{stepAuth, "Authentication", "Protect access with passkeys?"},
-		)
+		steps = append(steps, step{stepTLS, "TLS configuration", "How will you handle HTTPS?"})
 	}
 	steps = append(steps,
 		step{stepProject, "First project", "Path to your first project (optional)"},
