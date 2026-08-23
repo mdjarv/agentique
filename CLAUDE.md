@@ -91,6 +91,15 @@ leadership, and this server's data-dir owner stamp all hold — matching fails
 closed, and "orphan" means reparented away from us, not `PPID == 1` (systemd
 subreaper). Idle eviction is opt-in and lazy-resumes on the next message.
 
+**A restart is not a pause.** That same startup reap is why: the new process
+comes up and kills the CLI groups the old one left, so restarting mid-turn
+does not suspend the turn, it ends it. Sessions survive (worktrees, history
+and metadata are on disk); the current turn does not. Anything that restarts
+the server — in-app upgrade, rollback, a future self-restart — must consult
+`Manager.BusyTurns()` first and say, in those words, that the cost is the
+turn. Busy comes from the turn lifecycle (`EventPipeline.TurnOpen`), never
+from session state, which is updated asynchronously and lags it.
+
 ### Channels / teams — `docs/discussion-sessionless-personas.md`
 
 The `messages` table is the source of truth for channel timelines.

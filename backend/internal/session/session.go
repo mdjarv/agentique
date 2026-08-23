@@ -948,7 +948,9 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	if queryErr != nil {
 		// With turn starts serialized and the runtime state checked under the
 		// same critical section, a refusal here is a genuine CLI failure —
-		// not a lost race.
+		// not a lost race. No completion event will ever arrive for the turn
+		// we just advanced, so close it here or it stays open forever.
+		s.pipeline.CloseTurn()
 		if stErr := s.setState(StateFailed); stErr != nil {
 			slog.Error("state transition failed", "session_id", s.ID, "error", stErr)
 		}
@@ -1315,9 +1317,16 @@ func (s *Session) Close() {
 
 	// Resolve open turn subscriptions with a synthetic SessionClosed outcome
 	// so no subscriber (discussion orchestrator, scheduler) is left waiting
-	// on a turn whose CLI is gone.
+	// on a turn whose CLI is gone. The pipeline's turn goes with it: the CLI
+	// is gone, so nothing will ever complete it.
 	s.turnReg.Close()
+	s.pipeline.CloseTurn()
 }
+
+// TurnInFlight reports whether this session is running a turn right now.
+// Read from the pipeline's turn lifecycle, not from session state — state is
+// updated asynchronously via the broadcast hook and lags the real answer.
+func (s *Session) TurnInFlight() bool { return s.pipeline.TurnOpen() }
 
 // MarkDone transitions the session to StateDone and marks it completed.
 // If the session is already done (e.g., CLI exited cleanly), it ensures completedAt

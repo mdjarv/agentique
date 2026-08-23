@@ -125,6 +125,14 @@ export default defineConfig({
         target: backendOrigin,
         secure: false,
       },
+      // The machine descriptor. Unauthenticated and same-origin in production
+      // (the binary serves the SPA); without this the SPA's index.html answers
+      // in dev and anything probing "which version am I talking to" — the
+      // upgrade confirm-after-restart watch — silently never sees a version.
+      "/.well-known": {
+        target: backendOrigin,
+        secure: false,
+      },
       "/ws": {
         target: backendWs,
         ws: true,

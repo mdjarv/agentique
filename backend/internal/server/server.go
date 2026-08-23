@@ -33,6 +33,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
 	"github.com/mdjarv/agentique/backend/internal/schedule"
+	"github.com/mdjarv/agentique/backend/internal/service"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -176,6 +177,13 @@ type Config struct {
 	// BrainRetryMax bounds session-end learn/outcome job retries before dead-lettering. From
 	// AGENTIQUE_BRAIN_RETRY_MAX or [brain] retry-max; 0 = brain's default (5).
 	BrainRetryMax int
+}
+
+// serviceInstalled reports whether a service manager would bring agentique
+// back after a restart. Without one, replacing the binary would just stop it.
+func serviceInstalled() bool {
+	st, err := service.GetStatus()
+	return err == nil && st.Installed
 }
 
 // parseUpdateInterval reads the [update] interval; an empty value means "take
@@ -359,8 +367,21 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			APIURL:   cfg.Update.APIURL,
 			Interval: interval,
 		})
-		uh := &update.Handler{Checker: updateChecker}
+		// Applying is the machine's own business: it replaces its own binary
+		// and restarts its own service. Busy comes from the turn registry —
+		// a restart is not a pause (docs/upgrades.md, docs/process-lifecycle.md).
+		applier := update.NewApplier(updateChecker, update.Deps{
+			BinaryPath:       service.BinaryPath,
+			Restart:          service.Restart,
+			ServiceInstalled: serviceInstalled,
+			BusyTurns:        mgr.BusyTurns,
+			Publish:          bus.Broadcast,
+			MachineID:        cfg.MachineID,
+		})
+		uh := &update.Handler{Checker: updateChecker, Applier: applier}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
+		mux.HandleFunc("POST /api/update/apply", uh.HandleApply)
+		mux.HandleFunc("DELETE /api/update/apply", uh.HandleCancel)
 	}
 
 	// Machine catalog (multi-machine): paired machines are ACCOUNT state, not

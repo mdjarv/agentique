@@ -17,12 +17,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { UpdateRowAction } from "~/components/update/UpdateRowAction";
 import type { UpdateStatus } from "~/lib/generated-types";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { checkedAgo, machineKeys, PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import { cn, relativeTime } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
+import type { Flight } from "~/stores/update-store";
 import { useUpdateStore } from "~/stores/update-store";
 
 /** One machine's row, assembled from the three stores that know about it. */
@@ -37,6 +39,8 @@ interface Row {
   status?: UpdateStatus;
   /** The version it last reported, even if it cannot answer now. */
   lastKnownVersion?: string;
+  /** An upgrade running on it right now. */
+  flight?: Flight;
 }
 
 /** The one-line verdict for a row, and whether it wants attention.
@@ -59,9 +63,11 @@ function verdict(row: Row): { text: string; strong: boolean } {
 
 function MachineRow({ row }: { row: Row }) {
   const Icon = getMachineIcon(row.icon) ?? DEFAULT_MACHINE_ICON;
-  const { text, strong } = verdict(row);
   const version = row.status?.current || row.lastKnownVersion || "unknown";
   const age = row.status ? checkedAgo(row.status.checkedAt) : null;
+  const apply = useUpdateStore((s) => s.apply);
+  const cancel = useUpdateStore((s) => s.cancel);
+  const clearFlight = useUpdateStore((s) => s.clearFlight);
 
   const detail = [
     row.online
@@ -79,27 +85,35 @@ function MachineRow({ row }: { row: Row }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3.5 py-3",
+        "flex items-center gap-3 overflow-hidden rounded-lg border border-border/60 bg-card px-3.5 py-3",
         !row.online && "opacity-60",
       )}
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
         <Icon className="size-4" />
       </span>
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[13px] font-medium text-foreground">{row.label}</span>
         <span className="truncate font-mono text-[11px] text-muted-foreground-faint">
           {version}
           {detail ? ` · ${detail}` : ""}
         </span>
       </div>
-      <span
-        className={cn(
-          "ml-auto shrink-0 text-[11.5px]",
-          strong ? "font-medium text-foreground-bright" : "text-muted-foreground",
-        )}
-      >
-        {text}
+      {/* Shrinkable, min-w-0, and capped at half the row. A checksum mismatch
+          names two 64-char digests: without min-w-0 it stretched the row past
+          the dialog, and without the cap it ate the machine's own name — and a
+          row that cannot say WHICH machine failed is worse than one that
+          truncates why. */}
+      <span className="flex min-w-0 max-w-[50%] justify-end">
+        <UpdateRowAction
+          status={row.status}
+          flight={row.flight}
+          online={row.online}
+          verdict={verdict(row)}
+          onApply={(force) => apply(row.key, force)}
+          onCancel={() => cancel(row.key)}
+          onDismiss={() => clearFlight(row.key)}
+        />
       </span>
     </div>
   );
@@ -121,6 +135,7 @@ export function UpdateDialog({
 
   const updates = useUpdateStore((s) => s.statuses);
   const checking = useUpdateStore((s) => s.checking);
+  const flights = useUpdateStore((s) => s.flights);
   const fetchAll = useUpdateStore((s) => s.fetchAll);
 
   const busy = Object.keys(checking).length > 0;
@@ -132,6 +147,7 @@ export function UpdateDialog({
       icon: primaryIcon || "",
       online: true,
       status: updates[PRIMARY_MACHINE_KEY],
+      flight: flights[PRIMARY_MACHINE_KEY],
     };
     const remotes = Object.values(machines).map<Row>((entry) => ({
       key: entry.machineId,
@@ -141,9 +157,10 @@ export function UpdateDialog({
       lastSeenAt: lastSeenAt[entry.machineId],
       status: updates[entry.machineId],
       lastKnownVersion: versions[entry.machineId],
+      flight: flights[entry.machineId],
     }));
     return [primary, ...remotes];
-  }, [primaryLabel, primaryIcon, machines, statuses, versions, lastSeenAt, updates]);
+  }, [primaryLabel, primaryIcon, machines, statuses, versions, lastSeenAt, updates, flights]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -156,7 +173,10 @@ export function UpdateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2">
+        {/* min-w-0: DialogContent is a grid, and a grid item's default
+            min-width:auto lets content push it past its track — which is how a
+            long error message widened the whole dialog. */}
+        <div className="flex min-w-0 flex-col gap-2">
           {rows.map((row) => (
             <MachineRow key={row.key} row={row} />
           ))}

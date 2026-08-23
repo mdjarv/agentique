@@ -7,6 +7,7 @@ import { useChannelSubscriptions } from "~/hooks/useChannelSubscriptions";
 import { useDiscussionSubscriptions } from "~/hooks/useDiscussionSubscriptions";
 import { useScheduleSubscriptions } from "~/hooks/useScheduleSubscriptions";
 import { useTeamSubscriptions } from "~/hooks/useTeamSubscriptions";
+import { useUpdateSubscriptions } from "~/hooks/useUpdateSubscriptions";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { listChannels } from "~/lib/channel-actions";
 import type { ListSessionsResult } from "~/lib/generated-types";
@@ -98,6 +99,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
   useTeamSubscriptions(ws);
   useBrainSubscriptions(ws);
   useScheduleSubscriptions(ws);
+  useUpdateSubscriptions(ws);
 
   // Load teams once on mount
   const teamsLoadedRef = useRef(false);

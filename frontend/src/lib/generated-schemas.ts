@@ -483,6 +483,19 @@ export const StorageUsageSchema = z.object({
   orphans: z.array(SessionStorageSchema),
 });
 
+export const UpdateProgressSchema = z.object({
+  machineId: z.string(),
+  phase: z.string(),
+  target: z.string(),
+  from: z.string(),
+  downloaded: z.number(),
+  total: z.number(),
+  cancellable: z.boolean(),
+  error: z.string().optional(),
+  startedAt: z.string(),
+  updatedAt: z.string(),
+});
+
 export const UpdateStatusSchema = z.object({
   current: z.string(),
   latest: z.string(),
@@ -495,6 +508,11 @@ export const UpdateStatusSchema = z.object({
   checkError: z.string().optional(),
   releaseUrl: z.string().optional(),
   notes: z.string().optional(),
+  installable: z.boolean(),
+  blocker: z.string().optional(),
+  busy: z.boolean(),
+  busyTurns: z.number(),
+  progress: UpdateProgressSchema,
 });
 
 export const ProjectSubscribePayloadSchema = z.object({
@@ -1009,6 +1027,7 @@ export const WireEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export const pushSchemaMap = {
+  "update.progress": UpdateProgressSchema,
   "session.event": PushSessionEventSchema,
   "session.state": GitSnapshotSchema,
   "session.created": SessionInfoSchema,

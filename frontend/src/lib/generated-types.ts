@@ -481,6 +481,19 @@ export interface StorageUsage {
   orphans: SessionStorage[];
 }
 
+export interface UpdateProgress {
+  machineId: string;
+  phase: string;
+  target: string;
+  from: string;
+  downloaded: number;
+  total: number;
+  cancellable: boolean;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
 export interface UpdateStatus {
   current: string;
   latest: string;
@@ -493,6 +506,11 @@ export interface UpdateStatus {
   checkError?: string;
   releaseUrl?: string;
   notes?: string;
+  installable: boolean;
+  blocker?: string;
+  busy: boolean;
+  busyTurns: number;
+  progress: UpdateProgress;
 }
 
 export interface ProjectSubscribePayload {
@@ -1006,6 +1024,7 @@ export type WireEvent =
   | WireUserMessageEvent;
 
 export interface PushEventMap {
+  "update.progress": UpdateProgress;
   "session.event": PushSessionEvent;
   "session.state": GitSnapshot;
   "session.created": SessionInfo;

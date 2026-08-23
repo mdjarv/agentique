@@ -29,8 +29,8 @@ is connecting them and deciding when it is safe to pull the trigger.
 | Version shown to the user                   | Settings › About                            | exists       |
 | Asking GitHub for the latest tag            | `internal/update`                           | V1 ✓         |
 | Per-machine version client-side             | `machine-store.versions`, from the probe    | V1 ✓         |
-| An endpoint that performs the upgrade       | —                                           | **new**      |
-| Knowing whether it is safe to restart       | turn registry exists; nothing consults it   | **new**      |
+| An endpoint that performs the upgrade       | `internal/update` (`Applier`)               | V3 ✓         |
+| Knowing whether it is safe to restart       | `Manager.BusyTurns` ← `EventPipeline.TurnOpen` | V3 ✓      |
 
 ## The contract
 
@@ -275,12 +275,26 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
   - `UpdateDialog` is one row per machine. An away machine renders greyed,
     keeps its last-known version and verdict, and never reads as wanting
     attention.
-- **V3 — Apply, narrated.** Verification, `.prev` retention, restart,
-  reconnect-and-confirm, per-phase progress as state *and* events, cancel
-  through verification. Narration is not a follow-up: an unnarrated 30-second
-  binary swap is the version nobody trusts twice. Verified on throwaway
-  servers (isolated `AGENTIQUE_HOME`) before it goes near a real one; gated
-  to `linux/amd64`.
+- **V3 — Apply, narrated. Shipped.** Verification, `.prev` retention,
+  restart, reconnect-and-confirm, per-phase progress as state *and* events,
+  cancel through verification. Narration is not a follow-up: an unnarrated
+  30-second binary swap is the version nobody trusts twice. Verified on
+  throwaway servers (isolated `AGENTIQUE_HOME`, a stub releases endpoint, and
+  a `systemctl` shim that can only ever signal the throwaway) before it went
+  near a real one; gated to `linux/amd64`.
+  - `internal/update`: `Applier` (preflight → download → verify → replace →
+    restart), `install.go` (checksums, atomic install, `Rollback`),
+    `POST`/`DELETE /api/update/apply`, and `agentique rollback`.
+  - Busy comes from `EventPipeline.TurnOpen` via `Manager.BusyTurns()` — the
+    turn lifecycle, not session state. V3 refuses while busy unless `force`
+    is passed; V4 turns that into the drain gate.
+  - `status.installable` is the full preflight (verified platform + published
+    asset + writable install dir + a service to restart) and is what the UI
+    keys its button on; `blocker` says why not. `supported` stays the
+    platform/asset fact the contract above defines.
+  - Cancel and the point of no return contend on one mutex (`Applier.commit`),
+    so an accepted cancel can never be silently ignored by an install that was
+    already under way.
 - **V4 — Wait for idle.** Drain gate, armed one-shot with deadline and
   cancel, override with its honest warning. V3 simply refuses while busy
   until this lands.

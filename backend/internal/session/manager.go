@@ -792,6 +792,26 @@ func (m *Manager) LiveSessions() []*Session {
 	return out
 }
 
+// BusyTurns returns the IDs of sessions running a turn right now, from the
+// turn lifecycle itself — never from session state, which lags it.
+//
+// This is what makes restarting safe to reason about: a restart is not a
+// pause. On startup the server reaps orphaned CLI process groups
+// (docs/process-lifecycle.md), so a badly-timed restart does not suspend an
+// in-flight turn, it ends it. Anything that restarts the server asks here
+// first (docs/upgrades.md).
+func (m *Manager) BusyTurns() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var busy []string
+	for id, s := range m.sessions {
+		if s != nil && s.TurnInFlight() {
+			busy = append(busy, id)
+		}
+	}
+	return busy
+}
+
 // CloseAll gracefully closes all live sessions.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()

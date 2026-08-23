@@ -42,6 +42,26 @@ type Status struct {
 	ReleaseURL string `json:"releaseUrl,omitempty"`
 	// Notes are the release body, truncated.
 	Notes string `json:"notes,omitempty"`
+
+	// --- filled in by the handler from the applier (V3) ---
+
+	// Installable is the full preflight: a supported platform PLUS a writable
+	// install dir and a service to restart. The UI offers an action only for
+	// this, never for Supported alone — never offer a button that cannot work.
+	Installable bool `json:"installable"`
+	// Blocker names, in a sentence, why Installable is false.
+	Blocker string `json:"blocker,omitempty"`
+	// Busy reports a turn running on this machine right now. A restart is not
+	// a pause: restarting mid-turn ends that turn.
+	Busy bool `json:"busy"`
+	// BusyTurns is how many, so an override can state its cost.
+	BusyTurns int `json:"busyTurns"`
+	// Progress is the live upgrade; absent when none is running. Held as state
+	// (not only pushed as events) so reloading mid-upgrade still shows it.
+	// omitempty rather than an explicit null: typegen unwraps pointers, so an
+	// always-present field would generate a TS type that claims progress is
+	// never missing.
+	Progress *Progress `json:"progress,omitempty"`
 }
 
 // notesLimit bounds the release body we put on the wire. Auto-generated notes

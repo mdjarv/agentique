@@ -19,7 +19,7 @@ type Status struct {
 
 // Install registers and starts the service for the current platform.
 func Install() error {
-	bin, err := binaryPath()
+	bin, err := BinaryPath()
 	if err != nil {
 		return fmt.Errorf("resolve binary path: %w", err)
 	}
@@ -125,7 +125,10 @@ func unsupportedError() error {
 	return fmt.Errorf("service management not supported on %s (supported: linux, macOS, windows)", runtime.GOOS)
 }
 
-func binaryPath() (string, error) {
+// BinaryPath is the agentique executable this process is running from, with
+// symlinks resolved — the file a service unit points at, and the file an
+// in-app upgrade replaces (docs/upgrades.md).
+func BinaryPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err

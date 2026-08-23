@@ -455,6 +455,26 @@ func (p *EventPipeline) SetSeq(seq int) {
 	p.mu.Unlock()
 }
 
+// TurnOpen reports whether a turn is in flight — started and not yet drained.
+// This is the turn-lifecycle fact, the same one that gates outcome delivery;
+// nothing here reads session state, which lags it (docs/upgrades.md: anything
+// that restarts the server must consult the turn registry first).
+func (p *EventPipeline) TurnOpen() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.turnOpen
+}
+
+// CloseTurn releases a turn that will never complete — a Query the runtime
+// refused outright, or a session being torn down. Without it the turn stays
+// "open" forever: the next turn start burns WaitTurnClosed's full timeout, and
+// the drain gate reads the session as permanently busy.
+func (p *EventPipeline) CloseTurn() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closeTurnLocked()
+}
+
 // closeTurnLocked marks the current turn's completion as processed and
 // releases WaitTurnClosed waiters. Caller holds p.mu.
 func (p *EventPipeline) closeTurnLocked() {
