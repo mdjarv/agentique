@@ -23,6 +23,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useLogicalProjects } from "~/hooks/useLogicalProjects";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 // Re-export the prompt-parsing API from its new home so existing imports
@@ -312,7 +313,10 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
   const invalidSlug = slugOverride !== undefined && !resolvedProject && !overrideProjectId;
 
   const allProjects = useAppStore((s) => s.projects);
-  const showProjectPicker = allProjects.length > 1;
+  // One entry per repo (multi-machine): a repo cloned on two machines is one
+  // choice here, and starts on its representative.
+  const projectChoices = useLogicalProjects();
+  const showProjectPicker = projectChoices.length > 1;
   const targetProject = isCrossProject
     ? allProjects.find((p) => p.id === targetProjectId)
     : undefined;
@@ -451,19 +455,24 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
                       Start in project…
                     </DropdownMenuLabel>
-                    {allProjects.map((project) => (
+                    {projectChoices.map((row) => (
                       <DropdownMenuItem
-                        key={project.id}
-                        onClick={() => handleStartInProject(project.id)}
+                        key={row.id}
+                        disabled={row.away}
+                        onClick={() => handleStartInProject(row.id)}
                         className="text-xs gap-2"
                       >
                         <Check
                           className={cn(
                             "h-3 w-3",
-                            project.id === targetProjectId ? "opacity-100" : "opacity-0",
+                            // A remote member being the target still ticks its
+                            // repo's row — one repo, one entry.
+                            row.members.some((m) => m.projectId === targetProjectId)
+                              ? "opacity-100"
+                              : "opacity-0",
                           )}
                         />
-                        {project.name}
+                        {row.name}
                       </DropdownMenuItem>
                     ))}
                     <DropdownMenuSeparator />

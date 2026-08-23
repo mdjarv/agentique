@@ -9,8 +9,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useLogicalProjects } from "~/hooks/useLogicalProjects";
 import { openPrefilledNewSession } from "~/lib/session/new-session-draft";
-import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
 interface ProjectTarget {
@@ -32,9 +32,10 @@ interface ProjectTarget {
 export function RunBlockButton({ code }: { code: string }) {
   const navigate = useNavigate();
 
-  // Subscribe to the stable projects array (never a fresh .map() — Zustand
-  // stable-ref rule) and derive the minimal target shape in render.
-  const projects = useAppStore((s) => s.projects);
+  // One entry per repo, not per checkout (multi-machine): the same repo on two
+  // machines is one target, and it lands on the representative's new-session
+  // page where "Run on" picks the machine.
+  const rows = useLogicalProjects();
   // "Current" project = the project of the active session, when there is one.
   const activeProjectId = useChatStore(
     useShallow((s) =>
@@ -43,14 +44,15 @@ export function RunBlockButton({ code }: { code: string }) {
   );
 
   const targets = useMemo<ProjectTarget[]>(() => {
-    const mapped = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
+    const mapped = rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name }));
     if (!activeProjectId) return mapped;
-    // Float the current project to the top.
-    const idx = mapped.findIndex((p) => p.id === activeProjectId);
+    // Float the current repo to the top — matched through the group, so a
+    // session running on a remote member still floats its logical row.
+    const idx = rows.findIndex((r) => r.members.some((m) => m.projectId === activeProjectId));
     if (idx <= 0) return mapped;
     const [current] = mapped.splice(idx, 1);
     return current ? [current, ...mapped] : mapped;
-  }, [projects, activeProjectId]);
+  }, [rows, activeProjectId]);
 
   if (targets.length === 0 || !code.trim()) return null;
 

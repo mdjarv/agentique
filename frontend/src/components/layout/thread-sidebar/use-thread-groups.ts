@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 import { formatPulse } from "~/components/layout/session/PulseStatus";
 import { useTheme } from "~/hooks/useTheme";
+import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
 import type { Project } from "~/lib/types";
@@ -74,6 +75,13 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
   return useMemo(() => {
     const projectById = new Map<string, Project>(projects.map((p) => [p.id, p]));
     const projectIds = projects.map((p) => p.id);
+    // One repo reads the same everywhere: a session on a remote machine takes
+    // its label, colour and icon from the logical project's representative,
+    // and says WHICH machine through its glyph — not through a second colour.
+    const repById = new Map<string, Project>();
+    for (const { project: rep, members } of groupProjects(projects)) {
+      for (const member of members) repById.set(member.id, rep);
+    }
 
     // Worker counts for lead sessions, from the parent hierarchy.
     const workerCounts = new Map<string, number>();
@@ -97,12 +105,17 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const meta = data.meta;
       const project = projectById.get(meta.projectId);
       if (!project) continue;
+      // Presentation comes from the representative; ownership (which machine
+      // runs it) stays with the session's own project.
+      const rep = repById.get(project.id) ?? project;
 
       if (
         query &&
         !(meta.name || "").toLowerCase().includes(query) &&
         !project.slug.toLowerCase().includes(query) &&
-        !project.name.toLowerCase().includes(query)
+        !project.name.toLowerCase().includes(query) &&
+        !rep.slug.toLowerCase().includes(query) &&
+        !rep.name.toLowerCase().includes(query)
       ) {
         continue;
       }
@@ -118,7 +131,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const pulse = pulses[meta.id];
       const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
       const remoteMachineLabel = remoteMachine?.label;
-      const color = getProjectColor(project.color, project.id, projectIds, resolvedTheme);
+      const color = getProjectColor(rep.color, rep.id, projectIds, resolvedTheme);
       const isTerminal =
         meta.state === "done" || meta.state === "stopped" || meta.state === "failed";
       const todoTotal = data.todos?.length ?? 0;
@@ -128,12 +141,14 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         sessionId: meta.id,
         name: meta.name || "",
         untitled: !meta.name,
+        // Routing needs the session's OWN (machine-qualified) slug; the label
+        // beside it is the repo's, so both copies read as one project.
         projectSlug: project.slug,
-        projectLabel: displaySlug(project.slug),
-        projectInitials: projectInitials(displaySlug(project.slug)),
+        projectLabel: displaySlug(rep.slug),
+        projectInitials: projectInitials(displaySlug(rep.slug)),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
-        projectIconId: project.icon || undefined,
+        projectIconId: rep.icon || undefined,
         badge,
         awake: isAwake(badge) || meta.connected,
         livePhrase:

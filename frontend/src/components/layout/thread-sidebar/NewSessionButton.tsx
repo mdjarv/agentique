@@ -8,6 +8,11 @@
  * per-project surface left — so each row carries what those rows owned: the
  * remote sync pills (push/pull) and a jump to project settings.
  *
+ * Rows are LOGICAL projects (multi-machine): one repo, one row, however many
+ * machines hold a checkout. The row commands the representative — the primary
+ * machine's copy when it exists — and the new-session page's "Run on" picker
+ * is where another member is chosen.
+ *
  * Positioning goes through Radix Popover: the panel is wider than the space
  * left of the trigger inside a 288px sidebar, so it needs real collision
  * handling rather than a hand-rolled `absolute right-0` (which pushed it off
@@ -20,31 +25,30 @@ import { toast } from "sonner";
 import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ProjectPill } from "~/components/ui/project-pill";
+import { useLogicalProjects } from "~/hooks/useLogicalProjects";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import type { LogicalProjectVM } from "~/lib/machines/logical-derive";
+import { compareLogicalProjects, matchesLogicalProject } from "~/lib/machines/logical-derive";
 import { setProjectFavorite } from "~/lib/project-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
-import { useMachineStore } from "~/stores/machine-store";
 
 export function NewSessionButton() {
   const navigate = useNavigate();
   const projects = useAppStore((s) => s.projects);
-  const machineStatuses = useMachineStore((s) => s.statuses);
+  const rows = useLogicalProjects();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [rawSelectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const matches = q
-      ? projects.filter((p) => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q))
-      : projects;
-    return [...matches].sort((a, b) => {
-      if (a.favorite !== b.favorite) return b.favorite - a.favorite;
-      return a.name.localeCompare(b.name);
-    });
-  }, [projects, search]);
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    return rows
+      .filter((row) => matchesLogicalProject(row, byId, search))
+      .sort(compareLogicalProjects);
+  }, [rows, projects, search]);
 
   const selectedIdx = filtered.length === 0 ? 0 : Math.min(rawSelectedIdx, filtered.length - 1);
 
@@ -81,18 +85,17 @@ export function NewSessionButton() {
         setSelectedIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter") {
         e.preventDefault();
-        const project = filtered[selectedIdx];
-        // Keyboard launch obeys the same rule the row does: a machine that is
-        // away can't take a new session.
-        if (!project) return;
-        if (project.machineId && machineStatuses[project.machineId] !== "connected") return;
-        go("new", project.slug);
+        const row = filtered[selectedIdx];
+        // Keyboard launch obeys the same rule the row does: a repo whose every
+        // machine is away can't take a new session.
+        if (!row || row.away) return;
+        go("new", row.slug);
       }
     },
-    [filtered, selectedIdx, go, machineStatuses],
+    [filtered, selectedIdx, go],
   );
 
-  if (projects.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -132,15 +135,15 @@ export function NewSessionButton() {
           />
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
-          {filtered.map((p, i) => (
+          {filtered.map((row, i) => (
             <ProjectPaletteRow
-              key={p.id}
-              project={p}
+              key={row.id}
+              row={row}
               active={i === selectedIdx}
               onHover={() => setSelectedIdx(i)}
-              onLaunch={() => go("new", p.slug)}
-              onSettings={() => go("settings", p.slug)}
-              onOpenRepo={() => go("repo", p.slug)}
+              onLaunch={() => go("new", row.slug)}
+              onSettings={() => go("settings", row.slug)}
+              onOpenRepo={() => go("repo", row.slug)}
             />
           ))}
           {filtered.length === 0 && (
@@ -154,22 +157,40 @@ export function NewSessionButton() {
   );
 }
 
-interface PaletteProject {
-  id: string;
-  slug: string;
-  favorite: number;
-  machineId?: string;
+/**
+ * Glyphs for the machines a repo ALSO lives on — the row's only multi-machine
+ * chrome. The representative is never drawn: it is the row.
+ */
+function MemberGlyphs({ row }: { row: LogicalProjectVM }) {
+  if (row.remoteMembers.length === 0) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      {row.remoteMembers.map((member) => {
+        const Icon = getMachineIcon(member.machineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
+        return (
+          <Icon
+            key={member.projectId}
+            aria-hidden
+            className={cn(
+              "size-3",
+              member.offline ? "text-muted-foreground-faint/60" : "text-muted-foreground",
+            )}
+          />
+        );
+      })}
+    </span>
+  );
 }
 
 function ProjectPaletteRow({
-  project,
+  row,
   active,
   onHover,
   onLaunch,
   onSettings,
   onOpenRepo,
 }: {
-  project: PaletteProject;
+  row: LogicalProjectVM;
   active: boolean;
   onHover: () => void;
   onLaunch: () => void;
@@ -177,18 +198,14 @@ function ProjectPaletteRow({
   onOpenRepo: () => void;
 }) {
   const ws = useWebSocket();
-  const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
-  const machine = useMachineStore((s) =>
-    project.machineId ? (s.machines[project.machineId] ?? null) : null,
-  );
-  const machineStatus = useMachineStore((s) =>
-    project.machineId ? (s.statuses[project.machineId] ?? "disconnected") : "connected",
-  );
-  // The project stays listed — knowing where a repo lives is worth a row —
-  // but a session can't be started on a machine that is away.
-  const away = !!project.machineId && machineStatus !== "connected";
-  const favorite = project.favorite === 1;
+  // Git and settings belong to the representative checkout — the physical
+  // entity this row commands. Other members' drift is the sync dock's job.
+  const gitStatus = useAppStore((s) => s.projectGitStatus[row.id]);
   const dirty = gitStatus?.uncommittedCount ?? 0;
+  const away = row.away;
+  const alsoOn = row.remoteMembers
+    .map((m) => `${m.machineLabel}${m.offline ? " (offline)" : ""}`)
+    .join(", ");
 
   return (
     <div
@@ -202,13 +219,20 @@ function ProjectPaletteRow({
         type="button"
         onClick={onLaunch}
         disabled={away}
-        title={away ? `${machine?.label ?? "That machine"} is offline` : undefined}
+        title={
+          away
+            ? `${row.members[0]?.machineLabel || "That machine"} is offline`
+            : alsoOn
+              ? `Also on ${alsoOn}`
+              : undefined
+        }
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2 text-left",
           away ? "cursor-not-allowed opacity-45" : "cursor-pointer",
         )}
       >
-        <ProjectPill slug={project.slug} showIcon size="md" background={false} />
+        <ProjectPill slug={row.slug} showIcon size="md" background={false} />
+        <MemberGlyphs row={row} />
         {away && (
           <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">
             offline
@@ -231,8 +255,8 @@ function ProjectPaletteRow({
       )}
 
       <ProjectGitPill
-        projectId={project.id}
-        projectSlug={project.slug}
+        projectId={row.id}
+        projectSlug={row.slug}
         gitStatus={gitStatus}
         className="mr-0.5"
       />
@@ -249,11 +273,13 @@ function ProjectPaletteRow({
       >
         <Settings className="size-3.5" />
       </button>
+      {/* The star is the representative's — this host's opinion of the repo.
+          A remote machine's own favorite flag is its host's business. */}
       <button
         type="button"
-        aria-label={favorite ? "Unfavorite" : "Favorite"}
+        aria-label={row.favorite ? "Unfavorite" : "Favorite"}
         onClick={() => {
-          setProjectFavorite(ws, project.id, !favorite).catch((err) =>
+          setProjectFavorite(ws, row.id, !row.favorite).catch((err) =>
             toast.error(getErrorMessage(err, "Failed to update favorite")),
           );
         }}
@@ -262,7 +288,7 @@ function ProjectPaletteRow({
         <Star
           className={cn(
             "size-3.5",
-            favorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground-faint",
+            row.favorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground-faint",
           )}
         />
       </button>
