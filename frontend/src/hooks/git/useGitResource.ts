@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { getErrorMessage } from "~/lib/utils";
 import type { WsClient } from "~/lib/ws-client";
+import { isTransportUnavailable } from "~/lib/ws-client";
 import { useChatStore } from "~/stores/chat-store";
 
 /** A lazily-fetched, git-versioned session resource (diff, uncommitted diff, commit log). */
@@ -95,7 +96,9 @@ export function useGitResource<T>({
       return result;
     } catch (err) {
       if (fetchToken.current !== token) return null;
-      if (errorMessage) {
+      // A machine that is away isn't a failed request — the session view still
+      // renders from cache, and its composer already says why nothing is live.
+      if (errorMessage && !isTransportUnavailable(err)) {
         toast.error(getErrorMessage(err, errorMessage));
         setState((s) => (s.sessionId === sessionId ? { ...s, loading: false } : s));
       } else {

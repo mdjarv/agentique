@@ -2,6 +2,7 @@ import type { Project } from "~/lib/types";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { usePulseStore } from "~/stores/pulse-store";
 
 /**
  * Per-machine offline cache (multi-machine). Machines come and go — a
@@ -23,6 +24,35 @@ interface MachineCache {
 }
 
 const keyFor = (machineId: string) => `agentique:machine-cache:${machineId}`;
+
+/**
+ * Freeze this machine's sessions in the LIVE store when it goes away.
+ *
+ * The snapshot below sanitizes live-ness on its way to localStorage, but the
+ * store kept whatever was true when the laptop closed its lid — so a session
+ * that was mid-turn kept pulsing, and its pending approval kept offering
+ * Allow/Deny buttons that could only time out. Away means settled.
+ */
+export function freezeMachineSessions(machineId: string): void {
+  const projectIds = new Set(
+    useAppStore
+      .getState()
+      .projects.filter((p) => p.machineId === machineId)
+      .map((p) => p.id),
+  );
+  if (projectIds.size === 0) return;
+
+  const sessionIds = Object.values(useChatStore.getState().sessions)
+    .filter((data) => projectIds.has(data.meta.projectId))
+    .map((data) => data.meta.id);
+  if (sessionIds.length === 0) return;
+
+  useChatStore.getState().markSessionsAway(sessionIds);
+  // The pulse is the live narration ("editing derive.ts · 12 tool calls").
+  // Nothing is editing anything on a machine that is asleep.
+  const pulses = usePulseStore.getState();
+  for (const id of sessionIds) pulses.clearPulse(id);
+}
 
 /** Snapshot the machine's current store state. Called after a successful
  *  live load and again on disconnect (the freshest state we'll have). */

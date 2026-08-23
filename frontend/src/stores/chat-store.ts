@@ -154,6 +154,8 @@ export interface ChatState {
   setSessions: (sessions: SessionMetadata[], projectId: string, authoritative?: boolean) => void;
   addSession: (meta: SessionMetadata) => void;
   removeSession: (id: string) => void;
+  /** Freeze sessions whose machine went away — see `markSessionsAway`. */
+  markSessionsAway: (sessionIds: string[]) => void;
   setActiveSessionId: (id: string | null) => void;
   setSessionState: (sessionId: string, state: SessionState, extras?: StateExtras) => void;
   flushPendingState: (sessionId: string) => void;
@@ -285,6 +287,41 @@ export const useChatStore = create<ChatState>((set) => ({
       const historyLoading = new Set(s.historyLoading);
       historyLoading.delete(id);
       return { sessions: rest, activeSessionId, historyLoading };
+    }),
+
+  /**
+   * A machine went away, so its sessions cannot still be live: drop the
+   * connected flag, settle anything mid-turn, and clear requests nothing can
+   * answer. Same sanitize the offline snapshot applies — applied to the live
+   * store too, or the UI keeps pulsing for a laptop that closed its lid an
+   * hour ago and offers Allow/Deny buttons that can only time out.
+   */
+  markSessionsAway: (sessionIds) =>
+    set((s) => {
+      const sessions = { ...s.sessions };
+      let changed = false;
+      for (const id of sessionIds) {
+        const data = sessions[id];
+        if (!data) continue;
+        const wasLive =
+          data.meta.connected ||
+          data.meta.state === "running" ||
+          !!data.pendingApproval ||
+          !!data.pendingQuestion;
+        if (!wasLive) continue;
+        changed = true;
+        sessions[id] = {
+          ...data,
+          meta: {
+            ...data.meta,
+            connected: false,
+            state: data.meta.state === "running" ? "idle" : data.meta.state,
+          },
+          pendingApproval: null,
+          pendingQuestion: null,
+        };
+      }
+      return changed ? { sessions } : s;
     }),
 
   setActiveSessionId: (id) =>

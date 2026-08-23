@@ -24,10 +24,12 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { setProjectFavorite } from "~/lib/project-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
+import { useMachineStore } from "~/stores/machine-store";
 
 export function NewSessionButton() {
   const navigate = useNavigate();
   const projects = useAppStore((s) => s.projects);
+  const machineStatuses = useMachineStore((s) => s.statuses);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [rawSelectedIdx, setSelectedIdx] = useState(0);
@@ -80,10 +82,14 @@ export function NewSessionButton() {
       } else if (e.key === "Enter") {
         e.preventDefault();
         const project = filtered[selectedIdx];
-        if (project) go("new", project.slug);
+        // Keyboard launch obeys the same rule the row does: a machine that is
+        // away can't take a new session.
+        if (!project) return;
+        if (project.machineId && machineStatuses[project.machineId] !== "connected") return;
+        go("new", project.slug);
       }
     },
-    [filtered, selectedIdx, go],
+    [filtered, selectedIdx, go, machineStatuses],
   );
 
   if (projects.length === 0) return null;
@@ -152,6 +158,7 @@ interface PaletteProject {
   id: string;
   slug: string;
   favorite: number;
+  machineId?: string;
 }
 
 function ProjectPaletteRow({
@@ -171,6 +178,15 @@ function ProjectPaletteRow({
 }) {
   const ws = useWebSocket();
   const gitStatus = useAppStore((s) => s.projectGitStatus[project.id]);
+  const machine = useMachineStore((s) =>
+    project.machineId ? (s.machines[project.machineId] ?? null) : null,
+  );
+  const machineStatus = useMachineStore((s) =>
+    project.machineId ? (s.statuses[project.machineId] ?? "disconnected") : "connected",
+  );
+  // The project stays listed — knowing where a repo lives is worth a row —
+  // but a session can't be started on a machine that is away.
+  const away = !!project.machineId && machineStatus !== "connected";
   const favorite = project.favorite === 1;
   const dirty = gitStatus?.uncommittedCount ?? 0;
 
@@ -185,9 +201,19 @@ function ProjectPaletteRow({
       <button
         type="button"
         onClick={onLaunch}
-        className="flex min-w-0 flex-1 cursor-pointer items-center text-left"
+        disabled={away}
+        title={away ? `${machine?.label ?? "That machine"} is offline` : undefined}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 text-left",
+          away ? "cursor-not-allowed opacity-45" : "cursor-pointer",
+        )}
       >
         <ProjectPill slug={project.slug} showIcon size="md" background={false} />
+        {away && (
+          <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">
+            offline
+          </span>
+        )}
       </button>
 
       {/* Uncommitted work on the project's own checkout — the only route back

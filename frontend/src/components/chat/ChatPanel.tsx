@@ -435,7 +435,11 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     }
   }, [ws, sessionId, resuming]);
 
-  const isResumable = resumableStates.has(sessionState);
+  // Resuming reaches into the machine that owns the session, so an away
+  // machine has nothing to resume — offering the button would only produce a
+  // timeout. The banner disappears with it; the composer's placeholder is
+  // where the session says what it is waiting for.
+  const isResumable = resumableStates.has(sessionState) && !machineAway;
   const caps = meta?.capabilities;
   const planModeSupported = caps?.planMode !== false;
   const attachmentsSupported = caps?.attachments !== false;

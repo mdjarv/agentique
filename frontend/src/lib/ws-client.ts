@@ -16,6 +16,23 @@ interface PendingRequest {
 export type ConnectionState = "connected" | "reconnecting" | "disconnected";
 
 /**
+ * A request that failed because the socket wasn't there — not because the
+ * server said no. Machines suspend daily, so callers doing background or
+ * eager work check this and stay quiet instead of reporting a fault.
+ */
+export class WsUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WsUnavailable";
+  }
+}
+
+/** True for a failure caused by an absent connection rather than a real error. */
+export function isTransportUnavailable(err: unknown): boolean {
+  return err instanceof Error && err.name === "WsUnavailable";
+}
+
+/**
  * Resolves the WebSocket URL for a connection attempt. Async so remote
  * machines can mint a fresh one-time wsTicket per attempt (tickets are
  * single-use — a static URL would only ever connect once).
@@ -31,6 +48,8 @@ export class WsClient {
   private pushHandlers = new Map<string, Set<AnyPushHandler>>();
   private reconnectDelay = 500;
   private shouldReconnect = true;
+  /** Bumped per connect attempt so a stale URL resolution can be abandoned. */
+  private resolveGeneration = 0;
   private connectListeners = new Set<() => void>();
   private disconnectListeners = new Set<() => void>();
   private _connectionState: ConnectionState = "disconnected";
@@ -91,13 +110,20 @@ export class WsClient {
     }
 
     this.connecting = true;
+    const generation = ++this.resolveGeneration;
     resolved
       .then((url) => {
+        // A resolution started against a machine that was asleep can hang for
+        // as long as the network takes to give up — long after the machine
+        // woke and forceReconnect started a fresh attempt. Abandon it rather
+        // than letting it open a socket or schedule a redundant retry.
+        if (generation !== this.resolveGeneration) return;
         this.connecting = false;
         if (this.ws || !this.shouldReconnect) return;
         this.open(url);
       })
       .catch((err) => {
+        if (generation !== this.resolveGeneration) return;
         this.connecting = false;
         this.scheduleRetryAfterResolveFailure(err);
       });
@@ -184,7 +210,7 @@ export class WsClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         unsub();
-        reject(new Error("WebSocket connection timeout"));
+        reject(new WsUnavailableError("WebSocket connection timeout"));
       }, timeoutMs);
       const unsub = this.onConnect(() => {
         clearTimeout(timer);
@@ -205,7 +231,7 @@ export class WsClient {
       // against a dead/closing socket so the request rejects immediately instead
       // of hanging until the timeout with a dangling pending entry + timer.
       if (this.ws?.readyState !== WebSocket.OPEN) {
-        reject(new Error(`Request ${type} failed: socket not open`));
+        reject(new WsUnavailableError(`Request ${type} failed: socket not open`));
         return;
       }
 
@@ -333,6 +359,12 @@ export class WsClient {
 
   /** Force-close and reconnect. Catches zombie sockets that report OPEN but are dead. */
   forceReconnect(): void {
+    // Waking with a ticket mint still in flight against a machine that was
+    // asleep would otherwise be a no-op — `connect()` early-returns while
+    // `connecting` is set, so the wake would wait out the old attempt's
+    // network timeout instead of reconnecting now.
+    this.resolveGeneration++;
+    this.connecting = false;
     this.reconnectDelay = 500;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

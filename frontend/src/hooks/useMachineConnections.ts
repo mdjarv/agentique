@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import { subscribeAndLoad } from "~/hooks/useGlobalSubscriptions";
-import { clearMachineCache, hydrateMachineCache, saveMachineCache } from "~/lib/machines/cache";
+import {
+  clearMachineCache,
+  freezeMachineSessions,
+  hydrateMachineCache,
+  saveMachineCache,
+} from "~/lib/machines/cache";
 import { disconnectMachine, getMachineClient, machineFetch } from "~/lib/machines/registry";
 import { remoteSlug } from "~/lib/machines/slug";
 import type { Project } from "~/lib/types";
@@ -80,8 +85,12 @@ export function useMachineConnections(): void {
 
       const unsub = client.onConnect(load);
       // Snapshot at disconnect — the freshest state this machine will have
-      // until it comes back.
-      const unsubDisconnect = client.onDisconnect(() => saveMachineCache(machineId));
+      // until it comes back. Freeze first, so the live store and the snapshot
+      // tell the same story: away, settled, nothing pending.
+      const unsubDisconnect = client.onDisconnect(() => {
+        freezeMachineSessions(machineId);
+        saveMachineCache(machineId);
+      });
       // getMachineClient connects asynchronously (ticket mint), so attaching
       // onConnect here normally races nothing — but if the socket is somehow
       // already up (re-add after remove), load immediately.

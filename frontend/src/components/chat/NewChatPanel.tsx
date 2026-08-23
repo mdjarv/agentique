@@ -120,6 +120,18 @@ export function NewChatPanel({
   const [targetProjectId, setTargetProjectId] = useState(projectId);
   const target = members.find((m) => m.id === targetProjectId) ?? project;
 
+  // A repo that lives ONLY on a machine that is away has no picker to grey
+  // out — the panel itself has to say so, or it accepts a prompt and fails on
+  // submit. (Where the repo spans machines, the picker handles it and the
+  // reachable member stays selectable.)
+  const machineStatuses = useMachineStore((s) => s.statuses);
+  const machines = useMachineStore((s) => s.machines);
+  const targetMachineId = target?.machineId;
+  const targetAway = !!targetMachineId && machineStatuses[targetMachineId] !== "connected";
+  const targetMachineName = targetMachineId
+    ? (machines[targetMachineId]?.label ?? "That machine")
+    : "";
+
   const handleSwarmCreated = useCallback(
     (_channelId: string, firstSessionId: string) => {
       navigate({
@@ -302,7 +314,12 @@ export function NewChatPanel({
           ref={composerRef}
           projectId={projectId}
           onSend={handleSend}
-          disabled={sending}
+          disabled={sending || targetAway}
+          placeholder={
+            targetAway
+              ? `${targetMachineName} is offline — sessions start when it's back`
+              : undefined
+          }
           initialText={composerInitialText}
           onTextPersist={handleTextPersist}
           worktree={worktree}
