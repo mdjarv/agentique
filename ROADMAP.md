@@ -57,6 +57,21 @@ offline agents; the user decides when to spawn); personas are the autonomy
 gateway (a confidence threshold rather than binary flags); observe discovery
 patterns before widening automation.
 
+### Designed, not built
+
+Both have settled designs and phase plans; neither has code. A session can
+pick either up from its document alone.
+
+- **In-app upgrades** — [`docs/upgrades.md`](docs/upgrades.md). A tagged
+  release appears, every client says so, and each machine upgrades itself on
+  request without ending a turn that is mid-flight. V1 (know) is worth
+  shipping alone: with machines drifting independently, just seeing their
+  versions side by side is most of the value.
+- **Presentation sync** — [`docs/multi-machine-sync.md`](docs/multi-machine-sync.md).
+  Stars, names and colours replicate two-way between machines, so the same
+  repo reads the same from any UI. M1 (registers, no network) is invisible
+  and commits to nothing.
+
 ## Maybe
 
 Optional and unscheduled — pick up if the itch is real.

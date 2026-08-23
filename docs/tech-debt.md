@@ -3,17 +3,10 @@
 Maintained as a living document. Severity tiers describe what will break
 or surprise someone first, not effort to fix.
 
-Last full audit: 2026-06-23 (brain **self-balancing semantic graph** — embeddings as weighted kNN
-edges, force layout, embedding-weighted forces/visuals + legibility pass, graph is the default brain
-view; **semantic recall enabled in production** —
-ChromaDB + Ollama all-minilm as durable docker containers; **all brain config now config.toml-
-settable**). Prior: 2026-06-22 (brain **automatic outcome emitter** — session-end transcript judge
-that auto-feeds MarkAutoHelped/Flag, gentler 0.25 auto weight, session-end model knobs in
-config.toml; semantic recall — vector veto + vouch bar, model-specific auto-calibration, warmed +
-pruned embed cache; scheduled-consolidation config-file support; consolidation vocabulary
-unification — retired "Tidy"/"sleep"). Prior: 2026-06-21 (outcome signal v1: MemoryUsed +
-confidence calibration + operating contract; cross-scope areas, pluggable semantic similarity,
-fluid per-turn recall + corpus cache, recall precision).
+Last full audit: 2026-06-23. Pruned 2026-08-23: every item already marked
+CLOSED/SHIPPED was removed rather than kept struck through — `git log -p --
+docs/tech-debt.md` has them, and a debt list is only useful if everything in
+it is still true.
 
 ## P0 — Will bite a user
 
@@ -45,17 +38,6 @@ ids, making **25 facts fully recoverable** (matching the ~25-fact queue) plus so
 partial. Run against that dir, not the JSON bundle. The command refuses an id-less
 bundle with guidance. → `internal/memory/{record,promote,backfill}.go`,
 `cmd/agentique/brain.go`.
-
-### Brain: AI refine is a synchronous model call ~~uncancellable~~ (timeout shipped)
-`HandleRefine` runs the model on a detached context (so a client disconnect can't
-SIGTERM the subprocess) and **blocks the HTTP request** until it returns. It is now
-**bounded by a 2-minute timeout** (`refineTimeout`): a wedged or long-rate-limited
-call is cancelled and the handler returns `504 Gateway Timeout` instead of hanging the
-request and the review dialog's spinner indefinitely (`RunWithRetry` honors ctx, so
-the deadline unblocks an in-flight call or a retry backoff). Still synchronous and
-inline (not on the job channel) and there's no user-facing cancel button — acceptable
-for an interactive rewrite, but a remaining nicety. → `internal/brain/http.go`
-(`HandleRefine`, `refine_timeout_test.go`), `internal/brain/extractor.go` (`Refine`).
 
 ### Brain: consolidation apply is not transactional
 `ApplyPlan` / `ApplyGlobalPromotion` / `writePromoted` write facts one
@@ -262,83 +244,20 @@ sequential and two scopes can't consolidate concurrently. Parallel-across-scopes
 deferred — needs a multi-job map + frontend tracking multiple previews.
 → `internal/brain/job.go`, `frontend/src/stores/brain-store.ts`.
 
-### Brain: config-file coverage ~~is partial~~ → COMPLETE 2026-06-22; one env hard-rename, one naming seam
-**Resolved (2026-06-22).** Every brain knob is now settable in `config.toml` under `[brain]`, with
-the matching `AGENTIQUE_BRAIN_*` env var still winning when set: `chroma-url`, `embed-url`,
-`embed-model`, `embed-key`, `semantic-threshold`, `vector-veto`, `autocal`, and `recall` joined the
-already-covered `consolidate-interval`/`consolidate-model`/`learn-model`/`outcome-model`. Strings
-layer via `firstNonEmpty`, floats via `envFloatOr`, bools via `envBoolOr`; the default-ON `recall`
-toggle uses `resolveRecall` (env → file → on). Matches the user's config-over-env preference
-(`feedback_config_over_env`) for a persistent service. → `internal/config/config.go`,
-`cmd/agentique/serve.go`, `internal/server/server.go`.
-
-Two smaller residues remain from the 2026-06-22 vocabulary unification:
-(a) the env rename `AGENTIQUE_BRAIN_SLEEP_*` → `AGENTIQUE_BRAIN_CONSOLIDATE_*` is a **hard
-rename with no alias** — an operator with the old var set silently loses scheduled
-consolidation (acceptable: opt-in, barely deployed); (b) the cross-scope op is named three ways
-across layers — UI "Lift to global", API path `/api/brain/consolidate/global`, backend
-"promotion" (`promote.go`/`PlanGlobal`). Per-scope consolidation was unified; this seam wasn't.
-→ `internal/config/config.go`, `cmd/agentique/serve.go`, `internal/server/server.go`,
+### Brain: two residues from the 2026-06-22 vocabulary unification
+(a) The env rename `AGENTIQUE_BRAIN_SLEEP_*` → `AGENTIQUE_BRAIN_CONSOLIDATE_*` is a
+**hard rename with no alias** — an operator with the old var set silently loses
+scheduled consolidation (acceptable: opt-in, barely deployed). (b) The cross-scope
+op is named three ways across layers — UI "Lift to global", API path
+`/api/brain/consolidate/global`, backend "promotion" (`promote.go`/`PlanGlobal`).
+Per-scope consolidation was unified; this seam wasn't.
+→ `internal/config/config.go`, `cmd/agentique/serve.go`,
 `frontend/src/components/brain/BrainPage.tsx`.
 
 ### Brain: `brain.Handler` is a grab-bag
 One type owns memory CRUD + search + status + consolidation preview/apply + global
 + consolidate-all + the job runner. Growing; a split (CRUD vs. consolidation/jobs) would
 help. → `internal/brain/{http,job}.go`.
-
-### Brain: semantic similarity is activated only for areas (C) ~~partial~~ → CLOSED 2026-06-22
-**Resolved** (`docs/brain-design-log.md#semantic-recall` #2). `ConsolidateOptions.SimOptions` now
-threads the embedding-blended `memory.Similarity` through `memory.ApplyPlan` into the
-post-apply `RelinkScope` + `AssignCommunities`, so per-scope **links and communities are
-semantic** in semantic mode (`brain.ApplyPlan`/`Consolidate` compute the SimOptions —
-`scopeSimOptions`, embed the scope — *before* taking `s.mu`, so the network embed never
-blocks under the lock; skipped on dry run). `DetectInterference` takes `SimOptions` and
-blends cosine into its related-lower bound (duplicate-exclusion stays lexical — consolidation
-owns dups), threaded from the graph endpoint (request-time, not the per-turn hot path).
-`ApplyGlobal` now refreshes areas via the semantic `s.AssignAreas` instead of the bare
-lexical `memory.AssignAreas`. Remaining nuance: the graph-endpoint and `ApplyGlobal` embeds
-run inline (acceptable — neither is the hot path), and the per-pass re-embed has no cache
-(separate item below). → `internal/memory/{consolidate,similarity,interference}.go`,
-`internal/brain/{brain,graph}.go`. Tests: `TestApplyPlanThreadsSemanticSimOptionsToRelink`,
-`TestDetectInterferenceUsesEmbeddings`.
-
-### Brain: embeddings re-embed the whole corpus every pass ~~(no cache)~~ → cache + cold-start warm + pruning SHIPPED 2026-06-22 → CLOSED
-`Service.embedRecords` memoizes vectors in an in-process **text-hash cache**
-(`embedCache`, sha256 of text; embedding is pure in (text, per-Service-fixed model), so
-text-hash is a sufficient id-independent key) and embeds only DISTINCT miss texts. After the
-first pass an unchanged corpus costs zero embed calls — which matters now that #2 widened the
-call sites (per-`ApplyPlan`/`Consolidate` scope embed + per-graph-load embed, on top of
-`AssignAreas`). The per-turn *recall* path was never affected (single query-embed + search).
-**Cold start closed (the Chroma bulk-vector read):** on the first clustering embed after a
-restart, `warmEmbedCache` seeds the cache from the vectors Chroma already holds —
-`chroma.Client.GetEmbeddings` (a `/get` with `include:["embeddings","documents"]`) →
-`chroma.Store.LoadVectors`, keyed by `embedKey(document)` so an unchanged fact resolves without
-re-embedding. It runs at most once per process (`warmed`/`warmMu`), serializes concurrent first
-passes, and retries on a transient failure (best-effort; a cold cache just falls back to
-embedding). **Pruning closed:** `pruneEmbedCache` runs at the whole-brain checkpoint
-(`AssignAreas`, after every scheduled-consolidation/consolidate-all/global pass) and drops entries whose text-hash is no
-longer in the live corpus, so edited/deleted facts' stale vectors don't accumulate — the cache
-is bounded by the live fact set, not by every text ever seen. → `internal/brain/brain.go`,
-`internal/memory/chroma/{client,store}.go`. Tests: `TestEmbedRecordsCachesByTextHash`,
-`TestWarmEmbedCacheZeroReembedAfterRestart`, `TestWarmEmbedCacheEmbedsOnlyNewFacts`,
-`TestWarmEmbedCacheRetriesAfterFailure`, `TestPruneEmbedCacheDropsStaleTexts`, and the live
-`TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
-
-### Brain: semantic graph is a per-request O(n²) kNN ~~with no caching / fixed knobs~~ → CLOSED 2026-06-23
-The graph layout (P6, `docs/brain-design-log.md#graph-layer`) was reworked from a PCA *projection* (retired —
-positions collapsed 384-dim similarity to 2 axes) to **semantic edges + a self-balancing force layout**:
-`memory.SemanticEdges` computes the embedding kNN graph (cosine ≥ threshold, per-node cap) with cosine
-scores that weight the layout forces. All three open items are now closed: (a) **caching** —
-`Service.SemanticEdges` memoizes by a corpus fingerprint (record ids + text-hashes plus the resolved
-threshold/cap), so a repeated load over an unchanged corpus skips the re-embed + O(n²·d) kNN entirely;
-the map is bounded (cleared past `semEdgeCacheMax`) and a fingerprint change can never serve a stale
-result. (b)+(c) **configurable** — the per-node cap, the cosine edge threshold (0 ⇒ the recall
-`cosThresh`), and the force-layout curves (link strength/distance base+span, gravity) are now
-`[brain.graph]` config with `AGENTIQUE_BRAIN_GRAPH_*` env overrides; the force curves are threaded to
-the frontend on the graph payload (`graphDTO.tuning`, falling back to `LAYOUT_DEFAULTS`). →
-`internal/memory/semantic_edges.go`, `internal/brain/{brain,graph}.go`, `internal/config/config.go`,
-`backend/cmd/agentique/serve.go`, `frontend/src/components/brain/BrainGraph.tsx`. Tests:
-`TestSemanticEdgesCachedByFingerprint`, `TestSemanticEdgesFingerprintTracksKnobs`.
 
 ### Brain: semantic infra is operator-run docker, not managed by agentique
 Semantic recall is now **live in production** (ChromaDB + Ollama all-minilm), but the two services are
@@ -351,36 +270,6 @@ except in logs), the Ollama model lives in a docker volume (durable) but the sta
 `docker run`, and there's no compose/systemd unit checked in. → ops/runbook gap; see
 `docs/brain-design-log.md#semantic-recall` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
 reachability + a docker-compose in the repo.
-
-### Brain: cross-scope area labels ~~are frequency-based (noisy)~~ → TF-IDF SHIPPED 2026-06-23
-`areaLabel` now scores tokens by in-area document frequency × inverse document frequency across the
-durable corpus (`corpusIDF`, smoothed `1 + ln((1+N)/(1+df))` so a corpus-ubiquitous token bottoms out
-at idf 1 rather than being zeroed/dropped), so generic glue ("go", "user") is down-weighted in favour
-of the tokens that actually distinguish an area — replacing raw-frequency labels like "go agentkit
-codex". Deterministic (ties broken by idf, then alphabetically), so no LLM naming pass was needed. →
-`internal/memory/areas.go`. Test: `TestAssignAreasLabelDownweightsCorpusCommonTokens`.
-
-### Brain: cosine threshold is model-specific and hand-tuned ~~(no auto-calibration)~~ → auto-calibration SHIPPED 2026-06-22
-The 3 coupled knobs are still model-specific, but no longer have to be hand-tuned: an opt-in
-**auto-calibration** pass derives them from the corpus's OWN pairwise cosine distribution
-(`docs/brain-design-log.md#semantic-recall` #5). `memory.Calibrate` (`internal/memory/calibrate.go`, pure)
-samples the pairwise cosines and reads the cosine **related line off a high percentile (p99) and
-the veto floor off a low one (p25)**; `brain.New` opts in via `AGENTIQUE_BRAIN_AUTOCAL=1`, embeds
-the live corpus (through the text-hash cache) and overrides only the knobs the operator didn't pin
-(explicit `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` still win). `agentique brain calibrate`
-prints the distribution + derived thresholds without booting.
-
-Measured live on the real 1509-fact brain (all-MiniLM, 227k pairs): p99 = 0.4187 → cosineThreshold,
-p25 = 0.0455 → veto. The auto-derived related line (0.42) stays above the off-topic survivor (~0.36)
-so the github mis-recall stays excluded (`TestBrainAutoCalibrateExcludesGithub`). Notably the hand
-veto 0.15 sits at ~p63 of the real corpus — tuned on the 5-fact example, over-aggressive on a broad
-brain; auto-cal corrects it downward, safe because the vouch bar (not the veto) carries the github
-exclusion. The hand defaults remain the fallback (thin corpus / no embedder / embed failure).
-**Residual:** percentile picks (p99/p25) and `MaxPairs` are themselves constants (sensible, grounded
-in the live measurement, but not yet per-deployment configurable); calibration is a boot-time
-snapshot, not refreshed as the corpus grows. → `internal/memory/{calibrate,similarity,recall}.go`,
-`internal/brain/brain.go`, `cmd/agentique/brain.go`. Tests: `internal/memory/calibrate_test.go`,
-`TestBrainAutoCalibrateExcludesGithub`.
 
 ### Brain: persisted cross-scope edges deferred (the "B4" decision)
 The planned `RelinkScope` curated-edge tagging + persisted cross-scope `Related` edges was
@@ -397,25 +286,6 @@ clears on the next server write) — no TTL backstop. Also `List`/`Get` return r
 share slice backing with the cache: safe under the current replace-field-then-`Put` write
 pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt the cache
 (documented in-code, not enforced). → `internal/memory/cachestore/cachestore.go`.
-
-### Brain: lexical recall precision ~~is a blunt mitigation~~ → semantic cure SHIPPED 2026-06-22
-The keyword-only lone-token guard (`singleTokenMinShare`) remains as the `semantic=false`
-safeguard, but the **semantic cure** is now built and verified end-to-end against a live
-all-MiniLM + Chroma (`docs/brain-design-log.md#semantic-recall` #1+#3):
-- **Vector veto** (`Query.VectorVetoScore`/`DefaultVectorVetoScore`): a candidate the
-  embedder scores as actively unrelated is dropped regardless of keyword — kills the
-  MULTI-token off-topic survivor the lexical guard can't (`kwMatches>1`).
-- **Vouch bar** (`Query.VectorVouchScore` = cosThresh): the lexical lone-token guard is now
-  overridden *only* when the vector genuinely vouches (vs ≥ the cosine related line), not at
-  the old `minVectorScore` 0.20 — which was far too low for a compressed-distribution model
-  and was the actual reason the github fact leaked the hybrid path (it scored ~0.36, cleared
-  0.20, skipped the guard). This is the lever that excludes the real mis-recall.
-Live proof: recall of "secrets and vars on github" over {GOPRIVATE, github-actions, Sentry,
-…} returns **only the Sentry fact** under shipped defaults (veto 0.15 / vouch 0.45).
-Residual: thresholds are model-specific + hand-calibrated (item above); the per-pass embed
-has no cache (item above). → `internal/memory/recall.go`,
-tests `TestRecallVectorVetoes…`, `TestRecallVouchBarDropsMidScoreLoneToken`,
-`internal/memory/chroma/semantic_recall_integration_test.go`.
 
 ### Brain: per-turn recall injection is cumulatively unbounded
 Fluid recall bounds each turn (≤K, delta-deduped against a per-session seen-set), but the
@@ -564,28 +434,6 @@ no end-to-end test — it extends the existing "orchestration layer is untested"
 `MemoryReview` has component tests for full-text display, the inputs→output framing,
 and refine-via-chip, but the error path, edit→save, delete, and skip aren't covered.
 → `internal/brain/{http,extractor}.go`, `frontend/src/components/brain/__tests__/`.
-
-### Brain: areas / semantic / fluid-recall on a live server ~~not verified~~ → semantic NOW LIVE 2026-06-23
-**Semantic recall is enabled in production** (2026-06-23): ChromaDB + Ollama all-minilm wired via
-`[brain] chroma-url`/`embed-url`/`embed-model`, boot logs `semantic=true cosineThreshold=0.45
-vectorVeto=0.15`, and the graph endpoint projects the live ~1450-fact corpus's embeddings. So the
-"live is keyword-only/`semantic=false`" caveat is closed, and semantic clustering with a real
-embedder is exercised on the real brain. **Still open**: a multi-turn live *soak* measuring fluid
-recall on real topic drift and semantic recall *quality* on the live corpus (the thresholds were
-calibrated offline; autocal is available but not enabled — the hand defaults are running);
-`brain assign-areas` applied to the live brain (only run on a copy; `backfill-subsumed` was only
-`--dry-run` against live). → verification gap narrowed, not a known bug.
-
-**Outcome signal v1 (2026-06-21) — partially closed.** Verified on an isolated copy of the
-live brain (server boot with `AGENTIQUE_HOME`/`AGENTIQUE_DB` redirected to temp copies):
-`OperatingContract` produces a correct, non-empty contract for 16/16 scopes; `MarkHelped`
-calibration follows the gap-closing curve (0.875→0.9125→0.9312) under the 0.95 ceiling; the
-`helped` field serializes over `GET /api/brain/memories`; the server logs the operating-
-contract preamble wiring as active. **Still not exercised:** the `MemoryUsed` tool over the
-real `/mcp` HTTP transport by a model-backed agent (the token is minted per-session at
-session creation, which needs a live `claude` run), and whether agents actually *call*
-`MemoryUsed`/`MemoryFlag` mid-task often enough to move the corpus. Needs a live multi-turn
-session to close. → verification gap, not a known bug.
 
 ### Brain: scopeColor is a 10-entry hash (collisions possible)
 `~/lib/scope-color.ts` hashes a scope into a 10-colour palette, so two projects can

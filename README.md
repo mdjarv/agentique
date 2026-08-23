@@ -257,6 +257,38 @@ Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles a
 
 Session arguments accept a unique ID prefix.
 
+## Documentation
+
+| Where | What |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | Engineering conventions, code-gen workflow, and the invariants each subsystem must not break. Read before changing anything. |
+| [ROADMAP.md](ROADMAP.md) | Vision, what shipped, what's next, what was dropped. |
+| [PRODUCT.md](PRODUCT.md) · [DESIGN.md](DESIGN.md) | Product positioning and users; the design system (palette, type, surfaces). |
+| [docs/tech-debt.md](docs/tech-debt.md) | Open debt by severity. Closed items are pruned, not struck through. |
+
+Subsystem designs — **as built**:
+
+| Doc | Subsystem |
+|---|---|
+| [process-lifecycle.md](docs/process-lifecycle.md) | Provider CLI subprocess lifecycle, the orphan reaper, idle eviction. |
+| [multi-machine.md](docs/multi-machine.md) | Controlling several machines from one UI: pairing, routing, offline behaviour. |
+| [scheduled-loops.md](docs/scheduled-loops.md) | Recurring prompts with run history and health. |
+| [model-catalog.md](docs/model-catalog.md) | How models are listed and learned without shipping a release per upstream model. |
+| [brain-memory.md](docs/brain-memory.md) | Persistent cross-session agent memory: storage, recall, consolidation, runbook. |
+| [brain-design-log.md](docs/brain-design-log.md) | Why the brain works that way — condensed record of the decisions behind it. |
+| [discussion-groups.md](docs/discussion-groups.md) · [discussion-sessionless-personas.md](docs/discussion-sessionless-personas.md) | Channels, teams, and web-only personas. |
+| [agent-browser-mcp.md](docs/agent-browser-mcp.md) | The browser an agent can drive. |
+| [runnable-prompt-blocks.md](docs/runnable-prompt-blocks.md) · [structured-prompt-suggestions.md](docs/structured-prompt-suggestions.md) | Launchable prompt blocks and session suggestions. |
+| [workflows-integration.md](docs/workflows-integration.md) | Multi-agent workflow orchestration. |
+| [agentkit-extraction.md](docs/agentkit-extraction.md) | Playbook for lifting the memory core into agentkit once a second consumer needs it. |
+
+Subsystem designs — **designed, not built** (decisions settled, no code yet):
+
+| Doc | Feature |
+|---|---|
+| [upgrades.md](docs/upgrades.md) | In-app upgrades: a release lands, every client says so, each machine upgrades itself. Phases V1–V5. |
+| [multi-machine-sync.md](docs/multi-machine-sync.md) | Two-way replication of presentation state (stars, names, colours) between machines. Phases M1–M5. |
+
 ## Architecture
 
 ```
