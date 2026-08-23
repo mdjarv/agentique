@@ -40,7 +40,7 @@ func (s *Service) ListSnapshots() ([]SnapshotInfo, error) { return ListSnapshots
 // then INVALIDATES the read-through cache so the running server reflects the restored
 // corpus immediately. Without that invalidation the cache would keep serving the
 // pre-restore corpus until the next write — the M1 "restore is offline-only" caveat, lifted
-// here for the live UI path (brain-ui-spec.md F4, the load-bearing fix). Held under s.mu so
+// here for the live UI path (brain-design-log.md#brain-ui F4, the load-bearing fix). Held under s.mu so
 // the file rewrite can't race a concurrent single-fact write (mutate funnels through s.mu).
 //
 // NOTE: in semantic mode the chroma vector index is NOT reindexed here — its vectors

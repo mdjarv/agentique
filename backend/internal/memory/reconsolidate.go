@@ -20,7 +20,7 @@ const (
 	// CorroborationCeiling is the highest ConfidenceScore a fact can reach by outcome
 	// corroboration alone (positive MemoryUsed acknowledgements). It sits BELOW
 	// ScoreGroundTruth (1.0) on purpose: ground truth is asserted by a human (Confirm),
-	// not earned by agent corroboration (see brain-outcome-signal.md, RFC-LD #5).
+	// not earned by agent corroboration (see brain-design-log.md#the-outcome-signal, RFC-LD #5).
 	CorroborationCeiling = 0.95
 	// corroborationGapClose is the fraction of the remaining gap to CorroborationCeiling
 	// that a single positive outcome closes (0.8 → 0.875 → 0.9125 → …). Asymptotic, so
@@ -28,7 +28,7 @@ const (
 	// guardrail against an agent self-certifying a wrong fact (RFC Non-goals: false memories).
 	corroborationGapClose = 0.5
 	// AutoCorroborationGapClose is the gentler gap-close for an AUTOMATICALLY-inferred
-	// positive outcome (the session-end transcript judge, brain-outcome-signal.md "Automatic
+	// positive outcome (the session-end transcript judge, brain-design-log.md#the-outcome-signal "Automatic
 	// outcome emitter"). It is deliberately HALF the explicit weight: an agent that calls
 	// MemoryUsed, or a human Confirm, is firsthand testimony ("I was there, it helped"); a
 	// judge reading a finished transcript is a weaker, secondhand inference. A machine

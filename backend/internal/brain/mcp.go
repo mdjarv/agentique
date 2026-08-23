@@ -63,7 +63,7 @@ func (a *MCPAdapter) MemoryFlag(ctx context.Context, sessionID, id, reason strin
 	return fmt.Sprintf("Flagged for review [%s]: %s", flagged.Category, flagged.Text), nil
 }
 
-// MemoryUsed records the POSITIVE outcome (RFC-LD D2 positive half, brain-outcome-signal.md):
+// MemoryUsed records the POSITIVE outcome (RFC-LD D2 positive half, brain-design-log.md#the-outcome-signal):
 // an agent confirms a recalled fact was used/correct this session. It strengthens the fact and
 // raises its confidence toward the corroboration ceiling — earned trust that can graduate a
 // preference into the operating contract. Scoped like MemoryFlag: an agent may only mark facts

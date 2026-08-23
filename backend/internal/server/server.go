@@ -602,7 +602,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				// per-turn recall block stays a compact tagged block (see RecallBlock).
 				mgr.MemoryRecallPreamble = brain.RecallPreamble
 				// Operating contract: high-confidence preferences become acted-on standing
-				// instructions in the preamble, not just soft context (brain-outcome-signal.md).
+				// instructions in the preamble, not just soft context (brain-design-log.md#the-outcome-signal).
 				mgr.MemoryContractFn = brainSvc.OperatingContract
 				slog.Info("brain: auto-recall enabled (pinned facts + operating contract in preamble + task-relevant recall on the first turn)")
 			}

@@ -44,12 +44,12 @@ type Config struct {
 	SemanticThreshold float64
 	// VectorVetoScore overrides the hybrid-recall veto floor: a candidate the embedder
 	// scores at/below this (semantically unrelated) is dropped regardless of keyword
-	// overlap (brain-semantic-recall.md priority #1). 0 uses memory.DefaultVectorVetoScore.
+	// overlap (brain-design-log.md#semantic-recall priority #1). 0 uses memory.DefaultVectorVetoScore.
 	// Inert without an embedder; MODEL-SPECIFIC — calibrate with SemanticThreshold.
 	VectorVetoScore float64
 	// Calibrate, when set and semantic mode is enabled, derives the cosine link/vouch
 	// threshold and the vector veto floor from the live corpus's OWN pairwise cosine
-	// distribution (model-specific auto-calibration, brain-semantic-recall.md #5) instead
+	// distribution (model-specific auto-calibration, brain-design-log.md#semantic-recall #5) instead
 	// of the hand-set defaults. Precedence: an explicit SemanticThreshold/VectorVetoScore
 	// still wins per-knob; auto-calibration only fills the ones left 0. A too-thin corpus
 	// or an embed failure falls back to the defaults. Inert without an embedder.
@@ -588,7 +588,7 @@ func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 // OperatingContract formats the project's high-confidence preferences as a directive
 // system-preamble block — standing instructions the agent should act on by default, NOT
 // the soft "background context, verify first" framing of PinnedPreamble/RecallBlock
-// (brain-outcome-signal.md, part 2). Only CategoryPreference facts at/above
+// (brain-design-log.md#the-outcome-signal, part 2). Only CategoryPreference facts at/above
 // memory.ActOnConfidence and not flagged for review qualify: a preference earns the
 // authority to drive behavior by being human-confirmed or outcome-corroborated. Returns
 // "" when the brain is disabled, the project is empty, or nothing qualifies. Read-only.
@@ -693,7 +693,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 	for _, r := range fresh {
 		// id as an attribute keeps the UUID out of the prose; the agent feeds the
 		// outcome loop (RFC-LD D2) with it: MemoryUsed if it helped, MemoryFlag if
-		// it's wrong — see brain-outcome-signal.md.
+		// it's wrong — see brain-design-log.md#the-outcome-signal.
 		fmt.Fprintf(&b, "  <fact id=%q>%s</fact>\n", r.ID, escapeFactText(strings.ReplaceAll(r.Text, "\n", " ")))
 		ids = append(ids, r.ID)
 	}
@@ -885,7 +885,7 @@ func (s *Service) Flag(ctx context.Context, id, reason string) (memory.Record, e
 	})
 }
 
-// MarkHelped records the POSITIVE outcome (RFC-LD D2, brain-outcome-signal.md): an agent
+// MarkHelped records the POSITIVE outcome (RFC-LD D2, brain-design-log.md#the-outcome-signal): an agent
 // confirmed a recalled fact was used/correct this session. It increments Helped, refreshes
 // recency, and raises a non-protected fact's confidence toward CorroborationCeiling — so
 // earned trust can graduate a preference into the operating contract. The agent-facing entry
@@ -898,7 +898,7 @@ func (s *Service) MarkHelped(ctx context.Context, id string) (memory.Record, err
 
 // MarkAutoHelped records the same positive outcome as MarkHelped but with the gentler
 // AutoCorroborationGapClose weight: it is the automatic session-end emitter's entry point
-// (brain-outcome-signal.md "Automatic outcome emitter"), where a transcript judge — not a
+// (brain-design-log.md#the-outcome-signal "Automatic outcome emitter"), where a transcript judge — not a
 // firsthand agent acknowledgement — inferred the fact helped. The Helped count and recency
 // stamp are identical; only the confidence step is softer, so a machine inference can never
 // move trust as fast as an explicit MemoryUsed or a human Confirm.
@@ -914,7 +914,7 @@ func (s *Service) MarkAutoHelped(ctx context.Context, id string) (memory.Record,
 // A non-archived fact is left unchanged (idempotent). This is a NORMAL write — it funnels
 // through mutate/Put, so the read-through cache stays consistent (unlike a snapshot
 // restore, which rewrites files underneath the cache). It is the dedicated, no-edit
-// counterpart to the M5 "archived = restorable" cold tier (brain-ui-spec.md F3).
+// counterpart to the M5 "archived = restorable" cold tier (brain-design-log.md#brain-ui F3).
 func (s *Service) Restore(ctx context.Context, id string) (memory.Record, error) {
 	return s.mutate(ctx, id, func(r *memory.Record) {
 		if r.Lifecycle != memory.LifecycleArchived {

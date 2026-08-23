@@ -64,7 +64,7 @@ type Record struct {
 	Uses int
 	// Helped counts confirmed-useful outcomes: times an agent that saw this fact
 	// explicitly acknowledged it was used/correct via the MemoryUsed tool (RFC-LD
-	// D2 positive half — see brain-outcome-signal.md). A stronger signal than a bare
+	// D2 positive half — see brain-design-log.md#the-outcome-signal). A stronger signal than a bare
 	// injection; it raises both StorageStrength and (via MarkHelped) ConfidenceScore.
 	Helped int
 	// Corroborations counts independent RE-OBSERVATIONS: an ingest/Add saw text duplicating

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Outcome-derived salience (RFC-LD D3, brain-salience-gating.md). Where StorageStrength
+// Outcome-derived salience (RFC-LD D3, brain-design-log.md#salience-gating). Where StorageStrength
 // (strength.go) answers "how well established" — a monotonic blend of confidence, use and
 // provenance — Salience answers the orthogonal, *signed* question "did acting on this pay off
 // or backfire?". It rises with corroboration (Helped) and collapses on contradiction

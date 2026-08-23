@@ -124,7 +124,7 @@ existing capability, not a constraint future work must serve.
 
 - **Documentation that is true as-built:** `README.md` (install, config, CLI, architecture),
   `ROADMAP.md` (shipped vs. next vs. parked), `CLAUDE.md` (as-built channel/team, provider,
-  brain, and process-lifecycle behavior), `docs/*.md` (21 design docs), `plans/`.
+  brain, and process-lifecycle behavior), `docs/*.md` (16 subsystem and design docs).
 - **Real data for realistic states:** the live SQLite database at
   `~/.local/share/agentique/agentique.db` (projects, sessions, session_events, messages,
   teams, tags). Reads are encouraged; writes require explicit approval. Use it rather than

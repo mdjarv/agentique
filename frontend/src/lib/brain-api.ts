@@ -5,7 +5,7 @@ const BASE = "/api/brain";
 // Memory is the HAND-WRITTEN mirror of `memoryDTO` in backend/internal/brain/http.go.
 // Brain wire types are NOT in the typegen registry — `just typegen` does not touch them.
 // Every field here must match a memoryDTO json tag exactly; edit both files together.
-// See brain-ui-spec.md §3.
+// See brain-design-log.md#brain-ui §3.
 export interface Memory {
   id: string;
   scope: string;

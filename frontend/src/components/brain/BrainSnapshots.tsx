@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { createSnapshot, listSnapshots, restoreSnapshot, type Snapshot } from "~/lib/brain-api";
 import { formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 
-// BrainSnapshots is the admin surface for brain snapshots (brain-ui-spec.md F4): list them,
+// BrainSnapshots is the admin surface for brain snapshots (brain-design-log.md#brain-ui F4): list them,
 // take one on demand, and roll the whole brain back. Restore is destructive-feeling, so it
 // is guarded by an inline confirm and blocked while a consolidation job is running (the
 // restore would race the churn's own writes). The server takes a safety snapshot before

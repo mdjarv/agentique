@@ -14,7 +14,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 )
 
-// The automatic outcome emitter (brain-outcome-signal.md "Automatic outcome emitter",
+// The automatic outcome emitter (brain-design-log.md#the-outcome-signal "Automatic outcome emitter",
 // RFC-LD decision #2's open branch). It is the AUTOMATIC twin of the agent-volunteered
 // MemoryUsed/MemoryFlag tools: a session-end pass that reads the finished transcript,
 // recovers the facts recall INJECTED during the session, and asks an LLM judge whether

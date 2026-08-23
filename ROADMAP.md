@@ -34,9 +34,9 @@ headlines:
   cascade-delete and dissolve actions.
 - **Teams phases 0–2** (behind `[experimental] teams = true`): agent profiles,
   Haiku-powered personas for discovery/triage, and multi-agent channel
-  coordination. Background:
-  [`plans/persistent-teams-brainstorm.md`](plans/persistent-teams-brainstorm.md),
-  [`plans/channels.md`](plans/channels.md).
+  coordination. As-built behaviour lives in the CLAUDE.md channels block and
+  [`docs/discussion-groups.md`](docs/discussion-groups.md); the original
+  planning docs are in git history.
 - **The Brain** — persistent, project-scoped agent memory (recall/encode/
   consolidate). See [`docs/brain-memory.md`](docs/brain-memory.md).
 
@@ -120,7 +120,8 @@ now that inter-session messaging exists (channels). **Simpler alternative:** a
   (queued + replayed at the next idle boundary). Codex does **not** support
   natively: fork, plan mode, thinking, subagents, compaction events, MCP
   reconnect, or tool-progress ticks. The UI must check `Capabilities()`
-  rather than assume; see `docs/2026-05-25-capabilities-wire-shape.md`.
+  rather than assume — a missing capability key means unsupported, so features
+  degrade per-feature without version comparisons.
 - Known gaps (tracked in `docs/tech-debt.md`):
   - `reasoning_delta` and `turn_diff` events flow through the backend
     pipeline but have no frontend renderers yet.

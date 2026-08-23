@@ -27,7 +27,7 @@ const (
 	storageProvCap = 4
 	// helpedUseWeight is how many bare injections (Uses) a single confirmed-useful
 	// outcome (Helped) is worth in the saturating use term: corroborated-useful builds
-	// storage faster than merely-shown (brain-outcome-signal.md).
+	// storage faster than merely-shown (brain-design-log.md#the-outcome-signal).
 	helpedUseWeight = 2
 )
 

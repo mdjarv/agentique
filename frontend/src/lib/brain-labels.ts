@@ -2,7 +2,7 @@ import type { Memory } from "~/lib/brain-api";
 
 // Display vocabulary for the Band-1 controlled-vocabulary labels, shared by the memory
 // list (BrainPage) and the review surface (MemoryReview). Centralizes the value→label
-// map so there are no inline magic strings/colours (brain-ui-spec.md F1).
+// map so there are no inline magic strings/colours (brain-design-log.md#brain-ui F1).
 //
 // The defaults — evidence "inferred", volatility "slow" — intentionally have NO chip:
 // rows are dense, so only a fact that deviates from the default earns one. Likewise

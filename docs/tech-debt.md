@@ -162,7 +162,7 @@ practice:
   `MemoryUsed` / `MarkHelped` / `Record.Helped` + confidence calibration shipped, but the explicit
   signal is **agent-volunteered** (`helped` was `0` everywhere on the live corpus). The durable fix —
   the **automatic emitter** (session-end LLM judge over the transcript) — is now built
-  (`brain-outcome-signal.md` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
+  (`brain-design-log.md#the-outcome-signal` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
   the facts recall injected (from the persisted `<brain>` envelopes), judges helped/contradicted/neutral
   conservatively, and applies `MarkAutoHelped` (gentler `0.25` gap-close — a machine inference weighs
   half an explicit acknowledgement) / `Flag`. Opt-in via `AGENTIQUE_BRAIN_OUTCOME_MODEL` / `[brain]
@@ -287,7 +287,7 @@ One type owns memory CRUD + search + status + consolidation preview/apply + glob
 help. → `internal/brain/{http,job}.go`.
 
 ### Brain: semantic similarity is activated only for areas (C) ~~partial~~ → CLOSED 2026-06-22
-**Resolved** (`docs/brain-semantic-recall.md` #2). `ConsolidateOptions.SimOptions` now
+**Resolved** (`docs/brain-design-log.md#semantic-recall` #2). `ConsolidateOptions.SimOptions` now
 threads the embedding-blended `memory.Similarity` through `memory.ApplyPlan` into the
 post-apply `RelinkScope` + `AssignCommunities`, so per-scope **links and communities are
 semantic** in semantic mode (`brain.ApplyPlan`/`Consolidate` compute the SimOptions —
@@ -325,7 +325,7 @@ is bounded by the live fact set, not by every text ever seen. → `internal/brai
 `TestWarmEmbedCacheLiveZeroReembedAfterRestart` (env-gated).
 
 ### Brain: semantic graph is a per-request O(n²) kNN ~~with no caching / fixed knobs~~ → CLOSED 2026-06-23
-The graph layout (P6, `docs/brain-graph-layer.md`) was reworked from a PCA *projection* (retired —
+The graph layout (P6, `docs/brain-design-log.md#graph-layer`) was reworked from a PCA *projection* (retired —
 positions collapsed 384-dim similarity to 2 axes) to **semantic edges + a self-balancing force layout**:
 `memory.SemanticEdges` computes the embedding kNN graph (cosine ≥ threshold, per-node cap) with cosine
 scores that weight the layout forces. All three open items are now closed: (a) **caching** —
@@ -349,7 +349,7 @@ restarted — recall.go degrades cleanly, so no breakage, just lost semantics). 
 agentique-side health surfacing (an operator can't see "semantic is configured but Chroma is down"
 except in logs), the Ollama model lives in a docker volume (durable) but the stack is a manual
 `docker run`, and there's no compose/systemd unit checked in. → ops/runbook gap; see
-`docs/brain-semantic-recall.md` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
+`docs/brain-design-log.md#semantic-recall` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
 reachability + a docker-compose in the repo.
 
 ### Brain: cross-scope area labels ~~are frequency-based (noisy)~~ → TF-IDF SHIPPED 2026-06-23
@@ -363,7 +363,7 @@ codex". Deterministic (ties broken by idf, then alphabetically), so no LLM namin
 ### Brain: cosine threshold is model-specific and hand-tuned ~~(no auto-calibration)~~ → auto-calibration SHIPPED 2026-06-22
 The 3 coupled knobs are still model-specific, but no longer have to be hand-tuned: an opt-in
 **auto-calibration** pass derives them from the corpus's OWN pairwise cosine distribution
-(`docs/brain-semantic-recall.md` #5). `memory.Calibrate` (`internal/memory/calibrate.go`, pure)
+(`docs/brain-design-log.md#semantic-recall` #5). `memory.Calibrate` (`internal/memory/calibrate.go`, pure)
 samples the pairwise cosines and reads the cosine **related line off a high percentile (p99) and
 the veto floor off a low one (p25)**; `brain.New` opts in via `AGENTIQUE_BRAIN_AUTOCAL=1`, embeds
 the live corpus (through the text-hash cache) and overrides only the knobs the operator didn't pin
@@ -401,7 +401,7 @@ pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt t
 ### Brain: lexical recall precision ~~is a blunt mitigation~~ → semantic cure SHIPPED 2026-06-22
 The keyword-only lone-token guard (`singleTokenMinShare`) remains as the `semantic=false`
 safeguard, but the **semantic cure** is now built and verified end-to-end against a live
-all-MiniLM + Chroma (`docs/brain-semantic-recall.md` #1+#3):
+all-MiniLM + Chroma (`docs/brain-design-log.md#semantic-recall` #1+#3):
 - **Vector veto** (`Query.VectorVetoScore`/`DefaultVectorVetoScore`): a candidate the
   embedder scores as actively unrelated is dropped regardless of keyword — kills the
   MULTI-token off-topic survivor the lexical guard can't (`kwMatches>1`).

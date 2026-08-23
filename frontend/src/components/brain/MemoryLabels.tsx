@@ -2,7 +2,7 @@ import { Badge } from "~/components/ui/badge";
 import type { Memory } from "~/lib/brain-api";
 import { evidenceChip, isCapture, lifecycleBadge, volatilityChip } from "~/lib/brain-labels";
 
-// MemoryLabels renders a memory's tier vocabulary inline (brain-ui-spec.md F1): a
+// MemoryLabels renders a memory's tier vocabulary inline (brain-design-log.md#brain-ui F1): a
 // capture / archived / superseded badge, evidence + volatility chips, and a corroboration
 // count. Pure/presentational and read-only — reused by the list rows (BrainPage) and the
 // review surface (MemoryReview) so the two stay consistent. It emits a fragment of inline

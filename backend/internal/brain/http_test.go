@@ -14,7 +14,7 @@ import (
 
 // TestToDTO_CarriesBand1Labels asserts the single mapping point (toDTO) surfaces the
 // Band-1 controlled-vocabulary labels on the wire, with the JSON tag names/casing the
-// hand-written frontend Memory type expects (brain-ui-spec.md F0).
+// hand-written frontend Memory type expects (brain-design-log.md#brain-ui F0).
 func TestToDTO_CarriesBand1Labels(t *testing.T) {
 	curated := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	r := memory.Record{

@@ -17,7 +17,7 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
-        // Brain memory-tier badges (brain-ui-spec.md F1). capture = raw/pending (dashed,
+        // Brain memory-tier badges (brain-design-log.md#brain-ui F1). capture = raw/pending (dashed,
         // provisional); archived = cold tier (greyed); superseded = replaced (faded).
         capture:
           "border-dashed border-amber-500/60 bg-amber-500/5 text-amber-700 dark:text-amber-400",

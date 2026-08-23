@@ -156,7 +156,7 @@ data cache are offline caches, and cached snapshots sanitize live-ness. A
 flaky remote re-syncs only itself and must never reset primary state.
 Per-machine WS clients reconnect in place, never get replaced.
 
-### Brain / memory — `docs/brain-memory.md` (+ `docs/brain-*.md`)
+### Brain / memory — `docs/brain-memory.md` (+ `docs/brain-design-log.md`)
 
 Liftable core in `internal/memory` (stdlib + yaml/uuid only); agentique
 policy in `internal/brain`; markdown is the source of truth, everything else

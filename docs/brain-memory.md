@@ -161,7 +161,7 @@ Auto-approved, scoped to the calling session's project (+ global):
   reconsolidation): weakens it into the review queue, never deletes. The id comes from
   `MemorySearch` output.
 - `MemoryUsed(id)` — confirm a recalled fact was useful/correct (RFC-LD D2 positive half,
-  `docs/brain-outcome-signal.md`): strengthens it and raises confidence toward a 0.95
+  `docs/brain-design-log.md#the-outcome-signal`): strengthens it and raises confidence toward a 0.95
   corroboration ceiling, so well-proven preferences graduate into the operating contract.
   The positive twin of `MemoryFlag`; id likewise from `MemorySearch` (or a recalled-memory block).
 
@@ -213,7 +213,7 @@ batches run with bounded concurrency (`memory.RunBounded`, `maxParallelBatches` 
 ## Brain tab (UI surface for the Band-1 pipeline)
 
 The Brain tab makes the Band-1 backend visible and manageable (the spec is
-`docs/brain-ui-spec.md`):
+`docs/brain-design-log.md#brain-ui`):
 
 - **Tier visibility (F1).** Every memory row is self-describing: a *capture* / *archived* /
   *superseded* badge, compact *evidence* + *volatility* chips, and a corroboration `×N`
@@ -338,6 +338,54 @@ Other `[brain]` tunables (config-file key → env override; env wins):
 | `archive-confidence-floor` | `AGENTIQUE_BRAIN_ARCHIVE_FLOOR` | 0.35 | effective-confidence line below which a faded fact is archived / faded from recall |
 | `retry-max` | `AGENTIQUE_BRAIN_RETRY_MAX` | 5 | session-end learn/outcome job retries before dead-lettering |
 
+## Runbook — stand up the local embedder + Chroma and verify
+
+```bash
+# 1. Ollama (CPU is fine for embeddings). Download the static binary, serve, pull the model.
+#    (the install script needs root; the tarball does not)
+curl -fSL https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst \
+  | tar --use-compress-program=unzstd -xf - -C /tmp/ollama       # extracts bin/ + lib/
+OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=/tmp/ollama/models \
+  LD_LIBRARY_PATH=/tmp/ollama/lib /tmp/ollama/bin/ollama serve &
+/tmp/ollama/bin/ollama pull all-minilm                            # 45 MB, 384-dim
+
+# 2. Chroma v2 (the client uses /api/v2). Docker is simplest (no pip needed):
+docker run -d --name chroma -p 127.0.0.1:8000:8000 chromadb/chroma:latest
+
+# 3. Point the brain at them (the server reads these in serve.go):
+export AGENTIQUE_BRAIN_CHROMA_URL=http://127.0.0.1:8000
+export AGENTIQUE_BRAIN_EMBED_URL=http://127.0.0.1:11434/v1/embeddings
+export AGENTIQUE_BRAIN_EMBED_MODEL=all-minilm
+# optional: AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD, AGENTIQUE_BRAIN_VECTOR_VETO (pin a knob)
+# optional: AGENTIQUE_BRAIN_AUTOCAL=1 to derive both from the live corpus at boot (#5)
+# On boot, look for: "brain: semantic recall enabled ... cosineThreshold=0.45 vectorVeto=0.15"
+# and, with AUTOCAL: "brain: semantic thresholds auto-calibrated ... cosineThreshold=0.42 ..."
+
+# 4. Verify (env-gated integration tests — they re-measure + assert the github case):
+CHROMA_TEST_URL=http://127.0.0.1:8000 \
+EMBED_TEST_URL=http://127.0.0.1:11434/v1/embeddings \
+EMBED_TEST_MODEL=all-minilm \
+  go test ./internal/memory/chroma/ -run TestSemanticRecallVetoesGithubMisRecall -v
+# and the production-wiring test:
+#   go test ./internal/brain/ -run TestBrainSemanticWiring -v
+```
+
+Calibration note: the cosine/veto floors above are all-MiniLM-specific. For another model you no
+longer have to read them off by hand — run `agentique brain calibrate` (prints the corpus's own
+cosine distribution + the percentile-derived thresholds) or set `AGENTIQUE_BRAIN_AUTOCAL=1` to have
+the server derive them at boot (#5). The hand defaults remain the fallback; an explicit
+`AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`/`_VECTOR_VETO` still wins per-knob.
+
+Index maintenance: the Chroma collection is maintained **lazily** (each `Put` indexes one fact), so a
+bulk hand-edit of the markdown files or an embedding-model change leaves vectors stale or missing
+until a later pass touches each fact. Rebuild the whole collection in one shot with
+`agentique brain reindex` (re-embeds the durable corpus from the markdown source of truth; needs the
+same embedder + Chroma config the server uses — env or the `[brain]` config keys). The slow self-heal
+is the **scheduled-consolidation** pass, which also refreshes the semantic graph; it now runs once
+shortly after server start (a short initial delay) and then on `consolidate-interval`, so a
+frequently-restarted server can no longer defer that refresh indefinitely (a bare interval timer used
+to reset on every restart).
+
 ## Automation (the live recall → encode → consolidate loop)
 
 The cognitive loop runs automatically, not just via the CLI/UI:
@@ -415,7 +463,7 @@ Liftable core — `backend/internal/memory/` (stdlib + uuid + yaml only):
   batch colocation), and `ScopeManifest`/`manifestsEqual` (the per-scope content-hash
   manifest for incremental rebuild). Mirrors graphify's `global_graph.py`.
 - `link.go` — `RelinkScope` (the `Related` similarity graph); `recall.go`'s
-  `expandAssociative` consumes it. See `docs/brain-graph-layer.md` (RFC).
+  `expandAssociative` consumes it. See `docs/brain-design-log.md#graph-layer` (RFC).
 - `community.go` — `DetectCommunities` (deterministic label propagation) +
   `AssignCommunities` (persists `Record.Community`); feeds cluster-aware chunking
   (`brain/extractor.go`) and graph cluster coloring. RFC P3.
@@ -475,7 +523,7 @@ playbook in `docs/agentkit-extraction.md`). Mutations should broadcast
 
 Several items below are feedback-loop gaps — recall doesn't strengthen or update memory,
 salience doesn't gate consolidation, the episodic stage is skipped. They are consolidated into
-a forward design: [brain-learning-dynamics.md](brain-learning-dynamics.md) (RFC: learning
+a forward design: [brain-design-log.md#learning-dynamics](brain-design-log.md#learning-dynamics) (RFC: learning
 dynamics — what the brain borrows next from human-memory research).
 
 - **The `Extractor` is the caller's, with a caller-chosen model.** `ClaudeExtractor`
@@ -489,7 +537,7 @@ dynamics — what the brain borrows next from human-memory research).
   `Manager.MemoryRecallFn` → `Session.injectRecall`, delta-deduped against a session
   seen-set), so the agent gets relevance-ranked context without calling `MemorySearch`.
   Injected facts get `BumpUses`/`LastUsedAt` ("shown"). The loop's *outcome* half now
-  exists too (RFC-LD **D2**, [brain-outcome-signal.md](brain-outcome-signal.md)):
+  exists too (RFC-LD **D2**, [brain-design-log.md#the-outcome-signal](brain-design-log.md#the-outcome-signal)):
   `MemoryUsed`/`MarkHelped` strengthen a *confirmed-useful* fact (raising confidence
   toward a 0.95 corroboration ceiling) and `MemoryFlag`/`MarkContradicted` weaken a
   contradicted one — so strength now changes on outcome, not just injection. **Still
