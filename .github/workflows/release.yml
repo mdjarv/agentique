@@ -38,7 +38,13 @@ jobs:
           mkdir -p backend/internal/server/frontend_dist
           cp -r frontend/dist/* backend/internal/server/frontend_dist/
 
-      - name: Build binary
+      # Build wide, enable narrow (docs/upgrades.md, decision U5).
+      # Cross-compiling is free with CGO_ENABLED=0, so every platform we can
+      # build gets an asset and a working install.sh. Whether a platform may
+      # SELF-upgrade is a separate, narrower list in
+      # backend/internal/update/platform.go — keep the asset names in step
+      # with it, or apply downloads a 404.
+      - name: Build binaries
         run: |
           VERSION="${GITHUB_REF_NAME}"
           COMMIT="$(git rev-parse --short HEAD)"
@@ -46,8 +52,12 @@ jobs:
           LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
           cd backend
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-arm64" ./cmd/agentique
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-windows-amd64.exe" ./cmd/agentique
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-darwin-arm64" ./cmd/agentique
 
+      # Bare filenames, no ./ prefix — in-app apply matches asset names against
+      # this file exactly as install.sh does.
       - name: Generate checksums
         run: cd dist && sha256sum * > checksums.txt
 
@@ -57,5 +67,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/agentique-linux-amd64
+            dist/agentique-linux-arm64
             dist/agentique-windows-amd64.exe
+            dist/agentique-darwin-arm64
             dist/checksums.txt

@@ -23,14 +23,29 @@ export interface MachineFault {
   at: number;
 }
 
+/** The unauthenticated descriptor a machine publishes about itself. */
+export interface MachineDescriptor {
+  machineId?: string;
+  /** Build version — already on the wire; kept so a machine's version is
+   *  known without an authenticated call, and survives it going away. */
+  version?: string;
+  platform?: { os?: string; arch?: string };
+}
+
 /** What a descriptor probe found, before it is interpreted. */
 export interface ProbeResult {
   /** The address answered with a parseable agentique descriptor. */
-  descriptor?: { machineId?: string };
+  descriptor?: MachineDescriptor;
   /** The address answered HTTP, but not with a descriptor. */
   answeredNotAgentique?: boolean;
   /** The credential this host holds was refused (401/403). */
   credentialRefused?: boolean;
+}
+
+/** A probe's verdict plus what the machine said about itself. */
+export interface IdentityProbe {
+  fault: MachineFault | null;
+  descriptor?: MachineDescriptor;
 }
 
 /**
@@ -92,8 +107,12 @@ const PROBE_TIMEOUT_MS = 8000;
  * Ask an address who it is. Used both to diagnose a machine that won't connect
  * and — critically — to check identity on every connect: an address that
  * answers is not the same thing as the machine we paired with.
+ *
+ * Returns the descriptor alongside the verdict: the machine's version is
+ * already in that payload, and throwing it away is why nothing could show what
+ * each machine was running (docs/upgrades.md).
  */
-export async function probeIdentity(entry: MachineEntry): Promise<MachineFault | null> {
+export async function probeIdentity(entry: MachineEntry): Promise<IdentityProbe> {
   const probe: ProbeResult = {};
   try {
     const resp = await fetch(`${entry.baseUrl}/.well-known/agentique/environment`, {
@@ -102,9 +121,9 @@ export async function probeIdentity(entry: MachineEntry): Promise<MachineFault |
     if (resp.status === 404) {
       probe.answeredNotAgentique = true;
     } else if (resp.ok) {
-      let body: { machineId?: string } | null = null;
+      let body: MachineDescriptor | null = null;
       try {
-        body = (await resp.json()) as { machineId?: string };
+        body = (await resp.json()) as MachineDescriptor;
       } catch {
         // A 200 that isn't JSON is proof, not ambiguity: a dev server's
         // index.html, a captive portal, another app on a typo'd port.
@@ -113,12 +132,12 @@ export async function probeIdentity(entry: MachineEntry): Promise<MachineFault |
       if (body?.machineId) probe.descriptor = body;
       else if (body) probe.answeredNotAgentique = true;
     } else {
-      return null; // 500/502/503 — a maybe, not a proof
+      return { fault: null }; // 500/502/503 — a maybe, not a proof
     }
   } catch {
-    return null; // unreachable — asleep, off the network, or simply gone
+    return { fault: null }; // unreachable — asleep, off the network, or simply gone
   }
-  return classifyProbe(entry.machineId, probe);
+  return { fault: classifyProbe(entry.machineId, probe), descriptor: probe.descriptor };
 }
 
 /**
@@ -127,7 +146,7 @@ export async function probeIdentity(entry: MachineEntry): Promise<MachineFault |
  */
 export async function probeMachine(entry: MachineEntry): Promise<MachineFault | null> {
   const identity = await probeIdentity(entry);
-  if (identity) return identity;
+  if (identity.fault) return identity.fault;
 
   const probe: ProbeResult = { descriptor: { machineId: entry.machineId } };
   // Only reachable machines get this far, and only a credential we actually

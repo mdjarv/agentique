@@ -483,6 +483,20 @@ export const StorageUsageSchema = z.object({
   orphans: z.array(SessionStorageSchema),
 });
 
+export const UpdateStatusSchema = z.object({
+  current: z.string(),
+  latest: z.string(),
+  behind: z.boolean(),
+  channel: z.string(),
+  asset: z.string(),
+  supported: z.boolean(),
+  platform: z.string(),
+  checkedAt: z.string(),
+  checkError: z.string().optional(),
+  releaseUrl: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 export const ProjectSubscribePayloadSchema = z.object({
   projectId: z.string(),
 });

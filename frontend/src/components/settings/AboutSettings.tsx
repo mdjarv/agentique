@@ -1,11 +1,58 @@
-/** Settings › About — what this build is and what it has switched on. */
+/** Settings › About — what this build is, what it has switched on, and what
+ *  every machine you work across is running (docs/upgrades.md). */
 import { Link } from "@tanstack/react-router";
+import { RefreshCw } from "lucide-react";
+import { useEffect } from "react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
+import type { UpdateStatus } from "~/lib/generated-types";
+import { checkedAgo, PRIMARY_MACHINE_KEY } from "~/lib/update-api";
+import { cn, relativeTime } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
+import { useMachineStore } from "~/stores/machine-store";
+import { useUpdateStore } from "~/stores/update-store";
 
 function Value({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-[12px] text-muted-foreground">{children}</span>;
+}
+
+/**
+ * What the version check found, in one line. Deliberately never an alarm: a
+ * dev build says so and stops, a failed check keeps the last answer and dates
+ * it, and an unverified platform says the upgrade is manual rather than
+ * offering something that cannot work.
+ */
+function LatestValue({ status, error }: { status?: UpdateStatus; error?: string }) {
+  if (!status) return <Value>checking…</Value>;
+  if (status.channel === "dev") {
+    return <Value>dev build — not tracked</Value>;
+  }
+
+  const age = checkedAgo(status.checkedAt);
+  const suffix = [status.checkError ? `check failed${age ? ` · as of ${age}` : ""}` : age, error]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (!status.latest) {
+    return <Value>{suffix || "unknown"}</Value>;
+  }
+
+  return (
+    <span className="flex items-baseline gap-2">
+      <span
+        className={cn(
+          "font-mono text-[12px]",
+          status.behind ? "font-semibold text-foreground-bright" : "text-muted-foreground",
+        )}
+      >
+        {status.latest}
+      </span>
+      <span className="text-[11px] text-muted-foreground-faint">
+        {status.behind ? (status.supported ? "update available" : "manual upgrade") : "up to date"}
+        {suffix ? ` · ${suffix}` : ""}
+      </span>
+    </span>
+  );
 }
 
 export function AboutSettings() {
@@ -14,11 +61,45 @@ export function AboutSettings() {
   const machineLabel = useFeatureStore((s) => s.machineLabel);
   const features = useFeatureStore((s) => s.features);
 
+  const machines = useMachineStore((s) => s.machines);
+  const versions = useMachineStore((s) => s.versions);
+  const statuses = useMachineStore((s) => s.statuses);
+  const lastSeenAt = useMachineStore((s) => s.lastSeenAt);
+
+  const status = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]);
+  const checking = useUpdateStore((s) => !!s.checking[PRIMARY_MACHINE_KEY]);
+  const error = useUpdateStore((s) => s.errors[PRIMARY_MACHINE_KEY]);
+  const fetchStatus = useUpdateStore((s) => s.fetch);
+
+  useEffect(() => {
+    void fetchStatus(PRIMARY_MACHINE_KEY);
+  }, [fetchStatus]);
+
+  const paired = Object.values(machines);
+
   return (
     <div className="flex flex-col gap-7">
-      <SettingsSection title="Build">
+      <SettingsSection
+        title="Build"
+        action={
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={checking}
+            onClick={() => void fetchStatus(PRIMARY_MACHINE_KEY, true)}
+          >
+            <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+            Check now
+          </Button>
+        }
+      >
         <div className="flex flex-col gap-2">
           <SettingsRow label="Version" control={<Value>{version || "unknown"}</Value>} />
+          <SettingsRow
+            label="Latest release"
+            description={status?.releaseUrl ? undefined : "Checked hourly against GitHub."}
+            control={<LatestValue status={status} error={error} />}
+          />
           <SettingsRow
             label="Machine"
             description="Identity is the id; the name is only presentation."
@@ -27,6 +108,36 @@ export function AboutSettings() {
           <SettingsRow label="Machine id" control={<Value>{machineId || "—"}</Value>} />
         </div>
       </SettingsSection>
+
+      {paired.length > 0 && (
+        <SettingsSection
+          title="Machines"
+          description="Versions drift independently — each machine upgrades itself."
+        >
+          <div className="flex flex-col gap-2">
+            {paired.map((entry) => {
+              const away = statuses[entry.machineId] !== "connected";
+              const seen = lastSeenAt[entry.machineId];
+              return (
+                <SettingsRow
+                  key={entry.machineId}
+                  label={entry.label || entry.machineId.slice(0, 8)}
+                  description={
+                    away
+                      ? `away${seen ? ` · last seen ${relativeTime(new Date(seen).toISOString())}` : ""}`
+                      : undefined
+                  }
+                  control={
+                    <span className={cn(away && "opacity-60")}>
+                      <Value>{versions[entry.machineId] || "unknown"}</Value>
+                    </span>
+                  }
+                />
+              );
+            })}
+          </div>
+        </SettingsSection>
+      )}
 
       <SettingsSection
         title="Experimental features"

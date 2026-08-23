@@ -477,7 +477,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		MachineLabelPinned: machineLabelEnv != "",
 		ListenPort:         mcpPort, // the port split from --addr above
 
-		Version:             version,
+		Version: version,
+		// In-app upgrade check (docs/upgrades.md): env wins over [update].
+		Update: config.UpdateConfig{
+			APIURL:   firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_API_URL"), fileCfg.Update.APIURL),
+			Interval: firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_INTERVAL"), fileCfg.Update.Interval),
+			Disabled: envBoolOr("AGENTIQUE_UPDATE_DISABLED", fileCfg.Update.Disabled),
+		},
 		AdminSecret:         adminSecret,
 		TestMode:            testMode,
 		DevMode:             !isRelease(),
@@ -568,6 +574,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if sched := srv.Scheduler(); sched != nil {
 		sched.BootSweep(context.Background())
 		sched.Start()
+	}
+
+	// Version check (docs/upgrades.md): started here, never in server.New —
+	// a constructor a test calls must not reach the network. Read-only, so it
+	// runs in test mode too (a stubbed [update] api-url is how the e2e path
+	// exercises it).
+	if uc := srv.UpdateChecker(); uc != nil {
+		uc.Start(context.Background())
 	}
 
 	// Cross-machine project identity: recompute each project's canonical git

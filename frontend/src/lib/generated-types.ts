@@ -481,6 +481,20 @@ export interface StorageUsage {
   orphans: SessionStorage[];
 }
 
+export interface UpdateStatus {
+  current: string;
+  latest: string;
+  behind: boolean;
+  channel: string;
+  asset: string;
+  supported: boolean;
+  platform: string;
+  checkedAt: string;
+  checkError?: string;
+  releaseUrl?: string;
+  notes?: string;
+}
+
 export interface ProjectSubscribePayload {
   projectId: string;
 }

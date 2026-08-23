@@ -38,6 +38,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/testmode"
+	"github.com/mdjarv/agentique/backend/internal/update"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
@@ -65,6 +66,10 @@ type Config struct {
 	ListenPort string
 	// Version is the build version string ("dev" for non-release builds).
 	Version string
+	// Update configures the in-app upgrade check (docs/upgrades.md). The
+	// checker is constructed here but never started here — serve.go's
+	// production block runs the poll loop.
+	Update config.UpdateConfig
 	// AdminSecret arms the data-dir-secret auth path for the pairing and
 	// session-management endpoints (CLI `agentique pair`). Empty = disabled.
 	AdminSecret string
@@ -173,6 +178,23 @@ type Config struct {
 	BrainRetryMax int
 }
 
+// parseUpdateInterval reads the [update] interval; an empty value means "take
+// the default" and a bad one is reported but never fatal — a mistyped check
+// interval must not stop the server from serving.
+func parseUpdateInterval(v string) (time.Duration, error) {
+	if v == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("interval must be positive, got %s", v)
+	}
+	return d, nil
+}
+
 func devModePreamble(dbPath string) string {
 	return fmt.Sprintf(`## Live Database Warning
 
@@ -192,8 +214,14 @@ type Server struct {
 	authSvc        *auth.Service
 	brainAuto      *brain.Automation
 	scheduler      *schedule.Scheduler
+	updateChecker  *update.Checker
 	allowedOrigins map[string]bool
 }
+
+// UpdateChecker exposes the version checker so serve.go can start its poll
+// loop (same precedent as Scheduler — no network or filesystem work runs from
+// a constructor a test might call). Nil when checking is disabled.
+func (s *Server) UpdateChecker() *update.Checker { return s.updateChecker }
 
 // Scheduler exposes the scheduled-loop service so serve.go can run the boot
 // sweep and start the tick loop (deliberately not started in New — see the
@@ -316,6 +344,24 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			},
 		})
 	})
+
+	// In-app upgrades (docs/upgrades.md): each server checks for ITSELF —
+	// only it knows its platform, its install method and whether it is busy.
+	// Constructed here so the route exists; the poll loop starts from serve.go.
+	var updateChecker *update.Checker
+	if !cfg.Update.Disabled {
+		interval, ierr := parseUpdateInterval(cfg.Update.Interval)
+		if ierr != nil {
+			slog.Warn("update: bad [update] interval, using default", "value", cfg.Update.Interval, "error", ierr)
+		}
+		updateChecker = update.NewChecker(update.Options{
+			Version:  cfg.Version,
+			APIURL:   cfg.Update.APIURL,
+			Interval: interval,
+		})
+		uh := &update.Handler{Checker: updateChecker}
+		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
+	}
 
 	// Machine catalog (multi-machine): paired machines are ACCOUNT state, not
 	// device state — a phone PWA and a desktop logging into this primary see
@@ -732,7 +778,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched}
+	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched, updateChecker: updateChecker}
 
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
@@ -778,6 +824,9 @@ func (s *Server) SweepOrphans(ctx context.Context) {
 func (s *Server) Shutdown() {
 	if s.scheduler != nil {
 		s.scheduler.Stop()
+	}
+	if s.updateChecker != nil {
+		s.updateChecker.Stop()
 	}
 	if s.brainAuto != nil {
 		s.brainAuto.Stop()

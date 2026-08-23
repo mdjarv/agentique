@@ -30,6 +30,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/storage"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
+	"github.com/mdjarv/agentique/backend/internal/update"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
@@ -407,6 +408,10 @@ func main() {
 	g.register(storage.SessionStorage{}, "SessionStorage")
 	g.register(storage.ProjectStorage{}, "ProjectStorage")
 	g.register(storage.StorageUsage{}, "StorageUsage")
+
+	// ── In-app upgrades (docs/upgrades.md) ──
+
+	g.register(update.Status{}, "UpdateStatus")
 
 	// ── WS request payloads ──
 

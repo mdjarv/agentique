@@ -1,9 +1,10 @@
 # In-app upgrades — one click per machine, no dead turns
 
-Status: **designed, not implemented.** Decisions settled 2026-08-23 after
-review (proposal artifact `6fd17232-9ccc-4aad-9e1e-1d51206bd499`); phases
-V1–V5 below, none started. This document is the working contract — a session
-picking up any phase should need nothing else.
+Status: **V1 shipped; V2–V4 in progress; V5 not started.** Decisions settled
+2026-08-23 after review (proposal artifact
+`6fd17232-9ccc-4aad-9e1e-1d51206bd499`). This document is the working contract
+— a session picking up any phase should need nothing else. Per-phase status is
+on each phase below.
 
 ## Goal
 
@@ -26,8 +27,8 @@ is connecting them and deciding when it is safe to pull the trigger.
 | Version on the wire, per machine            | `/api/health`, `/.well-known/agentique/environment` | exists |
 | CLI version probing                         | `internal/doctor` (`claude --version`, `parseVersion`) | exists |
 | Version shown to the user                   | Settings › About                            | exists       |
-| Asking GitHub for the latest tag            | —                                           | **new**      |
-| Per-machine version client-side             | descriptor probe keeps only `machineId`     | **new** (small) |
+| Asking GitHub for the latest tag            | `internal/update`                           | V1 ✓         |
+| Per-machine version client-side             | `machine-store.versions`, from the probe    | V1 ✓         |
 | An endpoint that performs the upgrade       | —                                           | **new**      |
 | Knowing whether it is safe to restart       | turn registry exists; nothing consults it   | **new**      |
 
@@ -46,10 +47,13 @@ GET /api/update/status        (authenticated, per machine)
   "channel":   "release",      // or "dev" — a git-describe build never nags
   "asset":     "agentique-linux-amd64",
   "supported": true,           // false: no asset, or platform not yet verified
+  "platform":  "linux/amd64",  // so a row can explain itself
   "checkedAt": "2026-08-23T12:04:11Z",
-  "busy":      false,          // a turn is running here right now
-  "armed":     false,          // waiting for idle to upgrade itself
-  "progress":  null,           // or the live phase
+  "checkError": "",            // last check's failure; the cached answer stands
+  "releaseUrl": "https://github.com/…/releases/tag/v0.5.0",
+  "busy":      false,          // a turn is running here right now (V3)
+  "armed":     false,          // waiting for idle to upgrade itself (V4)
+  "progress":  null,           // or the live phase (V3)
   "notes":     "…release notes, truncated…"
 }
 
@@ -57,6 +61,18 @@ POST   /api/update/apply      body {"expect": "v0.5.0"}
          → 202, progress events, then the socket drops
 DELETE /api/update/apply      cancel: disarm, or abort before replacing
 ```
+
+`?refresh=1` forces a check instead of reading the hourly cache; without it
+the request never touches the network. Fields land with the phase that makes
+them real (marked above) rather than being stubbed early. `checkedAt` is
+stamped on failure too, so a stale answer can be dated: "as of 2h ago" is
+information, "unknown" is not.
+
+The endpoint is off entirely when `[update] disabled` is set
+(`AGENTIQUE_UPDATE_DISABLED`); `[update] api-url`
+(`AGENTIQUE_UPDATE_API_URL`) repoints the check at a fork's repo — or at a
+stub, which is how the apply path is verified without touching a real
+release.
 
 The check polls hourly per server, cached against the response `ETag`, and
 refreshable on demand. Unauthenticated GitHub allows 60 requests/hour/IP; one
@@ -232,11 +248,22 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
 
 ## Phases
 
-- **V1 — Know.** `/api/update/status`, hourly ETag-cached check, per-machine
-  version kept client-side, versions listed in Settings › About. No chip, no
-  button, no restart path. Zero risk, and with machines drifting
+- **V1 — Know. Shipped.** `/api/update/status`, hourly ETag-cached check,
+  per-machine version kept client-side, versions listed in Settings › About.
+  No chip, no button, no restart path. Zero risk, and with machines drifting
   independently, seeing the versions side by side is already most of the
   value. Worth shipping alone.
+  - Backend: `internal/update` (`Checker` + `Handler`), constructed in
+    `server.New`, poll loop started from serve.go's production block — same
+    precedent as the scheduler, so a unit test never reaches the network.
+  - Client: the descriptor probe in `lib/machines/health.ts` now returns the
+    descriptor it already fetched instead of discarding everything but
+    `machineId`; `machine-store.versions` persists each machine's last-known
+    version, so an away machine still says what it was running.
+  - `release.yml` builds `linux-arm64` and `darwin-arm64` too, and
+    `install.sh` accepts them (portable sha256, name-anchored checksum
+    lookup). Apply stays gated to `linux/amd64` in
+    `internal/update/platform.go`.
 - **V2 — Tell.** Footer chip and the dialog, fanned out across machines.
   Still no button.
 - **V3 — Apply, narrated.** Verification, `.prev` retention, restart,

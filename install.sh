@@ -10,12 +10,16 @@ ARCH="$(uname -m)"
 
 case "$ARCH" in
   x86_64|amd64) ARCH="amd64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
   *) echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-case "$OS" in
-  linux) ;;
-  *) echo "Error: unsupported OS: $OS"; exit 1 ;;
+# Published assets (docs/upgrades.md, U5): build wide so a manual install
+# works anywhere. In-app self-upgrade is a narrower list, in
+# backend/internal/update/platform.go.
+case "${OS}/${ARCH}" in
+  linux/amd64|linux/arm64|darwin/arm64) ;;
+  *) echo "Error: no published binary for ${OS}/${ARCH}"; exit 1 ;;
 esac
 
 ASSET="agentique-${OS}-${ARCH}"
@@ -50,8 +54,16 @@ curl -fsSL "$URL" -o "$TMPFILE"
 # Verify checksum if available
 CHECKSUMS="$(curl -fsSL "$CHECKSUM_URL" 2>/dev/null || true)"
 if [ -n "$CHECKSUMS" ]; then
-  EXPECTED="$(echo "$CHECKSUMS" | grep "$ASSET" | awk '{print $1}')"
-  ACTUAL="$(sha256sum "$TMPFILE" | awk '{print $1}')"
+  # Anchor on the asset NAME, not a substring: "agentique-linux-amd64" is a
+  # prefix of nothing else today, but "agentique-linux-arm64" vs a future
+  # "-arm64-v8" is exactly how the wrong line gets picked.
+  EXPECTED="$(echo "$CHECKSUMS" | awk -v a="$ASSET" '$2 == a || $2 == "*"a {print $1}')"
+  # macOS has no sha256sum; shasum -a 256 is the portable spelling.
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL="$(sha256sum "$TMPFILE" | awk '{print $1}')"
+  else
+    ACTUAL="$(shasum -a 256 "$TMPFILE" | awk '{print $1}')"
+  fi
   if [ "$EXPECTED" != "$ACTUAL" ]; then
     echo "Error: checksum mismatch"
     echo "  expected: $EXPECTED"

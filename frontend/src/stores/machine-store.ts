@@ -44,6 +44,10 @@ interface MachineState {
    * something that can never fix itself earns a place here.
    */
   faults: Record<string, MachineFault>;
+  /** machineId → the build version its descriptor last reported. Persisted:
+   *  an offline machine still shows what it was running when it left
+   *  (docs/upgrades.md), greyed and with no action offered. */
+  versions: Record<string, string>;
 
   addMachine: (entry: MachineEntry) => void;
   /** Rename / re-face a paired machine. Presentation is local to this host:
@@ -53,6 +57,8 @@ interface MachineState {
   setStatus: (machineId: string, status: MachineStatus) => void;
   /** Record or clear a proven fault for a machine. */
   setFault: (machineId: string, fault: MachineFault | null) => void;
+  /** Record the version a machine's descriptor reported. */
+  setVersion: (machineId: string, version: string) => void;
   /** Reconcile the catalog from the primary's server-side copy (server
    *  wins). A failed fetch keeps the local cache — offline still works. */
   syncFromServer: () => Promise<void>;
@@ -65,6 +71,7 @@ export const useMachineStore = create<MachineState>()(
       statuses: {},
       lastSeenAt: {},
       faults: {},
+      versions: {},
 
       addMachine: (entry) => {
         set((s) => ({ machines: { ...s.machines, [entry.machineId]: entry } }));
@@ -111,7 +118,9 @@ export const useMachineStore = create<MachineState>()(
           delete statuses[machineId];
           const faults = { ...s.faults };
           delete faults[machineId];
-          return { machines, statuses, faults };
+          const versions = { ...s.versions };
+          delete versions[machineId];
+          return { machines, statuses, faults, versions };
         });
         fetch(`/api/machines/${encodeURIComponent(machineId)}`, { method: "DELETE" }).catch((err) =>
           console.error("machine catalog delete failed", err),
@@ -128,6 +137,14 @@ export const useMachineStore = create<MachineState>()(
           }
           if (current?.kind === fault.kind) return s; // same fault, don't churn
           return { faults: { ...s.faults, [machineId]: fault } };
+        }),
+
+      setVersion: (machineId, version) =>
+        set((s) => {
+          // An empty answer never overwrites a real last-known version — a
+          // descriptor from an older build simply says nothing about it.
+          if (!version || s.versions[machineId] === version) return s;
+          return { versions: { ...s.versions, [machineId]: version } };
         }),
 
       setStatus: (machineId, status) =>
@@ -173,7 +190,13 @@ export const useMachineStore = create<MachineState>()(
       // Connection status is per-tab runtime state, never persisted.
       // Faults are runtime findings — re-proven on the next failed connect,
       // never restored from a cache that might be describing yesterday.
-      partialize: (s) => ({ machines: s.machines, lastSeenAt: s.lastSeenAt }),
+      // Versions ARE persisted: "what was it running when it left" is the
+      // honest answer for an away machine, and it is re-proven on connect.
+      partialize: (s) => ({
+        machines: s.machines,
+        lastSeenAt: s.lastSeenAt,
+        versions: s.versions,
+      }),
     },
   ),
 );

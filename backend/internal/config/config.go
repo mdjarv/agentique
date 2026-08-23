@@ -22,6 +22,7 @@ type Config struct {
 	Session      SessionConfig      `toml:"session"`
 	Scheduler    SchedulerConfig    `toml:"scheduler"`
 	Logging      LoggingConfig      `toml:"logging"`
+	Update       UpdateConfig       `toml:"update"`
 	Backup       BackupConfig       `toml:"backup"`
 	Setup        SetupConfig        `toml:"setup"`
 	Experimental ExperimentalConfig `toml:"experimental"`
@@ -232,6 +233,23 @@ type ServerConfig struct {
 type LoggingConfig struct {
 	Level  string `toml:"level"`
 	Output string `toml:"output"` // auto, journald, file, stdout
+}
+
+// UpdateConfig tunes the in-app upgrade check (docs/upgrades.md). Each field
+// has an AGENTIQUE_UPDATE_* env override which wins over the file value.
+type UpdateConfig struct {
+	// APIURL overrides the GitHub "latest release" endpoint — a fork's repo,
+	// or a stub server when verifying the apply path against throwaway
+	// servers. Empty uses the upstream agentique repo. Env:
+	// AGENTIQUE_UPDATE_API_URL.
+	APIURL string `toml:"api-url"`
+	// Interval is the background check period (e.g. "1h"); empty uses the
+	// default hour. Env: AGENTIQUE_UPDATE_INTERVAL.
+	Interval string `toml:"interval"`
+	// Disabled turns the check off entirely: no polling, and
+	// /api/update/status reports the current version with no latest.
+	// Env: AGENTIQUE_UPDATE_DISABLED.
+	Disabled bool `toml:"disabled"`
 }
 
 type BackupConfig struct {

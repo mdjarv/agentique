@@ -78,10 +78,15 @@ export function reloadMachineProjects(machineId: string): Promise<void> {
 async function verifyIdentity(machineId: string): Promise<boolean> {
   const entry = useMachineStore.getState().machines[machineId];
   if (!entry) return false;
-  const fault = await probeIdentity(entry);
-  if (!fault) return true;
-  useMachineStore.getState().setFault(machineId, fault);
-  return false;
+  const { fault, descriptor } = await probeIdentity(entry);
+  if (fault) {
+    useMachineStore.getState().setFault(machineId, fault);
+    return false;
+  }
+  // The descriptor already carries the machine's build version; record it so
+  // the version of every machine is known without an extra call.
+  if (descriptor?.version) useMachineStore.getState().setVersion(machineId, descriptor.version);
+  return true;
 }
 
 /**

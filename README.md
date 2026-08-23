@@ -160,6 +160,11 @@ initial-project = ""  # absolute path auto-registered as a project on first run
 teams   = false  # Teams tab / multi-agent channel coordination
 browser = false  # in-app browser tooling
 
+[update]
+disabled = false  # true = no version check at all
+interval = "1h"   # how often this machine asks GitHub for the latest release
+api-url  = ""     # override the releases endpoint (a fork, or a test stub)
+
 # Advanced: publicly-routable dev-URL slots a session can lease to expose a
 # Vite dev server externally. Each slot needs a unique slot/port/public-host.
 # [[dev-urls]]
@@ -202,6 +207,7 @@ All flags below belong to `serve` (except `--addr`, which is global). Each has a
 | `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] learn-model` (env wins). |
 | `AGENTIQUE_BRAIN_OUTCOME_MODEL` | Automatic outcome emitter: a session-end LLM judge that reads the transcript and decides whether the facts recall surfaced this session helped (→ strengthen) or were contradicted (→ flag for review), feeding the outcome signal without relying on agents calling `MemoryUsed`/`MemoryFlag` (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] outcome-model` (env wins). |
 | `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL`, `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). Also settable persistently in `config.toml` under `[brain] consolidate-interval` / `consolidate-model` (env wins when both are set). |
+| `AGENTIQUE_UPDATE_DISABLED`, `AGENTIQUE_UPDATE_INTERVAL`, `AGENTIQUE_UPDATE_API_URL` | The in-app version check (docs/upgrades.md): turn it off, change the hourly beat, or point it at another releases endpoint. Also settable in `config.toml` under `[update]` (env wins). |
 | `AGENTIQUE_BRAIN_GRAPH_*` | Tune the brain knowledge-graph view. `EDGE_CAP` (default `6`) and `EDGE_THRESHOLD` (default = the recall semantic threshold) set the semantic kNN edge density; `LINK_STRENGTH_BASE`/`_SPAN` (`0.04`/`0.32`), `LINK_DISTANCE_BASE`/`_SPAN` (`90`/`55`) and `GRAVITY` (`0.045`) shape the frontend force layout. All optional; also settable persistently in `config.toml` under `[brain.graph]` (`edge-cap`, `edge-threshold`, `link-strength-base`, `link-strength-span`, `link-distance-base`, `link-distance-span`, `gravity`). The env var wins when both are set. |
 
 ## Data & locations
