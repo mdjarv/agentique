@@ -147,7 +147,10 @@ it on pair and connect. Requests route by owning entity through the routing
 facade; only `Project` carries a client-side machine tag (sessions derive
 theirs via the project); remote slugs get a machine suffix, primary slugs
 are never rewritten. Cross-machine grouping (by canonical git remote) is
-display-only — commands always target one physical entity. The machine
+display-only — commands always target one physical entity. Every surface
+that LISTS projects lists logical ones (`useLogicalProjects`), never
+checkouts; the representative owns presentation (name, colour, icon, star)
+and a remote's own favorite flag is ignored. The machine
 catalog is account state on the primary; localStorage and the per-machine
 data cache are offline caches, and cached snapshots sanitize live-ness. A
 flaky remote re-syncs only itself and must never reset primary state.

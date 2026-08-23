@@ -132,12 +132,28 @@ rewritten and all pre-existing URLs remain valid.
 projects across machines into one logical project. The grouping is
 **display-only, never routing** — every command targets one physical
 (machine, project, session). The primary machine's copy, when present, is
-the representative and drives the group's name, color, icon, folder, and
-navigation slug. Sessions from every member interleave under the one row,
-each carrying its machine glyph; the new-session page shows a "Run on"
-control when the group spans machines (primary is the default), and the New
-Project dialog offers a machine picker whose path input, directory browser,
-and validation all run against the chosen machine.
+the representative and drives the group's name, color, icon, folder,
+favorite star, and navigation slug.
+
+`lib/machines/logical-derive.ts` turns that into the row view-model every
+project-listing surface consumes (`useLogicalProjects`), so no surface can
+quietly go back to listing checkouts: the New-session palette, the
+`/projects` inventory, the Run-in menu, and the prompt-card target picker
+all list repos, and thread rows take a session's label, colour, and icon
+from its representative while routing by its own qualified slug. A row is
+`away` only when EVERY member's machine is away — a repo that also lives
+locally is always launchable — and an unknown `machineId` counts as away
+rather than reachable. Where a repo spans machines, `/projects` gives each
+checkout its own launchable line (machine, path, reachability).
+
+**Presentation belongs to the host serving the UI.** A remote machine's own
+`favorite` flag is that host's opinion and is ignored here; starring a
+merged row writes to the representative. Sessions from every member
+interleave under one identity, each carrying its machine glyph; the
+new-session page shows a "Run on" control when the group spans machines
+(primary is the default), and the New Project dialog offers a machine picker
+whose path input, directory browser, and validation all run against the
+chosen machine.
 
 ### Offline behavior
 

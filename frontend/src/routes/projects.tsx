@@ -137,10 +137,12 @@ function ProjectsPage() {
                         <span className="text-[10px] text-muted-foreground-faint">fav</span>
                       )}
                     </div>
-                    {/* One repo on one machine reads as a path; the moment it
-                        spans machines, each checkout gets its own launchable
-                        line — the row itself never targets two things. */}
-                    {row.spansMachines ? (
+                    {/* A repo that lives only on this machine reads as a plain
+                        path. As soon as another machine holds a checkout —
+                        whether alongside this one or instead of it — every
+                        member gets its own launchable line, so where the code
+                        lives and whether it is reachable are both on the row. */}
+                    {row.members.some((m) => m.machineId) ? (
                       <div className="mt-1 space-y-0.5">
                         {row.members.map((member) => (
                           <MemberLine
