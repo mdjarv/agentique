@@ -97,8 +97,11 @@ does not suspend the turn, it ends it. Sessions survive (worktrees, history
 and metadata are on disk); the current turn does not. Anything that restarts
 the server — in-app upgrade, rollback, a future self-restart — must consult
 `Manager.BusyTurns()` first and say, in those words, that the cost is the
-turn. Busy comes from the turn lifecycle (`EventPipeline.TurnOpen`), never
-from session state, which is updated asynchronously and lags it.
+turn. Busy comes from the runtime's own turn lifecycle
+(`runtime.Session.TurnInFlight` via `Session.TurnInFlight`), never from session
+state: `State()` reports Idle for one dispatch before the completion that
+caused it is broadcast. The pipeline's `turnOpen` is a different concern —
+outcome attribution — and is not a busy signal.
 
 ### Channels / teams — `docs/discussion-sessionless-personas.md`
 

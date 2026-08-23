@@ -140,9 +140,19 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 		gitStatus:   RealBranchStatusQuerier(),
 	}
 	m.connWrap = &capturingConnector{inner: connector}
-	m.rt = runtime.NewManager(m.connWrap, runtime.WithOnTerminated(func(_ context.Context, sessionID string) {
-		m.releaseSessionResources(sessionID)
-	}))
+	m.rt = runtime.NewManager(m.connWrap,
+		runtime.WithOnTerminated(func(_ context.Context, sessionID string) {
+			m.releaseSessionResources(sessionID)
+		}),
+		// The runtime's own turn-end signal: fired after the completion is
+		// broadcast and after TurnInFlight has cleared, for every way a turn can
+		// stop — completed, died with the CLI, or closed mid-flight. Watching
+		// StateChange→Idle instead would wake observers on a session whose
+		// completion has not been delivered yet (see runtime.WithOnTurnEnd).
+		runtime.WithOnTurnEnd(func(_ context.Context, end runtime.TurnEnd) {
+			m.notifyTurnEnd(end.SessionID)
+		}),
+	)
 	return m
 }
 
@@ -302,15 +312,13 @@ func (m *Manager) wireCompletion(sess *Session, projectID string) {
 		id := sess.ID
 		sess.SetOnIdle(func() { m.OnSessionIdle(id) })
 	}
-	// Always installed, and it dispatches through the listener list at FIRE
-	// time — so a listener registered after a session was constructed (boot
-	// recovery runs before the server finishes wiring) still hears about it.
-	id := sess.ID
-	sess.SetOnTurnEnd(func() { m.notifyTurnEnd(id) })
 }
 
-// AddTurnEndListener registers a callback fired once per completed turn, on
-// any session, after the turn has closed. Registration order does not matter.
+// AddTurnEndListener registers a callback fired once per turn, on any session,
+// after that turn has stopped. Fed by the runtime's WithOnTurnEnd hook, which
+// covers every way a turn ends — completion, a CLI that died, a session closed
+// mid-flight — so a listener cannot be stranded by a turn that never completed.
+// Registration order does not matter: dispatch resolves listeners at fire time.
 func (m *Manager) AddTurnEndListener(fn func(sessionID string)) {
 	if fn == nil {
 		return

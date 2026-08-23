@@ -7,48 +7,48 @@ import (
 	"github.com/allbin/agentkit/runtime"
 )
 
-// A restart is not a pause (docs/upgrades.md): anything that restarts the
-// server asks the turn lifecycle first, and these are the answers it gets.
+// The pipeline's turn-open flag guards OUTCOME ATTRIBUTION, not "is this
+// machine busy" — that question is the runtime's (Session.TurnInFlight, backed
+// by runtime.Session.TurnInFlight). What is tested here is the narrower
+// agentique concern: a turn start must never advance the turn counter
+// underneath a completion the pipeline has not processed yet, and a turn that
+// will never complete must not make the next start wait out the full timeout.
 
-func TestTurnOpen_TracksTheTurnLifecycle(t *testing.T) {
+func TestPipelineTurnClosesOnCompletion(t *testing.T) {
 	p := newTestPipeline(newTestSink())
 
-	if p.TurnOpen() {
-		t.Fatal("a fresh pipeline has no turn in flight")
-	}
-
 	p.AdvanceTurn()
-	if !p.TurnOpen() {
-		t.Fatal("a started turn is in flight")
+	if !p.turnOpen {
+		t.Fatal("a started turn is open for attribution")
 	}
 
 	p.ProcessEvent(runtime.TurnCompletedEvent{Status: runtime.TurnStatusCompleted})
-	if p.TurnOpen() {
-		t.Fatal("a completed turn is not in flight")
+	if p.turnOpen {
+		t.Fatal("a processed completion closes the turn")
 	}
 }
 
-func TestTurnOpen_FatalErrorEndsTheTurn(t *testing.T) {
+func TestPipelineTurnStaysOpenAcrossAWorkflowPlaceholder(t *testing.T) {
 	p := newTestPipeline(newTestSink())
 	p.AdvanceTurn()
 
-	// A fatal error means no TurnCompletedEvent will ever arrive. Leaving the
-	// turn open would make the machine look permanently busy.
-	p.ProcessEvent(runtime.ErrorEvent{Err: errors.New("cli died"), Fatal: true})
-	if p.TurnOpen() {
-		t.Fatal("a fatally-failed turn must not read as in flight")
-	}
-}
-
-func TestTurnOpen_WorkflowPendingKeepsTheTurnOpen(t *testing.T) {
-	p := newTestPipeline(newTestSink())
-	p.AdvanceTurn()
-
-	// A dynamic workflow's placeholder completion is not the end of the turn —
-	// the agent is still working, so a restart would still cost it.
+	// A dynamic workflow's launch placeholder is not the turn's answer — the
+	// real completion comes later and owns the attribution.
 	p.ProcessEvent(runtime.TurnCompletedEvent{Status: runtime.TurnStatusCompleted, WorkflowPending: true})
-	if !p.TurnOpen() {
-		t.Fatal("a pending workflow turn is still in flight")
+	if !p.turnOpen {
+		t.Fatal("a pending workflow turn is still open")
+	}
+}
+
+func TestPipelineFatalErrorClosesTheTurn(t *testing.T) {
+	p := newTestPipeline(newTestSink())
+	p.AdvanceTurn()
+
+	// No TurnCompletedEvent will ever arrive; leaving it open would make the
+	// next turn start burn WaitTurnClosed's whole timeout.
+	p.ProcessEvent(runtime.ErrorEvent{Err: errors.New("cli died"), Fatal: true})
+	if p.turnOpen {
+		t.Fatal("a fatally-failed turn must not stay open")
 	}
 }
 
@@ -57,8 +57,8 @@ func TestCloseTurn_IsIdempotent(t *testing.T) {
 	p.AdvanceTurn()
 
 	p.CloseTurn()
-	p.CloseTurn() // a second close must not panic on the already-closed channel
-	if p.TurnOpen() {
+	p.CloseTurn() // must not panic on the already-closed channel
+	if p.turnOpen {
 		t.Fatal("turn should be closed")
 	}
 }

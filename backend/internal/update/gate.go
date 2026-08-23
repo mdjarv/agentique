@@ -32,9 +32,12 @@ var ErrNotArmed = errors.New("no upgrade is waiting for idle")
 // up and saying so.
 const DefaultArmDeadline = 4 * time.Hour
 
-// armCheckInterval is a backstop, not the mechanism. The gate fires from the
-// turn-end signal; this catches the turns that end without one (a CLI killed
-// outright, a session torn down) and enforces the deadline.
+// armCheckInterval enforces the deadline, which has no event of its own — an
+// arming that waits out its window has to expire on a clock.
+//
+// It is not how the gate normally fires. The runtime's turn-end hook covers
+// every way a turn stops (completed, died with the CLI, closed mid-flight), so
+// this is a safety net rather than the path anything depends on.
 const armCheckInterval = 30 * time.Second
 
 // Arming is the public shape of an armed upgrade.

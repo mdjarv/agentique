@@ -134,9 +134,9 @@ badly-timed restart is the **current turn**, not the session, and the UI must
 say exactly that; "will this lose my work" is the question that stops someone
 clicking.
 
-Busy is answered by the turn lifecycle — `Manager.BusyTurns()` over
-`EventPipeline.TurnOpen`, never session state, which is updated
-asynchronously and lags it:
+Busy is answered by the runtime's turn lifecycle — `Manager.BusyTurns()` over
+`runtime.Session.TurnInFlight`, never session state, which reports Idle for one
+dispatch before the completion that caused it is broadcast:
 
 - **idle** → upgrade now.
 - **busy** → offer *upgrade when idle*: arm a one-shot that fires on the next
@@ -152,12 +152,16 @@ lid closed at the wrong moment.
 
 **Where the gate listens matters more than it looks.** The obvious hook is
 the idle transition, and it is the wrong one: agentkit flips the runtime to
-Idle from inside the completion's own dispatch, *before* agentique's pipeline
-processes the `TurnCompletedEvent`. An observer woken at that moment still
-sees the turn it is waiting on as in flight, so a gate wired there never
-fires. It listens on turn completion instead (`Manager.AddTurnEndListener`),
-which the pipeline emits strictly after closing the turn — the same instant
-the turn registry resolves its subscribers.
+Idle from inside the completion's own dispatch, *before* the
+`TurnCompletedEvent` is broadcast. An observer woken at that moment still sees
+the turn it is waiting on as in flight, so a gate wired there never fires.
+
+That is now agentkit's own contract rather than something agentique
+reconstructs: `runtime.WithOnTurnEnd` fires strictly after the completion
+broadcast and after `runtime.Session.TurnInFlight` has cleared, for every way a
+turn can stop — completed, died with the CLI, or closed mid-flight.
+`Manager.AddTurnEndListener` just fans that one hook out to agentique's
+consumers.
 
 ## Cancelling
 
@@ -311,13 +315,11 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
     (it tries disarm before cancel — an armed upgrade has no progress to
     abort). `status.armed` carries the target and the deadline.
   - **The gate fires on turn END, not on the idle transition.** The runtime
-    flips Idle *before* the pipeline drains the turn's completion, so an
-    idle-time check still sees that very turn in flight and the gate would
-    never fire. `Manager.AddTurnEndListener` dispatches from the same place
-    the turn registry delivers its outcome — strictly after the turn closed.
-  - A 30s ticker backstops turns that end without a completion event (a CLI
-    killed outright) and enforces the deadline. It is a backstop, not the
-    mechanism.
+    flips Idle *before* the completion is broadcast, so an idle-time check
+    still sees that very turn in flight and the gate would never fire. Driven
+    by `runtime.WithOnTurnEnd`, fanned out via `Manager.AddTurnEndListener`.
+  - A 30s ticker enforces the deadline, which has no event of its own. It is
+    a safety net, not the mechanism.
   - Losing the race back to busy re-arms rather than dropping the request.
   - "Upgrade when idle" is the default offer on a busy machine; "now" is the
     secondary that then states its cost in turns and needs a second click.
