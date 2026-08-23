@@ -56,6 +56,10 @@ type Status struct {
 	Busy bool `json:"busy"`
 	// BusyTurns is how many, so an override can state its cost.
 	BusyTurns int `json:"busyTurns"`
+	// Armed is the drain gate's one-shot, waiting for this machine to go idle;
+	// absent when nothing is armed. In-memory only — an unrelated restart
+	// forgets it, which is the fail-safe direction.
+	Armed *Arming `json:"armed,omitempty"`
 	// Progress is the live upgrade; absent when none is running. Held as state
 	// (not only pushed as events) so reloading mid-upgrade still shows it.
 	// omitempty rather than an explicit null: typegen unwraps pointers, so an

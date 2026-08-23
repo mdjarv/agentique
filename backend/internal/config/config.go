@@ -250,6 +250,10 @@ type UpdateConfig struct {
 	// /api/update/status reports the current version with no latest.
 	// Env: AGENTIQUE_UPDATE_DISABLED.
 	Disabled bool `toml:"disabled"`
+	// ArmDeadline bounds how long an upgrade armed for the next idle boundary
+	// waits before giving up and saying so (e.g. "4h"); empty takes the
+	// default. Env: AGENTIQUE_UPDATE_ARM_DEADLINE.
+	ArmDeadline string `toml:"arm-deadline"`
 }
 
 type BackupConfig struct {

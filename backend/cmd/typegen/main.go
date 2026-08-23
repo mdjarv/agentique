@@ -410,8 +410,9 @@ func main() {
 	g.register(storage.StorageUsage{}, "StorageUsage")
 
 	// ── In-app upgrades (docs/upgrades.md) ──
-	// Progress before Status — Status embeds it (leaf-first).
+	// Progress and Arming before Status — Status embeds both (leaf-first).
 
+	g.register(update.Arming{}, "UpdateArming")
 	updateProgressRef := g.register(update.Progress{}, "UpdateProgress")
 	g.register(update.Status{}, "UpdateStatus")
 	g.addPushEvent("update.progress", updateProgressRef)

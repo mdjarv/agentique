@@ -98,7 +98,17 @@ type Manager struct {
 	// OnSessionIdle, when set by the server, fires on every runtime →Idle
 	// transition with the session id. The scheduler uses it for idle-boundary
 	// delivery of queued runs.
+	//
+	// NOTE: the runtime flips Idle before the pipeline drains the turn's
+	// completion, so a session can still read as in-flight here. Anything
+	// asking "is this machine free?" wants AddTurnEndListener instead.
 	OnSessionIdle func(sessionID string)
+
+	// turnEndListeners fire once per completed turn, after the pipeline has
+	// closed it. A list rather than a single field: the drain gate and any
+	// future consumer must not have to displace each other.
+	turnEndMu        sync.RWMutex
+	turnEndListeners []func(sessionID string)
 
 	// OnSessionComplete, when set by the server, fires once per clean session completion
 	// (runtime StateDone), passing the project and session id, so the brain learns from a
@@ -291,6 +301,34 @@ func (m *Manager) wireCompletion(sess *Session, projectID string) {
 	if m.OnSessionIdle != nil {
 		id := sess.ID
 		sess.SetOnIdle(func() { m.OnSessionIdle(id) })
+	}
+	// Always installed, and it dispatches through the listener list at FIRE
+	// time — so a listener registered after a session was constructed (boot
+	// recovery runs before the server finishes wiring) still hears about it.
+	id := sess.ID
+	sess.SetOnTurnEnd(func() { m.notifyTurnEnd(id) })
+}
+
+// AddTurnEndListener registers a callback fired once per completed turn, on
+// any session, after the turn has closed. Registration order does not matter.
+func (m *Manager) AddTurnEndListener(fn func(sessionID string)) {
+	if fn == nil {
+		return
+	}
+	m.turnEndMu.Lock()
+	m.turnEndListeners = append(m.turnEndListeners, fn)
+	m.turnEndMu.Unlock()
+}
+
+// notifyTurnEnd fans a turn completion out to the registered listeners.
+// Listeners run on the event-loop goroutine, so they must not block; the
+// upgrade gate's does nothing but read a flag and spawn.
+func (m *Manager) notifyTurnEnd(sessionID string) {
+	m.turnEndMu.RLock()
+	listeners := m.turnEndListeners
+	m.turnEndMu.RUnlock()
+	for _, fn := range listeners {
+		fn(sessionID)
 	}
 }
 

@@ -32,14 +32,24 @@ export async function fetchUpdateStatus(key: string, refresh = false): Promise<U
   return (await resp.json()) as UpdateStatus;
 }
 
-/** Ask one machine to upgrade itself. Resolves as soon as the server has
- *  accepted (202) — the narration then arrives over the WS global topic.
- *  `force` overrides the drain gate and costs the running turns. */
-export async function applyUpdate(key: string, expect: string, force = false): Promise<void> {
+/**
+ * Ask one machine to upgrade itself. Resolves as soon as the server has
+ * accepted (202) — the narration then arrives over the WS global topic.
+ *
+ * Three ways to ask, and the machine's state decides which is honest:
+ *   - plain: only when idle; refused with a 409 if a turn is running.
+ *   - `whenIdle`: arm the drain gate, fire when the last turn ends.
+ *   - `force`: go now, ending the turns in flight.
+ */
+export async function applyUpdate(
+  key: string,
+  expect: string,
+  opts: { force?: boolean; whenIdle?: boolean } = {},
+): Promise<void> {
   const resp = await apiFetch(targetFor(key), "/api/update/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ expect, force }),
+    body: JSON.stringify({ expect, force: !!opts.force, whenIdle: !!opts.whenIdle }),
   });
   if (!resp.ok) throw new Error(await errorText(resp));
 }

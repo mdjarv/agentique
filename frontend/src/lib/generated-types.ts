@@ -481,6 +481,12 @@ export interface StorageUsage {
   orphans: SessionStorage[];
 }
 
+export interface UpdateArming {
+  target: string;
+  armedAt: string;
+  deadlineAt: string;
+}
+
 export interface UpdateProgress {
   machineId: string;
   phase: string;
@@ -510,7 +516,8 @@ export interface UpdateStatus {
   blocker?: string;
   busy: boolean;
   busyTurns: number;
-  progress: UpdateProgress;
+  armed?: UpdateArming;
+  progress?: UpdateProgress;
 }
 
 export interface ProjectSubscribePayload {

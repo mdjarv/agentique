@@ -58,6 +58,9 @@ type Deps struct {
 	// Client downloads assets. Defaults to a 10-minute-timeout client — a
 	// 33 MB binary over a bad link is slow, not broken.
 	Client *http.Client
+	// ArmDeadline bounds how long an armed upgrade waits for idle before it
+	// gives up and says so. 0 takes DefaultArmDeadline.
+	ArmDeadline time.Duration
 }
 
 // Applier performs the upgrade: download, verify, replace, restart. One at a
@@ -73,6 +76,15 @@ type Applier struct {
 	// no return contend on one lock: whichever takes it first decides, and a
 	// cancel can never be accepted and then silently ignored.
 	cancelRequested bool
+	// arm is the drain gate's one-shot (gate.go). In-memory only, deliberately:
+	// a restart for any other reason must forget it.
+	arm *armState
+
+	// The gate's backstop ticker, kept off the main mutex so a fire attempt
+	// can stop it without deadlocking on itself.
+	watchMu   sync.Mutex
+	watchStop chan struct{}
+	watchWG   sync.WaitGroup
 }
 
 func NewApplier(checker *Checker, deps Deps) *Applier {

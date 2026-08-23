@@ -147,7 +147,7 @@ export function UpdateRowAction({
   online: boolean;
   /** The row's plain-language state, shown when there is nothing to do. */
   verdict: { text: string; strong: boolean };
-  onApply: (force: boolean) => Promise<void>;
+  onApply: (opts: { force?: boolean; whenIdle?: boolean }) => Promise<void>;
   onCancel: () => Promise<void>;
   /** Forget a finished flight, so the row goes back to offering the upgrade. */
   onDismiss: () => void;
@@ -175,11 +175,11 @@ export function UpdateRowAction({
     );
   }
 
-  const start = async (force: boolean) => {
+  const start = async (opts: { force?: boolean; whenIdle?: boolean }) => {
     setError(null);
     setStarting(true);
     try {
-      await onApply(force);
+      await onApply(opts);
       setConfirmingOverride(false);
     } catch (err) {
       setError(getErrorMessage(err, "Upgrade failed to start"));
@@ -188,42 +188,88 @@ export function UpdateRowAction({
     }
   };
 
-  // Busy: a restart is not a pause. Say what it costs, and make the override a
-  // second, deliberate click.
+  // Already waiting for idle: say what it is waiting for and offer the way out.
+  if (status.armed) {
+    return (
+      <span className="flex min-w-0 flex-col items-end gap-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[11.5px] text-muted-foreground">
+            {status.busy ? "upgrades when idle" : "waiting to upgrade"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void onCancel()}
+            aria-label="Cancel the armed upgrade"
+            title="Cancel — nothing has been installed"
+            className="shrink-0 cursor-pointer rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </span>
+        <span className="truncate text-[10.5px] text-muted-foreground-faint">
+          {status.armed.target} · until {shortTime(status.armed.deadlineAt)}
+        </span>
+      </span>
+    );
+  }
+
+  // Busy: a restart is not a pause. Waiting for idle is the default offer; the
+  // override is a second, deliberate click that states its cost in turns.
   if (status.busy) {
     const turns = status.busyTurns === 1 ? "1 turn" : `${status.busyTurns} turns`;
     return (
-      <span className="flex flex-col items-end gap-1">
+      <span className="flex min-w-0 flex-col items-end gap-1">
         {confirmingOverride ? (
           <Button
             size="sm"
             variant="destructive"
             disabled={starting}
-            onClick={() => void start(true)}
+            onClick={() => void start({ force: true })}
           >
             End {turns} and upgrade
           </Button>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setConfirmingOverride(true)}>
-            Busy — upgrade anyway
-          </Button>
+          <span className="flex items-center gap-1.5">
+            <Button size="sm" disabled={starting} onClick={() => void start({ whenIdle: true })}>
+              Upgrade when idle
+            </Button>
+            <button
+              type="button"
+              onClick={() => setConfirmingOverride(true)}
+              className="cursor-pointer text-[10.5px] text-muted-foreground underline-offset-2 hover:underline"
+            >
+              now
+            </button>
+          </span>
         )}
-        <span className="text-[10.5px] text-muted-foreground-faint">
+        <span className="truncate text-right text-[10.5px] text-muted-foreground-faint">
           {confirmingOverride
             ? `${turns} will be terminated. Sessions survive; the work in flight does not.`
             : `${turns} running here`}
         </span>
-        {error && <span className="text-[10.5px] text-destructive">{error}</span>}
+        {error && <span className="truncate text-[10.5px] text-destructive">{error}</span>}
       </span>
     );
   }
 
   return (
-    <span className="flex flex-col items-end gap-1">
-      <Button size="sm" disabled={starting} onClick={() => void start(false)}>
+    <span className="flex min-w-0 flex-col items-end gap-1">
+      <Button size="sm" disabled={starting} onClick={() => void start({})}>
         {starting ? "Starting…" : `Upgrade to ${status.latest}`}
       </Button>
-      {error && <span className="text-[10.5px] text-destructive">{error}</span>}
+      {error && <span className="truncate text-[10.5px] text-destructive">{error}</span>}
     </span>
   );
+}
+
+/** A deadline, in the least words that still say when. */
+function shortTime(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return iso;
+  const sameDay = new Date(at).toDateString() === new Date().toDateString();
+  return new Date(at).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(sameDay ? {} : { month: "short", day: "numeric" }),
+  });
 }

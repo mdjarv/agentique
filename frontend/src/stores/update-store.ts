@@ -51,9 +51,10 @@ interface UpdateState {
   fetchAll: (keys: string[], refresh?: boolean) => Promise<void>;
   /** Fold a progress push (or a status read) into the flight for a machine. */
   applyProgress: (key: string, progress: UpdateProgress) => void;
-  /** Start an upgrade on one machine. `force` overrides the drain gate. */
-  apply: (key: string, force?: boolean) => Promise<void>;
-  /** Cancel an upgrade that has not installed anything yet. */
+  /** Start an upgrade on one machine — now, when idle, or over the top of the
+   *  turns in flight. */
+  apply: (key: string, opts?: { force?: boolean; whenIdle?: boolean }) => Promise<void>;
+  /** Disarm an armed upgrade, or cancel one that has not installed anything. */
   cancel: (key: string) => Promise<void>;
   /** Forget a finished flight so the row goes back to normal. */
   clearFlight: (key: string) => void;
@@ -126,13 +127,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
   },
 
-  apply: async (key, force = false) => {
+  apply: async (key, opts = {}) => {
     const status = get().statuses[key];
     if (!status) throw new Error("no version information for that machine");
-    await applyUpdate(key, status.latest, force);
-    // The 202's body is the queued progress; the WS topic carries the rest.
-    // Read it back so a client whose socket is slow still starts narrating.
-    void get().fetch(key);
+    await applyUpdate(key, status.latest, opts);
+    // The 202's body is the queued progress (or the arming); the WS topic
+    // carries the rest. Read it back so a client whose socket is slow still
+    // starts narrating, and so an arming lands in the status immediately.
+    await get().fetch(key);
   },
 
   cancel: async (key) => {

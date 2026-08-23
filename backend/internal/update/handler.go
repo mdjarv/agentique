@@ -48,6 +48,7 @@ func (h *Handler) decorate(st *Status) {
 	st.Busy = len(busy) > 0
 	st.BusyTurns = len(busy)
 	st.Progress = h.Applier.Progress()
+	st.Armed = h.Applier.Arming()
 
 	if _, err := h.Applier.Preflight(); err != nil {
 		// Not an error to report loudly: most of the time it just means this
@@ -73,10 +74,24 @@ func (h *Handler) HandleApply(w http.ResponseWriter, r *http.Request) {
 		Expect string `json:"expect"`
 		// Force overrides the busy refusal, at the cost of the running turns.
 		Force bool `json:"force"`
+		// WhenIdle arms the drain gate instead of upgrading now: a one-shot
+		// that fires when the last turn on this machine ends.
+		WhenIdle bool `json:"whenIdle"`
 	}
 	// An empty body is fine — it means "whatever is latest, if idle".
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		httperror.RespondError(w, httperror.BadRequest("expect/force body expected"))
+		httperror.RespondError(w, httperror.BadRequest("expect/force/whenIdle body expected"))
+		return
+	}
+
+	if req.WhenIdle {
+		armed, err := h.Applier.Arm(req.Expect, 0)
+		if err != nil {
+			httperror.RespondError(w, applyError(err))
+			return
+		}
+		slog.Info("update: armed for idle", "expect", req.Expect, "deadline", armed.DeadlineAt)
+		httperror.JSON(w, http.StatusAccepted, armed)
 		return
 	}
 
@@ -88,10 +103,17 @@ func (h *Handler) HandleApply(w http.ResponseWriter, r *http.Request) {
 	httperror.JSON(w, http.StatusAccepted, h.Applier.Progress())
 }
 
-// HandleCancel answers DELETE /api/update/apply.
+// HandleCancel answers DELETE /api/update/apply. Two different things wear the
+// word: an ARMED upgrade is disarmed, an in-flight one is aborted (up to the
+// point where something is installed). Disarm first — an armed upgrade has no
+// progress to cancel.
 func (h *Handler) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	if h.Applier == nil {
 		httperror.RespondError(w, httperror.NotFound("in-app upgrades are not available on this server"))
+		return
+	}
+	if err := h.Applier.Disarm(); err == nil {
+		httperror.JSON(w, http.StatusOK, map[string]any{"disarmed": true})
 		return
 	}
 	if err := h.Applier.Cancel(); err != nil {
@@ -106,9 +128,10 @@ func (h *Handler) HandleCancel(w http.ResponseWriter, r *http.Request) {
 // expectation, 422 for a machine that simply cannot do this.
 func applyError(err error) *httperror.Error {
 	switch {
-	case errors.Is(err, ErrBusy), errors.Is(err, ErrAlreadyRunning), errors.Is(err, ErrTooLate):
+	case errors.Is(err, ErrBusy), errors.Is(err, ErrAlreadyRunning),
+		errors.Is(err, ErrTooLate), errors.Is(err, ErrAlreadyArmed):
 		return httperror.Conflict(err.Error())
-	case errors.Is(err, ErrNotRunning):
+	case errors.Is(err, ErrNotRunning), errors.Is(err, ErrNotArmed):
 		return httperror.NotFound(err.Error())
 	case errors.Is(err, ErrStale):
 		return httperror.BadRequest(err.Error())

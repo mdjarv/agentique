@@ -223,6 +223,7 @@ type Server struct {
 	brainAuto      *brain.Automation
 	scheduler      *schedule.Scheduler
 	updateChecker  *update.Checker
+	updateApplier  *update.Applier
 	allowedOrigins map[string]bool
 }
 
@@ -357,6 +358,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// only it knows its platform, its install method and whether it is busy.
 	// Constructed here so the route exists; the poll loop starts from serve.go.
 	var updateChecker *update.Checker
+	var updateApplier *update.Applier
 	if !cfg.Update.Disabled {
 		interval, ierr := parseUpdateInterval(cfg.Update.Interval)
 		if ierr != nil {
@@ -370,6 +372,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// Applying is the machine's own business: it replaces its own binary
 		// and restarts its own service. Busy comes from the turn registry —
 		// a restart is not a pause (docs/upgrades.md, docs/process-lifecycle.md).
+		armDeadline, aerr := parseUpdateInterval(cfg.Update.ArmDeadline)
+		if aerr != nil {
+			slog.Warn("update: bad [update] arm-deadline, using default", "value", cfg.Update.ArmDeadline, "error", aerr)
+		}
 		applier := update.NewApplier(updateChecker, update.Deps{
 			BinaryPath:       service.BinaryPath,
 			Restart:          service.Restart,
@@ -377,7 +383,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			BusyTurns:        mgr.BusyTurns,
 			Publish:          bus.Broadcast,
 			MachineID:        cfg.MachineID,
+			ArmDeadline:      armDeadline,
 		})
+		// The drain gate fires on turn END, not on the idle transition: the
+		// runtime flips Idle before the pipeline drains the completion, so an
+		// idle-time check would still see that very turn as in flight.
+		mgr.AddTurnEndListener(applier.OnTurnEnd)
+		updateApplier = applier
 		uh := &update.Handler{Checker: updateChecker, Applier: applier}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
 		mux.HandleFunc("POST /api/update/apply", uh.HandleApply)
@@ -799,7 +811,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
-	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched, updateChecker: updateChecker}
+	s := &Server{mux: mux, mgr: mgr, svc: svc, browserSvc: browserSvc, brainAuto: brainAuto, scheduler: sched, updateChecker: updateChecker, updateApplier: updateApplier}
 
 	if cfg.AuthEnabled {
 		authSvc, err := auth.NewService(queries, cfg.RPID, cfg.RPOrigins)
@@ -848,6 +860,9 @@ func (s *Server) Shutdown() {
 	}
 	if s.updateChecker != nil {
 		s.updateChecker.Stop()
+	}
+	if s.updateApplier != nil {
+		s.updateApplier.StopArmWatch()
 	}
 	if s.brainAuto != nil {
 		s.brainAuto.Stop()

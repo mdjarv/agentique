@@ -214,6 +214,12 @@ type Session struct {
 	// by mu.
 	onIdle func()
 
+	// onTurnEnd, when wired by the Manager, fires once per turn completion —
+	// after the pipeline has closed the turn, unlike onIdle. Anything asking
+	// "is this machine free now?" belongs here (the upgrade drain gate).
+	// Guarded by mu.
+	onTurnEnd func()
+
 	// turnReg resolves turn completions to the callers that started the turns
 	// (discussion orchestrator, scheduler), keyed by turn index. Created once
 	// per Session object; Close resolves open subscriptions with a synthetic
@@ -489,6 +495,17 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			// to this turn (discussion orchestrator, scheduler); delivery is
 			// buffered and never blocks the event loop.
 			s.turnReg.Deliver(outcome)
+			// The machine-wide "a turn just ended" signal. Deliberately here
+			// and not on the idle hook: the runtime flips Idle BEFORE the
+			// pipeline drains this completion, so an idle-time observer would
+			// still see this very turn as in flight. By the time
+			// onTurnComplete runs, the turn is closed.
+			s.mu.Lock()
+			onTurnEnd := s.onTurnEnd
+			s.mu.Unlock()
+			if onTurnEnd != nil {
+				onTurnEnd()
+			}
 		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
@@ -820,6 +837,15 @@ func (s *Session) SetOnComplete(fn func()) {
 
 // SetOnIdle wires the per-session idle callback fired on every runtime →Idle
 // transition. The Manager binds the session id; nil disables it.
+// SetOnTurnEnd wires the per-session turn-completion callback. Unlike
+// SetOnIdle it fires after the pipeline has closed the turn, so an observer
+// reading TurnInFlight sees the truth.
+func (s *Session) SetOnTurnEnd(fn func()) {
+	s.mu.Lock()
+	s.onTurnEnd = fn
+	s.mu.Unlock()
+}
+
 func (s *Session) SetOnIdle(fn func()) {
 	s.mu.Lock()
 	s.onIdle = fn

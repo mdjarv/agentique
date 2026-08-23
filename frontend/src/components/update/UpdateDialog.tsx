@@ -110,7 +110,7 @@ function MachineRow({ row }: { row: Row }) {
           flight={row.flight}
           online={row.online}
           verdict={verdict(row)}
-          onApply={(force) => apply(row.key, force)}
+          onApply={(opts) => apply(row.key, opts)}
           onCancel={() => cancel(row.key)}
           onDismiss={() => clearFlight(row.key)}
         />

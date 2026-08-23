@@ -1,6 +1,6 @@
 # In-app upgrades — one click per machine, no dead turns
 
-Status: **V1 shipped; V2–V4 in progress; V5 not started.** Decisions settled
+Status: **V1–V4 shipped; V5 not started.** Decisions settled
 2026-08-23 after review (proposal artifact
 `6fd17232-9ccc-4aad-9e1e-1d51206bd499`). This document is the working contract
 — a session picking up any phase should need nothing else. Per-phase status is
@@ -134,8 +134,9 @@ badly-timed restart is the **current turn**, not the session, and the UI must
 say exactly that; "will this lose my work" is the question that stops someone
 clicking.
 
-Busy is answered by the turn registry (the same source of truth scheduled
-loops use — never state polling):
+Busy is answered by the turn lifecycle — `Manager.BusyTurns()` over
+`EventPipeline.TurnOpen`, never session state, which is updated
+asynchronously and lags it:
 
 - **idle** → upgrade now.
 - **busy** → offer *upgrade when idle*: arm a one-shot that fires on the next
@@ -143,11 +144,20 @@ loops use — never state polling):
 - **override** → allowed, but the button states the cost ("2 turns will be
   terminated") and is a deliberate second click, never the default.
 
-Armed state carries a **deadline** (default a few hours) after which it
-disarms and says so, and is **in-memory only** — if the server restarts for
-any other reason the arming is forgotten. That is the fail-safe direction: an
-upgrade armed on Tuesday must not fire on Thursday because a lid closed at
-the wrong moment.
+Armed state carries a **deadline** (default 4h, `[update] arm-deadline`)
+after which it disarms and says so, and is **in-memory only** — if the server
+restarts for any other reason the arming is forgotten. That is the fail-safe
+direction: an upgrade armed on Tuesday must not fire on Thursday because a
+lid closed at the wrong moment.
+
+**Where the gate listens matters more than it looks.** The obvious hook is
+the idle transition, and it is the wrong one: agentkit flips the runtime to
+Idle from inside the completion's own dispatch, *before* agentique's pipeline
+processes the `TurnCompletedEvent`. An observer woken at that moment still
+sees the turn it is waiting on as in flight, so a gate wired there never
+fires. It listens on turn completion instead (`Manager.AddTurnEndListener`),
+which the pipeline emits strictly after closing the turn — the same instant
+the turn registry resolves its subscribers.
 
 ## Cancelling
 
@@ -295,9 +305,22 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
   - Cancel and the point of no return contend on one mutex (`Applier.commit`),
     so an accepted cancel can never be silently ignored by an install that was
     already under way.
-- **V4 — Wait for idle.** Drain gate, armed one-shot with deadline and
-  cancel, override with its honest warning. V3 simply refuses while busy
-  until this lands.
+- **V4 — Wait for idle. Shipped.** Drain gate, armed one-shot with deadline
+  and cancel, override with its honest warning.
+  - `POST /api/update/apply` with `{"whenIdle": true}` arms; `DELETE` disarms
+    (it tries disarm before cancel — an armed upgrade has no progress to
+    abort). `status.armed` carries the target and the deadline.
+  - **The gate fires on turn END, not on the idle transition.** The runtime
+    flips Idle *before* the pipeline drains the turn's completion, so an
+    idle-time check still sees that very turn in flight and the gate would
+    never fire. `Manager.AddTurnEndListener` dispatches from the same place
+    the turn registry delivers its outcome — strictly after the turn closed.
+  - A 30s ticker backstops turns that end without a completion event (a CLI
+    killed outright) and enforces the deadline. It is a backstop, not the
+    mechanism.
+  - Losing the race back to busy re-arms rather than dropping the request.
+  - "Upgrade when idle" is the default offer on a busy machine; "now" is the
+    secondary that then states its cost in turns and needs a second click.
 - **V5 — CLIs.** Claude and Codex rows: installed version, published version,
   install-method detection, the right command for the method found.
 

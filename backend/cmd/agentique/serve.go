@@ -480,9 +480,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Version: version,
 		// In-app upgrade check (docs/upgrades.md): env wins over [update].
 		Update: config.UpdateConfig{
-			APIURL:   firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_API_URL"), fileCfg.Update.APIURL),
-			Interval: firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_INTERVAL"), fileCfg.Update.Interval),
-			Disabled: envBoolOr("AGENTIQUE_UPDATE_DISABLED", fileCfg.Update.Disabled),
+			APIURL:      firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_API_URL"), fileCfg.Update.APIURL),
+			Interval:    firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_INTERVAL"), fileCfg.Update.Interval),
+			Disabled:    envBoolOr("AGENTIQUE_UPDATE_DISABLED", fileCfg.Update.Disabled),
+			ArmDeadline: firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_ARM_DEADLINE"), fileCfg.Update.ArmDeadline),
 		},
 		AdminSecret:         adminSecret,
 		TestMode:            testMode,

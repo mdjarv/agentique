@@ -483,6 +483,12 @@ export const StorageUsageSchema = z.object({
   orphans: z.array(SessionStorageSchema),
 });
 
+export const UpdateArmingSchema = z.object({
+  target: z.string(),
+  armedAt: z.string(),
+  deadlineAt: z.string(),
+});
+
 export const UpdateProgressSchema = z.object({
   machineId: z.string(),
   phase: z.string(),
@@ -512,7 +518,8 @@ export const UpdateStatusSchema = z.object({
   blocker: z.string().optional(),
   busy: z.boolean(),
   busyTurns: z.number(),
-  progress: UpdateProgressSchema,
+  armed: UpdateArmingSchema.optional(),
+  progress: UpdateProgressSchema.optional(),
 });
 
 export const ProjectSubscribePayloadSchema = z.object({
