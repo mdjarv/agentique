@@ -264,8 +264,17 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
     `install.sh` accepts them (portable sha256, name-anchored checksum
     lookup). Apply stays gated to `linux/amd64` in
     `internal/update/platform.go`.
-- **V2 — Tell.** Footer chip and the dialog, fanned out across machines.
-  Still no button.
+- **V2 — Tell. Shipped.** Footer chip and the dialog, fanned out across
+  machines. Still no button.
+  - `useUpdateChecks` (mounted at the root) re-reads every machine's cached
+    answer on a 15-minute beat and immediately when the catalog changes. The
+    servers do the hourly GitHub check; the client only re-reads.
+  - The chip lives in `SidebarFooter`; `dismissed` is a field on the
+    (unpersisted) update store, so a reload brings it back — verified in the
+    browser, and nothing lands in localStorage.
+  - `UpdateDialog` is one row per machine. An away machine renders greyed,
+    keeps its last-known version and verdict, and never reads as wanting
+    attention.
 - **V3 — Apply, narrated.** Verification, `.prev` retention, restart,
   reconnect-and-confirm, per-phase progress as state *and* events, cancel
   through verification. Narration is not a follow-up: an unnarrated 30-second

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { UpdateChip } from "~/components/update/UpdateChip";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
 import { cn, formatBytes } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
@@ -84,6 +85,7 @@ export function SidebarFooter() {
             <AccountButton />
           </PopoverTrigger>
           <span className="flex-1" />
+          <UpdateChip />
           {connection !== "connected" && (
             <span
               className={cn(

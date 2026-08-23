@@ -18,6 +18,11 @@ export function targetFor(key: string): string | undefined {
   return key === PRIMARY_MACHINE_KEY ? undefined : key;
 }
 
+/** Every machine to ask: the primary first, then each paired remote. */
+export function machineKeys(machines: Record<string, unknown>): string[] {
+  return [PRIMARY_MACHINE_KEY, ...Object.keys(machines)];
+}
+
 /** Ask one machine what it is running and what is published. `refresh` forces
  *  a check rather than reading that server's hourly cache. */
 export async function fetchUpdateStatus(key: string, refresh = false): Promise<UpdateStatus> {

@@ -2,7 +2,6 @@
  *  every machine you work across is running (docs/upgrades.md). */
 import { Link } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
-import { useEffect } from "react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
 import type { UpdateStatus } from "~/lib/generated-types";
@@ -66,14 +65,13 @@ export function AboutSettings() {
   const statuses = useMachineStore((s) => s.statuses);
   const lastSeenAt = useMachineStore((s) => s.lastSeenAt);
 
-  const status = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]);
+  // Polling is useUpdateChecks' job (mounted at the root); this panel only
+  // reads what it collected, plus an explicit "check now".
+  const updates = useUpdateStore((s) => s.statuses);
+  const status = updates[PRIMARY_MACHINE_KEY];
   const checking = useUpdateStore((s) => !!s.checking[PRIMARY_MACHINE_KEY]);
   const error = useUpdateStore((s) => s.errors[PRIMARY_MACHINE_KEY]);
   const fetchStatus = useUpdateStore((s) => s.fetch);
-
-  useEffect(() => {
-    void fetchStatus(PRIMARY_MACHINE_KEY);
-  }, [fetchStatus]);
 
   const paired = Object.values(machines);
 
@@ -129,7 +127,11 @@ export function AboutSettings() {
                   }
                   control={
                     <span className={cn(away && "opacity-60")}>
-                      <Value>{versions[entry.machineId] || "unknown"}</Value>
+                      <Value>
+                        {updates[entry.machineId]?.current ||
+                          versions[entry.machineId] ||
+                          "unknown"}
+                      </Value>
                     </span>
                   }
                 />

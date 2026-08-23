@@ -18,6 +18,7 @@ import { useMachineConnections } from "~/hooks/useMachineConnections";
 import { usePreventViewportScroll } from "~/hooks/usePreventViewportScroll";
 import { useProjects } from "~/hooks/useProjects";
 import { useTheme } from "~/hooks/useTheme";
+import { useUpdateChecks } from "~/hooks/useUpdateChecks";
 import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -58,6 +59,7 @@ function AuthenticatedLayout() {
   useMachineConnections();
   useSyncSweep(projects);
   useActiveProjectFetch();
+  useUpdateChecks();
   usePreventViewportScroll();
 
   const activeSessionId = useChatStore((s) => s.activeSessionId);
