@@ -7,8 +7,8 @@
  * machine is not a problem to solve: it shows the version it was last known to
  * be running, greyed, and gets offered the upgrade when it comes back.
  */
-import { RefreshCw } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { CLIRow } from "~/components/update/CLIRow";
 import { UpdateRowAction } from "~/components/update/UpdateRowAction";
 import type { UpdateStatus } from "~/lib/generated-types";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
@@ -61,7 +62,15 @@ function verdict(row: Row): { text: string; strong: boolean } {
   return { text: `${row.status.latest} available`, strong: attention };
 }
 
-function MachineRow({ row }: { row: Row }) {
+function MachineRow({
+  row,
+  expanded,
+  onToggle,
+}: {
+  row: Row;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const Icon = getMachineIcon(row.icon) ?? DEFAULT_MACHINE_ICON;
   const version = row.status?.current || row.lastKnownVersion || "unknown";
   const age = row.status ? checkedAgo(row.status.checkedAt) : null;
@@ -82,39 +91,68 @@ function MachineRow({ row }: { row: Row }) {
     .filter(Boolean)
     .join(" · ");
 
+  const clis = row.status?.clis ?? [];
+
   return (
     <div
       className={cn(
-        "flex items-center gap-3 overflow-hidden rounded-lg border border-border/60 bg-card px-3.5 py-3",
+        "overflow-hidden rounded-lg border border-border/60 bg-card",
         !row.online && "opacity-60",
       )}
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[13px] font-medium text-foreground">{row.label}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground-faint">
-          {version}
-          {detail ? ` · ${detail}` : ""}
+      <div className="flex items-center gap-3 px-3.5 py-3">
+        {/* The icon stays the icon. With several machines it is how you tell
+          them apart at a glance, so the disclosure gets its own control rather
+          than displacing identity. */}
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+          <Icon className="size-4" />
         </span>
-      </div>
-      {/* Shrinkable, min-w-0, and capped at half the row. A checksum mismatch
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-[13px] font-medium text-foreground">{row.label}</span>
+          <span className="truncate font-mono text-[11px] text-muted-foreground-faint">
+            {version}
+            {detail ? ` · ${detail}` : ""}
+          </span>
+        </div>
+        {/* A machine with no CLI rows has nothing to disclose, so it gets no
+          control rather than one that expands into emptiness. */}
+        {clis.length > 0 ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-label={expanded ? `Hide ${row.label} tools` : `Show ${row.label} tools`}
+            title={expanded ? "Hide command-line tools" : "Show command-line tools"}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground-faint transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+          >
+            <ChevronRight className={cn("size-4 transition-transform", expanded && "rotate-90")} />
+          </button>
+        ) : null}
+        {/* Shrinkable, min-w-0, and capped at half the row. A checksum mismatch
           names two 64-char digests: without min-w-0 it stretched the row past
           the dialog, and without the cap it ate the machine's own name — and a
           row that cannot say WHICH machine failed is worse than one that
           truncates why. */}
-      <span className="flex min-w-0 max-w-[50%] justify-end">
-        <UpdateRowAction
-          status={row.status}
-          flight={row.flight}
-          online={row.online}
-          verdict={verdict(row)}
-          onApply={(opts) => apply(row.key, opts)}
-          onCancel={() => cancel(row.key)}
-          onDismiss={() => clearFlight(row.key)}
-        />
-      </span>
+        <span className="flex min-w-0 max-w-[50%] justify-end">
+          <UpdateRowAction
+            status={row.status}
+            flight={row.flight}
+            online={row.online}
+            verdict={verdict(row)}
+            onApply={(opts) => apply(row.key, opts)}
+            onCancel={() => cancel(row.key)}
+            onDismiss={() => clearFlight(row.key)}
+          />
+        </span>
+      </div>
+
+      {expanded && clis.length > 0 ? (
+        <div className="flex flex-col divide-y divide-border/40 border-t border-border/40 bg-secondary/20 px-3.5 py-1">
+          {clis.map((cli) => (
+            <CLIRow key={cli.tool} cli={cli} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -132,6 +170,13 @@ export function UpdateDialog({
   const statuses = useMachineStore((s) => s.statuses);
   const versions = useMachineStore((s) => s.versions);
   const lastSeenAt = useMachineStore((s) => s.lastSeenAt);
+
+  // The local machine opens expanded because it is the one the user can act on
+  // and the one whose CLI drift is theirs to fix; remotes stay collapsed so a
+  // fleet does not turn the dialog into a wall.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    [PRIMARY_MACHINE_KEY]: true,
+  });
 
   const updates = useUpdateStore((s) => s.statuses);
   const checking = useUpdateStore((s) => s.checking);
@@ -178,7 +223,12 @@ export function UpdateDialog({
             long error message widened the whole dialog. */}
         <div className="flex min-w-0 flex-col gap-2">
           {rows.map((row) => (
-            <MachineRow key={row.key} row={row} />
+            <MachineRow
+              key={row.key}
+              row={row}
+              expanded={expanded[row.key] ?? false}
+              onToggle={() => setExpanded((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+            />
           ))}
         </div>
 

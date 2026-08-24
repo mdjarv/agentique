@@ -457,6 +457,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// CLI detection follows the same switch as the release check: turning
 		// [update] off silences all of it, not just the part about ourselves.
 		updateCLIs = update.NewCLIProbe(cliInspectors, interval)
+		// The version a CLI reports when a session starts is the only account of
+		// it that comes from something that happened rather than from inspecting
+		// a binary — the one check on detection being right.
+		mgr.SetOnCLIVersion(updateCLIs.RecordRan)
 		uh := &update.Handler{Checker: updateChecker, Applier: applier, CLIs: updateCLIs}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
 		// Applying replaces this machine's binary and restarts its service, and

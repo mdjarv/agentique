@@ -429,11 +429,19 @@ if a library starts calling a shared-tree rewrite self-managed.
     source, self-managed, update command, version manager, package manager,
     warnings. `internal/doctor` converts to the same source and gains its
     missing codex check. No verdict, no buttons (C15).
-  - **V5b — the rows.** One expandable machine row per UI shape A, local
-    expanded by default. Seven row states, of which *update available, nothing
-    to click* is first-class, not an edge case. Plus `lastRan` from
-    `runtime.SessionInitEvent.CLIVersion` (C12) — today it is dropped on the
-    floor.
+  - **V5b — the rows. Shipped.** One expandable machine row per UI shape A,
+    local expanded by default; the machine icon stays the icon and the
+    disclosure gets its own control, because with a fleet those icons are how
+    you tell rows apart. `lastRan` comes from
+    `runtime.SessionInitEvent.CLIVersion` through the pipeline and is folded in
+    on read, not at refresh — a session starting between two hourly probes
+    should not wait an hour to be visible.
+  - **The dialog is not the only home, and could not be.** The chip that opens
+    it renders only when a machine is *behind*, so on a dev build or an
+    up-to-date machine the question this phase exists to answer — which CLI is
+    this machine running — had no route to an answer at all. Settings › About
+    grew a **Command-line tools** section, which is always reachable. The
+    dialog stays the contextual surface; About is the permanent one.
   - **V5c — the button.** Needs a perform-the-update method in both provider
     libraries and on the agentkit capability first; ships behind
     `[update] cli-updates`, default off, and verified against a throwaway

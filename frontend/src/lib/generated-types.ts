@@ -501,6 +501,21 @@ export interface UpdateProgress {
   updatedAt: string;
 }
 
+export interface UpdateCLIStatus {
+  tool: string;
+  installed: string;
+  path: string;
+  realPath?: string;
+  method: string;
+  source?: string;
+  selfManaged: boolean;
+  updateCmd?: string;
+  versionManager?: string;
+  packageManager?: string;
+  warnings?: string[];
+  lastRan?: string;
+}
+
 export interface UpdateStatus {
   current: string;
   latest: string;
@@ -518,7 +533,7 @@ export interface UpdateStatus {
   busy: boolean;
   busyTurns: number;
   armed?: UpdateArming;
-  clis?: unknown[];
+  clis?: UpdateCLIStatus[];
   progress?: UpdateProgress;
 }
 

@@ -125,6 +125,9 @@ type Manager struct {
 
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
+	cliVerMu     sync.RWMutex
+	onCLIVersion func(provider, version string)
+
 	mcpTokens      *mcphttp.TokenStore
 	mcpInternalURL string
 	devURLs        *devurls.Store
@@ -154,6 +157,26 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 		}),
 	)
 	return m
+}
+
+// SetOnCLIVersion registers a sink for the version a provider CLI reports when
+// a session starts. Guarded because it is wired after NewManager while
+// RecoverStaleSessions may already be bringing sessions back.
+func (m *Manager) SetOnCLIVersion(fn func(provider, version string)) {
+	m.cliVerMu.Lock()
+	defer m.cliVerMu.Unlock()
+	m.onCLIVersion = fn
+}
+
+// notifyCLIVersion forwards an observed CLI version to whatever is listening.
+// Always safe to call: no listener is the normal state in tests.
+func (m *Manager) notifyCLIVersion(provider, version string) {
+	m.cliVerMu.RLock()
+	fn := m.onCLIVersion
+	m.cliVerMu.RUnlock()
+	if fn != nil {
+		fn(provider, version)
+	}
 }
 
 // SetProviderConnector overrides the runtime connector for a specific provider
@@ -372,16 +395,17 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	}
 
 	sess := newSession(sessionParams{
-		id:        id,
-		projectID: params.ProjectID,
-		model:     params.Model,
-		provider:  normalizeProvider(params.Provider),
-		db:        m.db,
-		queries:   m.queries,
-		broadcast: m.broadcastFunc(params.ProjectID),
-		turnIndex: -1, // first Query() will increment to 0
-		workDir:   params.WorkDir,
-		gitStatus: m.gitStatus,
+		id:           id,
+		projectID:    params.ProjectID,
+		model:        params.Model,
+		provider:     normalizeProvider(params.Provider),
+		onCLIVersion: m.notifyCLIVersion,
+		db:           m.db,
+		queries:      m.queries,
+		broadcast:    m.broadcastFunc(params.ProjectID),
+		turnIndex:    -1, // first Query() will increment to 0
+		workDir:      params.WorkDir,
+		gitStatus:    m.gitStatus,
 	})
 	// Discussion personas opt out of brain-recall so their turns aren't polluted
 	// with memory blocks — the orchestrator wants clean per-persona context.
@@ -534,6 +558,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		projectID:         p.ProjectID,
 		model:             p.Model,
 		provider:          normalizeProvider(p.Provider),
+		onCLIVersion:      m.notifyCLIVersion,
 		db:                m.db,
 		queries:           m.queries,
 		broadcast:         m.broadcastFunc(p.ProjectID),
@@ -628,6 +653,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		projectID:         p.ProjectID,
 		model:             p.Model,
 		provider:          normalizeProvider(p.Provider),
+		onCLIVersion:      m.notifyCLIVersion,
 		db:                m.db,
 		queries:           m.queries,
 		broadcast:         m.broadcastFunc(p.ProjectID),

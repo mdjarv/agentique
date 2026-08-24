@@ -254,6 +254,7 @@ type sessionParams struct {
 	projectID         string
 	model             string
 	provider          string
+	onCLIVersion      func(provider, version string)
 	db                *sql.DB
 	queries           sessionQueries
 	broadcast         func(pushType string, payload any)
@@ -445,7 +446,12 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				slog.Error("persist claude session ID failed", "session_id", p.id, "error", err)
 			}
 		},
-		OnResolvedModel:  func(id string) { persistResolvedModel(p, id) },
+		OnResolvedModel: func(id string) { persistResolvedModel(p, id) },
+		OnCLIVersion: func(v string) {
+			if p.onCLIVersion != nil {
+				p.onCLIVersion(p.provider, v)
+			}
+		},
 		OnPlanTransition: s.transitionPlanMode,
 		OnExitPlanMode: func(input json.RawMessage) {
 			s.mu.Lock()

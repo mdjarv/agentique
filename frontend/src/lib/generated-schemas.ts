@@ -503,6 +503,21 @@ export const UpdateProgressSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const UpdateCLIStatusSchema = z.object({
+  tool: z.string(),
+  installed: z.string(),
+  path: z.string(),
+  realPath: z.string().optional(),
+  method: z.string(),
+  source: z.string().optional(),
+  selfManaged: z.boolean(),
+  updateCmd: z.string().optional(),
+  versionManager: z.string().optional(),
+  packageManager: z.string().optional(),
+  warnings: z.array(z.string()).optional(),
+  lastRan: z.string().optional(),
+});
+
 export const UpdateStatusSchema = z.object({
   current: z.string(),
   latest: z.string(),
@@ -520,7 +535,7 @@ export const UpdateStatusSchema = z.object({
   busy: z.boolean(),
   busyTurns: z.number(),
   armed: UpdateArmingSchema.optional(),
-  clis: z.array(z.unknown()).optional(),
+  clis: z.array(UpdateCLIStatusSchema).optional(),
   progress: UpdateProgressSchema.optional(),
 });
 

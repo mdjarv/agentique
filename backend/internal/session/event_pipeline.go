@@ -42,7 +42,13 @@ type PipelineConfig struct {
 	// OnResolvedModel fires once per pipeline with the concrete model ID the
 	// provider reported for the configured slug (e.g. "opus" → "claude-opus-5").
 	// It is what keeps the model catalog current without a new release.
-	OnResolvedModel   func(id string)
+	OnResolvedModel func(id string)
+	// OnCLIVersion fires with the version the provider CLI reported when a
+	// session actually started. It is the only account of the CLI derived from
+	// something that happened rather than from inspecting a binary, which makes
+	// it the one check on install detection: if they disagree, detection is
+	// describing a binary this session did not run.
+	OnCLIVersion      func(version string)
 	OnPlanTransition  func(mode string)
 	OnExitPlanMode    func(input json.RawMessage)
 	OnWriteToolResult func()
@@ -141,6 +147,7 @@ type EventPipeline struct {
 
 	onClaudeSessionID func(string)
 	onResolvedModel   func(string)
+	onCLIVersion      func(string)
 	onPlanTransition  func(string)
 	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
@@ -163,6 +170,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		taskStatus:        make(map[string]bool),
 		onClaudeSessionID: cfg.OnClaudeSessionID,
 		onResolvedModel:   cfg.OnResolvedModel,
+		onCLIVersion:      cfg.OnCLIVersion,
 		onPlanTransition:  cfg.OnPlanTransition,
 		onExitPlanMode:    cfg.OnExitPlanMode,
 		onWriteToolResult: cfg.OnWriteToolResult,
@@ -571,6 +579,13 @@ func (p *EventPipeline) handleInit(event runtime.CLIEvent) bool {
 	// list means "advertised nothing", not "supports nothing".
 	p.cliCapabilities = initEv.Capabilities
 	p.mu.Unlock()
+
+	// Reported on every init, not just the first: a resume or reconnect can
+	// land on a CLI that updated underneath us, and the newest init is the only
+	// truth about which build is running now.
+	if initEv.CLIVersion != "" && p.onCLIVersion != nil {
+		p.onCLIVersion(initEv.CLIVersion)
+	}
 
 	if captureSession {
 		if p.onClaudeSessionID != nil {

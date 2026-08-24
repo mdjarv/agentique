@@ -414,6 +414,10 @@ func main() {
 
 	g.register(update.Arming{}, "UpdateArming")
 	updateProgressRef := g.register(update.Progress{}, "UpdateProgress")
+	// CLIStatus is registered explicitly because Status carries it as a slice,
+	// and an unregistered element type generates `unknown[]` — the rows would
+	// reach the UI shapeless.
+	g.register(update.CLIStatus{}, "UpdateCLIStatus")
 	g.register(update.Status{}, "UpdateStatus")
 	g.addPushEvent("update.progress", updateProgressRef)
 

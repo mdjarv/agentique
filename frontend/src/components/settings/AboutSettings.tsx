@@ -4,12 +4,30 @@ import { Link } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
-import type { UpdateStatus } from "~/lib/generated-types";
+import type { UpdateCLIStatus, UpdateStatus } from "~/lib/generated-types";
 import { checkedAgo, PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import { cn, relativeTime } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useUpdateStore } from "~/stores/update-store";
+
+/** The one line under a CLI's name. Warnings come first when present: a second
+ *  copy on PATH means the version beside it has stopped describing the binary
+ *  that actually runs, which outranks how it was installed. */
+function cliDescription(cli: UpdateCLIStatus): string {
+  const parts: string[] = [];
+  if (cli.warnings?.length) parts.push(cli.warnings.join(" · "));
+  parts.push(cli.versionManager ? `${cli.method} via ${cli.versionManager}` : cli.method);
+  if (cli.selfManaged) {
+    parts.push("updates itself");
+  } else if (cli.updateCmd) {
+    parts.push(cli.updateCmd);
+  }
+  if (cli.lastRan && cli.installed && cli.lastRan !== cli.installed) {
+    parts.push(`last session ran ${cli.lastRan}`);
+  }
+  return parts.join(" · ");
+}
 
 function Value({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-[12px] text-muted-foreground">{children}</span>;
@@ -106,6 +124,24 @@ export function AboutSettings() {
           <SettingsRow label="Machine id" control={<Value>{machineId || "—"}</Value>} />
         </div>
       </SettingsSection>
+
+      {(status?.clis ?? []).length > 0 && (
+        <SettingsSection
+          title="Command-line tools"
+          description="The binaries this machine would spawn for its next session — not whatever a shell resolves."
+        >
+          <div className="flex flex-col gap-2">
+            {(status?.clis ?? []).map((cli) => (
+              <SettingsRow
+                key={cli.tool}
+                label={cli.tool}
+                description={cliDescription(cli)}
+                control={<Value>{cli.installed || "version unreadable"}</Value>}
+              />
+            ))}
+          </div>
+        </SettingsSection>
+      )}
 
       {paired.length > 0 && (
         <SettingsSection

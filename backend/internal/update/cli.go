@@ -67,6 +67,13 @@ type CLIStatus struct {
 	// Both mean a version number may have stopped describing the binary that
 	// runs. Prose, meant to be shown as-is.
 	Warnings []string `json:"warnings,omitempty"`
+	// LastRan is the version this CLI reported when a session on this machine
+	// actually started, "" until one has. Every other field here is inspection;
+	// this is the only observation, which makes it the one check on detection —
+	// if it disagrees with Installed, detection is describing a binary the
+	// product does not run. Empty after a restart, which is honest: nothing has
+	// been observed yet.
+	LastRan string `json:"lastRan,omitempty"`
 }
 
 // defaultCLIProbeTimeout bounds one provider's detection. Detection is offline
@@ -93,6 +100,11 @@ type CLIProbe struct {
 	mu        sync.RWMutex
 	cached    []CLIStatus
 	checkedAt time.Time
+	// lastRan is what each provider's CLI reported when a session actually
+	// started, keyed by provider. Kept beside the cache rather than inside it
+	// because the two are refreshed by completely different events: detection
+	// on a timer, this on a session starting.
+	lastRan map[string]string
 
 	done     chan struct{}
 	stopOnce sync.Once
@@ -111,6 +123,7 @@ func NewCLIProbe(inspectors map[string]runtime.InstallInspectable, interval time
 		inspectors: inspectors,
 		interval:   interval,
 		timeout:    defaultCLIProbeTimeout,
+		lastRan:    map[string]string{},
 		done:       make(chan struct{}),
 	}
 }
@@ -142,11 +155,36 @@ func (p *CLIProbe) Stop() {
 	p.wg.Wait()
 }
 
-// Status returns the cached answer. Never blocks on a probe.
+// RecordRan notes the version a provider CLI reported when a session started.
+// Wired to the session manager, so it fires on every session init — including a
+// resume that lands on a CLI which updated underneath us.
+func (p *CLIProbe) RecordRan(provider, version string) {
+	if provider == "" || version == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastRan[provider] = version
+}
+
+// Status returns the cached answer, with each row's observed version folded in.
+// Never blocks on a probe.
+//
+// The fold happens on read rather than at refresh time because the two facts
+// arrive independently: a session can start between two hourly probes, and that
+// observation should not have to wait an hour to be visible.
 func (p *CLIProbe) Status() []CLIStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.cached
+	if len(p.lastRan) == 0 {
+		return p.cached
+	}
+	out := make([]CLIStatus, len(p.cached))
+	copy(out, p.cached)
+	for i := range out {
+		out[i].LastRan = p.lastRan[out[i].Tool]
+	}
+	return out
 }
 
 // Refresh asks every connector and replaces the cache. Each provider gets its
