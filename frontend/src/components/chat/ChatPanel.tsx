@@ -39,6 +39,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
+import { loopBadgeState } from "~/lib/loop-attention";
 import { useNavigationGuard } from "~/lib/navigation";
 import { getProjectColor } from "~/lib/project-colors";
 import { markScheduleViewed } from "~/lib/schedule-actions";
@@ -213,6 +214,10 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     () => agentBadgeState(agentRuns, latestTurnIndex, seenFailureTurn),
     [agentRuns, latestTurnIndex, seenFailureTurn],
   );
+  // No local seen-state: the server owns when a loop's attention clears
+  // (`schedule.mark-viewed`, sent by LoopsPanel), and a failed loop
+  // deliberately survives being looked at.
+  const loopsAttention = useMemo(() => loopBadgeState(sessionSchedules), [sessionSchedules]);
   useEffect(() => {
     if (activeTab !== "agents") return;
     setSeenFailure({ session: sessionId, turn: latestTurnIndex ?? 0 });
@@ -530,6 +535,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
       totalAdd={totalAdd}
       totalDel={totalDel}
       hasLoops={hasLoops}
+      loopsAttention={loopsAttention}
       hasAgents={hasAgents}
       agentsRunning={agentBadge.running}
       agentsFailed={agentBadge.failed}

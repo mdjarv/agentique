@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -8,7 +7,10 @@ import {
   FileDiff,
   ListTodo,
   MessageSquare,
+  TriangleAlert,
+  X,
 } from "lucide-react";
+import type { LoopAttentionKind, LoopBadgeState } from "~/lib/loop-attention";
 import { cn } from "~/lib/utils";
 import type { SessionTab } from "./ChatPanel";
 
@@ -27,6 +29,8 @@ interface SessionTabBarProps {
   totalDel?: number;
   /** Session has schedules — shows the Loops tab. */
   hasLoops?: boolean;
+  /** What this session's loops need from the user — see `loopBadgeState`. */
+  loopsAttention?: LoopBadgeState | null;
   /** Session has spawned at least one subagent — shows the Agents tab. */
   hasAgents?: boolean;
   /** Subagents still out. The only count the badge shows. */
@@ -35,6 +39,38 @@ interface SessionTabBarProps {
   agentsFailed?: number;
   /** Project accent color hex — used for active tab indicator. */
   accentColor?: string;
+}
+
+/**
+ * Glyphs follow the sidebar's vocabulary (`ThreadRow`) so one state reads the
+ * same wherever it appears: a triangle means someone is waiting on you, an X
+ * means it stopped. Nothing here pulses — in this strip a pulse already means
+ * "live activity" (agents out), and one mark cannot mean two things.
+ */
+const LOOP_ATTENTION: Record<
+  LoopAttentionKind,
+  { glyph: typeof Clock; tone: string; label: (n: number) => string }
+> = {
+  blocked: {
+    glyph: TriangleAlert,
+    tone: "text-warning",
+    label: (n) => `${n} loop${n === 1 ? " is" : "s are"} waiting on you`,
+  },
+  paused: {
+    glyph: X,
+    tone: "text-destructive",
+    label: (n) => `${n} loop${n === 1 ? "" : "s"} paused after repeated failures`,
+  },
+};
+
+function LoopAttentionBadge({ attention }: { attention: LoopBadgeState }) {
+  const { glyph: Glyph, tone, label } = LOOP_ATTENTION[attention.kind];
+  return (
+    <span className={cn("flex items-center gap-1", tone)} title={label(attention.count)}>
+      <Glyph className="size-3" />
+      <span className="font-medium text-xs tabular-nums">{attention.count}</span>
+    </span>
+  );
 }
 
 export function SessionTabBar({
@@ -51,6 +87,7 @@ export function SessionTabBar({
   totalAdd = 0,
   totalDel = 0,
   hasLoops = false,
+  loopsAttention = null,
   hasAgents = false,
   agentsRunning = 0,
   agentsFailed = 0,
@@ -154,7 +191,10 @@ export function SessionTabBar({
               className="flex items-center gap-1 text-destructive"
               title={`${agentsFailed} agent${agentsFailed === 1 ? "" : "s"} failed this turn`}
             >
-              <AlertTriangle className="size-3" />
+              {/* X, not a warning triangle: the sidebar (`ThreadRow`) already
+                  spends X on "it failed" and the triangle on "someone is
+                  waiting on you", and one glyph must mean one thing. */}
+              <X className="size-3" />
               <span className="font-medium text-xs tabular-nums">{agentsFailed}</span>
             </span>
           ) : null}
@@ -165,6 +205,11 @@ export function SessionTabBar({
         <Tab tab="loops">
           <Clock className="size-3.5" />
           Loops
+          {/* Same rule as Agents, the other way round: this tab was silent
+              about a state the store already tracks. A paused loop is dead
+              until someone acts, so it must say so from whatever tab you are
+              on — not only from inside itself. */}
+          {loopsAttention && <LoopAttentionBadge attention={loopsAttention} />}
         </Tab>
       )}
     </>

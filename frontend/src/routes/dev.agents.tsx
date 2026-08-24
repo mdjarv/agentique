@@ -3,6 +3,7 @@ import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentsView } from "~/components/chat/AgentsView";
 import { SessionTabBar } from "~/components/chat/SessionTabBar";
 import type { AgentRun } from "~/lib/agent-runs";
+import type { LoopBadgeState } from "~/lib/loop-attention";
 
 export const Route = createFileRoute("/dev/agents")({
   component: DevAgents,
@@ -105,9 +106,15 @@ function Panel({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function TabBarRow(props: { hasAgents: boolean; agentsRunning: number; agentsFailed: number }) {
+function TabBarRow(props: {
+  hasAgents?: boolean;
+  agentsRunning?: number;
+  agentsFailed?: number;
+  hasLoops?: boolean;
+  loopsAttention?: LoopBadgeState | null;
+}) {
   return (
-    <div className="flex items-stretch h-10 px-2">
+    <div className="flex h-10 items-stretch px-2">
       <SessionTabBar
         activeTab="chat"
         onTabChange={() => {}}
@@ -137,6 +144,18 @@ function DevAgents() {
           </Panel>
           <Panel label="Badge — idle (silent)">
             <TabBarRow hasAgents agentsRunning={0} agentsFailed={0} />
+          </Panel>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Panel label="Loops — healthy (silent)">
+            <TabBarRow hasLoops loopsAttention={null} />
+          </Panel>
+          <Panel label="Loops — 2 waiting on you">
+            <TabBarRow hasLoops loopsAttention={{ kind: "blocked", count: 2 }} />
+          </Panel>
+          <Panel label="Loops — paused after failures">
+            <TabBarRow hasLoops loopsAttention={{ kind: "paused", count: 1 }} />
           </Panel>
         </div>
 

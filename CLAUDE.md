@@ -289,6 +289,17 @@ not a transcript. Lifetime totals belong in the footer.
 The strip owns its own 1s clock: lifting it to `ChatPanel` would re-render the
 whole session view every second an agent is out.
 
+Tab badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
+must mean one thing across surfaces: **X is "it failed", the triangle is
+"someone is waiting on you"**, and a pulse in the tab strip means live activity,
+never blocked-ness. The Loops badge (`loopBadgeState`) reports `blocked`
+(schedule parked for approval, or a run waiting/overdue) above `paused` (loop
+auto-paused on repeated failures) — the same ranking as
+`lib/session/priority.ts`, where approval outranks failure. Note the asymmetry
+with agents: a loop's `failed` attention **survives being viewed** and clears
+only on an explicit act (edit or re-enable). That is the scheduler's rule
+(`schedule/api.go`), so the badge must not invent a local seen-state for it.
+
 ### Provider abstraction
 
 Sessions are driven via agentkit/runtime's neutral contract — never import a
