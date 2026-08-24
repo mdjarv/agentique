@@ -123,6 +123,8 @@ export interface DeriveRestTokenInput {
   state: string;
   merged: boolean;
   connected: boolean;
+  /** That session's machine is unreachable — we are reading a cached row. */
+  machineOffline?: boolean;
 }
 
 /**
@@ -131,11 +133,20 @@ export interface DeriveRestTokenInput {
  * "finished" is the word for state `done`, never "done": the state means the CLI
  * exited cleanly, and "done" reads as the user's own verdict on the work. That
  * verdict is Archive now, and it lives in a section header rather than a token.
+ *
+ * "evicted" is a claim about what agentique DID — it reclaimed the CLI — so it
+ * may only be said about a machine we can see. When the machine is away its
+ * sessions are frozen to `connected: false` (see `markSessionsAway`) precisely
+ * so no row claims to be live; reading that as "evicted" turns one honest
+ * unknown into a false statement, since that CLI is most likely still running
+ * over there. An unreachable machine gets "away", and the row's machine tag
+ * says which one.
  */
 export function deriveRestToken(input: DeriveRestTokenInput): string {
   if (input.merged) return "merged";
   if (input.state === "stopped") return "stopped";
   if (input.state === "done") return "finished";
+  if (input.machineOffline) return "away";
   if (!input.connected) return "evicted";
   return "";
 }

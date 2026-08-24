@@ -141,8 +141,11 @@ interface ThreadRowProps {
 
 function rowAriaLabel(vm: ThreadRowVM): string {
   const name = vm.untitled ? "Untitled" : vm.name;
-  const state = vm.badge ? BADGE_ARIA[vm.badge] : vm.restToken || "at rest";
-  return [name, state, vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
+  // `off` IS the resting state, so its word is the rest token — which knows the
+  // difference between a CLI we reclaimed ("evicted") and a machine we cannot
+  // see ("away"). Every other badge names something happening right now.
+  const spoken = vm.badge && vm.badge !== "off" ? BADGE_ARIA[vm.badge] : vm.restToken;
+  return [name, spoken || "at rest", vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
 }
 
 /**

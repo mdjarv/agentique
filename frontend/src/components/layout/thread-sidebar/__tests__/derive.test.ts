@@ -307,3 +307,31 @@ describe("a cleanly-exited session reaches the shelf, not the archive", () => {
     expect(isStale(unseen)).toBe(false);
   });
 });
+
+// "evicted" is a claim about something agentique DID (reclaimed the CLI). A
+// machine we cannot reach has its sessions frozen to connected:false so no row
+// claims to be live — reading that as "evicted" turns an honest unknown into a
+// false statement about a CLI that is probably still running over there.
+describe("a session on an unreachable machine", () => {
+  it("says away, not evicted", () => {
+    expect(
+      deriveRestToken({ state: "idle", merged: false, connected: false, machineOffline: true }),
+    ).toBe("away");
+  });
+
+  it("still says evicted when the machine is reachable", () => {
+    expect(
+      deriveRestToken({ state: "idle", merged: false, connected: false, machineOffline: false }),
+    ).toBe("evicted");
+  });
+
+  // A real outcome outranks reachability: merged work is merged wherever it ran.
+  it("does not hide a real outcome behind away", () => {
+    expect(
+      deriveRestToken({ state: "stopped", merged: true, connected: false, machineOffline: true }),
+    ).toBe("merged");
+    expect(
+      deriveRestToken({ state: "done", merged: false, connected: false, machineOffline: true }),
+    ).toBe("finished");
+  });
+});

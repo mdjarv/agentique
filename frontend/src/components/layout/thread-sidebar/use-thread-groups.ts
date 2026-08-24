@@ -170,6 +170,9 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
           state: meta.state,
           merged: !!meta.worktreeMerged,
           connected: meta.connected,
+          machineOffline: project.machineId
+            ? machineStatuses[project.machineId] !== "connected"
+            : false,
         }),
         timeLabel: sessionTime(meta),
         struck: isTerminal && !!meta.worktreeMerged,
