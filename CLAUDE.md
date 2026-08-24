@@ -117,10 +117,24 @@ that write fails, fall back to the stdio transport, never to inline JSON.
 is for the log line, not the response body.
 
 **No user row is written before its ceremony verifies.** `credentialCount == 0`
-puts the server in rekey mode, where anyone can claim an account by display
-name; persisting a user at `register/begin` meant one abandoned registration
-opened that window forever. Registration creates the row in `finish`, and
-re-checks the first-user precondition there.
+puts the server in rekey mode; persisting a user at `register/begin` meant one
+abandoned registration opened that window forever. Registration creates the row
+in `finish`, re-checks the first-user precondition there, and the rekey path
+itself takes a one-time code from `agentique auth rekey` — never a display
+name.
+
+**`is_admin` is not a containment boundary, and must not be treated as one.**
+Any authenticated user can create a session, and a session runs agents with
+tool access — that is code execution on the host. So a non-admin already has
+everything `requireFullAccess` guards, by a longer route. Nothing in the schema
+disagrees: `sessions` and `projects` have no owner column, and no list or WS
+topic filters by user.
+
+Keep the existing guards — they are consistent and they cost nothing — but do
+not add a feature whose safety *depends* on them, and do not describe the role
+to users as a restriction. A real boundary means adding ownership to every
+entity and scoping every list, subscription and command; that is a feature, not
+a check. Until then, treat "can log in" as "owns the machine".
 
 ## Subsystem invariants
 

@@ -111,6 +111,11 @@ is safe to treat as less trusted.
 - **First visitor becomes admin.** The first browser to complete registration is registered as the admin user, no invite required. **Register immediately after first start**, especially if the server is reachable beyond localhost — otherwise anyone who reaches the page first claims the admin account.
 - **Additional trusted operators need an invite.** The admin generates invite tokens from the UI; new users register against a token (valid 7 days). Do not invite an untrusted or merely read-only viewer.
 - **Manage auth from the CLI** with `agentique auth status` (list users/credentials/sessions), `agentique auth rekey` (clear credentials + sessions so everyone re-registers their passkey), and `agentique auth reset` (wipe all users — start over). Stop the server before `rekey` or `reset`; the CLI enforces this so no established socket can survive a direct database reset.
+- **Recovery needs the code, not a name.** `agentique auth rekey` prints a
+  one-time code per user (15 minutes). Registering the replacement passkey
+  requires it — otherwise the window where no credentials exist would be an
+  unauthenticated route into the account for anyone watching. Lost or expired?
+  `agentique pair` against the running server mints another.
 
 Guidelines for a safe deployment:
 
