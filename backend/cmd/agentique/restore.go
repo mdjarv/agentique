@@ -20,6 +20,101 @@ var (
 	restorePreOnly bool
 )
 
+// Safety copies of the live database, taken immediately before a restore
+// overwrites it, live in their own filename namespace with their own quota.
+//
+// They deliberately sit OUTSIDE sqliteops' "agentique-pre-" namespace.
+// sqliteops.Snapshot prunes that namespace by string prefix down to five
+// entries on every server start, and "agentique-pre-restore-" is a prefix
+// match — so nesting under it meant routine restarts and restore safety copies
+// competed for the same five slots. Sitting outside it also keeps them clear of
+// the periodic tiered prune, which skips any name whose timestamp does not
+// parse.
+const (
+	restoreSafetyPrefix = "agentique-restore-"
+
+	// legacyRestoreSafetyPrefix is the pre-rename name. Still recognised so
+	// copies written by an older build get listed-out and pruned rather than
+	// orphaned on disk forever.
+	legacyRestoreSafetyPrefix = "agentique-pre-restore-"
+
+	// restoreSafetyRetain caps the safety-copy pool. Each entry is a full-size
+	// copy of the live database and only an explicit restore creates one.
+	restoreSafetyRetain = 5
+
+	restoreSafetyTimeLayout = "20060102-150405"
+)
+
+// isRestoreSafetyCopy reports whether name is a restore safety copy, under
+// either the current or the legacy prefix.
+func isRestoreSafetyCopy(name string) bool {
+	_, ok := parseRestoreSafetyTime(name)
+	return ok
+}
+
+// parseRestoreSafetyTime extracts the timestamp from a restore safety copy's
+// filename. A name that merely starts with the prefix but carries an
+// unparseable timestamp is not one of ours and is left alone.
+func parseRestoreSafetyTime(name string) (time.Time, bool) {
+	if !strings.HasSuffix(name, ".db") {
+		return time.Time{}, false
+	}
+	for _, prefix := range []string{legacyRestoreSafetyPrefix, restoreSafetyPrefix} {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		ts := strings.TrimSuffix(name[len(prefix):], ".db")
+		t, err := time.Parse(restoreSafetyTimeLayout, ts)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+// pruneRestoreSafetyCopies keeps the newest restoreSafetyRetain safety copies
+// in dir and removes the rest. Ordering is by parsed timestamp, not filename,
+// so the legacy and current prefixes interleave correctly.
+//
+// Pruning failures are reported but never abort a restore: the copy this call
+// exists to protect has already been written.
+func pruneRestoreSafetyCopies(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not prune restore safety copies: %v\n", err)
+		return
+	}
+
+	type copyEntry struct {
+		name string
+		t    time.Time
+	}
+	var copies []copyEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		t, ok := parseRestoreSafetyTime(e.Name())
+		if !ok {
+			continue
+		}
+		copies = append(copies, copyEntry{e.Name(), t})
+	}
+
+	if len(copies) <= restoreSafetyRetain {
+		return
+	}
+
+	sort.Slice(copies, func(i, j int) bool { return copies[i].t.After(copies[j].t) })
+	for _, c := range copies[restoreSafetyRetain:] {
+		path := filepath.Join(dir, c.name)
+		if err := os.Remove(path); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not remove %s: %v\n", c.name, err)
+		}
+	}
+}
+
 func init() {
 	restoreCmd.Flags().BoolVarP(&restoreForce, "force", "f", false, "skip confirmation prompt")
 	restoreCmd.Flags().BoolVar(&restorePreOnly, "pre", false, "show only pre-startup snapshots")
@@ -81,15 +176,15 @@ func listBackups(dir string) ([]backupEntry, error) {
 			continue
 		}
 
+		if isRestoreSafetyCopy(name) {
+			continue // hide restore safety copies from listing
+		}
+
 		isPre := strings.HasPrefix(name, "agentique-pre-")
 		isPeriodic := strings.HasPrefix(name, "agentique-") && !isPre
-		isPreRestore := strings.HasPrefix(name, "agentique-pre-restore-")
 
 		if !isPre && !isPeriodic {
 			continue
-		}
-		if isPreRestore {
-			continue // hide pre-restore safety copies from listing
 		}
 		if restorePreOnly && !isPre {
 			continue
@@ -176,12 +271,13 @@ func restoreMode(entries []backupEntry, arg string, dbFile string, backupDir str
 
 	// Safety: backup current DB before overwriting.
 	if _, err := os.Stat(dbFile); err == nil {
-		safetyName := fmt.Sprintf("agentique-pre-restore-%s.db", time.Now().UTC().Format("20060102-150405"))
+		safetyName := restoreSafetyPrefix + time.Now().UTC().Format(restoreSafetyTimeLayout) + ".db"
 		safetyPath := filepath.Join(backupDir, safetyName)
 		if err := copyFile(dbFile, safetyPath); err != nil {
 			return fmt.Errorf("safety backup failed: %w", err)
 		}
 		fmt.Printf("Safety backup: %s\n", safetyName)
+		pruneRestoreSafetyCopies(backupDir)
 	}
 
 	// Atomic restore: write to temp file, then rename.
@@ -252,9 +348,10 @@ func isServerRunning() bool {
 }
 
 func parseTimestampFromName(name string) string {
-	// Strip known prefixes and .db suffix.
+	// Strip known prefixes and .db suffix. Longest first, so the restore
+	// namespaces are not swallowed by the prefixes they extend.
 	ts := name
-	for _, prefix := range []string{"agentique-pre-", "agentique-"} {
+	for _, prefix := range []string{legacyRestoreSafetyPrefix, restoreSafetyPrefix, "agentique-pre-", "agentique-"} {
 		if strings.HasPrefix(ts, prefix) {
 			ts = ts[len(prefix):]
 			break
