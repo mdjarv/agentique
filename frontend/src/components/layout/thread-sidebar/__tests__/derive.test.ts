@@ -174,10 +174,12 @@ describe("isAwake", () => {
 });
 
 describe("deriveRestToken", () => {
-  it("ranks merged over stopped over done", () => {
+  it("ranks merged over stopped over finished", () => {
     expect(deriveRestToken({ state: "stopped", merged: true, connected: true })).toBe("merged");
     expect(deriveRestToken({ state: "stopped", merged: false, connected: true })).toBe("stopped");
-    expect(deriveRestToken({ state: "done", merged: false, connected: true })).toBe("done");
+    // "finished", never "done": the state means the CLI exited, and "done" would
+    // read as the user's verdict on the work — that verdict is Archive.
+    expect(deriveRestToken({ state: "done", merged: false, connected: true })).toBe("finished");
   });
 
   it("marks a disconnected idle session as evicted", () => {
@@ -206,6 +208,8 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     struck: false,
     unread: false,
     pinned: false,
+    archived: false,
+    canArchive: true,
     lastActivity: 0,
     ...overrides,
   };
@@ -271,5 +275,35 @@ describe("isStale", () => {
   it("waits out the quiet period", () => {
     expect(isStale({ ...base, now: DAY - 1 })).toBe(false);
     expect(isStale({ ...base, now: DAY + 1 })).toBe(true);
+  });
+});
+
+// The seam this whole change exists for: a cleanly-exited CLI leaves a session
+// in a terminal state and nothing more, so the "Finished earlier" shelf is what
+// eventually collects it. Before, the runtime stamped completed_at on that same
+// transition and the row went straight to the collapsed Archived section.
+describe("a cleanly-exited session reaches the shelf, not the archive", () => {
+  const now = 1_000_000_000_000;
+
+  it("stays in Open until it has been quiet for a day", () => {
+    const justFinished = { state: "done", unread: false, lastActivity: now - 60_000, now };
+    expect(isStale(justFinished)).toBe(false);
+  });
+
+  it("becomes stale once quiet, exactly like stopped and failed", () => {
+    const quiet = (state: string) => ({
+      state,
+      unread: false,
+      lastActivity: now - STALE_AFTER_MS - 1,
+      now,
+    });
+    expect(isStale(quiet("done"))).toBe(true);
+    expect(isStale(quiet("stopped"))).toBe(true);
+    expect(isStale(quiet("failed"))).toBe(true);
+  });
+
+  it("never leaves an unseen outcome on the shelf", () => {
+    const unseen = { state: "done", unread: true, lastActivity: now - STALE_AFTER_MS - 1, now };
+    expect(isStale(unseen)).toBe(false);
   });
 });

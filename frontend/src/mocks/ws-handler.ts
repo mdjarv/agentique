@@ -103,7 +103,7 @@ function schedulePushEvents(client: WsClientConnection, projectId: string) {
 
     // Push result events to trigger hasUnseenCompletion for sessions the user hasn't viewed
     const simulateUnseen =
-      (session.state === "done" && session.completedAt) ||
+      (session.state === "done" && session.archivedAt) ||
       session.id === SESSION_IDS.imageGallery ||
       session.id === SESSION_IDS.schedulerTests;
     if (simulateUnseen) {
@@ -1061,11 +1061,31 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
       break;
     }
 
-    case "session.mark-done":
+    // Archive stamps archivedAt and releases the CLI — it never claims "done",
+    // which is the runtime's word for the process having exited.
+    case "session.archive":
       respond(client, msg.id);
       push(client, "session.state", {
         sessionId: p.sessionId,
-        state: "done",
+        state: "stopped",
+        connected: false,
+        archivedAt: new Date().toISOString(),
+        hasDirtyWorktree: false,
+        hasUncommitted: false,
+        worktreeMerged: false,
+        commitsAhead: 0,
+        commitsBehind: 0,
+        branchMissing: false,
+        version: Date.now(),
+      });
+      break;
+
+    // The exact inverse: one field cleared, state untouched.
+    case "session.unarchive":
+      respond(client, msg.id);
+      push(client, "session.state", {
+        sessionId: p.sessionId,
+        state: "stopped",
         connected: false,
         hasDirtyWorktree: false,
         hasUncommitted: false,

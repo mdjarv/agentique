@@ -71,7 +71,10 @@ test.describe("Session stop and resume", () => {
     await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
   });
 
-  test("mark-done shows Session complete banner", async ({ page, request }) => {
+  test("archive releases the CLI without claiming the session is done", async ({
+    page,
+    request,
+  }) => {
     await seedFixture(request, stopSeed([BASIC_SCENARIO]));
     const composer = await navigateToSession(page, SESSION_NAME);
 
@@ -80,19 +83,24 @@ test.describe("Session stop and resume", () => {
     await expect(page.getByText("The configuration looks good")).toBeVisible({ timeout: 10_000 });
     await waitForState(request, STOP_SESSION_ID, "idle");
 
-    // Click mark-done button in the session header.
-    const markDoneBtn = page.getByTitle("Mark done");
-    await expect(markDoneBtn).toBeVisible();
-    await markDoneBtn.click();
+    // Click the archive button in the session header.
+    const archiveBtn = page.getByTitle("Archive session");
+    await expect(archiveBtn).toBeVisible();
+    await archiveBtn.click();
 
-    // Marking done finishes the session and drops you on the new-session panel,
-    // so the banner is only observable on the way back in. Navigate by URL: a
-    // completed session is no longer in the sidebar's active list.
-    await waitForState(request, STOP_SESSION_ID, "done");
+    // Archiving files the session away and drops you on the new-session panel,
+    // so the banner is only observable on the way back in. Navigate by URL: an
+    // archived session is no longer in the sidebar's open list.
+    //
+    // The state is "stopped", not "done": archive released the idle CLI through
+    // the normal stop path rather than fabricating a lifecycle state of its own.
+    await waitForState(request, STOP_SESSION_ID, "stopped");
     await page.goto(`/project/${TEST_PROJECT.slug}/session/${STOP_SESSION_ID.slice(0, 8)}`);
 
-    // Resume banner should show "Session complete" with "Continue" button.
-    await expect(page.getByText("Session complete")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+    await expect(page.getByText("Session interrupted")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+
+    // And it is offered back: the action inverts on an archived session.
+    await expect(page.getByTitle("Unarchive session")).toBeVisible();
   });
 });

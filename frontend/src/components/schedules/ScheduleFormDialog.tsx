@@ -128,7 +128,7 @@ export function ScheduleFormDialog({
     const byProject = new Map<string, SessionOption[]>();
     for (const data of Object.values(sessionsMap)) {
       const meta = data.meta;
-      if (meta.completedAt) continue;
+      if (meta.archivedAt) continue;
       const list = byProject.get(meta.projectId) ?? [];
       list.push({ id: meta.id, name: meta.name || meta.id.slice(0, 8), projectId: meta.projectId });
       byProject.set(meta.projectId, list);

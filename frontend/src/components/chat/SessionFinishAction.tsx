@@ -1,4 +1,4 @@
-import { Check, CheckCircle2 } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCircle2 } from "lucide-react";
 import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
@@ -7,7 +7,7 @@ import type { SessionMetadata } from "~/stores/chat-store";
 
 type GitActions = ReturnType<typeof useGitActions>;
 
-export type FinishActionKind = "merge" | "merged" | "markDone" | null;
+export type FinishActionKind = "merge" | "merged" | "archive" | null;
 
 /**
  * Which finishing control (if any) applies to a session in its current state.
@@ -24,8 +24,10 @@ export function finishActionKind(meta: SessionMetadata, git?: GitActions): Finis
 
   if (git && isWorktree && !meta.branchMissing && !isMerged && ahead > 0 && !isBusy) return "merge";
   if (isWorktree && isMerged) return "merged";
+  // Archive is offered only off a settled session — the server refuses it while
+  // a turn is in flight, and the composer already owns Stop mid-turn.
   if (meta.state === "idle" || meta.state === "stopped" || meta.state === "failed")
-    return "markDone";
+    return "archive";
   return null;
 }
 
@@ -33,13 +35,14 @@ interface SessionFinishActionProps {
   meta: SessionMetadata;
   git?: GitActions;
   projectGitStatus?: ProjectGitStatus;
-  onMarkDone: () => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
 }
 
 /**
  * The mobile "finish the session" control: a single, state-aware slot that lives
  * on the tab strip. It shows the right verb for where the session is — merge
- * when there are commits ahead, mark-done when there's nothing to merge, a quiet
+ * when there are commits ahead, archive when there's nothing to merge, a quiet
  * confirmation once merged — and nothing while the session is busy (the composer
  * already owns Stop mid-turn). Desktop keeps its own inline controls in the header.
  */
@@ -47,7 +50,8 @@ export function SessionFinishAction({
   meta,
   git,
   projectGitStatus,
-  onMarkDone,
+  onArchive,
+  onUnarchive,
 }: SessionFinishActionProps) {
   const kind = finishActionKind(meta, git);
 
@@ -71,17 +75,18 @@ export function SessionFinishAction({
     );
   }
 
-  if (kind === "markDone") {
+  if (kind === "archive") {
+    const archived = !!meta.archivedAt;
     return (
       <Button
         variant="ghost"
         size="sm"
         className="h-7 shrink-0 gap-1 rounded-md border border-success/40 px-2.5 text-xs text-success hover:bg-success/10"
-        title="Mark session done"
-        onClick={onMarkDone}
+        title={archived ? "Unarchive session" : "Archive session"}
+        onClick={archived ? onUnarchive : onArchive}
       >
-        <Check className="size-3.5" />
-        Mark done
+        {archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+        {archived ? "Unarchive" : "Archive"}
       </Button>
     );
   }

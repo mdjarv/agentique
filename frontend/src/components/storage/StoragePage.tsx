@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  CheckCircle2,
+  Archive,
   ChevronDown,
   ChevronRight,
   HardDrive,
@@ -35,12 +35,15 @@ type DeleteTarget =
   | { kind: "orphan"; path: string; label: string; bytes: number }
   | { kind: "orphan-all"; count: number; bytes: number }
   | { kind: "session"; id: string; label: string; bytes: number }
-  // Bulk-delete completed sessions. scope is "all projects" or a project name
+  // Bulk-delete MERGED sessions. Deliberately not archived ones: archiving is a
+  // one-click sidebar tidy (including a whole-shelf sweep), while this removes
+  // worktrees AND branches AND rows. Only merged work is safe in bulk — its
+  // commits are already on main. scope is "all projects" or a project name
   // (for the dialog copy); ids carries the session IDs to remove.
-  | { kind: "clean-completed"; scope: string; ids: string[]; bytes: number };
+  | { kind: "clean-merged"; scope: string; ids: string[]; bytes: number };
 
 const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + s.bytes, 0);
-const completedOf = (sessions: SessionStorage[]) => sessions.filter((s) => s.completed);
+const mergedOf = (sessions: SessionStorage[]) => sessions.filter((s) => s.merged);
 
 const categoryColors: Record<string, string> = {
   worktrees: "bg-sky-500",
@@ -94,7 +97,7 @@ export function StoragePage() {
         });
         const removed = results.filter((r) => r.status === "fulfilled").length;
         toast.success(`Removed ${removed} of ${orphans.length} orphaned worktrees`);
-      } else if (deleteTarget.kind === "clean-completed") {
+      } else if (deleteTarget.kind === "clean-merged") {
         const { results } = await deleteSessionsBulk(ws, deleteTarget.ids);
         const removed = results.filter((r) => r.success).length;
         results
@@ -102,7 +105,7 @@ export function StoragePage() {
           .forEach((r) => {
             console.error("Failed to delete session", r.sessionId, r.error);
           });
-        toast.success(`Deleted ${removed} of ${deleteTarget.ids.length} completed sessions`);
+        toast.success(`Deleted ${removed} of ${deleteTarget.ids.length} merged sessions`);
       } else {
         await deleteSession(ws, deleteTarget.id);
         toast.success(`Deleted session ${deleteTarget.label}`);
@@ -119,9 +122,8 @@ export function StoragePage() {
   const disk = usage?.disk;
   const usedPct = disk ? Math.min(Math.round(disk.usagePercent), 100) : 0;
 
-  // Completed sessions across all projects — mirrors the sidebar's "completed"
-  // group so the disk view can scrub them in one click.
-  const allCompleted = usage ? usage.projects.flatMap((p) => completedOf(p.sessions)) : [];
+  // Merged sessions across all projects — the only bulk-safe set (see DeleteTarget).
+  const allMerged = usage ? usage.projects.flatMap((p) => mergedOf(p.sessions)) : [];
 
   return (
     <div className="flex flex-col h-full">
@@ -134,22 +136,22 @@ export function StoragePage() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {allCompleted.length > 0 && (
+          {allMerged.length > 0 && (
             <Button
               variant="outline"
               size="sm"
               className="text-destructive hover:text-destructive"
               onClick={() =>
                 setDeleteTarget({
-                  kind: "clean-completed",
+                  kind: "clean-merged",
                   scope: "all projects",
-                  ids: allCompleted.map((s) => s.sessionId),
-                  bytes: sumBytes(allCompleted),
+                  ids: allMerged.map((s) => s.sessionId),
+                  bytes: sumBytes(allMerged),
                 })
               }
             >
               <Sparkles className="size-3.5" />
-              Delete all completed ({allCompleted.length})
+              Delete all merged ({allMerged.length})
             </Button>
           )}
           <Button
@@ -274,11 +276,11 @@ export function StoragePage() {
                     bytes: s.bytes,
                   })
                 }
-                onCleanCompleted={() => {
-                  const done = completedOf(p.sessions);
+                onCleanMerged={() => {
+                  const done = mergedOf(p.sessions);
                   if (done.length === 0) return;
                   setDeleteTarget({
-                    kind: "clean-completed",
+                    kind: "clean-merged",
                     scope: p.name || p.slug,
                     ids: done.map((s) => s.sessionId),
                     bytes: sumBytes(done),
@@ -305,8 +307,8 @@ export function StoragePage() {
             <AlertDialogTitle>
               {deleteTarget?.kind === "orphan-all"
                 ? `Delete ${deleteTarget.count} orphaned worktrees?`
-                : deleteTarget?.kind === "clean-completed"
-                  ? `Delete ${deleteTarget.ids.length} completed session${deleteTarget.ids.length === 1 ? "" : "s"}?`
+                : deleteTarget?.kind === "clean-merged"
+                  ? `Delete ${deleteTarget.ids.length} merged session${deleteTarget.ids.length === 1 ? "" : "s"}?`
                   : deleteTarget?.kind === "session"
                     ? "Delete session?"
                     : "Delete orphaned worktree?"}
@@ -316,8 +318,8 @@ export function StoragePage() {
                 ? `This stops the session "${deleteTarget.label}" and removes its worktree and branch. Frees ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
                 : deleteTarget?.kind === "orphan-all"
                   ? `Permanently removes all orphaned worktree directories, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
-                  : deleteTarget?.kind === "clean-completed"
-                    ? `Deletes every completed session in ${deleteTarget.scope}, removing their worktrees and branches. Frees ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
+                  : deleteTarget?.kind === "clean-merged"
+                    ? `Deletes every merged session in ${deleteTarget.scope}, removing their worktrees and branches. Frees ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
                     : deleteTarget
                       ? `Permanently removes ${deleteTarget.label}, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
                       : ""}
@@ -374,15 +376,15 @@ function ProjectCard({
   expanded,
   onToggle,
   onDeleteSession,
-  onCleanCompleted,
+  onCleanMerged,
 }: {
   project: ProjectStorage;
   expanded: boolean;
   onToggle: () => void;
   onDeleteSession: (s: SessionStorage) => void;
-  onCleanCompleted: () => void;
+  onCleanMerged: () => void;
 }) {
-  const completedCount = project.sessions.filter((s) => s.completed).length;
+  const mergedCount = project.sessions.filter((s) => s.merged).length;
   return (
     <div className="rounded-lg border bg-card/40">
       <div className="group flex items-center gap-2 w-full px-3 py-2.5 hover:bg-muted/30 transition-colors rounded-lg">
@@ -403,20 +405,20 @@ function ProjectCard({
           <span className="font-medium text-sm truncate">{project.name || project.slug}</span>
           <span className="text-xs text-muted-foreground shrink-0">
             {project.sessions.length} session{project.sessions.length === 1 ? "" : "s"}
-            {completedCount > 0 && (
-              <span className="text-muted-foreground/70"> · {completedCount} completed</span>
+            {mergedCount > 0 && (
+              <span className="text-muted-foreground/70"> · {mergedCount} merged</span>
             )}
           </span>
         </button>
-        {completedCount > 0 && (
+        {mergedCount > 0 && (
           <button
             type="button"
-            onClick={onCleanCompleted}
+            onClick={onCleanMerged}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
-            title={`Delete ${completedCount} completed session${completedCount === 1 ? "" : "s"}`}
+            title={`Delete ${mergedCount} merged session${mergedCount === 1 ? "" : "s"}`}
           >
             <Trash2 className="size-3" />
-            completed ({completedCount})
+            merged ({mergedCount})
           </button>
         )}
         <span className="text-sm tabular-nums font-medium shrink-0">
@@ -439,20 +441,20 @@ function SessionRow({ session, onDelete }: { session: SessionStorage; onDelete: 
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/40 text-sm",
-        session.completed && "text-muted-foreground",
+        session.archived && "text-muted-foreground",
       )}
     >
       <span className="truncate min-w-0 flex-1">
         {session.name || (session.orphaned ? session.worktreePath : session.sessionId)}
       </span>
       {!session.orphaned &&
-        (session.completed ? (
+        (session.archived ? (
           <Badge
             variant="outline"
             className="text-[10px] shrink-0 gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
           >
-            <CheckCircle2 className="size-2.5" />
-            completed
+            <Archive className="size-2.5" />
+            archived
           </Badge>
         ) : (
           session.state && (

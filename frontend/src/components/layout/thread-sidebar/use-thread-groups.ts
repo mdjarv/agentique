@@ -2,9 +2,11 @@
  * Maps the chat/app/pulse/machine stores into the thread-sidebar view-model.
  *
  * All derivation is pure (`derive.ts`); this hook owns only the store reads
- * and the Pinned / Open / Archived partition. Archived means `completedAt`
- * is set (the repo's existing "user moved it aside" primitive); pinned rows
- * are excluded from Open/Archived so a session lives in exactly one section.
+ * and the Pinned / Open / Archived partition. Archived means `archivedAt` is
+ * set, which is now user intent and nothing else — the runtime stopped writing
+ * that field, so a session the CLI merely exited stays visible and falls to the
+ * "Finished earlier" shelf on its own schedule. Pinned rows are excluded from
+ * Open/Archived so a session lives in exactly one section.
  */
 import { useMemo } from "react";
 import { formatPulse } from "~/components/layout/session/PulseStatus";
@@ -53,8 +55,13 @@ function questionSummary(data: SessionData): string | undefined {
 }
 
 function sessionTime(meta: SessionData["meta"]): string {
-  const ts = meta.completedAt || meta.lastQueryAt || meta.updatedAt;
+  const ts = meta.archivedAt || meta.lastQueryAt || meta.updatedAt;
   return ts ? relativeTime(ts) : "";
+}
+
+/** Archiving is refused mid-turn, so the row must not offer it. */
+function canArchive(meta: SessionData["meta"]): boolean {
+  return meta.state !== "running" && meta.state !== "merging";
 }
 
 function lastActivity(meta: SessionData["meta"]): number {
@@ -170,6 +177,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         todo: todoTotal > 0 ? { done: todoDone, total: todoTotal } : undefined,
         workers: workerCounts.get(meta.id),
         pinned: meta.pinned,
+        archived: !!meta.archivedAt,
+        canArchive: canArchive(meta),
         remoteMachineLabel,
         remoteMachineIcon: remoteMachine?.icon || undefined,
         remoteMachineOffline: project.machineId
@@ -187,8 +196,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       if (meta.pinned) {
         pinOrderById.set(meta.id, meta.pinOrder);
         pinned.push(vm);
-      } else if (meta.completedAt) {
-        archivedAtById.set(meta.id, Date.parse(meta.completedAt) || 0);
+      } else if (meta.archivedAt) {
+        archivedAtById.set(meta.id, Date.parse(meta.archivedAt) || 0);
         archived.push(vm);
       } else if (
         // A search flattens the shelf so matches never hide behind it.

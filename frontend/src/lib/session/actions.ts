@@ -360,14 +360,14 @@ export function generateSessionName(ws: WsClient, sessionId: string): Promise<{ 
   return generateNameRpc(ws, { sessionId });
 }
 
-const markDoneRpc = define<void, { sessionId: string }>("session.mark-done");
-export function markSessionDone(ws: WsClient, sessionId: string): Promise<void> {
-  return markDoneRpc(ws, { sessionId });
+const archiveRpc = define<void, { sessionId: string }>("session.archive");
+export function archiveSession(ws: WsClient, sessionId: string): Promise<void> {
+  return archiveRpc(ws, { sessionId });
 }
 
-const unmarkDoneRpc = define<void, { sessionId: string }>("session.unmark-done");
-export function unmarkSessionDone(ws: WsClient, sessionId: string): Promise<void> {
-  return unmarkDoneRpc(ws, { sessionId });
+const unarchiveRpc = define<void, { sessionId: string }>("session.unarchive");
+export function unarchiveSession(ws: WsClient, sessionId: string): Promise<void> {
+  return unarchiveRpc(ws, { sessionId });
 }
 
 const setPinnedRpc = define<void, { sessionId: string; pinned: boolean; pinOrder: number }>(
@@ -455,7 +455,7 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
     hasDirtyWorktree: gs.hasDirtyWorktree,
     hasUncommitted: gs.hasUncommitted,
     worktreeMerged: gs.worktreeMerged,
-    completedAt: gs.completedAt,
+    archivedAt: gs.archivedAt,
     commitsAhead: gs.commitsAhead,
     commitsBehind: gs.commitsBehind,
     branchMissing: gs.branchMissing,
@@ -473,7 +473,7 @@ const resumeRpc = define<
     hasDirtyWorktree: boolean;
     hasUncommitted: boolean;
     worktreeMerged: boolean;
-    completedAt?: string;
+    archivedAt?: string;
     commitsAhead: number;
     commitsBehind: number;
     branchMissing: boolean;
@@ -494,7 +494,7 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     hasDirtyWorktree: info.hasDirtyWorktree,
     hasUncommitted: info.hasUncommitted,
     worktreeMerged: info.worktreeMerged,
-    completedAt: info.completedAt,
+    archivedAt: info.archivedAt,
     commitsAhead: info.commitsAhead,
     commitsBehind: info.commitsBehind,
     branchMissing: info.branchMissing,

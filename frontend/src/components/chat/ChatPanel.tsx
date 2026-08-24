@@ -40,12 +40,12 @@ import type { PromptTemplate } from "~/lib/generated-types";
 import { getProjectColor } from "~/lib/project-colors";
 import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
+  archiveSession,
   createSession,
   enqueueMessage,
   interruptSession,
   isGitFresh,
   type ModelId,
-  markSessionDone,
   type ProviderId,
   refreshGitStatus,
   resumeSession,
@@ -53,6 +53,7 @@ import {
   setPermissionMode,
   setSessionModel,
   stopSession,
+  unarchiveSession,
 } from "~/lib/session/actions";
 import { loadSessionHistory } from "~/lib/session/history";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
@@ -263,12 +264,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   // Load history on mount or session switch
   const sessionExists = !!meta;
   const hasTurns = turns.length > 0;
-  const needsCompletedBackfill = !!meta?.completedAt && hasTurns && !historyComplete;
+  const needsArchivedBackfill = !!meta?.archivedAt && hasTurns && !historyComplete;
   useEffect(() => {
-    if (sessionExists && (!hasTurns || needsCompletedBackfill)) {
+    if (sessionExists && (!hasTurns || needsArchivedBackfill)) {
       loadSessionHistory(ws, sessionId);
     }
-  }, [ws, sessionId, sessionExists, hasTurns, needsCompletedBackfill]);
+  }, [ws, sessionId, sessionExists, hasTurns, needsArchivedBackfill]);
 
   // Redirect if session was deleted or doesn't exist
   useEffect(() => {
@@ -378,9 +379,15 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId]);
 
-  const handleMarkDone = useCallback(() => {
-    markSessionDone(ws, sessionId).catch((err) => {
-      toast.error(getErrorMessage(err, "Failed to mark done"));
+  const handleArchive = useCallback(() => {
+    archiveSession(ws, sessionId).catch((err) => {
+      toast.error(getErrorMessage(err, "Failed to archive session"));
+    });
+  }, [ws, sessionId]);
+
+  const handleUnarchive = useCallback(() => {
+    unarchiveSession(ws, sessionId).catch((err) => {
+      toast.error(getErrorMessage(err, "Failed to unarchive session"));
     });
   }, [ws, sessionId]);
 
@@ -534,7 +541,8 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                 meta={meta}
                 git={git}
                 projectGitStatus={projectGitStatus}
-                onMarkDone={handleMarkDone}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
               />
             )}
           </div>

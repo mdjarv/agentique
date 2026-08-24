@@ -161,7 +161,7 @@ export function CommandDeck() {
   const projects = useAppStore((s) => s.projects);
 
   const { needs, live, review } = useMemo(() => {
-    const all = Object.values(sessions).filter((d) => !d.meta.completedAt);
+    const all = Object.values(sessions).filter((d) => !d.meta.archivedAt);
     return {
       needs: all.filter((d) => d.pendingApproval || d.pendingQuestion),
       live: all.filter(

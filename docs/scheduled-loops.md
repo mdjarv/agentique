@@ -274,12 +274,12 @@ boot pass to deliver (the daily-9am loop that crashed at 9:01 still runs its
 9am slot at boot instead of silently skipping the day).
 
 **Session lifecycle coupling** (corrected seams). Auto-pause on completion
-hooks the **two user-intent paths only**: the mark-done RPC flow and the merge
+hooks the **two user-intent paths only**: the archive RPC flow and the merge
 finalize path in `git_service.go`, synchronously, with
 `pause_reason='session-completed'`. Explicitly **not** `mgr.OnSessionComplete`
 / runtime `StateDone` — that fires on any clean CLI exit (which lazy-resume
 handles transparently) and would pause healthy loops. Pausing resolves queued
-runs as skipped. The fire path independently re-checks `completed` /
+runs as skipped. The fire path independently re-checks `archived` /
 `worktree_merged` at delivery time inside its transaction and converts the run
 to `skipped('session completed')` + auto-pause — necessary because `Query`
 otherwise *unsets* both flags (`persistQueryStart`), i.e. an in-flight fire

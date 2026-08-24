@@ -103,6 +103,25 @@ state: `State()` reports Idle for one dispatch before the completion that
 caused it is broadcast. The pipeline's `turnOpen` is a different concern —
 outcome attribution — and is not a busy signal.
 
+### Archived vs done
+
+Three independent facts, three owners. `state` is what the CLI process is doing
+and belongs to the runtime — `done` means it exited cleanly, never "the user is
+finished with this". `archived_at` is the user filing a session away (the
+sidebar's Archived section) and is written **only** by an explicit gesture:
+`ArchiveSession`, merge `complete`/`delete`, a local session's commit. The
+runtime's `StateDone` seam must never write it — that let a subprocess exiting
+hide a session in a collapsed section, and it is the same line
+`SetOnSessionFinished` already draws. `worktree_merged` is the git outcome.
+
+So: archiving never transitions state (it releases an *idle* CLI through
+`StopSession`, so the resulting state is one that actually happened), unarchive
+is its exact inverse, and archiving is refused while a turn is in flight —
+`TurnInFlight`, not `State()`. Bulk *destructive* actions key on
+`worktree_merged`, never on archived: archiving is a one-click tidy (including a
+whole-shelf sweep), and only merged work is safe to delete in bulk. UI copy says
+"Archive"; `done` reads as "finished" wherever it surfaces.
+
 ### Channels / teams — `docs/discussion-sessionless-personas.md`
 
 The `messages` table is the source of truth for channel timelines.

@@ -29,9 +29,11 @@ const config = {
     bg: "bg-destructive/5",
     iconColor: "text-destructive",
   },
+  // "done" is the CLI exiting cleanly, not the user's verdict on the work —
+  // so the copy names the process, and Archive owns the verdict.
   done: {
     icon: CheckCircle,
-    label: "Session complete",
+    label: "Session finished",
     button: "Continue",
     border: "border-success/30",
     bg: "bg-success/5",

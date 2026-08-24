@@ -30,6 +30,8 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     struck: false,
     unread: false,
     pinned: false,
+    archived: false,
+    canArchive: true,
     lastActivity: Date.now(),
     ...overrides,
   };

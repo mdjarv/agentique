@@ -34,7 +34,7 @@ export function useSessionLifecycleSubscription(
         connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
-        completedAt: payload.completedAt,
+        archivedAt: payload.archivedAt,
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,
@@ -46,8 +46,8 @@ export function useSessionLifecycleSubscription(
       });
       useChannelStore.getState().updateMemberState(sid, payload.state, payload.connected);
 
-      const becameCompleted = payload.completedAt && prevMeta && !prevMeta.completedAt;
-      if (becameCompleted && wasActive) {
+      const becameArchived = payload.archivedAt && prevMeta && !prevMeta.archivedAt;
+      if (becameArchived && wasActive) {
         const projectId = prevMeta.projectId;
         const projectSlug =
           useAppStore.getState().projects.find((p) => p.id === projectId)?.slug ?? projectId;

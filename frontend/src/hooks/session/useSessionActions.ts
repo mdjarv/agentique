@@ -1,14 +1,15 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
+  archiveSession,
   cleanSession,
   deleteSession,
-  markSessionDone,
   renameSession,
   resetConversation,
   restartSession,
   setSessionIcon,
   stopSession,
+  unarchiveSession,
 } from "~/lib/session/actions";
 import { getErrorMessage } from "~/lib/utils";
 import type { WsClient } from "~/lib/ws-client";
@@ -116,9 +117,15 @@ export function useSessionActions(ws: WsClient, meta: SessionMetadata) {
     [ws, sessionId],
   );
 
-  const handleMarkDone = useCallback(() => {
-    markSessionDone(ws, sessionId).catch((err) => {
-      toast.error(getErrorMessage(err, "Failed to mark done"));
+  const handleArchive = useCallback(() => {
+    archiveSession(ws, sessionId).catch((err) => {
+      toast.error(getErrorMessage(err, "Failed to archive session"));
+    });
+  }, [ws, sessionId]);
+
+  const handleUnarchive = useCallback(() => {
+    unarchiveSession(ws, sessionId).catch((err) => {
+      toast.error(getErrorMessage(err, "Failed to unarchive session"));
     });
   }, [ws, sessionId]);
 
@@ -134,6 +141,7 @@ export function useSessionActions(ws: WsClient, meta: SessionMetadata) {
     handleRestart,
     handleResetConversation,
     handleIconChange,
-    handleMarkDone,
+    handleArchive,
+    handleUnarchive,
   };
 }

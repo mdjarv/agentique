@@ -62,7 +62,7 @@ export function subscribeAndLoad(
         .getState()
         .setSessions(result.sessions as SessionMetadata[], projectId, forceHistory);
       for (const session of result.sessions) {
-        if (!session.completedAt) {
+        if (!session.archivedAt) {
           loadSessionHistory(ws, session.id, forceHistory);
         }
       }

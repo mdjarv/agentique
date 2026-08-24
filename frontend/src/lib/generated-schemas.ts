@@ -214,7 +214,7 @@ export const SessionInfoSchema = z.object({
   worktreePath: z.string().optional(),
   worktreeBranch: z.string().optional(),
   worktreeMerged: z.boolean().optional(),
-  completedAt: z.string().optional(),
+  archivedAt: z.string().optional(),
   hasDirtyWorktree: z.boolean().optional(),
   hasUncommitted: z.boolean().optional(),
   commitsAhead: z.number(),
@@ -298,7 +298,7 @@ export const GitSnapshotSchema = z.object({
   hasDirtyWorktree: z.boolean(),
   hasUncommitted: z.boolean(),
   worktreeMerged: z.boolean(),
-  completedAt: z.string().optional(),
+  archivedAt: z.string().optional(),
   commitsAhead: z.number(),
   commitsBehind: z.number(),
   branchMissing: z.boolean(),
@@ -459,8 +459,9 @@ export const SessionStorageSchema = z.object({
   worktreePath: z.string(),
   bytes: z.number(),
   updatedAt: z.string(),
-  completedAt: z.string(),
-  completed: z.boolean(),
+  archivedAt: z.string(),
+  archived: z.boolean(),
+  merged: z.boolean(),
   orphaned: z.boolean(),
 });
 
@@ -658,11 +659,11 @@ export const SessionGenerateCommitMsgPayloadSchema = z.object({
   sessionId: z.string(),
 });
 
-export const SessionMarkDonePayloadSchema = z.object({
+export const SessionArchivePayloadSchema = z.object({
   sessionId: z.string(),
 });
 
-export const SessionUnmarkDonePayloadSchema = z.object({
+export const SessionUnarchivePayloadSchema = z.object({
   sessionId: z.string(),
 });
 

@@ -1,7 +1,8 @@
 import {
+  Archive,
+  ArchiveRestore,
   ArrowDown,
   ArrowUp,
-  CircleCheck,
   ExternalLink,
   GitBranch,
   GitMerge,
@@ -42,14 +43,15 @@ import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
+  archiveSession,
   createPR,
   deleteSession,
   interruptSession,
   type MergeMode,
-  markSessionDone,
   mergeSession,
   rebaseSession,
   renameSession,
+  unarchiveSession,
 } from "~/lib/session/actions";
 import { getErrorMessage } from "~/lib/utils";
 import { useChatStore } from "~/stores/chat-store";
@@ -78,7 +80,9 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
   const hasConflicts = meta.mergeStatus === "conflicts";
 
   const canInterrupt = meta.state === "running";
-  const canMarkDone = meta.state === "idle";
+  const archived = !!meta.archivedAt;
+  // Archiving is refused mid-turn; unarchiving is always available.
+  const canArchive = archived || (meta.state !== "running" && meta.state !== "merging");
   const branchMissing = !!meta.branchMissing;
   const canCreatePR = hasWorktree && !merged && ahead && !meta.prUrl && !branchMissing;
   const hasOpenPR = !!meta.prUrl;
@@ -86,7 +90,7 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     hasWorktree && ahead && !behind && !hasConflicts && !branchMissing && meta.state !== "running";
   const canRebase = hasWorktree && !merged && behind && !branchMissing;
 
-  const hasStateActions = canInterrupt || canMarkDone;
+  const hasStateActions = canInterrupt || canArchive;
   const hasGitActions = canCreatePR || hasOpenPR || canMerge || canRebase;
 
   const handleInterrupt = async () => {
@@ -97,11 +101,19 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
     }
   };
 
-  const handleMarkDone = async () => {
+  const handleArchive = async () => {
     try {
-      await markSessionDone(ws, sessionId);
+      await archiveSession(ws, sessionId);
     } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to mark done"));
+      toast.error(getErrorMessage(err, "Failed to archive session"));
+    }
+  };
+
+  const handleUnarchive = async () => {
+    try {
+      await unarchiveSession(ws, sessionId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to unarchive session"));
     }
   };
 
@@ -243,8 +255,12 @@ export function SessionHoverCard({ sessionId, children }: SessionHoverCardProps)
             {canInterrupt && (
               <ActionItem icon={Pause} label="Interrupt" onClick={handleInterrupt} />
             )}
-            {canMarkDone && (
-              <ActionItem icon={CircleCheck} label="Mark done" onClick={handleMarkDone} />
+            {canArchive && (
+              <ActionItem
+                icon={archived ? ArchiveRestore : Archive}
+                label={archived ? "Unarchive" : "Archive"}
+                onClick={archived ? handleUnarchive : handleArchive}
+              />
             )}
 
             {hasStateActions && hasGitActions && <Separator className="my-1" />}

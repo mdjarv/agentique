@@ -3,9 +3,11 @@
  *
  * Pinned (drag-orderable) / Open (attention-first) / Archived (collapsed).
  * Rows come from `useThreadGroups`; pin, archive, and reorder go over WS and
- * settle via the `session.pinned` / `session.state` pushes. Archive reuses
- * the existing mark-done primitive, so archiving the active session also
- * triggers the existing navigate-to-sibling behavior.
+ * settle via the `session.pinned` / `session.state` pushes.
+ *
+ * Archive files a session away and nothing more — it does not end a run, and
+ * the server refuses it outright while a turn is in flight, which is why rows
+ * gate the action on `vm.canArchive`.
  */
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
@@ -13,7 +15,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { markSessionDone, setSessionPinned, unmarkSessionDone } from "~/lib/session/actions";
+import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -65,7 +67,7 @@ export function ThreadSidebar() {
 
   const archive = useCallback(
     (vm: ThreadRowVM) => {
-      markSessionDone(ws, vm.sessionId).catch((err) =>
+      archiveSession(ws, vm.sessionId).catch((err) =>
         toast.error(getErrorMessage(err, "Failed to archive session")),
       );
     },
@@ -74,7 +76,7 @@ export function ThreadSidebar() {
 
   const unarchive = useCallback(
     (vm: ThreadRowVM) => {
-      unmarkSessionDone(ws, vm.sessionId).catch((err) =>
+      unarchiveSession(ws, vm.sessionId).catch((err) =>
         toast.error(getErrorMessage(err, "Failed to unarchive session")),
       );
     },
@@ -85,9 +87,9 @@ export function ThreadSidebar() {
   // Both directions settle per-session — a remote machine that is offline
   // (or runs a binary without the command) must not sink the whole sweep.
   const archiveAllStale = useCallback(() => {
-    const ids = groups.stale.map((vm) => vm.sessionId);
+    const ids = groups.stale.filter((vm) => vm.canArchive).map((vm) => vm.sessionId);
     if (ids.length === 0) return;
-    Promise.allSettled(ids.map((id) => markSessionDone(ws, id))).then((results) => {
+    Promise.allSettled(ids.map((id) => archiveSession(ws, id))).then((results) => {
       const archived = ids.filter((_, i) => results[i]?.status === "fulfilled");
       const failed = ids.length - archived.length;
       if (archived.length === 0) {
@@ -101,7 +103,7 @@ export function ThreadSidebar() {
           action: {
             label: "Undo",
             onClick: () => {
-              Promise.allSettled(archived.map((id) => unmarkSessionDone(ws, id))).then((rs) => {
+              Promise.allSettled(archived.map((id) => unarchiveSession(ws, id))).then((rs) => {
                 const stuck = rs.filter((r) => r.status === "rejected").length;
                 if (stuck > 0) {
                   toast.error(`${stuck} session${stuck !== 1 ? "s" : ""} could not be restored`);

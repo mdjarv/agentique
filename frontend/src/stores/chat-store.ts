@@ -57,7 +57,7 @@ type StateExtras = Partial<
     | "connected"
     | "hasDirtyWorktree"
     | "worktreeMerged"
-    | "completedAt"
+    | "archivedAt"
     | "hasUncommitted"
     | "commitsAhead"
     | "commitsBehind"
@@ -335,7 +335,7 @@ export const useChatStore = create<ChatState>((set) => ({
       const prevId = s.activeSessionId;
       if (prevId && prevId !== id) {
         const prev = sessions[prevId];
-        if (prev?.meta.completedAt && prev.turns.length > 0) {
+        if (prev?.meta.archivedAt && prev.turns.length > 0) {
           const eviction = evictTurns(prev);
           if (Object.keys(eviction).length > 0) {
             sessions = { ...sessions, [prevId]: { ...prev, ...eviction } };
@@ -391,10 +391,10 @@ export const useChatStore = create<ChatState>((set) => ({
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
         gitRefreshedAt: incoming > current ? Date.now() : m.gitRefreshedAt,
-        // Transient states carry no completedAt/worktreeMerged — preserve cached
-        // values instead of wiping them (a clear here re-triggers becameCompleted
+        // Transient states carry no archivedAt/worktreeMerged — preserve cached
+        // values instead of wiping them (a clear here re-triggers becameArchived
         // below, causing badge flicker + spurious tail eviction / auto-navigate).
-        completedAt: transient ? m.completedAt : extras?.completedAt,
+        archivedAt: transient ? m.archivedAt : extras?.archivedAt,
         hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
         hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
         worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
@@ -407,8 +407,8 @@ export const useChatStore = create<ChatState>((set) => ({
         worktreePath: extras?.worktreePath ?? m.worktreePath,
       };
       // Evict turns when a session becomes completed and isn't being viewed.
-      const becameCompleted = !transient && extras?.completedAt && !m.completedAt;
-      if (becameCompleted && s.activeSessionId !== sessionId && session.turns.length > 0) {
+      const becameArchived = !transient && extras?.archivedAt && !m.archivedAt;
+      if (becameArchived && s.activeSessionId !== sessionId && session.turns.length > 0) {
         return updateSession(s, sessionId, {
           meta: { ...m, ...patch },
           ...evictTurns(session),

@@ -77,6 +77,14 @@ export interface ThreadRowVM {
   todo?: { done: number; total: number };
   workers?: number;
   pinned: boolean;
+  /** Already filed away — the row's action unarchives instead of archiving. */
+  archived: boolean;
+  /**
+   * Archiving is available. False while a turn is in flight: the server refuses
+   * it there (the turn would keep running behind a row the user believes is
+   * filed away), so the row must not offer the action either.
+   */
+  canArchive: boolean;
   remoteMachineLabel?: string;
   /** Icon id for that machine — this host's presentation of it. */
   remoteMachineIcon?: string;

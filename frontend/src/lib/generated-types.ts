@@ -212,7 +212,7 @@ export interface SessionInfo {
   worktreePath?: string;
   worktreeBranch?: string;
   worktreeMerged?: boolean;
-  completedAt?: string;
+  archivedAt?: string;
   hasDirtyWorktree?: boolean;
   hasUncommitted?: boolean;
   commitsAhead: number;
@@ -296,7 +296,7 @@ export interface GitSnapshot {
   hasDirtyWorktree: boolean;
   hasUncommitted: boolean;
   worktreeMerged: boolean;
-  completedAt?: string;
+  archivedAt?: string;
   commitsAhead: number;
   commitsBehind: number;
   branchMissing: boolean;
@@ -457,8 +457,9 @@ export interface SessionStorage {
   worktreePath: string;
   bytes: number;
   updatedAt: string;
-  completedAt: string;
-  completed: boolean;
+  archivedAt: string;
+  archived: boolean;
+  merged: boolean;
   orphaned: boolean;
 }
 
@@ -656,11 +657,11 @@ export interface SessionGenerateCommitMsgPayload {
   sessionId: string;
 }
 
-export interface SessionMarkDonePayload {
+export interface SessionArchivePayload {
   sessionId: string;
 }
 
-export interface SessionUnmarkDonePayload {
+export interface SessionUnarchivePayload {
   sessionId: string;
 }
 

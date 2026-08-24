@@ -121,11 +121,17 @@ export interface DeriveRestTokenInput {
   connected: boolean;
 }
 
-/** The one-word outcome a resting row folds into its repo line. */
+/**
+ * The one-word outcome a resting row folds into its repo line.
+ *
+ * "finished" is the word for state `done`, never "done": the state means the CLI
+ * exited cleanly, and "done" reads as the user's own verdict on the work. That
+ * verdict is Archive now, and it lives in a section header rather than a token.
+ */
 export function deriveRestToken(input: DeriveRestTokenInput): string {
   if (input.merged) return "merged";
   if (input.state === "stopped") return "stopped";
-  if (input.state === "done") return "done";
+  if (input.state === "done") return "finished";
   if (!input.connected) return "evicted";
   return "";
 }

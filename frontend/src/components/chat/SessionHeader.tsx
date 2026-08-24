@@ -1,6 +1,7 @@
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUp,
-  Check,
   Clock,
   FolderGit2,
   Gauge,
@@ -213,16 +214,22 @@ export function SessionHeader({
                 />
               )}
 
+              {/* Files the session away; it does not end a run, which is why
+                  the server refuses it mid-turn and this hides there. */}
               {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs text-muted-foreground hover:text-success gap-1"
-                  title="Mark done"
-                  onClick={actions.handleMarkDone}
+                  title={meta.archivedAt ? "Unarchive session" : "Archive session"}
+                  onClick={meta.archivedAt ? actions.handleUnarchive : actions.handleArchive}
                 >
-                  <Check className="h-3.5 w-3.5" />
-                  <span>Done</span>
+                  {meta.archivedAt ? (
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                  ) : (
+                    <Archive className="h-3.5 w-3.5" />
+                  )}
+                  <span>{meta.archivedAt ? "Unarchive" : "Archive"}</span>
                 </Button>
               )}
 

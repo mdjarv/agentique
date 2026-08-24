@@ -6666,8 +6666,8 @@
               "toolId": "toolu_01PHFzUHTxEqd1bAvsz6Ua38",
               "toolInput": {
                 "file_path": "/tmp/fixture-project/frontend/src/components/chat/SessionHeader.tsx",
-                "new_string": "import { cleanSession, deleteSession, markSessionDone, renameSession } from \"~/lib/session-actions\";\nimport { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from \"~/lib/team-actions\";\nimport { cn, getErrorMessage } from \"~/lib/utils\";\nimport type { SessionMetadata } from \"~/stores/chat-store\";\nimport { useTeamStore } from \"~/stores/team-store\";",
-                "old_string": "import { cleanSession, deleteSession, markSessionDone, renameSession } from \"~/lib/session-actions\";\nimport { cn, getErrorMessage } from \"~/lib/utils\";\nimport type { SessionMetadata } from \"~/stores/chat-store\";",
+                "new_string": "import { cleanSession, deleteSession, archiveSession, renameSession } from \"~/lib/session-actions\";\nimport { type TeamInfo, createTeam, joinTeam, leaveTeam, listTeams } from \"~/lib/team-actions\";\nimport { cn, getErrorMessage } from \"~/lib/utils\";\nimport type { SessionMetadata } from \"~/stores/chat-store\";\nimport { useTeamStore } from \"~/stores/team-store\";",
+                "old_string": "import { cleanSession, deleteSession, archiveSession, renameSession } from \"~/lib/session-actions\";\nimport { cn, getErrorMessage } from \"~/lib/utils\";\nimport type { SessionMetadata } from \"~/stores/chat-store\";",
                 "replace_all": false
               },
               "toolName": "Edit",

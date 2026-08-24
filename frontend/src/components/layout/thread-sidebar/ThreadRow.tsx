@@ -1,5 +1,6 @@
 import {
   Archive,
+  ArchiveRestore,
   BookOpen,
   Bot,
   Check,
@@ -176,24 +177,35 @@ function Chip({ vm, awake }: { vm: ThreadRowVM; awake: boolean }) {
 }
 
 function RowActions({
-  pinned,
+  vm,
   onTogglePin,
   onArchive,
 }: {
-  pinned: boolean;
+  vm: ThreadRowVM;
   onTogglePin: () => void;
   onArchive: () => void;
 }) {
-  const PinIcon = pinned ? PinOff : Pin;
+  const PinIcon = vm.pinned ? PinOff : Pin;
+  const ArchiveIcon = vm.archived ? ArchiveRestore : Archive;
   return (
     <span className="absolute right-2 top-1.5 hidden gap-0.5 md:group-hover/thread:flex">
       {[
         {
-          label: pinned ? "Unpin" : "Pin",
+          label: vm.pinned ? "Unpin" : "Pin",
           action: onTogglePin,
           icon: <PinIcon className="size-3" />,
         },
-        { label: "Archive", action: onArchive, icon: <Archive className="size-3" /> },
+        // Archiving is refused while a turn is in flight, so a working row
+        // offers only the pin — no button that can only fail.
+        ...(vm.archived || vm.canArchive
+          ? [
+              {
+                label: vm.archived ? "Unarchive" : "Archive",
+                action: onArchive,
+                icon: <ArchiveIcon className="size-3" />,
+              },
+            ]
+          : []),
       ].map(({ label, action, icon }) => (
         <button
           key={label}
@@ -271,7 +283,7 @@ export const ThreadRow = memo(function ThreadRow({
             </span>
           </span>
         </button>
-        <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
+        <RowActions vm={vm} onTogglePin={onTogglePin} onArchive={onArchive} />
       </div>
     );
   }
@@ -389,10 +401,12 @@ export const ThreadRow = memo(function ThreadRow({
       {selected ? (
         <span className="mt-0.5 flex gap-1 px-2.5 pb-1.5">
           <FocusedAction label={vm.pinned ? "Unpin" : "Pin"} onAction={onTogglePin} />
-          <FocusedAction label="Archive" onAction={onArchive} />
+          {(vm.archived || vm.canArchive) && (
+            <FocusedAction label={vm.archived ? "Unarchive" : "Archive"} onAction={onArchive} />
+          )}
         </span>
       ) : (
-        <RowActions pinned={vm.pinned} onTogglePin={onTogglePin} onArchive={onArchive} />
+        <RowActions vm={vm} onTogglePin={onTogglePin} onArchive={onArchive} />
       )}
     </div>
   );

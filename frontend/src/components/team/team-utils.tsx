@@ -12,7 +12,7 @@ export interface ActiveSessionRef {
 export function useProfileActiveSession(profileId: string): ActiveSessionRef | null {
   const key = useChatStore((s) => {
     for (const [id, data] of Object.entries(s.sessions)) {
-      if (data.meta.agentProfileId === profileId && !data.meta.completedAt) {
+      if (data.meta.agentProfileId === profileId && !data.meta.archivedAt) {
         const pending = !!(data.meta.pendingApproval || data.meta.pendingQuestion);
         return `${id}|${data.meta.state}|${data.meta.projectId}|${pending}`;
       }

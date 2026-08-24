@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
-import { markSessionDone, setSessionPinned, unmarkSessionDone } from "~/lib/session/actions";
+import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -285,7 +285,7 @@ export function SessionIdentity({
 
 function SidebarPlacementSection({ meta }: { meta: SessionMetadata }) {
   const ws = useWebSocket();
-  const archived = !!meta.completedAt;
+  const archived = !!meta.archivedAt;
   const PinIcon = meta.pinned ? PinOff : Pin;
 
   const togglePin = () => {
@@ -295,7 +295,7 @@ function SidebarPlacementSection({ meta }: { meta: SessionMetadata }) {
   };
 
   const toggleArchived = () => {
-    const action = archived ? unmarkSessionDone : markSessionDone;
+    const action = archived ? unarchiveSession : archiveSession;
     action(ws, meta.id).catch((err) =>
       toast.error(getErrorMessage(err, archived ? "Failed to unarchive" : "Failed to archive")),
     );
