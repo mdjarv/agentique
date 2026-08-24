@@ -185,3 +185,31 @@ export function compareOpenRows(a: ThreadRowVM, b: ThreadRowVM): number {
   if (a.lastActivity !== b.lastActivity) return b.lastActivity - a.lastActivity;
   return a.sessionId.localeCompare(b.sessionId);
 }
+
+/** Which section of the sidebar a row belongs to. A row is in exactly one. */
+export type ThreadSection = "pinned" | "open" | "stale" | "archived";
+
+export interface SectionInput {
+  /** The user filed it away. */
+  archived: boolean;
+  /** The user wants it at the top. */
+  pinned: boolean;
+  /** Terminal, seen, and quiet for a day — see {@link isStale}. */
+  stale: boolean;
+}
+
+/**
+ * Decide a row's section, precedence first.
+ *
+ * Archived outranks pinned, and that ordering is the whole point: "keep this at
+ * the top" and "stow this away" are contradictory claims, so the newer gesture
+ * wins and filed-away work never sits in the priority section. The server
+ * releases the pin when it archives, but the view cannot wait for that — the
+ * state push announcing an archive carries archivedAt and not pinned, and a peer
+ * on an older release never clears the pin at all.
+ */
+export function sectionFor(input: SectionInput): ThreadSection {
+  if (input.archived) return "archived";
+  if (input.pinned) return "pinned";
+  return input.stale ? "stale" : "open";
+}

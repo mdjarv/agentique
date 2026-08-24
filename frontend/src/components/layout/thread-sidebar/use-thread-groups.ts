@@ -5,8 +5,14 @@
  * and the Pinned / Open / Archived partition. Archived means `archivedAt` is
  * set, which is now user intent and nothing else — the runtime stopped writing
  * that field, so a session the CLI merely exited stays visible and falls to the
- * "Finished earlier" shelf on its own schedule. Pinned rows are excluded from
- * Open/Archived so a session lives in exactly one section.
+ * "Finished earlier" shelf on its own schedule.
+ *
+ * A session lives in exactly one section, and Archived is decided first: "keep
+ * this at the top" and "stow this away" are contradictory claims, and the newer
+ * gesture wins. The server releases the pin when it archives; this ordering is
+ * what keeps the view right in the meantime — the state push announcing an
+ * archive carries archivedAt but not pinned, and a peer on an older release
+ * never clears the pin at all.
  */
 import { useMemo } from "react";
 import { formatPulse } from "~/components/layout/session/PulseStatus";
@@ -28,6 +34,7 @@ import {
   deriveWorkKind,
   isAwake,
   isStale,
+  sectionFor,
 } from "./derive";
 import type { ThreadGroups, ThreadRowVM } from "./types";
 
@@ -143,6 +150,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         meta.state === "done" || meta.state === "stopped" || meta.state === "failed";
       const todoTotal = data.todos?.length ?? 0;
       const todoDone = data.todos?.filter((t) => t.status === "completed").length ?? 0;
+      const isArchived = !!meta.archivedAt;
 
       const vm: ThreadRowVM = {
         sessionId: meta.id,
@@ -179,8 +187,12 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         unread: data.hasUnseenCompletion,
         todo: todoTotal > 0 ? { done: todoDone, total: todoTotal } : undefined,
         workers: workerCounts.get(meta.id),
-        pinned: meta.pinned,
-        archived: !!meta.archivedAt,
+        // Archiving releases the pin server-side, but the state push that
+        // announces it carries archivedAt and not pinned — and a peer on an
+        // older release never clears it at all. Archived wins either way, so a
+        // filed-away row offers Pin rather than a stale Unpin.
+        pinned: meta.pinned && !isArchived,
+        archived: isArchived,
         canArchive: canArchive(meta),
         remoteMachineLabel,
         remoteMachineIcon: remoteMachine?.icon || undefined,
@@ -196,20 +208,29 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         turns: meta.turnCount || undefined,
       };
 
-      if (meta.pinned) {
-        pinOrderById.set(meta.id, meta.pinOrder);
-        pinned.push(vm);
-      } else if (meta.archivedAt) {
-        archivedAtById.set(meta.id, Date.parse(meta.archivedAt) || 0);
-        archived.push(vm);
-      } else if (
-        // A search flattens the shelf so matches never hide behind it.
-        !query &&
-        isStale({ state: meta.state, unread: vm.unread, lastActivity: vm.lastActivity, now })
+      switch (
+        sectionFor({
+          archived: isArchived,
+          pinned: meta.pinned,
+          // A search flattens the shelf so matches never hide behind it.
+          stale:
+            !query &&
+            isStale({ state: meta.state, unread: vm.unread, lastActivity: vm.lastActivity, now }),
+        })
       ) {
-        stale.push(vm);
-      } else {
-        open.push(vm);
+        case "archived":
+          archivedAtById.set(meta.id, Date.parse(meta.archivedAt ?? "") || 0);
+          archived.push(vm);
+          break;
+        case "pinned":
+          pinOrderById.set(meta.id, meta.pinOrder);
+          pinned.push(vm);
+          break;
+        case "stale":
+          stale.push(vm);
+          break;
+        default:
+          open.push(vm);
       }
     }
 

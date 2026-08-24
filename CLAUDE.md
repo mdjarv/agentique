@@ -13,6 +13,11 @@ infer by reading the code.
   a live provider CLI.
 - After editing SQL under `backend/db/`, run `just sqlc`. After changing Go
   wire types, run `just typegen`. Generated files are never edited by hand.
+- Keep `backend/db/**.sql` **ASCII** — comments included. sqlc expands
+  `SELECT *` by byte offset, so one multi-byte character (an em dash, a curly
+  quote) shifts those offsets and corrupts the generated code for *later*
+  queries, with an error that points at the victim rather than the cause
+  ("extraneous input 'SELECid'").
 - ALWAYS use `just` commands (not raw `npx`/`tsc`) — they `cd` into the
   correct directory. Running `npx biome` from the project root fails
   silently.
@@ -188,8 +193,15 @@ hide a session in a collapsed section, and it is the same line
 
 So: archiving never transitions state (it releases an *idle* CLI through
 `StopSession`, so the resulting state is one that actually happened), unarchive
-is its exact inverse, and archiving is refused while a turn is in flight —
-`TurnInFlight`, not `State()`. Bulk *destructive* actions key on
+clears `archived_at` and leaves no residue, and archiving is refused while a turn
+is in flight — `TurnInFlight`, not `State()`.
+
+Archiving also **releases the pin**: "keep this at the top" and "stow this away"
+are contradictory claims, so no row is both. The release lives in the
+`SetSessionArchived` query so no archive path can forget it, and unarchive does
+not restore the pin — guessing that the user still wants it at the top would
+re-create the contradiction. The sidebar decides Archived before Pinned
+(`sectionFor`) because the state push carries `archived_at` but not `pinned`. Bulk *destructive* actions key on
 `worktree_merged`, never on archived: archiving is a one-click tidy (including a
 whole-shelf sweep), and only merged work is safe to delete in bulk. UI copy says
 "Archive"; `done` reads as "finished" wherever it surfaces.

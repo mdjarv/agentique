@@ -135,6 +135,15 @@ type Querier interface {
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
 	SetScheduleFailures(ctx context.Context, arg SetScheduleFailuresParams) error
 	SetScheduleRunOverdue(ctx context.Context, id string) error
+	// Archiving releases the pin. Pinned means "keep this at the top" and archived
+	// means "stow this away": a session cannot be both, and leaving the pin set kept
+	// filed-away work sitting in the priority section. Clearing it here rather than
+	// at each caller means no archive path (the RPC, a completing merge, a local
+	// session's commit) can forget to.
+	//
+	// Keep this comment ASCII. sqlc expands `SELECT *` by byte offset, so a
+	// multi-byte character anywhere in this file shifts those offsets and corrupts
+	// the generated code for LATER queries.
 	SetSessionArchived(ctx context.Context, id string) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionArchived(ctx context.Context, id string) error

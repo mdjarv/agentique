@@ -39,7 +39,16 @@ UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%
 UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: SetSessionArchived :exec
-UPDATE sessions SET archived_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+-- Archiving releases the pin. Pinned means "keep this at the top" and archived
+-- means "stow this away": a session cannot be both, and leaving the pin set kept
+-- filed-away work sitting in the priority section. Clearing it here rather than
+-- at each caller means no archive path (the RPC, a completing merge, a local
+-- session's commit) can forget to.
+--
+-- Keep this comment ASCII. sqlc expands `SELECT *` by byte offset, so a
+-- multi-byte character anywhere in this file shifts those offsets and corrupts
+-- the generated code for LATER queries.
+UPDATE sessions SET archived_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), pinned = 0, pin_order = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: UnsetSessionArchived :exec
 UPDATE sessions SET archived_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;

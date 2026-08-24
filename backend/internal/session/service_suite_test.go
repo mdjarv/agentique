@@ -325,3 +325,41 @@ func (s *ServiceSuite) TestQueryUnarchivesTheSession() {
 	_, _, _, archivedAt, _ := live.liveState()
 	s.Empty(archivedAt, "the broadcast snapshot must report it un-archived")
 }
+
+// Pinned means "keep this at the top" and archived means "stow this away" — a
+// session cannot claim both, and leaving the pin set kept filed-away work
+// sitting in the sidebar's priority section. Archiving releases the pin.
+func (s *ServiceSuite) TestArchiveReleasesThePin() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	s.Require().NoError(s.svc.SetSessionPinned(ctx, sessionID, true, 3))
+	pinned, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Require().EqualValues(1, pinned.Pinned, "precondition: the session is pinned")
+
+	s.Require().NoError(s.svc.ArchiveSession(ctx, sessionID))
+
+	after, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.True(after.ArchivedAt.Valid, "still archived")
+	s.EqualValues(0, after.Pinned, "archiving must release the pin")
+	s.EqualValues(0, after.PinOrder, "and drop its place in the pin order")
+}
+
+// Un-archiving does not resurrect the pin. Archive released it deliberately;
+// guessing that the user still wants this at the top would re-create exactly
+// the contradiction the release exists to prevent.
+func (s *ServiceSuite) TestUnarchiveDoesNotRestoreThePin() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	s.Require().NoError(s.svc.SetSessionPinned(ctx, sessionID, true, 2))
+	s.Require().NoError(s.svc.ArchiveSession(ctx, sessionID))
+	s.Require().NoError(s.svc.UnarchiveSession(ctx, sessionID))
+
+	after, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.False(after.ArchivedAt.Valid)
+	s.EqualValues(0, after.Pinned, "the pin stays released")
+}

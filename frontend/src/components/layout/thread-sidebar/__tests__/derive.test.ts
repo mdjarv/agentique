@@ -9,6 +9,7 @@ import {
   isAwake,
   isStale,
   STALE_AFTER_MS,
+  sectionFor,
 } from "../derive";
 import type { ThreadRowVM } from "../types";
 
@@ -333,5 +334,35 @@ describe("a session on an unreachable machine", () => {
     expect(
       deriveRestToken({ state: "done", merged: false, connected: false, machineOffline: true }),
     ).toBe("finished");
+  });
+});
+
+// Archiving means "stow this away"; pinning means "keep this at the top". A
+// session that claims both is a contradiction the user created by archiving, and
+// leaving it in the priority section defeats the point of filing it.
+describe("sectionFor", () => {
+  it("files an archived session away even when it is still pinned", () => {
+    expect(sectionFor({ archived: true, pinned: true, stale: false })).toBe("archived");
+  });
+
+  it("keeps a pinned, un-archived session at the top", () => {
+    expect(sectionFor({ archived: false, pinned: true, stale: false })).toBe("pinned");
+  });
+
+  // Pinning still outranks the shelf: an old pinned session is there on purpose.
+  it("keeps a pinned session out of the shelf", () => {
+    expect(sectionFor({ archived: false, pinned: true, stale: true })).toBe("pinned");
+  });
+
+  it("sends a quiet, unpinned session to the shelf", () => {
+    expect(sectionFor({ archived: false, pinned: false, stale: true })).toBe("stale");
+  });
+
+  it("leaves everything else open", () => {
+    expect(sectionFor({ archived: false, pinned: false, stale: false })).toBe("open");
+  });
+
+  it("archives regardless of staleness", () => {
+    expect(sectionFor({ archived: true, pinned: false, stale: true })).toBe("archived");
   });
 });
