@@ -1,10 +1,11 @@
 # In-app upgrades — one click per machine, no dead turns
 
-Status: **V1–V4 shipped; V5 not started.** Decisions settled
+Status: **V1–V4 shipped; V5 designed, not built.** Decisions settled
 2026-08-23 after review (proposal artifact
-`6fd17232-9ccc-4aad-9e1e-1d51206bd499`). This document is the working contract
-— a session picking up any phase should need nothing else. Per-phase status is
-on each phase below.
+`6fd17232-9ccc-4aad-9e1e-1d51206bd499`); V5's own fifteen settled 2026-08-24
+(artifact `39f2b8b8-9d98-4dbc-a1b6-0b4be9883620`). This document is the working
+contract — a session picking up any phase should need nothing else. Per-phase
+status is on each phase below.
 
 ## Goal
 
@@ -228,18 +229,65 @@ self-upgrade. So:
 
 ## Claude and Codex CLIs
 
-Deferred to V5. `internal/doctor` already gives the installed version;
-`npm view <pkg> version` gives the published one on the same hourly tick.
+**Nobody in this repo runs a CLI.** Each provider's Go library owns its own
+command entirely — agentique never constructs, execs or shells out to `claude`
+or `codex`, not to read a version, not to run `doctor`, not to update. It asks
+agentkit's `runtime.InstallInspectable`; agentkit asks the adapter; the adapter
+asks the library. Anything the product needs from a CLI is a gap in that
+library, and the fix is to add it there rather than to route around it.
 
-**Detect how each CLI was installed — never assume.** Resolve the real binary
-(`exec.LookPath` + symlink resolution) and classify by where it lands: an npm
-global prefix, a version-manager shim (fnm/nvm/volta), or a native install
-dir; prefer whatever the tool reports about itself over our inference. The
-install method decides which command we show. Showing the wrong one does not
-fail cleanly — it half-installs a second copy and the version we probe stops
-describing the one that runs.
+**The target is the binary agentique itself would spawn**, resolved by the
+connector — never by a PATH lookup in the product. Those agree today only
+because nothing overrides the binary path. The connector owns the client
+options, so it is the only thing that stays right the moment something does,
+and it is why the capability hangs off `CLIConnector` rather than being a
+helper anyone can call.
 
-Surface the fact and offer the tool's own updater. Do not reimplement it.
+**Detect how each CLI was installed — never assume.** Showing the wrong update
+command does not fail cleanly: `npm install -g` against a native install writes
+a second complete copy into an npm prefix, whichever copy PATH reaches first
+answers `--version` from then on, and the copy actually in use stays stale. An
+empty update command means *tell the user to update manually*; it never means
+*fall back to npm*.
+
+**The install method never gates behaviour.** `Method` is a label to display.
+`InstallNative` means the standalone layout only in codexcli-go but includes a
+bare executable in claudecli-go; codex updates its own npm-global installs while
+claude's hand back a command. Branch on the library's verdict — `SelfManaged`, a
+non-empty `UpdateCmd`, a passing preflight — never on a method name. Same rule
+as the model catalog, one level down: versions and enums never gate behaviour,
+capabilities do.
+
+**Knowing and acting are separate questions.** Report that an update exists
+whenever a trustworthy source for *that* install can be named; offer to perform
+it only where the library manages that install itself and its preflight passes.
+Never let "we cannot act" suppress "you should know" — an npm-global install
+into a root-owned prefix is knowable and untouchable at once, and that is a
+common case, not an edge one. Where no source can be named (brew, winget, mise,
+asdf, unknown) the row says so; it never borrows another channel's number,
+because the channels disagree — npm and the native `latest` channel tracked
+2.1.241 on the day the native `stable` channel was ten patches behind at
+2.1.231.
+
+**Preflight is the library's, not ours.** The directory that must be writable is
+not the one holding the binary on PATH: for an npm install it is the managed
+package root, for a codex standalone install it is `$CODEX_HOME/packages/
+standalone`. Neither is derivable from the resolved path, so a check in the
+product would test the wrong directory and offer a button that cannot work.
+
+**Exit codes from CLI updaters are not evidence.** `codex update` was observed
+exiting 0 and printing success after its updater command was missing entirely.
+An update is verified by re-reading the version, exactly as V3 verifies
+agentique's own upgrade by re-reading the descriptor rather than trusting the
+response.
+
+**A CLI update is not a restart**, so the drain gate does not apply and V5 does
+not use it. The server keeps running, running turns keep their already-exec'd
+binary, and the new version applies to the next session — which is what the UI
+says. The claude CLI already updates itself underneath live sessions (observed
+2.1.239 → 2.1.241 mid-session, unprompted); a gate would protect against
+something that demonstrably does not happen. It returns as a question only if a
+library starts calling a shared-tree rewrite self-managed.
 
 ## Settled decisions
 
@@ -254,6 +302,26 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
 | U7 | Auto-upgrade per machine, default off | Ships as a setting; stays off until apply is exercised by hand. |
 | U8 | No pre-release channel          | Everything goes to master and out; `releases/latest` is all of it.   |
 
+### V5, the CLIs
+
+| #   | Decision                              | Why                                                                     |
+| --- | ------------------------------------- | ----------------------------------------------------------------------- |
+| C1  | Target is the binary agentique spawns | Anything else describes a binary nobody here executes.                   |
+| C2  | claudecli-go owns the claude command  | Detection already exists there, read-only and network-free.              |
+| C3  | codexcli-go owns the codex command    | Its own report beats our inference; the product must not shell out.      |
+| C4  | Knowing and acting are separate       | Root-owned installs are knowable and untouchable at the same time.       |
+| C5  | Only the tools' own updaters, run by their own libraries | The server has no npm prefix, and never should. |
+| C6  | No drain gate for CLI updates         | Not a restart; the CLI already self-updates under live sessions.         |
+| C7  | CLIs never drive the footer chip      | They ship most days; a permanently lit chip is one nobody reads.         |
+| C8  | `clis` rides `/api/update/status`     | Detection is offline and cheap; a second endpoint buys nothing.          |
+| C9  | Shadowing is reported, symmetrically  | A warning that works for one CLI and not the other teaches false trust.  |
+| C10 | `internal/doctor` stops running the CLI | Two answers to "how do I update this" must not differ.                 |
+| C11 | Run-it button ships off               | Mirrors U7: capability ships, trigger waits for a hand-run.              |
+| C12 | Show the version a session reported   | The only field derived from what happened rather than from inspection.   |
+| C13 | The connector answers, not the PATH   | Keeps detection and execution from drifting apart.                       |
+| C14 | The install method never gates behaviour | The two libraries' enums deliberately disagree.                       |
+| C15 | V5a ships without a "behind" verdict  | Nothing in the stack can compute one yet; a stub would be wrong, not small. |
+
 ## Invariants a change here must keep
 
 - **A restart is not a pause.** Anything that restarts the server must
@@ -267,8 +335,15 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
   the row offers an action.
 - **Only a client triggers an upgrade** — never a peer, never a schedule
   (until U7 is explicitly enabled on that machine).
-- **Version numbers never gate behaviour**; capabilities do.
+- **Version numbers never gate behaviour**; capabilities do. For the CLIs the
+  same holds of install-method enums: they are labels, and the two provider
+  libraries define them differently on purpose.
 - **A dev build never nags.**
+- **agentique never runs a provider CLI.** No `exec` of `claude` or `codex`
+  anywhere in this repo — versions, install methods and updates all come
+  through `runtime.InstallInspectable`. A missing fact is a gap in the provider
+  library, not a reason to shell out.
+- **An empty update command means "manually", never "use npm."**
 
 ## Phases
 
@@ -333,8 +408,31 @@ Surface the fact and offer the tool's own updater. Do not reimplement it.
   - Losing the race back to busy re-arms rather than dropping the request.
   - "Upgrade when idle" is the default offer on a busy machine; "now" is the
     secondary that then states its cost in turns and needs a second click.
-- **V5 — CLIs.** Claude and Codex rows: installed version, published version,
-  install-method detection, the right command for the method found.
+- **V5 — CLIs.** Claude and Codex rows in the same dialog, nested under the
+  machine that runs them. Dependencies live outside this repo and are pinned,
+  not vendored: `agentkit v0.1.0` ships `runtime.InstallInspectable` with both
+  adapters implemented, delegating to `claudecli-go v0.5.0` and
+  `codexcli-go v0.1.0`.
+  - **V5a — what is installed.** `internal/update/cli.go` asks the capability
+    per provider, caches on the existing hourly tick, and adds `clis[]` to
+    `/api/update/status`: tool, installed version, path and real path, method,
+    source, self-managed, update command, version manager, package manager,
+    warnings. `internal/doctor` converts to the same source and gains its
+    missing codex check. No verdict, no buttons (C15).
+  - **V5b — the rows.** One expandable machine row per UI shape A, local
+    expanded by default. Seven row states, of which *update available, nothing
+    to click* is first-class, not an edge case. Plus `lastRan` from
+    `runtime.SessionInitEvent.CLIVersion` (C12) — today it is dropped on the
+    floor.
+  - **V5c — the button.** Needs a perform-the-update method in both provider
+    libraries and on the agentkit capability first; ships behind
+    `[update] cli-updates`, default off, and verified against a throwaway
+    server before it goes near a real one.
+  - **Outside this repo, in dependency order:** `claudecli-go` needs an
+    `Update`, a published-version lookup (only it knows whether an install
+    tracks `latest` or `stable`), and a PATH-entries report so C9 can be
+    symmetric; `codexcli-go` needs its `Update` (queued for v0.2.0);
+    `agentkit` needs the capability extended to perform, not just report.
 
 When V3 lands, fold the drain-gate rule into the process-lifecycle block in
 CLAUDE.md — a restart is not a pause, and anything that restarts the server
@@ -356,3 +454,16 @@ has to know it.
   gated behind verified platforms.
 - **Release notes** are auto-generated from commits and may be noise rather
   than signal; a link may beat rendering them.
+- **No CLI updater has been run by the service**, as opposed to by a person in
+  a shell. That difference is what V3 learned to respect with throwaway servers,
+  and it is why V5c's button ships off.
+- **Updating an npm-global CLI under a live session is untested** — a running
+  node process may lazily load from the tree being rewritten. Currently
+  unreachable, because codex reports `SelfManaged: false` for npm installs and
+  claude's npm-global installs hand back a command. It becomes live the moment
+  any library calls such an install self-managed, which is also when C6's "no
+  gate" needs revisiting.
+- **`codex doctor --json` is a stringly-keyed `details` map** at schemaVersion
+  1. Absorbed inside codexcli-go rather than in this repo, but an upstream
+  rename still degrades a row to "unknown" — which is the correct failure, and
+  the one to keep.

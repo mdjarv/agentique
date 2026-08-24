@@ -275,6 +275,17 @@ features via `runtime.Capabilities()`. Codex mid-turn send is emulated
 (queued, replayed at idle) — the wire capability is deliberately `true`
 while the adapter capability is `false`.
 
+**agentique never runs a provider CLI.** No `exec` of `claude` or `codex`
+anywhere in this repo — not for a version, not for `doctor`, not to update.
+Install facts come from the connector via `runtime.InstallInspectable`, which
+answers for the binary that connector would actually spawn; a PATH lookup here
+would be right only by coincidence. Install-method enums are labels, not
+branches: the two provider libraries define `native` differently on purpose, so
+gate on the library's verdict (`SelfManaged`, a non-empty `UpdateCmd`) instead.
+An empty update command means "tell the user to update manually", never "fall
+back to npm" — the wrong command installs a second copy and the version we
+probe stops describing the one that runs. See `docs/upgrades.md`.
+
 ### Model catalog — `docs/model-catalog.md`
 
 **A new upstream model release must not require an agentique release.**
