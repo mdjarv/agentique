@@ -9,6 +9,7 @@ package filestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -252,7 +253,30 @@ func (f *FileStore) scopeDir(scope memory.Scope) string {
 	return filepath.Join(f.root, sanitizeScope(scope))
 }
 
+// ErrInvalidID rejects an ID that cannot be used as a single filename. Record
+// IDs are path components AND glob patterns here, so both have to be closed:
+// a separator or ".." escapes the root, and a glob metacharacter matches
+// records the caller never named ("*" would select every file in the store).
+// Callers pass IDs straight from HTTP paths and agent tool arguments, so this
+// is enforced in the store rather than trusted to each call site.
+var ErrInvalidID = errors.New("filestore: record id is not a valid filename")
+
+// validID reports whether id is safe as one filename and as a literal glob
+// component.
+func validID(id string) error {
+	if id == "" || id == "." || id == ".." {
+		return fmt.Errorf("%w: %q", ErrInvalidID, id)
+	}
+	if strings.ContainsAny(id, `/\*?[]`) || strings.Contains(id, "..") {
+		return fmt.Errorf("%w: %q", ErrInvalidID, id)
+	}
+	return nil
+}
+
 func (f *FileStore) glob(id string) ([]string, error) {
+	if err := validID(id); err != nil {
+		return nil, err
+	}
 	return filepath.Glob(filepath.Join(f.root, "*", id+".md"))
 }
 
@@ -261,6 +285,9 @@ func (f *FileStore) glob(id string) ([]string, error) {
 func (f *FileStore) Put(_ context.Context, r memory.Record) error {
 	if r.ID == "" {
 		return fmt.Errorf("filestore: record has no ID")
+	}
+	if err := validID(r.ID); err != nil {
+		return err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

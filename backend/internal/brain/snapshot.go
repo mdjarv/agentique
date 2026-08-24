@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,21 @@ const (
 	snapshotTSFormat      = "20060102T150405Z"
 	defaultSnapshotRetain = 7
 )
+
+// ErrInvalidSnapshotID rejects a restore handle that is not one of our own
+// timestamps. The id becomes a path component, and Restore DELETES the live
+// brain tree before copying the resolved directory over it — so a traversing
+// id would both destroy the corpus and read an attacker-chosen directory into
+// a store that feeds every agent preamble. IDs are minted by snapshotAt, so
+// exact-format parsing is the whole allowlist.
+var ErrInvalidSnapshotID = errors.New("brain: snapshot id is invalid")
+
+func validSnapshotID(id string) error {
+	if _, err := time.Parse(snapshotTSFormat, id); err != nil {
+		return fmt.Errorf("%w: %q", ErrInvalidSnapshotID, id)
+	}
+	return nil
+}
 
 // Snapshot writes a pre-churn snapshot of this service's brain directory, retaining the
 // configured number of snapshots. It is the single reversibility hook the M5 archive
@@ -135,6 +151,9 @@ func ListSnapshots(brainDir string) ([]SnapshotInfo, error) {
 // missing id is os.ErrNotExist. Restore is offline-only for M1 (it rewrites files
 // underneath a running server's read-through cache).
 func Restore(brainDir, id string, retain int) error {
+	if err := validSnapshotID(id); err != nil {
+		return err
+	}
 	snapPath := filepath.Join(brainDir, snapshotsDir, id)
 	if _, err := os.Stat(snapPath); err != nil {
 		if os.IsNotExist(err) {

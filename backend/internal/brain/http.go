@@ -14,6 +14,7 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/memory/filestore"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 )
 
@@ -174,6 +175,11 @@ func decode(r *http.Request, v any) error {
 func mapErr(err error) error {
 	if errors.Is(err, memory.ErrNotFound) {
 		return httperror.NotFound("memory not found")
+	}
+	// A path parameter is not a path: Go's ServeMux unescapes %2F inside a
+	// {id} wildcard, so a rejected id is a client error, not a server one.
+	if errors.Is(err, filestore.ErrInvalidID) {
+		return httperror.BadRequest("memory id is invalid")
 	}
 	return err
 }
@@ -667,6 +673,9 @@ func (h *Handler) HandleRestoreSnapshot(w http.ResponseWriter, r *http.Request) 
 	if err := h.Service.RestoreSnapshot(r.PathValue("id")); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return httperror.NotFound("snapshot not found")
+		}
+		if errors.Is(err, ErrInvalidSnapshotID) {
+			return httperror.BadRequest("snapshot id is invalid")
 		}
 		return err
 	}
