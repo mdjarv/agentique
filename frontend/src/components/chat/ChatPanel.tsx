@@ -37,6 +37,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
+import { useNavigationGuard } from "~/lib/navigation";
 import { getProjectColor } from "~/lib/project-colors";
 import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
@@ -118,6 +119,7 @@ const resumableStates = new Set(["stopped", "failed", "done"]);
 
 export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }: ChatPanelProps) {
   const navigate = useNavigate();
+  const navGuard = useNavigationGuard();
   const ws = useWebSocket();
   // Pop the workflow panel open when this session launches a live workflow.
   useAutoOpenWorkflowPanel(sessionId);
@@ -335,10 +337,14 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]): Promise<boolean> => {
       setFollowRequest((n) => n + 1);
+      // Switch to chat BEFORE the round trip. This navigates (tab lives in the
+      // URL), and doing it after the await would race the user: if they picked
+      // another session while the send was in flight, the stale route params
+      // would yank them back to this one.
+      if (activeTab !== "chat") setActiveTab("chat");
       try {
         await enqueueMessage(ws, sessionId, prompt, attachments);
         useUIStore.getState().clearDraft(sessionId);
-        setActiveTab("chat");
         const popped = useUIStore.getState().popStash(sessionId);
         if (popped) {
           composerRef.current?.setText(popped);
@@ -352,11 +358,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         return false;
       }
     },
-    [ws, sessionId, setActiveTab],
+    [ws, sessionId, activeTab, setActiveTab],
   );
 
   const handleStartFresh = useCallback(
     async (plan: string) => {
+      const stillHere = navGuard();
       try {
         const newId = await createSession(ws, projectId, "", !!meta?.worktreeBranch, {
           model: meta?.model,
@@ -364,6 +371,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         });
         await stopSession(ws, sessionId);
         await enqueueMessage(ws, newId, plan);
+        if (!stillHere()) return;
         navigate({
           to: "/project/$projectSlug/session/$sessionShortId",
           params: { projectSlug, sessionShortId: sessionShortId(newId) },
@@ -372,7 +380,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         toast.error(getErrorMessage(err, "Failed to start fresh session"));
       }
     },
-    [ws, projectId, sessionId, meta, navigate, projectSlug],
+    [ws, projectId, sessionId, meta, navigate, navGuard, projectSlug],
   );
 
   const handleInterrupt = useCallback(async () => {

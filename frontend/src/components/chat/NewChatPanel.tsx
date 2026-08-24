@@ -18,6 +18,7 @@ import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { useNavigationGuard } from "~/lib/navigation";
 import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
@@ -68,6 +69,7 @@ export function NewChatPanel({
 }: NewChatPanelProps) {
   const ws = useWebSocket();
   const navigate = useNavigate();
+  const navGuard = useNavigationGuard();
   const isMobile = useIsMobile();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const gitStatus = useAppStore((s) => s.projectGitStatus[projectId]);
@@ -155,6 +157,9 @@ export function NewChatPanel({
     setSending(true);
     setPendingPrompt(prompt);
     setPendingAttachments((attachments ?? []).map(({ previewUrl: _, ...rest }) => rest));
+    // Creating the session is a round trip; if the user picks another session
+    // meanwhile, the session is still created but we must not yank them here.
+    const stillHere = navGuard();
     try {
       const behaviorPresets = projectPresets ?? DEFAULT_PRESETS;
 
@@ -168,6 +173,7 @@ export function NewChatPanel({
       });
       await submitQuery(ws, sessionId, prompt, attachments);
       useUIStore.getState().clearDraft(draftKey);
+      if (!stillHere()) return true;
       navigate({
         to: "/project/$projectSlug/session/$sessionShortId",
         // The session lives in the chosen member's project — its slug, not

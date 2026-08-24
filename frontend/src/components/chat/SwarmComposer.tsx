@@ -14,6 +14,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 import type { BehaviorPresets } from "~/lib/generated-types";
 import { type ModelId, modelLabel, useModelOptions } from "~/lib/model-catalog";
+import { useNavigationGuard } from "~/lib/navigation";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SwarmMode = "goal" | "prompts";
@@ -45,6 +46,7 @@ export function SwarmComposer({
   onCreated,
 }: SwarmComposerProps) {
   const ws = useWebSocket();
+  const navGuard = useNavigationGuard();
   const { options: modelOptions } = useModelOptions();
   const [mode, setMode] = useState<SwarmMode>("goal");
   const [channelName, setChannelName] = useState("");
@@ -82,6 +84,9 @@ export function SwarmComposer({
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
     setSending(true);
+    // Creating the channel is a round trip; if the user has navigated
+    // elsewhere by the time it lands, don't drag them into the new session.
+    const stillHere = navGuard();
 
     try {
       let members: SwarmMemberSpec[];
@@ -111,7 +116,7 @@ export function SwarmComposer({
       }
 
       const firstSid = result.sessionIds.find((id) => id !== "");
-      if (firstSid) {
+      if (firstSid && stillHere()) {
         onCreated(result.channelId, firstSid);
       }
     } catch (err) {
@@ -130,6 +135,7 @@ export function SwarmComposer({
     ws,
     projectId,
     onCreated,
+    navGuard,
   ]);
 
   return (
