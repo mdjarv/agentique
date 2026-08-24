@@ -6,7 +6,7 @@
  * version arithmetic beyond comparing strings it was handed.
  */
 
-import type { UpdateStatus } from "~/lib/generated-types";
+import type { UpdateCLIStatus, UpdateStatus } from "~/lib/generated-types";
 import { apiFetch } from "~/lib/machines/api";
 
 /** Store key for the machine serving this SPA — apiFetch's `undefined` target.
@@ -120,4 +120,38 @@ export function checkedAgo(checkedAt: string, now = Date.now()): string | null {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
+ * How a self-managed CLI is keeping itself current, in one phrase.
+ *
+ * "Updates itself" is only true while the tool's auto-updater is on. A
+ * self-managed install with auto-updates switched off does not update itself,
+ * and telling the user it does is the most reassuring possible way to be wrong
+ * — so a disabled updater says so, and the row then shows the command instead.
+ *
+ * Returns null when the tool reported no auto-update state at all: "did not
+ * say" and "said no" are different claims, and only one is safe to render.
+ */
+export function autoUpdateSummary(cli: UpdateCLIStatus): string | null {
+  const au = cli.autoUpdate;
+  if (!au) return null;
+  if (!au.enabled) {
+    // A package manager owning the install is the normal, correct reason — it
+    // is not a misconfiguration and should not read as one.
+    const by =
+      au.disabledBy === "package-manager"
+        ? "its package manager keeps it current"
+        : au.disabledBy
+          ? `switched off in ${au.disabledBy}`
+          : "switched off";
+    return `auto-updates off — ${by}`;
+  }
+  return au.channel ? `updates itself · ${au.channel} channel` : "updates itself";
+}
+
+/** True when the tool says it will not update itself, so the row must show the
+ *  command even though the install is self-managed. */
+export function needsManualNudge(cli: UpdateCLIStatus): boolean {
+  return cli.selfManaged && cli.autoUpdate !== undefined && !cli.autoUpdate.enabled;
 }

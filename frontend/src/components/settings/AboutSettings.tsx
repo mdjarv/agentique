@@ -5,28 +5,44 @@ import { RefreshCw } from "lucide-react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
 import type { UpdateCLIStatus, UpdateStatus } from "~/lib/generated-types";
-import { checkedAgo, PRIMARY_MACHINE_KEY } from "~/lib/update-api";
+import {
+  autoUpdateSummary,
+  checkedAgo,
+  needsManualNudge,
+  PRIMARY_MACHINE_KEY,
+} from "~/lib/update-api";
 import { cn, relativeTime } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useUpdateStore } from "~/stores/update-store";
 
-/** The one line under a CLI's name. Warnings come first when present: a second
- *  copy on PATH means the version beside it has stopped describing the binary
- *  that actually runs, which outranks how it was installed. */
-function cliDescription(cli: UpdateCLIStatus): string {
-  const parts: string[] = [];
-  if (cli.warnings?.length) parts.push(cli.warnings.join(" · "));
-  parts.push(cli.versionManager ? `${cli.method} via ${cli.versionManager}` : cli.method);
+/** What sits under a CLI's name. Warnings get their own line and their own
+ *  weight: a second copy on PATH means the version beside it has stopped
+ *  describing the binary that runs, which is not a detail to bury in a run of
+ *  grey metadata. */
+function CLIDescription({ cli }: { cli: UpdateCLIStatus }) {
+  const facts: string[] = [];
+  facts.push(cli.versionManager ? `${cli.method} via ${cli.versionManager}` : cli.method);
   if (cli.selfManaged) {
-    parts.push("updates itself");
+    facts.push(autoUpdateSummary(cli) ?? "updates itself");
+    if (needsManualNudge(cli) && cli.updateCmd) facts.push(cli.updateCmd);
   } else if (cli.updateCmd) {
-    parts.push(cli.updateCmd);
+    facts.push(cli.updateCmd);
   }
   if (cli.lastRan && cli.installed && cli.lastRan !== cli.installed) {
-    parts.push(`last session ran ${cli.lastRan}`);
+    facts.push(`last session ran ${cli.lastRan}`);
   }
-  return parts.join(" · ");
+
+  return (
+    <span className="flex flex-col gap-0.5">
+      {cli.warnings?.map((w) => (
+        <span key={w} className="text-amber-600 dark:text-amber-500">
+          {w}
+        </span>
+      ))}
+      <span>{facts.join(" · ")}</span>
+    </span>
+  );
 }
 
 function Value({ children }: { children: React.ReactNode }) {
@@ -135,7 +151,7 @@ export function AboutSettings() {
               <SettingsRow
                 key={cli.tool}
                 label={cli.tool}
-                description={cliDescription(cli)}
+                description={<CLIDescription cli={cli} />}
                 control={<Value>{cli.installed || "version unreadable"}</Value>}
               />
             ))}

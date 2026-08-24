@@ -131,7 +131,10 @@ export function SettingsRow({
   control,
 }: {
   label: string;
-  description?: string;
+  // ReactNode rather than string: some rows carry a line that must stand out
+  // from the rest of the description (a warning, say) rather than being
+  // concatenated into the same grey run of text.
+  description?: React.ReactNode;
   control: React.ReactNode;
 }) {
   return (

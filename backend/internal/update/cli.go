@@ -67,6 +67,11 @@ type CLIStatus struct {
 	// Both mean a version number may have stopped describing the binary that
 	// runs. Prose, meant to be shown as-is.
 	Warnings []string `json:"warnings,omitempty"`
+	// AutoUpdate is the CLI's own auto-update state, absent when it does not
+	// report one. It is what makes "updates itself" honest: a self-managed
+	// install with auto-updates switched off does NOT update itself, and saying
+	// it does would be the most reassuring possible way to be wrong.
+	AutoUpdate *CLIAutoUpdate `json:"autoUpdate,omitempty"`
 	// LastRan is the version this CLI reported when a session on this machine
 	// actually started, "" until one has. Every other field here is inspection;
 	// this is the only observation, which makes it the one check on detection —
@@ -74,6 +79,30 @@ type CLIStatus struct {
 	// product does not run. Empty after a restart, which is honest: nothing has
 	// been observed yet.
 	LastRan string `json:"lastRan,omitempty"`
+}
+
+// CLIAutoUpdate is what a CLI says about keeping itself current. Reported, not
+// interpreted: the row says what the tool believes, and lets the user decide
+// whether that matches what they wanted.
+type CLIAutoUpdate struct {
+	// Enabled is the tool's own answer. False with a DisabledBy of
+	// "package-manager" is a normal, correct state — a brew or npm install is
+	// not supposed to self-update behind its package manager.
+	Enabled bool `json:"enabled"`
+	// DisabledBy names what turned it off ("config", "env", "package-manager",
+	// "unknown"), "" when it is on.
+	DisabledBy string `json:"disabledBy,omitempty"`
+	// Channel is the release stream it follows ("latest", "stable"). It matters
+	// because channels disagree: comparing an install against the wrong one
+	// manufactures a "behind" that is not true.
+	Channel string `json:"channel,omitempty"`
+	// LastOutcome, LastTo and LastAt describe the most recent attempt the tool
+	// made on its own, "" when it has never recorded one. This is the tool's
+	// account of its own background work, NOT a record that an update happened:
+	// an update driven through the library leaves it untouched.
+	LastOutcome string `json:"lastOutcome,omitempty"`
+	LastTo      string `json:"lastTo,omitempty"`
+	LastAt      string `json:"lastAt,omitempty"`
 }
 
 // defaultCLIProbeTimeout bounds one provider's detection. Detection is offline
@@ -242,7 +271,31 @@ func (p *CLIProbe) probeOne(ctx context.Context, provider string, in runtime.Ins
 		VersionManager: info.VersionManager,
 		PackageManager: info.PackageManager,
 		Warnings:       info.Warnings,
+		AutoUpdate:     autoUpdate(info.AutoUpdate),
 	}, true
+}
+
+// autoUpdate maps the provider's auto-update report onto the wire shape. A
+// provider that reports nothing yields nil rather than a zero-valued struct:
+// "Enabled: false" and "did not say" are different claims, and only one of them
+// is safe to show a user.
+func autoUpdate(in *runtime.AutoUpdate) *CLIAutoUpdate {
+	if in == nil {
+		return nil
+	}
+	out := &CLIAutoUpdate{
+		Enabled:    in.Enabled,
+		DisabledBy: in.DisabledBy,
+		Channel:    in.Channel,
+	}
+	if in.LastAttempt != nil {
+		out.LastOutcome = in.LastAttempt.Outcome
+		out.LastTo = in.LastAttempt.To
+		if !in.LastAttempt.Time.IsZero() {
+			out.LastAt = in.LastAttempt.Time.UTC().Format(time.RFC3339)
+		}
+	}
+	return out
 }
 
 // sortedProviders keeps row order stable across refreshes. Map iteration order

@@ -501,6 +501,15 @@ export interface UpdateProgress {
   updatedAt: string;
 }
 
+export interface UpdateCLIAutoUpdate {
+  enabled: boolean;
+  disabledBy?: string;
+  channel?: string;
+  lastOutcome?: string;
+  lastTo?: string;
+  lastAt?: string;
+}
+
 export interface UpdateCLIStatus {
   tool: string;
   installed: string;
@@ -513,6 +522,7 @@ export interface UpdateCLIStatus {
   versionManager?: string;
   packageManager?: string;
   warnings?: string[];
+  autoUpdate?: UpdateCLIAutoUpdate;
   lastRan?: string;
 }
 

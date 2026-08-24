@@ -503,6 +503,15 @@ export const UpdateProgressSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const UpdateCLIAutoUpdateSchema = z.object({
+  enabled: z.boolean(),
+  disabledBy: z.string().optional(),
+  channel: z.string().optional(),
+  lastOutcome: z.string().optional(),
+  lastTo: z.string().optional(),
+  lastAt: z.string().optional(),
+});
+
 export const UpdateCLIStatusSchema = z.object({
   tool: z.string(),
   installed: z.string(),
@@ -515,6 +524,7 @@ export const UpdateCLIStatusSchema = z.object({
   versionManager: z.string().optional(),
   packageManager: z.string().optional(),
   warnings: z.array(z.string()).optional(),
+  autoUpdate: UpdateCLIAutoUpdateSchema.optional(),
   lastRan: z.string().optional(),
 });
 

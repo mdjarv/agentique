@@ -15,6 +15,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import type { UpdateCLIStatus } from "~/lib/generated-types";
+import { autoUpdateSummary, needsManualNudge } from "~/lib/update-api";
 import { cn, copyToClipboard } from "~/lib/utils";
 
 /** How the install is managed, in the user's terms rather than the enum's.
@@ -71,9 +72,17 @@ export function CLIRow({ cli }: { cli: UpdateCLIStatus }) {
           the tool handles itself, and V5c will put the button here. */}
       <div className="flex min-w-0 flex-col gap-1 pl-14">
         {cli.selfManaged ? (
-          <span className="text-[11px] text-muted-foreground-faint">
-            updates itself{cli.updateCmd ? ` · ${cli.updateCmd}` : ""}
-          </span>
+          <>
+            <span className="text-[11px] text-muted-foreground-faint">
+              {autoUpdateSummary(cli) ?? "updates itself"}
+            </span>
+            {/* Self-managed only means the tool owns updating it. If its
+                updater is switched off it will not act on its own, so the
+                command has to be here after all. */}
+            {needsManualNudge(cli) && cli.updateCmd ? (
+              <CopyCommand command={cli.updateCmd} />
+            ) : null}
+          </>
         ) : cli.updateCmd ? (
           <CopyCommand command={cli.updateCmd} />
         ) : (

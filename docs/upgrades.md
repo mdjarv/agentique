@@ -436,6 +436,12 @@ if a library starts calling a shared-tree rewrite self-managed.
     `runtime.SessionInitEvent.CLIVersion` through the pipeline and is folded in
     on read, not at refresh — a session starting between two hourly probes
     should not wait an hour to be visible.
+  - **Auto-update state is what makes "updates itself" honest.** A self-managed
+    install whose updater is switched off does *not* update itself, and saying
+    it does is the most reassuring possible way to be wrong — so the row reports
+    what the tool says (`enabled`, what disabled it, which channel) and shows
+    the command anyway when the updater is off. A tool that reports nothing gets
+    the plain phrase: "did not say" and "said no" are different claims.
   - **The dialog is not the only home, and could not be.** The chip that opens
     it renders only when a machine is *behind*, so on a dev build or an
     up-to-date machine the question this phase exists to answer — which CLI is
