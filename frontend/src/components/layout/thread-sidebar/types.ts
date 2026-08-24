@@ -40,7 +40,7 @@ export type WorkKind =
   | "generic";
 
 /** Color tone of the machine line (maps onto the shared state palette tokens). */
-export type MachineTone = "work" | "attn" | "unread" | "fail" | "merge" | "draft" | "muted";
+export type MachineTone = "work" | "attn" | "fail" | "merge" | "draft" | "muted";
 
 export interface MachineLine {
   text: string;

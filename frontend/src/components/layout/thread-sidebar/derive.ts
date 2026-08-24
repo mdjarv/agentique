@@ -65,9 +65,13 @@ export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
 }
 
 /** A row is awake — and earns its color + third line — for every badge except
- *  rest ("off" = evicted counts as rest; its story is the rest token). */
+ *  rest ("off" = evicted counts as rest; its story is the rest token).
+ *
+ *  `unread` is deliberately NOT awake: a finished session isn't doing anything.
+ *  Its signal is the NEW pill in the time slot, and dropping the third line
+ *  makes the list *shorter* exactly when a batch of sessions lands. */
 export function isAwake(badge: ThreadBadge): boolean {
-  return badge !== null && badge !== "off";
+  return badge !== null && badge !== "off" && badge !== "unread";
 }
 
 /** Blocked on a human — the two amber states, sorted to the top of Open. */
@@ -106,8 +110,8 @@ export function deriveLivePhrase(input: DeriveLivePhraseInput): MachineLine | nu
       return { text: input.liveStatus || "merging", tone: "merge" };
     case "failed":
       return { text: input.liveStatus || "failed", tone: "fail" };
-    case "unread":
-      return { text: "new", tone: "unread" };
+    // unread has no phrase: the pill says it, and the outcome word ("done" /
+    // "merged") rides the repo line like any other settled session's.
     case "draft":
       return { text: "draft", tone: "draft" };
     default:

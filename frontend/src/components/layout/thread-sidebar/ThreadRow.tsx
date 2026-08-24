@@ -29,7 +29,6 @@ import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
   attn: "text-orange",
-  unread: "text-success",
   fail: "text-destructive",
   merge: "text-primary",
   draft: "text-info",
@@ -176,6 +175,20 @@ function Chip({ vm, awake }: { vm: ThreadRowVM; awake: boolean }) {
   );
 }
 
+/**
+ * The unread marker: a finished session spends its right-aligned time slot on
+ * this until you open it, then the timestamp comes back. The slot is the one
+ * always-present, always-aligned position on the row, so a column of pills is
+ * scannable without reading — which "bold title + green check" never was.
+ */
+function NewPill() {
+  return (
+    <span className="ml-auto shrink-0 rounded-full border border-success/45 bg-success/20 px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-wider text-success">
+      NEW
+    </span>
+  );
+}
+
 function RowActions({
   vm,
   onTogglePin,
@@ -273,9 +286,13 @@ export const ThreadRow = memo(function ThreadRow({
               >
                 {vm.untitled ? "Untitled" : vm.name}
               </span>
-              <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
-                {vm.timeLabel}
-              </span>
+              {vm.unread ? (
+                <NewPill />
+              ) : (
+                <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
+                  {vm.timeLabel}
+                </span>
+              )}
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
               <span className="min-w-0 truncate">{vm.projectLabel}</span>
@@ -319,14 +336,20 @@ export const ThreadRow = memo(function ThreadRow({
             {vm.projectLabel}
           </span>
           <MachineTag vm={vm} />
-          {!awake && vm.restToken && (
+          {/* Unread rows show the outcome word too: their third line is gone,
+              so "done" / "merged" has nowhere else to live. */}
+          {(!awake || vm.unread) && vm.restToken && (
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
               · {vm.restToken}
             </span>
           )}
-          <span className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
-            {vm.timeLabel}
-          </span>
+          {vm.unread ? (
+            <NewPill />
+          ) : (
+            <span className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
+              {vm.timeLabel}
+            </span>
+          )}
         </span>
 
         {/* Title line */}

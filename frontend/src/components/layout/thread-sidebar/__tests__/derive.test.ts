@@ -120,7 +120,7 @@ describe("deriveLivePhrase", () => {
     expect(deriveLivePhrase({ badge: "working" })).toEqual({ text: "working", tone: "work" });
   });
 
-  it("phrases planning, merging, failed, unread, and draft", () => {
+  it("phrases planning, merging, failed, and draft", () => {
     expect(deriveLivePhrase({ badge: "planning" })).toEqual({
       text: "planning",
       tone: "work",
@@ -130,10 +130,9 @@ describe("deriveLivePhrase", () => {
       text: "exit 1",
       tone: "fail",
     });
-    expect(deriveLivePhrase({ badge: "unread" })).toEqual({
-      text: "new",
-      tone: "unread",
-    });
+    // Unread has no phrase at all — the NEW pill in the time slot says it,
+    // and the row drops to two lines.
+    expect(deriveLivePhrase({ badge: "unread" })).toBeNull();
     expect(deriveLivePhrase({ badge: "draft" })).toEqual({
       text: "draft",
       tone: "draft",
@@ -164,10 +163,11 @@ describe("deriveWorkKind", () => {
 });
 
 describe("isAwake", () => {
-  it("treats every badge except rest and evicted as awake", () => {
+  it("treats every badge except rest, evicted, and unread as awake", () => {
     expect(isAwake("working")).toBe(true);
     expect(isAwake("attention")).toBe(true);
-    expect(isAwake("unread")).toBe(true);
+    // A finished session isn't doing anything: no hue-from-badge, no third line.
+    expect(isAwake("unread")).toBe(false);
     expect(isAwake(null)).toBe(false);
     expect(isAwake("off")).toBe(false);
   });
