@@ -15,6 +15,7 @@ import (
 	"time"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/server"
@@ -66,7 +67,7 @@ func createCookieSession(t *testing.T, queries *store.Queries, admin bool) strin
 	}
 	token := "test-cookie-token"
 	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
-		Token:     token,
+		TokenHash: auth.HashToken(token),
 		ID:        sql.NullString{String: "test-session-id", Valid: true},
 		UserID:    userID,
 		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
@@ -273,7 +274,7 @@ func TestCrossOriginBearerRequestAndPreflightAreAllowed(t *testing.T) {
 	createCookieSession(t, queries, true)
 	const bearer = "test-remote-bearer"
 	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
-		Token:     bearer,
+		TokenHash: auth.HashToken(bearer),
 		ID:        sql.NullString{String: "test-bearer-session", Valid: true},
 		UserID:    "00000000-0000-4000-8000-000000000001",
 		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),

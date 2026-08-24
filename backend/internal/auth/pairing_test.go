@@ -301,7 +301,7 @@ func TestPairingTokenExpiry(t *testing.T) {
 	}
 	expired := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	if err := queries.CreatePairingToken(context.Background(), store.CreatePairingTokenParams{
-		Token: token, UserID: admin.ID, ExpiresAt: expired,
+		TokenHash: hashToken(token), UserID: admin.ID, ExpiresAt: expired,
 	}); err != nil {
 		t.Fatalf("create pairing token: %v", err)
 	}
@@ -424,7 +424,8 @@ func TestWSTicketFlow(t *testing.T) {
 	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
 		t.Fatalf("decode second ticket: %v", err)
 	}
-	if err := queries.DeleteAuthSession(context.Background(), bearer); err != nil {
+	// Revocation goes through the store, which now keys on the digest.
+	if err := queries.DeleteAuthSession(context.Background(), hashToken(bearer)); err != nil {
 		t.Fatalf("delete session: %v", err)
 	}
 	if _, err := svc.redeemWSTicket(context.Background(), resp2.Ticket); err == nil {

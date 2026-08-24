@@ -46,8 +46,10 @@ const (
 const adminSecretHeader = "X-Agentique-Admin-Secret"
 
 type wsTicket struct {
-	sessionToken string
-	expiresAt    time.Time
+	// The digest, not the token: a ticket outlives the request that minted it,
+	// so holding the credential in memory buys nothing the hash does not.
+	sessionTokenHash string
+	expiresAt        time.Time
 }
 
 // LoadOrCreateAdminSecret returns the admin secret persisted in dataDir,
@@ -136,7 +138,7 @@ func MintRekeyCode(ctx context.Context, queries *store.Queries, userID string) (
 	}
 	expiresAt = time.Now().Add(RekeyCodeTTL)
 	if err := queries.CreatePairingToken(ctx, store.CreatePairingTokenParams{
-		Token:     code,
+		TokenHash: hashToken(code),
 		UserID:    userID,
 		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
 	}); err != nil {
@@ -152,7 +154,7 @@ func (s *Service) consumeRekeyCode(ctx context.Context, code string) (store.User
 	if len(code) != pairingTokenLength {
 		return store.User{}, errors.New("recovery code is invalid")
 	}
-	row, err := s.queries.ConsumePairingToken(ctx, code)
+	row, err := s.queries.ConsumePairingToken(ctx, hashToken(code))
 	if err != nil {
 		return store.User{}, errors.New("recovery code is invalid or expired")
 	}
@@ -231,7 +233,7 @@ func (s *Service) handleMintPairingToken(w http.ResponseWriter, r *http.Request)
 
 	expiresAt := time.Now().Add(ttl).UTC().Format(time.RFC3339)
 	if err := s.queries.CreatePairingToken(r.Context(), store.CreatePairingTokenParams{
-		Token:     token,
+		TokenHash: hashToken(token),
 		UserID:    userID,
 		ExpiresAt: expiresAt,
 	}); err != nil {
@@ -282,7 +284,7 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 
 	// Consumed atomically in SQL: expired, already-used, and unknown tokens
 	// are indistinguishable to the caller.
-	row, err := s.queries.ConsumePairingToken(r.Context(), token)
+	row, err := s.queries.ConsumePairingToken(r.Context(), hashToken(token))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.RespondError(w, httperror.Unauthorized("invalid or expired pairing token"))
@@ -387,12 +389,12 @@ func (s *Service) handleCreateWSTicket(w http.ResponseWriter, r *http.Request) {
 	expires := time.Now().Add(wsTicketTTL)
 	s.wsTicketMu.Lock()
 	s.deleteExpiredWSTicketsLocked(time.Now())
-	if len(s.wsTickets) >= maxWSTicketsTotal || s.countWSTicketsLocked(session.Token) >= maxWSTicketsPerSession {
+	if len(s.wsTickets) >= maxWSTicketsTotal || s.countWSTicketsLocked(session.TokenHash) >= maxWSTicketsPerSession {
 		s.wsTicketMu.Unlock()
 		httperror.RespondError(w, httperror.TooManyRequests("too many outstanding WebSocket tickets"))
 		return
 	}
-	s.wsTickets[ticket] = &wsTicket{sessionToken: session.Token, expiresAt: expires}
+	s.wsTickets[ticket] = &wsTicket{sessionTokenHash: session.TokenHash, expiresAt: expires}
 	s.wsTicketMu.Unlock()
 
 	httperror.JSON(w, http.StatusOK, map[string]any{
@@ -416,17 +418,17 @@ func (s *Service) redeemWSTicket(ctx context.Context, ticket string) (*store.Get
 		return nil, errors.New("ws ticket expired")
 	}
 
-	row, err := s.queries.GetAuthSession(ctx, entry.sessionToken)
+	row, err := s.queries.GetAuthSession(ctx, entry.sessionTokenHash)
 	if err != nil {
 		return nil, errors.New("session for ws ticket no longer valid")
 	}
 	return &row, nil
 }
 
-func (s *Service) countWSTicketsLocked(sessionToken string) int {
+func (s *Service) countWSTicketsLocked(sessionTokenHash string) int {
 	count := 0
 	for _, ticket := range s.wsTickets {
-		if ticket.sessionToken == sessionToken {
+		if ticket.sessionTokenHash == sessionTokenHash {
 			count++
 		}
 	}
@@ -513,7 +515,7 @@ func (s *Service) handleRevokeCurrentBearer(w http.ResponseWriter, r *http.Reque
 		httperror.RespondError(w, httperror.Unauthorized("valid bearer credential required"))
 		return
 	}
-	if err := s.queries.DeleteAuthSession(r.Context(), session.Token); err != nil {
+	if err := s.queries.DeleteAuthSession(r.Context(), session.TokenHash); err != nil {
 		httperror.RespondError(w, httperror.Internal("revoke current session", err))
 		return
 	}

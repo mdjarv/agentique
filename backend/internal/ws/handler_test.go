@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -298,8 +299,8 @@ func TestRevokingSessionClosesEstablishedWebSocket(t *testing.T) {
 	const bearer = "paired-bearer-token"
 	const sessionID = "paired-session-id"
 	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
-		Token: bearer,
-		ID:    sql.NullString{String: sessionID, Valid: true}, UserID: userID,
+		TokenHash: auth.HashToken(bearer),
+		ID:        sql.NullString{String: sessionID, Valid: true}, UserID: userID,
 		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		Label:     "desktop", Kind: "bearer",
 	}); err != nil {
@@ -373,8 +374,8 @@ func TestExpiredSessionClosesEstablishedWebSocket(t *testing.T) {
 	}
 	const bearer = "short-lived-bearer-token"
 	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
-		Token: bearer,
-		ID:    sql.NullString{String: "short-lived-session", Valid: true}, UserID: userID,
+		TokenHash: auth.HashToken(bearer),
+		ID:        sql.NullString{String: "short-lived-session", Valid: true}, UserID: userID,
 		ExpiresAt: time.Now().Add(3 * time.Second).UTC().Format(time.RFC3339),
 		Label:     "desktop", Kind: "bearer",
 	}); err != nil {

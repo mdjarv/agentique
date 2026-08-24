@@ -33,29 +33,29 @@ SELECT * FROM webauthn_credentials WHERE id = ?;
 UPDATE webauthn_credentials SET sign_count = ?, backup_eligible = ?, backup_state = ? WHERE id = ?;
 
 -- name: CreateAuthSession :exec
-INSERT INTO auth_sessions (token, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO auth_sessions (token_hash, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetAuthSession :one
-SELECT s.token, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
+SELECT s.token_hash, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
        u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
-WHERE s.token = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
+WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
 
 -- name: DeleteAuthSession :exec
-DELETE FROM auth_sessions WHERE token = ?;
+DELETE FROM auth_sessions WHERE token_hash = ?;
 
 -- name: DeleteExpiredAuthSessions :exec
 DELETE FROM auth_sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
 
 -- name: CreateInviteToken :exec
-INSERT INTO invite_tokens (token, created_by, expires_at) VALUES (?, ?, ?);
+INSERT INTO invite_tokens (token_hash, created_by, expires_at) VALUES (?, ?, ?);
 
 -- name: GetInviteToken :one
-SELECT * FROM invite_tokens WHERE token = ? AND used_by IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
+SELECT * FROM invite_tokens WHERE token_hash = ? AND used_by IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
 
 -- name: UseInviteToken :exec
-UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE token = ?;
+UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE token_hash = ?;
 
 -- name: ListInviteTokens :many
 SELECT * FROM invite_tokens WHERE created_by = ? ORDER BY created_at DESC;
@@ -73,12 +73,12 @@ DELETE FROM auth_sessions WHERE id = ?;
 DELETE FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'bearer';
 
 -- name: CreatePairingToken :exec
-INSERT INTO pairing_tokens (token, user_id, expires_at) VALUES (?, ?, ?);
+INSERT INTO pairing_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?);
 
 -- name: ConsumePairingToken :one
 UPDATE pairing_tokens
 SET used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-WHERE token = ?
+WHERE token_hash = ?
   AND used_at IS NULL
   AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 RETURNING *;

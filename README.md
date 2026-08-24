@@ -240,10 +240,18 @@ All persistent data lives under a single data directory:
 | Windows | `%LOCALAPPDATA%\agentique` | (same as data dir) |
 
 The data directory is created owner-only (`0700`), and an existing one is
-tightened on the next start: the database holds auth session tokens and every
-paired machine's bearer token in plaintext, so it must not be readable by other
-users on the box. The config file is `0600` for the same reason (it can carry an
-embeddings API key).
+tightened on the next start. The config file is `0600` for the same reason (it
+can carry an embeddings API key).
+
+Session, pairing and invite tokens are stored as SHA-256 digests, so a copy of
+the database — a backup, a disk, a DB handed over for debugging — yields no
+usable credential. Each paired machine's bearer is the exception: it is a
+credential *this* server presents to a remote, so it must stay recoverable and
+is protected only by the directory mode.
+
+> **Upgrading to this version signs everyone out.** The migration replaces the
+> plaintext token columns rather than converting them, so browsers log in again
+> and each paired machine needs `agentique pair` once.
 
 Inside the data directory:
 

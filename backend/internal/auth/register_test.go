@@ -232,7 +232,8 @@ func TestCreateInviteWorksForAnAdmin(t *testing.T) {
 	if body.Token == "" {
 		t.Fatal("no invite token returned")
 	}
-	if _, err := queries.GetInviteToken(ctx, body.Token); err != nil {
+	// The plaintext token goes to the operator; only its digest is stored.
+	if _, err := queries.GetInviteToken(ctx, hashToken(body.Token)); err != nil {
 		t.Errorf("invite token was not persisted: %v", err)
 	}
 }

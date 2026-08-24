@@ -106,10 +106,23 @@ embedded bundle**, never by `'unsafe-inline'`.
 
 **Credentials never reach argv or a group-readable file.** The data dir is
 owner-only (`paths.SecureDataDir`, called from serve, never a constructor) and
-the DB plus its sidecars are 0600 — that DB holds session tokens and every
-paired machine's bearer in plaintext. The per-session MCP bearer goes to the
-CLI as a 0600 *file path*, because `/proc/<pid>/cmdline` is world-readable; if
-that write fails, fall back to the stdio transport, never to inline JSON.
+the DB plus its sidecars are 0600. The per-session MCP bearer goes to the CLI
+as a 0600 *file path*, because `/proc/<pid>/cmdline` is world-readable; if that
+write fails, fall back to the stdio transport, never to inline JSON.
+
+**Inbound credentials are stored as digests, never recoverable.**
+`auth_sessions`, `pairing_tokens` and `invite_tokens` hold `token_hash`
+(`auth.HashToken` — plain SHA-256, correct because every token is
+crypto/rand output, not a password). Anything writing those rows directly must
+hash first; there is no plaintext column to fall back to.
+
+`machines.token` is the exception and must stay plaintext: it is an OUTBOUND
+credential this server presents to a remote. Hashing cannot protect it and
+neither can encryption at rest — the key would live in the same directory, at
+the same uid the agents run as. **That is the open boundary:** a prompt-injected
+agent can read the data dir, so it can read every paired machine's bearer. The
+fix is a privilege split (separate uid or sandbox per session), not another
+storage trick. Do not describe the data dir as protected from agents.
 
 **Downloads fail closed.** A missing or unfetchable checksum aborts an install
 (`install.sh`, `install.ps1`); release asset and checksum URLs must be HTTPS

@@ -13,17 +13,17 @@ import (
 const consumePairingToken = `-- name: ConsumePairingToken :one
 UPDATE pairing_tokens
 SET used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-WHERE token = ?
+WHERE token_hash = ?
   AND used_at IS NULL
   AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-RETURNING token, user_id, expires_at, used_at, created_at
+RETURNING token_hash, user_id, expires_at, used_at, created_at
 `
 
-func (q *Queries) ConsumePairingToken(ctx context.Context, token string) (PairingToken, error) {
-	row := q.db.QueryRowContext(ctx, consumePairingToken, token)
+func (q *Queries) ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error) {
+	row := q.db.QueryRowContext(ctx, consumePairingToken, tokenHash)
 	var i PairingToken
 	err := row.Scan(
-		&i.Token,
+		&i.TokenHash,
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.UsedAt,
@@ -55,11 +55,11 @@ func (q *Queries) CountWebAuthnCredentials(ctx context.Context) (int64, error) {
 }
 
 const createAuthSession = `-- name: CreateAuthSession :exec
-INSERT INTO auth_sessions (token, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO auth_sessions (token_hash, id, user_id, expires_at, label, kind) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateAuthSessionParams struct {
-	Token     string         `json:"token"`
+	TokenHash string         `json:"token_hash"`
 	ID        sql.NullString `json:"id"`
 	UserID    string         `json:"user_id"`
 	ExpiresAt string         `json:"expires_at"`
@@ -69,7 +69,7 @@ type CreateAuthSessionParams struct {
 
 func (q *Queries) CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error {
 	_, err := q.db.ExecContext(ctx, createAuthSession,
-		arg.Token,
+		arg.TokenHash,
 		arg.ID,
 		arg.UserID,
 		arg.ExpiresAt,
@@ -80,32 +80,32 @@ func (q *Queries) CreateAuthSession(ctx context.Context, arg CreateAuthSessionPa
 }
 
 const createInviteToken = `-- name: CreateInviteToken :exec
-INSERT INTO invite_tokens (token, created_by, expires_at) VALUES (?, ?, ?)
+INSERT INTO invite_tokens (token_hash, created_by, expires_at) VALUES (?, ?, ?)
 `
 
 type CreateInviteTokenParams struct {
-	Token     string `json:"token"`
+	TokenHash string `json:"token_hash"`
 	CreatedBy string `json:"created_by"`
 	ExpiresAt string `json:"expires_at"`
 }
 
 func (q *Queries) CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error {
-	_, err := q.db.ExecContext(ctx, createInviteToken, arg.Token, arg.CreatedBy, arg.ExpiresAt)
+	_, err := q.db.ExecContext(ctx, createInviteToken, arg.TokenHash, arg.CreatedBy, arg.ExpiresAt)
 	return err
 }
 
 const createPairingToken = `-- name: CreatePairingToken :exec
-INSERT INTO pairing_tokens (token, user_id, expires_at) VALUES (?, ?, ?)
+INSERT INTO pairing_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)
 `
 
 type CreatePairingTokenParams struct {
-	Token     string `json:"token"`
+	TokenHash string `json:"token_hash"`
 	UserID    string `json:"user_id"`
 	ExpiresAt string `json:"expires_at"`
 }
 
 func (q *Queries) CreatePairingToken(ctx context.Context, arg CreatePairingTokenParams) error {
-	_, err := q.db.ExecContext(ctx, createPairingToken, arg.Token, arg.UserID, arg.ExpiresAt)
+	_, err := q.db.ExecContext(ctx, createPairingToken, arg.TokenHash, arg.UserID, arg.ExpiresAt)
 	return err
 }
 
@@ -183,11 +183,11 @@ func (q *Queries) DeleteAllWebAuthnCredentials(ctx context.Context) error {
 }
 
 const deleteAuthSession = `-- name: DeleteAuthSession :exec
-DELETE FROM auth_sessions WHERE token = ?
+DELETE FROM auth_sessions WHERE token_hash = ?
 `
 
-func (q *Queries) DeleteAuthSession(ctx context.Context, token string) error {
-	_, err := q.db.ExecContext(ctx, deleteAuthSession, token)
+func (q *Queries) DeleteAuthSession(ctx context.Context, tokenHash string) error {
+	_, err := q.db.ExecContext(ctx, deleteAuthSession, tokenHash)
 	return err
 }
 
@@ -265,15 +265,15 @@ func (q *Queries) GetAdminUser(ctx context.Context) (User, error) {
 }
 
 const getAuthSession = `-- name: GetAuthSession :one
-SELECT s.token, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
+SELECT s.token_hash, s.id, s.label, s.kind, s.user_id, s.expires_at, s.created_at,
        u.display_name, u.is_admin, u.sidebar_focus_mode
 FROM auth_sessions s
 JOIN users u ON u.id = s.user_id
-WHERE s.token = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `
 
 type GetAuthSessionRow struct {
-	Token            string         `json:"token"`
+	TokenHash        string         `json:"token_hash"`
 	ID               sql.NullString `json:"id"`
 	Label            string         `json:"label"`
 	Kind             string         `json:"kind"`
@@ -285,11 +285,11 @@ type GetAuthSessionRow struct {
 	SidebarFocusMode int64          `json:"sidebar_focus_mode"`
 }
 
-func (q *Queries) GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error) {
-	row := q.db.QueryRowContext(ctx, getAuthSession, token)
+func (q *Queries) GetAuthSession(ctx context.Context, tokenHash string) (GetAuthSessionRow, error) {
+	row := q.db.QueryRowContext(ctx, getAuthSession, tokenHash)
 	var i GetAuthSessionRow
 	err := row.Scan(
-		&i.Token,
+		&i.TokenHash,
 		&i.ID,
 		&i.Label,
 		&i.Kind,
@@ -326,14 +326,14 @@ func (q *Queries) GetCredentialByID(ctx context.Context, id string) (WebauthnCre
 }
 
 const getInviteToken = `-- name: GetInviteToken :one
-SELECT token, created_by, expires_at, used_by, used_at, created_at FROM invite_tokens WHERE token = ? AND used_by IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+SELECT token_hash, created_by, expires_at, used_by, used_at, created_at FROM invite_tokens WHERE token_hash = ? AND used_by IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 `
 
-func (q *Queries) GetInviteToken(ctx context.Context, token string) (InviteToken, error) {
-	row := q.db.QueryRowContext(ctx, getInviteToken, token)
+func (q *Queries) GetInviteToken(ctx context.Context, tokenHash string) (InviteToken, error) {
+	row := q.db.QueryRowContext(ctx, getInviteToken, tokenHash)
 	var i InviteToken
 	err := row.Scan(
-		&i.Token,
+		&i.TokenHash,
 		&i.CreatedBy,
 		&i.ExpiresAt,
 		&i.UsedBy,
@@ -464,7 +464,7 @@ func (q *Queries) ListCredentialsByUser(ctx context.Context, userID string) ([]W
 }
 
 const listInviteTokens = `-- name: ListInviteTokens :many
-SELECT token, created_by, expires_at, used_by, used_at, created_at FROM invite_tokens WHERE created_by = ? ORDER BY created_at DESC
+SELECT token_hash, created_by, expires_at, used_by, used_at, created_at FROM invite_tokens WHERE created_by = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListInviteTokens(ctx context.Context, createdBy string) ([]InviteToken, error) {
@@ -477,7 +477,7 @@ func (q *Queries) ListInviteTokens(ctx context.Context, createdBy string) ([]Inv
 	for rows.Next() {
 		var i InviteToken
 		if err := rows.Scan(
-			&i.Token,
+			&i.TokenHash,
 			&i.CreatedBy,
 			&i.ExpiresAt,
 			&i.UsedBy,
@@ -566,15 +566,15 @@ func (q *Queries) UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUser
 }
 
 const useInviteToken = `-- name: UseInviteToken :exec
-UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE token = ?
+UPDATE invite_tokens SET used_by = ?, used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE token_hash = ?
 `
 
 type UseInviteTokenParams struct {
-	UsedBy sql.NullString `json:"used_by"`
-	Token  string         `json:"token"`
+	UsedBy    sql.NullString `json:"used_by"`
+	TokenHash string         `json:"token_hash"`
 }
 
 func (q *Queries) UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error {
-	_, err := q.db.ExecContext(ctx, useInviteToken, arg.UsedBy, arg.Token)
+	_, err := q.db.ExecContext(ctx, useInviteToken, arg.UsedBy, arg.TokenHash)
 	return err
 }

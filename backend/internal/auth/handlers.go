@@ -165,7 +165,7 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 			httperror.RespondError(w, httperror.BadRequest("invite token required"))
 			return
 		}
-		if _, err := s.queries.GetInviteToken(ctx, req.InviteToken); err != nil {
+		if _, err := s.queries.GetInviteToken(ctx, hashToken(req.InviteToken)); err != nil {
 			httperror.RespondError(w, httperror.BadRequest("invalid or expired invite token"))
 			return
 		}
@@ -275,8 +275,8 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	// Mark invite token as used.
 	if inviteToken != "" {
 		if err := s.queries.UseInviteToken(ctx, store.UseInviteTokenParams{
-			UsedBy: sql.NullString{String: user.ID, Valid: true},
-			Token:  inviteToken,
+			UsedBy:    sql.NullString{String: user.ID, Valid: true},
+			TokenHash: hashToken(inviteToken),
 		}); err != nil {
 			slog.Warn("failed to mark invite token as used", "token", inviteToken, "error", err)
 		}
@@ -380,7 +380,7 @@ func (s *Service) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 	session, authErr := s.authenticateRequest(r)
 	if session != nil && authErr == nil {
-		if err := s.queries.DeleteAuthSession(r.Context(), session.Token); err != nil {
+		if err := s.queries.DeleteAuthSession(r.Context(), session.TokenHash); err != nil {
 			slog.Warn("failed to delete logout session", "error", err)
 		}
 		if session.ID.Valid {
@@ -413,7 +413,7 @@ func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(inviteTokenTTL).UTC().Format(time.RFC3339)
 
 	err = s.queries.CreateInviteToken(r.Context(), store.CreateInviteTokenParams{
-		Token:     token,
+		TokenHash: hashToken(token),
 		CreatedBy: userID,
 		ExpiresAt: expiresAt,
 	})
@@ -431,7 +431,7 @@ func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 // handleValidateInvite checks if an invite token is valid.
 func (s *Service) handleValidateInvite(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	_, err := s.queries.GetInviteToken(r.Context(), token)
+	_, err := s.queries.GetInviteToken(r.Context(), hashToken(token))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.JSON(w, http.StatusOK, map[string]any{"valid": false})

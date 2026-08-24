@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -165,7 +167,7 @@ func (s *Service) TrackWebSocket(session *store.GetAuthSessionRow, closeConnecti
 	// Close the registration race with revocation. Add first, then re-read the
 	// database. Either a concurrent revoker sees this entry, or this lookup sees
 	// the deletion and closes it here.
-	if _, err := s.lookupSession(context.Background(), session.Token); err != nil {
+	if _, err := s.lookupSessionByHash(context.Background(), session.TokenHash); err != nil {
 		s.closeSessionConnections(sessionID)
 		return nil, errors.New("auth session was revoked during WebSocket setup")
 	}
@@ -243,7 +245,7 @@ func (s *Service) createSessionWithID(ctx context.Context, userID, label, kind s
 	expiresAt := time.Now().Add(sessionMaxAge).UTC().Format(time.RFC3339)
 
 	err = s.queries.CreateAuthSession(ctx, store.CreateAuthSessionParams{
-		Token:     token,
+		TokenHash: hashToken(token),
 		ID:        sql.NullString{String: id, Valid: true},
 		UserID:    userID,
 		ExpiresAt: expiresAt,
@@ -401,6 +403,25 @@ func generateToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// HashToken is the storage form of a bearer credential: what goes in the
+// database in place of the token itself. Exported because anything that writes
+// an auth_sessions / pairing_tokens / invite_tokens row directly (test
+// fixtures, future migrations) has to produce the same digest. It reveals
+// nothing — the caller already holds the token it is hashing.
+func HashToken(token string) string { return hashToken(token) }
+
+// hashToken is the digest stored in place of a bearer credential.
+//
+// Plain SHA-256 with no salt or stretching is the right primitive HERE and the
+// wrong one for a password: every token this hashes comes from crypto/rand
+// (32 bytes for sessions and invites, ~60 bits for a typed pairing code), so
+// there is no dictionary to grind and nothing a work factor would buy. Salting
+// would additionally break the point — lookup is by digest.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 func generateUUID() string {
 	return uuid.New().String()
 }
@@ -429,7 +450,13 @@ func (s *Service) authenticateRequest(r *http.Request) (*store.GetAuthSessionRow
 }
 
 func (s *Service) lookupSession(ctx context.Context, token string) (*store.GetAuthSessionRow, error) {
-	row, err := s.queries.GetAuthSession(ctx, token)
+	return s.lookupSessionByHash(ctx, hashToken(token))
+}
+
+// lookupSessionByHash is the same lookup for callers that already hold the
+// digest — the row itself no longer carries the token it authenticates.
+func (s *Service) lookupSessionByHash(ctx context.Context, tokenHash string) (*store.GetAuthSessionRow, error) {
+	row, err := s.queries.GetAuthSession(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("session not found")

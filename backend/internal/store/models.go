@@ -21,13 +21,13 @@ type AgentProfile struct {
 }
 
 type AuthSession struct {
-	Token     string         `json:"token"`
+	TokenHash string         `json:"token_hash"`
+	ID        sql.NullString `json:"id"`
 	UserID    string         `json:"user_id"`
 	ExpiresAt string         `json:"expires_at"`
-	CreatedAt string         `json:"created_at"`
-	ID        sql.NullString `json:"id"`
 	Label     string         `json:"label"`
 	Kind      string         `json:"kind"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type BrainJob struct {
@@ -61,7 +61,7 @@ type HostPresentation struct {
 }
 
 type InviteToken struct {
-	Token     string         `json:"token"`
+	TokenHash string         `json:"token_hash"`
 	CreatedBy string         `json:"created_by"`
 	ExpiresAt string         `json:"expires_at"`
 	UsedBy    sql.NullString `json:"used_by"`
@@ -107,7 +107,7 @@ type ModelResolution struct {
 }
 
 type PairingToken struct {
-	Token     string         `json:"token"`
+	TokenHash string         `json:"token_hash"`
 	UserID    string         `json:"user_id"`
 	ExpiresAt string         `json:"expires_at"`
 	UsedAt    sql.NullString `json:"used_at"`

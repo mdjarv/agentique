@@ -17,7 +17,7 @@ type Querier interface {
 	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
 	ClaimScheduleRun(ctx context.Context, id string) (int64, error)
 	ClearScheduleActionAttention(ctx context.Context, arg ClearScheduleActionAttentionParams) error
-	ConsumePairingToken(ctx context.Context, token string) (PairingToken, error)
+	ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
@@ -42,7 +42,7 @@ type Querier interface {
 	DeleteAgentProfile(ctx context.Context, id string) error
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
-	DeleteAuthSession(ctx context.Context, token string) error
+	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
 	DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error)
 	DeleteBrainJob(ctx context.Context, id string) error
@@ -60,11 +60,11 @@ type Querier interface {
 	GetActiveSessionByAgentProfile(ctx context.Context, agentProfileID sql.NullString) (Session, error)
 	GetAdminUser(ctx context.Context) (User, error)
 	GetAgentProfile(ctx context.Context, id string) (AgentProfile, error)
-	GetAuthSession(ctx context.Context, token string) (GetAuthSessionRow, error)
+	GetAuthSession(ctx context.Context, tokenHash string) (GetAuthSessionRow, error)
 	GetChannel(ctx context.Context, id string) (Channel, error)
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
 	GetHostPresentation(ctx context.Context) (GetHostPresentationRow, error)
-	GetInviteToken(ctx context.Context, token string) (InviteToken, error)
+	GetInviteToken(ctx context.Context, tokenHash string) (InviteToken, error)
 	GetMachine(ctx context.Context, machineID string) (Machine, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetProject(ctx context.Context, id string) (Project, error)

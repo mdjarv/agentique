@@ -95,10 +95,13 @@ This host's own name and icon (`PUT /api/machine/presentation`) take the same
 full-access guard as the catalog: it rewrites how this machine identifies
 itself to every client.
 
-Those bearer tokens live in the database in plaintext, so the data directory is
-owner-only and the database file is 0600 (`paths.SecureDataDir`, applied from
-serve and fixed forward on every start). A world-readable database makes the
-0600 admin secret and signing key beside it decorative.
+`machines.token` is the one credential that stays plaintext, and necessarily so
+— it is what this server *presents* to the remote, so it has to be recoverable.
+Everything inbound (`auth_sessions`, `pairing_tokens`, `invite_tokens`) is
+stored as a SHA-256 digest instead. The outbound bearers are protected only by
+the data directory being owner-only and the database 0600
+(`paths.SecureDataDir`, applied from serve and fixed forward on every start),
+which does **not** protect them from an agent running at the same uid.
 
 ### Cross-machine project identity
 
@@ -215,6 +218,8 @@ machine clears its cache and drops its sessions from the stores.
   redemption re-checks the database.
 - **Nor in argv, nor in a group-readable file**: the data dir is owner-only and
   the database 0600, because it stores every remote's bearer in plaintext.
+- **Inbound credentials are digests**; only outbound (`machines.token`) is
+  recoverable, and nothing but the directory mode guards it.
 - **Revocation is live**: it closes established sockets, and removing a
   catalog entry revokes the remote bearer before forgetting it locally.
 - **An explicit credential never falls back to another** (bad bearer ≠ try
