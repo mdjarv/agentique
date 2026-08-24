@@ -264,7 +264,12 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now ti
 
 	// Interference (RFC-LD D5): similar-but-not-duplicate pairs to disambiguate. simOpts
 	// (semantic mode) also surface semantic near-duplicates, not just lexical ones.
-	rep.Interference = memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference, simOpts...)
+	// Keep the empty case an empty slice, not nil: every other field of this
+	// report marshals as [], and the frontend types them all as arrays — a null
+	// here crashes the Brain tab on an empty corpus.
+	if pairs := memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference, simOpts...); pairs != nil {
+		rep.Interference = pairs
+	}
 
 	return rep
 }
