@@ -27,7 +27,7 @@ import { useNow } from "~/hooks/useNow";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { fetchSweep, STALE_AFTER_MS } from "~/lib/git/sync-sweep";
+import { fetchSiblings, fetchSweep, STALE_AFTER_MS } from "~/lib/git/sync-sweep";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { pullProject, pushProject } from "~/lib/project-actions";
 import { getProjectColor } from "~/lib/project-colors";
@@ -281,6 +281,9 @@ export function SyncDock() {
             : await pullProject(ws, row.projectId);
         useAppStore.getState().setProjectGitStatus(status);
         useAppStore.getState().markProjectFetched(row.projectId, Date.now());
+        // The push moved the remote: this repo's checkouts on other machines
+        // are behind now, and only a fetch there can find that out.
+        if (row.action === "push") void fetchSiblings(ws, row.projectId);
       } catch (err) {
         toast.error(getErrorMessage(err, `${row.action === "push" ? "Push" : "Pull"} failed`));
       } finally {
@@ -324,6 +327,7 @@ export function SyncDock() {
             const store = useAppStore.getState();
             store.setProjectGitStatus(status);
             store.markProjectFetched(row.projectId, Date.now());
+            if (action === "push") void fetchSiblings(ws, row.projectId);
           } catch {
             failed++;
           } finally {

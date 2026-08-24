@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { fetchSiblings } from "~/lib/git/sync-sweep";
 import {
   commitProject,
   discardProjectChanges,
@@ -24,6 +25,9 @@ export function useProjectGitActions(projectId: string) {
     try {
       const status = await pushProject(ws, projectId);
       useAppStore.getState().setProjectGitStatus(status);
+      // The remote moved: this repo's checkouts on other machines are behind
+      // now, and only a fetch over there can discover it.
+      void fetchSiblings(ws, projectId);
       toast.success("Pushed");
     } catch (err) {
       toast.error(getErrorMessage(err, "Push failed"));

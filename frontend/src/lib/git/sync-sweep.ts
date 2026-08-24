@@ -109,6 +109,37 @@ export function fetchSweep(ws: WsClient, projects: Project[], signal?: AbortSign
   return sweep(targets, FETCH_STAGGER_MS, signal, (id) => refreshFetch(ws, id));
 }
 
+/**
+ * The same repo's other checkouts — same canonical remote (`remote_url`, the
+ * key `groupProjects` groups on), different physical project.
+ */
+export function siblingCheckouts(projects: Project[], projectId: string): Project[] {
+  const source = projects.find((p) => p.id === projectId);
+  if (!source?.remote_url) return [];
+  return projects.filter((p) => p.id !== projectId && p.remote_url === source.remote_url);
+}
+
+/**
+ * A push moves the *remote*, so every other checkout of that repo just went
+ * behind — and no local command can discover it, only a fetch. Without this,
+ * pushing from here leaves the laptop's copy of the same repo looking clean
+ * until the ten-minute sweep comes round.
+ *
+ * Best-effort by design: it runs after the push has already been applied,
+ * skips machines that are away (their cached status stays the best answer),
+ * and a failure only means the sweep learns it later.
+ */
+export function fetchSiblings(
+  ws: WsClient,
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const siblings = reachableProjects(
+    siblingCheckouts(useAppStore.getState().projects, projectId),
+  ).filter((p) => useAppStore.getState().projectGitStatus[p.id]?.hasRemote !== false);
+  return sweep(siblings, FETCH_STAGGER_MS, signal, (id) => refreshFetch(ws, id));
+}
+
 /** Oldest fetch stamp across the given projects, or null if none have one. */
 export function oldestFetchedAt(projectIds: string[]): number | null {
   const stamps = useAppStore.getState().projectGitFetchedAt;
