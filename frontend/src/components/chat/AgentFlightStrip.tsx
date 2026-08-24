@@ -138,7 +138,7 @@ function ChipRail({
   label?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto px-3 py-1.5">
+    <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto px-3 py-1.5">
       {label && (
         <span className="shrink-0 font-medium text-[10px] text-agent/80 uppercase tracking-[0.1em]">
           In flight

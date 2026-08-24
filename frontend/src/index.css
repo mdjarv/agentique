@@ -1014,6 +1014,15 @@
   }
 }
 
+/* Horizontal strips that are chrome rather than content: a 6px bar under a
+   one-line rail reads as a second border and doubles its apparent height. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Deep-link (?turn=) target highlight: brief ring fade on the anchored turn. */
 @keyframes deep-link-flash {
   0%,
