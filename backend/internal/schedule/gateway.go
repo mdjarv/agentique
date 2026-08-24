@@ -27,8 +27,10 @@ func (g *sessionGateway) SessionFinished(ctx context.Context, sessionID string) 
 	if err != nil {
 		return false, err
 	}
-	completed := row.CompletedAt.Valid && row.CompletedAt.String != ""
-	return completed || row.WorktreeMerged != 0, nil
+	// User intent only. A clean CLI exit no longer looks finished here — an
+	// evicted or self-exited session lazy-resumes on the next fire.
+	archived := row.ArchivedAt.Valid && row.ArchivedAt.String != ""
+	return archived || row.WorktreeMerged != 0, nil
 }
 
 func (g *sessionGateway) PendingHumanInput(sessionID string) string {

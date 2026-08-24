@@ -91,7 +91,7 @@ type SessionInfo struct {
 	WorktreePath       string               `json:"worktreePath,omitempty"`
 	WorktreeBranch     string               `json:"worktreeBranch,omitempty"`
 	WorktreeMerged     bool                 `json:"worktreeMerged,omitempty"`
-	CompletedAt        string               `json:"completedAt,omitempty"`
+	ArchivedAt         string               `json:"archivedAt,omitempty"`
 	HasDirtyWorktree   bool                 `json:"hasDirtyWorktree,omitempty"`
 	HasUncommitted     bool                 `json:"hasUncommitted,omitempty"`
 	CommitsAhead       int                  `json:"commitsAhead"`
@@ -1068,7 +1068,7 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		WorktreePath:    nullStr(ss.WorktreePath),
 		WorktreeBranch:  nullStr(ss.WorktreeBranch),
 		WorktreeMerged:  ss.WorktreeMerged != 0,
-		CompletedAt:     nullStr(ss.CompletedAt),
+		ArchivedAt:      nullStr(ss.ArchivedAt),
 		PrUrl:           ss.PrUrl,
 		BehaviorPresets: ParsePresets(ss.BehaviorPresets),
 		ParentSessionID: nullStr(ss.ParentSessionID),
@@ -1557,14 +1557,14 @@ func (s *Service) wireEnsureBrowserCallback(sess *Session) {
 	})
 }
 
-// applyPostResumeFlags re-applies persisted lifecycle flags (merged/completed)
+// applyPostResumeFlags re-applies persisted lifecycle flags (merged/archived)
 // onto the live Session so the in-memory state matches what the DB reflects.
 func applyPostResumeFlags(sess *Session, dbSess store.Session) {
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
 	}
-	if dbSess.CompletedAt.Valid {
-		sess.MarkCompleted()
+	if dbSess.ArchivedAt.Valid {
+		sess.MarkArchived(dbSess.ArchivedAt.String)
 	}
 }
 

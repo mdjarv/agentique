@@ -38,11 +38,11 @@ UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%
 -- name: SetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
--- name: SetSessionCompleted :exec
-UPDATE sessions SET completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+-- name: SetSessionArchived :exec
+UPDATE sessions SET archived_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
--- name: UnsetSessionCompleted :exec
-UPDATE sessions SET completed_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+-- name: UnsetSessionArchived :exec
+UPDATE sessions SET archived_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: UnsetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
@@ -75,13 +75,13 @@ WHERE id = ?;
 -- name: GetActiveSessionByAgentProfile :one
 SELECT * FROM sessions
 WHERE agent_profile_id = ?
-  AND completed_at IS NULL
+  AND archived_at IS NULL
   AND state NOT IN ('done', 'stopped', 'failed')
 ORDER BY created_at DESC LIMIT 1;
 
 -- name: CountActiveSessionsByProject :one
 SELECT COUNT(*) FROM sessions
-WHERE project_id = ? AND completed_at IS NULL AND state NOT IN ('done', 'stopped', 'failed');
+WHERE project_id = ? AND archived_at IS NULL AND state NOT IN ('done', 'stopped', 'failed');
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;

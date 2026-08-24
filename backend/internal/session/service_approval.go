@@ -70,12 +70,41 @@ func (s *Service) SetAutoApproveMode(sessionID string, mode string) error {
 	return nil
 }
 
-// MarkSessionDone transitions a session to StateDone.
+// ArchiveSession files a session away into the sidebar's Archived section.
 // Works for both live (idle) and non-live (stopped/failed) sessions.
-func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
-	if sess := s.mgr.Get(sessionID); sess != nil {
-		if err := sess.MarkDone(); err != nil {
+//
+// Archiving is a placement decision, so it writes archived_at and never state —
+// the session's state keeps describing what its CLI is actually doing. Two
+// consequences worth stating, because they are the whole point:
+//
+//   - A turn in flight is refused. The turn would keep running behind a row the
+//     user believes is filed away, and there is no honest state to show for
+//     that. Stop the session first. Busy comes from the runtime's own turn
+//     lifecycle, never from State() — which reads Idle for one dispatch before
+//     the completion that caused it is broadcast.
+//   - A live *idle* session's CLI is released, through the same StopSession the
+//     idle-eviction sweep uses. "I'm done with this" is exactly when a CLI
+//     process stops earning its keep, and the resulting Stopped state is one
+//     that genuinely happened. Best effort: the archive stands either way, and
+//     the next message lazy-resumes.
+func (s *Service) ArchiveSession(ctx context.Context, sessionID string) error {
+	live := s.mgr.Get(sessionID)
+	if live != nil && live.TurnInFlight() {
+		return fmt.Errorf("session %s: cannot archive a session running a turn: %w", sessionID, ErrBusy)
+	}
+
+	if live != nil {
+		if err := live.Archive(); err != nil {
 			return err
+		}
+		// Reclaim the process only from a settled session. A state that is not
+		// Idle either has no CLI to release (stopped/failed) or has a git op
+		// holding the worktree (merging), where stopping would race it.
+		if live.State() == StateIdle {
+			if err := s.StopSession(ctx, sessionID); err != nil {
+				slog.Warn("archive: releasing the CLI failed; session stays live",
+					"session_id", sessionID, "error", err)
+			}
 		}
 		s.notifySessionFinished(sessionID)
 		return nil
@@ -86,19 +115,8 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 		return ErrNotFound
 	}
 
-	from := State(dbSess.State)
-	if err := validateTransition(from, StateDone, sessionID); err != nil {
-		return err
-	}
-
-	if err := s.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-		State: string(StateDone),
-		ID:    sessionID,
-	}); err != nil {
-		return fmt.Errorf("update state failed: %w", err)
-	}
-	if err := s.queries.SetSessionCompleted(ctx, sessionID); err != nil {
-		slog.Warn("persist session completed failed", "session_id", sessionID, "error", err)
+	if err := s.queries.SetSessionArchived(ctx, sessionID); err != nil {
+		return fmt.Errorf("persist session archived: %w", err)
 	}
 
 	if s.gitSvc != nil {
@@ -111,12 +129,13 @@ func (s *Service) MarkSessionDone(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// UnmarkSessionDone clears the completed marker so the session leaves the
-// archived list. The state stays terminal — only completed_at changes.
+// UnarchiveSession clears the archive marker so the session returns to the
+// sidebar's open list. The exact inverse of ArchiveSession — one field, no
+// residue, whatever the session's state happens to be.
 // Works for both live (idle) and non-live (stopped/failed) sessions.
-func (s *Service) UnmarkSessionDone(ctx context.Context, sessionID string) error {
+func (s *Service) UnarchiveSession(ctx context.Context, sessionID string) error {
 	if sess := s.mgr.Get(sessionID); sess != nil {
-		return sess.UnmarkDone()
+		return sess.Unarchive()
 	}
 
 	dbSess, err := s.queries.GetSession(ctx, sessionID)
@@ -124,8 +143,8 @@ func (s *Service) UnmarkSessionDone(ctx context.Context, sessionID string) error
 		return ErrNotFound
 	}
 
-	if err := s.queries.UnsetSessionCompleted(ctx, sessionID); err != nil {
-		return fmt.Errorf("unset completed failed: %w", err)
+	if err := s.queries.UnsetSessionArchived(ctx, sessionID); err != nil {
+		return fmt.Errorf("unset session archived: %w", err)
 	}
 
 	if s.gitSvc != nil {

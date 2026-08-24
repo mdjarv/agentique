@@ -137,7 +137,7 @@ func TestBaseSessionInfo_FullProjection(t *testing.T) {
 		WorktreePath:    sql.NullString{String: "/tmp/wt", Valid: true},
 		WorktreeBranch:  sql.NullString{String: "feature-x", Valid: true},
 		WorktreeMerged:  1,
-		CompletedAt:     sql.NullString{String: "2026-04-01", Valid: true},
+		ArchivedAt:      sql.NullString{String: "2026-04-01", Valid: true},
 		PrUrl:           "https://example/pr/1",
 		BehaviorPresets: `{"autoCommit":true}`,
 		ParentSessionID: sql.NullString{String: "parent-1", Valid: true},
@@ -156,8 +156,8 @@ func TestBaseSessionInfo_FullProjection(t *testing.T) {
 	if !got.WorktreeMerged {
 		t.Error("WorktreeMerged: int 1 should map to true")
 	}
-	if got.CompletedAt != "2026-04-01" {
-		t.Errorf("CompletedAt: got %q", got.CompletedAt)
+	if got.ArchivedAt != "2026-04-01" {
+		t.Errorf("ArchivedAt: got %q", got.ArchivedAt)
 	}
 	if got.ParentSessionID != "parent-1" {
 		t.Errorf("ParentSessionID: got %q", got.ParentSessionID)
@@ -179,7 +179,7 @@ func TestBaseSessionInfo_NullStringsBecomeEmpty(t *testing.T) {
 		ProjectID: "y",
 		// All sql.NullString fields are zero-value (Valid: false).
 	})
-	if got.WorktreePath != "" || got.WorktreeBranch != "" || got.CompletedAt != "" ||
+	if got.WorktreePath != "" || got.WorktreeBranch != "" || got.ArchivedAt != "" ||
 		got.ParentSessionID != "" || got.LastQueryAt != "" {
 		t.Errorf("invalid NullStrings should be empty: %+v", got)
 	}
@@ -205,16 +205,16 @@ func TestApplyPostResumeFlags_MarksMergedAndCompleted(t *testing.T) {
 	dbSess := store.Session{
 		ID:             "s",
 		WorktreeMerged: 1,
-		CompletedAt:    sql.NullString{String: "2026-01-01", Valid: true},
+		ArchivedAt:     sql.NullString{String: "2026-01-01", Valid: true},
 	}
 	applyPostResumeFlags(sess, dbSess)
 
-	_, _, merged, completedAt, _ := sess.liveState()
+	_, _, merged, archivedAt, _ := sess.liveState()
 	if !merged {
 		t.Error("worktreeMerged should be true after MarkMerged")
 	}
-	if completedAt == "" {
-		t.Error("completedAt should be set after MarkCompleted")
+	if archivedAt == "" {
+		t.Error("archivedAt should be set after MarkArchived")
 	}
 }
 
@@ -222,11 +222,11 @@ func TestApplyPostResumeFlags_NoOpForFreshSession(t *testing.T) {
 	sess := &Session{ID: "s"}
 	applyPostResumeFlags(sess, store.Session{ID: "s"})
 
-	_, _, merged, completedAt, _ := sess.liveState()
+	_, _, merged, archivedAt, _ := sess.liveState()
 	if merged {
 		t.Error("worktreeMerged should remain false")
 	}
-	if completedAt != "" {
-		t.Errorf("completedAt should remain empty, got %q", completedAt)
+	if archivedAt != "" {
+		t.Errorf("archivedAt should remain empty, got %q", archivedAt)
 	}
 }

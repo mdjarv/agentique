@@ -47,7 +47,7 @@ func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
 
 	s.mu.Lock()
 	snap.WorktreeMerged = s.git.worktreeMerged
-	snap.CompletedAt = s.completedAt
+	snap.ArchivedAt = s.archivedAt
 	snap.GitOperation = s.git.gitOperation
 	s.git.gitVersion++
 	snap.Version = s.git.gitVersion
@@ -139,7 +139,7 @@ func (s *Session) broadcastMidTurnGitStatus(dirty bool) {
 		HasDirtyWorktree: dirty,
 		HasUncommitted:   dirty,
 		WorktreeMerged:   s.git.worktreeMerged,
-		CompletedAt:      s.completedAt,
+		ArchivedAt:       s.archivedAt,
 		GitOperation:     s.git.gitOperation,
 		Version:          s.git.gitVersion,
 	}

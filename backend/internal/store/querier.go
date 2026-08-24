@@ -135,9 +135,9 @@ type Querier interface {
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
 	SetScheduleFailures(ctx context.Context, arg SetScheduleFailuresParams) error
 	SetScheduleRunOverdue(ctx context.Context, id string) error
-	SetSessionCompleted(ctx context.Context, id string) error
+	SetSessionArchived(ctx context.Context, id string) error
 	SetWorktreeMerged(ctx context.Context, id string) error
-	UnsetSessionCompleted(ctx context.Context, id string) error
+	UnsetSessionArchived(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateAgentProfile(ctx context.Context, arg UpdateAgentProfileParams) (AgentProfile, error)
 	UpdateBrainJobAttempts(ctx context.Context, arg UpdateBrainJobAttemptsParams) error

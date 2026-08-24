@@ -226,7 +226,7 @@ type Session struct {
 	MaxBudget       float64        `json:"max_budget"`
 	MaxTurns        int64          `json:"max_turns"`
 	LastQueryAt     sql.NullString `json:"last_query_at"`
-	CompletedAt     sql.NullString `json:"completed_at"`
+	ArchivedAt      sql.NullString `json:"archived_at"`
 	BehaviorPresets string         `json:"behavior_presets"`
 	ChannelID       sql.NullString `json:"channel_id"`
 	ChannelRole     string         `json:"channel_role"`

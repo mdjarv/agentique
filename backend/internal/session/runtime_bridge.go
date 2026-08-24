@@ -64,7 +64,7 @@ var browserToolNames = []string{
 // agentique Session. The hook fans out events:
 //
 //   - CLIEvent      → pipeline.ProcessEvent (persistence + UI broadcast)
-//   - StateChange   → DB persist + UI snapshot, plus completedAt on Done
+//   - StateChange   → DB persist + UI snapshot (never archivedAt: see below)
 //   - WatchdogEvent → log + UI error broadcast (fatal kinds also surface a
 //     state transition via the StateChange that follows)
 //   - PendingChange → check shouldBypassPermission for "auto" mode and
@@ -105,9 +105,12 @@ func safeProcessEvent(s *Session, event runtime.CLIEvent) {
 }
 
 // handleRuntimeStateChange mirrors a runtime state transition into agentique:
-// updates the in-memory state field, persists to DB, sets completedAt on Done,
-// and broadcasts a snapshot. While a git operation is in progress, the merging
-// dance owns the visible state — runtime transitions are dropped here.
+// updates the in-memory state field, persists to DB, and broadcasts a snapshot.
+// While a git operation is in progress, the merging dance owns the visible state
+// — runtime transitions are dropped here.
+//
+// It touches state and nothing else. The runtime owns the process lifecycle;
+// archivedAt belongs to the user.
 func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	target := mapRuntimeState(ev.To)
 	s.mu.Lock()
@@ -125,17 +128,17 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 		s.mu.Unlock()
 		return
 	}
-	if ev.To == runtime.StateDone && s.completedAt == "" {
-		s.completedAt = nowUTC()
-	}
 	s.state = target
 	s.mu.Unlock()
 
 	s.persistState(target)
 	if ev.To == runtime.StateDone {
-		if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
-			slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
-		}
+		// Deliberately NOT archived here. A clean CLI exit is a process fact, not
+		// user intent, and archivedAt is the sidebar's "the user filed this away"
+		// bit — stamping it here let a subprocess exiting hide a session in the
+		// collapsed Archived section with nobody asking. Same line
+		// SetOnSessionFinished draws; the terminal state alone tells this story.
+
 		// Learn-on-completion (M3): a clean CLI exit is a learning boundary, so fire the
 		// per-session completion hook once, async, so fresh captures flow without the
 		// session being deleted. Snapshot under lock then `go` (hook handlers must not

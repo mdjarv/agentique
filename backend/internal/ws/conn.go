@@ -222,8 +222,14 @@ var handlerRegistry = map[string]handlerFunc{
 	"session.dismiss-question":        (*conn).handleSessionDismissQuestion,
 	"session.rebase":                  (*conn).handleSessionRebase,
 	"session.generate-pr-description": (*conn).handleSessionGeneratePRDesc,
-	"session.mark-done":               (*conn).handleSessionMarkDone,
-	"session.unmark-done":             (*conn).handleSessionUnmarkDone,
+	"session.archive":                 (*conn).handleSessionArchive,
+	"session.unarchive":               (*conn).handleSessionUnarchive,
+	// Deprecated aliases. A paired machine can be running an older binary, and
+	// sidebar actions on a remote session travel over that machine's socket —
+	// so the new client keeps speaking the old names to a peer that only knows
+	// them. Remove once no supported release predates the rename.
+	"session.mark-done":               (*conn).handleSessionArchive,
+	"session.unmark-done":             (*conn).handleSessionUnarchive,
 	"session.clean":                   (*conn).handleSessionClean,
 	"session.refresh-git":             (*conn).handleSessionRefreshGit,
 	"session.generate-commit-message": (*conn).handleSessionGenerateCommitMsg,

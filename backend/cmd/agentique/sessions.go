@@ -22,7 +22,7 @@ var terminalStates = map[string]bool{
 
 func init() {
 	sessionsCmd.Flags().StringVarP(&sessProject, "project", "p", "", "filter by project slug")
-	sessionsCmd.Flags().BoolVarP(&sessAll, "all", "a", false, "include completed/stopped/failed sessions")
+	sessionsCmd.Flags().BoolVarP(&sessAll, "all", "a", false, "include archived, stopped and failed sessions")
 	rootCmd.AddCommand(sessionsCmd)
 }
 
@@ -70,11 +70,13 @@ func runSessions(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Filter terminal states unless -a.
+	// Filter archived and terminal-state sessions unless -a. Archived is the
+	// user's own "filed away", so it hides for the same reason the sidebar
+	// collapses it.
 	if !sessAll {
 		filtered := sessions[:0]
 		for _, s := range sessions {
-			if !terminalStates[s.State] {
+			if !terminalStates[s.State] && !s.archived() {
 				filtered = append(filtered, s)
 			}
 		}

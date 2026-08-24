@@ -148,7 +148,7 @@ type Session struct {
 	meter          *contextMeter
 	queries        sessionQueries
 	broadcast      func(pushType string, payload any)
-	completedAt    string        // ISO8601 timestamp or "" if not completed
+	archivedAt     string        // ISO8601 timestamp, or "" when the user has not filed it away
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
 
 	// pendingMessages buffers user messages sent while a turn is running on a
@@ -907,7 +907,7 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 			"session_id", s.ID)
 	}
 
-	rt, wasCompleted, wasMerged, err := s.validateAndPrepareQuery(origin)
+	rt, wasArchived, wasMerged, err := s.validateAndPrepareQuery(origin)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -928,7 +928,7 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	if subscribe {
 		outcome = s.turnReg.Subscribe(turnIndex)
 	}
-	s.persistQueryStart(turnIndex, wasCompleted, wasMerged, prompt, attachments, origin)
+	s.persistQueryStart(turnIndex, wasArchived, wasMerged, prompt, attachments, origin)
 
 	turnPayload := PushTurnStarted{SessionID: s.ID, Prompt: prompt, TurnIndex: turnIndex}
 	if origin.Kind != "" {
@@ -966,13 +966,13 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 // lock — Query would otherwise atomically UNSET completed/merged, so a fire
 // racing the user's mark-done/merge would silently reopen the session. The
 // scheduler's pre-delivery DB check cannot close that window; this can.
-func (s *Session) validateAndPrepareQuery(origin QueryOrigin) (rt *runtime.Session, wasCompleted, wasMerged bool, err error) {
+func (s *Session) validateAndPrepareQuery(origin QueryOrigin) (rt *runtime.Session, wasArchived, wasMerged bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.rt == nil {
 		return nil, false, false, ErrNotLive
 	}
-	if origin.Kind == "schedule" && (s.completedAt != "" || s.git.worktreeMerged) {
+	if origin.Kind == "schedule" && (s.archivedAt != "" || s.git.worktreeMerged) {
 		return nil, false, false, fmt.Errorf("session %s: %w", s.ID, ErrSessionFinished)
 	}
 	// Refuse a session claimed by the idle-eviction sweep — it is being torn
@@ -1002,17 +1002,17 @@ func (s *Session) validateAndPrepareQuery(origin QueryOrigin) (rt *runtime.Sessi
 	// refreshing lastActiveAt here guarantees a just-started turn is never seen
 	// as idle-past-TTL by a concurrent eviction sweep.
 	s.lastActiveAt = time.Now()
-	wasCompleted = s.completedAt != ""
-	s.completedAt = ""
+	wasArchived = s.archivedAt != ""
+	s.archivedAt = ""
 	wasMerged = s.git.worktreeMerged
 	s.git.worktreeMerged = false
-	return s.rt, wasCompleted, wasMerged, nil
+	return s.rt, wasArchived, wasMerged, nil
 }
 
 // persistQueryStart writes the running state, resets completed/merged flags in the
 // database, and persists the prompt as seq 0 of the new turn.
 // All writes are wrapped in a single transaction for atomicity.
-func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool, prompt string, attachments []QueryAttachment, origin QueryOrigin) {
+func (s *Session) persistQueryStart(turnIndex int, wasArchived, wasMerged bool, prompt string, attachments []QueryAttachment, origin QueryOrigin) {
 	promptPayload := map[string]any{"prompt": prompt}
 	if len(attachments) > 0 {
 		promptPayload["attachments"] = attachments
@@ -1042,8 +1042,8 @@ func (s *Session) persistQueryStart(turnIndex int, wasCompleted, wasMerged bool,
 			}); err != nil {
 				return err
 			}
-			if wasCompleted {
-				if err := q.UnsetSessionCompleted(ctx, s.ID); err != nil {
+			if wasArchived {
+				if err := q.UnsetSessionArchived(ctx, s.ID); err != nil {
 					return err
 				}
 			}
@@ -1336,43 +1336,33 @@ func (s *Session) TurnInFlight() bool {
 	return rt != nil && rt.TurnInFlight()
 }
 
-// MarkDone transitions the session to StateDone and marks it completed.
-// If the session is already done (e.g., CLI exited cleanly), it ensures completedAt
-// is set and broadcasts without attempting a state transition.
-func (s *Session) MarkDone() error {
+// Archive files the session away: it stamps archivedAt and nothing else.
+//
+// Deliberately no state transition. Archiving is a placement decision about the
+// sidebar, not a claim about the CLI process — conflating the two is what let
+// unarchive leave a session stranded in StateDone. What the process is doing is
+// the runtime's story to tell; the caller (Service.ArchiveSession) releases an
+// idle CLI separately, through the normal stop path, so the state that results
+// is one that actually happened.
+//
+// Idempotent: an already-archived session keeps its original timestamp, so
+// re-archiving never rewrites when the user filed it.
+func (s *Session) Archive() error {
 	s.mu.Lock()
-	alreadyDone := s.state == StateDone
-	alreadyCompleted := s.completedAt != ""
-	if !alreadyCompleted {
-		s.completedAt = time.Now().UTC().Format(time.RFC3339)
-	}
+	already := s.archivedAt != ""
 	s.mu.Unlock()
-
-	if !alreadyCompleted {
-		if err := s.queries.SetSessionCompleted(context.Background(), s.ID); err != nil {
-			slog.Error("persist session completed failed", "session_id", s.ID, "error", err)
-		}
-	}
-
-	if alreadyDone {
-		if !alreadyCompleted {
-			s.broadcastState(StateDone)
-		}
+	if already {
 		return nil
 	}
-	return s.setState(StateDone)
-}
 
-// UnmarkDone clears the completedAt timestamp and broadcasts the change.
-// The state is left untouched — a terminal session stays terminal, it just
-// returns to the non-archived list.
-func (s *Session) UnmarkDone() error {
-	if err := s.queries.UnsetSessionCompleted(context.Background(), s.ID); err != nil {
-		return fmt.Errorf("unset session completed: %w", err)
+	// Persist before mutating memory: a failed write must not leave the session
+	// presenting as archived until the next restart contradicts it.
+	if err := s.queries.SetSessionArchived(context.Background(), s.ID); err != nil {
+		return fmt.Errorf("persist session archived: %w", err)
 	}
 
 	s.mu.Lock()
-	s.completedAt = ""
+	s.archivedAt = time.Now().UTC().Format(time.RFC3339)
 	state := s.state
 	s.mu.Unlock()
 
@@ -1380,18 +1370,40 @@ func (s *Session) UnmarkDone() error {
 	return nil
 }
 
-// MarkCompleted sets the completedAt timestamp on a live session.
-func (s *Session) MarkCompleted() {
+// Unarchive clears archivedAt and broadcasts the change — the exact inverse of
+// Archive, which is the point: there is one field to clear and no residue.
+func (s *Session) Unarchive() error {
+	if err := s.queries.UnsetSessionArchived(context.Background(), s.ID); err != nil {
+		return fmt.Errorf("unset session archived: %w", err)
+	}
+
 	s.mu.Lock()
-	s.completedAt = time.Now().UTC().Format(time.RFC3339)
+	s.archivedAt = ""
+	state := s.state
+	s.mu.Unlock()
+
+	s.broadcastState(state)
+	return nil
+}
+
+// MarkArchived stamps archivedAt on a live session without persisting or
+// broadcasting — for callers that already wrote the row themselves (the merging
+// dance, the local-session commit, post-resume flag replay). Pass the value the
+// row carries so a resume doesn't rewrite when the user filed the session.
+func (s *Session) MarkArchived(at string) {
+	if at == "" {
+		at = nowUTC()
+	}
+	s.mu.Lock()
+	s.archivedAt = at
 	s.mu.Unlock()
 }
 
 // liveState returns the current in-memory state fields needed for a GitSnapshot.
-func (s *Session) liveState() (state State, connected bool, worktreeMerged bool, completedAt string, gitOperation string) {
+func (s *Session) liveState() (state State, connected bool, worktreeMerged bool, archivedAt string, gitOperation string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state, s.rt != nil, s.git.worktreeMerged, s.completedAt, s.git.gitOperation
+	return s.state, s.rt != nil, s.git.worktreeMerged, s.archivedAt, s.git.gitOperation
 }
 
 // PendingState returns a snapshot of any pending approval/question, preferring

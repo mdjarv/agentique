@@ -925,22 +925,22 @@ func TestSessionSetPinned(t *testing.T) {
 	}
 }
 
-func TestSessionUnmarkDone(t *testing.T) {
+func TestSessionUnarchive(t *testing.T) {
 	ts, queries, cleanup := setupTestServer(t)
 	defer cleanup()
 
 	projDir := t.TempDir()
 	proj := createTestProject(t, queries, "unmarkproj", projDir)
 	sessID := insertTestSession(t, queries, proj.ID, "Archived", projDir, "done")
-	if err := queries.SetSessionCompleted(context.Background(), sessID); err != nil {
+	if err := queries.SetSessionArchived(context.Background(), sessID); err != nil {
 		t.Fatalf("set completed: %v", err)
 	}
 
 	conn := dialWS(t, ts)
 	defer conn.Close()
 
-	resp := sendAndReceive(t, conn, "session.unmark-done", "95",
-		ws.SessionUnmarkDonePayload{SessionID: sessID})
+	resp := sendAndReceive(t, conn, "session.unarchive", "95",
+		ws.SessionUnarchivePayload{SessionID: sessID})
 	if resp.Error != nil {
 		t.Fatalf("unexpected error: %s", resp.Error.Message)
 	}
@@ -954,8 +954,8 @@ func TestSessionUnmarkDone(t *testing.T) {
 	if len(result.Sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(result.Sessions))
 	}
-	if result.Sessions[0].CompletedAt != "" {
-		t.Fatalf("expected empty completedAt, got %q", result.Sessions[0].CompletedAt)
+	if result.Sessions[0].ArchivedAt != "" {
+		t.Fatalf("expected empty archivedAt, got %q", result.Sessions[0].ArchivedAt)
 	}
 }
 
@@ -980,7 +980,7 @@ func TestHandlerValidation(t *testing.T) {
 		{"commit/empty-both", "session.commit", "93", ws.SessionCommitPayload{SessionID: "", Message: ""}, "sessionId"},
 		{"commit/empty-message", "session.commit", "94", ws.SessionCommitPayload{SessionID: validID, Message: ""}, "message"},
 		{"set-pinned/empty-sessionId", "session.set-pinned", "95", ws.SessionSetPinnedPayload{SessionID: "", Pinned: true}, "sessionId"},
-		{"unmark-done/empty-sessionId", "session.unmark-done", "96", ws.SessionUnmarkDonePayload{SessionID: ""}, "sessionId"},
+		{"unarchive/empty-sessionId", "session.unarchive", "96", ws.SessionUnarchivePayload{SessionID: ""}, "sessionId"},
 		{"channel.create/empty-projectId", "channel.create", "98", ws.ChannelCreatePayload{ProjectID: ""}, "projectId"},
 	}
 

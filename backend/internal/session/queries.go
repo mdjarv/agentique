@@ -23,8 +23,8 @@ type sessionWriter interface {
 	InsertEvent(ctx context.Context, arg store.InsertEventParams) error
 	UpdateClaudeSessionID(ctx context.Context, arg store.UpdateClaudeSessionIDParams) error
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
-	SetSessionCompleted(ctx context.Context, id string) error
-	UnsetSessionCompleted(ctx context.Context, id string) error
+	SetSessionArchived(ctx context.Context, id string) error
+	UnsetSessionArchived(ctx context.Context, id string) error
 	UpdateSessionResolvedModel(ctx context.Context, arg store.UpdateSessionResolvedModelParams) error
 	UpsertModelResolution(ctx context.Context, arg store.UpsertModelResolutionParams) error
 }
@@ -107,7 +107,7 @@ type serviceQueries interface {
 type gitServiceQueries interface {
 	sessionReader
 	SetWorktreeMerged(ctx context.Context, id string) error
-	SetSessionCompleted(ctx context.Context, id string) error
+	SetSessionArchived(ctx context.Context, id string) error
 	UpdateSessionState(ctx context.Context, arg store.UpdateSessionStateParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg store.UpdateWorktreeBaseSHAParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg store.UpdateSessionPRUrlParams) error

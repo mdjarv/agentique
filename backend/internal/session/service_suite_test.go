@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allbin/agentkit/runtime"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
@@ -177,14 +178,55 @@ func (s *ServiceSuite) TestListSessions() {
 	}
 }
 
-func (s *ServiceSuite) TestMarkSessionDone() {
+// Archiving is a placement decision: it stamps archived_at and never claims a
+// lifecycle state of its own. The state that follows comes from releasing the
+// idle CLI — a stop that actually happened.
+func (s *ServiceSuite) TestArchiveSession() {
 	sessionID, _ := s.createLiveSession()
 
-	s.Require().NoError(s.svc.MarkSessionDone(context.Background(), sessionID))
+	s.Require().NoError(s.svc.ArchiveSession(context.Background(), sessionID))
 
 	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
 	s.Require().NoError(err)
-	s.Equal("done", dbSess.State)
+	s.True(dbSess.ArchivedAt.Valid, "archive must stamp archived_at")
+	s.NotEqual(string(StateDone), dbSess.State, "archive must not fabricate a done state")
+	s.Equal(string(StateStopped), dbSess.State, "archiving an idle session releases its CLI")
+}
+
+// Unarchive is the exact inverse — one field cleared, no state residue. The old
+// mark-done/unmark-done pair left a session stranded in StateDone here.
+func (s *ServiceSuite) TestUnarchiveSessionIsTheInverse() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	before, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.svc.ArchiveSession(ctx, sessionID))
+	s.Require().NoError(s.svc.UnarchiveSession(ctx, sessionID))
+
+	after, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.False(after.ArchivedAt.Valid, "unarchive must clear archived_at")
+	s.NotEqual(string(StateDone), after.State, "unarchive must not leave a done state behind")
+	s.Equal(before.WorktreeMerged, after.WorktreeMerged)
+}
+
+// A turn in flight is refused: the turn would keep running behind a row the user
+// believes is filed away.
+func (s *ServiceSuite) TestArchiveSessionRefusedMidTurn() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	s.Require().NoError(s.svc.QuerySession(ctx, sessionID, "hello", nil))
+
+	err := s.svc.ArchiveSession(ctx, sessionID)
+	s.Require().Error(err)
+	s.ErrorIs(err, ErrBusy)
+
+	dbSess, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.False(dbSess.ArchivedAt.Valid, "a refused archive must not stamp archived_at")
 }
 
 func (s *ServiceSuite) TestQuerySession() {
@@ -233,4 +275,22 @@ func waitForState(t *testing.T, sess *Session, target State) {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}
+}
+
+// A clean CLI exit is a process fact, not user intent. It must reach a terminal
+// state without archiving — the seam that once let a subprocess exiting hide a
+// session inside the collapsed Archived section.
+func (s *ServiceSuite) TestCleanCLIExitDoesNotArchive() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	sess := s.mgr.Get(sessionID)
+	s.Require().NotNil(sess)
+	handleRuntimeStateChange(sess, runtime.StateChangeEvent{To: runtime.StateDone})
+
+	dbSess, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Equal(string(StateDone), dbSess.State, "the runtime still owns the state")
+	s.False(dbSess.ArchivedAt.Valid, "a clean CLI exit must never archive")
+	s.Empty(sess.archivedAt, "in-memory archivedAt must stay empty too")
 }

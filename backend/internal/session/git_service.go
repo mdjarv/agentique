@@ -139,16 +139,16 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 
 	// Use live session state when available, fall back to DB.
 	if live := g.mgr.Get(dbSess.ID); live != nil {
-		state, connected, merged, completedAt, gitOp := live.liveState()
+		state, connected, merged, archivedAt, gitOp := live.liveState()
 		snap.State = string(state)
 		snap.Connected = connected
 		snap.WorktreeMerged = merged
-		snap.CompletedAt = completedAt
+		snap.ArchivedAt = archivedAt
 		snap.GitOperation = gitOp
 	} else {
 		snap.State = dbSess.State
 		snap.WorktreeMerged = dbSess.WorktreeMerged != 0
-		snap.CompletedAt = nullStr(dbSess.CompletedAt)
+		snap.ArchivedAt = nullStr(dbSess.ArchivedAt)
 	}
 
 	if !snap.WorktreeMerged {
@@ -185,8 +185,8 @@ func (g *GitService) broadcastSnapshot(dbSess store.Session, project store.Proje
 // Merge mode constants.
 const (
 	MergeModeMerge    = "merge"    // merge only, session stays active
-	MergeModeComplete = "complete" // merge + mark completed
-	MergeModeDelete   = "delete"   // merge + mark completed + cleanup worktree/branch
+	MergeModeComplete = "complete" // merge + archive
+	MergeModeDelete   = "delete"   // merge + archive + cleanup worktree/branch
 )
 
 // Merge merges a worktree session's branch into the project's main branch.
@@ -266,11 +266,14 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, mode string) (
 
 	var unlockState State
 	switch mode {
-	case MergeModeMerge:
+	case MergeModeMerge, MergeModeComplete:
+		// "Complete" archives the session (finalizeMerge) but does not end its
+		// CLI, so it must not claim StateDone — that state means the process
+		// exited. Archiving is the git-op-independent half, and Service.
+		// ArchiveSession is what releases an idle CLI.
 		unlockState = StateIdle
-	case MergeModeComplete:
-		unlockState = StateDone
 	case MergeModeDelete:
+		// The worktree is gone, so the CLI's working directory is gone with it.
 		unlockState = StateStopped
 	}
 	guard.Release(unlockState)
@@ -284,18 +287,18 @@ func (g *GitService) Merge(ctx context.Context, sessionID string, mode string) (
 	return MergeResult{Status: "merged", CommitHash: hash}, nil
 }
 
-// finalizeMerge handles mode-specific post-merge steps (mark completed, cleanup worktree).
+// finalizeMerge handles mode-specific post-merge steps (archive, cleanup worktree).
 func (g *GitService) finalizeMerge(ctx context.Context, mode string, live *Session, sessionID string, project store.Project, branch, wtPath string) {
 	if mode == MergeModeComplete || mode == MergeModeDelete {
 		if err := g.queries.SetWorktreeMerged(ctx, sessionID); err != nil {
 			slog.Warn("persist worktree merged failed", "session_id", sessionID, "error", err)
 		}
-		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
-			slog.Warn("persist session completed on merge failed", "session_id", sessionID, "error", err)
+		if err := g.queries.SetSessionArchived(ctx, sessionID); err != nil {
+			slog.Warn("persist session archived on merge failed", "session_id", sessionID, "error", err)
 		}
 		if live != nil {
 			live.MarkMerged()
-			live.MarkCompleted()
+			live.MarkArchived(nowUTC())
 		}
 		if g.onSessionFinished != nil {
 			go g.onSessionFinished(sessionID)
@@ -625,15 +628,15 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 	project, projErr := g.queries.GetProject(ctx, dbSess.ProjectID)
 
 	if !isWorktree {
-		// Local sessions are done after commit — their changes are on the main branch.
-		if err := g.queries.UpdateSessionState(ctx, store.UpdateSessionStateParams{
-			State: string(StateDone),
-			ID:    sessionID,
-		}); err != nil {
-			slog.Warn("persist session state after commit failed", "session_id", sessionID, "error", err)
+		// A local session's changes are on the main branch the moment it commits,
+		// so the work is finished and the session files itself away. State is left
+		// alone: the CLI is still sitting there idle, and saying "done" about a
+		// live process is the conflation this whole seam exists to avoid.
+		if err := g.queries.SetSessionArchived(ctx, sessionID); err != nil {
+			slog.Warn("persist session archived after commit failed", "session_id", sessionID, "error", err)
 		}
-		if err := g.queries.SetSessionCompleted(ctx, sessionID); err != nil {
-			slog.Warn("persist session completed after commit failed", "session_id", sessionID, "error", err)
+		if live := g.mgr.Get(sessionID); live != nil {
+			live.MarkArchived(nowUTC())
 		}
 		if g.onSessionFinished != nil {
 			go g.onSessionFinished(sessionID)
@@ -813,7 +816,7 @@ type GitSnapshot struct {
 	HasDirtyWorktree   bool     `json:"hasDirtyWorktree"`
 	HasUncommitted     bool     `json:"hasUncommitted"`
 	WorktreeMerged     bool     `json:"worktreeMerged"`
-	CompletedAt        string   `json:"completedAt,omitempty"`
+	ArchivedAt         string   `json:"archivedAt,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`

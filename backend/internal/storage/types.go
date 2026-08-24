@@ -24,9 +24,14 @@ type CategoryUsage struct {
 // worktree dir with no matching session row) Orphaned is true and Name carries
 // the on-disk "<bucket>/<dir>" label.
 //
-// Completed mirrors the sidebar's "completed" semantics (a non-empty
-// completed_at) so the disk view can flag and bulk-clean finished sessions
-// without re-deriving the rule.
+// Archived mirrors the sidebar's Archived section (a non-empty archived_at) so
+// the disk view can label a session the way the sidebar does.
+//
+// Merged is what the bulk sweep keys on, and the distinction matters: archiving
+// is a one-click tidy gesture (including a whole-shelf "Archive all"), while
+// this page's delete removes worktrees AND branches AND rows. Only a merged
+// session is safe to sweep in bulk — its commits are already on main, so there
+// is nothing left to lose.
 type SessionStorage struct {
 	SessionID    string `json:"sessionId"`
 	Name         string `json:"name"`
@@ -34,8 +39,9 @@ type SessionStorage struct {
 	WorktreePath string `json:"worktreePath"`
 	Bytes        int64  `json:"bytes"`
 	UpdatedAt    string `json:"updatedAt"`
-	CompletedAt  string `json:"completedAt"`
-	Completed    bool   `json:"completed"`
+	ArchivedAt   string `json:"archivedAt"`
+	Archived     bool   `json:"archived"`
+	Merged       bool   `json:"merged"`
 	Orphaned     bool   `json:"orphaned"`
 }
 

@@ -163,11 +163,11 @@ type SessionGenerateNameResult struct {
 	Name string `json:"name"`
 }
 
-type SessionMarkDonePayload struct {
+type SessionArchivePayload struct {
 	SessionID string `json:"sessionId"`
 }
 
-type SessionUnmarkDonePayload struct {
+type SessionUnarchivePayload struct {
 	SessionID string `json:"sessionId"`
 }
 
@@ -441,11 +441,11 @@ func (p *SessionGenerateNamePayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 
-func (p *SessionMarkDonePayload) Validate() error {
+func (p *SessionArchivePayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 
-func (p *SessionUnmarkDonePayload) Validate() error {
+func (p *SessionUnarchivePayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 

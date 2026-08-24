@@ -191,15 +191,15 @@ func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
 	})
 }
 
-func (c *conn) handleSessionMarkDone(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionMarkDonePayload) (struct{}, error) {
-		return struct{}{}, c.svc.MarkSessionDone(ctx, p.SessionID)
+func (c *conn) handleSessionArchive(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionArchivePayload) (struct{}, error) {
+		return struct{}{}, c.svc.ArchiveSession(ctx, p.SessionID)
 	})
 }
 
-func (c *conn) handleSessionUnmarkDone(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionUnmarkDonePayload) (struct{}, error) {
-		return struct{}{}, c.svc.UnmarkSessionDone(ctx, p.SessionID)
+func (c *conn) handleSessionUnarchive(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionUnarchivePayload) (struct{}, error) {
+		return struct{}{}, c.svc.UnarchiveSession(ctx, p.SessionID)
 	})
 }
 
