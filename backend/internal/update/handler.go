@@ -34,6 +34,14 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	st := h.Checker.Status()
 	if r.URL.Query().Get("refresh") == "1" {
 		st = h.Checker.Refresh(r.Context())
+		// Re-probe the CLIs too. "Check again" has to re-check everything the
+		// dialog shows, or it silently means "everything except the half you
+		// were looking at" — a user who has just fixed a shadowed install and
+		// presses it would otherwise watch the stale warning survive the very
+		// gesture meant to clear it.
+		if h.CLIs != nil {
+			h.CLIs.Refresh(r.Context())
+		}
 	}
 	h.decorate(&st)
 	httperror.JSON(w, http.StatusOK, st)
