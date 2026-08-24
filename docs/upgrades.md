@@ -427,7 +427,17 @@ library starts calling a shared-tree rewrite self-managed.
   - **V5c — the button.** Needs a perform-the-update method in both provider
     libraries and on the agentkit capability first; ships behind
     `[update] cli-updates`, default off, and verified against a throwaway
-    server before it goes near a real one.
+    server before it goes near a real one. The neutral outcome must separate
+    five terminal states, because they are five different rows: **updated**
+    (with before and after), **already current**, **manual** — not ours to
+    update, carrying the command to show and where to run it, a normal result
+    rather than an error — **blocked**, where it would be ours but preflight
+    refuses, and **failed**. Manual and blocked are both "no button" and are
+    not interchangeable: one is about ownership, the other about permission,
+    and the user's next action differs. "Reported success but the version did
+    not change" must be reachable as its own state and must be impossible to
+    render as success — that is the observed `codex update` failure, and the
+    one a naive implementation calls a win.
   - **Outside this repo, in dependency order:** `claudecli-go` needs an
     `Update`, a published-version lookup (only it knows whether an install
     tracks `latest` or `stable`), and a PATH-entries report so C9 can be
