@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { agentRunTotals, collectAgentRuns, flattenPreview } from "~/lib/agent-runs";
+import {
+  type AgentRun,
+  type AgentRunState,
+  agentBadgeState,
+  agentRunTotals,
+  collectAgentRuns,
+  flattenPreview,
+  flightElapsedMs,
+  oldestFlightElapsedMs,
+  partitionAgentRuns,
+} from "~/lib/agent-runs";
 import type { ChatEvent, TaskEvent, Turn } from "~/stores/chat-types";
 
 function spawn(toolId: string, input: unknown): ChatEvent {
@@ -222,5 +232,170 @@ describe("agentRunTotals", () => {
 describe("flattenPreview", () => {
   it("collapses all whitespace runs to single spaces", () => {
     expect(flattenPreview("  a\n\n  b\t c  ")).toBe("a b c");
+  });
+});
+
+describe("partitionAgentRuns", () => {
+  it("splits into still-out and came-back, landing newest first", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "first" }),
+          task("tu_1", { taskSubtype: "task_notification", taskStatus: "completed" }),
+          spawn("tu_2", { description: "still out" }),
+          task("tu_2", { taskSubtype: "task_started" }),
+          spawn("tu_3", { description: "second" }),
+          task("tu_3", { taskSubtype: "task_notification", taskStatus: "error" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    const { inFlight, landed } = partitionAgentRuns(runs);
+    expect(inFlight.map((r) => r.title)).toEqual(["still out"]);
+    // Reverse spawn order: the report you just asked for reads first.
+    expect(landed.map((r) => r.title)).toEqual(["second", "first"]);
+  });
+
+  it("keeps in-flight runs in spawn order so the oldest reads first", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "oldest" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+          spawn("tu_2", { description: "newest" }),
+          task("tu_2", { taskSubtype: "task_started" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(partitionAgentRuns(runs).inFlight.map((r) => r.title)).toEqual(["oldest", "newest"]);
+  });
+});
+
+describe("flight elapsed", () => {
+  it("measures from the spawn timestamp when events carried one", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "a" }),
+          { ...task("tu_1", { taskSubtype: "task_started" }), timestamp: 1_000 } as ChatEvent,
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(flightElapsedMs(runs[0] as AgentRun, 4_000)).toBe(3_000);
+  });
+
+  it("falls back to the last reported duration without a timestamp", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "a" }),
+          task("tu_1", { taskSubtype: "task_progress", durationMs: 9_000 }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(flightElapsedMs(runs[0] as AgentRun, 4_000)).toBe(9_000);
+  });
+
+  it("reports the longest-running agent, which is the one that looks wedged", () => {
+    const runs: AgentRun[] = [
+      {
+        toolUseId: "a",
+        title: "a",
+        state: "running",
+        totalTokens: 0,
+        toolUses: 0,
+        durationMs: 0,
+        startedAt: 5_000,
+      },
+      {
+        toolUseId: "b",
+        title: "b",
+        state: "running",
+        totalTokens: 0,
+        toolUses: 0,
+        durationMs: 0,
+        startedAt: 1_000,
+      },
+    ];
+    expect(oldestFlightElapsedMs(runs, 6_000)).toBe(5_000);
+    expect(oldestFlightElapsedMs([], 6_000)).toBeUndefined();
+  });
+});
+
+describe("agentBadgeState", () => {
+  function runsWith(states: Array<[AgentRunState, number | undefined]>): AgentRun[] {
+    return states.map(([state, turnIndex], i) => ({
+      toolUseId: `tu_${i}`,
+      title: `agent ${i}`,
+      state,
+      totalTokens: 0,
+      toolUses: 0,
+      durationMs: 0,
+      turnIndex,
+    }));
+  }
+
+  it("says nothing for a session whose agents all finished cleanly", () => {
+    const runs = runsWith([
+      ["done", 1],
+      ["done", 2],
+    ]);
+    expect(agentBadgeState(runs, 2)).toEqual({ running: 0, failed: 0 });
+  });
+
+  it("counts agents still out, never the lifetime total", () => {
+    const runs = runsWith([
+      ["done", 1],
+      ["done", 1],
+      ["running", 2],
+      ["running", 2],
+    ]);
+    expect(agentBadgeState(runs, 2).running).toBe(2);
+  });
+
+  it("raises failures from the latest turn", () => {
+    const runs = runsWith([
+      ["failed", 4],
+      ["failed", 4],
+      ["done", 4],
+    ]);
+    expect(agentBadgeState(runs, 4)).toEqual({ running: 0, failed: 2, failedTurn: 4 });
+  });
+
+  it("clears a failure once the session moves to a new turn", () => {
+    const runs = runsWith([["failed", 4]]);
+    expect(agentBadgeState(runs, 5).failed).toBe(0);
+  });
+
+  it("clears a failure once the tab has been opened on that turn", () => {
+    const runs = runsWith([["failed", 4]]);
+    expect(agentBadgeState(runs, 4, 4).failed).toBe(0);
+    // A later turn failing again is a new fact, not the seen one.
+    expect(agentBadgeState(runsWith([["failed", 5]]), 5, 4).failed).toBe(1);
+  });
+
+  it("attributes streaming runs to the turn they are part of", () => {
+    const runs = runsWith([["failed", undefined]]);
+    expect(agentBadgeState(runs, 7)).toEqual({ running: 0, failed: 1, failedTurn: 7 });
+    expect(agentBadgeState(runs, 7, 7).failed).toBe(0);
+  });
+
+  it("only counts failures from the newest failing turn", () => {
+    const runs = runsWith([
+      ["failed", 3],
+      ["failed", 4],
+    ]);
+    expect(agentBadgeState(runs, 4)).toEqual({ running: 0, failed: 1, failedTurn: 4 });
+  });
+
+  it("says nothing at all for a session with no agents", () => {
+    expect(agentBadgeState([], 3)).toEqual({ running: 0, failed: 0 });
   });
 });

@@ -1,16 +1,22 @@
 import { memo, useMemo } from "react";
-import { ToolIcon } from "~/components/chat/ToolIcons";
-import { type AgentRun, agentRunTotals } from "~/lib/agent-runs";
+import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
+import { type AgentRun, agentRunTotals, partitionAgentRuns } from "~/lib/agent-runs";
 import { formatDuration, formatTokens } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
 /**
- * Roster of every subagent this session spawned. The row's second line is the
- * head of what the agent *returned* — the whole point of the view is reading
- * four agents' conclusions without opening any of them.
+ * Roster of every subagent this session spawned, in the only two groups a
+ * reader acts on: still out, and came back. Landed rows are newest first —
+ * this is a roster, not a transcript, and the reports you just asked for are
+ * the ones you came to read.
+ *
+ * The row's second line is the head of what the agent *returned*: the whole
+ * point of the view is reading four agents' conclusions without opening any of
+ * them. Lifetime totals live in the footer, which is where an odometer belongs.
  */
 export function AgentsView({ runs }: { runs: AgentRun[] }) {
   const totals = useMemo(() => agentRunTotals(runs), [runs]);
+  const { inFlight, landed } = useMemo(() => partitionAgentRuns(runs), [runs]);
 
   if (runs.length === 0) {
     return (
@@ -22,10 +28,21 @@ export function AgentsView({ runs }: { runs: AgentRun[] }) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex-1 overflow-y-auto divide-y divide-border/50">
-        {runs.map((run) => (
-          <AgentRunRow key={run.toolUseId} run={run} />
-        ))}
+      <AgentFlightStrip inFlight={inFlight} density="board" />
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {inFlight.length > 0 && landed.length > 0 && (
+          <div className="flex items-center gap-2 px-4 pt-2 pb-1.5">
+            <span className="font-medium text-[10px] text-muted-foreground-faint uppercase tracking-[0.12em]">
+              Landed
+            </span>
+            <span className="h-px flex-1 bg-border/60" />
+          </div>
+        )}
+        <div className="divide-y divide-border/50">
+          {landed.map((run) => (
+            <AgentRunRow key={run.toolUseId} run={run} />
+          ))}
+        </div>
       </div>
       <div className="shrink-0 flex items-center gap-3 border-t px-4 py-1.5 text-[11px] text-muted-foreground-faint">
         <span>
@@ -68,6 +85,7 @@ function StateDot({ state }: { state: AgentRun["state"] }) {
   );
 }
 
+/** One landed run. Agents still out are the flight strip's job, not this row's. */
 const AgentRunRow = memo(function AgentRunRow({ run }: { run: AgentRun }) {
   // Metrics read as one sentence rather than a label/value grid — "91 tools"
   // needs no "Tools:" in front of it.
@@ -102,13 +120,6 @@ const AgentRunRow = memo(function AgentRunRow({ run }: { run: AgentRun }) {
         >
           {run.preview}
         </p>
-      )}
-
-      {run.state === "running" && run.lastToolName && (
-        <span className="mt-0.5 flex items-center gap-1.5 pl-3.5 text-xs text-muted-foreground-faint">
-          <ToolIcon name={run.lastToolName} />
-          <span className="truncate">{run.lastToolName}</span>
-        </span>
       )}
 
       {metrics.length > 0 && (

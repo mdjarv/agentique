@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentsView } from "~/components/chat/AgentsView";
 import { ApprovalBanner } from "~/components/chat/banners/ApprovalBanner";
 import { PlanReviewBanner } from "~/components/chat/banners/PlanReviewBanner";
@@ -35,6 +36,7 @@ import { useIsLarge } from "~/hooks/useIsLarge";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { useNavigationGuard } from "~/lib/navigation";
@@ -159,6 +161,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     compacting,
   } = useSessionState(sessionId);
   const agentRuns = useAgentRuns(sessionId);
+  // A failure marker clears on whichever comes first: opening the tab, or the
+  // session moving to a new turn. `agentBadgeState` owns the second rule; this
+  // holds the first. Keyed by session so switching sessions cannot carry one
+  // session's "already seen" over to another.
+  const [seenFailure, setSeenFailure] = useState<{ session: string; turn: number } | null>(null);
+  const [flightExpanded, setFlightExpanded] = useState(false);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   // Schedules targeting this session (loops). Element refs are stable in the
   // store, so useShallow keeps the selector reference-stable across renders.
@@ -197,6 +205,18 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   } | null>(null);
   const activeTab: SessionTab = tab === "git" ? "changes" : (tab ?? "chat");
   const setActiveTab = useCallback((t: SessionTab) => onTabChange?.(t), [onTabChange]);
+
+  const latestTurnIndex = turns[turns.length - 1]?.turnIndex;
+  const seenFailureTurn = seenFailure?.session === sessionId ? seenFailure.turn : undefined;
+  const agentFlight = useMemo(() => partitionAgentRuns(agentRuns), [agentRuns]);
+  const agentBadge = useMemo(
+    () => agentBadgeState(agentRuns, latestTurnIndex, seenFailureTurn),
+    [agentRuns, latestTurnIndex, seenFailureTurn],
+  );
+  useEffect(() => {
+    if (activeTab !== "agents") return;
+    setSeenFailure({ session: sessionId, turn: latestTurnIndex ?? 0 });
+  }, [activeTab, sessionId, latestTurnIndex]);
   const [resuming, setResuming] = useState(false);
   const [expandFile, setExpandFile] = useState<string | null>(null);
   const [followRequest, setFollowRequest] = useState(0);
@@ -480,7 +500,6 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
   const hasLoops = sessionSchedules.length > 0;
   const hasAgents = agentRuns.length > 0;
-  const agentsRunning = agentRuns.filter((r) => r.state === "running").length;
   const pendingApprovalSchedules = sessionSchedules.filter(
     (sc) => sc.pauseReason === "pending-approval",
   );
@@ -511,9 +530,32 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
       totalAdd={totalAdd}
       totalDel={totalDel}
       hasLoops={hasLoops}
-      agentCount={agentRuns.length}
-      agentsRunning={agentsRunning}
+      hasAgents={hasAgents}
+      agentsRunning={agentBadge.running}
+      agentsFailed={agentBadge.failed}
       accentColor={agentColor}
+    />
+  ) : null;
+
+  // Which branch of the tab switch below renders — mirrors it exactly, because
+  // the flight rail mounts above the composer on the chat branch and directly
+  // under the tab strip everywhere else. Two slots, one component: "above the
+  // composer" is not a position that exists on a tab without a composer.
+  const showsChatBranch = !(
+    (effectiveTab === "todos" && hasTodos) ||
+    (effectiveTab === "changes" && hasGitContent) ||
+    (effectiveTab === "agents" && hasAgents) ||
+    (effectiveTab === "loops" && hasLoops)
+  );
+  // Suppressed on the Agents tab, where the panel is already saying it louder.
+  const showFlightRail =
+    agentFlight.inFlight.length > 0 && !(effectiveTab === "agents" && hasAgents);
+  const flightRail = showFlightRail ? (
+    <AgentFlightStrip
+      inFlight={agentFlight.inFlight}
+      density={isMobile ? "line" : "rail"}
+      expanded={flightExpanded}
+      onExpandedChange={setFlightExpanded}
     />
   ) : null;
 
@@ -559,6 +601,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         {/* Tab content + optional desktop todo sidebar */}
         <div className="flex-1 flex min-h-0 min-w-0">
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
+            {!showsChatBranch && flightRail}
             {effectiveTab === "todos" && hasTodos ? (
               <TodosView todos={todos} />
             ) : effectiveTab === "changes" && hasGitContent ? (
@@ -624,6 +667,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                     resumeUnsupported={!resumeSupported}
                   />
                 )}
+                {flightRail}
                 <MessageComposer
                   key={sessionId}
                   projectId={projectId}

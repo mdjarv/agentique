@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -26,10 +27,12 @@ interface SessionTabBarProps {
   totalDel?: number;
   /** Session has schedules — shows the Loops tab. */
   hasLoops?: boolean;
-  /** Subagents spawned in this session — shows the Agents tab. */
-  agentCount?: number;
-  /** Subagents still running, if any — pulses the Agents tab count. */
+  /** Session has spawned at least one subagent — shows the Agents tab. */
+  hasAgents?: boolean;
+  /** Subagents still out. The only count the badge shows. */
   agentsRunning?: number;
+  /** Failures still worth raising — see `agentBadgeState`. */
+  agentsFailed?: number;
   /** Project accent color hex — used for active tab indicator. */
   accentColor?: string;
 }
@@ -48,8 +51,9 @@ export function SessionTabBar({
   totalAdd = 0,
   totalDel = 0,
   hasLoops = false,
-  agentCount = 0,
+  hasAgents = false,
   agentsRunning = 0,
+  agentsFailed = 0,
   accentColor,
 }: SessionTabBarProps) {
   const showChangesTab = hasGitContent || hasChanges;
@@ -130,18 +134,30 @@ export function SessionTabBar({
         </Tab>
       )}
 
-      {agentCount > 0 && (
+      {hasAgents && (
         <Tab tab="agents">
           <Bot className="size-3.5" />
           Agents
-          <span
-            className={cn(
-              "text-xs tabular-nums",
-              agentsRunning > 0 ? "text-agent" : "text-muted-foreground",
-            )}
-          >
-            {agentCount}
-          </span>
+          {/* State, never a lifetime count: agents out, or failures from this
+              turn you have not looked at. Neither, and the tab says nothing —
+              a badge that only ever counts up trains you to stop reading it. */}
+          {agentsRunning > 0 ? (
+            <span
+              className="flex items-center gap-1.5"
+              title={`${agentsRunning} agent${agentsRunning === 1 ? "" : "s"} still running`}
+            >
+              <span className="size-1.5 rounded-full bg-agent motion-safe:animate-pulse" />
+              <span className="font-medium text-agent text-xs tabular-nums">{agentsRunning}</span>
+            </span>
+          ) : agentsFailed > 0 ? (
+            <span
+              className="flex items-center gap-1 text-destructive"
+              title={`${agentsFailed} agent${agentsFailed === 1 ? "" : "s"} failed this turn`}
+            >
+              <AlertTriangle className="size-3" />
+              <span className="font-medium text-xs tabular-nums">{agentsFailed}</span>
+            </span>
+          ) : null}
         </Tab>
       )}
 

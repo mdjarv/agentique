@@ -31,6 +31,12 @@ export interface AgentRun {
   totalTokens: number;
   toolUses: number;
   durationMs: number;
+  /**
+   * Wall-clock start, from the spawn event. Present only when the events
+   * carried a timestamp; a running agent without one falls back to the last
+   * reported `durationMs`, which freezes between task_progress events.
+   */
+  startedAt?: number;
   /** Persisted turn index the agent was spawned in, when known. */
   turnIndex?: number;
 }
@@ -157,10 +163,110 @@ export function collectAgentRuns(
       totalTokens: latestNumber(tasks, (t) => t.totalTokens),
       toolUses: latestNumber(tasks, (t) => t.toolUses),
       durationMs: latestNumber(tasks, (t) => t.durationMs),
+      startedAt: started?.timestamp ?? spawn?.use.timestamp,
       turnIndex: spawn?.turnIndex,
     });
   }
   return runs;
+}
+
+export interface AgentRunPartition {
+  /** Still out, oldest spawn first — the one that has been gone longest reads first. */
+  inFlight: AgentRun[];
+  /** Returned, newest first: the reports you just asked for are at the top. */
+  landed: AgentRun[];
+}
+
+/**
+ * Split the roster into the only two groups the panel shows. Deliberately not
+ * grouped by turn: "still out" and "came back" are the two states a reader
+ * acts on, and a turn boundary is not one of them.
+ */
+export function partitionAgentRuns(runs: readonly AgentRun[]): AgentRunPartition {
+  const inFlight: AgentRun[] = [];
+  const landed: AgentRun[] = [];
+  for (const run of runs) {
+    if (run.state === "running") inFlight.push(run);
+    else landed.unshift(run);
+  }
+  return { inFlight, landed };
+}
+
+/** Elapsed wall-clock for a run that is still out, or `undefined` if unknowable. */
+export function flightElapsedMs(run: AgentRun, now: number): number | undefined {
+  if (run.startedAt !== undefined) return Math.max(0, now - run.startedAt);
+  return run.durationMs > 0 ? run.durationMs : undefined;
+}
+
+/** Longest-running agent's elapsed — the number that says "something is wedged". */
+export function oldestFlightElapsedMs(
+  inFlight: readonly AgentRun[],
+  now: number,
+): number | undefined {
+  let longest: number | undefined;
+  for (const run of inFlight) {
+    const elapsed = flightElapsedMs(run, now);
+    if (elapsed !== undefined && (longest === undefined || elapsed > longest)) longest = elapsed;
+  }
+  return longest;
+}
+
+export interface AgentBadgeState {
+  running: number;
+  /**
+   * Failures the badge should still be raising. Zero unless they are in the
+   * session's latest turn and the user has not opened the tab since.
+   */
+  failed: number;
+  /** Turn the live failures belong to — feed back as `seenTurn` once seen. */
+  failedTurn?: number;
+}
+
+const NO_BADGE: AgentBadgeState = { running: 0, failed: 0 };
+
+/**
+ * What the Agents tab badge should say right now.
+ *
+ * A lifetime count is never the answer: the badge is a claim on attention, so
+ * it carries only the two facts that can still be acted on — agents out, and
+ * failures from the current turn. A failure marker clears on whichever comes
+ * first, the user opening the tab (`seenTurn`) or the session moving to a new
+ * turn; that is why both indices are parameters rather than derived here.
+ *
+ * Runs from the live stream have no `turnIndex` yet, so they are attributed to
+ * `latestTurnIndex` — the turn they are, in fact, part of.
+ */
+export function agentBadgeState(
+  runs: readonly AgentRun[],
+  latestTurnIndex?: number,
+  seenTurn?: number,
+): AgentBadgeState {
+  if (runs.length === 0) return NO_BADGE;
+
+  let running = 0;
+  let failedTurn: number | undefined;
+  let failed = 0;
+
+  for (const run of runs) {
+    if (run.state === "running") {
+      running += 1;
+      continue;
+    }
+    if (run.state !== "failed") continue;
+    const turn = run.turnIndex ?? latestTurnIndex ?? 0;
+    if (failedTurn === undefined || turn > failedTurn) {
+      failedTurn = turn;
+      failed = 1;
+    } else if (turn === failedTurn) {
+      failed += 1;
+    }
+  }
+
+  if (failedTurn === undefined) return { running, failed: 0 };
+
+  const stale = failedTurn < (latestTurnIndex ?? failedTurn);
+  if (stale || failedTurn === seenTurn) return { running, failed: 0 };
+  return { running, failed, failedTurn };
 }
 
 export interface AgentRunTotals {
