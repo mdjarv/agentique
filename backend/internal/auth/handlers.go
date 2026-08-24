@@ -107,63 +107,63 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// authUser drives the ceremony. pending is non-nil when the user row does
+	// not exist yet — it is created in handleRegisterFinish, only after the
+	// authenticator's response verifies. Nothing here writes to the users
+	// table: an unauthenticated caller must not be able to leave state behind.
 	var authUser *User
+	var pending *pendingUser
 	inviteToken := ""
 
 	switch {
 	case userCount == 0:
-		// First user — no invite needed, becomes admin.
-		userID := generateUUID()
-		user, err := s.queries.CreateUser(ctx, store.CreateUserParams{
-			ID:          userID,
-			DisplayName: req.DisplayName,
-			IsAdmin:     1,
-		})
-		if err != nil {
-			httperror.RespondError(w, httperror.Internal("create user", err))
-			return
-		}
-		authUser = &User{User: user}
+		// First user — no invite needed, becomes the full-access operator.
+		pending = &pendingUser{displayName: req.DisplayName, isAdmin: 1}
+		authUser = &User{User: store.User{ID: generateUUID(), DisplayName: req.DisplayName, IsAdmin: 1}}
 
 	case credCount == 0:
-		// Rekey mode — users exist but all credentials were cleared.
-		// Match by display name to let existing users re-register.
+		// Rekey — users exist but every credential was cleared (a deliberate
+		// reset), so an existing user may re-register by display name.
+		//
+		// The failure message is deliberately identical to the success path's
+		// absence of one: a distinct "no such display name" reply turns this
+		// into a name-enumeration oracle for an unauthenticated caller.
 		existing, err := s.queries.GetUserByDisplayName(ctx, req.DisplayName)
 		if err != nil {
-			httperror.RespondError(w, httperror.BadRequest("no user found with that display name"))
+			httperror.RespondError(w, httperror.BadRequest("registration is not available for that name"))
 			return
 		}
 		authUser = &User{User: existing}
 
 	default:
-		// Normal flow — need invite token or existing auth session.
+		// Normal flow — an authenticated operator adding another passkey to
+		// THEIR OWN account, or a new user redeeming an invite.
 		session, authErr := s.validateSession(r)
 		if authErr == nil && session != nil {
-			// Authenticated user adding another passkey — handled below.
-		} else {
-			if req.InviteToken == "" {
-				httperror.RespondError(w, httperror.BadRequest("invite token required"))
-				return
-			}
-			_, err := s.queries.GetInviteToken(ctx, req.InviteToken)
+			// Adding a credential to the caller's existing account. This used
+			// to fall through and CreateUser, so "add another passkey" quietly
+			// produced a second, non-admin account instead of a second
+			// credential on the first one.
+			existing, err := s.loadUser(ctx, session.UserID)
 			if err != nil {
-				httperror.RespondError(w, httperror.BadRequest("invalid or expired invite token"))
+				httperror.RespondError(w, httperror.Internal("load user", err))
 				return
 			}
-			inviteToken = req.InviteToken
+			authUser = existing
+			break
 		}
 
-		userID := generateUUID()
-		user, err := s.queries.CreateUser(ctx, store.CreateUserParams{
-			ID:          userID,
-			DisplayName: req.DisplayName,
-			IsAdmin:     0,
-		})
-		if err != nil {
-			httperror.RespondError(w, httperror.Internal("create user", err))
+		if req.InviteToken == "" {
+			httperror.RespondError(w, httperror.BadRequest("invite token required"))
 			return
 		}
-		authUser = &User{User: user}
+		if _, err := s.queries.GetInviteToken(ctx, req.InviteToken); err != nil {
+			httperror.RespondError(w, httperror.BadRequest("invalid or expired invite token"))
+			return
+		}
+		inviteToken = req.InviteToken
+		pending = &pendingUser{displayName: req.DisplayName, isAdmin: 0}
+		authUser = &User{User: store.User{ID: generateUUID(), DisplayName: req.DisplayName}}
 	}
 
 	opts := []webauthn.RegistrationOption{
@@ -179,7 +179,7 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ceremonyKey := "reg:" + authUser.ID
-	if err := s.saveCeremony(ceremonyKey, session, authUser.ID); err != nil {
+	if err := s.saveCeremony(ceremonyKey, session, authUser.ID, pending); err != nil {
 		httperror.RespondError(w, httperror.TooManyRequests(err.Error()))
 		return
 	}
@@ -208,10 +208,23 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.loadUser(r.Context(), entry.userID)
-	if err != nil {
-		httperror.RespondError(w, httperror.Internal("load user", err))
-		return
+	ctx := r.Context()
+
+	var user *User
+	if entry.pending != nil {
+		// Not persisted yet — verify against the in-memory identity the
+		// ceremony was started with, then create the row.
+		user = &User{User: store.User{
+			ID:          entry.userID,
+			DisplayName: entry.pending.displayName,
+			IsAdmin:     entry.pending.isAdmin,
+		}}
+	} else {
+		user, err = s.loadUser(ctx, entry.userID)
+		if err != nil {
+			httperror.RespondError(w, httperror.Internal("load user", err))
+			return
+		}
 	}
 
 	cred, err := s.webauthn.FinishRegistration(user, *entry.session, r)
@@ -221,7 +234,31 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	if entry.pending != nil {
+		// Re-check the precondition the ceremony was authorized under. Two
+		// concurrent first-run registrations would otherwise both believe they
+		// are the first and both create a full-access operator.
+		count, cerr := s.queries.CountUsers(ctx)
+		if cerr != nil {
+			httperror.RespondError(w, httperror.Internal("count users", cerr))
+			return
+		}
+		if entry.pending.isAdmin == 1 && count > 0 {
+			httperror.RespondError(w, httperror.Conflict("an operator is already registered"))
+			return
+		}
+		created, cerr := s.queries.CreateUser(ctx, store.CreateUserParams{
+			ID:          user.ID,
+			DisplayName: user.DisplayName,
+			IsAdmin:     user.IsAdmin,
+		})
+		if cerr != nil {
+			httperror.RespondError(w, httperror.Internal("create user", cerr))
+			return
+		}
+		user.User = created
+	}
+
 	if err := s.storeCredential(ctx, user.ID, cred); err != nil {
 		httperror.RespondError(w, httperror.Internal("store credential", err))
 		return
@@ -270,7 +307,7 @@ func (s *Service) handleLoginBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ceremonyKey := "login:" + rawKey
-	if err := s.saveCeremony(ceremonyKey, session, ""); err != nil {
+	if err := s.saveCeremony(ceremonyKey, session, "", nil); err != nil {
 		httperror.RespondError(w, httperror.TooManyRequests(err.Error()))
 		return
 	}
@@ -348,10 +385,15 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateInvite creates a new invite token. Requires admin auth.
+//
+// Authorization comes from requireAdmin, NOT from the request context: every
+// /api/auth/ path is exempt from the auth middleware, so the context user is
+// always nil here. Reading it meant this endpoint returned 403 unconditionally
+// and no invite could ever be created.
 func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
-	session := UserFromContext(r.Context())
-	if session == nil || session.IsAdmin == 0 {
-		httperror.RespondError(w, httperror.Forbidden("admin access required"))
+	userID, _, err := s.requireAdmin(r)
+	if err != nil {
+		httperror.RespondError(w, httperror.Forbidden(err.Error()))
 		return
 	}
 
@@ -364,7 +406,7 @@ func (s *Service) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	err = s.queries.CreateInviteToken(r.Context(), store.CreateInviteTokenParams{
 		Token:     token,
-		CreatedBy: session.UserID,
+		CreatedBy: userID,
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {

@@ -460,15 +460,30 @@ func TestWSTicketMintIsBoundedPerSession(t *testing.T) {
 	}
 }
 
+// The ceremony table stays bounded, but overflow evicts the oldest entry
+// instead of refusing the new one: /api/auth/login/begin is unauthenticated, so
+// refusing would let anyone fill the table and deny passkey login to everyone.
 func TestWebAuthnCeremoniesAreBounded(t *testing.T) {
 	svc, _ := newTestService(t)
-	for i := 0; i < 1024; i++ {
-		if err := svc.saveCeremony(fmt.Sprintf("login:%d", i), &webauthn.SessionData{}, ""); err != nil {
+	for i := 0; i < maxCeremonies; i++ {
+		if err := svc.saveCeremony(fmt.Sprintf("login:%d", i), &webauthn.SessionData{}, "", nil); err != nil {
 			t.Fatalf("save ceremony %d: %v", i, err)
 		}
 	}
-	if err := svc.saveCeremony("login:overflow", &webauthn.SessionData{}, ""); err == nil {
-		t.Fatal("unbounded WebAuthn ceremony was accepted")
+	if err := svc.saveCeremony("login:overflow", &webauthn.SessionData{}, "", nil); err != nil {
+		t.Fatalf("a legitimate ceremony was refused under flood: %v", err)
+	}
+
+	svc.ceremonyMu.Lock()
+	n := len(svc.ceremonies)
+	_, kept := svc.ceremonies["login:overflow"]
+	svc.ceremonyMu.Unlock()
+
+	if n > maxCeremonies {
+		t.Errorf("ceremony table grew to %d, want at most %d", n, maxCeremonies)
+	}
+	if !kept {
+		t.Error("the newest ceremony was the one dropped")
 	}
 }
 

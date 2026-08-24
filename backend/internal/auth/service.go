@@ -66,6 +66,19 @@ type ceremonyEntry struct {
 	session   *webauthn.SessionData
 	userID    string
 	expiresAt time.Time
+	// pending is set when this ceremony would CREATE the user. The row is
+	// written only once the ceremony verifies — persisting it at /begin left
+	// any abandoned first-run registration as a user with no credential, which
+	// puts the server permanently in rekey mode (claimable by anyone who knows
+	// the display name).
+	pending *pendingUser
+}
+
+// pendingUser is a user that does not exist yet: everything needed to create
+// it after FinishRegistration succeeds.
+type pendingUser struct {
+	displayName string
+	isAdmin     int64
 }
 
 // NewService creates a new auth Service. rpID is the domain (e.g. "localhost"),
@@ -274,20 +287,42 @@ func (s *Service) requestUsesHTTPS(r *http.Request) bool {
 	return r.TLS != nil || s.secureCookieHosts[strings.ToLower(r.Host)]
 }
 
-// saveCeremony stores WebAuthn session data for the duration of a begin/finish flow.
-func (s *Service) saveCeremony(key string, session *webauthn.SessionData, userID string) error {
+// saveCeremony stores WebAuthn session data for the duration of a begin/finish
+// flow. pending may be nil (the user already exists).
+//
+// When the table is full the OLDEST entry is evicted rather than the request
+// refused: /api/auth/login/begin is unauthenticated, so a refusal would let
+// anyone fill the table and lock every operator out of passkey login. Under
+// attack the eviction victim is whoever is oldest — which is the flood itself,
+// since a real ceremony is seconds old when it finishes.
+func (s *Service) saveCeremony(key string, session *webauthn.SessionData, userID string, pending *pendingUser) error {
 	s.ceremonyMu.Lock()
 	defer s.ceremonyMu.Unlock()
 	s.deleteExpiredCeremoniesLocked(time.Now())
 	if _, replacing := s.ceremonies[key]; !replacing && len(s.ceremonies) >= maxCeremonies {
-		return errors.New("too many authentication ceremonies in progress")
+		s.evictOldestCeremonyLocked()
 	}
 	s.ceremonies[key] = &ceremonyEntry{
 		session:   session,
 		userID:    userID,
 		expiresAt: time.Now().Add(ceremonyTTL),
+		pending:   pending,
 	}
 	return nil
+}
+
+// evictOldestCeremonyLocked drops the ceremony closest to expiry.
+func (s *Service) evictOldestCeremonyLocked() {
+	oldestKey := ""
+	var oldest time.Time
+	for key, entry := range s.ceremonies {
+		if oldestKey == "" || entry.expiresAt.Before(oldest) {
+			oldestKey, oldest = key, entry.expiresAt
+		}
+	}
+	if oldestKey != "" {
+		delete(s.ceremonies, oldestKey)
+	}
 }
 
 // loadCeremony retrieves and deletes ceremony session data.

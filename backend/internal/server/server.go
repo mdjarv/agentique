@@ -434,8 +434,22 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		updateApplier = applier
 		uh := &update.Handler{Checker: updateChecker, Applier: applier}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
-		mux.HandleFunc("POST /api/update/apply", uh.HandleApply)
-		mux.HandleFunc("DELETE /api/update/apply", uh.HandleCancel)
+		// Applying replaces this machine's binary and restarts its service, and
+		// `force` ends every turn in flight (docs/process-lifecycle.md). That is
+		// at least as privileged as reading the machine catalog, so it takes the
+		// same guard — reading the status does not.
+		mux.HandleFunc("POST /api/update/apply", func(w http.ResponseWriter, r *http.Request) {
+			if !requireFullAccess(w, r) {
+				return
+			}
+			uh.HandleApply(w, r)
+		})
+		mux.HandleFunc("DELETE /api/update/apply", func(w http.ResponseWriter, r *http.Request) {
+			if !requireFullAccess(w, r) {
+				return
+			}
+			uh.HandleCancel(w, r)
+		})
 	}
 
 	// Machine catalog (multi-machine): paired machines are ACCOUNT state, not
@@ -562,6 +576,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// remote (opens a socket to base_url, fetches with its token), so self
 	// belongs beside the catalog, not in it.
 	mux.HandleFunc("PUT /api/machine/presentation", func(w http.ResponseWriter, r *http.Request) {
+		// This rewrites how the host identifies itself to every client, so it
+		// takes the same guard as its /api/machines/{id}/presentation sibling.
+		if !requireFullAccess(w, r) {
+			return
+		}
 		var req struct {
 			Label string `json:"label"`
 			Icon  string `json:"icon"`
