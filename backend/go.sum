@@ -12,8 +12,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/allbin/agentkit v0.1.0 h1:hauWo3T/1E/7dnLpPEvRCgB4o7ZPjCF308n5azh3edg=
 github.com/allbin/agentkit v0.1.0/go.mod h1:wUOBKefW+OesS0VkZ39s5cryFlOw8NZjicncXVhX+NY=
-github.com/allbin/claudecli-go v0.6.0 h1:dgNd5BFRqGd4C/vuUQQ7TX4dMSH8P/qaC4fCZkoJWHQ=
-github.com/allbin/claudecli-go v0.6.0/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
+github.com/allbin/claudecli-go v0.7.0 h1:fGYxqzUH0/wRO45tj8J2Y5YrK5sxK99y8xH+mWlS63k=
+github.com/allbin/claudecli-go v0.7.0/go.mod h1:YMnVhFtIG9UoiJxv4ecHHvhc31yRzw+QAt6J6z9OIKA=
 github.com/allbin/codexcli-go v0.1.0 h1:y+WQvwOLrzLRyqiH+iZL7DvrPXY3/J51Mj3A6r6dm84=
 github.com/allbin/codexcli-go v0.1.0/go.mod h1:sR17lcEIU+OLIU7JsISdpzLLSl1h11rcIFMQLjz+Dzs=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
