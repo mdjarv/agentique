@@ -74,29 +74,87 @@ func TestAbandonedRegistrationLeavesNoRekeyWindow(t *testing.T) {
 	}
 }
 
-// The rekey branch must not report whether a display name exists.
-func TestRekeyDoesNotLeakDisplayNames(t *testing.T) {
+// Rekey mode is reachable only with the one-time code `agentique auth rekey`
+// prints. A display name is not a credential — knowing one must get nobody in.
+func TestRekeyRequiresARecoveryCode(t *testing.T) {
 	svc, queries := newTestService(t)
-	real := createAdminUser(t, queries) // "admin", no credentials => rekey mode
+	admin := createAdminUser(t, queries) // no credentials => rekey mode
 
-	miss := registerBegin(t, svc, `{"displayName":"nobody-by-this-name"}`)
-	if miss.Code != http.StatusBadRequest {
-		t.Fatalf("unknown name status = %d, want 400", miss.Code)
-	}
-	var body struct{ Error string }
-	if err := json.Unmarshal(miss.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	for _, leak := range []string{"no user found", "display name"} {
-		if strings.Contains(strings.ToLower(body.Error), leak) {
-			t.Errorf("error %q distinguishes a missing user from a present one", body.Error)
+	for _, body := range []string{
+		`{"displayName":"admin"}`,
+		`{"displayName":"admin","rekeyCode":"AAAAAAAAAAAA"}`,
+		`{"rekeyCode":"short"}`,
+		`{}`,
+	} {
+		w := registerBegin(t, svc, body)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("registerBegin(%s) = %d, want 401: %s", body, w.Code, w.Body.String())
 		}
 	}
 
-	// The real name still works — the fix is the message, not the behaviour.
-	hit := registerBegin(t, svc, `{"displayName":"`+real.DisplayName+`"}`)
-	if hit.Code != http.StatusOK {
-		t.Errorf("rekey for an existing user = %d, want 200: %s", hit.Code, hit.Body.String())
+	code, _, err := MintRekeyCode(context.Background(), queries, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := registerBegin(t, svc, `{"rekeyCode":"`+code+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("a valid recovery code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	// The ceremony binds to the code's user, not to anything the caller typed.
+	svc.ceremonyMu.Lock()
+	defer svc.ceremonyMu.Unlock()
+	for _, entry := range svc.ceremonies {
+		if entry.userID != admin.ID {
+			t.Errorf("ceremony user = %s, want %s", entry.userID, admin.ID)
+		}
+		if entry.pending != nil {
+			t.Error("rekey must not create a user — the account already exists")
+		}
+	}
+}
+
+func TestRekeyCodeIsOneTimeAndSurvivesFormatting(t *testing.T) {
+	svc, queries := newTestService(t)
+	admin := createAdminUser(t, queries)
+	code, _, err := MintRekeyCode(context.Background(), queries, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Hand-typed codes arrive with dashes and in any case.
+	formatted := strings.ToLower(code[:4] + "-" + code[4:8] + "-" + code[8:])
+	if w := registerBegin(t, svc, `{"rekeyCode":"`+formatted+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("formatted code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := registerBegin(t, svc, `{"rekeyCode":"`+code+`"}`); w.Code != http.StatusUnauthorized {
+		t.Errorf("reused code = %d, want 401", w.Code)
+	}
+}
+
+func TestRekeyFailureDoesNotDistinguishCases(t *testing.T) {
+	svc, queries := newTestService(t)
+	createAdminUser(t, queries)
+
+	// A wrong code and a well-formed-but-unknown one must read identically —
+	// otherwise the reply is an oracle for what exists.
+	var messages []string
+	for _, body := range []string{
+		`{"rekeyCode":"AAAAAAAAAAAA"}`,
+		`{"rekeyCode":"BBBBBBBBBBBB","displayName":"admin"}`,
+		`{"rekeyCode":""}`,
+	} {
+		w := registerBegin(t, svc, body)
+		var parsed struct{ Error string }
+		if err := json.Unmarshal(w.Body.Bytes(), &parsed); err != nil {
+			t.Fatal(err)
+		}
+		messages = append(messages, parsed.Error)
+	}
+	for _, m := range messages[1:] {
+		if m != messages[0] {
+			t.Errorf("failure messages differ: %q vs %q", messages[0], m)
+		}
 	}
 }
 

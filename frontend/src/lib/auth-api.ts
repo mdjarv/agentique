@@ -24,12 +24,20 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   return res.json();
 }
 
-export async function register(displayName: string, inviteToken?: string): Promise<AuthUser> {
+/** Register a passkey.
+ *
+ *  `rekeyCode` is the one-time code `agentique auth rekey` prints. It replaces
+ *  the display name entirely on the recovery path — the code identifies the
+ *  account, so nothing has to be typed that an attacker could also guess. */
+export async function register(
+  displayName: string,
+  opts: { inviteToken?: string; rekeyCode?: string } = {},
+): Promise<AuthUser> {
   // Step 1: Begin registration — get WebAuthn options from server.
   const beginRes = await fetch(`${BASE}/register/begin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ displayName, inviteToken }),
+    body: JSON.stringify({ displayName, ...opts }),
   });
   await throwIfNotOk(beginRes, "Registration failed");
   const beginData = await beginRes.json();

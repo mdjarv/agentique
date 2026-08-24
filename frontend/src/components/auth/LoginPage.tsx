@@ -93,18 +93,23 @@ function SetupForm() {
 
 function RekeyForm() {
   const setAuthenticated = useAuthStore((s) => s.setAuthenticated);
-  const [displayName, setDisplayName] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // The code identifies the account, so no display name is asked for — and
+  // there is no name here for anyone to guess or enumerate.
+  const normalized = code.toUpperCase().replace(/[\s-]/g, "");
+  const complete = normalized.length === 12;
+
   async function handleRekey(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!displayName.trim()) return;
+    if (!complete) return;
 
     setError("");
     setLoading(true);
     try {
-      const user = await register(displayName.trim());
+      const user = await register("", { rekeyCode: normalized });
       setAuthenticated(user);
     } catch (err) {
       setError(getErrorMessage(err, "Registration failed"));
@@ -126,22 +131,27 @@ function RekeyForm() {
           </span>
         </h1>
         <p className="text-sm text-muted-foreground">
-          Passkeys were cleared (domain change). Enter your display name to register a new one.
+          Passkeys were cleared. Enter the recovery code from{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">agentique auth rekey</code> to
+          register a new one.
         </p>
       </div>
       <form onSubmit={handleRekey} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="rekeyDisplayName">Display name</Label>
+          <Label htmlFor="rekeyCode">Recovery code</Label>
           <Input
-            id="rekeyDisplayName"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Your existing display name"
+            id="rekeyCode"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="XXXX-XXXX-XXXX"
             autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            className="text-center font-mono tracking-[0.2em] uppercase"
             disabled={loading}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading || !displayName.trim()}>
+        <Button type="submit" className="w-full" disabled={loading || !complete}>
           {loading ? "Registering passkey..." : "Register new passkey"}
         </Button>
       </form>

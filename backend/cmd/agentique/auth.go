@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	dbpkg "github.com/mdjarv/agentique/backend/db"
+	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -110,7 +111,23 @@ func runAuthRekey(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Cleared all credentials and sessions.")
-	fmt.Println("Users can now re-register passkeys by visiting the app and entering their display name.")
+	fmt.Println()
+
+	// Clearing credentials is the one thing that opens the rekey path, so hand
+	// out the code for it here. Without a code that path would be an
+	// unauthenticated route to an account for as long as the window is open —
+	// and on a network-reachable server, whoever is watching wins the race.
+	fmt.Println("Recovery codes (one-time, valid " + auth.RekeyCodeTTL.String() + "):")
+	for _, u := range users {
+		code, expiresAt, err := auth.MintRekeyCode(ctx, queries, u.ID)
+		if err != nil {
+			return fmt.Errorf("mint recovery code for %s: %w", u.DisplayName, err)
+		}
+		fmt.Printf("  %-20s %s   (expires %s)\n", u.DisplayName, code, expiresAt.Local().Format("15:04:05"))
+	}
+	fmt.Println()
+	fmt.Println("Open the app and enter the code to register a new passkey.")
+	fmt.Println("Lost or expired? Run `agentique pair` against the running server for another.")
 	return nil
 }
 

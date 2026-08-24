@@ -79,6 +79,10 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 type registerBeginRequest struct {
 	DisplayName string `json:"displayName"`
 	InviteToken string `json:"inviteToken,omitempty"`
+	// RekeyCode is the one-time code printed by `agentique auth rekey`. It is
+	// the only way into the rekey path, and it identifies the user itself —
+	// so no display name is involved and there is nothing to enumerate.
+	RekeyCode string `json:"rekeyCode,omitempty"`
 }
 
 // handleRegisterBegin starts passkey registration.
@@ -86,11 +90,6 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	var req registerBeginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httperror.RespondError(w, httperror.BadRequest("invalid request body"))
-		return
-	}
-
-	if req.DisplayName == "" {
-		httperror.RespondError(w, httperror.BadRequest("displayName is required"))
 		return
 	}
 
@@ -118,24 +117,33 @@ func (s *Service) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case userCount == 0:
 		// First user — no invite needed, becomes the full-access operator.
+		if req.DisplayName == "" {
+			httperror.RespondError(w, httperror.BadRequest("displayName is required"))
+			return
+		}
 		pending = &pendingUser{displayName: req.DisplayName, isAdmin: 1}
 		authUser = &User{User: store.User{ID: generateUUID(), DisplayName: req.DisplayName, IsAdmin: 1}}
 
 	case credCount == 0:
-		// Rekey — users exist but every credential was cleared (a deliberate
-		// reset), so an existing user may re-register by display name.
+		// Rekey — users exist but every credential was cleared, which only
+		// `agentique auth rekey` does. That command runs on the machine with
+		// data-dir access and prints a one-time code; requiring it here means
+		// the window it opens is not an unauthenticated path to an account.
 		//
-		// The failure message is deliberately identical to the success path's
-		// absence of one: a distinct "no such display name" reply turns this
-		// into a name-enumeration oracle for an unauthenticated caller.
-		existing, err := s.queries.GetUserByDisplayName(ctx, req.DisplayName)
+		// The code carries the user id, so nothing is matched by display name:
+		// there is no "does this name exist" answer to probe for.
+		existing, err := s.consumeRekeyCode(ctx, req.RekeyCode)
 		if err != nil {
-			httperror.RespondError(w, httperror.BadRequest("registration is not available for that name"))
+			httperror.RespondError(w, httperror.Unauthorized("a valid recovery code is required — run `agentique auth rekey` on the server to get one"))
 			return
 		}
 		authUser = &User{User: existing}
 
 	default:
+		if req.DisplayName == "" {
+			httperror.RespondError(w, httperror.BadRequest("displayName is required"))
+			return
+		}
 		// Normal flow — an authenticated operator adding another passkey to
 		// THEIR OWN account, or a new user redeeming an invite.
 		session, authErr := s.validateSession(r)

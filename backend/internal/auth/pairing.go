@@ -113,6 +113,52 @@ func generatePairingToken() (string, error) {
 	return string(out), nil
 }
 
+// RekeyCodeTTL is how long a recovery code stays valid. Longer than a pairing
+// token because the operator typically mints it at a terminal and then walks to
+// another device to use it.
+const RekeyCodeTTL = 15 * time.Minute
+
+// MintRekeyCode issues a one-time recovery code bound to userID, so the holder
+// can register a fresh passkey after `agentique auth rekey` cleared them all.
+//
+// Deliberately the SAME one-time token machinery as pairing: 12 chars from a
+// transcription-friendly alphabet (~60 bits), consumed atomically in SQL,
+// TTL-bounded. A recovery code and a pairing code grant exactly the same thing
+// — that user's access — so they are interchangeable by design, and a burnt
+// code can be replaced with `agentique pair`.
+//
+// Called by the CLI while it holds the offline auth write lock, so it takes
+// queries directly rather than going through a running server.
+func MintRekeyCode(ctx context.Context, queries *store.Queries, userID string) (code string, expiresAt time.Time, err error) {
+	code, err = generatePairingToken()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	expiresAt = time.Now().Add(RekeyCodeTTL)
+	if err := queries.CreatePairingToken(ctx, store.CreatePairingTokenParams{
+		Token:     code,
+		UserID:    userID,
+		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	}); err != nil {
+		return "", time.Time{}, fmt.Errorf("create recovery code: %w", err)
+	}
+	return code, expiresAt, nil
+}
+
+// consumeRekeyCode redeems a recovery code and returns the user it belongs to.
+// Expired, already-used and unknown codes are indistinguishable to the caller.
+func (s *Service) consumeRekeyCode(ctx context.Context, code string) (store.User, error) {
+	code = normalizePairingToken(code)
+	if len(code) != pairingTokenLength {
+		return store.User{}, errors.New("recovery code is invalid")
+	}
+	row, err := s.queries.ConsumePairingToken(ctx, code)
+	if err != nil {
+		return store.User{}, errors.New("recovery code is invalid or expired")
+	}
+	return s.queries.GetUser(ctx, row.UserID)
+}
+
 // normalizePairingToken uppercases and strips separators so a hand-typed
 // token survives spacing/case variations.
 func normalizePairingToken(token string) string {
