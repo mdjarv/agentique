@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { GitSnapshotSchema } from "~/lib/generated-schemas";
 import { isUnknownOpError, LEGACY_OP, readArchivedAt } from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
 import { define } from "~/lib/ws-rpc";
@@ -140,5 +141,39 @@ describe("define — renamed ops against an older peer", () => {
   it("declares both renamed archive ops", () => {
     expect(LEGACY_OP["session.archive"]).toBe("session.mark-done");
     expect(LEGACY_OP["session.unarchive"]).toBe("session.unmark-done");
+  });
+});
+
+// The regression that made this file necessary a second time: `archivedAt` was
+// briefly marked required on the wire, so the generated schema rejected every
+// session.state push from a peer that predates the rename — the whole payload,
+// state included. Remote rows simply froze. Wire fields stay optional.
+describe("session.state accepts a payload from a peer that predates the rename", () => {
+  const fromOldPeer = {
+    sessionId: "s1",
+    state: "done",
+    connected: false,
+    hasDirtyWorktree: false,
+    hasUncommitted: false,
+    worktreeMerged: false,
+    completedAt: "2026-08-24T09:00:00Z",
+    commitsAhead: 0,
+    commitsBehind: 0,
+    branchMissing: false,
+    version: 7,
+  };
+
+  it("validates without archivedAt", () => {
+    const parsed = GitSnapshotSchema.safeParse(fromOldPeer);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("and the archive marker still reads through", () => {
+    expect(readArchivedAt(fromOldPeer)).toBe("2026-08-24T09:00:00Z");
+  });
+
+  it("still validates a current peer's payload", () => {
+    const fromCurrentPeer = { ...fromOldPeer, archivedAt: "2026-08-24T09:00:00Z" };
+    expect(GitSnapshotSchema.safeParse(fromCurrentPeer).success).toBe(true);
   });
 });

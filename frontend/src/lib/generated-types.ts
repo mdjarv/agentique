@@ -296,7 +296,7 @@ export interface GitSnapshot {
   hasDirtyWorktree: boolean;
   hasUncommitted: boolean;
   worktreeMerged: boolean;
-  archivedAt: string;
+  archivedAt?: string;
   commitsAhead: number;
   commitsBehind: number;
   branchMissing: boolean;

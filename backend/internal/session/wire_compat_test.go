@@ -46,22 +46,24 @@ func TestGitSnapshotCarriesLegacyArchivedAlias(t *testing.T) {
 	}
 }
 
-// An un-archived session must say so explicitly. Omitting the field would be
-// indistinguishable from "unchanged", and a client that just started a turn on
-// an archived session would keep the row filed away.
-func TestGitSnapshotAlwaysStatesArchivedAt(t *testing.T) {
+// An un-archived session omits the marker entirely, and BOTH names must be
+// absent. The client reads an absent marker as "not archived" — which is what
+// makes starting a turn un-archive a session visibly — so emitting an empty
+// value would be redundant, and making the field REQUIRED would be worse: the
+// generated schema mirrors these tags, and a client would then reject every
+// payload from a peer that predates the rename.
+func TestGitSnapshotOmitsTheMarkerWhenOpen(t *testing.T) {
 	got := fieldsOf(t, GitSnapshot{SessionID: "s1"})
 
-	v, present := got["archivedAt"]
-	if !present {
-		t.Fatal("archivedAt must always be present, even when empty")
+	if _, present := got["archivedAt"]; present {
+		t.Error("archivedAt should be omitted when the session is not archived")
 	}
-	if v != "" {
-		t.Errorf("archivedAt: got %v, want empty", v)
-	}
-	// The deprecated alias keeps its historical omitempty behaviour.
 	if _, present := got["completedAt"]; present {
 		t.Error("completedAt should be omitted when the session is not archived")
+	}
+	// The rest of the snapshot still marshals.
+	if got["sessionId"] != "s1" {
+		t.Errorf("sessionId: got %v", got["sessionId"])
 	}
 }
 

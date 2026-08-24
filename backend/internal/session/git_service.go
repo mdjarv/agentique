@@ -817,11 +817,17 @@ type GitSnapshot struct {
 	HasDirtyWorktree bool   `json:"hasDirtyWorktree"`
 	HasUncommitted   bool   `json:"hasUncommitted"`
 	WorktreeMerged   bool   `json:"worktreeMerged"`
-	// ArchivedAt is deliberately NOT omitempty: the empty string has to reach
-	// the client as a value, because clearing it is a real event (starting a
-	// turn un-archives a session). An omitted field is indistinguishable from
-	// "unchanged", and the frontend would keep showing a filed-away row.
-	ArchivedAt         string   `json:"archivedAt"`
+	// ArchivedAt keeps omitempty, and that is load-bearing in both directions:
+	//
+	//   - The client must treat an ABSENT marker as "not archived", never as
+	//     "unchanged" — that is what lets starting a turn un-archive a session
+	//     visibly, since the running snapshot simply stops carrying it.
+	//   - Making it required would be a breaking wire change. The generated Zod
+	//     schema mirrors these tags, and a required field makes the client
+	//     REJECT the whole payload from a peer that predates the rename — every
+	//     session.state push from that machine silently dropped, so its rows
+	//     freeze. Wire fields are optional-by-default for exactly this reason.
+	ArchivedAt         string   `json:"archivedAt,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`
