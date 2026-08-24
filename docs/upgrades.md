@@ -423,7 +423,7 @@ if a library starts calling a shared-tree rewrite self-managed.
   not vendored: `agentkit v0.1.0` ships `runtime.InstallInspectable` with both
   adapters implemented, delegating to `claudecli-go v0.5.0` and
   `codexcli-go v0.1.0`.
-  - **V5a — what is installed.** `internal/update/cli.go` asks the capability
+  - **V5a — what is installed. Shipped.** `internal/update/cli.go` asks the capability
     per provider, caches on the existing hourly tick, and adds `clis[]` to
     `/api/update/status`: tool, installed version, path and real path, method,
     source, self-managed, update command, version manager, package manager,
@@ -447,7 +447,12 @@ if a library starts calling a shared-tree rewrite self-managed.
     and the user's next action differs. "Reported success but the version did
     not change" must be reachable as its own state and must be impossible to
     render as success — that is the observed `codex update` failure, and the
-    one a naive implementation calls a win.
+    one a naive implementation calls a win. Its twin is **unknown**: both
+    libraries report an empty version when the probe fails, so `"" == ""` is a
+    probe that could not see, not a binary that did not move. Equal-and-known
+    is a failure; unknown is an update we cannot confirm, rendered as success
+    with different words. Collapsing the two would make the honest case wear
+    the accusation meant for the dishonest one.
   - **Outside this repo, in dependency order:** `claudecli-go` needs an
     `Update`, a published-version lookup (only it knows whether an install
     tracks `latest` or `stable`), and a PATH-entries report so C9 can be

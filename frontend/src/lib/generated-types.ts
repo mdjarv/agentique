@@ -518,6 +518,7 @@ export interface UpdateStatus {
   busy: boolean;
   busyTurns: number;
   armed?: UpdateArming;
+  clis?: unknown[];
   progress?: UpdateProgress;
 }
 

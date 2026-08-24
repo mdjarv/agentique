@@ -18,6 +18,9 @@ type Handler struct {
 	// Applier is nil when this build cannot apply upgrades in place; the
 	// status endpoint still works and reports supported:false.
 	Applier *Applier
+	// CLIs reports the provider CLIs this machine would spawn. Nil when nothing
+	// can answer — the rest of the status is unaffected.
+	CLIs *CLIProbe
 }
 
 // HandleStatus answers GET /api/update/status. `?refresh=1` forces a check
@@ -40,6 +43,11 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 // could actually run here, what is stopping it, whether a turn is in flight,
 // and any live progress.
 func (h *Handler) decorate(st *Status) {
+	// Read from cache, never probe here: a status call is on the client's
+	// 15-minute beat across every machine, and detection spawns `--version`.
+	if h.CLIs != nil {
+		st.CLIs = h.CLIs.Status()
+	}
 	if h.Applier == nil {
 		st.Blocker = "this server was built without in-app upgrades"
 		return

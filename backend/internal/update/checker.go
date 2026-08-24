@@ -60,6 +60,12 @@ type Status struct {
 	// absent when nothing is armed. In-memory only — an unrelated restart
 	// forgets it, which is the fail-safe direction.
 	Armed *Arming `json:"armed,omitempty"`
+	// CLIs is what this machine's provider CLIs report about themselves — the
+	// binaries agentique would spawn, not whatever a shell would resolve. Empty
+	// when update checking is off, when no connector can answer, or when the
+	// CLI simply is not installed: a machine without codex is a normal state,
+	// not a row saying so (docs/upgrades.md V5).
+	CLIs []CLIStatus `json:"clis,omitempty"`
 	// Progress is the live upgrade; absent when none is running. Held as state
 	// (not only pushed as events) so reloading mid-upgrade still shows it.
 	// omitempty rather than an explicit null: typegen unwraps pointers, so an

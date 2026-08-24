@@ -520,6 +520,7 @@ export const UpdateStatusSchema = z.object({
   busy: z.boolean(),
   busyTurns: z.number(),
   armed: UpdateArmingSchema.optional(),
+  clis: z.array(z.unknown()).optional(),
   progress: UpdateProgressSchema.optional(),
 });
 

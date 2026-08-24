@@ -234,6 +234,7 @@ type Server struct {
 	scheduler      *schedule.Scheduler
 	updateChecker  *update.Checker
 	updateApplier  *update.Applier
+	updateCLIs     *update.CLIProbe
 	allowedOrigins map[string]bool
 	authEnabled    bool
 	// csp is the SPA document policy, computed once from the embedded bundle
@@ -245,6 +246,12 @@ type Server struct {
 // loop (same precedent as Scheduler — no network or filesystem work runs from
 // a constructor a test might call). Nil when checking is disabled.
 func (s *Server) UpdateChecker() *update.Checker { return s.updateChecker }
+
+// UpdateCLIProbe exposes the provider-CLI probe so serve.go can start its poll
+// loop, for the same reason UpdateChecker is exposed: detection spawns
+// `--version`, and nothing that touches a subprocess may run from a
+// constructor a test might call. Nil when update checking is disabled.
+func (s *Server) UpdateCLIProbe() *update.CLIProbe { return s.updateCLIs }
 
 // Scheduler exposes the scheduled-loop service so serve.go can run the boot
 // sweep and start the tick loop (deliberately not started in New — see the
@@ -305,9 +312,23 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	devStore := devurls.NewStore(toAgentkitSlots(cfg.DevURLSlots))
 	mcpTokens := mcphttp.NewTokenStore()
 
+	// The connectors double as the answer to "which CLI would this machine
+	// actually spawn": each one owns its client options, so it is the only
+	// thing that stays correct if a binary path is ever overridden. Collected
+	// here rather than re-derived, so detection and execution cannot drift
+	// apart (docs/upgrades.md C13). A connector that cannot answer is simply
+	// absent — the test-mode connector never implements this.
+	cliInspectors := map[string]runtime.InstallInspectable{}
+	if in, ok := connector.(runtime.InstallInspectable); ok {
+		cliInspectors["claude"] = in
+	}
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
 	if !cfg.TestMode {
-		mgr.SetProviderConnector("codex", codexadapter.NewConnector())
+		codexConnector := codexadapter.NewConnector()
+		mgr.SetProviderConnector("codex", codexConnector)
+		if in, ok := codexConnector.(runtime.InstallInspectable); ok {
+			cliInspectors["codex"] = in
+		}
 	}
 	mgr.SetMCPHTTP(mcpTokens, cfg.MCPInternalURL)
 	mgr.SetDevURLStore(devStore)
@@ -401,6 +422,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// Constructed here so the route exists; the poll loop starts from serve.go.
 	var updateChecker *update.Checker
 	var updateApplier *update.Applier
+	var updateCLIs *update.CLIProbe
 	if !cfg.Update.Disabled {
 		interval, ierr := parseUpdateInterval(cfg.Update.Interval)
 		if ierr != nil {
@@ -432,7 +454,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// idle-time check would still see that very turn as in flight.
 		mgr.AddTurnEndListener(applier.OnTurnEnd)
 		updateApplier = applier
-		uh := &update.Handler{Checker: updateChecker, Applier: applier}
+		// CLI detection follows the same switch as the release check: turning
+		// [update] off silences all of it, not just the part about ourselves.
+		updateCLIs = update.NewCLIProbe(cliInspectors, interval)
+		uh := &update.Handler{Checker: updateChecker, Applier: applier, CLIs: updateCLIs}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
 		// Applying replaces this machine's binary and restarts its service, and
 		// `force` ends every turn in flight (docs/process-lifecycle.md). That is
@@ -974,6 +999,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		scheduler:      sched,
 		updateChecker:  updateChecker,
 		updateApplier:  updateApplier,
+		updateCLIs:     updateCLIs,
 		allowedOrigins: allowedOrigins,
 		authEnabled:    cfg.AuthEnabled,
 		csp:            spaCSP(frontendSub),

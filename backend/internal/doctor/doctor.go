@@ -2,12 +2,18 @@
 package doctor
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/allbin/agentkit/runtime"
+	claudeadapter "github.com/allbin/agentkit/runtime/cli/claude"
+	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
+	claudecli "github.com/allbin/claudecli-go"
 
 	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/paths"
@@ -70,6 +76,7 @@ func AllChecks() []CheckFunc {
 func RunAll() []Check {
 	return []Check{
 		checkClaude(),
+		checkCodex(),
 		checkGit(),
 		checkGH(),
 		checkNode(),
@@ -116,44 +123,110 @@ func FormatError(checks []Check) string {
 	return strings.Join(parts, "\n\n")
 }
 
+// checkClaude reports the claude CLI the *server* would spawn, and the command
+// that would update that install.
+//
+// It never resolves the binary itself and never runs the CLI: detection comes
+// from the provider's own library through agentkit's connector capability, so
+// this and the Versions dialog cannot disagree (docs/upgrades.md C1, C10, C13).
+//
+// The Fix line is whatever the library says, or nothing. It used to hardcode
+// `npm install -g @anthropic-ai/claude-code`, which on a native install writes
+// a second copy into an npm prefix and leaves the install it was describing
+// untouched — the user is then shown a version that does not describe the
+// binary their next session runs.
 func checkClaude() Check {
 	c := Check{Name: "claude", Required: true}
 
-	path, err := exec.LookPath("claude")
+	info, err := detectCLI("claude")
 	if err != nil {
 		c.Status = Fail
 		c.Message = "not found on PATH"
-		c.Fix = "Install: npm install -g @anthropic-ai/claude-code"
-		return c
-	}
-
-	out, err := exec.Command(path, "--version").Output()
-	if err != nil {
-		c.Status = Fail
-		c.Message = "failed to get version"
-		c.Fix = "Verify: claude --version"
-		return c
-	}
-
-	version := strings.TrimSpace(string(out))
-	// Output: "2.1.87 (Claude Code)" — extract leading version
-	major, _, ok := parseVersion(version)
-	if !ok {
-		c.Status = Warn
-		c.Message = fmt.Sprintf("could not parse version %q", version)
-		return c
-	}
-
-	if major < 2 {
-		c.Status = Fail
-		c.Message = fmt.Sprintf("version %s too old (need >= 2.0.0)", version)
-		c.Fix = "Upgrade: npm install -g @anthropic-ai/claude-code"
+		c.Fix = "Install: https://claude.com/product/claude-code"
 		return c
 	}
 
 	c.Status = OK
-	c.Message = version
+	c.Message = describeInstall(info)
+	if major, _, ok := parseVersion(info.Version); ok && major < 2 {
+		c.Status = Fail
+		c.Message = fmt.Sprintf("version %s too old (need >= 2.0.0)", info.Version)
+		c.Fix = updateHint(info)
+	}
 	return c
+}
+
+// checkCodex reports the codex CLI, when one is installed. Optional: codex is
+// a second provider, not a dependency, so its absence is not a warning either.
+func checkCodex() Check {
+	c := Check{Name: "codex", Required: false}
+
+	info, err := detectCLI("codex")
+	if err != nil {
+		c.Status = OK
+		c.Message = "not installed (optional)"
+		return c
+	}
+
+	c.Status = OK
+	c.Message = describeInstall(info)
+	return c
+}
+
+// detectCLI asks the provider's connector how its CLI was installed. The
+// connectors are constructed with no binary override, exactly as server.New
+// constructs them, so the answer describes the binary a session would spawn.
+func detectCLI(tool string) (*runtime.Install, error) {
+	var conn runtime.CLIConnector
+	switch tool {
+	case "claude":
+		conn = claudeadapter.NewConnector()
+	case "codex":
+		conn = codexadapter.NewConnector()
+	default:
+		return nil, fmt.Errorf("doctor: unknown provider %q", tool)
+	}
+	in, ok := conn.(runtime.InstallInspectable)
+	if !ok {
+		return nil, fmt.Errorf("doctor: %s connector cannot report its install", tool)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cliDetectTimeout)
+	defer cancel()
+	info, err := in.InstallInfo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("doctor: detect %s: %w", tool, err)
+	}
+	return info, nil
+}
+
+// cliDetectTimeout bounds detection, which spawns one `--version`.
+const cliDetectTimeout = 10 * time.Second
+
+// describeInstall renders "2.1.241 (native)" plus anything the library thought
+// worth warning about — a second copy on PATH is the one that matters, since
+// that is when a version stops describing the binary that runs.
+func describeInstall(info *runtime.Install) string {
+	version := info.Version
+	if version == "" {
+		version = "unknown version"
+	}
+	msg := version
+	if info.Method != "" && info.Method != runtime.InstallMethodUnknown {
+		msg += " (" + info.Method + ")"
+	}
+	if len(info.Warnings) > 0 {
+		msg += " — " + strings.Join(info.Warnings, "; ")
+	}
+	return msg
+}
+
+// updateHint is the library's own update command, or an honest shrug. An empty
+// UpdateCmd means "update manually"; it never means "use npm".
+func updateHint(info *runtime.Install) string {
+	if info.UpdateCmd == "" {
+		return "Update it the way it was installed — no command is known to be correct for a " + info.Method + " install"
+	}
+	return "Upgrade: " + info.UpdateCmd
 }
 
 func checkGit() Check {
@@ -284,30 +357,16 @@ func checkDiskSpace() Check {
 	return c
 }
 
+// checkClaudeAuth asks claudecli-go rather than running `claude auth status`
+// and parsing the JSON here — same rule as checkClaude: the library owns the
+// command. It also gets defensive parsing and a three-state answer for free.
 func checkClaudeAuth() Check {
 	c := Check{Name: "claude-auth", Required: false}
 
-	path, err := exec.LookPath("claude")
-	if err != nil {
-		c.Status = Warn
-		c.Message = "skipped (claude not installed)"
-		return c
-	}
-
-	out, err := exec.Command(path, "auth", "status").Output()
-	if err != nil {
-		c.Status = Warn
-		c.Message = "not authenticated"
-		c.Fix = "Run: claude auth login"
-		return c
-	}
-
-	var auth struct {
-		LoggedIn bool   `json:"loggedIn"`
-		Email    string `json:"email"`
-		OrgName  string `json:"orgName"`
-	}
-	if err := json.Unmarshal(out, &auth); err != nil || !auth.LoggedIn {
+	ctx, cancel := context.WithTimeout(context.Background(), cliDetectTimeout)
+	defer cancel()
+	auth, err := claudecli.AuthStatus(ctx)
+	if err != nil || auth == nil || !auth.LoggedIn {
 		c.Status = Warn
 		c.Message = "not authenticated"
 		c.Fix = "Run: claude auth login"
@@ -317,6 +376,9 @@ func checkClaudeAuth() Check {
 	detail := auth.Email
 	if auth.OrgName != "" {
 		detail += " (" + auth.OrgName + ")"
+	}
+	if detail == "" {
+		detail = "authenticated"
 	}
 	c.Status = OK
 	c.Message = detail
