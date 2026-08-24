@@ -180,3 +180,92 @@ export function summarize(rows: SyncRowVM[]): SyncSummary {
 export function mechanicalRows(rows: SyncRowVM[]): SyncRowVM[] {
   return rows.filter((r) => r.action !== "rebase" && !r.machineOffline);
 }
+
+/**
+ * The rows the dock can't run: diverged, or on a machine that is away.
+ * Diverged first — it is work waiting on a decision, where away is only work
+ * waiting on a machine to come back.
+ */
+export function exceptionRows(rows: SyncRowVM[]): SyncRowVM[] {
+  return rows
+    .filter((r) => r.action === "rebase" || r.machineOffline)
+    .sort((a, b) => Number(a.action !== "rebase") - Number(b.action !== "rebase"));
+}
+
+/**
+ * The collapsed meter's three segments, in commits. Direction is colour —
+ * green ahead, blue behind — except for a diverged checkout, whose commits are
+ * amber whichever way they point: the bar's job is to separate what one press
+ * can clear from what needs a person, and that distinction outranks direction.
+ */
+export interface SyncSegments {
+  ahead: number;
+  behind: number;
+  diverged: number;
+  /** ahead + behind + diverged; 0 means nothing to draw. */
+  total: number;
+}
+
+export function syncSegments(rows: SyncRowVM[]): SyncSegments {
+  let ahead = 0;
+  let behind = 0;
+  let diverged = 0;
+  for (const row of rows) {
+    if (row.action === "rebase") {
+      diverged += row.ahead + row.behind;
+      continue;
+    }
+    ahead += row.ahead;
+    behind += row.behind;
+  }
+  return { ahead, behind, diverged, total: ahead + behind + diverged };
+}
+
+/**
+ * What the bulk button will actually do, in its own units. Never a generic
+ * "sync N": the plan names each half it contains, so the number in the label
+ * can be checked against the rows above it.
+ */
+export interface BulkPlan {
+  /** Checkouts to push / to pull — reachable and mechanical only. */
+  pushes: number;
+  pulls: number;
+  /** Commits moving in each direction. */
+  ahead: number;
+  behind: number;
+  /** Nothing to run: the button doesn't render. */
+  empty: boolean;
+}
+
+export function bulkPlan(rows: SyncRowVM[]): BulkPlan {
+  const targets = mechanicalRows(rows);
+  let pushes = 0;
+  let pulls = 0;
+  let ahead = 0;
+  let behind = 0;
+  for (const row of targets) {
+    if (row.action === "push") {
+      pushes++;
+      ahead += row.ahead;
+    } else {
+      pulls++;
+      behind += row.behind;
+    }
+  }
+  return { pushes, pulls, ahead, behind, empty: targets.length === 0 };
+}
+
+/**
+ * The button's label. A set of pushes says push, a set of pulls says pull, and
+ * only a genuinely mixed set names both halves — "sync" is a fallback, never
+ * the default.
+ */
+export function bulkLabel(plan: BulkPlan): string {
+  if (plan.pushes > 0 && plan.pulls > 0) {
+    return `Push ${plan.pushes} · Pull ${plan.pulls}`;
+  }
+  if (plan.pushes > 0) {
+    return plan.pushes === 1 ? `Push ↑${plan.ahead}` : `Push ${plan.pushes} · ↑${plan.ahead}`;
+  }
+  return plan.pulls === 1 ? `Pull ↓${plan.behind}` : `Pull ${plan.pulls} · ↓${plan.behind}`;
+}

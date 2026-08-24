@@ -2,16 +2,22 @@
  * The sync dock — the rail's last band, under the session list and above the
  * footer.
  *
- * At rest it is one line: an amber dot, the faces of the repos that have
- * drifted, and how many actions are outstanding. Expanded it lists one row per
- * drifted *checkout* (so a repo out of sync on two machines is two rows, one
- * face) with its single action. It runs only the two mechanical operations —
- * push and fast-forward pull — and hands a diverged checkout to a session with
- * a rebase prompt, exactly as the old project row's pills did.
+ * At rest it is one line: a three-tone meter (ahead / behind / diverged) in
+ * place of a status dot, the faces of the repos that have drifted, and the
+ * commit counts. Opening it keeps that header exactly as it was and only grows
+ * a list underneath — one row per drifted *checkout* (so a repo out of sync on
+ * two machines is two rows, one face) with its single action.
+ *
+ * The open dock states its bulk action by position: everything the button will
+ * run sits directly above it, the rule beneath it separates what needs a human
+ * (diverged) or a machine that is home (away), and pointing at the button
+ * previews that split. The label never says a generic "sync N" — it names each
+ * half it contains. Running it applies each checkout's result as it lands, so
+ * rows leave the dock one by one and the meter shrinks with them.
  *
  * Freshness is part of the design, not a footnote: ahead/behind is only as
- * true as the last `git fetch`, so the dock reports its age and says "sync
- * unknown" rather than presenting a stale count as fact.
+ * true as the last `git fetch`, so the dock reports its age and says "not
+ * checked yet" rather than presenting a stale count as fact.
  */
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight, RefreshCw } from "lucide-react";
@@ -30,12 +36,17 @@ import { useAppStore } from "~/stores/app-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useUIStore } from "~/stores/ui-store";
 import {
+  bulkLabel,
+  bulkPlan,
   deriveSyncRows,
+  exceptionRows,
   mechanicalRows,
   type SyncChip,
   type SyncRowInput,
   type SyncRowVM,
+  type SyncSegments,
   summarize,
+  syncSegments,
 } from "./sync-derive";
 
 /** How many faces the collapsed line shows before it starts counting. */
@@ -140,6 +151,42 @@ function Chip({ chip, stacked }: { chip: SyncChip; stacked: boolean }) {
   );
 }
 
+/**
+ * The drift meter — and the dock's status light, since it replaced the amber
+ * dot. Proportional by commits, three-tone (ahead / behind / diverged), and it
+ * still says something when there is nothing docked: a dim green track for
+ * clear, a grey one when no fetch has happened and the claim would be a guess.
+ */
+function SyncMeter({
+  segments,
+  clear,
+  stale,
+}: {
+  segments: SyncSegments;
+  clear: boolean;
+  stale: boolean;
+}) {
+  const pct = (n: number) => (segments.total > 0 ? `${(n / segments.total) * 100}%` : "0%");
+  return (
+    <span
+      aria-hidden
+      className="flex h-[5px] w-[46px] shrink-0 overflow-hidden rounded-full bg-border/55"
+    >
+      {clear || segments.total === 0 ? (
+        <span
+          className={cn("h-full w-full", stale ? "bg-muted-foreground-faint/60" : "bg-success/45")}
+        />
+      ) : (
+        <>
+          <span className="h-full bg-success" style={{ width: pct(segments.ahead) }} />
+          <span className="h-full bg-primary" style={{ width: pct(segments.behind) }} />
+          <span className="h-full bg-warning" style={{ width: pct(segments.diverged) }} />
+        </>
+      )}
+    </span>
+  );
+}
+
 export function SyncDock() {
   const ws = useWebSocket();
   const navigate = useNavigate();
@@ -149,17 +196,18 @@ export function SyncDock() {
   const setExpanded = useUIStore((s) => s.setSyncDockExpanded);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
+  // Hover/focus on the bulk button previews its reach: the rows it will run
+  // light up, the ones it skips fade. Asked and answered, without a footnote.
+  const [previewing, setPreviewing] = useState(false);
+  // A bulk run in flight. Rows leave the dock as their own status lands, so
+  // this only has to say how much of the batch is still moving.
+  const [run, setRun] = useState<{ total: number; done: number } | null>(null);
 
   const summary = useMemo(() => summarize(rows), [rows]);
-  // Commits, not checkouts: what the open dock trades the chip stack for.
-  const totals = useMemo(
-    () =>
-      rows.reduce(
-        (acc, row) => ({ ahead: acc.ahead + row.ahead, behind: acc.behind + row.behind }),
-        { ahead: 0, behind: 0 },
-      ),
-    [rows],
-  );
+  const mechanical = useMemo(() => mechanicalRows(rows), [rows]);
+  const exceptions = useMemo(() => exceptionRows(rows), [rows]);
+  const plan = useMemo(() => bulkPlan(rows), [rows]);
+  const segments = useMemo(() => syncSegments(rows), [rows]);
   const { oldest, stale } = useFetchAge(rows, now);
 
   const projectsLoaded = useAppStore((s) => s.projectsLoaded);
@@ -206,30 +254,35 @@ export function SyncDock() {
     [navigate],
   );
 
-  // Bulk: mechanical rows only, settled per checkout so one unreachable
-  // machine can't sink the sweep.
+  // Bulk: mechanical rows only, each settled and *applied* on its own. The
+  // per-checkout store write is the point — a synced checkout leaves the list
+  // the moment its status lands and the meter shrinks with it, so the run
+  // proves what the button covered instead of restating it.
   const syncAll = useCallback(async () => {
     const targets = mechanicalRows(rows);
     if (targets.length === 0) return;
+    setRun({ total: targets.length, done: 0 });
     for (const row of targets) markBusy(row.projectId, true);
-    const results = await Promise.allSettled(
-      targets.map((row) =>
-        row.action === "push" ? pushProject(ws, row.projectId) : pullProject(ws, row.projectId),
-      ),
-    );
-    const store = useAppStore.getState();
     let failed = 0;
-    results.forEach((result, i) => {
-      const row = targets[i];
-      if (!row) return;
-      markBusy(row.projectId, false);
-      if (result.status === "fulfilled") {
-        store.setProjectGitStatus(result.value);
-        store.markProjectFetched(row.projectId, Date.now());
-      } else {
-        failed++;
-      }
-    });
+    await Promise.all(
+      targets.map(async (row) => {
+        try {
+          const status =
+            row.action === "push"
+              ? await pushProject(ws, row.projectId)
+              : await pullProject(ws, row.projectId);
+          const store = useAppStore.getState();
+          store.setProjectGitStatus(status);
+          store.markProjectFetched(row.projectId, Date.now());
+        } catch {
+          failed++;
+        } finally {
+          markBusy(row.projectId, false);
+          setRun((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+        }
+      }),
+    );
+    setRun(null);
     if (failed > 0) {
       toast.error(`${failed} of ${targets.length} could not be synced`);
     }
@@ -267,66 +320,52 @@ export function SyncDock() {
           "transition-colors hover:bg-sidebar-accent/60 max-md:min-h-9",
         )}
       >
-        <span
-          className={cn(
-            "size-[7px] shrink-0 rounded-full",
-            clear ? "bg-success/70" : stale ? "bg-muted-foreground-faint" : "bg-orange",
-          )}
-        />
+        {/* The meter is also the status light — it replaced the amber dot, so
+            it has to hold the empty states too. */}
+        <SyncMeter segments={segments} clear={clear} stale={stale} />
 
         {/* Staleness only silences the *claim*, never the findings: drift we
             already know about is real work whether or not it was just
             re-checked, so an unverified dock still names its repos and marks
-            the age instead. "Sync unknown" is reserved for the one case where
-            the alternative would be a claim we can't back — nothing docked and
-            nothing fetched, where "all in sync" might simply be ignorance. */}
+            the age instead. "Not checked yet" is reserved for the one case
+            where the alternative would be a claim we can't back — nothing
+            docked and nothing fetched, where "everything pushed" might simply
+            be ignorance. */}
         {clear ? (
           <span className="truncate text-[11.5px] text-muted-foreground">
-            {stale ? "Sync unknown" : "All repos in sync"}
+            {stale ? "Not checked yet" : "Everything pushed"}
           </span>
-        ) : expanded ? (
-          // Open, the list below names every repo — so the header drops the
-          // faces and becomes a section header like Open or Archived, spending
-          // the reclaimed room on the shape of the work instead.
-          <>
-            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Out of sync
-            </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
-              {summary.total}
-            </span>
-            {totals.ahead > 0 && (
-              <span className="shrink-0 font-mono text-[10px] tabular-nums text-success">
-                ↑{totals.ahead}
-              </span>
-            )}
-            {totals.behind > 0 && (
-              <span className="shrink-0 font-mono text-[10px] tabular-nums text-primary">
-                ↓{totals.behind}
-              </span>
-            )}
-          </>
         ) : (
+          // Open or shut, the header says the same thing in the same place —
+          // toggling only grows the list underneath it.
           <>
-            <span className="flex shrink-0 items-center pr-1">
-              {summary.chips.slice(0, MAX_CHIPS).map((chip) => (
-                <Chip key={chip.repoKey} chip={chip} stacked />
-              ))}
-            </span>
-            {summary.chips.length > MAX_CHIPS && (
+            {!expanded && (
+              <span className="flex shrink-0 items-center pr-1">
+                {summary.chips.slice(0, MAX_CHIPS).map((chip) => (
+                  <Chip key={chip.repoKey} chip={chip} stacked />
+                ))}
+              </span>
+            )}
+            {!expanded && summary.chips.length > MAX_CHIPS && (
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
                 +{summary.chips.length - MAX_CHIPS}
               </span>
             )}
-            <span className="truncate text-[11.5px] text-muted-foreground">
-              <span className="font-semibold text-foreground-bright">{summary.total}</span> to sync
+            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
+              {segments.ahead > 0 && <span className="text-success">↑{segments.ahead}</span>}
+              {segments.behind > 0 && <span className="text-primary">↓{segments.behind}</span>}
+              {summary.diverged > 0 && (
+                <span className="text-warning" title="diverged — needs a rebase">
+                  ⚠{summary.diverged}
+                </span>
+              )}
             </span>
           </>
         )}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className="font-mono text-[9.5px] text-muted-foreground-faint">
-            {ageLabel(oldest, now)}
+            as of {ageLabel(oldest, now)}
           </span>
           {!clear && (
             <ChevronRight
@@ -343,14 +382,61 @@ export function SyncDock() {
         // Capped: a long drift list scrolls inside the dock rather than
         // crushing the session list above it.
         <div className="mt-0.5 flex max-h-56 flex-col gap-px overflow-y-auto">
-          {rows.map((row) => (
+          {/* Everything the bulk button covers, then the button itself, then
+              the rule. Position states the scope: what the press touches is
+              directly above it, what it skips is below the line — so the old
+              "N need a rebase, M away" footnote has nothing left to explain. */}
+          {mechanical.map((row) => (
             <SyncRow
               key={row.projectId}
               row={row}
               busy={busy.has(row.projectId)}
-              onAct={() => (row.action === "rebase" ? openRebase(row) : runAction(row))}
+              inScope={previewing}
+              onAct={() => runAction(row)}
             />
           ))}
+
+          {!plan.empty && (
+            <div className="px-1.5 pt-1">
+              <button
+                type="button"
+                onClick={syncAll}
+                onMouseEnter={() => setPreviewing(true)}
+                onMouseLeave={() => setPreviewing(false)}
+                onFocus={() => setPreviewing(true)}
+                onBlur={() => setPreviewing(false)}
+                disabled={!!run}
+                title={`${bulkLabel(plan)} — ${exceptions.length > 0 ? `${exceptions.length} below the line left alone` : "everything docked"}`}
+                className={cn(
+                  "flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 py-1",
+                  "bg-success text-[10.5px] font-semibold text-primary-foreground",
+                  "transition-colors hover:bg-success/85 disabled:cursor-default disabled:opacity-60",
+                )}
+              >
+                {run ? `Syncing ${run.total - run.done} of ${run.total}…` : bulkLabel(plan)}
+              </button>
+            </div>
+          )}
+
+          {exceptions.length > 0 && (
+            <>
+              <div className="mx-1.5 my-1 h-px bg-border/55" />
+              <div className="px-1.5 pb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground-faint">
+                needs you
+              </div>
+              {exceptions.map((row) => (
+                <SyncRow
+                  key={row.projectId}
+                  row={row}
+                  busy={busy.has(row.projectId)}
+                  dimmed
+                  outOfScope={previewing}
+                  onAct={() => (row.action === "rebase" ? openRebase(row) : runAction(row))}
+                />
+              ))}
+            </>
+          )}
+
           <div className="flex items-center gap-2 px-1.5 pt-1">
             <button
               type="button"
@@ -358,33 +444,10 @@ export function SyncDock() {
               className="flex cursor-pointer items-center gap-1 font-mono text-[9.5px] text-muted-foreground-faint transition-colors hover:text-foreground"
             >
               <RefreshCw className={cn("size-2.5", refreshing && "animate-spin")} />
-              {refreshing ? "fetching…" : "refresh"}
+              {refreshing ? "checking…" : "refresh"}
             </button>
-            {/* The bulk action's promise, stated where it can be read: it only
-                ever pushes and fast-forwards. Diverged checkouts are excluded
-                by `mechanicalRows`, and the count says so out loud rather than
-                leaving you to infer it from a smaller number. */}
-            {summary.diverged > 0 && (
-              <span className="font-mono text-[9.5px] text-warning/80">
-                {summary.diverged} need{summary.diverged === 1 ? "s" : ""} a rebase
-              </span>
-            )}
-            {summary.offline > 0 && (
-              <span className="font-mono text-[9.5px] text-muted-foreground-faint">
-                {summary.offline} away
-              </span>
-            )}
-            {summary.mechanical > 0 && (
-              <button
-                type="button"
-                onClick={syncAll}
-                title={`Push and fast-forward ${summary.mechanical}${
-                  summary.diverged > 0 ? ` — ${summary.diverged} diverged, left for a session` : ""
-                }${summary.offline > 0 ? ` — ${summary.offline} on machines that are away` : ""}`}
-                className="ml-auto cursor-pointer rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success transition-colors hover:bg-success/20"
-              >
-                Sync {summary.mechanical}
-              </button>
+            {run && run.done > 0 && (
+              <span className="font-mono text-[9.5px] text-success">{run.done} done</span>
             )}
           </div>
         </div>
@@ -408,7 +471,9 @@ const ACTION_CLASS: Record<SyncRowVM["action"], string> = {
 function actionLabel(row: SyncRowVM): string {
   if (row.action === "push") return `↑${row.ahead}`;
   if (row.action === "pull") return `↓${row.behind}`;
-  return `↑${row.ahead}↓${row.behind}`;
+  // The one row whose button neither pushes nor pulls says so in words — a
+  // bare ↑2↓3 reads like the other two and it is not one of them.
+  return `rebase ↑${row.ahead}↓${row.behind}`;
 }
 
 function actionTitle(row: SyncRowVM): string {
@@ -418,10 +483,33 @@ function actionTitle(row: SyncRowVM): string {
   return `Diverged — opens a session to rebase${row.uncommitted > 0 ? ` (${row.uncommitted} uncommitted)` : ""}`;
 }
 
-function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: () => void }) {
+function SyncRow({
+  row,
+  busy,
+  dimmed = false,
+  inScope = false,
+  outOfScope = false,
+  onAct,
+}: {
+  row: SyncRowVM;
+  busy: boolean;
+  /** Below the rule: real drift the dock will not run on its own. */
+  dimmed?: boolean;
+  /** The bulk button is being pointed at and this row is in its reach. */
+  inScope?: boolean;
+  /** …and this one is not. */
+  outOfScope?: boolean;
+  onAct: () => void;
+}) {
   const Icon = useProjectIcon(row.iconId ?? "");
   return (
-    <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-sidebar-accent/40">
+    <div
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent/40",
+        inScope && "bg-success/[0.08]",
+        outOfScope && "opacity-45",
+      )}
+    >
       <span
         className="flex size-3.5 shrink-0 items-center justify-center rounded"
         style={{ backgroundColor: `${row.colorBg}26`, color: row.colorFg }}
@@ -432,7 +520,12 @@ function SyncRow({ row, busy, onAct }: { row: SyncRowVM; busy: boolean; onAct: (
           <span className="text-[7px] font-bold">{row.initials}</span>
         )}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-foreground">
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate font-mono text-[10.5px]",
+          dimmed ? "text-muted-foreground" : "text-foreground",
+        )}
+      >
         {row.label}
       </span>
       {row.machineLabel && (

@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { ProjectGitStatus } from "~/lib/generated-types";
 import type { Project } from "~/lib/types";
 import {
+  bulkLabel,
+  bulkPlan,
   deriveAction,
   deriveSyncRows,
+  exceptionRows,
   mechanicalRows,
   type SyncRowInput,
   summarize,
+  syncSegments,
 } from "../sync-derive";
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -167,5 +171,83 @@ describe("summarize", () => {
       }),
     ]);
     expect(summarize(rows).chips).toHaveLength(2);
+  });
+});
+
+describe("syncSegments", () => {
+  it("colours a diverged checkout's commits amber, whichever way they point", () => {
+    const rows = deriveSyncRows([
+      input({ status: status({ aheadRemote: 12 }) }),
+      input({
+        project: project({ id: "p-2", slug: "webticket-ui", remote_url: "github.com/org/wt" }),
+        status: status({ projectId: "p-2", behindRemote: 3 }),
+      }),
+      input({
+        project: project({ id: "p-3", slug: "alltix-api", remote_url: "github.com/org/ax" }),
+        status: status({ projectId: "p-3", aheadRemote: 2, behindRemote: 3 }),
+      }),
+    ]);
+    expect(syncSegments(rows)).toEqual({ ahead: 12, behind: 3, diverged: 5, total: 20 });
+  });
+
+  it("is all zeroes with nothing docked", () => {
+    expect(syncSegments([])).toEqual({ ahead: 0, behind: 0, diverged: 0, total: 0 });
+  });
+});
+
+describe("bulkPlan / bulkLabel", () => {
+  const pushes = () =>
+    deriveSyncRows([
+      input({ status: status({ aheadRemote: 12 }) }),
+      input({
+        project: project({ id: "p-2", slug: "agentkit", remote_url: "github.com/org/ak" }),
+        status: status({ projectId: "p-2", aheadRemote: 9 }),
+      }),
+    ]);
+
+  it("names both halves only when the set is genuinely mixed", () => {
+    expect(bulkLabel(bulkPlan(pushes()))).toBe("Push 2 · ↑21");
+
+    const mixed = deriveSyncRows([
+      input({ status: status({ aheadRemote: 12 }) }),
+      input({
+        project: project({ id: "p-2", slug: "agentkit", remote_url: "github.com/org/ak" }),
+        status: status({ projectId: "p-2", aheadRemote: 9 }),
+      }),
+      input({
+        project: project({ id: "p-3", slug: "webticket-ui", remote_url: "github.com/org/wt" }),
+        status: status({ projectId: "p-3", behindRemote: 3 }),
+      }),
+    ]);
+    expect(bulkLabel(bulkPlan(mixed))).toBe("Push 2 · Pull 1");
+  });
+
+  it("drops the count when a single checkout is in scope", () => {
+    const one = deriveSyncRows([input({ status: status({ behindRemote: 3 }) })]);
+    expect(bulkLabel(bulkPlan(one))).toBe("Pull ↓3");
+  });
+
+  it("excludes diverged and away checkouts from the plan, and lists them as exceptions", () => {
+    const rows = deriveSyncRows([
+      input({ status: status({ aheadRemote: 12 }) }),
+      input({
+        project: project({ id: "p-2", slug: "alltix-api", remote_url: "github.com/org/ax" }),
+        status: status({ projectId: "p-2", aheadRemote: 2, behindRemote: 3 }),
+      }),
+      input({
+        project: project({ id: "p-3", slug: "agentique~zbook", machineId: "m-z" }),
+        status: status({ projectId: "p-3", aheadRemote: 4 }),
+        machineLabel: "zbook",
+        machineOffline: true,
+      }),
+    ]);
+    const plan = bulkPlan(rows);
+    expect(plan).toMatchObject({ pushes: 1, pulls: 0, ahead: 12, behind: 0, empty: false });
+    expect(exceptionRows(rows).map((r) => r.label)).toEqual(["alltix-api", "agentique"]);
+  });
+
+  it("is empty when nothing is mechanical", () => {
+    const rows = deriveSyncRows([input({ status: status({ aheadRemote: 2, behindRemote: 3 }) })]);
+    expect(bulkPlan(rows).empty).toBe(true);
   });
 });
