@@ -265,6 +265,30 @@ channel, not the orange pulse. The MCP schedule-create tool must stay
 non-blocking (CLI MCP clients time out). Boot sweep runs from serve strictly
 before the scheduler starts.
 
+### Subagent roster
+
+A session tab badge is a claim on attention, so it carries only facts that can
+still be acted on and returns to nothing when there are none — Todos resets each
+`TodoWrite`, Changes clears on commit. The Agents badge therefore shows agents
+**in flight** and failures **from the latest turn the user has not opened the tab
+on**; never a lifetime spawn count, which only ever grows and trains you to stop
+reading it. Both clears matter (`agentBadgeState`): a failure marker goes away on
+whichever comes first, the tab being opened or the session starting a new turn.
+
+Live flight status is *not* behind the tab. `AgentFlightStrip` renders the same
+runs at three densities — `rail` (chips), `board` (cards, top of the Agents
+panel), `line` (pips plus the oldest agent's clock, mobile) — and the rail mounts
+at panel level in `ChatPanel`, next to the todo sidebar, so it survives a tab
+switch: a live-status surface that disappears when you change tabs is not one.
+"Above the composer" only exists on the chat branch, which is why there are two
+mount sites for one component. Suppressed on the Agents tab, where the board says
+it louder. The roster groups by the only two states a reader acts on — still out,
+came back — never by turn, and landed rows are newest first because a roster is
+not a transcript. Lifetime totals belong in the footer.
+
+The strip owns its own 1s clock: lifting it to `ChatPanel` would re-render the
+whole session view every second an agent is out.
+
 ### Provider abstraction
 
 Sessions are driven via agentkit/runtime's neutral contract — never import a
