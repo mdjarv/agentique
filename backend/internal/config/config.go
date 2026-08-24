@@ -419,17 +419,27 @@ func Load(path string) (*Config, error) {
 }
 
 // Save writes config to the given path, creating parent directories as needed.
+//
+// Owner-only: this file carries the embeddings API key and the TLS key path,
+// and a group-writable config is worse than a readable one — anyone in the
+// group could point the server at their own listen address or brain backend.
 func Save(cfg *Config, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	enc := toml.NewEncoder(f)
-	return enc.Encode(cfg)
+	if err := enc.Encode(cfg); err != nil {
+		return errors.Join(err, f.Close())
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	// An existing file keeps its old mode through O_CREATE, so fix it forward.
+	return os.Chmod(path, 0o600)
 }
 
 // Exists reports whether a config file is present at the default path.

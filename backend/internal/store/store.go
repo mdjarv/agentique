@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
 // RunInTx runs fn inside a database transaction. If fn returns an error or
@@ -57,6 +60,19 @@ func Open(path string) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
 		db.Close()
 		return nil, err
+	}
+
+	// This file holds auth session tokens, every paired machine's bearer token,
+	// and pairing/invite tokens in plaintext. SQLite creates it (and the WAL it
+	// just enabled) under the process umask, which is typically 0644 — readable
+	// by every other local user. Restricting it here rather than at one call
+	// site means every path that opens the DB gets it, including --db pointing
+	// somewhere outside the data directory. Best-effort: a database we cannot
+	// chmod (a read-only mount, a foreign owner) is still a usable database.
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := paths.SecureFile(p); err != nil {
+			slog.Warn("could not restrict database file permissions", "path", p, "error", err)
+		}
 	}
 
 	return db, nil

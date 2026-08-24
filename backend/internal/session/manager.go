@@ -781,6 +781,8 @@ func (m *Manager) releaseSessionResources(sessionID string) {
 	}
 	if m.mcpTokens != nil {
 		m.mcpTokens.Revoke(sessionID)
+		// The config file holds that same token — it must not outlive it.
+		removeSessionMCPConfig(sessionID)
 	}
 }
 
@@ -883,8 +885,15 @@ func (m *Manager) buildMCPConfigs(sessionID string, extra []string) []string {
 		tok, err := m.mcpTokens.Mint(sessionID)
 		if err != nil {
 			slog.Warn("mcp token mint failed, falling back to stdio", "session_id", sessionID, "error", err)
+		} else if path, werr := writeSessionMCPConfig(sessionID, AgentiqueMCPHTTPConfig(m.mcpInternalURL, tok)); werr != nil {
+			// Deliberately NOT falling back to inline JSON: that would put the
+			// bearer token in argv, where every local user can read it. Keep
+			// the stdio transport instead — fewer tools, no leaked credential.
+			slog.Warn("mcp config file failed, falling back to stdio (dev-url, memory and schedule tools unavailable)",
+				"session_id", sessionID, "error", werr)
+			m.mcpTokens.Revoke(sessionID)
 		} else {
-			first = AgentiqueMCPHTTPConfig(m.mcpInternalURL, tok)
+			first = path
 		}
 	}
 	return append([]string{first}, extra...)

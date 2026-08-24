@@ -276,6 +276,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Owner-only on the data directory, before anything is created inside it.
+	// The database, its WAL and the timed backups all carry live credentials
+	// and are written under the process umask, so the directory is the only
+	// place one decision covers all of them (internal/paths/secure.go).
+	if err := paths.SecureDataDir(); err != nil {
+		return fmt.Errorf("secure data directory: %w", err)
+	}
+
 	slog.Info("data directory", "path", paths.DataDir())
 	dbFile := resolveDBPath()
 	slog.Info("database", "path", dbFile)
