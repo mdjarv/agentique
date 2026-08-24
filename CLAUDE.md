@@ -215,9 +215,16 @@ Renames go out as **expand/contract**, both halves at once:
   look.
 - **Contract later**, once no supported release predates the rename.
 
-A field whose clearing is an event (`archivedAt` — starting a turn un-archives)
-must **not** be `omitempty`: an omitted field is indistinguishable from
-"unchanged", and the client keeps showing the stale value.
+Wire fields stay **optional**. The generated Zod schema mirrors the Go tags, so
+dropping `omitempty` makes a field required and the client then rejects the
+*whole* payload from any peer that does not send it — every `session.state` push
+from that machine dropped, its rows frozen. An absent field means "not set".
+
+The per-machine offline cache (`lib/machines/cache.ts`) is the same kind of
+boundary: it is a serialization of an internal type, so it drifts whenever that
+type changes, and a stale cache renders wrong rather than failing loudly. It
+carries `CACHE_VERSION` — bump it on any rename, migrate the previous shape, and
+refuse a version from the future instead of hydrating a guess.
 
 ### Channels / teams — `docs/discussion-sessionless-personas.md`
 

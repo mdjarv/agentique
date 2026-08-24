@@ -1,4 +1,5 @@
 import type { Project } from "~/lib/types";
+import { readArchivedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -17,10 +18,45 @@ import { usePulseStore } from "~/stores/pulse-store";
  * down shows the machine-offline status via the existing chips/dots.
  */
 
+/**
+ * Shape of the persisted session metadata. Bump whenever a field a cached
+ * session carries is renamed or removed, and teach {@link migrateCached} how to
+ * read the previous shape.
+ *
+ * This exists because the cache is a serialization of an INTERNAL type, so it
+ * drifts the moment that type changes — and a stale cache does not fail loudly,
+ * it renders wrong. Version 1 is the `completedAt` → `archivedAt` rename: caches
+ * written before it made every archived session on that machine hydrate as open
+ * work, so a reload showed a list of greyed rows that vanished one after another
+ * as each machine's live list arrived and corrected them.
+ */
+const CACHE_VERSION = 1;
+
 interface MachineCache {
+  /** Absent means version 0 — written before the cache was versioned. */
+  version?: number;
   savedAt: string;
   projects: Project[];
   sessions: SessionMetadata[];
+}
+
+/**
+ * Bring cached sessions up to the current shape, or refuse them.
+ *
+ * Returns null when the cache cannot be interpreted — a build we do not know
+ * wrote it. Showing nothing is strictly better than showing a guess: this is an
+ * offline convenience, and the live re-sync repopulates it the moment the
+ * machine connects.
+ */
+function migrateCached(cache: MachineCache): SessionMetadata[] | null {
+  const sessions = cache.sessions ?? [];
+  const version = cache.version ?? 0;
+
+  if (version > CACHE_VERSION) return null;
+  if (version === CACHE_VERSION) return sessions;
+
+  // v0 → v1: the archive marker was called `completedAt`.
+  return sessions.map((meta) => ({ ...meta, archivedAt: readArchivedAt(meta) }));
 }
 
 const keyFor = (machineId: string) => `agentique:machine-cache:${machineId}`;
@@ -80,6 +116,7 @@ export function saveMachineCache(machineId: string): void {
     localStorage.setItem(
       keyFor(machineId),
       JSON.stringify({
+        version: CACHE_VERSION,
         savedAt: new Date().toISOString(),
         projects,
         sessions,
@@ -106,9 +143,14 @@ export function hydrateMachineCache(machineId: string): void {
   }
   if (!Array.isArray(cache.projects) || cache.projects.length === 0) return;
 
+  // Refuse a cache we cannot read rather than hydrating a guess — nothing is
+  // shown for this machine until it connects, which is the honest state.
+  const cachedSessions = migrateCached(cache);
+  if (cachedSessions === null) return;
+
   useAppStore.getState().setMachineProjects(machineId, cache.projects);
   const byProject = new Map<string, SessionMetadata[]>();
-  for (const meta of cache.sessions ?? []) {
+  for (const meta of cachedSessions) {
     const list = byProject.get(meta.projectId);
     if (list) list.push(meta);
     else byProject.set(meta.projectId, [meta]);
