@@ -284,10 +284,20 @@ response.
 **A CLI update is not a restart**, so the drain gate does not apply and V5 does
 not use it. The server keeps running, running turns keep their already-exec'd
 binary, and the new version applies to the next session — which is what the UI
-says. The claude CLI already updates itself underneath live sessions (observed
-2.1.239 → 2.1.241 mid-session, unprompted); a gate would protect against
-something that demonstrably does not happen. It returns as a question only if a
-library starts calling a shared-tree rewrite self-managed.
+says.
+
+That is observed, not reasoned. A real `claude update` ran on the dev box at
+07:40 on 2026-08-24 while three CLI sessions were mid-turn (started 06:35,
+06:37 and 07:06). All three continued, and all three still had
+`/proc/<pid>/exe` pointing at `versions/2.1.239` afterwards while the symlink
+had moved to `2.1.241`. The native layout keeps every version as its own file
+and repoints a symlink, so a running turn is not reading anything the update
+touches. A gate would have suspended those turns to prevent nothing.
+
+The claude CLI also self-updates on the same mechanism — four versions in the
+thirteen days to 2026-08-24, installed without anyone asking — so this happens
+whether or not agentique offers a button. The gate returns as a question only
+if a library starts calling a shared-tree rewrite self-managed.
 
 ## Settled decisions
 

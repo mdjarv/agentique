@@ -276,14 +276,27 @@ function CompactDivider({
   postTokens?: number;
 }) {
   const preTokens = event.preTokens ?? 0;
-  const label = event.trigger === "manual" ? "Manual compaction" : "Auto-compacted";
+  // Codex sends a compact boundary with neither trigger nor preTokens set —
+  // both arrive zero-valued — so the marker states only what it knows. Naming
+  // an "Auto-compaction from 0 tokens" on a codex session asserts a trigger we
+  // were never told and a size we never measured.
+  const label =
+    event.trigger === "manual"
+      ? "Manual compaction"
+      : event.trigger
+        ? "Auto-compacted"
+        : "Compacted";
+  const from = preTokens > 0 ? ` from ${formatTokens(preTokens)}` : "";
+  const to = postTokens != null ? ` to ${formatTokens(postTokens)}` : "";
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground/80 py-2 -mx-4">
       <div className="flex-1 border-t border-dashed border-primary/30" />
       <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-primary">
         <Scissors className="size-3" />
-        {label} from {formatTokens(preTokens)}
-        {postTokens != null ? ` to ${formatTokens(postTokens)}` : ""} tokens
+        {label}
+        {from}
+        {to}
+        {from || to ? " tokens" : ""}
       </span>
       <div className="flex-1 border-t border-dashed border-primary/30" />
     </div>
