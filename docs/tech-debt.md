@@ -118,6 +118,38 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
 
 ## P2 — Smells / drift
 
+### CLI detection cannot tell "not installed" from "detection broke"
+
+- **Symptom:** a machine whose `codex` detection fails for any reason renders
+  exactly like a machine without codex installed — no row, no warning.
+- **Cause:** `runtime.InstallInspectable` has no neutral not-found sentinel, and
+  matching a provider library's own `ErrCLINotFound` would mean importing that
+  library into the product, which the ownership rule forbids
+  (`docs/upgrades.md` C13). So `internal/update/cli.go` collapses every error to
+  "no row" — correct for the common case, silent for the real failure.
+- **Fix path:** a `runtime.ErrCLINotFound` alongside `ErrNotSupported`, returned
+  by both adapters when the underlying library reports its own not-found
+  sentinel. Requested of agentkit; not in v0.2.0.
+
+### The CLI shadow warning is claude-only
+
+- **Symptom:** a second copy of `codex` on PATH is never reported, while a
+  second `claude` is. `docs/upgrades.md` C9 says the warning ships symmetric or
+  not at all, and today it is not.
+- **Cause:** claudecli-go reports `PathEntries` from the offline `DetectInstall`
+  with an `Active` flag, and agentkit maps it into `Install.Warnings`.
+  codexcli-go exposes `PathEntries` only on `Doctor` — which touches the network
+  and so is deliberately not on the detection path — as a bare `[]string` with
+  no active marker. It is also **not deduplicated by resolved path**: codex's own
+  report listed 3 entries on a box with 2 real binaries, because one PATH
+  directory appeared twice. Mapping that as-is would produce a false shadow
+  warning on machines that have only one copy, which is worse than none.
+- **Fix path:** an offline `PathEntries` on codexcli-go's `DetectInstall`,
+  deduplicated by resolved path with the winner marked, mirroring claudecli-go.
+  Benign today (no codex warning is produced at all), so it is drift rather than
+  a bug.
+
+
 ### CLI subprocess PID is not exposed → orphan reaper is heuristic
 The startup orphan reaper and shutdown backstop (`internal/procctl`, see
 `docs/process-lifecycle.md`) identify agentique-owned `claude` processes by

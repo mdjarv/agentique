@@ -1,6 +1,7 @@
 # In-app upgrades — one click per machine, no dead turns
 
-Status: **V1–V4 shipped; V5 designed, not built.** Decisions settled
+Status: **V1–V4 shipped; V5a and V5b shipped 2026-08-24; V5c is the last
+phase.** Decisions settled
 2026-08-23 after review (proposal artifact
 `6fd17232-9ccc-4aad-9e1e-1d51206bd499`); V5's own fifteen settled 2026-08-24
 (artifact `39f2b8b8-9d98-4dbc-a1b6-0b4be9883620`). This document is the working
@@ -26,7 +27,8 @@ is connecting them and deciding when it is safe to pull the trigger.
 | Download → sha256 → atomic replace          | `install.sh`, `install.ps1`                 | exists (sh)  |
 | Service control, three platforms            | `internal/service` (systemd/launchd/schtasks) | exists     |
 | Version on the wire, per machine            | `/api/health`, `/.well-known/agentique/environment` | exists |
-| CLI version probing                         | `internal/doctor` (`claude --version`, `parseVersion`) | exists |
+| CLI install detection, per provider         | `runtime.InstallInspectable` → `internal/update/cli.go` | V5a ✓ |
+| CLI rows in the UI                          | Versions dialog + Settings › About          | V5b ✓        |
 | Version shown to the user                   | Settings › About                            | exists       |
 | Asking GitHub for the latest tag            | `internal/update`                           | V1 ✓         |
 | Per-machine version client-side             | `machine-store.versions`, from the probe    | V1 ✓         |
@@ -448,11 +450,16 @@ if a library starts calling a shared-tree rewrite self-managed.
     this machine running — had no route to an answer at all. Settings › About
     grew a **Command-line tools** section, which is always reachable. The
     dialog stays the contextual surface; About is the permanent one.
-  - **V5c — the button.** Needs a perform-the-update method in both provider
-    libraries and on the agentkit capability first; ships behind
-    `[update] cli-updates`, default off, and verified against a throwaway
-    server before it goes near a real one. The neutral outcome must separate
-    five terminal states, because they are five different rows: **updated**
+  - **V5c — the button.** Unblocked: `runtime.InstallUpdatable`,
+    `UpdateOutcome` and the three-valued `VersionStatus` all ship in agentkit
+    v0.2.0. Ships behind `[update] cli-updates`, default off, and verified
+    against a throwaway server before it goes near a real one.
+
+    agentkit settled on **six** outcomes, not the five below: it made
+    `unverified` its own value rather than a flag on `updated`. Render it as
+    success with different words — the affordance is identical (nothing to
+    retry, nothing for the user to do) and only the copy differs. The five
+    named here are the reasoning behind them, which still holds: **updated**
     (with before and after), **already current**, **manual** — not ours to
     update, carrying the command to show and where to run it, a normal result
     rather than an error — **blocked**, where it would be ours but preflight
@@ -467,6 +474,14 @@ if a library starts calling a shared-tree rewrite self-managed.
     is a failure; unknown is an update we cannot confirm, rendered as success
     with different words. Collapsing the two would make the honest case wear
     the accusation meant for the dishonest one.
+
+    One consequence to carry into the copy: **"reported success and nothing
+    happened" is not distinguishable from "already up to date"** without a
+    published version to prove an update was due. Both are a nil error with an
+    unchanged version. So `failed` + `version unchanged` is reachable only when
+    the updater *also* exits non-zero, and phase-one copy must not claim to
+    catch the updater that lied. That is the strongest argument for wiring the
+    published version early rather than treating it as a badge.
   - **Outside this repo, in dependency order:** `claudecli-go` needs an
     `Update`, a published-version lookup (only it knows whether an install
     tracks `latest` or `stable`), and a PATH-entries report so C9 can be
