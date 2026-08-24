@@ -36,8 +36,10 @@ import { useAppStore } from "~/stores/app-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useUIStore } from "~/stores/ui-store";
 import {
+  type BulkAction,
   bulkLabel,
   bulkPlan,
+  bulkTargets,
   deriveSyncRows,
   exceptionRows,
   mechanicalRows,
@@ -187,6 +189,52 @@ function SyncMeter({
   );
 }
 
+const BULK_CLASS: Record<BulkAction, string> = {
+  push: "bg-success hover:bg-success/85",
+  pull: "bg-primary hover:bg-primary/85",
+};
+
+/**
+ * One direction's bulk action. It reports its own batch while running, and the
+ * other button stays disabled — two concurrent sweeps over the same checkouts
+ * is a race nobody asked for.
+ */
+function BulkButton({
+  action,
+  label,
+  run,
+  onRun,
+  onPreview,
+}: {
+  action: BulkAction;
+  label: string;
+  run: { action: BulkAction; total: number; done: number } | null;
+  onRun: () => void;
+  onPreview: (action: BulkAction | null) => void;
+}) {
+  const mine = run?.action === action;
+  return (
+    <button
+      type="button"
+      onClick={onRun}
+      onMouseEnter={() => onPreview(action)}
+      onMouseLeave={() => onPreview(null)}
+      onFocus={() => onPreview(action)}
+      onBlur={() => onPreview(null)}
+      disabled={!!run}
+      title={`${label} — every other row is left alone`}
+      className={cn(
+        "flex flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg px-2 py-1",
+        "text-[10.5px] font-semibold text-primary-foreground transition-colors",
+        "disabled:cursor-default disabled:opacity-60",
+        BULK_CLASS[action],
+      )}
+    >
+      {mine && run ? `${run.total - run.done} to go…` : label}
+    </button>
+  );
+}
+
 export function SyncDock() {
   const ws = useWebSocket();
   const navigate = useNavigate();
@@ -196,12 +244,13 @@ export function SyncDock() {
   const setExpanded = useUIStore((s) => s.setSyncDockExpanded);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
-  // Hover/focus on the bulk button previews its reach: the rows it will run
-  // light up, the ones it skips fade. Asked and answered, without a footnote.
-  const [previewing, setPreviewing] = useState(false);
+  // Hover/focus on a bulk button previews *that* button's reach: the rows it
+  // will run light up, everything else fades — including the other button's
+  // rows, since push and pull are separate batches.
+  const [previewing, setPreviewing] = useState<BulkAction | null>(null);
   // A bulk run in flight. Rows leave the dock as their own status lands, so
-  // this only has to say how much of the batch is still moving.
-  const [run, setRun] = useState<{ total: number; done: number } | null>(null);
+  // this only has to say which batch is moving and how much of it is left.
+  const [run, setRun] = useState<{ action: BulkAction; total: number; done: number } | null>(null);
 
   const summary = useMemo(() => summarize(rows), [rows]);
   const mechanical = useMemo(() => mechanicalRows(rows), [rows]);
@@ -254,39 +303,44 @@ export function SyncDock() {
     [navigate],
   );
 
-  // Bulk: mechanical rows only, each settled and *applied* on its own. The
-  // per-checkout store write is the point — a synced checkout leaves the list
-  // the moment its status lands and the meter shrinks with it, so the run
-  // proves what the button covered instead of restating it.
-  const syncAll = useCallback(async () => {
-    const targets = mechanicalRows(rows);
-    if (targets.length === 0) return;
-    setRun({ total: targets.length, done: 0 });
-    for (const row of targets) markBusy(row.projectId, true);
-    let failed = 0;
-    await Promise.all(
-      targets.map(async (row) => {
-        try {
-          const status =
-            row.action === "push"
-              ? await pushProject(ws, row.projectId)
-              : await pullProject(ws, row.projectId);
-          const store = useAppStore.getState();
-          store.setProjectGitStatus(status);
-          store.markProjectFetched(row.projectId, Date.now());
-        } catch {
-          failed++;
-        } finally {
-          markBusy(row.projectId, false);
-          setRun((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
-        }
-      }),
-    );
-    setRun(null);
-    if (failed > 0) {
-      toast.error(`${failed} of ${targets.length} could not be synced`);
-    }
-  }, [ws, rows, markBusy]);
+  // Bulk: one direction at a time, mechanical rows only, each settled and
+  // *applied* on its own. The per-checkout store write is the point — a synced
+  // checkout leaves the list the moment its status lands and the meter shrinks
+  // with it, so the run proves what the button covered instead of restating it.
+  const runBulk = useCallback(
+    async (action: BulkAction) => {
+      const targets = bulkTargets(rows, action);
+      if (targets.length === 0) return;
+      setRun({ action, total: targets.length, done: 0 });
+      for (const row of targets) markBusy(row.projectId, true);
+      let failed = 0;
+      await Promise.all(
+        targets.map(async (row) => {
+          try {
+            const status =
+              row.action === "push"
+                ? await pushProject(ws, row.projectId)
+                : await pullProject(ws, row.projectId);
+            const store = useAppStore.getState();
+            store.setProjectGitStatus(status);
+            store.markProjectFetched(row.projectId, Date.now());
+          } catch {
+            failed++;
+          } finally {
+            markBusy(row.projectId, false);
+            setRun((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+          }
+        }),
+      );
+      setRun(null);
+      if (failed > 0) {
+        toast.error(
+          `${failed} of ${targets.length} could not be ${action === "push" ? "pushed" : "pulled"}`,
+        );
+      }
+    },
+    [ws, rows, markBusy],
+  );
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -308,6 +362,8 @@ export function SyncDock() {
   if (!projectsLoaded) return null;
 
   const clear = rows.length === 0;
+  // Both buttons on one line: each has half the rail, so the labels shorten.
+  const both = plan.pushes > 0 && plan.pulls > 0;
 
   return (
     <div className="shrink-0 border-t border-sidebar-border px-2 py-1.5">
@@ -382,39 +438,44 @@ export function SyncDock() {
         // Capped: a long drift list scrolls inside the dock rather than
         // crushing the session list above it.
         <div className="mt-0.5 flex max-h-56 flex-col gap-px overflow-y-auto">
-          {/* Everything the bulk button covers, then the button itself, then
-              the rule. Position states the scope: what the press touches is
-              directly above it, what it skips is below the line — so the old
-              "N need a rebase, M away" footnote has nothing left to explain. */}
+          {/* Everything the bulk buttons cover, then the buttons, then the
+              rule. Position states the scope: what a press touches is directly
+              above it, what it skips is below the line — so the old "N need a
+              rebase, M away" footnote has nothing left to explain. */}
           {mechanical.map((row) => (
             <SyncRow
               key={row.projectId}
               row={row}
               busy={busy.has(row.projectId)}
-              inScope={previewing}
+              inScope={previewing === row.action}
+              outOfScope={!!previewing && previewing !== row.action}
               onAct={() => runAction(row)}
             />
           ))}
 
           {!plan.empty && (
-            <div className="px-1.5 pt-1">
-              <button
-                type="button"
-                onClick={syncAll}
-                onMouseEnter={() => setPreviewing(true)}
-                onMouseLeave={() => setPreviewing(false)}
-                onFocus={() => setPreviewing(true)}
-                onBlur={() => setPreviewing(false)}
-                disabled={!!run}
-                title={`${bulkLabel(plan)} — ${exceptions.length > 0 ? `${exceptions.length} below the line left alone` : "everything docked"}`}
-                className={cn(
-                  "flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 py-1",
-                  "bg-success text-[10.5px] font-semibold text-primary-foreground",
-                  "transition-colors hover:bg-success/85 disabled:cursor-default disabled:opacity-60",
-                )}
-              >
-                {run ? `Syncing ${run.total - run.done} of ${run.total}…` : bulkLabel(plan)}
-              </button>
+            // Two batches, never one: sending your own work is the thing you
+            // want to do first and on its own, so push and pull each get their
+            // own button, in that order, in their own colour.
+            <div className="flex gap-1 px-1.5 pt-1">
+              {plan.pushes > 0 && (
+                <BulkButton
+                  action="push"
+                  label={bulkLabel(plan, "push", both)}
+                  run={run}
+                  onRun={() => runBulk("push")}
+                  onPreview={setPreviewing}
+                />
+              )}
+              {plan.pulls > 0 && (
+                <BulkButton
+                  action="pull"
+                  label={bulkLabel(plan, "pull", both)}
+                  run={run}
+                  onRun={() => runBulk("pull")}
+                  onPreview={setPreviewing}
+                />
+              )}
             </div>
           )}
 
@@ -430,7 +491,7 @@ export function SyncDock() {
                   row={row}
                   busy={busy.has(row.projectId)}
                   dimmed
-                  outOfScope={previewing}
+                  outOfScope={!!previewing}
                   onAct={() => (row.action === "rebase" ? openRebase(row) : runAction(row))}
                 />
               ))}

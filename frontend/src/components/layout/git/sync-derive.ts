@@ -226,6 +226,9 @@ export function syncSegments(rows: SyncRowVM[]): SyncSegments {
  * "sync N": the plan names each half it contains, so the number in the label
  * can be checked against the rows above it.
  */
+/** The two directions a bulk button runs. */
+export type BulkAction = "push" | "pull";
+
 export interface BulkPlan {
   /** Checkouts to push / to pull — reachable and mechanical only. */
   pushes: number;
@@ -256,16 +259,27 @@ export function bulkPlan(rows: SyncRowVM[]): BulkPlan {
 }
 
 /**
- * The button's label. A set of pushes says push, a set of pulls says pull, and
- * only a genuinely mixed set names both halves — "sync" is a fallback, never
- * the default.
+ * One bulk button's label. Push and pull are separate actions, never one
+ * "sync": sending your own work is the thing you almost always want to do
+ * first, and folding it in with taking someone else's makes that impossible to
+ * do on its own.
+ *
+ * `compact` is for the case where both buttons share the rail's width: the
+ * checkout count goes, because the rows it counts are directly above the
+ * button, and the commits stay, because nothing else states them.
  */
-export function bulkLabel(plan: BulkPlan): string {
-  if (plan.pushes > 0 && plan.pulls > 0) {
-    return `Push ${plan.pushes} · Pull ${plan.pulls}`;
+export function bulkLabel(plan: BulkPlan, action: BulkAction, compact = false): string {
+  if (action === "push") {
+    return plan.pushes === 1 || compact
+      ? `Push ↑${plan.ahead}`
+      : `Push ${plan.pushes} · ↑${plan.ahead}`;
   }
-  if (plan.pushes > 0) {
-    return plan.pushes === 1 ? `Push ↑${plan.ahead}` : `Push ${plan.pushes} · ↑${plan.ahead}`;
-  }
-  return plan.pulls === 1 ? `Pull ↓${plan.behind}` : `Pull ${plan.pulls} · ↓${plan.behind}`;
+  return plan.pulls === 1 || compact
+    ? `Pull ↓${plan.behind}`
+    : `Pull ${plan.pulls} · ↓${plan.behind}`;
+}
+
+/** The mechanical rows one bulk button runs. */
+export function bulkTargets(rows: SyncRowVM[], action: BulkAction): SyncRowVM[] {
+  return mechanicalRows(rows).filter((r) => r.action === action);
 }

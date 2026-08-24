@@ -4,6 +4,7 @@ import type { Project } from "~/lib/types";
 import {
   bulkLabel,
   bulkPlan,
+  bulkTargets,
   deriveAction,
   deriveSyncRows,
   exceptionRows,
@@ -205,8 +206,8 @@ describe("bulkPlan / bulkLabel", () => {
       }),
     ]);
 
-  it("names both halves only when the set is genuinely mixed", () => {
-    expect(bulkLabel(bulkPlan(pushes()))).toBe("Push 2 · ↑21");
+  it("labels each direction as its own batch", () => {
+    expect(bulkLabel(bulkPlan(pushes()), "push")).toBe("Push 2 · ↑21");
 
     const mixed = deriveSyncRows([
       input({ status: status({ aheadRemote: 12 }) }),
@@ -219,12 +220,15 @@ describe("bulkPlan / bulkLabel", () => {
         status: status({ projectId: "p-3", behindRemote: 3 }),
       }),
     ]);
-    expect(bulkLabel(bulkPlan(mixed))).toBe("Push 2 · Pull 1");
+    expect(bulkLabel(bulkPlan(mixed), "push")).toBe("Push 2 · ↑21");
+    expect(bulkLabel(bulkPlan(mixed), "pull")).toBe("Pull ↓3");
+    expect(bulkTargets(mixed, "push").map((r) => r.label)).toEqual(["agentique", "agentkit"]);
+    expect(bulkTargets(mixed, "pull").map((r) => r.label)).toEqual(["webticket-ui"]);
   });
 
   it("drops the count when a single checkout is in scope", () => {
     const one = deriveSyncRows([input({ status: status({ behindRemote: 3 }) })]);
-    expect(bulkLabel(bulkPlan(one))).toBe("Pull ↓3");
+    expect(bulkLabel(bulkPlan(one), "pull")).toBe("Pull ↓3");
   });
 
   it("excludes diverged and away checkouts from the plan, and lists them as exceptions", () => {
