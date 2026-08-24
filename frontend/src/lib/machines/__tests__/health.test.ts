@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyProbe,
+  clearedByIdentityProof,
   createIdentityNonce,
   faultLabel,
   readBoundedMachineJSON,
@@ -83,6 +84,26 @@ describe("verifyIdentityProof", () => {
     await expect(
       verifyIdentityProof(encode(publicKey), "machine-b", nonce, encode(signature)),
     ).resolves.toBe(false);
+  });
+});
+
+describe("clearedByIdentityProof", () => {
+  // Every retry re-proves identity before presenting the credential. If that
+  // proof cleared a credential-rejected fault, the diagnosis would be erased
+  // within a second of being recorded and the Re-pair button would never show.
+  it("keeps a rejected credential — identity says nothing about it", () => {
+    expect(clearedByIdentityProof("credential-rejected")).toBe(false);
+  });
+
+  it("clears the faults a passing proof actually disproves", () => {
+    for (const kind of [
+      "wrong-machine",
+      "not-agentique",
+      "identity-unpinned",
+      "identity-proof-invalid",
+    ] as const) {
+      expect(clearedByIdentityProof(kind)).toBe(true);
+    }
   });
 });
 

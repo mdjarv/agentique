@@ -119,6 +119,8 @@ async function loadMachine(machineId: string, client: WsClient): Promise<void> {
 export function useMachineConnections(): void {
   const machines = useMachineStore((s) => s.machines);
   const teardownsRef = useRef(new Map<string, () => void>());
+  /** machineId → the credential its client is currently retrying with. */
+  const credentialsRef = useRef(new Map<string, string>());
 
   // The catalog is account state mastered on the primary: reconcile once at
   // startup so a machine paired from another device (desktop vs phone PWA)
@@ -135,7 +137,27 @@ export function useMachineConnections(): void {
     const teardowns = teardownsRef.current;
 
     for (const machineId of Object.keys(machines)) {
-      if (teardowns.has(machineId)) continue;
+      if (teardowns.has(machineId)) {
+        // Re-pairing replaces the credential on an entry we already track, so
+        // no teardown runs and nothing would otherwise notice. The client reads
+        // the token fresh per attempt, but a machine diagnosed as
+        // credential-rejected is sitting on a five-minute backoff — without
+        // this the new key goes unused until that elapses, which reads as a
+        // re-pair that did nothing. Retry now, on the normal beat.
+        const retrying = credentialsRef.current.get(machineId);
+        const current = machines[machineId]?.token ?? "";
+        if (retrying !== undefined && retrying !== current) {
+          credentialsRef.current.set(machineId, current);
+          const client = peekMachineClient(machineId);
+          if (client) {
+            useMachineStore.getState().setFault(machineId, null);
+            client.setMaxReconnectDelay(NORMAL_RETRY_MS);
+            client.forceReconnect();
+          }
+        }
+        continue;
+      }
+      credentialsRef.current.set(machineId, machines[machineId]?.token ?? "");
 
       // Last-known projects + session metadata render immediately — a
       // suspended laptop's half of the sidebar stays visible and navigable
@@ -152,20 +174,32 @@ export function useMachineConnections(): void {
       // Identity first: a machine that isn't who we paired with never gets to
       // hand us projects, however willingly its socket opened.
       const unsub = client.onConnect(() => admit(machineId, client, load));
-      // Snapshot at disconnect — the freshest state this machine will have
-      // until it comes back. Freeze first, so the live store and the snapshot
-      // tell the same story: away, settled, nothing pending.
+      // Diagnose after a beat: a two-second blip is away, not a fault. Left
+      // pending if one is already armed — a machine that fails every retry
+      // must not keep pushing its own diagnosis into the future.
       let probeTimer: ReturnType<typeof setTimeout> | null = null;
-      const unsubDisconnect = client.onDisconnect(() => {
-        freezeMachineSessions(machineId);
-        saveMachineCache(machineId);
-        // Diagnose after a beat: a two-second blip is away, not a fault.
-        if (probeTimer) clearTimeout(probeTimer);
+      const scheduleDiagnose = () => {
+        if (probeTimer) return;
         probeTimer = setTimeout(() => {
           probeTimer = null;
           void diagnose(machineId);
         }, PROBE_DELAY_MS);
+      };
+
+      // Snapshot at disconnect — the freshest state this machine will have
+      // until it comes back. Freeze first, so the live store and the snapshot
+      // tell the same story: away, settled, nothing pending.
+      const unsubDisconnect = client.onDisconnect(() => {
+        freezeMachineSessions(machineId);
+        saveMachineCache(machineId);
+        scheduleDiagnose();
       });
+      // A socket that never opened reports here instead, and this is the only
+      // path a refused credential takes: the ws-ticket mint 401s, so ws.onclose
+      // never runs. Without this the one fault worth naming — needs re-pairing
+      // — could never be recorded, leaving the machine pulsing "reconnecting"
+      // forever with no way to fix it from the UI.
+      const unsubAttemptFailed = client.onAttemptFailed(scheduleDiagnose);
       // getMachineClient connects asynchronously (ticket mint), so attaching
       // onConnect here normally races nothing — but if the socket is somehow
       // already up (re-add after remove), admit it now. Through the same gate:
@@ -175,6 +209,7 @@ export function useMachineConnections(): void {
       teardowns.set(machineId, () => {
         unsub();
         unsubDisconnect();
+        unsubAttemptFailed();
         if (probeTimer) clearTimeout(probeTimer);
       });
     }
@@ -182,6 +217,7 @@ export function useMachineConnections(): void {
     for (const [machineId, teardown] of teardowns) {
       if (machines[machineId]) continue;
       teardown();
+      credentialsRef.current.delete(machineId);
       disconnectMachine(machineId);
       // Sessions go before projects — the project list is how we know which
       // sessions were its (sessions carry no machine tag).

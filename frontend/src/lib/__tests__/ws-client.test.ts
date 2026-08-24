@@ -474,6 +474,61 @@ describe("WsClient", () => {
       expect(MockWebSocket.last().url).toBe("ws://remote/ws?wsTicket=ok");
     });
 
+    // A refused credential fails at the ticket mint, so no socket ever opens
+    // and ws.onclose never runs. onDisconnect therefore cannot report it —
+    // which is why a re-paired machine could sit pulsing "reconnecting" with
+    // no fault recorded and no way to fix it from the UI.
+    it("reports a failed attempt that never opened a socket", async () => {
+      const attemptFailed = vi.fn();
+      const disconnected = vi.fn();
+      const client = new WsClient(async () => {
+        throw new Error("ws-ticket mint failed (401)");
+      });
+      clients.push(client);
+      client.onAttemptFailed(attemptFailed);
+      client.onDisconnect(disconnected);
+
+      client.connect();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(attemptFailed).toHaveBeenCalledTimes(1);
+      expect(disconnected).not.toHaveBeenCalled();
+      expect(MockWebSocket.instances).toHaveLength(0);
+      expect(client.connectionState).toBe("reconnecting");
+    });
+
+    it("fires onAttemptFailed for each failed retry", async () => {
+      const attemptFailed = vi.fn();
+      const client = new WsClient(async () => {
+        throw new Error("ws-ticket mint failed (401)");
+      });
+      clients.push(client);
+      client.onAttemptFailed(attemptFailed);
+
+      client.connect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(attemptFailed).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(attemptFailed).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops listening once unsubscribed", async () => {
+      const attemptFailed = vi.fn();
+      const client = new WsClient(async () => {
+        throw new Error("nope");
+      });
+      clients.push(client);
+      const unsub = client.onAttemptFailed(attemptFailed);
+
+      client.connect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(attemptFailed).toHaveBeenCalledTimes(1);
+
+      unsub();
+      await vi.advanceTimersByTimeAsync(600);
+      expect(attemptFailed).toHaveBeenCalledTimes(1);
+    });
+
     it("does not open a socket when disconnected during resolution", async () => {
       const client = new WsClient(async () => "ws://remote/ws?wsTicket=late");
       clients.push(client);

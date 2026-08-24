@@ -78,6 +78,14 @@ func RevokeRemoteBearer(ctx context.Context, client *http.Client, baseURL, machi
 		return fmt.Errorf("revoke remote bearer: %w", err)
 	}
 	defer revokeResp.Body.Close()
+	// A refused credential is already revoked: the remote does not honour it,
+	// which is the state this call exists to reach. Treating that as a failure
+	// stranded the entry — a machine whose bearer died could be neither used nor
+	// removed. The identity proof above still ran, so this is not a way to
+	// delete a pairing without proving who is answering.
+	if revokeResp.StatusCode == http.StatusUnauthorized || revokeResp.StatusCode == http.StatusForbidden {
+		return nil
+	}
 	if revokeResp.StatusCode != http.StatusNoContent {
 		_, _ = io.Copy(io.Discard, io.LimitReader(revokeResp.Body, maxIdentityResponseBytes))
 		return fmt.Errorf("revoke remote bearer: status %d", revokeResp.StatusCode)

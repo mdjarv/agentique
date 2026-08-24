@@ -306,6 +306,20 @@ persists bearer credentials, and per-machine data caches sanitize live-ness. A
 flaky remote re-syncs only itself and must never reset primary state.
 Per-machine WS clients reconnect in place, never get replaced.
 
+**A refused credential never opens a socket.** It fails at the ws-ticket mint,
+so `ws.onclose` — and therefore `onDisconnect` — never runs; diagnosis hangs off
+`WsClient.onAttemptFailed` as well, or the one fault worth naming
+(`credential-rejected`) can never be recorded and the machine pulses
+"reconnecting" forever with no Re-pair button. For the same reason a passing
+identity proof clears only the faults it disproves (`clearedByIdentityProof`):
+identity says who answered, never whether they still accept our credential, and
+`machineFetch` re-proves identity on every retry — clearing that fault there
+erases the diagnosis a second after it is made. A rejected credential is cleared
+by proof of the opposite: a connection that authenticated, or a re-pair.
+Symmetrically, **removal tolerates a refused revoke** — a credential the remote
+already rejects is already revoked, and failing there strands the entry as one
+that can be neither used nor removed.
+
 ### Brain / memory — `docs/brain-memory.md` (+ `docs/brain-design-log.md`)
 
 Liftable core in `internal/memory` (stdlib + yaml/uuid only); agentique

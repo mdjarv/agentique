@@ -150,6 +150,8 @@ export function MachinesSettings() {
 
   const [editing, setEditing] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  /** Set when the dialog was opened by a row's Re-pair, not by "Add machine". */
+  const [repairing, setRepairing] = useState<string | null>(null);
   // Unpairing drops the pairing, its projects and its cached sessions — worth
   // one question before a stray click does it.
   const [removing, setRemoving] = useState<string | null>(null);
@@ -180,7 +182,14 @@ export function MachinesSettings() {
         title="Paired machines"
         description="Names and icons are local to this device — satellites never see them."
         action={
-          <Button size="sm" variant="ghost" onClick={() => setAddOpen(true)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setRepairing(null);
+              setAddOpen(true);
+            }}
+          >
             <Plus className="size-3.5" />
             Add machine
           </Button>
@@ -208,7 +217,10 @@ export function MachinesSettings() {
               fault={faults[m.machineId]?.detail}
               status={statuses[m.machineId] ?? "disconnected"}
               onEdit={() => setEditing(m.machineId)}
-              onRepair={() => setAddOpen(true)}
+              onRepair={() => {
+                setRepairing(m.machineId);
+                setAddOpen(true);
+              }}
               onRemove={() => setRemoving(m.machineId)}
             />
           ))}
@@ -256,7 +268,14 @@ export function MachinesSettings() {
         }}
       />
 
-      <AddMachineDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddMachineDialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open);
+          if (!open) setRepairing(null);
+        }}
+        repairMachineId={repairing ?? undefined}
+      />
 
       <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
         <AlertDialogContent>

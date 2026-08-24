@@ -28,6 +28,20 @@ export interface MachineFault {
   at: number;
 }
 
+/**
+ * True for a fault that a passing identity proof actually disproves.
+ *
+ * A verified identity says who answered — nothing about whether they still
+ * accept our credential. Clearing `credential-rejected` on that evidence
+ * erases the diagnosis on the very next retry, so the machine pulses
+ * "reconnecting" forever and its Re-pair button never appears. That fault is
+ * cleared by proof of the opposite: a connection that authenticated, or a
+ * re-pair replacing the credential.
+ */
+export function clearedByIdentityProof(kind: MachineFaultKind): boolean {
+  return kind !== "credential-rejected";
+}
+
 /** The unauthenticated descriptor a machine publishes about itself. */
 export interface MachineDescriptor {
   machineId?: string;

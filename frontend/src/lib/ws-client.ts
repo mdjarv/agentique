@@ -54,6 +54,7 @@ export class WsClient {
   private resolveGeneration = 0;
   private connectListeners = new Set<() => void>();
   private disconnectListeners = new Set<() => void>();
+  private attemptFailedListeners = new Set<() => void>();
   private _connectionState: ConnectionState = "disconnected";
   private connectionStateListeners = new Set<() => void>();
   private visibilityBound = false;
@@ -133,6 +134,7 @@ export class WsClient {
 
   private scheduleRetryAfterResolveFailure(err: unknown): void {
     console.warn("[WsClient] url resolution failed:", err);
+    for (const fn of this.attemptFailedListeners) fn();
     if (!this.shouldReconnect) {
       this.setConnectionState("disconnected");
       return;
@@ -281,6 +283,21 @@ export class WsClient {
   onDisconnect(fn: () => void): () => void {
     this.disconnectListeners.add(fn);
     return () => this.disconnectListeners.delete(fn);
+  }
+
+  /**
+   * A connection attempt failed before a socket ever existed — the URL provider
+   * threw, which for a remote machine means its one-time ws-ticket could not be
+   * minted (a refused credential 401s exactly here).
+   *
+   * Distinct from onDisconnect, which fires only from ws.onclose and therefore
+   * only for a socket that once opened. A revoked credential never gets that
+   * far, so anything diagnosing a machine must listen to both or it will never
+   * hear about the one failure it most needs to explain.
+   */
+  onAttemptFailed(fn: () => void): () => void {
+    this.attemptFailedListeners.add(fn);
+    return () => this.attemptFailedListeners.delete(fn);
   }
 
   private setupVisibilityHandler(): void {

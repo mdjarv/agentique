@@ -33,14 +33,30 @@ interface DiscoveredPeer {
 export function AddMachineDialog({
   open,
   onOpenChange,
+  repairMachineId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Re-pairing this catalog entry rather than adding a new machine. */
+  repairMachineId?: string;
 }) {
+  const repairing = useMachineStore((s) =>
+    repairMachineId ? s.machines[repairMachineId] : undefined,
+  );
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-pairing already knows the address — only the token is new. Seeding on
+  // open (not on every render) leaves the field editable, which matters when
+  // the machine moved and the stale address is the thing being corrected.
+  useEffect(() => {
+    if (!open) return;
+    setToken("");
+    setError(null);
+    setAddress(repairing?.baseUrl ?? "");
+  }, [open, repairing?.baseUrl]);
 
   // Tailnet peer discovery: the primary probes online peers for agentique
   // descriptors; hits become one-click suggestions. Purely a hint —
@@ -65,7 +81,11 @@ export function AddMachineDialog({
       cancelled = true;
     };
   }, [open]);
-  const suggestions = discovered.filter((p) => p.pairing && !paired[p.machineId]);
+  // A paired machine is not a pairing suggestion — unless it is the very one
+  // being re-paired, which is otherwise filtered out of its own dialog.
+  const suggestions = discovered.filter(
+    (p) => p.pairing && (!paired[p.machineId] || p.machineId === repairMachineId),
+  );
 
   const submit = async () => {
     setBusy(true);
@@ -86,10 +106,22 @@ export function AddMachineDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add machine</DialogTitle>
+          <DialogTitle>
+            {repairing ? `Re-pair ${repairing.label || "machine"}` : "Add machine"}
+          </DialogTitle>
           <DialogDescription>
-            On the other machine, run <code className="font-mono">agentique pair</code> and enter
-            its address and the one-time token here.
+            {repairing ? (
+              <>
+                This machine no longer accepts our credential. Run{" "}
+                <code className="font-mono">agentique pair</code> on {repairing.label || "it"} and
+                enter the new one-time token — its projects and history are kept.
+              </>
+            ) : (
+              <>
+                On the other machine, run <code className="font-mono">agentique pair</code> and
+                enter its address and the one-time token here.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
@@ -155,7 +187,7 @@ export function AddMachineDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={busy || !address.trim()}>
-            {busy ? "Pairing…" : "Pair"}
+            {busy ? "Pairing…" : repairing ? "Re-pair" : "Pair"}
           </Button>
         </DialogFooter>
       </DialogContent>

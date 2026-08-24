@@ -1,4 +1,8 @@
-import { checkMachineIdentity, readBoundedMachineJSON } from "~/lib/machines/health";
+import {
+  checkMachineIdentity,
+  clearedByIdentityProof,
+  readBoundedMachineJSON,
+} from "~/lib/machines/health";
 import { WsClient } from "~/lib/ws-client";
 import { useMachineStore } from "~/stores/machine-store";
 
@@ -59,7 +63,12 @@ export async function machineFetch(
         : identity.fault.detail,
     );
   }
-  useMachineStore.getState().setFault(machineId, null);
+  // Only clear what this proof actually disproves: identity is settled, the
+  // credential is not — and the call below is where it gets refused.
+  const known = useMachineStore.getState().faults[machineId];
+  if (known && clearedByIdentityProof(known.kind)) {
+    useMachineStore.getState().setFault(machineId, null);
+  }
   if (identity.descriptor?.version) {
     useMachineStore.getState().setVersion(machineId, identity.descriptor.version);
   }
