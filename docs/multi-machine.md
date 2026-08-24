@@ -91,6 +91,15 @@ credentials. Removing a machine proves its pinned identity and revokes the
 remote bearer first; failure keeps the local row so an unreachable machine
 cannot leave a silently orphaned credential.
 
+This host's own name and icon (`PUT /api/machine/presentation`) take the same
+full-access guard as the catalog: it rewrites how this machine identifies
+itself to every client.
+
+Those bearer tokens live in the database in plaintext, so the data directory is
+owner-only and the database file is 0600 (`paths.SecureDataDir`, applied from
+serve and fixed forward on every start). A world-readable database makes the
+0600 admin secret and signing key beside it decorative.
+
 ### Cross-machine project identity
 
 `projects.remote_url` holds the canonical key of the checkout's primary git
@@ -204,6 +213,8 @@ machine clears its cache and drops its sessions from the stores.
   grants access.
 - **Bearer tokens never appear in URLs**; sockets use one-time tickets whose
   redemption re-checks the database.
+- **Nor in argv, nor in a group-readable file**: the data dir is owner-only and
+  the database 0600, because it stores every remote's bearer in plaintext.
 - **Revocation is live**: it closes established sockets, and removing a
   catalog entry revokes the remote bearer before forgetting it locally.
 - **An explicit credential never falls back to another** (bad bearer ≠ try

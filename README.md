@@ -234,12 +234,22 @@ All persistent data lives under a single data directory:
 | macOS | `~/Library/Application Support/agentique` | (same as data dir) |
 | Windows | `%LOCALAPPDATA%\agentique` | (same as data dir) |
 
+The data directory is created owner-only (`0700`), and an existing one is
+tightened on the next start: the database holds auth session tokens and every
+paired machine's bearer token in plaintext, so it must not be readable by other
+users on the box. The config file is `0600` for the same reason (it can carry an
+embeddings API key).
+
 Inside the data directory:
 
 - `agentique.db` — SQLite database (sessions, projects, events, auth).
 - `backups/` — automatic database snapshots (every `--backup-interval`, `--backup-retain` days kept). Manage with `agentique restore` (list/restore a snapshot).
 - `worktrees/` — one git worktree per session.
-- `session-files/` — files attached to or produced by sessions.
+- `session-files/` — files attached to or produced by sessions. Served back at
+  `/api/sessions/{id}/files/…`, but only as inert content: images, plain text
+  and media render inline, everything else (HTML, SVG, anything unrecognized)
+  downloads as an attachment, because these files are written by agents and the
+  app's own origin is where they would otherwise run.
 - `brain/` — persistent agent memory (markdown).
 - `agentique.log.jsonl` — structured log.
 

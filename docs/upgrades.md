@@ -57,10 +57,20 @@ GET /api/update/status        (authenticated, per machine)
   "notes":     "…release notes, truncated…"
 }
 
-POST   /api/update/apply      body {"expect": "v0.5.0"}
+POST   /api/update/apply      body {"expect": "v0.5.0"}   (full access)
          → 202, progress events, then the socket drops
 DELETE /api/update/apply      cancel: disarm, or abort before replacing
 ```
+
+Reading the status only needs a session — every client shows the chip. Applying
+needs **full access**: it replaces this machine's binary and restarts its
+service, and `force` ends every turn in flight. That is at least as privileged
+as reading the machine catalog, so it carries the same guard.
+
+The asset and checksum URLs are taken from the release document and must be
+HTTPS (loopback excepted). The checksum proves the download matches what that
+document said, so the transport carrying both is the part that has to be
+trustworthy — releases are not signed, which is the remaining gap here.
 
 `?refresh=1` forces a check instead of reading the hourly cache; without it
 the request never touches the network. Fields land with the phase that makes

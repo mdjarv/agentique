@@ -77,6 +77,51 @@ every live session of the running service). Always isolate with
 targets the production data dir and fails fast against the running service.
 `--test-mode` swaps in the mock CLI connector — it is not a sandbox flag.
 
+## Security invariants
+
+An authenticated operator has arbitrary code execution by design — they run
+agents. So the boundaries that matter are the *other* ones: an unauthenticated
+caller, a cross-origin page, another local user, and **a prompt-injected
+agent** (agents act on untrusted repo/web/tool content and are not a trusted
+principal). Judge a change against those, not against "is the caller logged
+in".
+
+**A `{id}` route parameter is not one path segment.** Go's `ServeMux` matches
+on the escaped path and unescapes the capture, so `%2F` arrives as a real
+separator: `/api/x/..%2F..%2Fy` yields `../../y` from `r.PathValue`. Any path
+parameter that becomes a filesystem path must be validated for what it is (a
+UUID, a timestamp) *before* the join — and never by checking the joined result
+against a root derived from the same untrusted value. Record ids are also glob
+patterns in `filestore`, so `*` and `?` are rejected too.
+
+**Agent-written bytes are never served as active content.** Session files come
+from agents and are served from the app's own origin, where script can drive
+the whole authenticated API. `internal/session/files_content_type.go` holds an
+allowlist of provably inert types; everything else is an octet-stream
+attachment. Adding `.html`, `.svg`, or a sniffable type to that list is a
+stored-XSS hole. Response headers (`nosniff`, `frame-ancestors`,
+`Referrer-Policy`, the SPA CSP) live in one middleware so a new route inherits
+them; `script-src` allows index.html's bootstrap by **hash computed from the
+embedded bundle**, never by `'unsafe-inline'`.
+
+**Credentials never reach argv or a group-readable file.** The data dir is
+owner-only (`paths.SecureDataDir`, called from serve, never a constructor) and
+the DB plus its sidecars are 0600 — that DB holds session tokens and every
+paired machine's bearer in plaintext. The per-session MCP bearer goes to the
+CLI as a 0600 *file path*, because `/proc/<pid>/cmdline` is world-readable; if
+that write fails, fall back to the stdio transport, never to inline JSON.
+
+**Downloads fail closed.** A missing or unfetchable checksum aborts an install
+(`install.sh`, `install.ps1`); release asset and checksum URLs must be HTTPS
+(loopback excepted). Unclassified 500s return a fixed message — `err.Error()`
+is for the log line, not the response body.
+
+**No user row is written before its ceremony verifies.** `credentialCount == 0`
+puts the server in rekey mode, where anyone can claim an account by display
+name; persisting a user at `register/begin` meant one abandoned registration
+opened that window forever. Registration creates the row in `finish`, and
+re-checks the first-user precondition there.
+
 ## Subsystem invariants
 
 Each subsystem's full design lives in its doc; what follows is only the rules
