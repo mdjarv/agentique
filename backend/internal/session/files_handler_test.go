@@ -12,7 +12,7 @@ import (
 
 func TestFilesHandlerAllowsFilenamesContainingDots(t *testing.T) {
 	t.Setenv("AGENTIQUE_HOME", t.TempDir())
-	sessionID := "session-1"
+	sessionID := "11111111-2222-3333-4444-555555555555"
 	sessionDir := filepath.Join(paths.SessionFilesDir(), sessionID)
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestFilesHandlerAllowsFilenamesContainingDots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/session-1/files/notes..md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/11111111-2222-3333-4444-555555555555/files/notes..md", nil)
 	req.SetPathValue("id", sessionID)
 	req.SetPathValue("filepath", "notes..md")
 	w := httptest.NewRecorder()
@@ -38,8 +38,8 @@ func TestFilesHandlerAllowsFilenamesContainingDots(t *testing.T) {
 
 func TestFilesHandlerRejectsPathTraversal(t *testing.T) {
 	t.Setenv("AGENTIQUE_HOME", t.TempDir())
-	sessionID := "session-1"
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/session-1/files/../secret.md", nil)
+	sessionID := "11111111-2222-3333-4444-555555555555"
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/11111111-2222-3333-4444-555555555555/files/../secret.md", nil)
 	req.SetPathValue("id", sessionID)
 	req.SetPathValue("filepath", "../secret.md")
 	w := httptest.NewRecorder()

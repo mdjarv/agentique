@@ -236,6 +236,9 @@ type Server struct {
 	updateApplier  *update.Applier
 	allowedOrigins map[string]bool
 	authEnabled    bool
+	// csp is the SPA document policy, computed once from the embedded bundle
+	// (the inline bootstrap script is allowed by hash, not by 'unsafe-inline').
+	csp string
 }
 
 // UpdateChecker exposes the version checker so serve.go can start its poll
@@ -954,6 +957,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		updateApplier:  updateApplier,
 		allowedOrigins: allowedOrigins,
 		authEnabled:    cfg.AuthEnabled,
+		csp:            spaCSP(frontendSub),
 	}
 
 	if cfg.AuthEnabled {
@@ -1027,6 +1031,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	chain = maxBodySize(chain)
 	chain = requireJSONBodies(chain)
 	chain = preventSensitiveCaching(chain)
+	chain = securityHeaders(s.csp, chain)
 	s.corsMiddleware(chain).ServeHTTP(w, r)
 }
 
