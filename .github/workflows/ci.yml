@@ -24,8 +24,18 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Configure private Go modules
-        run: git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+      # Download private modules with the PAT, then remove it. Leaving it in a
+      # global git config keeps a usable credential in ~/.gitconfig for the
+      # rest of the job, where any later step — or anything a build runs — can
+      # read it. The module cache is already warm afterwards, so the steps
+      # below need no credential at all.
+      - name: Download private Go modules
+        run: |
+          git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+          cd backend && go mod download
+          git config --global --unset-all url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf
+        env:
+          GOPRIVATE: github.com/allbin/*
 
       - name: Go vet
         run: cd backend && go vet ./...
@@ -94,8 +104,15 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Configure private Go modules
-        run: git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+      # Same as the backend job: hold the PAT only for the download, so `npm ci`
+      # and everything after it cannot read it out of ~/.gitconfig.
+      - name: Download private Go modules
+        run: |
+          git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+          cd backend && go mod download
+          git config --global --unset-all url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf
+        env:
+          GOPRIVATE: github.com/allbin/*
 
       - name: Install frontend dependencies
         run: cd frontend && npm ci

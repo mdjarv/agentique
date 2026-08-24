@@ -51,29 +51,35 @@ TMPFILE="$(mktemp)"
 trap 'rm -f "$TMPFILE"' EXIT
 curl -fsSL "$URL" -o "$TMPFILE"
 
-# Verify checksum if available
-CHECKSUMS="$(curl -fsSL "$CHECKSUM_URL" 2>/dev/null || true)"
-if [ -n "$CHECKSUMS" ]; then
-  # Anchor on the asset NAME, not a substring: "agentique-linux-amd64" is a
-  # prefix of nothing else today, but "agentique-linux-arm64" vs a future
-  # "-arm64-v8" is exactly how the wrong line gets picked.
-  EXPECTED="$(echo "$CHECKSUMS" | awk -v a="$ASSET" '$2 == a || $2 == "*"a {print $1}')"
-  # macOS has no sha256sum; shasum -a 256 is the portable spelling.
-  if command -v sha256sum >/dev/null 2>&1; then
-    ACTUAL="$(sha256sum "$TMPFILE" | awk '{print $1}')"
-  else
-    ACTUAL="$(shasum -a 256 "$TMPFILE" | awk '{print $1}')"
-  fi
-  if [ "$EXPECTED" != "$ACTUAL" ]; then
-    echo "Error: checksum mismatch"
-    echo "  expected: $EXPECTED"
-    echo "  got:      $ACTUAL"
-    exit 1
-  fi
-  echo "Checksum verified."
-else
-  echo "Warning: no checksums available, skipping verification."
+# Verify the checksum. This is REQUIRED, not best-effort: skipping it on a
+# failed fetch means anyone who can break that one request gets to install an
+# unverified binary, which is the opposite of what a checksum is for.
+CHECKSUMS="$(curl -fsSL "$CHECKSUM_URL")" || {
+  echo "Error: could not fetch ${CHECKSUM_URL}"
+  echo "Refusing to install an unverified binary."
+  exit 1
+}
+# Anchor on the asset NAME, not a substring: "agentique-linux-amd64" is a
+# prefix of nothing else today, but "agentique-linux-arm64" vs a future
+# "-arm64-v8" is exactly how the wrong line gets picked.
+EXPECTED="$(echo "$CHECKSUMS" | awk -v a="$ASSET" '$2 == a || $2 == "*"a {print $1}')"
+if [ -z "$EXPECTED" ]; then
+  echo "Error: ${CHECKSUM_URL} publishes no digest for ${ASSET}"
+  exit 1
 fi
+# macOS has no sha256sum; shasum -a 256 is the portable spelling.
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "$TMPFILE" | awk '{print $1}')"
+else
+  ACTUAL="$(shasum -a 256 "$TMPFILE" | awk '{print $1}')"
+fi
+if [ "$EXPECTED" != "$ACTUAL" ]; then
+  echo "Error: checksum mismatch"
+  echo "  expected: $EXPECTED"
+  echo "  got:      $ACTUAL"
+  exit 1
+fi
+echo "Checksum verified."
 
 # Install
 mkdir -p "$INSTALL_DIR"

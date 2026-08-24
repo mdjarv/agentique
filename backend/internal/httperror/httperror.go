@@ -105,8 +105,15 @@ func Classify(err error) *Error {
 		return NotFound("not found")
 	}
 
-	return Internal(err.Error(), err)
+	// An unclassified error is by definition one nobody chose to show a caller:
+	// its text is filesystem paths, SQL, and internal state. Keep the detail in
+	// the log line (RespondError logs Cause) and give the client a fixed
+	// message. Handlers that DO want to say something return a typed *Error.
+	return &Error{Status: http.StatusInternalServerError, Message: genericInternalMessage, Cause: err}
 }
+
+// genericInternalMessage is what an unclassified failure tells the client.
+const genericInternalMessage = "internal server error"
 
 // JSON writes data as a JSON response with the given status code.
 func JSON(w http.ResponseWriter, status int, data any) {

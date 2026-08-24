@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -140,6 +143,17 @@ func (a *Applier) Preflight() (*plan, error) {
 		return nil, fmt.Errorf("release %s publishes no %s", rel.TagName, ChecksumsAsset)
 	}
 
+	// The asset and checksum URLs come out of the release document, so they are
+	// only as trustworthy as the transport that carried them. Require HTTPS for
+	// both: a release naming http:// URLs would let one network position swap
+	// the binary AND the digest it is checked against, consistently.
+	if err := requireHTTPS(bin.URL); err != nil {
+		return nil, fmt.Errorf("release asset %s: %w", asset, err)
+	}
+	if err := requireHTTPS(sums.URL); err != nil {
+		return nil, fmt.Errorf("release %s: %w", ChecksumsAsset, err)
+	}
+
 	binary, err := a.deps.BinaryPath()
 	if err != nil {
 		return nil, fmt.Errorf("resolve install path: %w", err)
@@ -159,6 +173,34 @@ func (a *Applier) Preflight() (*plan, error) {
 		binary:      binary,
 		size:        bin.Size,
 	}, nil
+}
+
+// ErrInsecureAsset rejects a release asset that is not served over TLS.
+var ErrInsecureAsset = errors.New("release asset must be served over https")
+
+// requireHTTPS mirrors the rule the machine catalog already applies to remote
+// origins (internal/machine/url.go): TLS on the network, plain HTTP only over
+// loopback, where there is no network position to attack from.
+func requireHTTPS(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("%w: unparseable url", ErrInsecureAsset)
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return nil
+	}
+	if strings.EqualFold(u.Scheme, "http") && isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("%w: got %q", ErrInsecureAsset, u.Scheme)
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Busy reports the sessions with a turn in flight. A restart is not a pause:

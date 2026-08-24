@@ -51,22 +51,26 @@ $tmp = New-TemporaryFile
 try {
     Invoke-WebRequest -Uri "$baseUrl/$asset" -OutFile $tmp.FullName -UseBasicParsing
 
-    # Verify checksum if the release publishes one.
-    $checksums = ''
-    try { $checksums = (Invoke-WebRequest -Uri "$baseUrl/checksums.txt" -UseBasicParsing).Content } catch { }
-    if ($checksums) {
-        $expected = $checksums -split "`n" |
-            Where-Object { $_ -match [regex]::Escape($asset) } |
-            ForEach-Object { ($_ -split '\s+')[0] } |
-            Select-Object -First 1
-        $actual = (Get-FileHash -Path $tmp.FullName -Algorithm SHA256).Hash.ToLower()
-        if ($expected -and ($expected.ToLower() -ne $actual)) {
-            throw "checksum mismatch`n  expected: $expected`n  got:      $actual"
-        }
-        Write-Host 'Checksum verified.'
-    } else {
-        Write-Warning 'no checksums available, skipping verification.'
+    # Verify the checksum. REQUIRED, not best-effort: treating a failed fetch
+    # or a missing digest as "skip verification" hands an unverified binary to
+    # anyone who can break that one request.
+    try {
+        $checksums = (Invoke-WebRequest -Uri "$baseUrl/checksums.txt" -UseBasicParsing).Content
+    } catch {
+        throw "could not fetch $baseUrl/checksums.txt — refusing to install an unverified binary"
     }
+    $expected = $checksums -split "`n" |
+        Where-Object { ($_ -split '\s+' | Select-Object -Skip 1 -First 1) -in @($asset, "*$asset") } |
+        ForEach-Object { ($_ -split '\s+')[0] } |
+        Select-Object -First 1
+    if (-not $expected) {
+        throw "checksums.txt publishes no digest for $asset"
+    }
+    $actual = (Get-FileHash -Path $tmp.FullName -Algorithm SHA256).Hash.ToLower()
+    if ($expected.ToLower() -ne $actual) {
+        throw "checksum mismatch`n  expected: $expected`n  got:      $actual"
+    }
+    Write-Host 'Checksum verified.'
 
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"slices"
 
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
@@ -222,6 +223,19 @@ func (g *GitService) Checkout(ctx context.Context, projectID, branch string) (Pr
 	project, err := g.getProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
+	}
+
+	// The branch name arrives off the wire and becomes a leading argument to
+	// `git checkout`, where a "-"-prefixed value is parsed as a flag rather
+	// than a ref. Rather than guess which flags are dangerous, require the name
+	// to be one git itself already reports for this repo — the UI only ever
+	// offers those, so a value outside that set is not a checkout request.
+	local, remote, err := g.git.ListBranches(project.Path)
+	if err != nil {
+		return ProjectGitStatus{}, fmt.Errorf("list branches: %w", err)
+	}
+	if !slices.Contains(local, branch) && !slices.Contains(remote, branch) {
+		return ProjectGitStatus{}, fmt.Errorf("unknown branch %q", branch)
 	}
 
 	dirty, err := g.git.HasUncommittedChanges(project.Path)

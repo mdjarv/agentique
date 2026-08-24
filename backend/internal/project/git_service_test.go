@@ -239,6 +239,7 @@ func TestCommit_NothingToCommit(t *testing.T) {
 func TestCheckout_Success(t *testing.T) {
 	git := &mockGitOps{
 		dirty:         false,
+		localBranches: []string{"main", "develop"},
 		projectStatus: gitops.ProjectStatusResult{Branch: "develop"},
 	}
 	svc, hub := newTestService(git)
@@ -258,7 +259,8 @@ func TestCheckout_Success(t *testing.T) {
 }
 
 func TestCheckout_DirtyRefused(t *testing.T) {
-	git := &mockGitOps{dirty: true}
+	// The branch must exist, or this would pass for the wrong reason.
+	git := &mockGitOps{dirty: true, localBranches: []string{"main", "develop"}}
 	svc, _ := newTestService(git)
 	_, err := svc.Checkout(context.Background(), "proj-1", "develop")
 	if err == nil {
@@ -379,5 +381,38 @@ func TestBroadcastStatus(t *testing.T) {
 	}
 	if hub.messages[0].pushType != "project.git-status" {
 		t.Errorf("got push type %q", hub.messages[0].pushType)
+	}
+}
+
+// The branch name is a leading argument to `git checkout`, where a "-"-prefixed
+// value is read as a flag rather than a ref. Only names git itself reports for
+// this repo are accepted, so an option can never reach the command line.
+func TestCheckout_RefusesBranchesTheRepoDoesNotHave(t *testing.T) {
+	for _, branch := range []string{
+		"--help",
+		"-b",
+		"--pathspec-from-file=/etc/passwd",
+		"does-not-exist",
+		"",
+	} {
+		git := &mockGitOps{localBranches: []string{"main"}, remoteBranches: []string{"feature"}}
+		svc, _ := newTestService(git)
+		if _, err := svc.Checkout(context.Background(), "proj-1", branch); err == nil {
+			t.Errorf("Checkout(%q) succeeded, want a refusal", branch)
+		}
+		if git.checkoutBranch != "" {
+			t.Errorf("Checkout(%q) reached git with %q", branch, git.checkoutBranch)
+		}
+	}
+}
+
+func TestCheckout_AcceptsARemoteOnlyBranch(t *testing.T) {
+	git := &mockGitOps{localBranches: []string{"main"}, remoteBranches: []string{"feature"}}
+	svc, _ := newTestService(git)
+	if _, err := svc.Checkout(context.Background(), "proj-1", "feature"); err != nil {
+		t.Fatalf("checking out a remote-only branch must still work: %v", err)
+	}
+	if git.checkoutBranch != "feature" {
+		t.Errorf("checked out %q, want feature", git.checkoutBranch)
 	}
 }
