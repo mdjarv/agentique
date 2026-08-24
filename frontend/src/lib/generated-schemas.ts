@@ -298,7 +298,7 @@ export const GitSnapshotSchema = z.object({
   hasDirtyWorktree: z.boolean(),
   hasUncommitted: z.boolean(),
   worktreeMerged: z.boolean(),
-  archivedAt: z.string().optional(),
+  archivedAt: z.string(),
   commitsAhead: z.number(),
   commitsBehind: z.number(),
   branchMissing: z.boolean(),

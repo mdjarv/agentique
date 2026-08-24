@@ -19,6 +19,7 @@ import type { TeamInfo } from "~/lib/team-actions";
 import { listAgentProfiles, listPersonaInteractions, listTeams } from "~/lib/team-actions";
 import type { Project } from "~/lib/types";
 import { getErrorMessage } from "~/lib/utils";
+import { readArchivedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -55,13 +56,19 @@ export function subscribeAndLoad(
   });
   ws.request<ListSessionsResult>("session.list", { projectId }, 10_000)
     .then((result) => {
+      // The wire boundary for the list: a peer on a release from before the
+      // archive rename says `completedAt`, and reading only `archivedAt` would
+      // land every archived session on that machine in the Open section.
+      const sessions = result.sessions.map((s) => ({
+        ...s,
+        archivedAt: readArchivedAt(s),
+      })) as SessionMetadata[];
+
       // forceHistory is true only on reconnect: make session.list authoritative
       // for pending approval/question state so requests resolved while
       // disconnected are cleared (not just added).
-      useChatStore
-        .getState()
-        .setSessions(result.sessions as SessionMetadata[], projectId, forceHistory);
-      for (const session of result.sessions) {
+      useChatStore.getState().setSessions(sessions, projectId, forceHistory);
+      for (const session of sessions) {
         if (!session.archivedAt) {
           loadSessionHistory(ws, session.id, forceHistory);
         }

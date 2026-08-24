@@ -194,6 +194,31 @@ is its exact inverse, and archiving is refused while a turn is in flight —
 whole-shelf sweep), and only merged work is safe to delete in bulk. UI copy says
 "Archive"; `done` reads as "finished" wherever it surfaces.
 
+### Wire compatibility across peers
+
+A client talks to **several servers at once** — the primary plus one per paired
+machine — each on whatever release that machine happens to be running. So a
+rename to the wire vocabulary is never atomic, and shipping one without a
+transition breaks every machine that has not upgraded yet.
+
+Renames go out as **expand/contract**, both halves at once:
+
+- **Server expands** — emit the new name *and* the old one. Derive the alias in
+  one place (a `MarshalJSON` on the wire struct, not at each construction site)
+  so no broadcast path can forget it. Keep accepting the old op name in
+  `handlerRegistry`.
+- **Client accepts either** — via `frontend/src/lib/wire-compat.ts`, which owns
+  every alias: `readArchivedAt` for fields, `LEGACY_OP` for renamed RPCs.
+  `ws-rpc.define` retries under the old op name when a peer rejects the new one
+  and remembers that peer, so it costs one round-trip per socket, not per click.
+  Never spell an alias at a call site — the next rename must have one place to
+  look.
+- **Contract later**, once no supported release predates the rename.
+
+A field whose clearing is an event (`archivedAt` — starting a turn un-archives)
+must **not** be `omitempty`: an omitted field is indistinguishable from
+"unchanged", and the client keeps showing the stale value.
+
 ### Channels / teams — `docs/discussion-sessionless-personas.md`
 
 The `messages` table is the source of truth for channel timelines.

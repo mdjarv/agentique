@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { useWebSocket } from "~/hooks/useWebSocket";
 import { navigateToSession } from "~/lib/navigation";
 import { findNearestActiveSession } from "~/lib/session/utils";
+import { readArchivedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -34,7 +35,7 @@ export function useSessionLifecycleSubscription(
         connected: payload.connected,
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
-        archivedAt: payload.archivedAt,
+        archivedAt: readArchivedAt(payload),
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,
@@ -46,7 +47,7 @@ export function useSessionLifecycleSubscription(
       });
       useChannelStore.getState().updateMemberState(sid, payload.state, payload.connected);
 
-      const becameArchived = payload.archivedAt && prevMeta && !prevMeta.archivedAt;
+      const becameArchived = readArchivedAt(payload) && prevMeta && !prevMeta.archivedAt;
       if (becameArchived && wasActive) {
         const projectId = prevMeta.projectId;
         const projectSlug =

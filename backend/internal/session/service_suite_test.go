@@ -294,3 +294,34 @@ func (s *ServiceSuite) TestCleanCLIExitDoesNotArchive() {
 	s.False(dbSess.ArchivedAt.Valid, "a clean CLI exit must never archive")
 	s.Empty(sess.archivedAt, "in-memory archivedAt must stay empty too")
 }
+
+// Sending a message to an archived session brings it back: a turn is the
+// clearest possible statement that the user is not finished with it. The
+// session must leave the Archived section on the way in, not once the turn
+// ends — so archived_at is cleared as the turn commits, and the running
+// snapshot that follows already says so.
+func (s *ServiceSuite) TestQueryUnarchivesTheSession() {
+	sessionID, _ := s.createLiveSession()
+	ctx := context.Background()
+
+	s.Require().NoError(s.svc.ArchiveSession(ctx, sessionID))
+	archived, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Require().True(archived.ArchivedAt.Valid, "precondition: the session is archived")
+	s.Require().Equal(string(StateStopped), archived.State, "precondition: its CLI was released")
+
+	// Sending lazy-resumes the released CLI and starts a turn.
+	s.Require().NoError(s.svc.QuerySession(ctx, sessionID, "actually, one more thing", nil))
+
+	after, err := s.Queries.GetSession(ctx, sessionID)
+	s.Require().NoError(err)
+	s.False(after.ArchivedAt.Valid, "sending must un-archive the session")
+	s.NotEqual(string(StateStopped), after.State, "and bring it back to life")
+
+	// The live session agrees, so the snapshot broadcast with the running
+	// transition carries the cleared marker rather than a stale one.
+	live := s.mgr.Get(sessionID)
+	s.Require().NotNil(live)
+	_, _, _, archivedAt, _ := live.liveState()
+	s.Empty(archivedAt, "the broadcast snapshot must report it un-archived")
+}

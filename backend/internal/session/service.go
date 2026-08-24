@@ -119,6 +119,18 @@ type SessionInfo struct {
 	LastQueryAt        string               `json:"lastQueryAt,omitempty"`
 }
 
+// MarshalJSON emits the deprecated `completedAt` alias alongside `archivedAt`,
+// for the same reason GitSnapshot does — a peer on a release from before the
+// rename lists this machine's sessions and must still see which are archived.
+// Remove once no supported release predates the rename.
+func (s SessionInfo) MarshalJSON() ([]byte, error) {
+	type info SessionInfo // sheds this method, so json won't recurse
+	return json.Marshal(struct {
+		info
+		CompletedAt string `json:"completedAt,omitempty"`
+	}{info(s), s.ArchivedAt})
+}
+
 // CreateSessionParams holds client-provided parameters for creating a session.
 type CreateSessionParams struct {
 	ProjectID       string

@@ -391,10 +391,16 @@ export const useChatStore = create<ChatState>((set) => ({
         gitOperation: extras?.gitOperation ?? "",
         gitVersion: incoming || current,
         gitRefreshedAt: incoming > current ? Date.now() : m.gitRefreshedAt,
-        // Transient states carry no archivedAt/worktreeMerged — preserve cached
-        // values instead of wiping them (a clear here re-triggers becameArchived
-        // below, causing badge flicker + spurious tail eviction / auto-navigate).
-        archivedAt: transient ? m.archivedAt : extras?.archivedAt,
+        // Transient states carry no computed git fields — preserve cached values
+        // instead of wiping them (a clear re-triggers becameArchived below,
+        // causing badge flicker + spurious tail eviction / auto-navigate).
+        //
+        // archivedAt is the exception, and deliberately so: it is read from
+        // session state rather than computed from git, so every snapshot states
+        // it — including the running one. Starting a turn un-archives a session
+        // server-side, and honouring that here is what moves the row back out of
+        // Archived the moment you send, rather than when the turn ends.
+        archivedAt: extras?.archivedAt,
         hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
         hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
         worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),
@@ -406,7 +412,9 @@ export const useChatStore = create<ChatState>((set) => ({
         worktreeBranch: extras?.worktreeBranch ?? m.worktreeBranch,
         worktreePath: extras?.worktreePath ?? m.worktreePath,
       };
-      // Evict turns when a session becomes completed and isn't being viewed.
+      // Evict turns when a session is archived and isn't being viewed. Still
+      // gated on !transient: a session cannot become archived by starting a
+      // turn, and dropping the tail out from under a live turn would be wrong.
       const becameArchived = !transient && extras?.archivedAt && !m.archivedAt;
       if (becameArchived && s.activeSessionId !== sessionId && session.turns.length > 0) {
         return updateSession(s, sessionId, {

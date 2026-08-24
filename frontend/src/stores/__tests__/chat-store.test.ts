@@ -672,3 +672,51 @@ describe("chat-store", () => {
     });
   });
 });
+
+// Sending a message un-archives a session server-side as the turn commits, and
+// the running snapshot that follows already carries the cleared marker. The
+// store has to honour it there — waiting for the turn to end would leave the
+// row sitting in Archived while the agent is visibly working in it.
+describe("archivedAt across a turn", () => {
+  beforeEach(() => {
+    _clearPendingStateUpdates();
+    useChatStore.setState({ sessions: {}, activeSessionId: null });
+    useChatStore.getState().addSession(makeMeta({ archivedAt: "2026-08-24T06:00:00Z" }));
+  });
+
+  it("clears on the running snapshot, not only when the turn ends", () => {
+    useChatStore
+      .getState()
+      .setSessionState("sess-1", "running", { archivedAt: undefined, gitVersion: 1 });
+
+    expect(useChatStore.getState().sessions["sess-1"]?.meta.archivedAt).toBeUndefined();
+  });
+
+  // The other half of the same rule: a snapshot that still reports the session
+  // archived must not spuriously un-archive it.
+  it("keeps the marker when the snapshot still reports it", () => {
+    useChatStore
+      .getState()
+      .setSessionState("sess-1", "running", { archivedAt: "2026-08-24T06:00:00Z", gitVersion: 1 });
+
+    expect(useChatStore.getState().sessions["sess-1"]?.meta.archivedAt).toBe(
+      "2026-08-24T06:00:00Z",
+    );
+  });
+
+  // Git fields stay preserved across transient states — archivedAt is the lone
+  // exception, because it is session state rather than a computed git field.
+  it("still preserves computed git fields while running", () => {
+    useChatStore.getState().setSessionState("sess-1", "idle", {
+      archivedAt: undefined,
+      commitsAhead: 4,
+      worktreeMerged: true,
+      gitVersion: 1,
+    });
+    useChatStore.getState().setSessionState("sess-1", "running", { gitVersion: 2 });
+
+    const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+    expect(meta?.commitsAhead).toBe(4);
+    expect(meta?.worktreeMerged).toBe(true);
+  });
+});

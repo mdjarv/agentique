@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -810,13 +811,17 @@ func (g *GitService) Clean(ctx context.Context, sessionID string) (CleanResult, 
 // The Version field is monotonically increasing per session; the frontend
 // discards any snapshot with a version lower than what it already has.
 type GitSnapshot struct {
-	SessionID          string   `json:"sessionId"`
-	State              string   `json:"state"`
-	Connected          bool     `json:"connected"`
-	HasDirtyWorktree   bool     `json:"hasDirtyWorktree"`
-	HasUncommitted     bool     `json:"hasUncommitted"`
-	WorktreeMerged     bool     `json:"worktreeMerged"`
-	ArchivedAt         string   `json:"archivedAt,omitempty"`
+	SessionID        string `json:"sessionId"`
+	State            string `json:"state"`
+	Connected        bool   `json:"connected"`
+	HasDirtyWorktree bool   `json:"hasDirtyWorktree"`
+	HasUncommitted   bool   `json:"hasUncommitted"`
+	WorktreeMerged   bool   `json:"worktreeMerged"`
+	// ArchivedAt is deliberately NOT omitempty: the empty string has to reach
+	// the client as a value, because clearing it is a real event (starting a
+	// turn un-archives a session). An omitted field is indistinguishable from
+	// "unchanged", and the frontend would keep showing a filed-away row.
+	ArchivedAt         string   `json:"archivedAt"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`
@@ -824,6 +829,24 @@ type GitSnapshot struct {
 	MergeConflictFiles []string `json:"mergeConflictFiles,omitempty"`
 	GitOperation       string   `json:"gitOperation,omitempty"`
 	Version            int64    `json:"version"`
+}
+
+// MarshalJSON emits the deprecated `completedAt` alias alongside `archivedAt`.
+//
+// This is the expand half of an expand/contract wire migration: a peer running
+// a release from before the rename reads `completedAt`, and dropping it would
+// make every archived session on this machine look un-archived in that peer's
+// sidebar. Deriving it here rather than at each construction site means no
+// broadcast path can forget it.
+//
+// Remove once no supported release predates the rename (see wireCompat in
+// CLAUDE.md).
+func (s GitSnapshot) MarshalJSON() ([]byte, error) {
+	type snapshot GitSnapshot // sheds this method, so json won't recurse
+	return json.Marshal(struct {
+		snapshot
+		CompletedAt string `json:"completedAt,omitempty"`
+	}{snapshot(s), s.ArchivedAt})
 }
 
 // RefreshGitStatus recomputes, broadcasts, and returns git status for a session.

@@ -12,6 +12,7 @@ import type {
   SessionDeleteBulkResult,
   SessionDeleteBulkResultItem,
 } from "~/lib/generated-types";
+import { readArchivedAt } from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
 import { define, LONG, QUICK } from "~/lib/ws-rpc";
 import type {
@@ -455,7 +456,7 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
     hasDirtyWorktree: gs.hasDirtyWorktree,
     hasUncommitted: gs.hasUncommitted,
     worktreeMerged: gs.worktreeMerged,
-    archivedAt: gs.archivedAt,
+    archivedAt: readArchivedAt(gs),
     commitsAhead: gs.commitsAhead,
     commitsBehind: gs.commitsBehind,
     branchMissing: gs.branchMissing,
@@ -494,7 +495,7 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     hasDirtyWorktree: info.hasDirtyWorktree,
     hasUncommitted: info.hasUncommitted,
     worktreeMerged: info.worktreeMerged,
-    archivedAt: info.archivedAt,
+    archivedAt: readArchivedAt(info),
     commitsAhead: info.commitsAhead,
     commitsBehind: info.commitsBehind,
     branchMissing: info.branchMissing,
