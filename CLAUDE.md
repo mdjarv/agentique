@@ -496,6 +496,22 @@ approve what you cannot see, on a transcription — so a call refuses the handof
 rather than creating that situation. `blocked` therefore means "this needs a
 screen", not "answer this".
 
+**Reading a message aloud is not the live call.** The bubble's speak button is
+browser `speechSynthesis` (`lib/speech/`), deliberately local: instant, offline,
+no key, nothing billed. It will not sound like the Live agent, which is the
+right trade for a control on every message. The speaker is a **module
+singleton** because speech is a serial channel — one listener, one pair of
+speakers — so starting a message stops whatever was speaking and the other
+button must see that; per-component state lets two answers talk over each other.
+Markdown is stripped before speaking (`toSpeakableText`) or the synthesiser
+reads the punctuation, and long text is split into queued utterances
+(`toUtteranceChunks`) or the browser cuts it off partway.
+
+**`segmentKey` is unique within a turn, not within a session.** `text-0` is the
+first text segment of *every* turn, so anything needing document-wide identity
+scopes by session and `turnIndex` as well — the speak button lit four bubbles at
+once before it did.
+
 ### Model catalog — `docs/model-catalog.md`
 
 **A new upstream model release must not require an agentique release.** Global

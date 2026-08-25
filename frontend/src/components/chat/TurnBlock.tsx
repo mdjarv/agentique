@@ -219,6 +219,7 @@ export const TurnBlock = memo(function TurnBlock({
                       postCompactTokens={postCompactTokens}
                       onCopy={handleCopy}
                       copied={copied}
+                      turnIndex={turn.turnIndex}
                     />
                   ))}
 

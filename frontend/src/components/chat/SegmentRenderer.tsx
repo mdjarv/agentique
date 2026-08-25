@@ -1,5 +1,5 @@
-import { ArrowRight, Check, Copy, Loader2, Scissors, Wrench } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { ArrowRight, Check, Copy, Loader2, Scissors, Square, Volume2, Wrench } from "lucide-react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { AgentMessage } from "~/components/chat/AgentMessage";
 import { ErrorBlock } from "~/components/chat/ErrorBlock";
 import { Markdown } from "~/components/chat/Markdown";
@@ -15,6 +15,7 @@ import { ThinkingIcon, ToolIcon } from "~/components/chat/ToolIcons";
 import { formatSummary, ToolUseBlock } from "~/components/chat/ToolUseBlock";
 import { WorkflowActivity } from "~/components/chat/WorkflowActivity";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
+import { useMessageSpeech } from "~/hooks/useMessageSpeech";
 import { formatDuration, formatTokens, formatTurnTime } from "~/lib/format";
 import { getMessageTypeStyle } from "~/lib/message-type-styles";
 import type {
@@ -205,6 +206,7 @@ export const TextSegmentView = memo(function TextSegmentView({
   sessionId,
   isStreaming,
   timestamp,
+  speechId,
 }: {
   content: string;
   onCopy: (text: string) => void;
@@ -213,6 +215,8 @@ export const TextSegmentView = memo(function TextSegmentView({
   sessionId: string;
   isStreaming: boolean;
   timestamp?: number;
+  /** Stable identity for the read-aloud control. Omit to leave it out. */
+  speechId?: string;
 }) {
   const debouncedContent = useDebouncedValue(content, STREAMING_DEBOUNCE_MS);
   const markdownContent = isStreaming ? debouncedContent : content;
@@ -236,14 +240,17 @@ export const TextSegmentView = memo(function TextSegmentView({
             <Markdown content={markdownContent} isStreaming={isStreaming} />
             {isStreaming && <TypingCursor />}
           </div>
-          <button
-            type="button"
-            onClick={() => onCopy(content)}
-            className="mt-1 p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity max-md:opacity-60"
-            aria-label="Copy message"
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
+          <div className="mt-1 flex flex-col gap-0.5">
+            <button
+              type="button"
+              onClick={() => onCopy(content)}
+              className="p-1 rounded opacity-0 group-hover/msg:opacity-100 hover:bg-background/50 text-muted-foreground transition-opacity max-md:opacity-60"
+              aria-label="Copy message"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+            {speechId && !isStreaming && <SpeakButton id={speechId} content={content} />}
+          </div>
         </div>
         {timestamp != null && !isStreaming && (
           <div
@@ -255,6 +262,39 @@ export const TextSegmentView = memo(function TextSegmentView({
         )}
       </div>
     </PromptGroupProvider>
+  );
+});
+
+/**
+ * Reads a message aloud, and stops it.
+ *
+ * The speaker is a module singleton, so only one message can be speaking: a
+ * second click elsewhere stops this one and this button returns to idle without
+ * anything here having to coordinate it.
+ */
+const SpeakButton = memo(function SpeakButton({ id, content }: { id: string; content: string }) {
+  const getContent = useCallback(() => content, [content]);
+  const { supported, isSpeaking, toggle } = useMessageSpeech(id, getContent);
+
+  if (!supported) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className={cn(
+        "p-1 rounded hover:bg-background/50 transition-opacity max-md:opacity-60",
+        // A speaking button stays visible after the pointer leaves — it is the
+        // only way to stop it, and hunting for it by hovering is not a control.
+        isSpeaking
+          ? "text-agent opacity-100"
+          : "text-muted-foreground opacity-0 group-hover/msg:opacity-100",
+      )}
+      aria-label={isSpeaking ? "Stop reading" : "Read message aloud"}
+      title={isSpeaking ? "Stop reading" : "Read aloud"}
+    >
+      {isSpeaking ? <Square className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+    </button>
   );
 });
 
@@ -418,6 +458,12 @@ interface SegmentRendererProps {
   postCompactTokens?: number;
   onCopy: (text: string) => void;
   copied: boolean;
+  /**
+   * The turn this segment belongs to. segmentKey is only unique *within* a
+   * turn ("text-0" is the first text segment of every one), so anything that
+   * needs a document-wide identity has to be scoped by this too.
+   */
+  turnIndex?: number;
 }
 
 export function SegmentRenderer({
@@ -432,6 +478,7 @@ export function SegmentRenderer({
   postCompactTokens,
   onCopy,
   copied,
+  turnIndex,
 }: SegmentRendererProps) {
   const key = segmentKey(seg, idx);
   const isLastSegment = isStreaming && idx === totalSegments - 1;
@@ -462,6 +509,10 @@ export function SegmentRenderer({
         sessionId={sessionId}
         isStreaming={false}
         timestamp={seg.timestamp}
+        // Scoped by session *and turn*: segmentKey restarts per turn, so
+        // without the turn every turn's first text segment would be the same
+        // message to the speaker and one click would light four buttons.
+        speechId={`${sessionId}:${turnIndex ?? "x"}:${key}`}
       />
     );
   }
