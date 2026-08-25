@@ -45,6 +45,9 @@ type Options struct {
 	AllowTicketOrigin bool
 	// MaxCalls bounds concurrent calls. 0 = the built-in default.
 	MaxCalls int64
+	// Dispatcher hands a drafted prompt to the session that does the work.
+	// Nil leaves the call conversational — it can talk, but cannot start work.
+	Dispatcher Dispatcher
 	// Registry routes a followed session's progress reports into live calls.
 	// Nil disables following — a call still works, it just hears nothing from
 	// the sessions it starts.
@@ -129,7 +132,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log := slog.With("subsystem", "voice", "backend", h.opts.Backend)
 	log.Info("voice call opened", "remote", r.RemoteAddr)
-	newCall(ws, engine, h.opts.Registry, h.opts.IdleTimeout, log).run(r.Context())
+	newCall(ws, engine, h.opts, r.URL.Query().Get("sessionId"), log).run(r.Context())
 	log.Info("voice call closed", "remote", r.RemoteAddr)
 }
 

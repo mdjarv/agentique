@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"unicode/utf8"
@@ -22,6 +23,58 @@ const maxSpokenSummary = 600
 // the turn that just ended. Looking further would risk speaking the *previous*
 // turn's answer when this one ended without saying anything.
 const turnsBack = 1
+
+// voiceDispatcher hands a voice-drafted prompt to a session.
+//
+// It is deliberately thin: the prompt goes down the *same* path the composer's
+// send button uses, so there is one route into the session pipeline whether the
+// gesture was a click or a sentence.
+type voiceDispatcher struct {
+	svc *session.Service
+}
+
+// Dispatch implements voice.Dispatcher.
+func (d *voiceDispatcher) Dispatch(ctx context.Context, sessionID, prompt string) (voice.Delivery, error) {
+	delivery, err := d.svc.EnqueueMessage(ctx, sessionID, prompt, nil)
+	if err != nil {
+		return "", err
+	}
+	// Mapped rather than cast: the voice vocabulary is its own, so a rename on
+	// either side is a compile error here instead of a silently wrong sentence.
+	switch delivery {
+	case session.DeliveryMidTurn:
+		return voice.DeliveryMidTurn, nil
+	case session.DeliveryQueued:
+		return voice.DeliveryQueued, nil
+	case session.DeliveryTurn:
+		return voice.DeliveryTurn, nil
+	default:
+		return voice.DeliveryTurn, nil
+	}
+}
+
+// AutoRunnable implements voice.Dispatcher.
+//
+// Live voice has no spoken approval, so a session that would stop and ask is
+// refused at the handoff. The alternative is a run that stalls invisibly while
+// the call sounds perfectly healthy.
+func (d *voiceDispatcher) AutoRunnable(ctx context.Context, sessionID string) (bool, string, error) {
+	info, err := d.svc.GetSessionInfo(ctx, sessionID)
+	if err != nil {
+		return false, "", err
+	}
+	// "Some auto" is not enough. Under accept-edits a Bash prompt still blocks,
+	// and with no way to answer it the run simply stops with nobody told.
+	if info.AutoApproveMode == autoApproveAll {
+		return true, "", nil
+	}
+	return false, fmt.Sprintf("It is currently set to %q.", info.AutoApproveMode), nil
+}
+
+// autoApproveAll is the only mode that never stops for a prompt: it maps to
+// runtime.AutoApproveAll, which bypasses the permission pump entirely
+// (see runtimeAutoApproveMode). Every other mode can block on a tool.
+const autoApproveAll = "fullAuto"
 
 // voiceTurnWatcher pushes the three things a working agent cannot report about
 // itself — that it is blocked, that it died, that it finished — to whoever is

@@ -21,6 +21,9 @@ const (
 	// msgReport carries an agent-written progress report from the session being
 	// followed.
 	msgReport = "report"
+	// msgDispatched carries the prompt the voice agent just handed to the
+	// session, so there is always a visible record of what was sent.
+	msgDispatched = "dispatched"
 	// msgNotice carries a runtime fact about the followed session — finished,
 	// failed, or blocked. Distinct from msgReport because the source differs
 	// and so does the trust: a notice is the server's own words.

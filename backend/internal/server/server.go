@@ -797,7 +797,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var voiceRegistry *voice.Registry
 	if cfg.ExperimentalVoice {
 		voiceRegistry = voice.NewRegistry()
-		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry); err != nil {
+		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, &voiceDispatcher{svc: svc}); err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
 			voiceRegistry = nil
 		} else {

@@ -3,7 +3,9 @@ package voice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +13,10 @@ import (
 )
 
 const (
+	// toolCallTimeout bounds one tool call. The model is paused meanwhile, so
+	// this is the point at which dead air is worse than a refusal.
+	toolCallTimeout = 30 * time.Second
+
 	writeTimeout = 10 * time.Second
 	pongTimeout  = 60 * time.Second
 	pingInterval = 25 * time.Second
@@ -111,10 +117,20 @@ type SpeechIdler interface {
 // control messages. That keeps audio out of a JSON encoder, which matters at
 // 30-odd frames a second.
 type call struct {
-	ws       *websocket.Conn
-	engine   Engine
-	registry *Registry
-	log      *slog.Logger
+	ws         *websocket.Conn
+	engine     Engine
+	registry   *Registry
+	dispatcher Dispatcher
+	log        *slog.Logger
+
+	// targetSession is the session this call hands work to, fixed when the
+	// socket opens. A call talks to one session; picking one by voice is a
+	// dispatcher, which is a much larger feature wearing the same button.
+	targetSession string
+
+	// runCtx is the call's lifetime, for work that must not outlive it.
+	runCtxMu sync.Mutex
+	runCtx   context.Context
 
 	idleTimeout time.Duration
 
@@ -135,18 +151,35 @@ type call struct {
 	lastFrame   time.Time
 }
 
-func newCall(ws *websocket.Conn, engine Engine, registry *Registry, idleTimeout time.Duration, log *slog.Logger) *call {
+func newCall(ws *websocket.Conn, engine Engine, opts Options, targetSession string, log *slog.Logger) *call {
+	idleTimeout := opts.IdleTimeout
 	if idleTimeout <= 0 {
 		idleTimeout = defaultIdleTimeout
 	}
 	return &call{
-		ws:          ws,
-		engine:      engine,
-		registry:    registry,
-		log:         log,
-		idleTimeout: idleTimeout,
-		lastFrame:   time.Now(),
+		ws:            ws,
+		engine:        engine,
+		registry:      opts.Registry,
+		dispatcher:    opts.Dispatcher,
+		targetSession: targetSession,
+		log:           log,
+		idleTimeout:   idleTimeout,
+		lastFrame:     time.Now(),
+		runCtx:        context.Background(),
 	}
+}
+
+// ctx returns the call's lifetime context.
+func (c *call) ctx() context.Context {
+	c.runCtxMu.Lock()
+	defer c.runCtxMu.Unlock()
+	return c.runCtx
+}
+
+func (c *call) setCtx(ctx context.Context) {
+	c.runCtxMu.Lock()
+	c.runCtx = ctx
+	c.runCtxMu.Unlock()
 }
 
 // follow binds the call to a session so that session's reports reach it. A
@@ -258,6 +291,78 @@ func (c *call) NotifyRuntime(n Notice) error {
 	return nil
 }
 
+// handleToolCall runs one tool call and answers it.
+//
+// Every path here ends in a response, including the failures. An unanswered
+// tool call leaves the model paused forever, which sounds exactly like the call
+// having died.
+func (c *call) handleToolCall(ev ToolCallEvent) {
+	responder, ok := c.engine.(ToolResponder)
+	if !ok {
+		c.log.Warn("voice tool call with no responder", "tool", ev.Name)
+		return
+	}
+
+	result := c.runTool(ev)
+	if err := responder.RespondTool(ev.ID, ev.Name, result); err != nil {
+		c.log.Warn("voice tool response failed", "tool", ev.Name, "error", err)
+	}
+}
+
+// runTool executes the call and returns the model's result payload.
+func (c *call) runTool(ev ToolCallEvent) map[string]any {
+	if ev.Name != ToolRunPrompt {
+		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
+	}
+	if c.dispatcher == nil || c.targetSession == "" {
+		return map[string]any{"error": "This call is not attached to a session, so there is nothing to hand work to."}
+	}
+
+	prompt, _ := ev.Args["prompt"].(string)
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return map[string]any{"error": "The prompt was empty. Say what the agent should do."}
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
+	defer cancel()
+
+	// Live voice has no spoken approval, so a session that would stop and ask
+	// is refused here rather than stalling silently with the call sounding fine.
+	ok, why, err := c.dispatcher.AutoRunnable(ctx, c.targetSession)
+	if err != nil {
+		c.log.Warn("voice auto-mode check failed", "session", c.targetSession, "error", err)
+		return map[string]any{"error": "Could not reach that session."}
+	}
+	if !ok {
+		return map[string]any{"error": "That session is not in auto mode, so it would stop and ask for " +
+			"approval that cannot be given over a call. Tell the user to switch it to full auto on screen. " + why}
+	}
+
+	// The prompt goes to the browser whether or not it is spoken, so there is
+	// always a visible record of what was sent.
+	_ = c.sendControl(serverMessage{
+		Type:      msgDispatched,
+		Headline:  prompt,
+		SessionID: c.targetSession,
+	})
+
+	delivery, err := c.dispatcher.Dispatch(ctx, c.targetSession, prompt)
+	if err != nil {
+		c.log.Warn("voice dispatch failed", "session", c.targetSession, "error", err)
+		return map[string]any{"error": "That could not be sent."}
+	}
+
+	// Following starts here, not at connect: the call is now watching a run, so
+	// silence becomes the expected state and reports have somewhere to land.
+	c.follow(c.targetSession)
+	c.log.Info("voice dispatched prompt", "session", c.targetSession, "delivery", delivery)
+
+	// Only the server knows which of the three happened, so it is reported
+	// rather than left for the model to guess.
+	return map[string]any{"output": delivery.Spoken()}
+}
+
 // speak hands text to the engine when it has a voice. Best effort: a call whose
 // engine cannot speak, or whose session is mid-reconnect, still showed the
 // message on screen rather than losing it.
@@ -290,6 +395,7 @@ func noticePreamble(kind NoticeKind) string {
 func (c *call) run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	c.setCtx(ctx)
 	defer func() {
 		// Release the session binding first: a report arriving mid-teardown
 		// would otherwise write to a socket that is already closing.
@@ -404,6 +510,13 @@ func (c *call) forward(ev Event) error {
 			Source: e.Source,
 		})
 
+	case ToolCallEvent:
+		// Handled off this goroutine: dispatch can take a moment (a session may
+		// have to be woken), and this pump also carries audio. The model is
+		// paused until the response goes back, so it will not talk over itself.
+		go c.handleToolCall(e)
+		return nil
+
 	case ErrorEvent:
 		c.log.Warn("voice engine error", "error", e.Err, "fatal", e.Fatal)
 		// The message is deliberately generic: the detail goes to the log, not
@@ -472,6 +585,9 @@ func (c *call) noteFrame() {
 func (c *call) sendAudio(pcm []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.ws == nil {
+		return errors.New("call has no socket")
+	}
 	_ = c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 	return c.ws.WriteMessage(websocket.BinaryMessage, pcm)
 }
@@ -479,6 +595,11 @@ func (c *call) sendAudio(pcm []byte) error {
 func (c *call) sendControl(msg serverMessage) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	// No socket is a real state, not a programming error: policy paths are
+	// exercised without one, and every caller already handles a write failing.
+	if c.ws == nil {
+		return errors.New("call has no socket")
+	}
 	_ = c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 	return c.ws.WriteJSON(msg)
 }

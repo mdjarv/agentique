@@ -69,10 +69,30 @@ type ErrorEvent struct {
 	Fatal bool
 }
 
+// ToolCallEvent is the speech model asking to run one of its declared tools.
+//
+// The engine only carries it; deciding what a tool does is policy and lives in
+// the call. The model is **paused** until the response goes back, so a handler
+// must answer — slowly is survivable, never is not.
+type ToolCallEvent struct {
+	ID   string
+	Name string
+	Args map[string]any
+}
+
 func (AudioEvent) isVoiceEvent()        {}
 func (TurnCompleteEvent) isVoiceEvent() {}
 func (TranscriptEvent) isVoiceEvent()   {}
 func (ErrorEvent) isVoiceEvent()        {}
+func (ToolCallEvent) isVoiceEvent()     {}
+
+// ToolResponder is an optional [Engine] capability: an engine that can declare
+// tools and be answered when it calls one.
+type ToolResponder interface {
+	// RespondTool answers one tool call. Answering is mandatory — the model
+	// stays paused until it arrives.
+	RespondTool(id, name string, response map[string]any) error
+}
 
 // Engine is a realtime speech backend: caller audio in, [Event]s out.
 //

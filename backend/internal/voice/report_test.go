@@ -1,6 +1,8 @@
 package voice
 
 import (
+	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -272,4 +274,10 @@ func TestReportingInstructionsNameTheTool(t *testing.T) {
 			t.Errorf("instructions missing %q — that guidance is what keeps reports listenable", want)
 		}
 	}
+}
+
+// testLogger keeps test output quiet without leaving a nil *slog.Logger to
+// panic on the first call.
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

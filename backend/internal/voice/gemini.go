@@ -163,6 +163,16 @@ func liveConfig(systemInstruction string) *genai.LiveConnectConfig {
 		// An empty handle asks the server to start issuing them; a handle is
 		// supplied on reconnect.
 		SessionResumption: &genai.SessionResumptionConfig{},
+
+		// One tool: hand a finished prompt to the session that does the work.
+		// The speech model never runs anything itself.
+		Tools: []*genai.Tool{{
+			FunctionDeclarations: []*genai.FunctionDeclaration{{
+				Name:        ToolRunPrompt,
+				Description: runPromptDescription,
+				Parameters:  runPromptSchema(),
+			}},
+		}},
 	}
 	if systemInstruction != "" {
 		cfg.SystemInstruction = &genai.Content{
@@ -211,6 +221,26 @@ func (e *geminiEngine) SendText(text string) error {
 		return errors.New("voice session is not connected")
 	}
 	return e.session.SendRealtimeInput(genai.LiveRealtimeInput{Text: text})
+}
+
+// RespondTool implements [ToolResponder].
+//
+// The model is paused until this arrives, so every tool call must be answered.
+// Taking a second is survivable; never answering is dead air followed by a
+// cancelled call.
+func (e *geminiEngine) RespondTool(id, name string, response map[string]any) error {
+	e.sendMu.Lock()
+	defer e.sendMu.Unlock()
+	if e.session == nil {
+		return errors.New("voice session is not connected")
+	}
+	return e.session.SendToolResponse(genai.LiveToolResponseInput{
+		FunctionResponses: []*genai.FunctionResponse{{
+			ID:       id,
+			Name:     name,
+			Response: response,
+		}},
+	})
 }
 
 // Events implements [Engine].
@@ -318,6 +348,16 @@ func (e *geminiEngine) handle(msg *genai.LiveServerMessage) {
 			_ = e.session.Close()
 		}
 		e.sendMu.Unlock()
+		return
+	}
+
+	if call := msg.ToolCall; call != nil {
+		for _, fc := range call.FunctionCalls {
+			if fc == nil {
+				continue
+			}
+			e.emit(ToolCallEvent{ID: fc.ID, Name: fc.Name, Args: fc.Args})
+		}
 		return
 	}
 

@@ -4,29 +4,38 @@ Spoken dialog in the composer. A conversational agent works out *what to ask*
 with the operator, drafts the prompt, and hands it to the session that does the
 work. The agent never runs the coding job and never sends the message.
 
-The feature is gated by `[experimental] voice`. What exists today is the
-transport and a loopback echo engine; the speech backend is not implemented yet.
+The feature is gated by `[experimental] voice`. The loop is closed end to end —
+converse, draft, dispatch, follow, hear about it — but nothing in the UI opens a
+call yet; see *Not implemented yet*.
 
 ## Shape
 
 ```
-Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶ Engine
+Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶ Engine (speech model)
+                                                    │
+                                          run_prompt │ Dispatcher
+                                                    ▼
+                                          Service.EnqueueMessage ──▶ the session
+                                                    │
+                     VoiceReport (agent) + Notice (runtime) ──▶ back to the call
 ```
 
-Three participants, and keeping them separate is the design:
+Two participants, not three:
 
-- **The ear and mouth** — a realtime speech engine. Owns voice activity
-  detection, barge-in, turn-taking and speech synthesis. It has no tools, never
-  sees a repository, and never reaches the session pipeline.
-- **The drafter** — a warm, tool-less Claude agent that knows the project and
-  turns the conversation into prompt text.
-- **The workhorse** — the existing session, unchanged. It receives text through
-  the composer like any other message.
+- **The drafter** — the realtime speech model. It owns voice activity detection,
+  barge-in, turn-taking and synthesis, *and* it writes the prompt. It has one
+  tool and never runs anything itself.
+- **The workhorse** — the existing session, unchanged. It receives the prompt
+  through the same path the composer's send button uses.
 
-The ear and the drafter are deliberately not the same agent. Merging them would
-mean shipping `CLAUDE.md`, the file tree and session history to the speech
-vendor on every call, and would still have a model that has never seen the
-codebase writing prompts for one that has.
+An earlier design had a third participant, a separate Claude agent doing the
+drafting behind the speech model, on the reasoning that a model which has never
+seen the codebase should not write prompts for one that has. In practice the
+speech model drafts well from a short project context, and the extra hop cost a
+round trip on every turn of a latency-critical conversation. What survives from
+that reasoning is the limit on context: the drafter gets a summary, not the file
+tree and session history, because everything handed to it goes to the speech
+vendor.
 
 ## Transport
 
@@ -293,6 +302,61 @@ operator chooses to stay on the call. Decline, and the prompt carries none of
 it: no instruction, no tool calls, no reporting overhead. That is the whole
 reason the handoff asks rather than assuming.
 
+## The drafter
+
+`SystemInstruction` turns the speech model into a drafter, and it carries most
+of the feature. Nearly every way this goes wrong is a prompt failure rather than
+a transport one, so it is written against the specific failures:
+
+- **It never answers the question itself.** Asked "why does the reconnect keep
+  dropping?", a helpful assistant speculates. This one has not read the code and
+  cannot, so it turns the question into a prompt for the agent that can. This is
+  the likeliest failure and gets the loudest rule.
+- **It talks like a person on a call.** One or two sentences, no lists, no
+  headings, no code, no file paths read aloud.
+- **Silence is not consent**, and neither is being told to skip the read-back.
+
+The model gets exactly one tool, `run_prompt`. It never runs anything itself:
+the prompt goes through `Dispatcher` to `Service.EnqueueMessage`, the same path
+the composer's send button uses. One route into the session pipeline whether the
+gesture was a click or a sentence.
+
+Use the typed `Parameters` schema on the declaration, not
+`ParametersJsonSchema` — they are mutually exclusive and the Live API honours
+the former.
+
+### Every tool call is answered
+
+The model is **paused** until the response arrives, so an unanswered call is
+indistinguishable from the call having died. Every path through `runTool`
+returns a payload, including the failures, and dispatch runs off the event pump
+so a session that has to be woken does not stall audio.
+
+### The refusal is real
+
+`AutoRunnable` is checked before dispatch. Live voice has no spoken approval, so
+a session that would stop and ask is refused at the handoff rather than stalling
+invisibly while the call sounds healthy. Only `fullAuto` qualifies — under
+accept-edits a Bash prompt still blocks, and nobody would be told.
+
+### Delivery is spoken, not guessed
+
+`EnqueueMessage` returns which of three things happened, and the tool result
+says it: "Started", "Added to what it is already doing", "Queued — it will start
+that when the current work finishes". Only the server knows which, which is why
+the contract reports it rather than letting the model infer.
+
+### Verified against the real service
+
+`TestGeminiToolCallLive` drives a real conversation to a real tool call.
+`TestGeminiRefusesToSkipTheReadbackLive` asks it to delete all the tests without
+confirmation and asserts no dispatch happens — it answers "I must read the
+prompt back before I can proceed."
+
+Both are skipped by `-short` and without `AGENTIQUE_VOICE_API_KEY`. The number
+of turns before a dispatch is not fixed: the drafter may clarify first, and
+always reads back, so the test keeps agreeing until the tool is called.
+
 ## The handoff contract
 
 **The dialog agent drafts. It never sends.**
@@ -367,13 +431,15 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 
 ## Not implemented yet
 
-- The drafter agent and its project context, and the handoff question that
-  decides whether the call stays open.
-- The rest of the call state machine. Gathering and working exist; confirming
-  (the verbatim read-back and its spoken affirmative) and reporting do not.
-- Nothing calls `follow` yet except `/dev/voice` and tests — the drafter is
-  what will bind a call to the session it just started.
-- The Live panel. `/dev/voice` is a loopback check, not the feature.
+- **Project context is empty.** `SystemInstruction("")` is what the server
+  passes today, so the drafter knows the shape of its job but nothing about the
+  repository. Feeding it `CLAUDE.md` plus the recent transcript is the next
+  increment, and the one most likely to make its questions sharp.
+- The handoff question — "shall I stay on the line?" — and with it the
+  conditional `ReportingInstructions`, which is written but never appended.
+- The Live panel. `/dev/voice` is a loopback check, not the feature: nothing in
+  the composer opens a call yet, and the socket takes its target session from a
+  `?sessionId=` query parameter.
 - The `vertex` backend is wired but unverified — it shares the engine, so only
   credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation
