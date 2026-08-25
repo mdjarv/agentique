@@ -15,16 +15,20 @@ invalidated, and everything new is either off by default or additive.
 
 ### Added
 
-- **Live voice (experimental, no UI yet).** A spoken-dialog agent that works out
-  *what to ask* with you, drafts the prompt, and hands it to a session through
-  the same path the composer's send button uses — it never runs the job and
-  never sends without a verbatim read-back and an explicit yes. Its own socket
+- **Live voice (experimental).** A spoken-dialog agent that works out *what to
+  ask* with you, drafts the prompt, and hands it to a session through the same
+  path the composer's send button uses — it never runs the job and never sends
+  without a verbatim read-back and an explicit yes. The composer's **Live**
+  button opens a call bound to that session; it then follows the run and tells
+  you when it finishes, fails, or gets stuck. Its own socket
   (`/api/voice/live`) carries binary PCM and JSON control, a loopback echo
   engine verifies the browser audio path with no credentials, and the Gemini
   Live engine backs a real conversation. Idle timeout is phase-aware, because
-  silence during a run is the expected state, not abandonment. Turn it on with
-  `[experimental] voice`; `/dev/voice` is the loopback check. Nothing in the
-  composer opens a call yet. See [docs/voice.md](docs/voice.md).
+  silence during a run is the expected state, not abandonment. A call requires
+  the session to be in full auto: there is no spoken approval, so a session
+  that would stop and ask is refused rather than stalling silently. Turn it on
+  with `[experimental] voice`; `/dev/voice` stays the loopback check for the
+  audio path. See [docs/voice.md](docs/voice.md).
 - **A working session reports its own progress.** Agents get a `VoiceReport`
   tool and report what is worth interrupting for; the three things an agent
   structurally cannot report — blocked, died, finished — arrive from the

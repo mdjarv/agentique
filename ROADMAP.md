@@ -78,9 +78,10 @@ survives a tab switch at three densities.
 **Live voice.** Spoken dialog that drafts a prompt and hands it to a session
 through the composer's own send path, on its own audio socket, with a loopback
 echo engine for verifying the browser path and a Gemini Live engine for real
-conversation. The loop is closed end to end — converse, draft, dispatch, follow,
-hear about it — but no UI opens a call yet, and it is gated by `[experimental]
-voice`. See [docs/voice.md](docs/voice.md).
+conversation. The loop is closed end to end: the composer's Live button opens a
+call bound to that session, which converses, reads the draft back, dispatches on
+an explicit yes, follows the run and says what happened. Gated by
+`[experimental] voice`. See [docs/voice.md](docs/voice.md).
 
 **A security audit round.** Inbound credentials stored as digests, passkey
 recovery gated behind a one-time code, the rekey window closed, path-escaping and

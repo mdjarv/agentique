@@ -477,8 +477,8 @@ initial-project = ""  # absolute path registered as a project when none exist
 [experimental]
 teams   = false  # Teams tab and multi-agent channel coordination
 browser = false  # the in-app browser panel
-voice   = false  # live spoken dialog (docs/voice.md). No UI opens a call yet;
-                 # /dev/voice exercises the audio path against the echo engine.
+voice   = false  # live spoken dialog (docs/voice.md). Adds a Live button to the
+                 # composer; /dev/voice stays a loopback check for the audio path.
 
 [claude]
 autocompact = ""     # "auto", or a token count between 100000 and 1000000.
@@ -541,6 +541,8 @@ model        = ""   # realtime model id. "" is the backend's default, so a new
                     # upstream model needs no agentique release.
 idle-timeout = ""   # e.g. "90s". A call bills for wall-clock time with the mic
                     # open, so an abandoned tab keeps spending. "" is the default.
+                    # Applies while gathering; a run in flight gets a far longer
+                    # ceiling, because silence there is the expected state.
 
 # Replace a provider's auto-detected model list. A non-empty list replaces that
 # provider's generated list entirely. This is the escape hatch for anything
