@@ -1,10 +1,15 @@
 import { Popover as PopoverPrimitive } from "radix-ui";
 import type * as React from "react";
 
+import { useInModalLayer } from "~/components/ui/modal-layer";
 import { cn } from "~/lib/utils";
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
+function Popover({ modal, ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+  // Inside a Sheet or Dialog the popover has to own the scroll lock, or its
+  // list cannot be scrolled by touch — see `modal-layer.tsx`. An explicit
+  // `modal` from the caller still wins.
+  const inModalLayer = useInModalLayer();
+  return <PopoverPrimitive.Root data-slot="popover" modal={modal ?? inModalLayer} {...props} />;
 }
 
 function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {

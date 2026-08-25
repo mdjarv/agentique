@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { Button } from "~/components/ui/button";
+import { ModalLayerProvider } from "~/components/ui/modal-layer";
 import { cn } from "~/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -58,7 +59,7 @@ function DialogContent({
         )}
         {...props}
       >
-        {children}
+        <ModalLayerProvider>{children}</ModalLayerProvider>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
