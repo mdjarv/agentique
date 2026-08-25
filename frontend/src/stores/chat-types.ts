@@ -173,6 +173,13 @@ export interface WorkflowProgressEntry {
 export interface TaskEvent extends BaseChatEvent {
   type: "task";
   toolUseId?: string;
+  /**
+   * The provider's own id for the agent this task runs. It is the only bridge
+   * from an `agent_result` (which carries `agentId` and an empty
+   * `parentToolUseId`) back to the `Agent` tool call that spawned it — see
+   * `collectAgentRuns`.
+   */
+  taskId?: string;
   taskSubtype?: "task_started" | "task_progress" | "task_notification";
   taskDescription?: string;
   taskType?: string;

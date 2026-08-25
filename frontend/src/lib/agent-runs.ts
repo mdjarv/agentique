@@ -1,4 +1,5 @@
 import type {
+  AgentResultEvent,
   ChatEvent,
   TaskEvent,
   ToolResultEvent,
@@ -30,6 +31,10 @@ export interface AgentRun {
   /**
    * What the agent returned, whole and unflattened — the report behind the
    * one-line preview. Absent while it is still out.
+   *
+   * Read from the `agent_result` event when one joins (see `collectAgentRuns`),
+   * because the `Agent` tool call's result is truncated for DB storage and a
+   * long report comes back from history with its middle missing.
    */
   report?: string;
   /**
@@ -90,7 +95,7 @@ function latestString(tasks: readonly TaskEvent[], pick: (t: TaskEvent) => strin
 }
 
 /** The return value as written — line breaks and all. */
-function resultText(result: ToolResultEvent | undefined): string | undefined {
+function resultText(result: ToolResultEvent | AgentResultEvent | undefined): string | undefined {
   for (const block of result?.contentBlocks ?? []) {
     const text = asText(block.text);
     if (block.type === "text" && text) return text.trim();
@@ -125,9 +130,21 @@ export function collectAgentRuns(
   const results = new Map<string, ToolResultEvent>();
   const tasksByToolUse = new Map<string, TaskEvent[]>();
   const stepsByToolUse = new Map<string, ChatEvent[]>();
+  // agent_result carries an empty parentToolUseId, so it cannot address its
+  // spawn directly. It carries `agentId`, which is the task stream's `taskId`,
+  // and a task event names the spawning tool call — so these two maps compose
+  // into the join: agentId → taskId → toolUseId.
+  const agentResultsByAgentId = new Map<string, AgentResultEvent>();
+  const toolUseIdByTaskId = new Map<string, string>();
   const order: string[] = [];
 
   const consider = (ev: ChatEvent, turnIndex?: number) => {
+    // An outcome, never narration: keep it out of `steps` even when it arrives
+    // addressed to a parent, which a nested one does.
+    if (ev.type === "agent_result") {
+      if (ev.agentId) agentResultsByAgentId.set(ev.agentId, ev);
+      return;
+    }
     // Forwarded subagent output — the agent's own narration, addressed to the
     // spawn it belongs to. Collected first: a subagent's tool call is not a
     // spawn of the parent session, and its tool result is not the agent's
@@ -151,6 +168,7 @@ export function collectAgentRuns(
     }
     if (ev.type !== "task" || !ev.toolUseId) return;
     if (ev.taskType === "local_workflow") return;
+    if (ev.taskId) toolUseIdByTaskId.set(ev.taskId, ev.toolUseId);
     let list = tasksByToolUse.get(ev.toolUseId);
     if (!list) {
       list = [];
@@ -164,6 +182,14 @@ export function collectAgentRuns(
     for (const ev of turn.events) consider(ev, turn.turnIndex);
   }
   for (const ev of streamingEvents ?? []) consider(ev);
+
+  // Resolve the join once, into the roster's own key.
+  const agentReportByToolUse = new Map<string, string>();
+  for (const [agentId, ev] of agentResultsByAgentId) {
+    const toolUseId = toolUseIdByTaskId.get(agentId);
+    const text = resultText(ev);
+    if (toolUseId && text) agentReportByToolUse.set(toolUseId, text);
+  }
 
   const runs: AgentRun[] = [];
   for (const toolUseId of order) {
@@ -181,7 +207,11 @@ export function collectAgentRuns(
       asText(input.prompt) ??
       "Agent";
 
-    const report = resultText(result);
+    // Prefer the agent_result's copy of the report: the tool_result is
+    // truncated for DB storage past maxToolResultDBSize, so on a long report it
+    // is the same text with its middle cut out. The roster promises the whole
+    // report, so it reads the copy that still is one.
+    const report = agentReportByToolUse.get(toolUseId) ?? resultText(result);
     runs.push({
       toolUseId,
       title: flattenPreview(title),

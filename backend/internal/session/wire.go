@@ -475,6 +475,19 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 			Summary:       e.Summary,
 		}
 	case runtime.AgentResultEvent:
+		// Not every AgentResultEvent describes an agent. The claude adapter
+		// derives one from any user event carrying a tool_use_result
+		// (agentkit runtime/cli/claude/event_map.go, mapUserEvent), and
+		// claudecli's parseAgentResult returns a non-nil result for any JSON
+		// object — so an ordinary Bash/Read/Edit result unmarshals into an
+		// all-zero AgentResult and arrives here as an event with no status, no
+		// agent and no report. Dropping it is deliberate rather than filtering
+		// at persist time: it is not news to anyone, so there is nothing to
+		// broadcast either. Real ones always carry a Status ("completed",
+		// "async_launched").
+		if emptyAgentResult(e) {
+			return nil
+		}
 		return WireAgentResultEvent{
 			Type:              "agent_result",
 			ParentToolUseID:   e.ParentToolUseID,
@@ -492,6 +505,19 @@ func ToWireEvent(event runtime.CLIEvent, model string) any {
 	default:
 		return nil
 	}
+}
+
+// emptyAgentResult reports whether an AgentResultEvent carries nothing at all:
+// no outcome, no agent identity, no report, no totals.
+//
+// ParentToolUseID is excluded from the test on purpose. It is the only field an
+// ordinary *nested* tool result inside a subagent populates, and such an event
+// is exactly as empty as a top-level one — keeping it would leave the same
+// per-tool-call noise, one level down.
+func emptyAgentResult(e runtime.AgentResultEvent) bool {
+	return e.Status == "" && e.AgentID == "" && e.AgentType == "" &&
+		len(e.Content) == 0 && e.TotalDurationMs == 0 && e.TotalTokens == 0 &&
+		e.TotalToolUseCount == 0
 }
 
 // wireErrorEvent maps a runtime.ErrorEvent to a WireErrorEvent, classifying the

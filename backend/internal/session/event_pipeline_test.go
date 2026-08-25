@@ -588,6 +588,48 @@ func TestPipeline_TaskProgressIsTransient(t *testing.T) {
 	}
 }
 
+// An empty AgentResultEvent is what the claude adapter reports for every
+// ordinary tool result (see emptyAgentResult): it names no agent, no outcome
+// and no report, so it must reach neither the DB nor a client. Not transient —
+// dropped outright, because there is nothing to tell anyone.
+func TestPipeline_EmptyAgentResultDropped(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	// The shape a Bash/Read/Edit tool_use_result unmarshals into.
+	p.ProcessEvent(runtime.AgentResultEvent{})
+	// The same, one level down inside a subagent: only the parent id is set.
+	p.ProcessEvent(runtime.AgentResultEvent{ParentToolUseID: "tu_agent"})
+
+	if len(sink.persisted) != 0 {
+		t.Errorf("empty agent_result should not be persisted, got %d", len(sink.persisted))
+	}
+	if len(sink.broadcasts) != 0 {
+		t.Errorf("empty agent_result should not be broadcast, got %d", len(sink.broadcasts))
+	}
+}
+
+// A background launch reports a status and an agent but no content yet. It is
+// a real event and must survive the empty-result drop.
+func TestPipeline_AsyncLaunchedAgentResultPersisted(t *testing.T) {
+	sink := newTestSink()
+	p := newTestPipeline(sink)
+	p.AdvanceTurn()
+
+	p.ProcessEvent(runtime.AgentResultEvent{
+		Status:  "async_launched",
+		AgentID: "agent-abc",
+	})
+
+	if len(sink.persisted) != 1 {
+		t.Fatalf("expected 1 persisted event, got %d", len(sink.persisted))
+	}
+	if sink.persisted[0].WireType != "agent_result" {
+		t.Errorf("expected wire type 'agent_result', got %q", sink.persisted[0].WireType)
+	}
+}
+
 func TestPipeline_TaskStartedAndNotificationPersist(t *testing.T) {
 	sink := newTestSink()
 	p := newTestPipeline(sink)

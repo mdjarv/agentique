@@ -141,6 +141,13 @@ export function classifyEvent(e: ChatEvent): SegmentKind | "result" | "skip" {
     case "reasoning_delta":
     case "tool_progress":
       return "skip";
+    // Deliberately unrendered in the transcript: an agent's report already
+    // reaches the reader as the `Agent` tool call's result, and again in the
+    // roster, which folds this event in for the untruncated text
+    // (`collectAgentRuns`). Rendering it here would print the same report a
+    // second time, detached from the call that asked for it.
+    case "agent_result":
+      return "skip";
     default:
       return "skip";
   }

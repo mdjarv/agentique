@@ -358,6 +358,27 @@ rather than rendering a blank. The strip decides only *that* a card is open; wha
 open shows is injected (`renderDetail`), because reading an agent is the roster's
 subject and the rail and line stay a glance.
 
+**The report comes from `agent_result`, joined by `agentId`.** The spawn's
+`tool_result` carries the same text but is truncated for the DB past
+`maxToolResultDBSize`, so a long report reloads from history with its middle
+missing — and the roster promises the whole one. `agent_result` is persisted
+whole, but its `parentToolUseId` is empty, so it reaches its spawn only through
+the task stream: `agentId` **is** `task.taskId`, and that task names the
+`toolUseId`. Keep `taskId` on the wire and on `TaskEvent`; without it the join
+silently degrades to the truncated copy. The transcript still skips
+`agent_result` explicitly (`classifyEvent`) — the report is already there as the
+`Agent` call's result, and printing it twice detaches it from the call.
+
+**An `agent_result` that describes nothing never leaves `ToWireEvent`.** The
+claude adapter derives one from *every* user event carrying a `tool_use_result`,
+not just subagent spawns — claudecli's `parseAgentResult` returns non-nil for any
+JSON object, so an ordinary Bash or Read result becomes an all-zero
+`AgentResultEvent`. Those are dropped in `wire.go` (`emptyAgentResult`) rather
+than filtered at persist time, because an event with no outcome, no agent and no
+report is not news to a client either. A real one always carries a `Status`
+(`completed`, `async_launched`); do not add emptiness filtering to `isTransient`,
+which would still broadcast them.
+
 The header's `SessionStatusPill` is the matching rule for *reporting* a blocked
 session: it sits outside the tab switch, so it says "Needs approval" from every
 tab, but the approve/deny buttons only exist on the chat branch. It therefore

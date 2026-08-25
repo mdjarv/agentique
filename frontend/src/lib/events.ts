@@ -256,6 +256,7 @@ export function parseServerEvent(raw: Record<string, unknown>): ChatEvent | unde
         id,
         type: "task",
         toolUseId: raw.toolUseId as string | undefined,
+        taskId: raw.taskId as string | undefined,
         // Wire field names are subtype/description/summary/status (see
         // WireTaskEvent); the frontend prefixes them with "task". Reading the
         // wrong keys left these undefined, which broke Subagent/Workflow rendering
