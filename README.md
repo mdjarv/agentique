@@ -1,166 +1,442 @@
 # Agentique
 
-A GUI for managing concurrent coding agents across multiple projects. Go backend drives provider CLIs through [agentkit/runtime](https://github.com/allbin/agentkit) (Claude via [claudecli-go](https://github.com/allbin/claudecli-go), OpenAI Codex via [codexcli-go](https://github.com/allbin/codexcli-go)); React frontend connects via WebSocket; deploys as a single embedded binary.
+A GUI for running and supervising concurrent coding agents across many projects.
+Every session drives a provider CLI (Claude Code or OpenAI Codex) inside its own
+git worktree, so parallel agents never clobber each other's working tree.
 
-Each session runs in its own git worktree, so concurrent agents never clobber each other's working tree.
+The whole thing is one Go binary with the React frontend embedded. It runs on
+your own machine, keeps its data in one directory, and needs nothing remote at
+runtime. One UI can drive several machines at once, so a laptop, a desktop and a
+VPS behave like one control surface.
 
-## Prerequisites
+- Go backend driving [agentkit/runtime](https://github.com/allbin/agentkit),
+  with adapters for [claudecli-go](https://github.com/allbin/claudecli-go) and
+  [codexcli-go](https://github.com/allbin/codexcli-go)
+- React SPA over WebSocket, installable as a PWA
+- SQLite (pure Go, no cgo), WebAuthn passkeys, systemd/launchd/Scheduled Task
+  service integration
 
-- **Claude Code CLI** >= 2.0.0 (`npm install -g @anthropic-ai/claude-code`) — required for the default `claude` provider. Must be authenticated (`claude auth login`).
-- **Codex CLI** >= 0.130 — required only when creating sessions with `provider: "codex"`. Not checked by `doctor`.
-- **git** on PATH.
-- **gh** (optional) — needed for PR creation from the UI; must be authenticated (`gh auth login`).
-- **node** (optional) — only needed to upgrade the Claude CLI.
+**Automating an install?** Skip to [Scripted install](#scripted-install), which
+is written for an agent doing an unattended setup and names the two steps a human
+still has to perform.
 
-Run `agentique doctor` at any time to check all of the above (versions, PATH, auth, data dir, free disk).
+## Requirements
 
-> **Platform:** prebuilt binaries are published for **Linux x86_64** and **Windows x86_64**. macOS is supported by the code but must be [built from source](#development).
+| Dependency | Required | Notes |
+|---|---|---|
+| `claude` >= 2.0.0 | yes | The default provider. `npm install -g @anthropic-ai/claude-code`, then `claude auth login`. |
+| `git` | yes | Worktrees, branches, diffs. |
+| `codex` | no | Only for sessions created with `provider: "codex"`. |
+| `gh` | no | PR creation from the UI. Needs `gh auth login`. |
+| `node` | no | Only to upgrade an npm-installed provider CLI. |
+
+`agentique doctor` checks all of these plus data-dir permissions, free disk,
+`claude`/`gh` auth state, and whether a server is already answering. It exits
+non-zero when a required check fails, which makes it usable as a gate in a
+script.
+
+Published binaries, and where in-app self-upgrade is enabled:
+
+| Platform | Binary published | In-app upgrade |
+|---|---|---|
+| linux/amd64 | yes | yes |
+| linux/arm64 | yes | manual |
+| darwin/arm64 | yes | manual |
+| windows/amd64 | yes | manual |
+
+Everything else needs a [source build](#development). "Manual" means the release
+downloads and installs fine, the in-app **Upgrade** button just reports the
+platform as unverified and tells you to re-run the installer. A platform
+graduates when someone has actually run agentique on it, not when it compiles.
 
 ## Install
 
-### Linux / macOS
+### Linux and macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
 ```
 
-Installs to `~/.local/bin/agentique`. Override the target with `INSTALL_DIR`:
+Installs to `~/.local/bin/agentique`. Set `INSTALL_DIR` to put it elsewhere:
 
 ```bash
 INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
 ```
 
-The installer verifies the release checksum, installs shell completions (fish/zsh/bash, detected from `$SHELL`), re-installs the systemd service unit if one is already enabled, and finishes by running `agentique doctor`. If `~/.local/bin` is not on your `PATH`, it prints the line to add.
+The installer verifies the release checksum and refuses to install if it cannot
+fetch or match one. It then installs shell completions for whatever `$SHELL`
+says you use, re-writes the systemd unit if one is already enabled, and runs
+`agentique doctor`. If the install directory is not on `PATH` it prints the line
+to add.
 
 ### Windows
-
-In PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/mdjarv/agentique/master/install.ps1 | iex
 ```
 
-Installs `agentique.exe` to `%LOCALAPPDATA%\Programs\agentique` (override with `$env:INSTALL_DIR`), verifies the checksum, adds the install dir to your user `PATH`, re-installs the scheduled-task service if one already exists, and runs `agentique doctor`. PowerShell tab-completions and the background service are set up via `agentique setup` / `agentique service install` (the latter registers a per-user **Scheduled Task** — no admin elevation required).
+Installs `agentique.exe` to `%LOCALAPPDATA%\Programs\agentique` (override with
+`$env:INSTALL_DIR`), verifies the checksum, adds the directory to your user
+`PATH`, re-registers an existing scheduled-task service, and runs `doctor`.
+Completions and the background service come from `agentique setup` and
+`agentique service install`. The service is a per-user Scheduled Task, so no
+admin elevation.
 
-Upgrade later by re-running the same command, or run `agentique upgrade` to see the instructions. If you run as a service, restart it afterward: `agentique service restart`.
+### Upgrading
 
-## First-time setup
+Re-run the installer, or use the in-app **Upgrade** button on a verified
+platform. If you run as a service, restart it afterwards:
 
-The fastest safe path is the guided wizard:
+```bash
+agentique service restart
+```
+
+An in-app upgrade keeps the binary it replaced, so `agentique rollback` puts it
+back.
+
+A restart is not a pause. The new process reaps the CLI process groups the old
+one left behind, so restarting mid-turn ends that turn. Sessions themselves
+survive: worktrees, history and metadata are on disk. Both the UI and
+`agentique rollback` say this before they act.
+
+## First run
+
+The guided path:
 
 ```bash
 agentique setup
 ```
 
-It walks you through:
+The wizard asks about the listen address, TLS (it can generate a self-signed
+`localhost` cert), authentication, an initial project, and whether to install the
+background service. It writes the answers to
+[`config.toml`](#configuration-file) so they survive restarts.
 
-- **Listen address** (localhost vs. binding to a LAN/Tailscale hostname),
-- **TLS** — can generate a self-signed `localhost` certificate for you, or point at your own cert/key,
-- safe **authentication defaults** (network mode always uses passkeys;
-  localhost-only mode may run without auth),
-- an **initial project** to register, and
-- optionally installing the **background service**.
+Then start it and register:
 
-It writes your choices to the [config file](#configuration-file) so they persist across restarts. You can skip the wizard and configure everything manually with flags or the config file instead.
+```bash
+agentique serve
+```
+
+Open the printed URL. **The first browser to complete registration becomes the
+admin.** Do that immediately, especially on a network-reachable listener,
+because otherwise whoever reaches the page first claims the account.
+
+## Scripted install
+
+Everything below is non-interactive and safe to run from an agent or a
+provisioning script. Two steps cannot be scripted, and they are called out where
+they fall.
+
+`agentique setup` is a terminal wizard with no non-interactive mode. Write
+`config.toml` directly instead.
+
+### 1. Install the binary
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
+export PATH="$HOME/.local/bin:$PATH"
+agentique --version
+```
+
+### 2. Check dependencies before going further
+
+```bash
+agentique doctor || exit 1
+```
+
+Non-zero means a required dependency is missing or broken. Fix it before
+continuing. The usual cause on a fresh box is a missing or unauthenticated
+`claude`.
+
+### 3. Write the config file
+
+The service unit runs a bare `agentique serve` with no flags, so **every setting
+the service uses has to be in `config.toml`.** Flags you pass by hand do not
+reach it.
+
+Linux path is `~/.config/agentique/config.toml`; macOS and Windows keep it in the
+data directory. Create the directory yourself if it does not exist.
+
+A localhost-only machine:
+
+```toml
+[server]
+addr = "localhost:9201"
+
+[setup]
+initial-project = "/home/you/git/some-project"
+```
+
+A machine reachable over a tailnet or LAN, which is what you want for anything
+that will be paired into another machine's UI:
+
+```toml
+[server]
+addr      = "0.0.0.0:9201"
+tls-cert  = "/home/you/.config/agentique/tls/cert.pem"
+tls-key   = "/home/you/.config/agentique/tls/key.pem"
+rp-id     = "box.tail1234.ts.net"
+rp-origin = "https://box.tail1234.ts.net:9201"
+machine-label = "vps"
+
+[setup]
+initial-project = "/home/you/git/some-project"
+```
+
+Three things go wrong here often enough to name:
+
+- `rp-id` and `rp-origin` must match the hostname users type. WebAuthn refuses
+  to validate otherwise, and the failure looks like a broken passkey rather than
+  a config error.
+- Any non-`localhost` origin needs real HTTPS. `tailscale cert <name>` produces a
+  usable pair. Browsers treat `localhost` as secure, so plain HTTP is fine there
+  and nowhere else.
+- `initial-project` only fires when the database holds zero projects. With it
+  unset, the first start registers the server's working directory (or its git
+  root) instead, which for a service is your home directory.
+
+### 4. Install and start the service
+
+```bash
+agentique service install
+agentique service status
+```
+
+On Linux this writes `~/.config/systemd/user/agentique.service`, enables it,
+starts it, and calls `loginctl enable-linger` so it survives SSH logout. The unit
+pins `PATH` to whatever `PATH` was at install time, which matters when `claude`
+lives somewhere non-standard: install the service from a shell where `claude` is
+on `PATH`. macOS gets a launchd agent, Windows a logon Scheduled Task.
+
+The unit references the binary by absolute path, so install the binary to a
+stable location first.
+
+### 5. Verify it answers
+
+```bash
+curl -fsS http://localhost:9201/api/health
+```
+
+Returns `{"status":"ok", "version": ..., "machineId": ..., "machineLabel": ...}`.
+`machineId` is stable for the life of the data directory and is what the
+multi-machine catalog keys on.
+
+### 6. Register the first passkey (human required)
+
+Open the machine's URL in a browser and register. WebAuthn needs a real
+authenticator, so no script can do this. It takes about ten seconds and only
+happens once per machine.
+
+Verify from the shell:
+
+```bash
+agentique auth status
+```
+
+Until a user exists, `agentique pair` fails with `no admin user registered yet`.
+
+### 7. Pair it into an existing UI (human required for the last click)
+
+Scriptable half, on the new machine:
+
+```bash
+agentique pair --ttl 15m
+```
+
+This prints the machine label, every address a client could plausibly reach it
+on (listen address, configured public origin, tailnet name), a single-use token,
+and an expiry. It authorizes itself with the `admin-secret` file in the data
+directory rather than by opening a second writer to the live database, so it
+works over SSH with the server running.
+
+Human half, in the primary's UI: sidebar footer, server icon, **Add machine**.
+Agentique servers on the same tailnet show up as suggestions; otherwise paste the
+HTTPS address. Then paste the token. Pairing pins the remote's signing identity
+before any credential is sent, which is why there is no supported curl recipe for
+it.
+
+### 8. Confirm the pairing
+
+On the new machine:
+
+```bash
+agentique auth sessions
+```
+
+The paired client appears with kind `pair`. Revoke it later with
+`agentique auth revoke <id>`.
+
+### Idempotency
+
+Re-running any of this is safe. The installer no-ops when the version already
+matches, `service install` never restarts a running service behind your back, and
+`initial-project` is ignored once any project exists. The one non-idempotent step
+is pairing: each token is single-use, and pairing twice creates two catalog
+entries.
+
+## Multi-machine
+
+One UI drives agentique servers on several machines. The server whose page you
+opened is the **primary**; the others are paired to it. Their projects and
+sessions appear alongside local ones, and same-repo projects merge into one entry
+matched by canonical git remote (SSH and HTTPS clones of one repo count as the
+same repo). Starting a session gets a **Run on** picker, and every session row
+carries a machine indicator.
+
+Paired machines live on the primary, so every device signing into it (phone PWA,
+desktop browser) sees the same set. Pair once, use everywhere. Bearer credentials
+stay in browser memory and never reach `localStorage`.
+
+Machines come and go. A suspended laptop's projects and sessions stay visible
+from cache, marked with their connection state, and re-sync when it returns.
+Removing a machine revokes its credential on the remote before deleting the local
+entry, so the remote has to be reachable. A remote whose credential was rejected
+says so and offers a re-pair.
+
+Remotes must listen on an address the browser can reach, over HTTPS for anything
+but `localhost`. Creating projects, browsing files and git operations all work
+across machines. Teams, schedules and the brain stay per-machine.
+
+See [docs/multi-machine.md](docs/multi-machine.md) for the architecture.
 
 ## Running
 
 ### Foreground
 
 ```bash
-agentique serve                       # start on localhost:9201
-agentique serve --addr 0.0.0.0:9201   # bind all interfaces
-agentique                             # status: address, TLS/auth state, health, session summary
-agentique doctor                      # check dependencies and system health
+agentique serve                       # localhost:9201
+agentique serve --addr 0.0.0.0:9201   # all interfaces
+agentique                             # status: address, TLS/auth, health, sessions
+agentique doctor                      # dependency and health check
 ```
 
-Open the printed URL (default <http://localhost:9201>) and add projects via the **+** button in the sidebar.
-
-### As a background service
-
-Installs a systemd user unit (Linux), a launchd agent (macOS), or a per-user Scheduled Task (Windows) that starts on login and restarts on crash:
+### As a service
 
 ```bash
-agentique service install     # install + start
+agentique service install     # install, enable, start
 agentique service status      # running? PID? unit path
 agentique service restart     # after an upgrade
-agentique service logs        # stream logs (journald / launchd / JSON log file on Windows)
+agentique service logs        # journald, launchd, or the JSON log on Windows
 agentique service stop
 agentique service uninstall
 ```
 
-Install the binary to a stable location (`~/.local/bin`, `/usr/local/bin`) before installing the service — the unit file references the binary's current path.
+The Linux unit puts every session CLI and its Playwright/Chromium subtree in one
+cgroup, with `KillMode=control-group` so a stop or restart takes the whole tree
+down rather than orphaning subprocesses, `OOMPolicy=kill`, and
+`MemoryHigh=70%` / `MemoryMax=85%` so a burst of warm sessions cannot exhaust
+host memory. Edit the unit or add a drop-in to tune those.
 
 ### System tray
 
-On a desktop, `agentique tray` runs a notification-area icon to watch and control the server: status (●/○), **Open**, **Start**, **Stop**, **Restart**, **Quit**. It's a thin, decoupled controller — it does **not** host the server. When a service is installed it drives that (so it never fights restart-on-failure); otherwise it launches a detached `serve` that keeps running after the tray quits. Quitting the tray leaves the server up.
+`agentique tray` runs a notification-area controller: status dot, **Open**,
+**Start**, **Stop**, **Restart**, **Quit**. It does not host the server. With a
+service installed it drives that, so it never fights restart-on-failure;
+otherwise it launches a detached `serve` that outlives the tray. Quitting the
+tray leaves the server up.
 
-Add it to login autostart alongside the service with `agentique service install --tray` (an XDG autostart entry on Linux, a second logon Scheduled Task on Windows). On a headless Linux session (no display) there's no tray — use `serve` or the service. The tray is pure-Go on Windows and Linux; on macOS it needs a `CGO_ENABLED=1` build.
+`agentique service install --tray` also autostarts it on login (an XDG autostart
+entry on Linux, a second logon task on Windows). Headless Linux has no tray. The
+tray is pure Go on Windows and Linux; macOS needs a `CGO_ENABLED=1` build.
 
-## Authentication & security
+## Authentication and security
 
-Authentication is **on by default** and uses **WebAuthn passkeys** (Touch ID, security keys, platform authenticators) — there are no passwords.
+Authentication is on by default and uses WebAuthn passkeys. There are no
+passwords.
 
-Agentique is a **single-operator trust domain**, not a multi-tenant service.
-Every authenticated user can drive agents that have deep access to the host and
-must therefore be as trusted as the machine owner. The admin bit protects
-credential and catalog administration; it is not a sandbox around ordinary
-users. A future read-only role needs an explicit capability design before it
-is safe to treat as less trusted.
+**Agentique is a single-operator trust domain, not a multi-tenant service.** Any
+authenticated user can create a session, and a session runs agents with tool
+access, which is code execution on the host. So every user you invite must be as
+trusted as the machine owner. The admin bit covers credential and catalog
+administration; it is not a sandbox around ordinary users, and no read-only role
+exists.
 
-- **First visitor becomes admin.** The first browser to complete registration is registered as the admin user, no invite required. **Register immediately after first start**, especially if the server is reachable beyond localhost — otherwise anyone who reaches the page first claims the admin account.
-- **Additional trusted operators need an invite.** The admin generates invite tokens from the UI; new users register against a token (valid 7 days). Do not invite an untrusted or merely read-only viewer.
-- **Manage auth from the CLI** with `agentique auth status` (list users/credentials/sessions), `agentique auth rekey` (clear credentials + sessions so everyone re-registers their passkey), and `agentique auth reset` (wipe all users — start over). Stop the server before `rekey` or `reset`; the CLI enforces this so no established socket can survive a direct database reset.
-- **Recovery needs the code, not a name.** `agentique auth rekey` prints a
-  one-time code per user (15 minutes). Registering the replacement passkey
-  requires it — otherwise the window where no credentials exist would be an
-  unauthenticated route into the account for anyone watching. Lost or expired?
-  `agentique pair` against the running server mints another.
+- **First visitor becomes admin.** No invite needed. Register right after first
+  start.
+- **Further operators join by invite.** The admin generates tokens in the UI;
+  they are valid seven days.
+- **Manage auth from the CLI.** `agentique auth status` lists users,
+  credentials and sessions. `agentique auth rekey` clears credentials so
+  everyone re-registers. `agentique auth reset` wipes all users. Stop the server
+  before `rekey` or `reset`; the CLI enforces this so no live socket outlives a
+  direct database reset.
+- **Recovery needs a code, not a name.** `agentique auth rekey` prints a
+  one-time code per user, valid fifteen minutes, and registering the replacement
+  passkey requires it. Without that, the window where no credentials exist would
+  be an open door for anyone watching. Lost the code? `agentique pair` against
+  the running server mints another.
 
-Guidelines for a safe deployment:
+Deployment guidance:
 
-| Scenario | Recommended config |
-|----------|--------------------|
-| Local only, single user | Default (`localhost:9201`, auth on). Or `--disable-auth` for zero friction on the same machine only. |
-| LAN / Tailscale / remote | **Keep auth on, enable TLS.** WebAuthn requires a secure context (HTTPS) for any non-`localhost` origin. Set `--rp-id`/`--rp-origin` (or the config equivalents) to the hostname users connect to, or passkeys won't validate. |
+| Scenario | Config |
+|---|---|
+| Local, single user | Defaults: `localhost:9201`, auth on. Or `--disable-auth` for zero friction on that machine only. |
+| LAN, tailnet, remote | Keep auth on, enable TLS, set `rp-id` and `rp-origin` to the hostname users connect to. |
 
-`--disable-auth` allows **anonymous, full machine access** and is therefore
-accepted only on a loopback listener (`localhost`, `127.0.0.1`, or `::1`).
-Requests must also carry a loopback Host, preventing a hostile DNS name from
-rebinding a browser to the local server. Network listeners always require authentication. `localhost` is treated as a
-secure context by browsers, so passkeys work there over plain HTTP; every
-other origin needs HTTPS.
+`--disable-auth` grants anonymous full machine access, so it is accepted only on
+a loopback listener, and requests must carry a loopback `Host` too. That second
+check stops a hostile DNS name from rebinding a browser onto the local server.
+Network listeners always require authentication, and pairing refuses to work with
+auth off.
 
-## Multi-machine
+Session, pairing and invite tokens are stored as SHA-256 digests. A copy of the
+database yields no usable credential. The exception is each paired machine's
+bearer token, which this server presents to a remote and therefore has to stay
+recoverable; it is protected by the data directory's owner-only mode.
 
-One UI can control agentique servers on several machines (e.g. a VPS serving the web app plus a laptop). The server you open in the browser is the **primary**; other machines are paired to it and their projects and sessions appear alongside local ones — same-repo projects merge into a single entry (matched by git remote, SSH and HTTPS clones of the same repo count as one), with a **Run on** picker when starting a session and per-session machine indicators everywhere.
-
-Pairing:
-
-1. On the machine to add, run `agentique pair` — it prints a single-use token (5-minute default, `--ttl` to change) plus the addresses the machine is reachable on.
-2. In the UI: sidebar footer → server icon → **Add machine**. Machines running agentique on your tailnet are auto-discovered and offered as suggestions; otherwise enter the HTTPS address, then the token. Pairing pins the server's signing identity before accepting the bearer credential. Auth-disabled servers are local-only and cannot be paired.
-
-Paired machines are stored on the primary, so every device that signs into it (phone PWA, desktop) sees the same machines — pair once, use everywhere. Bearer credentials remain in memory in the browser and are never persisted to localStorage. Machines may come and go: a suspended laptop's projects and sessions stay visible from cache (marked with its connection state) and re-sync automatically when it returns. Removing a machine revokes its credential on the remote before deleting the local entry; the remote must therefore be reachable. Manage paired clients from the remote machine with `agentique auth sessions` / `agentique auth revoke <id>`.
-
-Remote machines need to listen on an address the browser can reach (not `localhost`) with TLS for HTTPS pages — a Tailscale cert (`tailscale cert`) works well. Creating projects, browsing files, and git operations all work across machines; teams, schedules, and the brain remain per-machine.
+> Upgrading across the hashed-token migration signs everyone out. It replaces the
+> plaintext columns rather than converting them, so browsers log in again and each
+> paired machine needs `agentique pair` once.
 
 ## Configuration
 
-Settings resolve in this order (highest precedence first): **CLI flags → config file → built-in defaults**.
+Precedence, highest first:
+
+1. An explicitly-passed CLI flag
+2. An environment variable, for the settings that have one
+3. `config.toml`
+4. Built-in default
+
+A missing config file is not an error. The file is written `0600` because it can
+carry an embeddings API key.
 
 ### Configuration file
 
-`~/.config/agentique/config.toml` on Linux (override location with `XDG_CONFIG_HOME` or `AGENTIQUE_HOME`; on macOS/Windows it lives in the data dir). A missing file is not an error — defaults apply. `agentique setup` writes this file for you. Full annotated example with defaults:
+`~/.config/agentique/config.toml` on Linux. `XDG_CONFIG_HOME` moves it;
+`AGENTIQUE_HOME` moves both config and data. On macOS and Windows it lives in the
+data directory.
+
+Every section, with defaults:
 
 ```toml
 [server]
-addr         = "localhost:9201"  # listen address
-disable-auth = false             # true = anonymous access (loopback listener only)
-tls-cert     = ""                # path to TLS cert; with tls-key, enables HTTPS
-tls-key      = ""
-rp-id        = ""                # WebAuthn relying party ID (default: host from addr)
-rp-origin    = ""                # WebAuthn origin (default: derived from addr)
-machine-label = ""               # name shown to multi-machine clients (default: hostname)
+addr          = "localhost:9201"  # listen address
+disable-auth  = false             # anonymous access; loopback listener only
+tls-cert      = ""                # with tls-key, enables HTTPS
+tls-key       = ""
+rp-id         = ""                # WebAuthn relying party ID (default: host from addr)
+rp-origin     = ""                # WebAuthn origin (default: derived from addr)
+machine-label = ""                # name shown to paired clients. Default:
+                                  # PRETTY_HOSTNAME from /etc/machine-info,
+                                  # else the OS hostname.
+
+[session]
+idle-evict-timeout = ""           # e.g. "30m": stop idle sessions to reclaim the
+                                  # CLI process and its Chromium subtree. The
+                                  # session resumes transparently on the next
+                                  # message. "" disables eviction.
+
+[scheduler]
+disabled                 = false  # schedules persist but never fire
+tick-interval            = "20s"  # due-schedule poll cadence
+min-interval             = "1m"   # floor for cron cadence and dynamic delays
+max-run-duration         = "30m"  # past this a run is overdue (attention, not error)
+max-consecutive-failures = 3      # auto-pause after this many error terminals
+run-history              = 200    # retained runs per schedule
+once-catchup-window      = "1h"   # how stale a missed one-shot may still fire
+dynamic-max-delay        = "6h"   # clamp on ScheduleNext delays
+dynamic-fallback         = "20m"  # next fire if a dynamic run never reschedules
 
 [logging]
 level  = "info"   # trace, debug, info, warn, error
@@ -168,24 +444,80 @@ output = "auto"   # auto, journald, file, stdout
 
 [backup]
 interval = "15m"  # database snapshot interval
-retain   = 7      # days of daily backups to keep
-disabled = false  # true disables automatic backups
-
-[setup]
-initial-project = ""  # absolute path auto-registered as a project on first run
-
-[experimental]
-teams   = false  # Teams tab / multi-agent channel coordination
-browser = false  # in-app browser tooling
+retain   = 7      # days of daily backups kept
+disabled = false
 
 [update]
-disabled     = false  # true = no version check at all
+disabled     = false  # no version check at all
 interval     = "1h"   # how often this machine asks GitHub for the latest release
 api-url      = ""     # override the releases endpoint (a fork, or a test stub)
 arm-deadline = "4h"   # how long "upgrade when idle" waits before giving up
 
-# Advanced: publicly-routable dev-URL slots a session can lease to expose a
-# Vite dev server externally. Each slot needs a unique slot/port/public-host.
+[setup]
+initial-project = ""  # absolute path registered as a project when none exist
+
+[experimental]
+teams   = false  # Teams tab and multi-agent channel coordination
+browser = false  # the in-app browser panel
+
+[claude]
+autocompact = ""     # "auto", or a token count between 100000 and 1000000.
+                     # "" leaves the CLI's own behaviour alone. A bad value is
+                     # rejected at startup, because the CLI rejects it at spawn
+                     # and that surfaces as a session that dies.
+forward-subagent-text = false  # surface what subagents say, not just that they
+                               # ran. Off by default: real event-volume increase
+                               # on subagent-heavy turns.
+exclude-dynamic-system-prompt-sections = false  # move cwd/env/git-status out of
+                               # the system prompt so the cached prefix is shared
+                               # between sessions instead of diverging per worktree.
+
+[brain]
+# Semantic recall. Without these, recall and clustering fall back to
+# keyword/Jaccard over the markdown files, which works but is weaker.
+chroma-url  = ""
+embed-url   = ""
+embed-model = ""
+embed-key   = ""
+# Both thresholds are embedding-model specific. Recalibrate when you change
+# models, or set autocal to derive them from the corpus at boot.
+semantic-threshold = 0.45
+vector-veto        = 0.15
+autocal            = false
+recall             = "on"   # "off" disables per-turn fact injection
+# Optional LLM helpers. Unset means off. Values: haiku, sonnet, opus.
+learn-model          = ""   # distil memories from a finished session on delete
+outcome-model        = ""   # session-end judge: did recalled facts help?
+consolidate-model    = ""   # unset falls back to deterministic dedup
+consolidate-interval = ""   # e.g. "6h"; unset disables scheduled consolidation
+# 0 and "" mean "use the built-in default", noted after each.
+snapshot-retain          = 0     # kept snapshots under brain/.snapshots/ (7)
+retry-max                = 0     # retries before a learn/outcome job is dead-lettered (5)
+archive-after            = ""    # e.g. "720h": disuse-aging archival. "" is off:
+                                 # no recall fade-out, no archive.
+archive-confidence-floor = 0.0   # effective confidence below which a faded fact
+                                 # is archived (0.35)
+
+[brain.graph]
+edge-cap             = 6      # semantic kNN edge density
+edge-threshold       = 0.0    # defaults to semantic-threshold
+link-strength-base   = 0.04   # frontend force layout
+link-strength-span   = 0.32
+link-distance-base   = 90
+link-distance-span   = 55
+gravity              = 0.045
+
+# Replace a provider's auto-detected model list. A non-empty list replaces that
+# provider's generated list entirely. This is the escape hatch for anything
+# auto-detection misses; you should not normally need it, because model labels
+# are derived from what the CLI reports.
+# [[models.claude]]
+# slug        = "opus"
+# display     = "Opus 5"
+# description = ""
+
+# Publicly-routable dev-URL slots a session can lease to expose a Vite dev
+# server. Each slot needs a unique slot name, port and public host.
 # [[dev-urls]]
 # slot        = "a"
 # port        = 19301
@@ -194,254 +526,231 @@ arm-deadline = "4h"   # how long "upgrade when idle" waits before giving up
 
 ### Server flags
 
-All flags below belong to `serve` (except `--addr`, which is global). Each has a config-file equivalent shown above.
+These belong to `serve`, except `--addr`, which is global. Each has a config-file
+equivalent above.
 
 | Flag | Default | Description |
-|------|---------|-------------|
-| `--addr` | `localhost:9201` | Listen address (`host:port`). Use `0.0.0.0:9201` to bind all interfaces. |
+|---|---|---|
+| `--addr` | `localhost:9201` | Listen address. `0.0.0.0:9201` binds all interfaces. |
 | `--db` | platform data dir | Database file path. |
-| `--disable-auth` | `false` | Disable WebAuthn — allow anonymous access. Loopback listeners only. |
-| `--tls-cert` / `--tls-key` | — | Enable HTTPS (both required). |
+| `--disable-auth` | `false` | Anonymous access. Loopback listeners only. |
+| `--tls-cert`, `--tls-key` | | Enable HTTPS. Both required. |
 | `--rp-id` | host from `--addr` | WebAuthn relying party ID. |
 | `--rp-origin` | derived from `--addr` | WebAuthn relying party origin. |
 | `--log-level` | `info` | `trace`, `debug`, `info`, `warn`, `error`. |
 | `--log-output` | `auto` | `auto`, `journald`, `file`, `stdout`. |
-| `--backup-interval` | `15m` | Interval between database snapshots. |
-| `--backup-retain` | `7` | Days of daily backups to keep. |
-| `--disable-backup` | `false` | Turn off automatic database backups. |
+| `--backup-interval` | `15m` | Database snapshot interval. |
+| `--backup-retain` | `7` | Days of daily backups kept. |
+| `--disable-backup` | `false` | Turn off automatic backups. |
+| `--test-mode` | `false` | Mock CLI connector and test endpoints. Not a sandbox flag: it does not isolate the data directory. |
 
 ### Environment variables
 
 | Variable | Effect |
-|----------|--------|
-| `AGENTIQUE_HOME` | Overrides **both** the data and config directories (full precedence). |
-| `XDG_DATA_HOME` / `XDG_CONFIG_HOME` | Override the data / config directory (Linux). |
-| `AGENTIQUE_DB` | Database file path (overridden by `--db`). |
-| `LOG_LEVEL` / `JSON_LOG` | Log level / path of the JSONL log file. |
-| `AGENTIQUE_BRAIN_CHROMA_URL`, `AGENTIQUE_BRAIN_EMBED_URL`, `AGENTIQUE_BRAIN_EMBED_MODEL`, `AGENTIQUE_BRAIN_EMBED_KEY` | Opt into semantic recall **and** semantic cross-scope clustering ("areas") for the persistent agent memory ("brain"). Without them, recall and clustering fall back to keyword/Jaccard over markdown files. |
-| _(all `AGENTIQUE_BRAIN_*` below)_ | Every brain setting is also settable persistently in `config.toml` under `[brain]` — `chroma-url`, `embed-url`, `embed-model`, `embed-key`, `semantic-threshold`, `vector-veto`, `autocal`, `recall`, plus the consolidate/learn/outcome models. The env var wins when both are set. |
-| `AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD`, `AGENTIQUE_BRAIN_VECTOR_VETO` | Cosine "related" link/vouch threshold (default `0.45`) and the vector veto floor (default `0.15`) for hybrid recall. Both model-specific — recalibrate per embedding model. Inert without an embedder. |
-| `AGENTIQUE_BRAIN_AUTOCAL` | Set to `1` to derive the two thresholds above from the live corpus's own cosine distribution at boot (model-specific auto-calibration), instead of the hand-set defaults. An explicitly-set threshold still wins. Inert without an embedder. |
-| `AGENTIQUE_BRAIN_RECALL` | Auto-recall (pinned facts in the preamble + task-relevant facts injected per turn, delta-deduped) is on by default; set to `off` to disable. |
-| `AGENTIQUE_BRAIN_LEARN_MODEL` | Auto-encode: distill memories from a finished session's transcript on delete (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] learn-model` (env wins). |
-| `AGENTIQUE_BRAIN_OUTCOME_MODEL` | Automatic outcome emitter: a session-end LLM judge that reads the transcript and decides whether the facts recall surfaced this session helped (→ strengthen) or were contradicted (→ flag for review), feeding the outcome signal without relying on agents calling `MemoryUsed`/`MemoryFlag` (`haiku`/`sonnet`/`opus`; unset = off). Also settable in `config.toml` under `[brain] outcome-model` (env wins). |
-| `AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL`, `AGENTIQUE_BRAIN_CONSOLIDATE_MODEL` | Scheduled consolidation: interval (e.g. `6h`; unset = off) and optional model (else deterministic dedup). Also settable persistently in `config.toml` under `[brain] consolidate-interval` / `consolidate-model` (env wins when both are set). |
-| `AGENTIQUE_UPDATE_DISABLED`, `AGENTIQUE_UPDATE_INTERVAL`, `AGENTIQUE_UPDATE_API_URL`, `AGENTIQUE_UPDATE_ARM_DEADLINE` | In-app upgrades (docs/upgrades.md): turn the check off, change the hourly beat, point it at another releases endpoint, or bound how long an "upgrade when idle" waits. Also settable in `config.toml` under `[update]` (env wins). `AGENTIQUE_UPDATE_DISABLED` also silences provider-CLI detection. |
-| `AGENTIQUE_BRAIN_GRAPH_*` | Tune the brain knowledge-graph view. `EDGE_CAP` (default `6`) and `EDGE_THRESHOLD` (default = the recall semantic threshold) set the semantic kNN edge density; `LINK_STRENGTH_BASE`/`_SPAN` (`0.04`/`0.32`), `LINK_DISTANCE_BASE`/`_SPAN` (`90`/`55`) and `GRAVITY` (`0.045`) shape the frontend force layout. All optional; also settable persistently in `config.toml` under `[brain.graph]` (`edge-cap`, `edge-threshold`, `link-strength-base`, `link-strength-span`, `link-distance-base`, `link-distance-span`, `gravity`). The env var wins when both are set. |
+|---|---|
+| `AGENTIQUE_HOME` | Overrides both the data and config directories. The only reliable way to isolate an instance. |
+| `XDG_DATA_HOME`, `XDG_CONFIG_HOME` | Override the data or config directory. |
+| `AGENTIQUE_DB` | Database file path. `--db` wins over it. |
+| `LOG_LEVEL`, `JSON_LOG` | Log level, and the path of the JSONL log file. |
+| `AGENTIQUE_MACHINE_LABEL` | Name shown to paired clients. |
+| `AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT` | Same as `[session] idle-evict-timeout`. |
+| `AGENTIQUE_SCHEDULER_*` | One per `[scheduler]` key, upper-snake-cased: `AGENTIQUE_SCHEDULER_DISABLED`, `_TICK_INTERVAL`, `_MIN_INTERVAL`, `_MAX_RUN_DURATION`, `_MAX_CONSECUTIVE_FAILURES`, `_RUN_HISTORY`, `_ONCE_CATCHUP_WINDOW`, `_DYNAMIC_MAX_DELAY`, `_DYNAMIC_FALLBACK`. |
+| `AGENTIQUE_CLAUDE_*` | `_AUTOCOMPACT`, `_FORWARD_SUBAGENT_TEXT`, `_EXCLUDE_DYNAMIC_SYSTEM_PROMPT_SECTIONS`. |
+| `AGENTIQUE_UPDATE_*` | `_DISABLED`, `_INTERVAL`, `_API_URL`, `_ARM_DEADLINE`. `_DISABLED` also silences provider-CLI version detection. |
+| `AGENTIQUE_BRAIN_*` | One per `[brain]` key, plus `AGENTIQUE_BRAIN_GRAPH_*` for `[brain.graph]`. One name does not follow the pattern: `archive-confidence-floor` is `AGENTIQUE_BRAIN_ARCHIVE_FLOOR`. |
 
-## Data & locations
+Every environment variable above wins over the config file and loses to an
+explicitly-passed flag.
 
-All persistent data lives under a single data directory:
+## Data and locations
 
 | Platform | Data directory | Config directory |
-|----------|----------------|------------------|
+|---|---|---|
 | Linux | `~/.local/share/agentique` | `~/.config/agentique` |
-| macOS | `~/Library/Application Support/agentique` | (same as data dir) |
-| Windows | `%LOCALAPPDATA%\agentique` | (same as data dir) |
+| macOS | `~/Library/Application Support/agentique` | same as data |
+| Windows | `%LOCALAPPDATA%\agentique` | same as data |
 
-The data directory is created owner-only (`0700`), and an existing one is
-tightened on the next start. The config file is `0600` for the same reason (it
-can carry an embeddings API key).
+The data directory is created `0700`, and an existing one is tightened on the
+next start. The database and its sidecars are `0600`.
 
-Session, pairing and invite tokens are stored as SHA-256 digests, so a copy of
-the database — a backup, a disk, a DB handed over for debugging — yields no
-usable credential. Each paired machine's bearer is the exception: it is a
-credential *this* server presents to a remote, so it must stay recoverable and
-is protected only by the directory mode.
+Inside it:
 
-> **Upgrading to this version signs everyone out.** The migration replaces the
-> plaintext token columns rather than converting them, so browsers log in again
-> and each paired machine needs `agentique pair` once.
-
-Inside the data directory:
-
-- `agentique.db` — SQLite database (sessions, projects, events, auth).
-- `backups/` — automatic database snapshots (every `--backup-interval`, `--backup-retain` days kept). Manage with `agentique restore` (list/restore a snapshot).
+- `agentique.db` — SQLite: sessions, projects, events, auth, machines.
+- `backups/` — automatic snapshots. `agentique restore` lists and restores them.
 - `worktrees/` — one git worktree per session.
-- `session-files/` — files attached to or produced by sessions. Served back at
-  `/api/sessions/{id}/files/…`, but only as inert content: images, plain text
-  and media render inline, everything else (HTML, SVG, anything unrecognized)
-  downloads as an attachment, because these files are written by agents and the
-  app's own origin is where they would otherwise run.
-- `brain/` — persistent agent memory (markdown).
+- `session-files/` — files agents attach or produce, served back at
+  `/api/sessions/{id}/files/…`. Only provably inert types render inline. HTML,
+  SVG and anything unrecognized download as attachments, because these bytes come
+  from agents and the app's own origin is where they would otherwise execute.
+- `brain/` — persistent agent memory, markdown as the source of truth.
+- `admin-secret` — what `agentique pair` and `agentique auth sessions` present to
+  the running server.
 - `agentique.log.jsonl` — structured log.
 
-> Projects point to local filesystem paths — a database is **not portable** between machines.
+Projects point at local filesystem paths, so a database does not move between
+machines. Pair the machines instead.
 
 ## CLI reference
 
-Beyond `serve`/`doctor`/`setup`/`service`/`auth`/`upgrade`, the binary doubles as a client to a running server:
+The binary is both the server and a client to a running server.
 
 | Command | Purpose |
-|---------|---------|
+|---|---|
 | `agentique` | Status: address, TLS/auth, health, session summary. |
-| `agentique pair` | Mint a single-use pairing token for connecting another device or machine. |
-| `agentique auth sessions` / `auth revoke <id>` | List / revoke paired clients and web logins. |
+| `agentique serve` | Start the server. |
+| `agentique doctor` | Dependency and health check. Non-zero on a required failure. |
+| `agentique setup` | Interactive first-time configuration wizard. |
+| `agentique service <install\|start\|stop\|restart\|status\|logs\|uninstall>` | Background service. |
+| `agentique tray` | Notification-area controller. |
+| `agentique upgrade` | Check for and install updates. |
+| `agentique rollback` | Swap back to the binary an upgrade replaced. `--no-restart` to leave the service alone. |
+| `agentique pair` | Mint a single-use pairing token. `--ttl` to change its lifetime. |
+| `agentique auth <status\|sessions\|revoke\|rekey\|reset>` | Users, credentials, paired clients. |
 | `agentique projects` | List projects. |
 | `agentique sessions` | List sessions. |
 | `agentique worktrees` | List sessions with active worktrees. |
-| `agentique logs <id>` | Show a session's turn history. |
+| `agentique logs <id>` | A session's turn history. |
 | `agentique follow <id>` | Stream live events for a session. |
 | `agentique query <id> <prompt>` | Send a prompt to a session. |
 | `agentique stop <id>` | Stop a running session. |
 | `agentique export <id>` | Export a session as a Playwright test fixture. |
 | `agentique cleanup` | Delete merged, terminal sessions. |
-| `agentique restore [name|index]` | List or restore database backups. |
-| `agentique brain list` | List memories (id, scope, category, trust, uses, text). Filter `--scope`/`--category`, `--sort uses\|new`, `--json`. |
-| `agentique brain show <id>` | Show one memory's full text + frontmatter (provenance, confidence, related, area). Accepts an id prefix; `--json`. |
-| `agentique brain search <query>` | Search via the live recall path (hybrid when semantic recall is configured, else keyword). `--scope`/`--limit`/`--json`. |
-| `agentique brain stats` | Corpus summary: totals, per-scope counts, trust tiers, graph connectivity, semantic-edge count. `--json`. |
-| `agentique brain backfill` | Extract durable memories from past transcripts. |
-| `agentique brain consolidate` | Run consolidation over one scope (`--project`/`--scope`, optional `--model`). |
-| `agentique brain assign-areas` | Recompute cross-scope topic "areas" and stamp them onto facts (`--dry-run` to preview). Normally automatic on scheduled consolidation, consolidate-all, or global promotion. |
-| `agentique brain backfill-subsumed` | One-time: rebuild empty `Subsumed` merge-provenance on promoted facts from a snapshot (`--source` a brain dir or id-bearing export). |
-| `agentique brain export <file>` | Export the brain to a portable JSON bundle. |
-| `agentique brain import <file>` | Import a bundle, mapping projects to local ones (interactive, or `--map`/`-y`). |
+| `agentique prune` | Reclaim disk from finished and orphaned worktrees, Chrome profiles and scratchpads. Dry-run by default; `--apply` to delete, `--orphans-only` for the zero-risk subset. |
+| `agentique restore [name\|index]` | List or restore database backups. |
+| `agentique completion <shell>` | Shell completion script. |
 
 Session arguments accept a unique ID prefix.
+
+### Brain commands
+
+| Command | Purpose |
+|---|---|
+| `brain list` | List memories. Filter `--scope`/`--category`, `--sort uses\|new`, `--json`. |
+| `brain show <id>` | One memory's full text and frontmatter. Accepts an id prefix. |
+| `brain search <query>` | Search through the live recall path, hybrid or keyword. |
+| `brain stats` | Totals, per-scope counts, trust tiers, graph connectivity, semantic edges. |
+| `brain snapshot` / `brain restore <id>` | Filesystem snapshot and restore. Restore writes a safety snapshot first. |
+| `brain consolidate` | Consolidate one scope. `--project`/`--scope`, optional `--model`. |
+| `brain assign-areas` | Recompute cross-scope topic areas. `--dry-run` to preview. |
+| `brain calibrate` | Derive model-specific semantic thresholds from the corpus's own cosine distribution. |
+| `brain reindex` | Rebuild the vector index from the markdown source of truth. |
+| `brain backfill` | Extract durable memories from past transcripts. |
+| `brain backfill-labels` / `backfill-subsumed` | One-time migrations. |
+| `brain export <file>` / `brain import <file>` | Portable JSON bundles. Import maps projects interactively, or with `--map`/`-y`. |
+
+## Architecture
+
+```
+   React SPA  <--- WebSocket / HTTP --->  Go server
+   Vite                                   session.Manager (singleton)
+   Zustand                                       |
+   shadcn/ui                              agentkit/runtime
+                                          neutral CLIEvent / CLISession
+                                                 |
+                                    +------------+------------+
+                                    |                         |
+                             claude adapter            codex adapter
+                             (claudecli-go)            (codexcli-go)
+                                    |                         |
+                              claude processes          codex processes
+```
+
+Each session owns one provider CLI subprocess in its own process group, spawned
+with a background context so it outlives the request that created it, plus one
+git worktree. The server talks to every provider through agentkit's neutral
+event contract, so provider choice is a per-session decision and neither adapter
+leaks its native types into the session pipeline.
+
+The Go binary embeds the built frontend through `embed.FS`. In development the
+two run as separate servers.
+
+Backend packages live under `backend/internal/`, frontend code under
+`frontend/src/`. Both are organised by subsystem and readable directly; the
+subsystem docs below cover the parts whose design is not obvious from the code.
+
+### Stack
+
+Backend: net/http and gorilla/websocket, agentkit/runtime with claudecli-go and
+codexcli-go adapters, WebAuthn, SQLite through modernc.org/sqlite (pure Go),
+sqlc for queries, goose for migrations, TOML config.
+
+Frontend: React 19, Vite, TanStack Router, Zustand, Tailwind 4, shadcn/ui,
+react-markdown, Biome, PWA with an auto-updating service worker.
+
+## Development
+
+```bash
+just dev            # both servers (stops any previous pair first)
+just dev-frontend   # Vite HMR on :9200
+just dev-backend    # Go server on 127.0.0.1:9201, auth disabled
+just dev-mock       # frontend against MSW mocks on :9210, no backend needed
+just dev-tls        # both with TLS, needs certs/server.{crt,key}
+```
+
+In development the frontend opens its WebSocket straight at `:9201` rather than
+through the Vite proxy.
+
+| Command | Purpose |
+|---|---|
+| `just build` | Production build: one binary with the frontend embedded. |
+| `just install` | Build and install to `~/.local/bin`. |
+| `just upgrade` | Install, restart the service, run doctor. |
+| `just check` | Biome lint and `tsc --noEmit`. Must pass. |
+| `just test-backend` | `go test ./... -race -short`. |
+| `just test-frontend` | Vitest. |
+| `just test-e2e` | Playwright. |
+| `just sqlc` | Regenerate query code after editing SQL. |
+| `just typegen` | Refresh generated frontend types after changing Go wire types. |
+| `just release` | Cross-compile release binaries. |
+| `just reset` | Delete local dev `.db` files. Never touches the production DB. |
+
+Two things to know before running a second server locally:
+
+- Single-instance enforcement is a lock on the **data directory**, not the listen
+  address. Two servers on different ports still share one data dir's database,
+  worktrees and CLI subprocesses. Isolate with `AGENTIQUE_HOME=<tmpdir>`. Passing
+  `--db` or `--addr` alone does not isolate anything.
+- An unstamped build (no `-X main.version`) writes `agentique.db` in the working
+  directory instead of the data directory. `just build` stamps the version;
+  `go run` does not.
+
+[CLAUDE.md](CLAUDE.md) holds the engineering conventions and the invariants a
+change must not break. Read it before changing anything.
 
 ## Documentation
 
 | Where | What |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | Engineering conventions, code-gen workflow, and the invariants each subsystem must not break. Read before changing anything. |
-| [ROADMAP.md](ROADMAP.md) | Vision, what shipped, what's next, what was dropped. |
-| [PRODUCT.md](PRODUCT.md) · [DESIGN.md](DESIGN.md) | Product positioning and users; the design system (palette, type, surfaces). |
-| [docs/tech-debt.md](docs/tech-debt.md) | Open debt by severity. Closed items are pruned, not struck through. |
+| [CLAUDE.md](CLAUDE.md) | Conventions, code-gen workflow, subsystem invariants. |
+| [ROADMAP.md](ROADMAP.md) | What shipped, what is next, what was dropped. |
+| [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) | Product positioning and the design system. Generated and consumed by the `impeccable` skill. |
+| [docs/tech-debt.md](docs/tech-debt.md) | Open debt by severity. Closed items are deleted, not struck through. |
 
-Subsystem designs — **as built**:
+Subsystem docs, all describing what is built today:
 
 | Doc | Subsystem |
 |---|---|
-| [process-lifecycle.md](docs/process-lifecycle.md) | Provider CLI subprocess lifecycle, the orphan reaper, idle eviction. |
-| [multi-machine.md](docs/multi-machine.md) | Controlling several machines from one UI: pairing, routing, offline behaviour. |
+| [process-lifecycle.md](docs/process-lifecycle.md) | CLI subprocess lifecycle, the orphan reaper, idle eviction. |
+| [multi-machine.md](docs/multi-machine.md) | Pairing, routing, offline behaviour, and the designed-not-built presentation sync. |
+| [upgrades.md](docs/upgrades.md) | In-app upgrades across machines. |
 | [scheduled-loops.md](docs/scheduled-loops.md) | Recurring prompts with run history and health. |
-| [model-catalog.md](docs/model-catalog.md) | How models are listed and learned without shipping a release per upstream model. |
-| [brain-memory.md](docs/brain-memory.md) | Persistent cross-session agent memory: storage, recall, consolidation, runbook. |
-| [brain-design-log.md](docs/brain-design-log.md) | Why the brain works that way — condensed record of the decisions behind it. |
-| [discussion-groups.md](docs/discussion-groups.md) · [discussion-sessionless-personas.md](docs/discussion-sessionless-personas.md) | Channels, teams, and web-only personas. |
-| [agent-browser-mcp.md](docs/agent-browser-mcp.md) | The browser an agent can drive. |
-| [runnable-prompt-blocks.md](docs/runnable-prompt-blocks.md) · [structured-prompt-suggestions.md](docs/structured-prompt-suggestions.md) | Launchable prompt blocks and session suggestions. |
-| [workflows-integration.md](docs/workflows-integration.md) | Multi-agent workflow orchestration. |
-| [agentkit-extraction.md](docs/agentkit-extraction.md) | Playbook for lifting the memory core into agentkit once a second consumer needs it. |
-
-Subsystem designs — **designed, not built** (decisions settled, no code yet):
-
-| Doc | Feature |
-|---|---|
-| [upgrades.md](docs/upgrades.md) | In-app upgrades: a release lands, every client says so, each machine upgrades itself. Phases V1–V5. |
-| [multi-machine-sync.md](docs/multi-machine-sync.md) | Two-way replication of presentation state (stars, names, colours) between machines. Phases M1–M5. |
-
-## Architecture
-
-```
-+------------------+         WebSocket / HTTP          +------------------+
-|                  | <-------------------------------> |                  |
-|   React SPA      |                                   |   Go Backend     |
-|   (Vite)         |                                   |                  |
-|   Zustand        |                                   |  session.Manager |
-|   shadcn/ui      |                                   |  (singleton)     |
-+------------------+                                   +------------------+
-                                                              |
-                                                     agentkit/runtime
-                                                     (neutral CLIEvent /
-                                                      CLISession contract)
-                                                              |
-                                          +-------------------+-------------------+
-                                          |                                       |
-                                  claude adapter                          codex adapter
-                                  (claudecli-go)                          (codexcli-go)
-                                          |                                       |
-                                  +---------------+                       +---------------+
-                                  |  Claude CLI   |                       |   Codex CLI   |
-                                  |  processes    |                       |   processes   |
-                                  +---------------+                       +---------------+
-```
-
-### Backend (Go)
-
-| Module | Purpose |
-|--------|---------|
-| `backend/cmd/agentique` | Entry point, CLI commands, DB init, default project creation |
-| `backend/internal/server` | HTTP mux, SPA handler, embedded frontend assets |
-| `backend/internal/ws` | WebSocket handler, hub (connection registry + broadcasting), wire message types |
-| `backend/internal/gitops` | Pure git/gh CLI wrappers (merge, branch, worktree, diff, PR), no session dependencies |
-| `backend/internal/session` | Session lifecycle (Service), GitService (orchestrates gitops), event streaming, state machine |
-| `backend/internal/auth` | WebAuthn passkey registration/login, invites, sessions |
-| `backend/internal/config` | TOML config file loading |
-| `backend/internal/project` | Project CRUD routes |
-| `backend/internal/store` | SQLite via sqlc -- generated query code, migrations via goose |
-
-### Frontend (TypeScript + React)
-
-| Module | Purpose |
-|--------|---------|
-| `frontend/src/components/chat/` | Chat UI -- message rendering, composer, turn blocks, tool display |
-| `frontend/src/components/layout/` | Sidebar, project tree, session status |
-| `frontend/src/hooks/` | useWebSocket (connection + reconnect), useChatSession, useProjects |
-| `frontend/src/stores/` | Zustand -- app-store (projects), chat-store (sessions + turns), streaming-store (assistant text), selectors |
-| `frontend/src/lib/` | Types, WS client (request/response correlation), event schemas, utils |
-
-## Tech Stack
-
-### Backend
-
-- **HTTP/WS server:** net/http + gorilla/websocket
-- **Provider runtime:** github.com/allbin/agentkit/runtime (neutral CLI surface; per-provider adapters)
-- **Claude integration:** github.com/allbin/claudecli-go
-- **Codex integration:** github.com/allbin/codexcli-go
-- **Auth:** WebAuthn (passkeys)
-- **Database:** SQLite via modernc.org/sqlite (pure Go, no CGO)
-- **Query generation:** sqlc
-- **Migrations:** goose
-- **Config:** TOML (BurntSushi/toml)
-
-### Frontend
-
-- **Framework:** React 19
-- **Build tool:** Vite
-- **Routing:** TanStack Router
-- **State management:** Zustand
-- **Styling:** Tailwind CSS 4 + shadcn/ui (Catppuccin Mocha theme)
-- **Markdown:** react-markdown + @tailwindcss/typography + react-syntax-highlighter
-- **Linting/Formatting:** Biome
-
-### Deployment
-
-- Single binary: Go backend embeds built frontend assets via `embed.FS`.
-- Separate dev servers during development (Vite dev server + Go backend).
-
-## Development
-
-```bash
-just dev            # run both servers in parallel (auto-stops previous)
-just dev-frontend   # Vite HMR on :9200
-just dev-backend    # Go server on 127.0.0.1:9201 (auth disabled)
-just dev-mock       # frontend with MSW mocks on :9210 (no backend needed)
-```
-
-In development the frontend connects its WebSocket directly to `:9201` (bypassing the Vite proxy for reliability). In production the Go binary embeds the built frontend via `embed.FS`.
-
-### Key commands
-
-| Command | Purpose |
-|---------|---------|
-| `just build` | Full production build (single binary) |
-| `just install` | Build and install locally from source |
-| `just check` | Biome lint + tsc typecheck |
-| `just test-backend` | Go tests |
-| `just test-frontend` | Vitest |
-| `just test-e2e` | Playwright e2e tests |
-| `just sqlc` | Regenerate sqlc query code after editing SQL |
-| `just typegen` | Refresh generated frontend types after changing Go wire types |
-| `just reset` | Delete local dev `.db` files (not the production DB) |
-
-See [CLAUDE.md](CLAUDE.md) for engineering conventions and the code-gen workflow.
+| [model-catalog.md](docs/model-catalog.md) | Listing models without shipping a release per upstream model. |
+| [brain.md](docs/brain.md) | Persistent cross-session agent memory, and why it works that way. |
+| [channels.md](docs/channels.md) | Channels, teams, `@spawn` delegation, and web-only personas. |
+| [agent-browser.md](docs/agent-browser.md) | The browser an agent can drive. |
+| [prompt-handoffs.md](docs/prompt-handoffs.md) | Runnable prompt blocks and structured session suggestions. |
+| [workflows.md](docs/workflows.md) | Multi-agent workflow orchestration. |
+| [agentkit-extraction.md](docs/agentkit-extraction.md) | Playbook for lifting the memory core into agentkit. |
 
 ## Notes
 
-- First session creation takes ~30-40s (provider CLI subprocess init).
-- **Provider capability differences.** Codex sessions support resume and rate-limit events, and mid-turn messages are emulated (queued and replayed at the next idle boundary, so the live composer works). Codex does **not** support natively: fork, plan mode, thinking, subagents, compaction events, MCP reconnect, or tool-progress ticks. The runtime advertises these via `Capabilities()` and the UI gates features accordingly. The default `claude` provider supports the full feature set.
-- See [ROADMAP.md](ROADMAP.md) for vision, milestones, and future plans.
+- The first session on a fresh CLI takes 30 to 40 seconds to start, which is
+  provider CLI init.
+- Codex supports resume and rate-limit events. Mid-turn send is emulated by
+  queueing and replaying at the next idle boundary, so the live composer works.
+  Codex does not natively support fork, plan mode, thinking, subagents,
+  compaction events, MCP reconnect, or tool-progress ticks. The runtime
+  advertises what each provider can do through `Capabilities()` and the UI gates
+  features on that. The default `claude` provider has the full set.
 </content>
 </invoke>
