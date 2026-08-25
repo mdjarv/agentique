@@ -339,10 +339,14 @@ The strip owns its own 1s clock. Lifting it to `ChatPanel` would re-render the
 whole session view every second an agent is out.
 
 **An agent is readable, not just reportable.** A roster row and a board card open
-into the same `AgentRunDetail`: the agent's own narration (`AgentRun.steps`) and
-the whole report it returned (`AgentRun.report`, unflattened — `preview` is the
-one-line form and steps aside when the row is open). Both come from events the
-session already has, so opening a row is a render, not a fetch: `steps` are the
+into the same `AgentRunDetail`: the whole report it returned (`AgentRun.report`,
+unflattened — `preview` is the one-line form and steps aside when the row is
+open), then its own narration (`AgentRun.steps`) folded away behind it. The
+report goes through the chat's `Markdown`, because an agent's headings and code
+blocks have to read the same wherever you meet them. Narration opens by default
+only when there is no report — an agent still out has nothing else to show, and
+"Watch" that opens onto a second button is not watching. Both come from events
+the session already has, so opening a row is a render, not a fetch: `steps` are the
 forwarded events carrying `parentToolUseId`, folded in `collectAgentRuns` exactly
 as `segments.ts` folds them for the transcript. A subagent's own tool call is
 never a spawn and its own tool result is never the agent's return value — that is

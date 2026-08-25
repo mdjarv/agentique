@@ -1,29 +1,34 @@
 /**
- * One agent, opened: what it has been doing, and what it came back with.
+ * One agent, opened: what it came back with, and — behind a fold — how it got
+ * there.
  *
- * The roster's rows answer "who is out and how did it go"; this answers the
- * question that used to mean leaving the tab — reading the agent itself. Both
- * halves are already on the wire, so opening a row costs a render, not a fetch.
+ * The report leads because it is what the reader came for, and it renders as
+ * markdown through the same component the chat uses, so an agent's headings and
+ * code blocks read the same wherever you meet them. Narration is a second
+ * question ("what did it actually do"), so it folds away behind the report: it
+ * is long by nature and would push the report off the panel every time.
  *
- * Narration first, report second, for the one reader who needs both: an agent
- * still out has only narration, and a landed one is usually read from its report
- * down. Each half scrolls on its own so a chatty agent cannot push the report
- * off the panel.
+ * Both halves are already on the wire, so opening a row costs a render, not a
+ * fetch.
  */
-import { useMemo } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Markdown } from "~/components/chat/Markdown";
 import { SubagentSteps, subagentSteps } from "~/components/chat/SubagentSteps";
 import type { AgentRun } from "~/lib/agent-runs";
 
-function Heading({ label }: { label: string }) {
-  return (
-    <div className="mb-1 font-medium text-[10px] text-muted-foreground-faint uppercase tracking-[0.12em]">
-      {label}
-    </div>
-  );
+/** "Show 12 steps so far" — an agent still out has not finished counting. */
+function stepsLabel(count: number, running: boolean, open: boolean): string {
+  const noun = count === 1 ? "step" : "steps";
+  return `${open ? "Hide" : "Show"} ${count} ${noun}${running ? " so far" : ""}`;
 }
 
 export function AgentRunDetail({ run }: { run: AgentRun }) {
   const steps = useMemo(() => subagentSteps(run.steps), [run.steps]);
+  // Collapsed when there is a report to read, open when the narration is all
+  // there is — an agent still out has nothing else to show, and "Watch" that
+  // opens onto a second button to press is not watching.
+  const [showSteps, setShowSteps] = useState(() => !run.report);
 
   if (steps.length === 0 && !run.report) {
     return (
@@ -36,22 +41,34 @@ export function AgentRunDetail({ run }: { run: AgentRun }) {
   }
 
   return (
-    <div className="space-y-2.5 text-xs">
-      {steps.length > 0 && (
-        <div>
-          <Heading label={run.state === "running" ? "Doing" : "Did"} />
-          <div className="max-h-64 overflow-y-auto rounded border bg-muted/20 px-2 py-1.5">
-            <SubagentSteps steps={steps} />
-          </div>
+    <div className="space-y-2 text-xs">
+      {run.report && (
+        // Selectable and whole: the report is the thing worth copying out.
+        <div className="max-h-96 overflow-y-auto rounded border bg-muted/20 px-2.5 py-1.5">
+          <Markdown content={run.report} />
         </div>
       )}
-      {run.report && (
-        <div>
-          <Heading label="Returned" />
-          {/* Selectable and whole: the report is the thing worth copying out. */}
-          <div className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded border bg-muted/20 px-2 py-1.5 text-muted-foreground-dim">
-            {run.report}
-          </div>
+
+      {steps.length > 0 && (
+        <div className="overflow-hidden rounded border bg-muted/20">
+          <button
+            type="button"
+            onClick={() => setShowSteps((v) => !v)}
+            aria-expanded={showSteps}
+            className="flex w-full cursor-pointer items-center gap-1.5 px-2 py-1.5 text-muted-foreground-faint transition-colors hover:bg-muted/30 hover:text-muted-foreground"
+          >
+            {showSteps ? (
+              <ChevronDown className="size-3 shrink-0" />
+            ) : (
+              <ChevronRight className="size-3 shrink-0" />
+            )}
+            <span>{stepsLabel(steps.length, run.state === "running", showSteps)}</span>
+          </button>
+          {showSteps && (
+            <div className="max-h-64 overflow-y-auto border-t px-2 py-1.5">
+              <SubagentSteps steps={steps} />
+            </div>
+          )}
         </div>
       )}
     </div>
