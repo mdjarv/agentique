@@ -103,7 +103,7 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
   `EnsureBrowser` is idempotent and the codex sandbox start has slack), or
   eager-launch on the first browser tool advertised in a danger-full codex
   session. Out of scope for the claude-focused fix. → `internal/session/`,
-  `docs/agent-browser-mcp.md` (*fullAuto gap*).
+  `docs/agent-browser.md` (*fullAuto gap*).
 
 ### Codex attachments path is half-baked
 
@@ -176,7 +176,7 @@ practice:
   `MemoryUsed` / `MarkHelped` / `Record.Helped` + confidence calibration shipped, but the explicit
   signal is **agent-volunteered** (`helped` was `0` everywhere on the live corpus). The durable fix —
   the **automatic emitter** (session-end LLM judge over the transcript) — is now built
-  (`brain-design-log.md#the-outcome-signal` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
+  (`brain.md#the-outcome-signal` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
   the facts recall injected (from the persisted `<brain>` envelopes), judges helped/contradicted/neutral
   conservatively, and applies `MarkAutoHelped` (gentler `0.25` gap-close — a machine inference weighs
   half an explicit acknowledgement) / `Flag`. Opt-in via `AGENTIQUE_BRAIN_OUTCOME_MODEL` / `[brain]
@@ -300,7 +300,7 @@ restarted — recall.go degrades cleanly, so no breakage, just lost semantics). 
 agentique-side health surfacing (an operator can't see "semantic is configured but Chroma is down"
 except in logs), the Ollama model lives in a docker volume (durable) but the stack is a manual
 `docker run`, and there's no compose/systemd unit checked in. → ops/runbook gap; see
-`docs/brain-design-log.md#semantic-recall` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
+`docs/brain.md#semantic-recall` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
 reachability + a docker-compose in the repo.
 
 ### Brain: persisted cross-scope edges deferred (the "B4" decision)

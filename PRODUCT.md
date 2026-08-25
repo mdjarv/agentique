@@ -74,9 +74,11 @@ Effect-TS backend had process-management stalls. The Go runtime is the answer to
 
 ## Capabilities and Constraints
 
-**Surfaces that exist today** (`frontend/src/routes/`): projects list; project overview,
-files, and settings; new session; session chat; channels; teams and personas; discussions;
-brain; templates; storage.
+**Surfaces that exist today** (`frontend/src/routes/`): the landing command deck and
+activity wire at `/`; the projects list at `/projects`; project overview, files, and
+settings; new session; session chat; channels; teams and personas; discussions; brain;
+schedules; templates; storage; and a settings area with account, appearance, machines,
+and about.
 
 **Hard constraints:**
 
@@ -125,8 +127,8 @@ existing capability, not a constraint future work must serve.
 ## Evidence on Hand
 
 - **Documentation that is true as-built:** `README.md` (install, config, CLI, architecture),
-  `ROADMAP.md` (shipped vs. next vs. parked), `CLAUDE.md` (as-built channel/team, provider,
-  brain, and process-lifecycle behavior), `docs/*.md` (16 subsystem and design docs).
+  `ROADMAP.md` (shipped vs. next vs. parked), `CLAUDE.md` (the conventions and the
+  invariants a change must not break), `docs/*.md` (12 subsystem docs).
 - **Real data for realistic states:** the live SQLite database at
   `~/.local/share/agentique/agentique.db` (projects, sessions, session_events, messages,
   teams, tags). Reads are encouraged; writes require explicit approval. Use it rather than

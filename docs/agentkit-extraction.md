@@ -6,7 +6,7 @@ agentique-specific policy lives in `backend/internal/brain/**`. This document is
 the mechanical playbook for moving the engine into `github.com/allbin/agentkit`
 when a second consumer (formica, hittat) needs it.
 
-See `docs/brain-memory.md` for the feature architecture; this doc is only about
+See `docs/brain.md` for the feature architecture; this doc is only about
 the lift.
 
 ## What moves vs. what stays
