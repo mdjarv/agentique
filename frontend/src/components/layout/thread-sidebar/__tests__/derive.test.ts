@@ -7,6 +7,7 @@ import {
   deriveRestToken,
   deriveWorkKind,
   isAwake,
+  isHued,
   isStale,
   STALE_AFTER_MS,
   sectionFor,
@@ -167,10 +168,37 @@ describe("isAwake", () => {
   it("treats every badge except rest, evicted, and unread as awake", () => {
     expect(isAwake("working")).toBe(true);
     expect(isAwake("attention")).toBe(true);
-    // A finished session isn't doing anything: no hue-from-badge, no third line.
+    // A finished session isn't doing anything: no third line.
     expect(isAwake("unread")).toBe(false);
     expect(isAwake(null)).toBe(false);
     expect(isAwake("off")).toBe(false);
+  });
+});
+
+// Colour answers "is this still mine to deal with", never "is a CLI attached".
+// Losing the process is not an outcome: agentique evicts idle CLIs, a restart
+// reaps every process group, a crash takes one down — and one message wakes the
+// session again in all three cases.
+describe("isHued", () => {
+  const base = { state: "idle", archived: false, merged: false };
+
+  it("keeps the hue on a session whose process is gone", () => {
+    expect(isHued({ ...base, state: "stopped" })).toBe(true);
+    expect(isHued({ ...base, state: "failed" })).toBe(true);
+    expect(isHued({ ...base, state: "done" })).toBe(true);
+  });
+
+  it("greys a session the user filed away", () => {
+    expect(isHued({ ...base, archived: true })).toBe(false);
+    // Archived outranks everything, including a run still going.
+    expect(isHued({ ...base, state: "running", archived: true })).toBe(false);
+  });
+
+  it("greys a landed worktree only once the run has ended", () => {
+    expect(isHued({ ...base, state: "done", merged: true })).toBe(false);
+    // An early merge mid-session is normal — that session is still live work.
+    expect(isHued({ ...base, state: "running", merged: true })).toBe(true);
+    expect(isHued({ ...base, state: "idle", merged: true })).toBe(true);
   });
 });
 
@@ -205,6 +233,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     badge: null,
     restToken: "",
     awake: false,
+    hued: true,
     timeLabel: "1h",
     struck: false,
     unread: false,

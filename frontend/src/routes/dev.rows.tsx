@@ -25,6 +25,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     projectColorFg: "#73daca",
     badge: null,
     awake: true,
+    hued: true,
     restToken: "",
     timeLabel: "3h",
     struck: false,
@@ -168,7 +169,7 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
       badge: "unread",
       unread: true,
       awake: false,
-      restToken: "done",
+      restToken: "finished",
       timeLabel: "12m",
       workers: 3,
     }),
@@ -177,8 +178,9 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
     label: "draft",
     vm: vm({ badge: "draft", livePhrase: { text: "draft", tone: "draft" } }),
   },
+  // Parked rows keep their hue: the process died, the work did not.
   {
-    label: "at rest — stopped",
+    label: "parked — stopped",
     vm: vm({
       name: "Stop button + live context meter",
       projectSlug: "agentique",
@@ -190,8 +192,31 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
     }),
   },
   {
-    label: "at rest — evicted",
+    label: "parked — evicted",
     vm: vm({ badge: "off", awake: false, restToken: "evicted", timeLabel: "2d" }),
+  },
+  {
+    label: "parked — machine away",
+    vm: vm({
+      badge: "off",
+      awake: false,
+      restToken: "away",
+      timeLabel: "6h",
+      remoteMachineLabel: "zbook",
+      remoteMachineOffline: true,
+    }),
+  },
+  {
+    label: "filed — merged",
+    vm: vm({
+      name: "Windows packaging",
+      badge: null,
+      awake: false,
+      hued: false,
+      struck: true,
+      restToken: "merged",
+      timeLabel: "3d",
+    }),
   },
 ];
 

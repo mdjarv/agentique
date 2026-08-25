@@ -3,7 +3,12 @@
  * The integrator feeds primitives pulled from the chat store; these decide
  * badge, machine-line phrasing, and Open-section ordering.
  */
-import type { MachineLine, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+import type { MachineLine, RestToken, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+
+/** The run reached an end — the CLI is not going to produce anything more. */
+export function isTerminalState(state: string): boolean {
+  return state === "done" || state === "stopped" || state === "failed";
+}
 
 /**
  * Pulse tool category → work kind. The categories come from the pulse pipeline
@@ -64,14 +69,45 @@ export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
   return null;
 }
 
-/** A row is awake — and earns its color + third line — for every badge except
- *  rest ("off" = evicted counts as rest; its story is the rest token).
+/** A row is awake — and earns its third line — for every badge except rest
+ *  ("off" = evicted counts as rest; its story is the rest token).
  *
  *  `unread` is deliberately NOT awake: a finished session isn't doing anything.
  *  Its signal is the NEW pill in the time slot, and dropping the third line
- *  makes the list *shorter* exactly when a batch of sessions lands. */
+ *  makes the list *shorter* exactly when a batch of sessions lands.
+ *
+ *  Awake does NOT decide colour — see {@link isHued}. A stopped session is not
+ *  awake and still carries its hue. */
 export function isAwake(badge: ThreadBadge): boolean {
   return badge !== null && badge !== "off" && badge !== "unread";
+}
+
+export interface HuedInput {
+  state: string;
+  /** The user filed it away. */
+  archived: boolean;
+  /** The worktree landed on the base branch. */
+  merged: boolean;
+}
+
+/**
+ * Whether the row keeps its project hue.
+ *
+ * Colour tracks "is this still mine to deal with", never "is a CLI attached".
+ * Losing the process is not an outcome: agentique reclaims idle CLIs, a restart
+ * reaps every process group, and a crash takes one down — none of which say
+ * anything about the work. All three end with a session that one message wakes
+ * again, so greying it files the work away on the user's behalf, right next to
+ * something merged last week.
+ *
+ * Grey is already the language of *filed*: the "Finished earlier" shelf and
+ * Archived both render `compact`, which is grey and collapsed by construction.
+ * Here it means the same thing and nothing else — the user archived it, or the
+ * worktree landed and the run ended.
+ */
+export function isHued(input: HuedInput): boolean {
+  if (input.archived) return false;
+  return !(input.merged && isTerminalState(input.state));
 }
 
 /** Blocked on a human — the two amber states, sorted to the top of Open. */
@@ -142,7 +178,7 @@ export interface DeriveRestTokenInput {
  * over there. An unreachable machine gets "away", and the row's machine tag
  * says which one.
  */
-export function deriveRestToken(input: DeriveRestTokenInput): string {
+export function deriveRestToken(input: DeriveRestTokenInput): RestToken {
   if (input.merged) return "merged";
   if (input.state === "stopped") return "stopped";
   if (input.state === "done") return "finished";
@@ -169,8 +205,7 @@ export interface StaleInput {
  * that keeps working is never terminal anyway.
  */
 export function isStale(input: StaleInput): boolean {
-  const terminal = input.state === "done" || input.state === "stopped" || input.state === "failed";
-  if (!terminal || input.unread) return false;
+  if (!isTerminalState(input.state) || input.unread) return false;
   return input.now - input.lastActivity > STALE_AFTER_MS;
 }
 

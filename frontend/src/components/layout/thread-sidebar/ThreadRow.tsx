@@ -5,6 +5,8 @@ import {
   Bot,
   Check,
   CircleHelp,
+  CircleStop,
+  CloudOff,
   Diamond,
   GitMerge,
   Globe,
@@ -18,13 +20,14 @@ import {
   SquareDashed,
   Terminal,
   TriangleAlert,
+  Unplug,
   X,
 } from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { cn } from "~/lib/utils";
-import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+import type { MachineTone, RestToken, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
@@ -62,6 +65,20 @@ const BADGE_GLYPH: Record<Exclude<ThreadBadge, null | "off">, typeof Check> = {
   failed: X,
   merging: GitMerge,
   draft: SquareDashed,
+};
+
+/**
+ * The resting row's mark, beside its outcome word. Deliberately quiet — the
+ * row already carries its hue, so this only has to separate "the work ended"
+ * (check, merge) from "the process did" (stop, unplug, cloud-off), which is
+ * low-priority information: the next message wakes the session either way.
+ */
+export const REST_GLYPH: Record<Exclude<RestToken, "">, typeof Check> = {
+  merged: GitMerge,
+  finished: Check,
+  stopped: CircleStop,
+  evicted: Unplug,
+  away: CloudOff,
 };
 
 /**
@@ -149,24 +166,21 @@ function rowAriaLabel(vm: ThreadRowVM): string {
 }
 
 /**
- * The 14px inline project chip on the repo line. Awake rows carry the
- * project's hue; resting rows are grey, evicted rows fainter still — the
- * wake model's identity color lives here and on the slug, nowhere else.
+ * The 14px inline project chip on the repo line. Hued rows carry the project's
+ * colour, filed rows are grey — the identity colour lives here and on the slug,
+ * nowhere else. Hue is not a liveness signal (see `isHued`): a stopped or
+ * evicted session keeps it, because losing the CLI is not an outcome.
  */
-function Chip({ vm, awake }: { vm: ThreadRowVM; awake: boolean }) {
+function Chip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
   const Icon = useProjectIcon(vm.projectIconId ?? "");
-  const evicted = vm.badge === "off";
   return (
     <span
       className={cn(
         "flex size-3.5 shrink-0 items-center justify-center rounded",
-        !awake &&
-          (evicted
-            ? "bg-border/25 text-muted-foreground-faint"
-            : "bg-border/40 text-muted-foreground"),
+        !hued && "bg-border/40 text-muted-foreground",
       )}
       style={
-        awake ? { backgroundColor: `${vm.projectColorBg}26`, color: vm.projectColorFg } : undefined
+        hued ? { backgroundColor: `${vm.projectColorBg}26`, color: vm.projectColorFg } : undefined
       }
     >
       {Icon ? (
@@ -174,6 +188,17 @@ function Chip({ vm, awake }: { vm: ThreadRowVM; awake: boolean }) {
       ) : (
         <span className="text-[7px] font-bold">{vm.projectInitials}</span>
       )}
+    </span>
+  );
+}
+
+/** The outcome word with its mark, folded into the repo line at rest. */
+function RestMark({ token }: { token: Exclude<RestToken, ""> }) {
+  const Glyph = REST_GLYPH[token];
+  return (
+    <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-muted-foreground-faint">
+      ·<Glyph className="size-2.5 shrink-0" />
+      {token}
     </span>
   );
 }
@@ -276,7 +301,9 @@ export const ThreadRow = memo(function ThreadRow({
           )}
         >
           <span className="mt-0.5 shrink-0">
-            <Chip vm={vm} awake={false} />
+            {/* The shelf and Archived are the filed sections — grey by
+                construction, whatever the row's own hue rule says. */}
+            <Chip vm={vm} hued={false} />
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline gap-2">
@@ -309,7 +336,6 @@ export const ThreadRow = memo(function ThreadRow({
   }
 
   const awake = vm.awake;
-  const evicted = vm.badge === "off";
   const showTodo = vm.todo && vm.todo.total > 0;
 
   return (
@@ -327,25 +353,20 @@ export const ThreadRow = memo(function ThreadRow({
       >
         {/* Repo line: chip · slug · @machine · rest outcome · time */}
         <span className="flex items-center gap-1.5">
-          <Chip vm={vm} awake={awake} />
+          <Chip vm={vm} hued={vm.hued} />
           <span
             className={cn(
               "min-w-0 shrink truncate font-mono text-[10px] font-medium",
-              !awake && "text-muted-foreground",
-              evicted && "opacity-80",
+              !vm.hued && "text-muted-foreground",
             )}
-            style={awake ? { color: vm.projectColorFg } : undefined}
+            style={vm.hued ? { color: vm.projectColorFg } : undefined}
           >
             {vm.projectLabel}
           </span>
           <MachineTag vm={vm} />
           {/* Unread rows show the outcome word too: their third line is gone,
               so "done" / "merged" has nowhere else to live. */}
-          {(!awake || vm.unread) && vm.restToken && (
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">
-              · {vm.restToken}
-            </span>
-          )}
+          {(!awake || vm.unread) && vm.restToken && <RestMark token={vm.restToken} />}
           {vm.unread ? (
             <NewPill />
           ) : (
@@ -362,7 +383,6 @@ export const ThreadRow = memo(function ThreadRow({
             selected && "text-foreground-bright",
             vm.unread && "font-semibold text-foreground-bright",
             vm.untitled && "font-normal italic text-muted-foreground",
-            evicted && "text-muted-foreground",
             vm.struck &&
               "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
           )}

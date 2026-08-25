@@ -33,7 +33,9 @@ import {
   deriveRestToken,
   deriveWorkKind,
   isAwake,
+  isHued,
   isStale,
+  isTerminalState,
   sectionFor,
 } from "./derive";
 import type { ThreadGroups, ThreadRowVM } from "./types";
@@ -146,8 +148,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
       const remoteMachineLabel = remoteMachine?.label;
       const color = getProjectColor(rep.color, rep.id, projectIds, resolvedTheme);
-      const isTerminal =
-        meta.state === "done" || meta.state === "stopped" || meta.state === "failed";
+      const isTerminal = isTerminalState(meta.state);
       const todoTotal = data.todos?.length ?? 0;
       const todoDone = data.todos?.filter((t) => t.status === "completed").length ?? 0;
       const isArchived = !!meta.archivedAt;
@@ -166,6 +167,11 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         projectIconId: rep.icon || undefined,
         badge,
         awake: isAwake(badge) || meta.connected,
+        hued: isHued({
+          state: meta.state,
+          archived: isArchived,
+          merged: !!meta.worktreeMerged,
+        }),
         livePhrase:
           deriveLivePhrase({
             badge,

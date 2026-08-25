@@ -42,6 +42,13 @@ export type WorkKind =
 /** Color tone of the machine line (maps onto the shared state palette tokens). */
 export type MachineTone = "work" | "attn" | "fail" | "merge" | "draft" | "muted";
 
+/**
+ * The one-word outcome a resting row folds into its repo line. Closed, because
+ * each token owns a glyph — a new one must decide on its mark, not inherit a
+ * blank.
+ */
+export type RestToken = "" | "merged" | "stopped" | "finished" | "away" | "evicted";
+
 export interface MachineLine {
   text: string;
   tone: MachineTone;
@@ -62,15 +69,20 @@ export interface ThreadRowVM {
   projectColorFg: string;
   projectIconId?: string;
   badge: ThreadBadge;
-  /** Identity wakes (project hue) for any live badge OR a connected CLI —
+  /** Live enough to earn a third line: any live badge OR a connected CLI —
    *  an idle session with its claude process alive is active, just quiet. */
   awake: boolean;
+  /**
+   * Identity carries the project hue. Tracks "still mine to deal with", NOT
+   * "a CLI is attached" — see {@link import("./derive").isHued}.
+   */
+  hued: boolean;
   /** Line 3, live rows only — the state phrase in its tone. Absent at rest. */
   livePhrase?: MachineLine;
   /** Refines the `working` glyph; ignored for every other badge. */
   workKind?: WorkKind;
   /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */
-  restToken: string;
+  restToken: RestToken;
   timeLabel: string;
   struck: boolean;
   unread: boolean;
