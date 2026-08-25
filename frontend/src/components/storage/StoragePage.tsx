@@ -3,6 +3,7 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  GitMerge,
   HardDrive,
   Loader2,
   RefreshCw,
@@ -39,8 +40,9 @@ type DeleteTarget =
   // one-click sidebar tidy (including a whole-shelf sweep), while this removes
   // worktrees AND branches AND rows. Only merged work is safe in bulk — its
   // commits are already on main. scope is "all projects" or a project name
-  // (for the dialog copy); ids carries the session IDs to remove.
-  | { kind: "clean-merged"; scope: string; ids: string[]; bytes: number };
+  // (for the dialog copy); sessions is the exact set, named in the dialog so a
+  // count is never the only thing standing between a click and the delete.
+  | { kind: "clean-merged"; scope: string; sessions: SessionStorage[] };
 
 const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + s.bytes, 0);
 const mergedOf = (sessions: SessionStorage[]) => sessions.filter((s) => s.merged);
@@ -98,14 +100,15 @@ export function StoragePage() {
         const removed = results.filter((r) => r.status === "fulfilled").length;
         toast.success(`Removed ${removed} of ${orphans.length} orphaned worktrees`);
       } else if (deleteTarget.kind === "clean-merged") {
-        const { results } = await deleteSessionsBulk(ws, deleteTarget.ids);
+        const ids = deleteTarget.sessions.map((s) => s.sessionId);
+        const { results } = await deleteSessionsBulk(ws, ids);
         const removed = results.filter((r) => r.success).length;
         results
           .filter((r) => !r.success)
           .forEach((r) => {
             console.error("Failed to delete session", r.sessionId, r.error);
           });
-        toast.success(`Deleted ${removed} of ${deleteTarget.ids.length} merged sessions`);
+        toast.success(`Deleted ${removed} of ${ids.length} merged sessions`);
       } else {
         await deleteSession(ws, deleteTarget.id);
         toast.success(`Deleted session ${deleteTarget.label}`);
@@ -145,8 +148,7 @@ export function StoragePage() {
                 setDeleteTarget({
                   kind: "clean-merged",
                   scope: "all projects",
-                  ids: allMerged.map((s) => s.sessionId),
-                  bytes: sumBytes(allMerged),
+                  sessions: allMerged,
                 })
               }
             >
@@ -279,11 +281,13 @@ export function StoragePage() {
                 onCleanMerged={() => {
                   const done = mergedOf(p.sessions);
                   if (done.length === 0) return;
+                  // Expand the card as well: the dialog names the set, and
+                  // behind it the rows it came from are now on screen too.
+                  setExpanded((prev) => new Set(prev).add(p.projectId));
                   setDeleteTarget({
                     kind: "clean-merged",
                     scope: p.name || p.slug,
-                    ids: done.map((s) => s.sessionId),
-                    bytes: sumBytes(done),
+                    sessions: done,
                   });
                 }}
               />
@@ -308,7 +312,7 @@ export function StoragePage() {
               {deleteTarget?.kind === "orphan-all"
                 ? `Delete ${deleteTarget.count} orphaned worktrees?`
                 : deleteTarget?.kind === "clean-merged"
-                  ? `Delete ${deleteTarget.ids.length} merged session${deleteTarget.ids.length === 1 ? "" : "s"}?`
+                  ? `Delete ${deleteTarget.sessions.length} merged session${deleteTarget.sessions.length === 1 ? "" : "s"}?`
                   : deleteTarget?.kind === "session"
                     ? "Delete session?"
                     : "Delete orphaned worktree?"}
@@ -319,11 +323,29 @@ export function StoragePage() {
                 : deleteTarget?.kind === "orphan-all"
                   ? `Permanently removes all orphaned worktree directories, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
                   : deleteTarget?.kind === "clean-merged"
-                    ? `Deletes every merged session in ${deleteTarget.scope}, removing their worktrees and branches. Frees ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
+                    ? `These sessions in ${deleteTarget.scope} are merged into the main branch — their commits are already there. Deleting removes each worktree, branch and row, freeing ~${formatBytes(sumBytes(deleteTarget.sessions))}. This cannot be undone.`
                     : deleteTarget
                       ? `Permanently removes ${deleteTarget.label}, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
                       : ""}
             </AlertDialogDescription>
+            {deleteTarget?.kind === "clean-merged" && (
+              <ul className="mt-1 max-h-56 overflow-y-auto rounded-md border bg-muted/30 divide-y divide-border/60 text-sm">
+                {deleteTarget.sessions.map((s) => (
+                  <li key={s.sessionId} className="flex items-center gap-2 px-2.5 py-1.5">
+                    <span className="truncate min-w-0 flex-1">{s.name || s.sessionId}</span>
+                    {s.archived && (
+                      <Archive
+                        className="size-3 shrink-0 text-muted-foreground"
+                        aria-label="archived"
+                      />
+                    )}
+                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                      {formatBytes(s.bytes)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
@@ -447,6 +469,17 @@ function SessionRow({ session, onDelete }: { session: SessionStorage; onDelete: 
       <span className="truncate min-w-0 flex-1">
         {session.name || (session.orphaned ? session.worktreePath : session.sessionId)}
       </span>
+      {/* The set "Delete merged (N)" acts on. Without it the count is a claim
+          about rows that look identical to the ones it leaves alone. */}
+      {session.merged && (
+        <Badge
+          variant="outline"
+          className="text-[10px] shrink-0 gap-1 border-sky-500/30 text-sky-600 dark:text-sky-400"
+        >
+          <GitMerge className="size-2.5" />
+          merged
+        </Badge>
+      )}
       {!session.orphaned &&
         (session.archived ? (
           <Badge
