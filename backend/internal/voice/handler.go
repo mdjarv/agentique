@@ -29,10 +29,6 @@ type Options struct {
 	Location string
 	// Model overrides the backend's default realtime model id.
 	Model string
-	// SystemInstruction shapes the dialog agent. Empty leaves the model's
-	// default behaviour, which is a conversational assistant rather than a
-	// prompt drafter.
-	SystemInstruction string
 	// IdleTimeout closes a call whose caller has gone quiet. 0 = the built-in
 	// default.
 	IdleTimeout time.Duration
@@ -112,7 +108,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A live speech session must outlive the request that opened it: the HTTP
 	// context is cancelled when ServeHTTP returns, which for a hijacked
 	// WebSocket is not when the call ends.
-	engine, err := h.newEngine(context.WithoutCancel(r.Context()))
+	// The drafter's instruction is built per call, because project context
+	// belongs to the session this call is attached to.
+	target := r.URL.Query().Get("sessionId")
+	instruction := SystemInstruction(h.projectContext(r.Context(), target))
+
+	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction)
 	if err != nil {
 		// The detail goes to the log; an unclassified failure returns a fixed
 		// message rather than err.Error().
@@ -131,8 +132,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log := slog.With("subsystem", "voice", "backend", h.opts.Backend)
-	log.Info("voice call opened", "remote", r.RemoteAddr)
-	newCall(ws, engine, h.opts, r.URL.Query().Get("sessionId"), log).run(r.Context())
+	log.Info("voice call opened", "remote", r.RemoteAddr, "session", target)
+	newCall(ws, engine, h.opts, target, log).run(r.Context())
 	log.Info("voice call closed", "remote", r.RemoteAddr)
 }
 
@@ -141,15 +142,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // A per-call engine is not an optimisation. Sharing one across calls means the
 // second caller's stream overwrites the first's, and results are delivered to
 // whoever asked most recently.
-func (h *Handler) newEngine(ctx context.Context) (Engine, error) {
+func (h *Handler) newEngine(ctx context.Context, systemInstruction string) (Engine, error) {
 	switch h.opts.Backend {
 	case BackendEcho:
 		return NewEchoEngine(), nil
 	case BackendAIStudio, BackendVertex:
 		// The engine's context is the call's, not the request's: it must
 		// outlive the HTTP handler that created it.
-		return newGeminiEngine(ctx, h.opts, slog.With("subsystem", "voice"))
+		return newGeminiEngine(ctx, h.opts, systemInstruction, slog.With("subsystem", "voice"))
 	default:
 		return nil, fmt.Errorf("unknown voice backend %q", h.opts.Backend)
 	}
+}
+
+// projectContext asks the dispatcher what the drafter should know. A call with
+// no session, or no dispatcher, still works — it just drafts generically.
+func (h *Handler) projectContext(ctx context.Context, sessionID string) string {
+	if h.opts.Dispatcher == nil || sessionID == "" {
+		return ""
+	}
+	return h.opts.Dispatcher.ProjectContext(ctx, sessionID)
 }

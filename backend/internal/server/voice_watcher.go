@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/voice"
@@ -30,11 +33,18 @@ const turnsBack = 1
 // send button uses, so there is one route into the session pipeline whether the
 // gesture was a click or a sentence.
 type voiceDispatcher struct {
-	svc *session.Service
+	svc     *session.Service
+	queries *store.Queries
 }
 
 // Dispatch implements voice.Dispatcher.
+//
+// The reporting instruction is appended here rather than written by the
+// drafter, because dispatching from a live call *is* the "someone is
+// listening" condition. A run started any other way carries none of it.
 func (d *voiceDispatcher) Dispatch(ctx context.Context, sessionID, prompt string) (voice.Delivery, error) {
+	prompt += "\n\n" + voice.ReportingInstructions(mcphttp.VoiceReportToolFullName)
+
 	delivery, err := d.svc.EnqueueMessage(ctx, sessionID, prompt, nil)
 	if err != nil {
 		return "", err
@@ -75,6 +85,66 @@ func (d *voiceDispatcher) AutoRunnable(ctx context.Context, sessionID string) (b
 // runtime.AutoApproveAll, which bypasses the permission pump entirely
 // (see runtimeAutoApproveMode). Every other mode can block on a tool.
 const autoApproveAll = "fullAuto"
+
+// maxProjectContext bounds what the drafter is told about the project.
+//
+// A budget rather than a truncation accident: everything here is sent to the
+// speech vendor on every call, and a drafter given the whole of CLAUDE.md asks
+// worse questions than one given its opening summary, not better.
+const maxProjectContext = 4000
+
+// ProjectContext implements voice.Dispatcher.
+//
+// The drafter needs enough to ask sharp questions and name files — not the file
+// tree, not the history. What it gets is the session's own identity plus the
+// head of the project's CLAUDE.md, which is where a repository explains itself.
+func (d *voiceDispatcher) ProjectContext(ctx context.Context, sessionID string) string {
+	info, err := d.svc.GetSessionInfo(ctx, sessionID)
+	if err != nil {
+		slog.Warn("voice: no project context", "session", sessionID, "error", err)
+		return ""
+	}
+
+	var b strings.Builder
+	if info.Name != "" {
+		fmt.Fprintf(&b, "The session is called %q.\n", info.Name)
+	}
+	if info.WorktreeBranch != "" {
+		fmt.Fprintf(&b, "It is working on branch %s.\n", info.WorktreeBranch)
+	}
+
+	project, err := d.queries.GetProject(ctx, info.ProjectID)
+	if err == nil {
+		if project.Name != "" {
+			fmt.Fprintf(&b, "The project is %s.\n", project.Name)
+		}
+		if guide := readProjectGuide(project.Path); guide != "" {
+			b.WriteString("\nFrom the project's CLAUDE.md:\n\n")
+			b.WriteString(guide)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// readProjectGuide returns the head of a project's CLAUDE.md, or "".
+//
+// Best effort by design: a project without one is ordinary, and a drafter that
+// refuses to work because a file is missing would be worse than a vague one.
+func readProjectGuide(projectPath string) string {
+	if projectPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(projectPath, "CLAUDE.md"))
+	if err != nil {
+		return ""
+	}
+	text := string(data)
+	if utf8.RuneCountInString(text) <= maxProjectContext {
+		return strings.TrimSpace(text)
+	}
+	runes := []rune(text)
+	return strings.TrimSpace(string(runes[:maxProjectContext])) + "\n\n[…truncated]"
+}
 
 // voiceTurnWatcher pushes the three things a working agent cannot report about
 // itself — that it is blocked, that it died, that it finished — to whoever is

@@ -77,7 +77,7 @@ type geminiEngine struct {
 }
 
 // newGeminiEngine connects a live session and starts its receive loop.
-func newGeminiEngine(ctx context.Context, opts Options, log *slog.Logger) (*geminiEngine, error) {
+func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string, log *slog.Logger) (*geminiEngine, error) {
 	clientCfg := &genai.ClientConfig{
 		// v1alpha, because session resumption is absent from v1beta — and
 		// without resumption a call cannot outlive ten minutes.
@@ -109,7 +109,7 @@ func newGeminiEngine(ctx context.Context, opts Options, log *slog.Logger) (*gemi
 	e := &geminiEngine{
 		client: client,
 		model:  model,
-		config: liveConfig(opts.SystemInstruction),
+		config: liveConfig(systemInstruction),
 		log:    log,
 		events: make(chan Event, geminiEventBuffer),
 		ctx:    engineCtx,

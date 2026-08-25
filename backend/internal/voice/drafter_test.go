@@ -64,6 +64,8 @@ type fakeDispatcher struct {
 	autoErr   error
 	gotPrompt string
 	calls     int
+
+	projectContext string
 }
 
 func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string) (Delivery, error) {
@@ -80,6 +82,8 @@ func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string) (Delivery
 func (f *fakeDispatcher) AutoRunnable(context.Context, string) (bool, string, error) {
 	return f.autoOK, f.autoWhy, f.autoErr
 }
+
+func (f *fakeDispatcher) ProjectContext(context.Context, string) string { return f.projectContext }
 
 func (f *fakeDispatcher) dispatched() (int, string) {
 	f.mu.Lock()

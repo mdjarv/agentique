@@ -4,9 +4,10 @@ Spoken dialog in the composer. A conversational agent works out *what to ask*
 with the operator, drafts the prompt, and hands it to the session that does the
 work. The agent never runs the coding job and never sends the message.
 
-The feature is gated by `[experimental] voice`. The loop is closed end to end —
-converse, draft, dispatch, follow, hear about it — but nothing in the UI opens a
-call yet; see *Not implemented yet*.
+The feature is gated by `[experimental] voice`. The loop is closed end to end:
+the composer's Live button opens a call bound to that session, and from there
+you converse, it drafts, reads back, dispatches, follows the run, and tells you
+what happened.
 
 ## Shape
 
@@ -297,15 +298,19 @@ inherit a bucket the previous one spent.
 
 ### The instruction is conditional
 
-`ReportingInstructions` is appended to a drafted prompt **only** when the
-operator chooses to stay on the call. Decline, and the prompt carries none of
-it: no instruction, no tool calls, no reporting overhead. That is the whole
-reason the handoff asks rather than assuming.
+`ReportingInstructions` is appended in `voiceDispatcher.Dispatch`, because
+dispatching from a live call **is** the "someone is listening" condition —
+there is a person on the other end by construction. A run started from the
+composer, a schedule, or anywhere else carries none of it: no instruction, no
+tool calls, no reporting overhead.
 
 ## The drafter
 
 `SystemInstruction` turns the speech model into a drafter, and it carries most
-of the feature. Nearly every way this goes wrong is a prompt failure rather than
+of the feature. It is built **per call**, because project context belongs to the
+session the call is attached to — `Dispatcher.ProjectContext` supplies the
+session's name and branch plus the head of the project's `CLAUDE.md`, bounded,
+since everything in it goes to the speech vendor on every call. Nearly every way this goes wrong is a prompt failure rather than
 a transport one, so it is written against the specific failures:
 
 - **It never answers the question itself.** Asked "why does the reconnect keep
@@ -431,15 +436,16 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 
 ## Not implemented yet
 
-- **Project context is empty.** `SystemInstruction("")` is what the server
-  passes today, so the drafter knows the shape of its job but nothing about the
-  repository. Feeding it `CLAUDE.md` plus the recent transcript is the next
-  increment, and the one most likely to make its questions sharp.
-- The handoff question — "shall I stay on the line?" — and with it the
-  conditional `ReportingInstructions`, which is written but never appended.
-- The Live panel. `/dev/voice` is a loopback check, not the feature: nothing in
-  the composer opens a call yet, and the socket takes its target session from a
-  `?sessionId=` query parameter.
+- **The handoff question.** The call always stays open; it never asks "shall I
+  stay on the line, or ping you when it's done?". Answering "ping me" would end
+  the call and notify instead — a real saving, since only an open call bills.
+- **Recent transcript is not in the context.** The drafter gets the session's
+  identity and the project's CLAUDE.md, but not what the session has been doing,
+  so it cannot pick up a thread mid-conversation.
+- **The confirming phase is a prompt rule, not a state.** The read-back and its
+  affirmative are enforced by the system instruction — and hold up well in
+  testing — but nothing in the call machinery would stop a model that ignored
+  them.
 - The `vertex` backend is wired but unverified — it shares the engine, so only
   credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation

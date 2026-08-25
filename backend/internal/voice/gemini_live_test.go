@@ -26,16 +26,15 @@ func TestGeminiEngineLive(t *testing.T) {
 	}
 
 	opts := Options{
-		Backend:           BackendAIStudio,
-		APIKey:            key,
-		Model:             os.Getenv("AGENTIQUE_VOICE_MODEL"),
-		SystemInstruction: "You are terse. Answer in one short sentence.",
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	engine, err := newGeminiEngine(ctx, opts, slog.Default())
+	engine, err := newGeminiEngine(ctx, opts, "You are terse. Answer in one short sentence.", slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -113,11 +112,10 @@ func TestGeminiToolCallLive(t *testing.T) {
 	defer cancel()
 
 	engine, err := newGeminiEngine(ctx, Options{
-		Backend:           BackendAIStudio,
-		APIKey:            key,
-		Model:             os.Getenv("AGENTIQUE_VOICE_MODEL"),
-		SystemInstruction: SystemInstruction("A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts."),
-	}, slog.Default())
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, SystemInstruction("A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts."), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -219,11 +217,10 @@ func TestGeminiRefusesToSkipTheReadbackLive(t *testing.T) {
 	defer cancel()
 
 	engine, err := newGeminiEngine(ctx, Options{
-		Backend:           BackendAIStudio,
-		APIKey:            key,
-		Model:             os.Getenv("AGENTIQUE_VOICE_MODEL"),
-		SystemInstruction: SystemInstruction("A Go backend with a React frontend."),
-	}, slog.Default())
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, SystemInstruction("A Go backend with a React frontend."), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

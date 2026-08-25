@@ -1,7 +1,5 @@
 package voice
 
-import "fmt"
-
 // NoticeKind is a runtime fact about a followed session.
 //
 // These are exactly the three things a working agent **cannot** report about
@@ -53,15 +51,4 @@ type Notice struct {
 	Kind NoticeKind `json:"kind"`
 	// Headline is the spoken form. For a finished run this is the summary.
 	Headline string `json:"headline"`
-}
-
-// ParseNoticeKind validates a kind from a caller outside this package.
-func ParseNoticeKind(kind string) (NoticeKind, error) {
-	k := NoticeKind(kind)
-	switch k {
-	case NoticeFinished, NoticeFailed, NoticeBlocked:
-		return k, nil
-	default:
-		return "", fmt.Errorf("unknown notice kind %q: want finished, failed or blocked", kind)
-	}
 }

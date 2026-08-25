@@ -58,6 +58,5 @@ func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice
 		AllowTicketOrigin: cfg.AuthEnabled,
 		Registry:          registry,
 		Dispatcher:        dispatcher,
-		SystemInstruction: voice.SystemInstruction(""),
 	})
 }

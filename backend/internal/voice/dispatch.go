@@ -46,6 +46,18 @@ type Dispatcher interface {
 	// waiting on the tool response, and a long stall is audible as dead air.
 	Dispatch(ctx context.Context, sessionID, prompt string) (Delivery, error)
 
+	// ProjectContext is what the drafter should know about the work before it
+	// starts asking questions: enough to name files and ask sharp questions,
+	// and no more.
+	//
+	// It is deliberately a summary rather than the file tree and full history.
+	// Everything handed over goes to the speech vendor on every call, and a
+	// drafter that knows the repository's shape asks better questions than one
+	// that has been given all of it.
+	//
+	// Returning "" is valid and yields a generic but correctly-shaped drafter.
+	ProjectContext(ctx context.Context, sessionID string) string
+
 	// AutoRunnable reports whether sessionID runs without stopping for
 	// approval, and if not, why.
 	//

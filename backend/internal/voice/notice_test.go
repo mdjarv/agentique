@@ -5,17 +5,6 @@ import (
 	"time"
 )
 
-func TestParseNoticeKind(t *testing.T) {
-	for _, name := range []string{"finished", "failed", "blocked"} {
-		if _, err := ParseNoticeKind(name); err != nil {
-			t.Errorf("ParseNoticeKind(%q) = %v", name, err)
-		}
-	}
-	if _, err := ParseNoticeKind("surprise"); err == nil {
-		t.Error("ParseNoticeKind accepted a report kind — the two vocabularies are separate")
-	}
-}
-
 // The ordering must match lib/session/priority.ts: the thing still holding a
 // process outranks the thing that already stopped. One rule, both surfaces.
 func TestNoticePriorityMatchesTheAttentionRule(t *testing.T) {
