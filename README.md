@@ -156,7 +156,17 @@ the service uses has to be in `config.toml`.** Flags you pass by hand do not
 reach it.
 
 Linux path is `~/.config/agentique/config.toml`; macOS and Windows keep it in the
-data directory. Create the directory yourself if it does not exist.
+data directory. Create the directory yourself if it does not exist, and
+`chmod 600` the file afterwards — the server does not tighten a config it did not
+write, and this one can hold an embeddings API key.
+
+```bash
+mkdir -p ~/.config/agentique
+cat > ~/.config/agentique/config.toml <<'TOML'
+...
+TOML
+chmod 600 ~/.config/agentique/config.toml
+```
 
 A localhost-only machine:
 
@@ -398,8 +408,12 @@ Precedence, highest first:
 3. `config.toml`
 4. Built-in default
 
-A missing config file is not an error. The file is written `0600` because it can
-carry an embeddings API key.
+A missing config file is not an error.
+
+`agentique setup` writes the file `0600`, because it can carry an embeddings API
+key. **The server does not tighten a config file you wrote yourself**, and on
+Linux the config directory sits outside the owner-only data directory, so a
+hand-written or scripted config keeps whatever your umask gave it. `chmod 600` it.
 
 ### Configuration file
 
@@ -575,17 +589,28 @@ next start. The database and its sidecars are `0600`.
 
 Inside it:
 
-- `agentique.db` — SQLite: sessions, projects, events, auth, machines.
+- `agentique.db` — SQLite: sessions, projects, events, auth, machines. Plus its
+  `-wal` and `-shm` sidecars.
 - `backups/` — automatic snapshots. `agentique restore` lists and restores them.
-- `worktrees/` — one git worktree per session.
+- `brain/` — persistent agent memory, markdown as the source of truth.
+- `worktrees/` — one git worktree per session. Created on first session.
 - `session-files/` — files agents attach or produce, served back at
   `/api/sessions/{id}/files/…`. Only provably inert types render inline. HTML,
   SVG and anything unrecognized download as attachments, because these bytes come
   from agents and the app's own origin is where they would otherwise execute.
-- `brain/` — persistent agent memory, markdown as the source of truth.
+- `machine-id`, `machine-identity-key.pem` — this server's stable identity and
+  its P-256 signing key. Paired clients pin both. Corrupt key material is fatal
+  rather than silently replaced.
 - `admin-secret` — what `agentique pair` and `agentique auth sessions` present to
-  the running server.
-- `agentique.log.jsonl` — structured log.
+  the running server, so the CLI never becomes a second writer to the live
+  database.
+- `agentique.lock`, `agentique.pid` — the single-instance lock and the running
+  server's pid.
+- `agentique.log.jsonl` — the structured log, when `--log-output file` is in
+  effect (the default on Windows, and whenever `JSON_LOG` is set).
+
+`worktrees/` and `session-files/` do not exist until the first session needs
+them.
 
 Projects point at local filesystem paths, so a database does not move between
 machines. Pair the machines instead.
