@@ -207,6 +207,24 @@ Bulk *destructive* actions key on `worktree_merged`, never on archived. Archivin
 is a one-click tidy, up to a whole-shelf sweep; only merged work is safe to delete
 in bulk. UI copy says "Archive"; `done` reads as "finished" wherever it surfaces.
 
+### Drafts are client-local
+
+An unsent New-session prompt lives only in this browser's localStorage
+(`ui-store.drafts`, keyed `new:<projectId>`), and that is why its rows sit
+**above** Pinned: everything below them is server state, reachable from any
+client, while a draft nobody can find is text nobody gets back. A draft is not a
+session — no state, no outcome, no pin, nothing to archive — so it gets its own
+row (`DraftRow`, `useDraftRows`) rather than a `ThreadRowVM` with the session
+fields left blank. It also carries no timestamp, so the section sorts by project
+rather than inventing a recency.
+
+`NewChatPanel`'s composer keeps its own copy of the text and writes it back on
+the next keystroke **and on unmount**. So any gesture that changes that store key
+from outside the panel — the row's Discard, and the undo on its toast — has to
+reach the composer too, or that write brings the draft straight back. The restore
+half applies only while the composer is empty: every keystroke also lands there
+(the composer is what persisted it), and writing then would fight the typist.
+
 ### Colour is filing, not liveness
 
 A session row carries its project hue while the work is **still the user's to
