@@ -1,7 +1,7 @@
 import { Ban, Check, Clock, Copy, FileText, Loader2, User } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo, useMemo, useState } from "react";
 import { BrainCard } from "~/components/chat/BrainCard";
+import { ImageLightbox } from "~/components/chat/ImageLightbox";
 import { Markdown } from "~/components/chat/Markdown";
 import { extractBrainBlock } from "~/components/chat/PromptCard";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
@@ -39,15 +39,6 @@ export const UserMessage = memo(function UserMessage({
       ? { brainFacts: brain.facts, bodyPrompt: brain.rest.trimStart() }
       : { brainFacts: null, bodyPrompt: prompt };
   }, [prompt]);
-
-  useEffect(() => {
-    if (!lightboxSrc) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLightboxSrc(null);
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [lightboxSrc]);
 
   return (
     <>
@@ -147,25 +138,7 @@ export const UserMessage = memo(function UserMessage({
         )}
       </div>
 
-      {lightboxSrc &&
-        createPortal(
-          <dialog
-            open
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer m-0 p-0 border-none max-w-none max-h-none w-screen h-screen"
-            onClick={() => setLightboxSrc(null)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setLightboxSrc(null);
-            }}
-            aria-label="Image preview"
-          >
-            <img
-              src={lightboxSrc}
-              alt="Full-size preview"
-              className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
-            />
-          </dialog>,
-          document.body,
-        )}
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </>
   );
 });

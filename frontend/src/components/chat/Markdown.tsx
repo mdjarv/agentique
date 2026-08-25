@@ -15,6 +15,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { BrainCard } from "~/components/chat/BrainCard";
+import { ImageLightbox } from "~/components/chat/ImageLightbox";
 import { MarkdownFileLink } from "~/components/chat/MarkdownFileLink";
 import { MermaidDiagram } from "~/components/chat/MermaidDiagram";
 import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
@@ -252,10 +253,36 @@ function MarkdownImage({
   if (!machineId) {
     // A primary session's file: normalize an absolute-localhost variant to
     // the relative form so it loads from any device (cookie auth applies).
-    return <img src={filePath ?? src} alt={alt ?? ""} {...rest} />;
+    return <ZoomableImage src={filePath ?? src} alt={alt ?? ""} {...rest} />;
   }
   if (!blobUrl) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
-  return <img src={blobUrl} alt={alt ?? ""} {...rest} />;
+  return <ZoomableImage src={blobUrl} alt={alt ?? ""} {...rest} />;
+}
+
+/** An image in the transcript opens full-screen, where it can be zoomed and
+ *  panned. A screenshot an agent embedded is often the whole point of the
+ *  message and is rendered at column width, which on a phone is unreadable —
+ *  so the picture is a control, not decoration. */
+function ZoomableImage({
+  src,
+  alt,
+  className,
+  ...rest
+}: ComponentPropsWithoutRef<"img"> & { src?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={alt ? `View ${alt} full screen` : "View image full screen"}
+        className="block cursor-zoom-in border-none bg-transparent p-0"
+      >
+        <img src={src} alt={alt ?? ""} className={cn("max-w-full", className)} {...rest} />
+      </button>
+      <ImageLightbox src={open ? (src ?? null) : null} onClose={() => setOpen(false)} />
+    </>
+  );
 }
 
 const COMPONENTS: Components = {
