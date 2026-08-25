@@ -22,6 +22,7 @@ import { Route as DevAgentsRouteImport } from "./routes/dev.agents";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
 import { Route as DevDockRouteImport } from "./routes/dev.dock";
+import { Route as DevParkedRouteImport } from "./routes/dev.parked";
 import { Route as DevRowsRouteImport } from "./routes/dev.rows";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
 import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
@@ -103,6 +104,11 @@ const DevContextBarRoute = DevContextBarRouteImport.update({
 const DevDockRoute = DevDockRouteImport.update({
   id: "/dev/dock",
   path: "/dev/dock",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevParkedRoute = DevParkedRouteImport.update({
+  id: "/dev/parked",
+  path: "/dev/parked",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevRowsRoute = DevRowsRouteImport.update({
@@ -209,6 +215,7 @@ export interface FileRoutesByFullPath {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/dock": typeof DevDockRoute;
+  "/dev/parked": typeof DevParkedRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
@@ -240,6 +247,7 @@ export interface FileRoutesByTo {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/dock": typeof DevDockRoute;
+  "/dev/parked": typeof DevParkedRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
@@ -272,6 +280,7 @@ export interface FileRoutesById {
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
   "/dev/dock": typeof DevDockRoute;
+  "/dev/parked": typeof DevParkedRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
   "/discussions_/$channelId": typeof DiscussionsChannelIdRoute;
@@ -306,6 +315,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/dock"
+    | "/dev/parked"
     | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions/$channelId"
@@ -337,6 +347,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/dock"
+    | "/dev/parked"
     | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions/$channelId"
@@ -368,6 +379,7 @@ export interface FileRouteTypes {
     | "/dev/bubbles"
     | "/dev/context-bar"
     | "/dev/dock"
+    | "/dev/parked"
     | "/dev/rows"
     | "/dev/tool-groups"
     | "/discussions_/$channelId"
@@ -401,6 +413,7 @@ export interface RootRouteChildren {
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
   DevDockRoute: typeof DevDockRoute;
+  DevParkedRoute: typeof DevParkedRoute;
   DevRowsRoute: typeof DevRowsRoute;
   DevToolGroupsRoute: typeof DevToolGroupsRoute;
   DiscussionsChannelIdRoute: typeof DiscussionsChannelIdRoute;
@@ -501,6 +514,13 @@ declare module "@tanstack/react-router" {
       path: "/dev/dock";
       fullPath: "/dev/dock";
       preLoaderRoute: typeof DevDockRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/parked": {
+      id: "/dev/parked";
+      path: "/dev/parked";
+      fullPath: "/dev/parked";
+      preLoaderRoute: typeof DevParkedRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/rows": {
@@ -680,6 +700,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,
   DevDockRoute: DevDockRoute,
+  DevParkedRoute: DevParkedRoute,
   DevRowsRoute: DevRowsRoute,
   DevToolGroupsRoute: DevToolGroupsRoute,
   DiscussionsChannelIdRoute: DiscussionsChannelIdRoute,
