@@ -412,11 +412,12 @@ second copy, and the version we probe stops describing the one that runs. See
 
 ### Model catalog — `docs/model-catalog.md`
 
-**A new upstream model release must not require an agentique release.** Never put
-a version number in a label literal. Labels are derived from the model ID the CLI
-reports; the alias list is stable, versions are learned. The resolved-model
-learning loop is never fatal to a session. The frontend `ModelId` is deliberately
-`string`. Catalog layers degrade weakest-first, and listing models never fails.
+**A new upstream model release must not require an agentique release.** Global
+picker labels are stable family names with no version or context suffix. Exact
+versions come only from the model ID a particular session reports. The
+resolved-model loop is never fatal to a session. The frontend `ModelId` is
+deliberately `string`. Catalog layers degrade weakest-first, and listing models
+never fails.
 
 ### Multi-machine — `docs/multi-machine.md`
 

@@ -9,18 +9,19 @@ require an agentique release.** Everything below follows from that.
 
 ## Why a hard-coded list goes stale, and what doesn't
 
-The Claude CLI accepts *aliases* (`opus`, `sonnet`, `haiku`, `fable`) which
-always point at the newest model in their family, and it reports the concrete ID
-it resolved to in its `init` event:
+The Claude CLI accepts aliases which follow the newest model in a family, and it
+reports the concrete ID it resolved to in its `init` event:
 
 ```
-$ claude --print --output-format json --model opus 'ok'
-{"type":"system","subtype":"init",...,"model":"claude-opus-5",...}
+$ claude --print --output-format json --model 'opus[1m]' 'ok'
+{"type":"system","subtype":"init",...,"model":"claude-opus-5[1m]",...}
 ```
 
-So the *slugs* never went stale — agentique was already running the new model.
-Only the **labels** did ("Opus 4.8" for what is actually Opus 5). The catalog
-therefore keeps the alias list and derives every label.
+The picker only needs one choice per family. Agentique uses the 1M aliases for
+Sonnet and Opus, but labels them "Sonnet" and "Opus" because context size and
+version are execution details. The exact version appears only on a session that
+received it from the provider. This keeps the global picker stable across
+Agentique releases without hiding what a particular session ran.
 
 ## The layers
 
@@ -31,7 +32,7 @@ request never fails, because a stale label beats an empty picker.
 | Layer | Source | Gives |
 |---|---|---|
 | base | `claudeAliases` (claude) / `codexcli.ListModels` (codex) | the slugs |
-| learned | `model_resolutions` table | live version labels |
+| learned | `model_resolutions` table | alias and CLI-option de-duplication |
 | cli | `~/.claude.json` → `additionalModelOptionsCache` | models the CLI advertises beyond the built-ins |
 | config | `[models]` in `config.toml` | an explicit override that replaces the provider's list |
 
@@ -39,42 +40,38 @@ request never fails, because a stale label beats an empty picker.
 (`static` / `learned` / `cache` / `fallback` / `config`), so the frontend can
 show staleness hints.
 
-### learned — the self-healing part
+### learned: exact versions belong to sessions
 
-`EventPipeline.handleInit` already captured the resolved model ID; it now also
-fires `OnResolvedModel`, and `persistResolvedModel`
+`EventPipeline.handleInit` captures the resolved model ID and fires
+`OnResolvedModel`. `persistResolvedModel`
 (`internal/session/model_resolution.go`) makes two writes:
 
 - `sessions.resolved_model` — history: what this conversation actually ran on.
-- `model_resolutions (provider, slug, resolved_id)` — the catalog's learning
-  signal, upserted so a later release re-points the alias in place.
+- `model_resolutions (provider, slug, resolved_id)` — enough information to
+  recognize a concrete CLI option already covered by an alias.
 
 Only alias → concrete pairs are recorded. A session started on a pinned ID
 teaches the catalog nothing and is skipped.
 
-`ModelDisplayName` (in `internal/providers/claude.go`) then renders
-`claude-opus-5` → "Opus 5". It parses structure rather than consulting a lookup
-table and does **not** allowlist the family token, so `claude-fable-5` →
-"Fable 5" and an unannounced family renders correctly too. This is a deliberate
-generalization of `claudecli.ModelDisplayName`, which only knows the
-opus/sonnet/haiku tiers and returns `claude-fable-5` verbatim.
-
-An unobserved alias falls back to the bare family name ("Opus"), which is never
-*wrong* — only less specific.
+The pipeline also broadcasts `session.model-resolved`, so the active session can
+show "Opus 5" as soon as the provider reports `claude-opus-5`. Session lists
+carry the persisted `resolvedModel` after reload or reconnect. Changing a
+session's configured model clears the old resolved value and returns the
+display to its family name.
 
 ### cli — new families without a release
 
 `additionalModelOptionsCache` is where the CLI records models the account can
-reach beyond the built-in set (today: the Fable 1M variant). Entries whose slug
-duplicates an alias's resolved ID are skipped so the same model never appears
-twice under two names.
+reach beyond the built-in set. The catalog derives a family name and skips an
+entry when its slug or family is already represented, so version and context
+variants cannot create duplicate choices.
 
 ### config — the escape hatch
 
 ```toml
 [[models.claude]]
-slug = "opus"          # passed to the CLI verbatim; alias or pinned ID
-display = "Opus 5"     # picker label; defaults to slug
+slug = "opus[1m]"      # passed to the CLI verbatim; alias or pinned ID
+display = "Opus"       # picker label; defaults to slug
 description = ""       # optional secondary text
 ```
 
@@ -84,11 +81,12 @@ it must be predictable.
 
 ## Frontend
 
-`frontend/src/lib/model-catalog.ts` owns the catalog helpers. `ModelId` is a
-bare `string`, not a union — a closed union would reintroduce exactly the
-release dependency this design removes. The static `FALLBACK_MODELS` list covers
-only the window before the first `providers.models` response, and its labels are
-family names without versions on purpose.
+`frontend/src/lib/model-catalog.ts` owns the catalog helpers. `ModelId` is a bare
+`string`, not a union. A closed union would add the release dependency this
+design removes. The static `FALLBACK_MODELS` list covers only the window before
+the first `providers.models` response and uses the same family-only labels.
+`sessionModelLabel` combines that configured family with `resolvedModel` for
+session-specific display.
 
 ## Adding a provider
 

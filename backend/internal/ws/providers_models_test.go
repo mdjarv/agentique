@@ -45,10 +45,10 @@ func modelLabel(models []providers.ModelInfo, slug string) string {
 	return ""
 }
 
-// TestProvidersModelsServesLearnedLabels drives the real wire path: a resolution
-// observed from a session's init event must show up as a live version label on
-// the next providers.models request, with no rebuild in between.
-func TestProvidersModelsServesLearnedLabels(t *testing.T) {
+// TestProvidersModelsCarriesResolutionWithoutChangingLabel drives the real wire
+// path: resolutions remain available for de-duplication while picker labels
+// stay on stable family names.
+func TestProvidersModelsCarriesResolutionWithoutChangingLabel(t *testing.T) {
 	// Keep the developer's own ~/.claude.json out of the assertions.
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 
@@ -63,15 +63,15 @@ func TestProvidersModelsServesLearnedLabels(t *testing.T) {
 		t.Fatalf("providers.models error: %v", resp.Error)
 	}
 	before := decodeModels(t, resp)
-	if got := modelLabel(claudeCatalog(t, before), "opus"); got != "Opus" {
+	if got := modelLabel(claudeCatalog(t, before), "opus[1m]"); got != "Opus" {
 		t.Fatalf("pre-learn opus label = %q, want Opus", got)
 	}
 
 	// What the session pipeline writes when the CLI reports its resolved model.
 	if err := queries.UpsertModelResolution(context.Background(), store.UpsertModelResolutionParams{
 		Provider:   "claude",
-		Slug:       "opus",
-		ResolvedID: "claude-opus-5",
+		Slug:       "opus[1m]",
+		ResolvedID: "claude-opus-5[1m]",
 	}); err != nil {
 		t.Fatalf("upsert resolution: %v", err)
 	}
@@ -82,12 +82,12 @@ func TestProvidersModelsServesLearnedLabels(t *testing.T) {
 	}
 	after := decodeModels(t, resp)
 	models := claudeCatalog(t, after)
-	if got := modelLabel(models, "opus"); got != "Opus 5" {
-		t.Errorf("post-learn opus label = %q, want Opus 5", got)
+	if got := modelLabel(models, "opus[1m]"); got != "Opus" {
+		t.Errorf("post-learn opus label = %q, want Opus", got)
 	}
 	for _, m := range models {
-		if m.Slug == "opus" && m.ResolvedID != "claude-opus-5" {
-			t.Errorf("opus resolvedId = %q, want claude-opus-5", m.ResolvedID)
+		if m.Slug == "opus[1m]" && m.ResolvedID != "claude-opus-5[1m]" {
+			t.Errorf("opus resolvedId = %q, want claude-opus-5[1m]", m.ResolvedID)
 		}
 	}
 }

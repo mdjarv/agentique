@@ -1,7 +1,7 @@
 -- +goose Up
 -- Observed alias -> concrete model ID mappings, learned from the provider CLI's
--- init event (e.g. "opus" -> "claude-opus-5"). Lets the model catalog show the
--- live version without shipping a new agentique release.
+-- init event (e.g. "opus[1m]" -> "claude-opus-5[1m]"). Lets the model catalog
+-- recognize concrete CLI options already covered by a stable alias.
 CREATE TABLE model_resolutions (
     provider TEXT NOT NULL,
     slug TEXT NOT NULL,

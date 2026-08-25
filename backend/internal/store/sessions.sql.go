@@ -489,7 +489,7 @@ func (q *Queries) UpdateSessionLastQueryAt(ctx context.Context, id string) error
 }
 
 const updateSessionModel = `-- name: UpdateSessionModel :exec
-UPDATE sessions SET model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+UPDATE sessions SET model = ?, resolved_model = '', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `
 
 type UpdateSessionModelParams struct {

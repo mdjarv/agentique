@@ -78,10 +78,10 @@ func TestResolveSessionConfig_ProjectDefaultsForPresets(t *testing.T) {
 	}
 }
 
-func TestResolveSessionConfig_OpusFallbackWhenNothingSet(t *testing.T) {
+func TestResolveSessionConfig_Opus1MFallbackWhenNothingSet(t *testing.T) {
 	got := resolveSessionConfig(CreateSessionParams{}, PersonaConfig{}, store.Project{})
-	if got.model != "opus" {
-		t.Errorf("model fallback: got %q, want opus", got.model)
+	if got.model != "opus[1m]" {
+		t.Errorf("model fallback: got %q, want opus[1m]", got.model)
 	}
 }
 
@@ -129,6 +129,7 @@ func TestBaseSessionInfo_FullProjection(t *testing.T) {
 		Name:            "Test",
 		State:           "idle",
 		Model:           "opus",
+		ResolvedModel:   "claude-opus-5",
 		PermissionMode:  "manual",
 		AutoApproveMode: "manual",
 		Effort:          "high",
@@ -161,6 +162,9 @@ func TestBaseSessionInfo_FullProjection(t *testing.T) {
 	}
 	if got.ParentSessionID != "parent-1" {
 		t.Errorf("ParentSessionID: got %q", got.ParentSessionID)
+	}
+	if got.ResolvedModel != "claude-opus-5" {
+		t.Errorf("ResolvedModel: got %q", got.ResolvedModel)
 	}
 	if got.LastQueryAt != "2026-04-03" {
 		t.Errorf("LastQueryAt: got %q", got.LastQueryAt)

@@ -49,6 +49,8 @@ interface MessageComposerProps {
   onProviderChange?: (value: ProviderId) => void;
   attachmentsSupported?: boolean;
   model?: ModelId;
+  /** Session-specific label, including the concrete version when reported. */
+  modelDisplayName?: string;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
@@ -94,6 +96,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onProviderChange,
       attachmentsSupported = true,
       model,
+      modelDisplayName,
       onModelChange,
       effort,
       onEffortChange,
@@ -206,6 +209,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         provider={provider}
         onProviderChange={onProviderChange}
         model={model}
+        modelDisplayName={modelDisplayName}
         onModelChange={onModelChange}
         effort={effort}
         onEffortChange={onEffortChange}

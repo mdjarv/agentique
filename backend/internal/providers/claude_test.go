@@ -70,20 +70,19 @@ func TestClaudeModelsWithoutResolutions(t *testing.T) {
 	if pm.Source != "static" {
 		t.Errorf("Source = %q, want static", pm.Source)
 	}
-	// Unlearned labels degrade to the bare family, which is never *wrong* —
-	// only less specific than "Opus 5".
-	if got := find(t, pm, "opus").DisplayName; got != "Opus" {
-		t.Errorf("opus label = %q, want Opus", got)
+	if got := find(t, pm, "opus[1m]").DisplayName; got != "Opus" {
+		t.Errorf("opus[1m] label = %q, want Opus", got)
 	}
-	if got := find(t, pm, "opus[1m]").DisplayName; got != "Opus (1M)" {
-		t.Errorf("opus[1m] label = %q, want Opus (1M)", got)
+	for _, m := range pm.Models {
+		if m.Slug == "opus" || m.Slug == "sonnet" {
+			t.Errorf("catalog includes non-1M duplicate %q", m.Slug)
+		}
 	}
 }
 
-func TestClaudeModelsLearnsLabelsFromResolutions(t *testing.T) {
+func TestClaudeModelsKeepStableLabelsWithResolutions(t *testing.T) {
 	resolver := ResolverFunc(func(context.Context) ([]Resolution, error) {
 		return []Resolution{
-			{Provider: "claude", Slug: "opus", ResolvedID: "claude-opus-5"},
 			{Provider: "claude", Slug: "opus[1m]", ResolvedID: "claude-opus-5[1m]"},
 			{Provider: "codex", Slug: "gpt-5", ResolvedID: "gpt-5"},
 		}, nil
@@ -93,18 +92,14 @@ func TestClaudeModelsLearnsLabelsFromResolutions(t *testing.T) {
 	if pm.Source != "learned" {
 		t.Errorf("Source = %q, want learned", pm.Source)
 	}
-	opus := find(t, pm, "opus")
-	if opus.DisplayName != "Opus 5" {
-		t.Errorf("opus label = %q, want Opus 5", opus.DisplayName)
+	opus := find(t, pm, "opus[1m]")
+	if opus.DisplayName != "Opus" {
+		t.Errorf("opus label = %q, want Opus", opus.DisplayName)
 	}
-	if opus.ResolvedID != "claude-opus-5" {
-		t.Errorf("opus resolvedId = %q, want claude-opus-5", opus.ResolvedID)
+	if opus.ResolvedID != "claude-opus-5[1m]" {
+		t.Errorf("opus resolvedId = %q, want claude-opus-5[1m]", opus.ResolvedID)
 	}
-	if got := find(t, pm, "opus[1m]").DisplayName; got != "Opus 5 (1M)" {
-		t.Errorf("opus[1m] label = %q, want Opus 5 (1M)", got)
-	}
-	// An unobserved alias keeps its bare label rather than borrowing a sibling's.
-	if got := find(t, pm, "sonnet").DisplayName; got != "Sonnet" {
+	if got := find(t, pm, "sonnet[1m]").DisplayName; got != "Sonnet" {
 		t.Errorf("sonnet label = %q, want Sonnet", got)
 	}
 }
@@ -127,27 +122,28 @@ func TestClaudeModelsIncludesCLIAdvertisedExtras(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude.json")
 	body := `{"numStartups":3,"additionalModelOptionsCache":[
 		{"value":"claude-fable-5[1m]","label":"Fable","description":"Most capable"},
-		{"value":"claude-opus-5","label":"Opus","description":"dup of the opus alias"}
+		{"value":"claude-opus-5[1m]","label":"Opus","description":"dup of the opus alias"},
+		{"value":"claude-quartz-6-2[1m]","label":"Quartz","description":"Experimental"}
 	]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	resolver := ResolverFunc(func(context.Context) ([]Resolution, error) {
-		return []Resolution{{Provider: "claude", Slug: "opus", ResolvedID: "claude-opus-5"}}, nil
+		return []Resolution{{Provider: "claude", Slug: "opus[1m]", ResolvedID: "claude-opus-5[1m]"}}, nil
 	})
 	pm := claudeList(t, New(WithResolver(resolver), WithCLIOptionsPath(path)))
 
-	extra := find(t, pm, "claude-fable-5[1m]")
-	if extra.DisplayName != "Fable 5 (1M)" {
-		t.Errorf("extra label = %q, want Fable 5 (1M)", extra.DisplayName)
+	extra := find(t, pm, "claude-quartz-6-2[1m]")
+	if extra.DisplayName != "Quartz" {
+		t.Errorf("extra label = %q, want Quartz", extra.DisplayName)
 	}
-	if extra.Description != "Most capable" {
-		t.Errorf("extra description = %q, want Most capable", extra.Description)
+	if extra.Description != "Experimental" {
+		t.Errorf("extra description = %q, want Experimental", extra.Description)
 	}
-	// claude-opus-5 is what the "opus" alias already resolves to; listing both
-	// would show the same model twice under different names.
+	// Built-in families stay single choices even when the CLI advertises a
+	// concrete or context-specific spelling for them.
 	for _, m := range pm.Models {
-		if m.Slug == "claude-opus-5" {
+		if m.Slug == "claude-opus-5[1m]" || m.Slug == "claude-fable-5[1m]" {
 			t.Errorf("catalog lists %q separately from its alias", m.Slug)
 		}
 	}

@@ -7,8 +7,7 @@
 //  1. base    — the provider's stable alias set (claude) or its CLI's on-disk
 //     model cache (codex).
 //  2. learned — alias -> concrete ID mappings observed from provider init
-//     events, which turn "opus" into "Opus 5" the moment the CLI
-//     starts resolving it that way.
+//     events, used to de-duplicate aliases from CLI-advertised models.
 //  3. cli     — extra models the provider CLI itself advertises on disk.
 //  4. config  — an explicit [models] override in config.toml, which wins.
 package providers
@@ -24,7 +23,8 @@ type ModelInfo struct {
 	DisplayName string `json:"displayName"`
 	Description string `json:"description,omitempty"`
 	// ResolvedID is the concrete upstream model ID this slug was last observed
-	// to resolve to (e.g. "claude-opus-5" for "opus"). Empty until seen.
+	// to resolve to. Picker labels remain stable family names; session metadata
+	// carries the exact model a particular run reported.
 	ResolvedID string `json:"resolvedId,omitempty"`
 }
 
@@ -33,8 +33,8 @@ type ProviderModels struct {
 	Provider string      `json:"provider"`
 	Models   []ModelInfo `json:"models"`
 	// Source names the strongest layer that shaped this list: "config" (an
-	// explicit override), "learned" (labels derived from observed resolutions
-	// or the provider CLI's on-disk options), "cache" (read wholesale from the
+	// explicit override), "learned" (observed resolutions or the provider CLI's
+	// on-disk options), "cache" (read wholesale from the
 	// CLI's cache), "static" (base aliases only), or "fallback" (cache
 	// unavailable). The frontend uses it to show staleness hints.
 	Source string `json:"source"`

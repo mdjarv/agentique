@@ -45,6 +45,13 @@ type PushSessionRenamed struct {
 	Name      string `json:"name"`
 }
 
+// PushSessionModelResolved carries the concrete model ID reported by the
+// provider for this session.
+type PushSessionModelResolved struct {
+	SessionID     string `json:"sessionId"`
+	ResolvedModel string `json:"resolvedModel"`
+}
+
 // PushSessionPinned signals a session pin-state change.
 type PushSessionPinned struct {
 	SessionID string `json:"sessionId"`

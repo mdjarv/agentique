@@ -97,6 +97,7 @@ export async function createSession(
     provider: result.provider,
     capabilities: result.capabilities,
     model: result.model as ModelId,
+    resolvedModel: result.resolvedModel,
     permissionMode: result.permissionMode,
     autoApproveMode: result.autoApproveMode,
     effort: result.effort,

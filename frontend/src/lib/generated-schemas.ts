@@ -204,6 +204,7 @@ export const SessionInfoSchema = z.object({
   provider: z.string().optional(),
   capabilities: WireCapabilitiesSchema.optional(),
   model: z.string(),
+  resolvedModel: z.string().optional(),
   permissionMode: z.string(),
   autoApproveMode: z.string(),
   effort: z.string().optional(),
@@ -250,6 +251,7 @@ export const CreateSessionResultSchema = z.object({
   provider: z.string().optional(),
   capabilities: WireCapabilitiesSchema.optional(),
   model: z.string(),
+  resolvedModel: z.string().optional(),
   permissionMode: z.string(),
   autoApproveMode: z.string(),
   effort: z.string().optional(),
@@ -810,6 +812,11 @@ export const PushSessionRenamedSchema = z.object({
   name: z.string(),
 });
 
+export const PushSessionModelResolvedSchema = z.object({
+  sessionId: z.string(),
+  resolvedModel: z.string(),
+});
+
 export const PushSessionPinnedSchema = z.object({
   sessionId: z.string(),
   pinned: z.boolean(),
@@ -1070,6 +1077,7 @@ export const pushSchemaMap = {
   "session.state": GitSnapshotSchema,
   "session.created": SessionInfoSchema,
   "session.renamed": PushSessionRenamedSchema,
+  "session.model-resolved": PushSessionModelResolvedSchema,
   "session.pinned": PushSessionPinnedSchema,
   "session.deleted": PushSessionDeletedSchema,
   "session.pr-updated": PushPRUpdatedSchema,

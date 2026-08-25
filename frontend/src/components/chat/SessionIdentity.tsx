@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
+import { sessionModelLabel } from "~/lib/model-catalog";
 import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { getSessionIconComponent } from "~/lib/session/icons";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -54,6 +55,7 @@ export function SessionIdentity({
   const SessionIcon = getSessionIconComponent(meta.icon);
   const worktreeBranch = meta.worktreeBranch;
   const worktreePath = meta.worktreePath;
+  const modelName = sessionModelLabel(meta.model, meta.resolvedModel);
 
   useEffect(() => {
     if (editing) {
@@ -230,6 +232,18 @@ export function SessionIdentity({
               >
                 {pathCopied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Model */}
+        {modelName && (
+          <div className="space-y-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Model
+            </span>
+            <div className="text-xs text-muted-foreground" title={meta.resolvedModel}>
+              {modelName}
             </div>
           </div>
         )}

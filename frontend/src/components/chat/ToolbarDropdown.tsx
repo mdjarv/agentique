@@ -22,6 +22,7 @@ export interface ToolbarDropdownOption {
 
 interface ToolbarDropdownProps {
   value: string;
+  selectedLabel?: string;
   onChange?: (value: string) => void;
   options: ToolbarDropdownOption[];
   icon?: ReactNode;
@@ -35,6 +36,7 @@ const BASE =
 
 export function ToolbarDropdown({
   value,
+  selectedLabel,
   onChange,
   options,
   icon,
@@ -43,7 +45,7 @@ export function ToolbarDropdown({
   readOnlyColor,
 }: ToolbarDropdownProps) {
   const selected = options.find((o) => o.value === value);
-  const label = selected?.label ?? value;
+  const label = selectedLabel ?? selected?.label ?? value;
   const hasDescriptions = options.some((o) => o.description);
 
   if (!onChange) {

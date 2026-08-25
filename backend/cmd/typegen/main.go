@@ -483,6 +483,7 @@ func main() {
 	// Push event structs (session package).
 	pushSessionEvent := g.register(session.PushSessionEvent{}, "PushSessionEvent")
 	pushSessionRenamed := g.register(session.PushSessionRenamed{}, "PushSessionRenamed")
+	pushSessionModelResolved := g.register(session.PushSessionModelResolved{}, "PushSessionModelResolved")
 	pushSessionPinned := g.register(session.PushSessionPinned{}, "PushSessionPinned")
 	pushSessionDeleted := g.register(session.PushSessionDeleted{}, "PushSessionDeleted")
 	pushPRUpdated := g.register(session.PushPRUpdated{}, "PushPRUpdated")
@@ -529,6 +530,7 @@ func main() {
 	g.addPushEvent("session.state", gitSnapshotRef)
 	g.addPushEvent("session.created", sessionInfoRef)
 	g.addPushEvent("session.renamed", pushSessionRenamed)
+	g.addPushEvent("session.model-resolved", pushSessionModelResolved)
 	g.addPushEvent("session.pinned", pushSessionPinned)
 	g.addPushEvent("session.deleted", pushSessionDeleted)
 	g.addPushEvent("session.pr-updated", pushPRUpdated)

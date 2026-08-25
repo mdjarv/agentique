@@ -40,6 +40,7 @@ import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { loopBadgeState } from "~/lib/loop-attention";
+import { sessionModelLabel } from "~/lib/model-catalog";
 import { useNavigationGuard } from "~/lib/navigation";
 import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
@@ -702,6 +703,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                   onAutoApproveModeChange={handleAutoApproveModeChange}
                   provider={(meta.provider as ProviderId) || undefined}
                   model={(meta.model as ModelId) ?? undefined}
+                  modelDisplayName={sessionModelLabel(meta.model, meta.resolvedModel)}
                   onModelChange={modelSwitchSupported ? handleModelChange : undefined}
                   effort={(meta.effort as EffortLevel) ?? ""}
                   onEmptySubmit={isResumable ? handleResume : undefined}

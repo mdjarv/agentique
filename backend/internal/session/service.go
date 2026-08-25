@@ -81,6 +81,7 @@ type SessionInfo struct {
 	Provider           string               `json:"provider,omitempty"`
 	Capabilities       *WireCapabilities    `json:"capabilities,omitempty"`
 	Model              string               `json:"model"`
+	ResolvedModel      string               `json:"resolvedModel,omitempty"`
 	PermissionMode     string               `json:"permissionMode"`
 	AutoApproveMode    string               `json:"autoApproveMode"`
 	Effort             string               `json:"effort,omitempty"`
@@ -169,6 +170,7 @@ type CreateSessionResult struct {
 	Provider           string            `json:"provider,omitempty"`
 	Capabilities       *WireCapabilities `json:"capabilities,omitempty"`
 	Model              string            `json:"model"`
+	ResolvedModel      string            `json:"resolvedModel,omitempty"`
 	PermissionMode     string            `json:"permissionMode"`
 	AutoApproveMode    string            `json:"autoApproveMode"`
 	Effort             string            `json:"effort,omitempty"`
@@ -487,8 +489,10 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	s.wireSpawnWorkersCallback(sess, p.ProjectID)
 
 	createdAt := ""
+	resolvedModel := ""
 	if dbSess, dbErr := s.queries.GetSession(ctx, sess.ID); dbErr == nil {
 		createdAt = dbSess.CreatedAt
+		resolvedModel = dbSess.ResolvedModel
 	}
 
 	profileName, profileAvatar := s.resolveAgentProfileMeta(ctx, p.AgentProfileID, tc)
@@ -505,6 +509,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Provider:           provider,
 		Capabilities:       &caps,
 		Model:              cfg.model,
+		ResolvedModel:      resolvedModel,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
 		Effort:             cfg.effort,
@@ -529,6 +534,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		Provider:           provider,
 		Capabilities:       &caps,
 		Model:              cfg.model,
+		ResolvedModel:      resolvedModel,
 		PermissionMode:     sess.PermissionMode(),
 		AutoApproveMode:    sess.AutoApproveMode(),
 		Effort:             cfg.effort,
@@ -643,7 +649,7 @@ func resolveSessionConfig(p CreateSessionParams, pc PersonaConfig, project store
 		if pc.Model != "" {
 			cfg.model = pc.Model
 		} else {
-			cfg.model = "opus"
+			cfg.model = "opus[1m]"
 		}
 	}
 	if cfg.effort == "" {
@@ -1095,6 +1101,7 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		Provider:        provider,
 		Capabilities:    &caps,
 		Model:           ss.Model,
+		ResolvedModel:   ss.ResolvedModel,
 		PermissionMode:  ss.PermissionMode,
 		AutoApproveMode: ss.AutoApproveMode,
 		Effort:          ss.Effort,

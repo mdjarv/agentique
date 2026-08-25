@@ -13,9 +13,8 @@ import (
 // as reported by the provider's init event.
 //
 // Two writes, deliberately different in kind: the session row is history ("what
-// did this conversation run on"), while the (provider, slug) row is the model
-// catalog's learning signal — it is what turns the "opus" alias into an
-// "Opus 5" label without shipping a new agentique release.
+// did this conversation run on"), while the (provider, slug) row lets the model
+// catalog recognize concrete CLI options already covered by a stable alias.
 //
 // Both failures are logged and swallowed: a session must not die because a
 // catalog hint could not be stored.

@@ -96,3 +96,28 @@ func TestPersistResolvedModelSurvivesWriteFailures(t *testing.T) {
 		t.Error("upsert was never attempted")
 	}
 }
+
+func TestPipelineConfigBroadcastsResolvedModel(t *testing.T) {
+	q := &fakeResolutionQueries{}
+	var pushType string
+	var payload PushSessionModelResolved
+	p := sessionParams{
+		id:       "s1",
+		model:    "opus[1m]",
+		provider: "claude",
+		queries:  q,
+		broadcast: func(gotType string, gotPayload any) {
+			pushType = gotType
+			payload = gotPayload.(PushSessionModelResolved)
+		},
+	}
+
+	buildPipelineConfig(&Session{}, p).OnResolvedModel("claude-opus-5[1m]")
+
+	if pushType != "session.model-resolved" {
+		t.Fatalf("push type = %q", pushType)
+	}
+	if payload.SessionID != "s1" || payload.ResolvedModel != "claude-opus-5[1m]" {
+		t.Errorf("payload = %+v", payload)
+	}
+}

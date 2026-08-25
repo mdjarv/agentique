@@ -62,6 +62,7 @@ interface ComposerToolbarProps {
   provider?: ProviderId;
   onProviderChange?: (value: ProviderId) => void;
   model?: ModelId;
+  modelDisplayName?: string;
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
@@ -92,6 +93,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   provider,
   onProviderChange,
   model,
+  modelDisplayName,
   onModelChange,
   effort,
   onEffortChange,
@@ -176,6 +178,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
       {model && (
         <ToolbarDropdown
           value={model}
+          selectedLabel={modelDisplayName}
           onChange={
             onModelChange
               ? (v) => {

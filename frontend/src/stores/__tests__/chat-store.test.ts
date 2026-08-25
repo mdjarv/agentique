@@ -788,3 +788,28 @@ describe("archivedAt across a turn", () => {
     expect(meta?.worktreeMerged).toBe(true);
   });
 });
+
+describe("resolved model metadata", () => {
+  beforeEach(() => {
+    useChatStore.setState({ sessions: {}, activeSessionId: null });
+    useChatStore
+      .getState()
+      .addSession(makeMeta({ model: "opus[1m]", resolvedModel: "claude-opus-5[1m]" }));
+  });
+
+  it("updates from the provider report", () => {
+    useChatStore.getState().setSessionResolvedModel("sess-1", "claude-opus-5-1[1m]");
+
+    expect(useChatStore.getState().sessions["sess-1"]?.meta.resolvedModel).toBe(
+      "claude-opus-5-1[1m]",
+    );
+  });
+
+  it("clears the old report when the configured model changes", () => {
+    useChatStore.getState().setSessionModel("sess-1", "sonnet[1m]");
+
+    const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+    expect(meta?.model).toBe("sonnet[1m]");
+    expect(meta?.resolvedModel).toBeUndefined();
+  });
+});

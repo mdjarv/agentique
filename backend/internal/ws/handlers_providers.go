@@ -7,7 +7,7 @@ import (
 )
 
 // defaultCatalog serves tests and any wiring that omits a catalog: base aliases
-// plus whatever the provider CLIs advertise on disk, with no learned labels.
+// plus whatever the provider CLIs advertise on disk, with no saved resolutions.
 var defaultCatalog = providers.New()
 
 func (c *conn) handleProvidersModels(msg ClientMessage) {

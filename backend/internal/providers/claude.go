@@ -7,17 +7,14 @@ import (
 	"strings"
 )
 
-// claudeAliases is the stable alias set the Claude CLI accepts. Aliases always
-// point at the newest model in their family, so this list does not go stale
-// when a new version ships — only the *labels* do, and those are derived (see
-// claudeLabel) rather than hard-coded.
+// claudeAliases is the one-choice-per-family set shown in the picker. Sonnet
+// and Opus use the CLI's stable 1M aliases; the context size is an execution
+// detail, so their labels stay as bare family names.
 var claudeAliases = []string{
 	"haiku",
-	"sonnet",
-	"opus",
-	"fable",
 	"sonnet[1m]",
 	"opus[1m]",
+	"fable",
 }
 
 // oneMSuffix marks a 1M-context variant of an alias.
@@ -31,6 +28,7 @@ func (c *Catalog) claudeModels(resolved map[string]string) ProviderModels {
 	models := make([]ModelInfo, 0, len(claudeAliases)+2)
 	seenSlug := map[string]bool{}
 	seenResolved := map[string]bool{}
+	seenFamily := map[string]bool{}
 	learned := false
 
 	for _, slug := range claudeAliases {
@@ -41,20 +39,23 @@ func (c *Catalog) claudeModels(resolved map[string]string) ProviderModels {
 		}
 		models = append(models, ModelInfo{
 			Slug:        slug,
-			DisplayName: claudeLabel(slug, id),
+			DisplayName: claudeLabel(slug),
 			ResolvedID:  id,
 		})
 		seenSlug[slug] = true
+		seenFamily[strings.ToLower(claudeLabel(slug))] = true
 	}
 
 	// Models the CLI itself advertises beyond the built-in aliases (promotional
 	// tiers, extra context-window variants). This is how a genuinely new family
 	// reaches the picker without an agentique release.
 	for _, extra := range cliModelOptions(c.claudeConfigPath()) {
-		if seenSlug[extra.Slug] || seenResolved[normalizeModelID(extra.Slug)] {
+		family := strings.ToLower(extra.DisplayName)
+		if seenSlug[extra.Slug] || seenResolved[normalizeModelID(extra.Slug)] || seenFamily[family] {
 			continue
 		}
 		seenSlug[extra.Slug] = true
+		seenFamily[family] = true
 		learned = true
 		models = append(models, extra)
 	}
@@ -66,21 +67,17 @@ func (c *Catalog) claudeModels(resolved map[string]string) ProviderModels {
 	return ProviderModels{Provider: "claude", Source: source, Models: models}
 }
 
-// claudeLabel renders the picker label for an alias. With an observed concrete
-// ID it shows the live version ("opus" + "claude-opus-5" -> "Opus 5"); without
-// one it degrades to the bare family name ("Opus"), which is never wrong.
-func claudeLabel(slug, resolvedID string) string {
-	base := ""
-	if resolvedID != "" {
-		base = ModelDisplayName(resolvedID)
-	}
-	if base == "" {
-		base = ModelDisplayName(strings.TrimSuffix(slug, oneMSuffix))
-	}
-	if strings.HasSuffix(slug, oneMSuffix) {
-		base += " (1M)"
-	}
-	return base
+// claudeLabel renders the stable family name used in the picker. The concrete
+// version belongs to the session that reported it, not to this global list.
+func claudeLabel(slug string) string {
+	return ModelFamilyName(strings.TrimSuffix(slug, oneMSuffix))
+}
+
+// ModelFamilyName extracts the stable family name from a Claude model ID:
+// "claude-opus-5" -> "Opus", "claude-3-5-sonnet-20241022" -> "Sonnet".
+func ModelFamilyName(id string) string {
+	family, _ := modelNameParts(id)
+	return family
 }
 
 // ModelDisplayName renders a human-readable name from a Claude model ID:
@@ -93,9 +90,20 @@ func claudeLabel(slug, resolvedID string) string {
 // A bracketed context marker ("[1m]") and 8-digit date stamps are ignored; an
 // ID with no family token is returned unchanged.
 func ModelDisplayName(id string) string {
+	name, nums := modelNameParts(id)
+	if name == "" {
+		return normalizeModelID(id)
+	}
+	if len(nums) > 0 {
+		name += " " + strings.Join(nums, ".")
+	}
+	return name
+}
+
+func modelNameParts(id string) (string, []string) {
 	id = normalizeModelID(id)
 	if id == "" {
-		return ""
+		return "", nil
 	}
 
 	family := ""
@@ -113,14 +121,11 @@ func ModelDisplayName(id string) string {
 		}
 	}
 	if family == "" {
-		return id
+		return "", nil
 	}
 
 	name := strings.ToUpper(family[:1]) + family[1:]
-	if len(nums) > 0 {
-		name += " " + strings.Join(nums, ".")
-	}
-	return name
+	return name, nums
 }
 
 // normalizeModelID lowercases and strips a bracketed context marker so that
@@ -193,12 +198,9 @@ func cliModelOptions(path string) []ModelInfo {
 		if opt.Value == "" {
 			continue
 		}
-		// Derive the label rather than trusting the CLI's, which is the bare
-		// family ("Fable") where the picker wants the version ("Fable 5").
-		name := ModelDisplayName(opt.Value)
-		if strings.HasSuffix(strings.ToLower(opt.Value), oneMSuffix) {
-			name += " (1M)"
-		}
+		// Keep the global picker on stable family names. The exact version is
+		// shown only on a session after the provider reports what it ran.
+		name := ModelFamilyName(opt.Value)
 		if name == "" {
 			name = opt.Label
 		}

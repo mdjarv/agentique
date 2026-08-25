@@ -20,7 +20,7 @@ export const EFFORT_LABELS: Record<EffortLevel, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
-  xhigh: "XHigh (recommended)",
+  xhigh: "XHigh",
   max: "Max",
 };
 export const EFFORT_COLORS: Record<EffortLevel, string> = {

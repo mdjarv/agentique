@@ -32,11 +32,9 @@ export interface ModelOption {
 const FALLBACK_MODELS: Record<ProviderId, { slug: string; label: string }[]> = {
   claude: [
     { slug: "haiku", label: "Haiku" },
-    { slug: "sonnet", label: "Sonnet" },
-    { slug: "opus", label: "Opus" },
+    { slug: "sonnet[1m]", label: "Sonnet" },
+    { slug: "opus[1m]", label: "Opus" },
     { slug: "fable", label: "Fable" },
-    { slug: "sonnet[1m]", label: "Sonnet (1M)" },
-    { slug: "opus[1m]", label: "Opus (1M)" },
   ],
   codex: [
     { slug: "gpt-5", label: "GPT-5" },
@@ -45,8 +43,15 @@ const FALLBACK_MODELS: Record<ProviderId, { slug: string; label: string }[]> = {
   ],
 };
 
+const LEGACY_MODEL_LABELS: Record<string, string> = {
+  haiku: "Haiku",
+  sonnet: "Sonnet",
+  opus: "Opus",
+  fable: "Fable",
+};
+
 export const DEFAULT_MODEL_FOR_PROVIDER: Record<ProviderId, ModelId> = {
-  claude: "sonnet",
+  claude: "sonnet[1m]",
   codex: "gpt-5",
 };
 
@@ -55,7 +60,7 @@ type Catalog = Record<string, { slug: string; displayName: string; description?:
 /**
  * Flattens the backend catalog into picker options, grouped by provider and
  * falling back per provider (not globally) so a codex cache miss never hides
- * claude's learned labels.
+ * Claude's stable family choices.
  */
 export function buildModelOptions(
   catalog: Catalog,
@@ -119,7 +124,44 @@ export function modelLabel(slug: ModelId | undefined): string {
     const hit = FALLBACK_MODELS[p].find((m) => m.slug === slug);
     if (hit) return hit.label;
   }
+  if (LEGACY_MODEL_LABELS[slug]) return LEGACY_MODEL_LABELS[slug];
   return slug;
+}
+
+/**
+ * Renders the concrete Claude model ID reported by a session. Global picker
+ * labels stay on stable family names; this is the one place a live version is
+ * useful because it describes what that session actually ran.
+ */
+export function resolvedModelLabel(resolved: string | undefined): string {
+  if (!resolved) return "";
+  const normalized = resolved
+    .trim()
+    .toLowerCase()
+    .replace(/\[[^\]]+\]$/, "");
+  if (!normalized.startsWith("claude-")) return modelLabel(resolved);
+
+  let family = "";
+  const version: string[] = [];
+  for (const token of normalized.split("-")) {
+    if (!token || token === "claude") continue;
+    if (/^\d+$/.test(token)) {
+      if (token.length !== 8) version.push(token);
+      continue;
+    }
+    if (!family) family = token;
+  }
+  if (!family) return resolved;
+
+  const name = family.charAt(0).toUpperCase() + family.slice(1);
+  return version.length > 0 ? `${name} ${version.join(".")}` : name;
+}
+
+export function sessionModelLabel(
+  configured: ModelId | undefined,
+  resolved: string | undefined,
+): string {
+  return resolvedModelLabel(resolved) || modelLabel(configured);
 }
 
 /**

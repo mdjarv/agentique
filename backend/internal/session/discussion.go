@@ -319,7 +319,7 @@ func (s *Service) startWebOnlyPersona(ctx context.Context, d *Discussion, channe
 		model = pc.Model
 	}
 	if model == "" {
-		model = "opus"
+		model = "opus[1m]"
 	}
 	effort := spec.Effort
 	if effort == "" {

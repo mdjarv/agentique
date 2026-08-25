@@ -446,7 +446,13 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 				slog.Error("persist claude session ID failed", "session_id", p.id, "error", err)
 			}
 		},
-		OnResolvedModel: func(id string) { persistResolvedModel(p, id) },
+		OnResolvedModel: func(id string) {
+			persistResolvedModel(p, id)
+			p.broadcast("session.model-resolved", PushSessionModelResolved{
+				SessionID:     p.id,
+				ResolvedModel: id,
+			})
+		},
 		OnCLIVersion: func(v string) {
 			if p.onCLIVersion != nil {
 				p.onCLIVersion(p.provider, v)

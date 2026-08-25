@@ -65,39 +65,39 @@ func labelOf(models []struct {
 	return ""
 }
 
-// The full learn loop against a real database: what a session's init event
-// records is what the next catalog request serves.
-func TestModelCatalogServesLearnedLabels(t *testing.T) {
+// A session's init event records the concrete model without changing the
+// stable family label in the global picker.
+func TestModelCatalogKeepsStableLabels(t *testing.T) {
 	q := newCatalogTestDB(t)
 
-	if got := labelOf(claudeModels(t, q, nil), "opus"); got != "Opus" {
+	if got := labelOf(claudeModels(t, q, nil), "opus[1m]"); got != "Opus" {
 		t.Fatalf("pre-learn opus label = %q, want Opus", got)
 	}
 
 	// What EventPipeline.handleInit → persistResolvedModel writes when a session
-	// started on "opus" reports claude-opus-5.
+	// started on "opus[1m]" reports claude-opus-5[1m].
 	if err := q.UpsertModelResolution(context.Background(), store.UpsertModelResolutionParams{
 		Provider:   "claude",
-		Slug:       "opus",
-		ResolvedID: "claude-opus-5",
+		Slug:       "opus[1m]",
+		ResolvedID: "claude-opus-5[1m]",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := labelOf(claudeModels(t, q, nil), "opus"); got != "Opus 5" {
-		t.Errorf("post-learn opus label = %q, want Opus 5", got)
+	if got := labelOf(claudeModels(t, q, nil), "opus[1m]"); got != "Opus" {
+		t.Errorf("post-learn opus label = %q, want Opus", got)
 	}
 
 	// A later release moves the alias again; the upsert re-points it in place.
 	if err := q.UpsertModelResolution(context.Background(), store.UpsertModelResolutionParams{
 		Provider:   "claude",
-		Slug:       "opus",
-		ResolvedID: "claude-opus-5-1",
+		Slug:       "opus[1m]",
+		ResolvedID: "claude-opus-5-1[1m]",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := labelOf(claudeModels(t, q, nil), "opus"); got != "Opus 5.1" {
-		t.Errorf("relearned opus label = %q, want Opus 5.1", got)
+	if got := labelOf(claudeModels(t, q, nil), "opus[1m]"); got != "Opus" {
+		t.Errorf("relearned opus label = %q, want Opus", got)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestModelCatalogSurvivesClosedDB(t *testing.T) {
 	closeDB(t, db)
 
 	// A catalog request must still answer when the resolutions read fails.
-	if got := labelOf(claudeModels(t, q, nil), "opus"); got != "Opus" {
+	if got := labelOf(claudeModels(t, q, nil), "opus[1m]"); got != "Opus" {
 		t.Errorf("opus label = %q, want Opus", got)
 	}
 }

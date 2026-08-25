@@ -19,6 +19,7 @@ import { formatPulse } from "~/components/layout/session/PulseStatus";
 import { useTheme } from "~/hooks/useTheme";
 import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
+import { sessionModelLabel } from "~/lib/model-catalog";
 import { getProjectColor } from "~/lib/project-colors";
 import { deriveRestToken } from "~/lib/session/rest-state";
 import type { Project } from "~/lib/types";
@@ -210,7 +211,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
           : undefined,
         lastActivity: lastActivity(meta),
         branch: meta.worktreeBranch || undefined,
-        model: meta.model || undefined,
+        model: sessionModelLabel(meta.model, meta.resolvedModel) || undefined,
         turns: meta.turnCount || undefined,
       };
 

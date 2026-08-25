@@ -202,6 +202,7 @@ export interface SessionInfo {
   provider?: string;
   capabilities?: WireCapabilities;
   model: string;
+  resolvedModel?: string;
   permissionMode: string;
   autoApproveMode: string;
   effort?: string;
@@ -248,6 +249,7 @@ export interface CreateSessionResult {
   provider?: string;
   capabilities?: WireCapabilities;
   model: string;
+  resolvedModel?: string;
   permissionMode: string;
   autoApproveMode: string;
   effort?: string;
@@ -808,6 +810,11 @@ export interface PushSessionRenamed {
   name: string;
 }
 
+export interface PushSessionModelResolved {
+  sessionId: string;
+  resolvedModel: string;
+}
+
 export interface PushSessionPinned {
   sessionId: string;
   pinned: boolean;
@@ -1067,6 +1074,7 @@ export interface PushEventMap {
   "session.state": GitSnapshot;
   "session.created": SessionInfo;
   "session.renamed": PushSessionRenamed;
+  "session.model-resolved": PushSessionModelResolved;
   "session.pinned": PushSessionPinned;
   "session.deleted": PushSessionDeleted;
   "session.pr-updated": PushPRUpdated;

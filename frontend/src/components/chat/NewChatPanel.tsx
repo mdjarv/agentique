@@ -343,8 +343,6 @@ export function NewChatPanel({
           onTextPersist={handleTextPersist}
           worktree={worktree}
           onWorktreeChange={setWorktree}
-          planMode={planMode}
-          onPlanModeChange={setPlanMode}
           autoApproveMode={autoApproveMode}
           onAutoApproveModeChange={setAutoApproveMode}
           onProviderChange={setProvider}
