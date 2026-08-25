@@ -274,8 +274,8 @@ On the new machine:
 agentique auth sessions
 ```
 
-The paired client appears with kind `pair`. Revoke it later with
-`agentique auth revoke <id>`.
+The paired client appears with kind `bearer`; a browser login is `cookie`. Revoke
+either with `agentique auth revoke <id>`.
 
 ### Idempotency
 
