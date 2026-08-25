@@ -266,7 +266,61 @@ describe("applyServerEvent — result merge", () => {
 
 // --- Late events & delivery acks ------------------------------------------
 
+describe("applyServerEvent — echo of an optimistic turn", () => {
+  // The composer adds an optimistic turn when the last pushed state says the
+  // session is idle. The server can disagree (its turn is still running), and
+  // then delivers the message mid-turn instead of opening a turn for it — the
+  // optimistic turn is a phantom and the prompt would render twice.
+  it("drops the phantom optimistic turn when the message comes back as a mid-turn echo", () => {
+    const running = makeTurn({ prompt: "first", events: [text("working")] });
+    const optimistic = makeTurn({ prompt: "follow-up", events: [] });
+    const session = makeSession({ turns: [running, optimistic], streamingEvents: [] });
+
+    const res = applyServerEvent(session, userMsg({ messageId: "m1", content: "follow-up" }), true);
+
+    expect(res?.patch.turns?.map((t) => t.prompt)).toEqual(["first"]);
+    // The echo becomes the pinned bubble on the turn that is actually running.
+    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus).toBe(
+      "sending",
+    );
+  });
+
+  it("keeps a started turn whose prompt matches (only an unstarted one is a phantom)", () => {
+    const started = makeTurn({ prompt: "follow-up", events: [text("already answering")] });
+    const session = makeSession({ turns: [started] });
+    const res = applyServerEvent(session, userMsg({ messageId: "m1", content: "follow-up" }), true);
+    expect(res?.patch.turns).toBeUndefined();
+  });
+
+  it("keeps the turn when the echo is a different message", () => {
+    const optimistic = makeTurn({ prompt: "follow-up", events: [] });
+    const session = makeSession({ turns: [optimistic] });
+    const res = applyServerEvent(
+      session,
+      userMsg({ messageId: "m1", content: "something else" }),
+      true,
+    );
+    expect(res?.patch.turns).toBeUndefined();
+  });
+});
+
 describe("applyServerEvent — late append to a complete turn", () => {
+  it("buffers a queued echo that lost the race with its turn's result", () => {
+    // Appending it to the finished turn would put it out of reach of the clear
+    // in submitQuery, so the replayed turn would render the same prompt twice.
+    const turn = makeTurn({ events: [text("done")], complete: true });
+    const session = makeSession({ turns: [turn], streamingEvents: [] });
+    const res = applyServerEvent(
+      session,
+      userMsg({ messageId: "q9", content: "next turn", queued: true }),
+      true,
+    );
+    expect(res?.patch.turns).toBeUndefined();
+    expect((res?.patch.streamingEvents?.[0] as UserMessageEvent | undefined)?.deliveryStatus).toBe(
+      "queued",
+    );
+  });
+
   it("appends to the last turn (not the buffer) when it is already complete", () => {
     const turn = makeTurn({ events: [text("done")], complete: true });
     const session = makeSession({ turns: [turn], streamingEvents: [] });

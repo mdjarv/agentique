@@ -670,6 +670,57 @@ describe("chat-store", () => {
       expect(s?.todos).toHaveLength(1);
       expect(s?.todos?.[0]?.content).toBe("Task 1");
     });
+
+    it("keeps a queued bubble whose replayed turn has not landed yet", () => {
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.setState((st) => ({
+        sessions: {
+          ...st.sessions,
+          "sess-1": {
+            // biome-ignore lint/style/noNonNullAssertion: seeded above
+            ...st.sessions["sess-1"]!,
+            streamingEvents: [
+              { id: "e1", type: "user_message", content: "later", deliveryStatus: "queued" },
+            ],
+          },
+        },
+      }));
+
+      useChatStore
+        .getState()
+        .setSessionHistory("sess-1", [
+          { id: "t1", prompt: "first", attachments: [], events: [], complete: true },
+        ]);
+
+      expect(useChatStore.getState().sessions["sess-1"]?.streamingEvents).toHaveLength(1);
+    });
+
+    it("drops a queued bubble whose replayed turn is already in the history", () => {
+      // turn-started normally clears it; a reconnect can deliver the history
+      // without that push, and the stale bubble then duplicates its own turn.
+      useChatStore.getState().addSession(makeMeta());
+      useChatStore.setState((st) => ({
+        sessions: {
+          ...st.sessions,
+          "sess-1": {
+            // biome-ignore lint/style/noNonNullAssertion: seeded above
+            ...st.sessions["sess-1"]!,
+            streamingEvents: [
+              { id: "e1", type: "user_message", content: "later", deliveryStatus: "queued" },
+              { id: "e2", type: "user_message", content: "and this", deliveryStatus: "queued" },
+            ],
+          },
+        },
+      }));
+
+      useChatStore.getState().setSessionHistory("sess-1", [
+        { id: "t1", prompt: "first", attachments: [], events: [], complete: true },
+        // Coalesced replay of both queued messages (backend joins on a blank line).
+        { id: "t2", prompt: "later\n\nand this", attachments: [], events: [], complete: true },
+      ]);
+
+      expect(useChatStore.getState().sessions["sess-1"]?.streamingEvents).toEqual([]);
+    });
   });
 });
 

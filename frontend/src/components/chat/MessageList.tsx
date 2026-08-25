@@ -15,6 +15,7 @@ import { ScheduledTurnGroup } from "~/components/schedules/ScheduledTurnGroup";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
+import { isPinnedWhileOpen } from "~/lib/segments";
 import type { ChatEvent, ResultEvent, Turn, UserMessageEvent } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -387,7 +388,9 @@ export function MessageList({
     return () => observer.disconnect();
   }, [contentNode]);
 
-  // Pending user messages live in streamingEvents during streaming.
+  // Pending user messages live in streamingEvents during streaming. The status
+  // table is shared with buildSegments, which suppresses exactly what is pinned
+  // here — otherwise the same message renders in both places.
   const streamingEvents = useChatStore(
     (s) => s.sessions[sessionId]?.streamingEvents ?? EMPTY_PENDING,
   );
@@ -395,10 +398,7 @@ export function MessageList({
     if (streamingEvents.length === 0) return EMPTY_USER_MESSAGES;
     return streamingEvents.filter(
       (e): e is UserMessageEvent =>
-        e.type === "user_message" &&
-        (e.deliveryStatus === "sending" ||
-          e.deliveryStatus === "queued" ||
-          e.deliveryStatus === "cancelled"),
+        e.type === "user_message" && isPinnedWhileOpen(e.deliveryStatus),
     );
   }, [streamingEvents]);
 

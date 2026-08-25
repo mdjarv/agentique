@@ -1,5 +1,5 @@
 import { foldTaskList, isTaskListEvent } from "~/lib/event-extractors";
-import type { ChatEvent, SessionData } from "~/stores/chat-types";
+import type { ChatEvent, SessionData, Turn } from "~/stores/chat-types";
 
 /**
  * Side-effect that must be executed by the store wrapper when a rate_limit event arrives.
@@ -129,7 +129,19 @@ export function applyServerEvent(
 
   // --- Append event to the last turn's streaming buffer (or merge on result) ---
 
-  const lastTurn = session.turns[session.turns.length - 1];
+  // An echo (mid-turn SendMessage or a queued buffer) means the server did NOT
+  // open a turn for this message. If the composer already added an optimistic
+  // turn for it — it reads the last pushed session state, which can still say
+  // "idle" while the server has the turn running — that turn is a phantom, and
+  // leaving it renders the prompt twice: once as a turn header, once as the
+  // pinned bubble. Drop it; the echo is the message's only representation.
+  let baseTurns = session.turns;
+  if (isEchoOfOptimisticTurn(stamped, baseTurns[baseTurns.length - 1])) {
+    baseTurns = baseTurns.slice(0, -1);
+    patch.turns = baseTurns;
+  }
+
+  const lastTurn = baseTurns[baseTurns.length - 1];
   if (lastTurn) {
     const appended =
       stamped.type === "user_message" && stamped.messageId
@@ -151,13 +163,19 @@ export function applyServerEvent(
         (e) => !(e.type === "user_message" && e.deliveryStatus === "queued"),
       );
       const mergedEvents = [...lastTurn.events, ...merge, appended];
-      const turns = [...session.turns];
+      const turns = [...baseTurns];
       turns[turns.length - 1] = { ...lastTurn, events: mergedEvents, complete: true };
       patch.turns = turns;
       patch.streamingEvents = carryOver;
+    } else if (lastTurn.complete && isQueuedMessage(appended)) {
+      // A queued echo that lost the race with its turn's result. It targets the
+      // NEXT turn, so appending it to the finished one both misplaces it and
+      // puts it out of reach of the clear in submitQuery (which only empties the
+      // buffer) — the message would then render twice once its turn starts.
+      patch.streamingEvents = [...session.streamingEvents, appended];
     } else if (lastTurn.complete) {
       // Late-arriving event for an already-complete turn (rare).
-      const turns = [...session.turns];
+      const turns = [...baseTurns];
       turns[turns.length - 1] = {
         ...lastTurn,
         events: [...lastTurn.events, appended],
@@ -191,6 +209,23 @@ export function applyServerEvent(
 }
 
 // --- Helpers ---
+
+function isQueuedMessage(e: ChatEvent): boolean {
+  return e.type === "user_message" && e.deliveryStatus === "queued";
+}
+
+/**
+ * True when this event is the server's echo of a message the composer already
+ * rendered as an optimistic turn. An unstarted optimistic turn is incomplete
+ * with no events of its own; the server only echoes a `user_message` for
+ * deliveries that do NOT open a turn (mid-turn injection, or a queued replay),
+ * so a content match means the optimistic turn will never be filled.
+ */
+function isEchoOfOptimisticTurn(event: ChatEvent, last: Turn | undefined): boolean {
+  if (event.type !== "user_message" || !event.messageId) return false;
+  if (!last || last.complete || last.events.length > 0) return false;
+  return last.prompt.length > 0 && last.prompt === event.content;
+}
 
 function applyMessageDelivery(
   session: SessionData,

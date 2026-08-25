@@ -101,6 +101,22 @@ const emptySessionData = (meta: SessionMetadata): SessionData => ({
   compacting: false,
 });
 
+/**
+ * True when `prompt` is the turn a queued message became. The backend coalesces
+ * a whole queued batch into one prompt joined by blank lines (coalescePending),
+ * so an exact match only covers the single-message case; the boundary checks
+ * cover a batch without letting an arbitrary substring count as a match.
+ */
+function promptCarriesMessage(prompt: string, content: string): boolean {
+  if (!content) return false;
+  return (
+    prompt === content ||
+    prompt.startsWith(`${content}\n\n`) ||
+    prompt.endsWith(`\n\n${content}`) ||
+    prompt.includes(`\n\n${content}\n\n`)
+  );
+}
+
 function evictTurns(session: SessionData): Partial<SessionData> {
   if (session.turns.length <= TAIL_TURN_COUNT) return {};
   return {
@@ -544,8 +560,15 @@ export const useChatStore = create<ChatState>((set) => ({
       // mid-turn echo targeting the NEXT turn). History only contains durable
       // turns, so a mid-window resync would otherwise drop the "queued" bubble
       // until its replayed turn lands. Mirrors the carry-over in apply-event.ts.
+      // A message whose replayed turn is already IN this history is done being
+      // queued — normally submitQuery clears it when turn-started arrives, but a
+      // reconnect can land the history without ever delivering that push, and
+      // the stale bubble then duplicates the turn it became.
       const carryOver = session.streamingEvents.filter(
-        (e) => e.type === "user_message" && e.deliveryStatus === "queued",
+        (e) =>
+          e.type === "user_message" &&
+          e.deliveryStatus === "queued" &&
+          !merged.some((t) => promptCarriesMessage(t.prompt, e.content ?? "")),
       );
       const result = {
         historyLoading: nextLoading,
@@ -594,11 +617,15 @@ export const useChatStore = create<ChatState>((set) => ({
       if (!session) return s;
       const turns = session.turns;
       const last = turns[turns.length - 1];
+      // A queued/pending user_message in the buffer is not output — it belongs
+      // to a message that is still waiting, and it must not veto the rollback of
+      // a turn whose send failed (that leaves a phantom prompt on screen).
+      const turnProduced = session.streamingEvents.some((e) => e.type !== "user_message");
       if (
         last &&
         !last.complete &&
         last.events.length === 0 &&
-        session.streamingEvents.length === 0 &&
+        !turnProduced &&
         last.prompt === prompt
       ) {
         return updateSession(s, sessionId, { turns: turns.slice(0, -1) });

@@ -90,6 +90,20 @@ export interface SuggestSessionSegment {
   suggestions: SuggestionItem[];
 }
 
+/**
+ * Delivery statuses whose bubble MessageList pins below the transcript while
+ * the turn is still open. One table, two readers: the pinned list renders
+ * exactly these, and buildSegments suppresses exactly these — a status in one
+ * and not the other renders the same message twice (a mid-turn message that a
+ * stop cancelled used to show as both a pinned bubble and a turn segment,
+ * for as long as the turn stayed open, which after a plain stop is forever).
+ */
+const PINNED_WHILE_OPEN = new Set(["sending", "queued", "cancelled"]);
+
+export function isPinnedWhileOpen(deliveryStatus: string | undefined): boolean {
+  return deliveryStatus != null && PINNED_WHILE_OPEN.has(deliveryStatus);
+}
+
 export type Segment =
   | ActivitySegment
   | TextSegment
@@ -320,11 +334,7 @@ export function buildSegments(
           // Queued messages (next-turn delivery) live only in the streaming
           // buffer, never in committed turn events — guard anyway.
           if (event.type === "user_message") {
-            if (
-              (event.deliveryStatus === "sending" || event.deliveryStatus === "queued") &&
-              !turnComplete
-            )
-              break;
+            if (isPinnedWhileOpen(event.deliveryStatus) && !turnComplete) break;
             segments.push({
               kind: "user_message",
               content: event.content ?? "",

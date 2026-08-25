@@ -18,7 +18,7 @@ const text = (content: string, timestamp?: number): ChatEvent => ({
 const errorEvent = (content: string): ChatEvent => ({ id: rid(), type: "error", content });
 const userMessage = (
   content: string,
-  deliveryStatus?: "sending" | "delivered" | "queued",
+  deliveryStatus?: "sending" | "delivered" | "queued" | "cancelled",
 ): ChatEvent => ({ id: rid(), type: "user_message", content, deliveryStatus });
 const agentMessage = (
   overrides: Partial<Extract<ChatEvent, { type: "agent_message" }>>,
@@ -241,6 +241,19 @@ describe("buildSegments user_message suppression", () => {
 
   it("always emits a delivered message regardless of turn completion", () => {
     const { segments } = buildSegments([userMessage("done", "delivered")], false);
+    expect(segments).toHaveLength(1);
+  });
+
+  it("suppresses a cancelled message while the turn is in flight", () => {
+    // MessageList pins cancelled bubbles too, so emitting one here rendered the
+    // message twice — and a plain stop leaves the turn open indefinitely, so the
+    // duplicate never resolved on its own.
+    const { segments } = buildSegments([userMessage("dropped", "cancelled")], false);
+    expect(segments).toHaveLength(0);
+  });
+
+  it("emits a cancelled message once the turn completes", () => {
+    const { segments } = buildSegments([userMessage("dropped", "cancelled")], true);
     expect(segments).toHaveLength(1);
   });
 });
