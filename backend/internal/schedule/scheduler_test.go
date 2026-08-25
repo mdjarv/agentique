@@ -367,12 +367,18 @@ func TestResolve_DeferredOnRateLimitDoesNotCountFailure(t *testing.T) {
 	}
 	waitFor(t, "deferred", func() bool { return f.runByStatus(RunDeferred) != nil })
 
+	// Resolving the run and re-anchoring the schedule are two writes, and the
+	// run status lands first — so a bare read here can still see the cadence's
+	// next slot. Poll for the settled state.
+	want := formatTime(time.Unix(reset, 0))
+	waitFor(t, "reschedule at the rate-limit reset", func() bool {
+		got, err := f.q.GetSchedule(context.Background(), sched.ID)
+		return err == nil && got.NextRunAt == want
+	})
+
 	got, _ := f.q.GetSchedule(context.Background(), sched.ID)
 	if got.Enabled != 1 || got.ConsecutiveFailures != 0 {
 		t.Errorf("deferred must not fail the loop: %+v", got)
-	}
-	if got.NextRunAt != formatTime(time.Unix(reset, 0)) {
-		t.Errorf("next_run_at = %q, want the rate-limit reset %s", got.NextRunAt, formatTime(time.Unix(reset, 0)))
 	}
 }
 

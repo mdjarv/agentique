@@ -20,6 +20,10 @@ VPS behave like one control surface.
 is written for an agent doing an unattended setup and names the two steps a human
 still has to perform.
 
+**Upgrading?** [CHANGELOG.md](CHANGELOG.md) carries what each release asks of you
+before you upgrade. v0.4.0 signs every browser out and needs every paired machine
+re-paired.
+
 ## Requirements
 
 | Dependency | Required | Notes |
