@@ -8,6 +8,54 @@ before you upgrade.
 Starts at v0.4.0. Releases v0.1.0 through v0.3.0 are listed at the bottom with
 links to their own notes, rather than reconstructed here after the fact.
 
+## v0.5.0
+
+Nothing to do before upgrading: no migration changes schema, no credential is
+invalidated, and everything new is either off by default or additive.
+
+### Added
+
+- **Live voice (experimental, no UI yet).** A spoken-dialog agent that works out
+  *what to ask* with you, drafts the prompt, and hands it to a session through
+  the same path the composer's send button uses — it never runs the job and
+  never sends without a verbatim read-back and an explicit yes. Its own socket
+  (`/api/voice/live`) carries binary PCM and JSON control, a loopback echo
+  engine verifies the browser audio path with no credentials, and the Gemini
+  Live engine backs a real conversation. Idle timeout is phase-aware, because
+  silence during a run is the expected state, not abandonment. Turn it on with
+  `[experimental] voice`; `/dev/voice` is the loopback check. Nothing in the
+  composer opens a call yet. See [docs/voice.md](docs/voice.md).
+- **A working session reports its own progress.** Agents get a `VoiceReport`
+  tool and report what is worth interrupting for; the three things an agent
+  structurally cannot report — blocked, died, finished — arrive from the
+  runtime instead. Reports are relayed to a listening call, never acted on.
+- **Read a message aloud.** A speak button on every chat bubble, using the
+  browser's own speech synthesis: instant, offline, no key, nothing billed.
+  Markdown is stripped first and code blocks are announced rather than read.
+- **An agent run opens.** A roster row or board card expands into the whole
+  report the agent returned, rendered as markdown, with its narration folded
+  behind it.
+- **Images open full screen** from chat, with pinch-zoom.
+- **Unsent new-session drafts get their own sidebar section**, above Pinned,
+  because a draft lives only in this browser and nothing else on that list does.
+- **The launch palette targets a machine**, not just a repo: a project on three
+  machines offers three targets.
+
+### Fixed
+
+- Global model labels no longer carry versions, so a new upstream model release
+  does not need an agentique release to be selectable.
+- An `agent_result` describing nothing (no outcome, no agent, no report) never
+  reaches the database or a client.
+- Dictation stops duplicating phrases and doubling spaces.
+- Prompt-card menus stay on screen, and Edit is a real button.
+
+### Security
+
+- The WebSocket upgrade origin rule lives in one place, and the paths that may
+  redeem a one-time ticket are enumerated and asserted to be authenticated —
+  a new socket path can no longer fall through as an unauthenticated SPA asset.
+
 ## v0.4.0
 
 ### Breaking

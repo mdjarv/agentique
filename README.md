@@ -477,6 +477,8 @@ initial-project = ""  # absolute path registered as a project when none exist
 [experimental]
 teams   = false  # Teams tab and multi-agent channel coordination
 browser = false  # the in-app browser panel
+voice   = false  # live spoken dialog (docs/voice.md). No UI opens a call yet;
+                 # /dev/voice exercises the audio path against the echo engine.
 
 [claude]
 autocompact = ""     # "auto", or a token count between 100000 and 1000000.
@@ -524,6 +526,20 @@ link-strength-span   = 0.32
 link-distance-base   = 90
 link-distance-span   = 55
 gravity              = 0.045
+
+[voice]
+# Which speech backend a live call talks to. With [experimental] voice on and
+# nothing here, the socket serves the loopback echo and no model is contacted.
+# Every key has an AGENTIQUE_VOICE_* env equivalent, which wins when set.
+backend      = ""   # "aistudio" (default) or "vertex"
+api-key      = ""   # aistudio only. Free-tier content may be used to improve
+                    # Google's products; paid-tier content may not.
+project      = ""   # vertex only: Google Cloud project id
+location     = ""   # vertex only: region, e.g. "us-central1"
+model        = ""   # realtime model id. "" is the backend's default, so a new
+                    # upstream model needs no agentique release.
+idle-timeout = ""   # e.g. "90s". A call bills for wall-clock time with the mic
+                    # open, so an abandoned tab keeps spending. "" is the default.
 
 # Replace a provider's auto-detected model list. A non-empty list replaces that
 # provider's generated list entirely. This is the escape hatch for anything
@@ -807,6 +823,7 @@ Subsystem docs, all describing what is built today:
 | [model-catalog.md](docs/model-catalog.md) | Listing models without shipping a release per upstream model. |
 | [brain.md](docs/brain.md) | Persistent cross-session agent memory, and why it works that way. |
 | [channels.md](docs/channels.md) | Channels, teams, `@spawn` delegation, and web-only personas. |
+| [voice.md](docs/voice.md) | Live spoken dialog: the transport, the drafter, and what it refuses to do. |
 | [agent-browser.md](docs/agent-browser.md) | The browser an agent can drive. |
 | [prompt-handoffs.md](docs/prompt-handoffs.md) | Runnable prompt blocks and structured session suggestions. |
 | [workflows.md](docs/workflows.md) | Multi-agent workflow orchestration. |
