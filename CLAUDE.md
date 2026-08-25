@@ -338,6 +338,22 @@ transcript. Lifetime totals belong in the footer.
 The strip owns its own 1s clock. Lifting it to `ChatPanel` would re-render the
 whole session view every second an agent is out.
 
+**An agent is readable, not just reportable.** A roster row and a board card open
+into the same `AgentRunDetail`: the agent's own narration (`AgentRun.steps`) and
+the whole report it returned (`AgentRun.report`, unflattened — `preview` is the
+one-line form and steps aside when the row is open). Both come from events the
+session already has, so opening a row is a render, not a fetch: `steps` are the
+forwarded events carrying `parentToolUseId`, folded in `collectAgentRuns` exactly
+as `segments.ts` folds them for the transcript. A subagent's own tool call is
+never a spawn and its own tool result is never the agent's return value — that is
+what the `parentToolUseId` branch is for.
+
+Those events exist only where the provider forwards them (Claude, with `[claude]
+forward-subagent-text`), so an empty `steps` is normal and says so in words
+rather than rendering a blank. The strip decides only *that* a card is open; what
+open shows is injected (`renderDetail`), because reading an agent is the roster's
+subject and the rail and line stay a glance.
+
 The header's `SessionStatusPill` is the matching rule for *reporting* a blocked
 session: it sits outside the tab switch, so it says "Needs approval" from every
 tab, but the approve/deny buttons only exist on the chat branch. It therefore
