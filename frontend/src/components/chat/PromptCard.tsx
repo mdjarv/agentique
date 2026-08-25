@@ -18,7 +18,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { ProjectPill } from "~/components/ui/project-pill";
@@ -421,74 +420,83 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
         )}
         <div className="flex items-center justify-end gap-2 pt-0.5">
           {state === "idle" && (
-            <DropdownMenu>
-              <div
-                className={cn(
-                  "inline-flex items-center rounded-md text-xs font-medium",
-                  "bg-primary text-primary-foreground shadow-xs",
-                  (isStreaming || !ctx) && "opacity-50 pointer-events-none",
-                )}
+            <>
+              {/* Editing first is the common move — the composer is where worktree,
+               *  agent and wording get changed — so it is a button of its own rather
+               *  than a menu item. Switching project is the rare one and stays in the
+               *  menu. */}
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={isStreaming || !ctx || !navSlug}
+                onClick={handleEdit}
+                title="Open in the composer to adjust worktree, agent or wording before sending"
               >
-                <button
-                  type="button"
-                  disabled={isStreaming || !ctx || invalidSlug}
-                  onClick={handleStart}
-                  className="inline-flex items-center gap-1.5 h-6 px-2 rounded-l-md hover:bg-primary-foreground/10 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Button>
+              <DropdownMenu>
+                <div
+                  className={cn(
+                    "inline-flex items-center rounded-md text-xs font-medium",
+                    "bg-primary text-primary-foreground shadow-xs",
+                    (isStreaming || !ctx) && "opacity-50 pointer-events-none",
+                  )}
                 >
-                  <Play className="h-3 w-3" />
-                  Start Session
-                </button>
-                <div className="w-px h-4 bg-primary-foreground/25" />
-                <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors"
-                    aria-label="More launch options"
+                    disabled={isStreaming || !ctx || invalidSlug}
+                    onClick={handleStart}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 h-6 px-2 rounded-l-md hover:bg-primary-foreground/10 transition-colors disabled:opacity-50 disabled:pointer-events-none",
+                      !showProjectPicker && "rounded-r-md",
+                    )}
                   >
-                    <ChevronDown className="h-3 w-3" />
+                    <Play className="h-3 w-3" />
+                    Start Session
                   </button>
-                </DropdownMenuTrigger>
-              </div>
-              <DropdownMenuContent align="end">
-                {showProjectPicker && (
-                  <>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Start in project…
-                    </DropdownMenuLabel>
-                    {projectChoices.map((row) => (
-                      <DropdownMenuItem
-                        key={row.id}
-                        disabled={row.away}
-                        onClick={() => handleStartInProject(row.id)}
-                        className="text-xs gap-2"
-                      >
-                        <Check
-                          className={cn(
-                            "h-3 w-3",
-                            // A remote member being the target still ticks its
-                            // repo's row — one repo, one entry.
-                            row.members.some((m) => m.projectId === targetProjectId)
-                              ? "opacity-100"
-                              : "opacity-0",
-                          )}
-                        />
-                        {row.name}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {/* Prefill-and-edit: land in the new-session composer without spawning. */}
-                <DropdownMenuItem
-                  onClick={handleEdit}
-                  disabled={!navSlug}
-                  className="text-xs gap-2"
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit before running
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {showProjectPicker && (
+                    <>
+                      <div className="w-px h-4 bg-primary-foreground/25" />
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors"
+                          aria-label="Start in another project"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </>
+                  )}
+                </div>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    Start in project…
+                  </DropdownMenuLabel>
+                  {projectChoices.map((row) => (
+                    <DropdownMenuItem
+                      key={row.id}
+                      disabled={row.away}
+                      onClick={() => handleStartInProject(row.id)}
+                      className="text-xs gap-2"
+                    >
+                      <Check
+                        className={cn(
+                          "h-3 w-3",
+                          // A remote member being the target still ticks its
+                          // repo's row — one repo, one entry.
+                          row.members.some((m) => m.projectId === targetProjectId)
+                            ? "opacity-100"
+                            : "opacity-0",
+                        )}
+                      />
+                      {row.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           )}
           {state === "creating" && (
             <Button size="xs" disabled>
