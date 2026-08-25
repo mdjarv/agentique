@@ -3,6 +3,8 @@ import { create } from "zustand";
 interface Features {
   browser: boolean;
   teams: boolean;
+  /** Live spoken dialog. Off unless [experimental] voice is set. */
+  voice: boolean;
 }
 
 interface FeatureState {
@@ -21,7 +23,7 @@ interface FeatureState {
   saveHostPresentation: (label: string, icon: string) => Promise<void>;
 }
 
-const DEFAULT_FEATURES: Features = { browser: false, teams: false };
+const DEFAULT_FEATURES: Features = { browser: false, teams: false, voice: false };
 
 export const useFeatureStore = create<FeatureState>((set, get) => ({
   features: DEFAULT_FEATURES,

@@ -31,7 +31,7 @@ const STATE_COPY: Record<string, { label: string; tone: string }> = {
 };
 
 function DevVoice() {
-  const { state, detail, transcripts, start, stop } = useVoiceCall();
+  const { state, detail, log, start, stop } = useVoiceCall();
   const running = state === "live" || state === "connecting";
   const copy = STATE_COPY[state] ?? STATE_COPY.idle;
 
@@ -72,16 +72,16 @@ function DevVoice() {
         </dl>
       </div>
 
-      {transcripts.length > 0 && (
+      {log.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Transcript
+            Call log
           </h2>
           <ul className="flex flex-col gap-1 text-sm">
-            {transcripts.map((t) => (
-              <li key={t.id} className="flex gap-2">
-                <span className="text-muted-foreground">{t.source ?? "?"}</span>
-                <span>{t.text}</span>
+            {log.map((entry) => (
+              <li key={entry.id} className="flex gap-2">
+                <span className="shrink-0 text-muted-foreground">{entry.source}</span>
+                <span>{entry.text}</span>
               </li>
             ))}
           </ul>

@@ -1,12 +1,24 @@
 import { MicCapture } from "./capture";
 import { PlaybackQueue } from "./playback";
-import { parseServerMessage, type VoiceTranscript } from "./protocol";
+import {
+  parseServerMessage,
+  type VoiceDispatched,
+  type VoiceNotice,
+  type VoiceReportMessage,
+  type VoiceTranscript,
+} from "./protocol";
 
 export type VoiceCallState = "idle" | "connecting" | "live" | "closed" | "failed";
 
 export interface VoiceCallHandlers {
   onState: (state: VoiceCallState, detail?: string) => void;
   onTranscript?: (t: VoiceTranscript) => void;
+  /** A progress report from the followed session (agent-written, quoted). */
+  onReport?: (r: VoiceReportMessage) => void;
+  /** A runtime fact about the followed session. */
+  onNotice?: (n: VoiceNotice) => void;
+  /** The prompt the voice agent handed over, so it is visible as well as spoken. */
+  onDispatched?: (d: VoiceDispatched) => void;
 }
 
 /**
@@ -32,10 +44,16 @@ function micFailureMessage(err: unknown): string {
   }
 }
 
-/** URL of the voice socket on the machine serving this page. */
-export function primaryVoiceUrl(): string {
+/**
+ * URL of the voice socket on the machine serving this page.
+ *
+ * sessionId names the session the call hands work to. Without it the call can
+ * still converse, but `run_prompt` has nothing to dispatch to and says so.
+ */
+export function primaryVoiceUrl(sessionId?: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/api/voice/live`;
+  const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+  return `${protocol}//${window.location.host}/api/voice/live${query}`;
 }
 
 /**
@@ -59,7 +77,7 @@ export class VoiceCall {
     this.handlers = handlers;
   }
 
-  async start(url = primaryVoiceUrl()): Promise<void> {
+  async start(url: string = primaryVoiceUrl()): Promise<void> {
     if (this.state === "connecting" || this.state === "live") return;
     const generation = ++this.generation;
     this.setState("connecting");
@@ -123,6 +141,18 @@ export class VoiceCall {
 
       case "transcript":
         this.handlers.onTranscript?.(msg);
+        return;
+
+      case "report":
+        this.handlers.onReport?.(msg);
+        return;
+
+      case "notice":
+        this.handlers.onNotice?.(msg);
+        return;
+
+      case "dispatched":
+        this.handlers.onDispatched?.(msg);
         return;
 
       case "error":

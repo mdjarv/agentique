@@ -1,4 +1,13 @@
-import { ClipboardPaste, ListPlus, Mic, MicOff, Plus, SendHorizonal, Square } from "lucide-react";
+import {
+  AudioLines,
+  ClipboardPaste,
+  ListPlus,
+  Mic,
+  MicOff,
+  Plus,
+  SendHorizonal,
+  Square,
+} from "lucide-react";
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { useAttachments } from "~/hooks/useAttachments";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -62,6 +71,11 @@ interface MessageComposerProps {
    * out of the way. No-op on desktop and on the new-session form (opt-in).
    */
   focusMode?: boolean;
+  /**
+   * Opens a live voice call for this session. Absent hides the control, which
+   * is what an unconfigured [voice] backend looks like from here.
+   */
+  onStartLive?: () => void;
   stashedText?: string;
   stashDepth?: number;
   onStash?: (text: string) => void;
@@ -103,6 +117,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onEmptySubmit,
       templatePicker,
       focusMode,
+      onStartLive,
       stashedText,
       stashDepth,
       onStash,
@@ -237,6 +252,18 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             ) : (
               <Mic className="h-3.5 w-3.5" />
             )}
+          </button>
+        )}
+        {onStartLive && (
+          <button
+            type="button"
+            onClick={onStartLive}
+            disabled={!!disabled || send.submitting}
+            className="h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer text-muted-foreground hover:text-agent hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Start a live voice call"
+            title="Live — talk it through, it drafts and runs the prompt"
+          >
+            <AudioLines className="h-3.5 w-3.5" />
           </button>
         )}
         {isRunning && (

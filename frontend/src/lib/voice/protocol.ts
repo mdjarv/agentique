@@ -37,12 +37,38 @@ export interface VoiceClosed {
   reason?: string;
 }
 
+/** An agent-written progress report from the session being followed. */
+export interface VoiceReportMessage {
+  type: "report";
+  kind?: string;
+  headline?: string;
+  sessionId?: string;
+}
+
+/** A runtime fact about the followed session: finished, failed, or blocked. */
+export interface VoiceNotice {
+  type: "notice";
+  kind?: string;
+  headline?: string;
+  sessionId?: string;
+}
+
+/** The prompt the voice agent just handed to the session. */
+export interface VoiceDispatched {
+  type: "dispatched";
+  headline?: string;
+  sessionId?: string;
+}
+
 export type VoiceServerMessage =
   | VoiceReady
   | VoiceTurnComplete
   | VoiceTranscript
   | VoiceError
-  | VoiceClosed;
+  | VoiceClosed
+  | VoiceReportMessage
+  | VoiceNotice
+  | VoiceDispatched;
 
 /** Control messages the browser sends. */
 export type VoiceClientMessage = { type: "stop" };
@@ -70,6 +96,9 @@ export function parseServerMessage(raw: string): VoiceServerMessage | null {
     case "transcript":
     case "error":
     case "closed":
+    case "report":
+    case "notice":
+    case "dispatched":
       return parsed as VoiceServerMessage;
     default:
       return null;
