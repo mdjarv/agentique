@@ -241,7 +241,7 @@ func TestRecallKeepsDominantSingleToken(t *testing.T) {
 	}
 }
 
-// The vector veto (brain-design-log.md#semantic-recall priority #1): when the embedder scores a
+// The vector veto (brain.md#semantic-recall priority #1): when the embedder scores a
 // candidate as semantically unrelated, that verdict drops it even though keyword overlap
 // is strong enough to survive on its own. This is the failure class the lexical lone-token
 // guard CANNOT catch — the keyword match here is MULTI-token (kwMatches > 1), so the guard
@@ -285,7 +285,7 @@ func TestRecallVectorVetoesUnrelatedKeywordSurvivor(t *testing.T) {
 	}
 }
 
-// The vouch bar (brain-design-log.md#semantic-recall priority #1, the github fix): in hybrid mode a
+// The vouch bar (brain.md#semantic-recall priority #1, the github fix): in hybrid mode a
 // LONE-token keyword survivor whose vector score is only MID-RANGE (above minVectorScore
 // but below the cosine "related" line) must still be dropped by the lexical lone-token
 // guard — a mediocre cosine does not vouch for it. This is the real github mis-recall: the

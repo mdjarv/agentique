@@ -309,7 +309,7 @@ type BrainConfig struct {
 	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
 	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
 	// hybrid (keyword + embedding cosine). Each has an AGENTIQUE_BRAIN_* env override that
-	// wins when set. See docs/brain-design-log.md#semantic-recall.
+	// wins when set. See docs/brain.md#semantic-recall.
 
 	// ChromaURL is the Chroma (vector DB) base URL, e.g. http://127.0.0.1:8000.
 	// Env: AGENTIQUE_BRAIN_CHROMA_URL.

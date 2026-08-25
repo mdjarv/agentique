@@ -20,7 +20,7 @@ import (
 // line, so the personas engage with each other rather than answering in isolation.
 // The user drives every round; there is no moderator or auto-synthesis.
 //
-// Design: docs/discussion-groups.md. This file is the server-side orchestrator —
+// Design: docs/channels.md. This file is the server-side orchestrator —
 // pure plumbing over QuerySession (append + run a turn), the per-session
 // turn-complete hook (capture the reply text), and SendChannelMessage (mirror
 // each contribution to the channel timeline, which is the merged transcript the

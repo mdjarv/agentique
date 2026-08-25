@@ -160,7 +160,7 @@ func TestBrainSemanticWiring(t *testing.T) {
 // thresholds from the seeded corpus's OWN pairwise distribution (not the hand-set
 // defaults) and recall of the github query still excludes the off-topic GOPRIVATE
 // fact through those derived thresholds. This is the session's deliverable —
-// docs/brain-design-log.md#semantic-recall sequencing #5.
+// docs/brain.md#semantic-recall sequencing #5.
 //
 //	CHROMA_TEST_URL=http://127.0.0.1:8000 \
 //	EMBED_TEST_URL=http://127.0.0.1:11434/v1/embeddings \

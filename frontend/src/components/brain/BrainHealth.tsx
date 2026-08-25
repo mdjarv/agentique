@@ -22,7 +22,7 @@ const LABEL: Record<string, string> = {
 
 // BrainHealth is the Band-3 E2 report: a popover answering "what state is the brain in?" —
 // the capture backlog, archived/superseded counts, the evidence/volatility/confidence
-// spread, and the review backlog (brain-design-log.md#brain-ui F6). Read-only; the counts come from the
+// spread, and the review backlog (brain.md#brain-ui F6). Read-only; the counts come from the
 // status endpoint and refresh on brain.updated (debounced in the store). The component is
 // structured so a future Band-2 Curator "recent churn" list can slot in below the strip.
 export function BrainHealth() {

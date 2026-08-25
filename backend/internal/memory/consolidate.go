@@ -67,7 +67,7 @@ type DecayPolicy struct {
 	// ConfidenceWeighted (both factors multiply).
 	StrengthWeighted bool
 	// SalienceWeighted sharpens decay by outcome-derived salience (RFC-LD D3,
-	// brain-design-log.md#salience-gating): a contradicted fact (ReviewNote set) decays far sooner —
+	// brain.md#salience-gating): a contradicted fact (ReviewNote set) decays far sooner —
 	// a decay candidate — while a corroborated one (Helped) resists. The factor is 1.0 at
 	// the neutral baseline, so this is a no-op for any fact the outcome loop hasn't touched
 	// (it refines outcome-judged facts, it does not accelerate decay across the board). It

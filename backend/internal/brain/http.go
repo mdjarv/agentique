@@ -34,7 +34,7 @@ type Handler struct {
 // memoryDTO is the wire shape of a brain memory. It is HAND-SYNCED with the
 // frontend `Memory` interface in frontend/src/lib/brain-api.ts — there is NO typegen
 // for brain types, so every field added/changed here MUST be mirrored there by hand
-// (matching the JSON tag names/casing). See brain-design-log.md#brain-ui §3.
+// (matching the JSON tag names/casing). See brain.md#brain-ui §3.
 type memoryDTO struct {
 	ID       string `json:"id"`
 	Scope    string `json:"scope"`
@@ -68,7 +68,7 @@ type memoryDTO struct {
 	// --- Band-1 controlled-vocabulary labels (memory/labels.go). Lifecycle/Evidence/
 	// Volatility are always set on a record (New + NormalizeLabels-on-load), so they are
 	// never omitted; the rest are optional. The frontend surfaces these as tier badges,
-	// chips, filters, and typed graph edges (brain-design-log.md#brain-ui F0–F6).
+	// chips, filters, and typed graph edges (brain.md#brain-ui F0–F6).
 
 	// Lifecycle is the coarse state: active | superseded | archived (archived = cold tier,
 	// out of recall, restorable).
@@ -573,7 +573,7 @@ func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// statusCounts is the brain-health distribution (brain-design-log.md#brain-ui F6, Band 3 E2): a cheap
+// statusCounts is the brain-health distribution (brain.md#brain-ui F6, Band 3 E2): a cheap
 // single-pass aggregation over the whole corpus that makes the Band-1 pipeline legible —
 // how many captures await promotion, how much is archived, the evidence/volatility/
 // confidence spread, and the review backlog. Kept in sync by hand with brain-api.ts.

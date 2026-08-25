@@ -24,7 +24,7 @@ type builtinPersona struct {
 
 // builtinPersonas are the Odysseus-style discussion personas seeded as global
 // (project-less) agent profiles. Prompts ported verbatim from the Odysseus
-// project; see docs/discussion-groups.md §7.
+// project; see docs/channels.md.
 var builtinPersonas = []builtinPersona{
 	{
 		id: "builtin-socrates", name: "Socrates", role: "questioner",

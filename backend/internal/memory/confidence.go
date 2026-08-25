@@ -49,7 +49,7 @@ const (
 	// not nagged about.
 	NeedsConfirmationScore = CrossProjectInferredScore
 	// ActOnConfidence is the confidence at or above which a preference graduates from
-	// soft "background context" into an acted-on operating contract (brain-design-log.md#the-outcome-signal).
+	// soft "background context" into an acted-on operating contract (brain.md#the-outcome-signal).
 	// It sits ABOVE DefaultInferredScore (0.8) deliberately: a freshly inferred preference
 	// must EARN the authority to drive behavior — by human Confirm (→1.0) or by outcome
 	// corroboration (MemoryUsed raising it past this gate) — before it becomes a standing

@@ -14,7 +14,7 @@ import (
 )
 
 // TestSemanticRecallVetoesGithubMisRecall reproduces the real meta-spec mis-recall
-// (docs/brain-design-log.md#semantic-recall) end-to-end against a LIVE Chroma + embedding endpoint,
+// (docs/brain.md#semantic-recall) end-to-end against a LIVE Chroma + embedding endpoint,
 // to (a) measure the actual cosine distribution for the chosen model and (b) prove the
 // vector veto (priority #1) excludes the off-topic Go/GOPRIVATE fact through the real
 // vector path, not just the lexical guard.

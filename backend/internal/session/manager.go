@@ -81,7 +81,7 @@ type Manager struct {
 	// MemoryContractFn, when set, returns the project's "operating contract" — the
 	// high-confidence preferences the agent should act on by default, framed as standing
 	// instructions rather than the soft background context of MemoryPreambleFn. Injected
-	// into the system preamble at create/resume (brain-design-log.md#the-outcome-signal). Read-only; nil
+	// into the system preamble at create/resume (brain.md#the-outcome-signal). Read-only; nil
 	// disables it. Wired to the brain Service by the server.
 	MemoryContractFn func(ctx context.Context, projectID string) string
 

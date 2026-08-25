@@ -24,7 +24,7 @@ const (
 	// when the query's actually-discriminating terms went unmatched, while still admitting
 	// a genuinely dominant single-keyword match (the one word IS most of what was asked).
 	// Skipped when a strong vector signal already vouches for relevance. See
-	// docs/brain-design-log.md#semantic-recall for why lexical recall needs this and the embedder doesn't.
+	// docs/brain.md#semantic-recall for why lexical recall needs this and the embedder doesn't.
 	singleTokenMinShare = 0.40
 
 	// Hybrid blend weights when semantic scores are available (Odysseus-derived):
@@ -37,7 +37,7 @@ const (
 	minVectorScore = 0.20
 
 	// DefaultVectorVetoScore is the hybrid-mode veto floor (Query.VectorVetoScore, the
-	// cure half of brain-design-log.md#semantic-recall). When a Searcher scored a candidate at or
+	// cure half of brain.md#semantic-recall). When a Searcher scored a candidate at or
 	// below this, the embedder is asserting "this is unrelated to the query"; we drop it
 	// even if keyword overlap is strong, so semantics — not an incidental keyword match —
 	// has the final say. It sits BELOW minVectorScore on purpose: minVectorScore is "a
@@ -47,7 +47,7 @@ const (
 	// handled by the vouch bar (the lexical guard, gated on VectorVouchScore), so the two
 	// cover disjoint classes. It is MODEL-SPECIFIC: 0.15 is calibrated for all-MiniLM-L6-v2
 	// (measured live — clearly-unrelated facts score ~0.05–0.13; weakly-related ~0.35;
-	// related ~0.44; see docs/brain-design-log.md#semantic-recall). A better-centred model can use a
+	// related ~0.44; see docs/brain.md#semantic-recall). A better-centred model can use a
 	// higher floor.
 	DefaultVectorVetoScore = 0.15
 
@@ -55,7 +55,7 @@ const (
 	// veto can only drop a candidate the vector actually scored, so recall asks the index
 	// to cover the whole keyword candidate pool (not just top-k) — bounded here so a large
 	// global scope can't blow up the per-turn query. Documented latency tradeoff in
-	// docs/brain-design-log.md#semantic-recall ("per-turn recall latency").
+	// docs/brain.md#semantic-recall ("per-turn recall latency").
 	maxRecallVectorK = 200
 )
 
@@ -258,7 +258,7 @@ func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, 
 			vs, vScored = vec[c.ID]
 		}
 
-		// Vector veto (brain-design-log.md#semantic-recall priority #1, the cure half): when the
+		// Vector veto (brain.md#semantic-recall priority #1, the cure half): when the
 		// embedder SCORED this candidate (present in the vector results) as semantically
 		// unrelated to the query — at/below vetoFloor — drop it regardless of keyword
 		// overlap. The semantic "not related" verdict outranks an incidental keyword
@@ -285,7 +285,7 @@ func rank(query string, candidates []Record, vec map[string]float64, vetoFloor, 
 		// NOT enough: a compressed-distribution embedder (e.g. all-MiniLM, where even
 		// unrelated pairs score ~0.35) would otherwise vouch for everything and let the
 		// github mis-recall survive the hybrid path — measured live, see
-		// docs/brain-design-log.md#semantic-recall. With no vector signal the guard always applies.
+		// docs/brain.md#semantic-recall. With no vector signal the guard always applies.
 		vouched := haveVec && vScored && vs >= vouchScore
 		if !vouched && multiToken && kwMatches[i] <= 1 && kw < singleTokenMinShare {
 			continue

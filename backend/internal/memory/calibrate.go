@@ -11,7 +11,7 @@ import "sort"
 // wider), so a single constant calibrated on one model is wrong on the next — and
 // even on the same model, wrong for a corpus whose breadth differs from the sample
 // it was tuned on (DefaultVectorVetoScore was tuned on a 5-fact example and is
-// over-aggressive on a broad 1500-fact brain). See docs/brain-design-log.md#semantic-recall
+// over-aggressive on a broad 1500-fact brain). See docs/brain.md#semantic-recall
 // (sequencing #5) and docs/tech-debt.md ("cosine threshold is model-specific").
 //
 // The shape of a real corpus's pairwise distribution is the lever: the vast

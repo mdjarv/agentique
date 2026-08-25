@@ -286,7 +286,7 @@ type WireWorkflowProgress struct {
 //
 // NOTE: agentkit's WorkflowLaunchedEvent carries no TaskID/ToolUseID, so this
 // event cannot be correlated to the task stream client-side — the workflow panel
-// keys on the task events' ToolUseID instead. See docs/workflows-integration.md.
+// keys on the task events' ToolUseID instead. See docs/workflows.md.
 type WireWorkflowLaunchedEvent struct {
 	Type          string `json:"type"` // "workflow_launched"
 	RunID         string `json:"runId"`

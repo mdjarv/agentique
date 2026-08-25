@@ -636,7 +636,7 @@ var calibrateCmd = &cobra.Command{
 brain, and derive the model-specific semantic thresholds from its percentiles: the
 cosine "related" line (the link threshold + recall vouch bar) from a high percentile,
 the vector veto floor from a low one. This replaces hand-tuning a constant per
-embedding model (docs/brain-design-log.md#semantic-recall).
+embedding model (docs/brain.md#semantic-recall).
 
 It prints the distribution and the derived thresholds next to today's defaults; it
 writes nothing. To make the server use derived thresholds at boot, set
