@@ -17,6 +17,8 @@ export type { EffortLevel };
 
 export interface ComposerHandle {
   setText: (text: string) => void;
+  /** Current text — for callers that must not clobber what is being typed. */
+  getText: () => string;
 }
 
 type SendResult = boolean | undefined;
@@ -150,6 +152,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       ref,
       () => ({
         setText: (value: string) => inputRef.current?.setText(value, { focus: true }),
+        getText: () => inputRef.current?.getText() ?? "",
       }),
       [],
     );

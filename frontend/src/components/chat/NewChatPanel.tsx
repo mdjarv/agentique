@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { GitBranch, Loader2, Monitor, Plus, Users2 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { SwarmComposer } from "~/components/chat/SwarmComposer";
@@ -85,6 +85,26 @@ export function NewChatPanel({
   const persistedDraft = useUIStore((s) => s.drafts[draftKey] ?? "");
   const composerInitialText = persistedDraft || initialPrompt;
   const composerRef = useRef<ComposerHandle>(null);
+
+  // The draft can also be discarded — and that discard undone — from outside
+  // this panel (the sidebar's Drafts section). The composer owns its own text
+  // and writes it back on the next keystroke and on unmount, so both gestures
+  // have to reach it or the last write wins and undoes the user.
+  const lastPersisted = useRef(persistedDraft);
+  useEffect(() => {
+    const previous = lastPersisted.current;
+    lastPersisted.current = persistedDraft;
+    const composer = composerRef.current;
+    if (persistedDraft === previous || !composer) return;
+    if (persistedDraft === "") {
+      composer.setText("");
+      return;
+    }
+    // Restored from outside. Only while the composer holds nothing of its own:
+    // every keystroke also lands here (the composer persists what it typed),
+    // and overwriting then would fight the person typing.
+    if (previous === "" && !composer.getText()) composer.setText(persistedDraft);
+  }, [persistedDraft]);
   const [panelMode, setPanelMode] = useState<PanelMode>("session");
   const [worktree, setWorktree] = useState(initialWorktree ?? DEFAULT_SESSION_DEFAULTS.worktree);
   const [planMode, setPlanMode] = useState(DEFAULT_SESSION_DEFAULTS.planMode);
