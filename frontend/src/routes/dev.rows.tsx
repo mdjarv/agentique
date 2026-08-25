@@ -174,10 +174,6 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
       workers: 3,
     }),
   },
-  {
-    label: "draft",
-    vm: vm({ badge: "draft", livePhrase: { text: "draft", tone: "draft" } }),
-  },
   // Parked rows keep their hue: the process died, the work did not.
   {
     label: "parked — stopped",

@@ -52,10 +52,6 @@ describe("deriveBadge", () => {
     ).toBe("attention");
   });
 
-  it("maps drafts before live state", () => {
-    expect(deriveBadge(badgeInput({ isDraft: true }))).toBe("draft");
-  });
-
   it("maps running to working, and planning while running to planning", () => {
     expect(deriveBadge(badgeInput({ state: "running" }))).toBe("working");
     expect(deriveBadge(badgeInput({ state: "running", isPlanning: true }))).toBe("planning");
@@ -121,7 +117,7 @@ describe("deriveLivePhrase", () => {
     expect(deriveLivePhrase({ badge: "working" })).toEqual({ text: "working", tone: "work" });
   });
 
-  it("phrases planning, merging, failed, and draft", () => {
+  it("phrases planning, merging, and failed", () => {
     expect(deriveLivePhrase({ badge: "planning" })).toEqual({
       text: "planning",
       tone: "work",
@@ -134,10 +130,6 @@ describe("deriveLivePhrase", () => {
     // Unread has no phrase at all — the NEW pill in the time slot says it,
     // and the row drops to two lines.
     expect(deriveLivePhrase({ badge: "unread" })).toBeNull();
-    expect(deriveLivePhrase({ badge: "draft" })).toEqual({
-      text: "draft",
-      tone: "draft",
-    });
   });
 
   it("is silent at rest — resting rows have no third line", () => {

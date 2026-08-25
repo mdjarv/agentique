@@ -44,7 +44,6 @@ export interface DeriveBadgeInput {
   isPlanning: boolean;
   hasUnseenCompletion: boolean;
   connected: boolean;
-  isDraft?: boolean;
 }
 
 /**
@@ -60,7 +59,6 @@ export interface DeriveBadgeInput {
 export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
   if (input.hasPendingApproval) return "attention";
   if (input.hasPendingQuestion) return "question";
-  if (input.isDraft) return "draft";
   if (input.state === "running") return input.isPlanning ? "planning" : "working";
   if (input.state === "merging") return "merging";
   if (input.state === "failed") return "failed";
@@ -148,8 +146,6 @@ export function deriveLivePhrase(input: DeriveLivePhraseInput): MachineLine | nu
       return { text: input.liveStatus || "failed", tone: "fail" };
     // unread has no phrase: the pill says it, and the outcome word ("done" /
     // "merged") rides the repo line like any other settled session's.
-    case "draft":
-      return { text: "draft", tone: "draft" };
     default:
       return null;
   }

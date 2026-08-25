@@ -15,7 +15,6 @@ import {
   PinOff,
   Plug,
   Settings2,
-  SquareDashed,
   Terminal,
   TriangleAlert,
   X,
@@ -31,7 +30,6 @@ const TONE_CLASS: Record<MachineTone, string> = {
   attn: "text-orange",
   fail: "text-destructive",
   merge: "text-primary",
-  draft: "text-info",
   muted: "text-muted-foreground-faint",
 };
 
@@ -44,7 +42,6 @@ const BADGE_ARIA: Record<Exclude<ThreadBadge, null>, string> = {
   unread: "finished, unread",
   failed: "failed",
   merging: "merging",
-  draft: "draft",
   off: "evicted",
 };
 
@@ -61,7 +58,6 @@ const BADGE_GLYPH: Record<Exclude<ThreadBadge, null | "off">, typeof Check> = {
   unread: Check,
   failed: X,
   merging: GitMerge,
-  draft: SquareDashed,
 };
 
 /**

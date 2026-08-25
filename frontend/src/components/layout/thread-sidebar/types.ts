@@ -21,7 +21,6 @@ export type ThreadBadge =
   | "unread"
   | "failed"
   | "merging"
-  | "draft"
   | "off"
   | null;
 
@@ -43,7 +42,7 @@ export type WorkKind =
   | "generic";
 
 /** Color tone of the machine line (maps onto the shared state palette tokens). */
-export type MachineTone = "work" | "attn" | "fail" | "merge" | "draft" | "muted";
+export type MachineTone = "work" | "attn" | "fail" | "merge" | "muted";
 
 export interface MachineLine {
   text: string;
