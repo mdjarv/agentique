@@ -34,7 +34,9 @@ const HOLD_THRESHOLD_MS = 500;
  * - if already listening on pointer down, force-stop immediately (escape hatch).
  *
  * `speechBaseRef` snapshots the text that existed when recognition started; every
- * transcript update replaces everything after that base.
+ * transcript update replaces everything after that base. The spacer below is the
+ * only whitespace this layer adds — the transcript arrives already normalized
+ * (no leading or trailing space), so the two cannot double up.
  */
 export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams): ComposerSpeech {
   const speechBaseRef = useRef("");

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { reduceTranscript } from "~/lib/speech-transcript";
 
 const SpeechRecognitionCtor =
   typeof window !== "undefined"
@@ -6,7 +7,11 @@ const SpeechRecognitionCtor =
     : undefined;
 
 interface UseSpeechRecognitionOptions {
-  /** Called with the accumulated transcript every time results update. */
+  /**
+   * Called with the transcript so far every time results update. Whitespace is
+   * normalized (single spaces between parts, none at either end), so callers can
+   * concatenate it onto their own text without guarding against doubled spaces.
+   */
   onTranscript: (transcript: string) => void;
   /** Called once before recognition starts — use to snapshot pre-speech state. */
   onBeforeStart?: () => void;
@@ -66,19 +71,30 @@ export function useSpeechRecognition({
     if (!listeningRef.current) return;
     resetState();
     const rec = recognitionRef.current;
-    recognitionRef.current = null;
+
+    // The ref keeps pointing at `rec` until its own onend clears it. stop() is
+    // cooperative — that is the whole reason it isn't abort(): the engine still
+    // flushes one last onresult and only then releases the microphone. Dropping
+    // the ref here would leave a quick re-click's start() with nothing to abort,
+    // so the old recognizer would hold the device while the new one takes it.
+    // The session counter deliberately does not move: that final flush belongs
+    // to this session and the stale-callback guard must still let it through.
     try {
       rec?.stop();
     } catch {
-      // InvalidStateError if recognition wasn't actually started.
-      // State is already reset — nothing to do.
+      // InvalidStateError — recognition never actually started, so it holds no
+      // device and will emit no onend. Drop it rather than leave a dud in the ref.
+      recognitionRef.current = null;
     }
   }, [resetState]);
 
   const start = useCallback(() => {
     if (!SpeechRecognitionCtor || listeningRef.current) return;
 
-    // Abort any leftover instance (shouldn't exist, but defensive).
+    // Reclaim the microphone from a leftover instance: after stop() the previous
+    // recognizer stays in the ref until its onend, so a fast re-click lands here
+    // while it is still winding down. Its handlers stay attached — the session
+    // bump below is what silences them.
     recognitionRef.current?.abort();
     recognitionRef.current = null;
 
@@ -91,12 +107,10 @@ export function useSpeechRecognition({
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (sessionIdRef.current !== mySession) return;
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const alt = event.results[i]?.[0];
-        if (alt) transcript += alt.transcript;
-      }
-      onTranscriptRef.current(transcript);
+      // The list is authoritative and complete on every event, so the transcript
+      // is derived from it rather than accumulated here. See reduceTranscript
+      // for why interim results must not be added to it.
+      onTranscriptRef.current(reduceTranscript(event.results));
     };
 
     recognition.onend = () => {
