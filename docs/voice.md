@@ -442,6 +442,12 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 - **Recent transcript is not in the context.** The drafter gets the session's
   identity and the project's CLAUDE.md, but not what the session has been doing,
   so it cannot pick up a thread mid-conversation.
+- **A call is local-only.** The voice socket opens against the origin serving
+  the page, and dispatch goes through *that* server's session service, so a
+  session on a paired machine cannot be handed work. The Live button is hidden
+  there rather than failing after a whole conversation. Making it work means
+  routing the call to the owning machine, which is the multi-machine routing
+  facade's problem, not the voice socket's.
 - **The confirming phase is a prompt rule, not a state.** The read-back and its
   affirmative are enforced by the system instruction — and hold up well in
   testing — but nothing in the call machinery would stop a model that ignored

@@ -223,6 +223,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const [followRequest, setFollowRequest] = useState(0);
   const [liveOpen, setLiveOpen] = useState(false);
   const voiceEnabled = useFeatureStore((s) => s.features.voice);
+  // A call is physical, not logical: the voice socket opens against the origin
+  // serving this page, and dispatch goes through *that* server's session
+  // service. A session on a paired machine is not there, so the handoff would
+  // fail with "that could not be sent" after a whole conversation. Offer Live
+  // only where it can actually deliver.
+  const liveAvailable = voiceEnabled && !project?.machineId;
 
   const handleExpandFileConsumed = useCallback(() => {
     setExpandFile(null);
@@ -685,7 +691,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                   }
                   isRunning={sessionState === "running"}
                   onInterrupt={handleInterrupt}
-                  onStartLive={voiceEnabled ? () => setLiveOpen(true) : undefined}
+                  onStartLive={liveAvailable ? () => setLiveOpen(true) : undefined}
                   attachmentsSupported={attachmentsSupported}
                   focusMode
                   placeholder={

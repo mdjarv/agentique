@@ -1,5 +1,5 @@
 import { Loader2, Mic, PhoneOff, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useVoiceCall, type VoiceLogEntry } from "~/hooks/useVoiceCall";
 import { cn } from "~/lib/utils";
@@ -21,6 +21,14 @@ export function LiveCallPanel({
   onClose: () => void;
 }) {
   const { state, detail, log, start, stop } = useVoiceCall(sessionId);
+  const tailRef = useRef<HTMLDivElement>(null);
+
+  // Follow the tail. Hands-free means nobody is going to scroll, so a log that
+  // needs scrolling to read is a log nobody reads.
+  useEffect(() => {
+    if (log.length === 0) return;
+    tailRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [log]);
 
   // Start on open: the user already pressed a button that says Live, and a
   // second "connect" tap is a step nobody wants while driving.
@@ -76,6 +84,7 @@ export function LiveCallPanel({
             {log.map((entry) => (
               <LogLine key={entry.id} entry={entry} />
             ))}
+            <div ref={tailRef} />
           </ul>
         )}
       </div>
