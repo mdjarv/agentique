@@ -6,6 +6,9 @@
  * helpers in `derive.ts`, so these components never import from `~/stores/*`
  * or `~/lib/generated-types`.
  */
+import type { RestToken } from "~/lib/session/rest-state";
+
+export type { RestToken };
 
 /** Corner-badge state on the project icon. `null` = at rest, no badge. */
 export type ThreadBadge =
@@ -41,13 +44,6 @@ export type WorkKind =
 
 /** Color tone of the machine line (maps onto the shared state palette tokens). */
 export type MachineTone = "work" | "attn" | "fail" | "merge" | "draft" | "muted";
-
-/**
- * The one-word outcome a resting row folds into its repo line. Closed, because
- * each token owns a glyph — a new one must decide on its mark, not inherit a
- * blank.
- */
-export type RestToken = "" | "merged" | "stopped" | "finished" | "away" | "evicted";
 
 export interface MachineLine {
   text: string;

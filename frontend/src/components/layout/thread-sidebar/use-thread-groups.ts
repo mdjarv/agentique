@@ -20,6 +20,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
+import { deriveRestToken } from "~/lib/session/rest-state";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -30,7 +31,6 @@ import {
   compareOpenRows,
   deriveBadge,
   deriveLivePhrase,
-  deriveRestToken,
   deriveWorkKind,
   isAwake,
   isHued,

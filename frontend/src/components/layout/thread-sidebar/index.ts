@@ -2,12 +2,13 @@ export {
   compareOpenRows,
   type DeriveBadgeInput,
   type DeriveLivePhraseInput,
-  type DeriveRestTokenInput,
   deriveBadge,
   deriveLivePhrase,
-  deriveRestToken,
+  type HuedInput,
   isAwake,
+  isHued,
   isStale,
+  isTerminalState,
   STALE_AFTER_MS,
 } from "./derive";
 export { NewSessionButton } from "./NewSessionButton";
@@ -17,6 +18,7 @@ export { ThreadSidebar } from "./ThreadSidebar";
 export type {
   MachineLine,
   MachineTone,
+  RestToken,
   ThreadBadge,
   ThreadGroups,
   ThreadRowVM,

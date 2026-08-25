@@ -5,8 +5,6 @@ import {
   Bot,
   Check,
   CircleHelp,
-  CircleStop,
-  CloudOff,
   Diamond,
   GitMerge,
   Globe,
@@ -20,14 +18,14 @@ import {
   SquareDashed,
   Terminal,
   TriangleAlert,
-  Unplug,
   X,
 } from "lucide-react";
 import { memo } from "react";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { REST_GLYPH, type RestToken } from "~/lib/session/rest-state";
 import { cn } from "~/lib/utils";
-import type { MachineTone, RestToken, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
@@ -65,20 +63,6 @@ const BADGE_GLYPH: Record<Exclude<ThreadBadge, null | "off">, typeof Check> = {
   failed: X,
   merging: GitMerge,
   draft: SquareDashed,
-};
-
-/**
- * The resting row's mark, beside its outcome word. Deliberately quiet — the
- * row already carries its hue, so this only has to separate "the work ended"
- * (check, merge) from "the process did" (stop, unplug, cloud-off), which is
- * low-priority information: the next message wakes the session either way.
- */
-export const REST_GLYPH: Record<Exclude<RestToken, "">, typeof Check> = {
-  merged: GitMerge,
-  finished: Check,
-  stopped: CircleStop,
-  evicted: Unplug,
-  away: CloudOff,
 };
 
 /**

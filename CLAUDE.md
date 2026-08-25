@@ -206,6 +206,32 @@ re-create the contradiction. The sidebar decides Archived before Pinned
 whole-shelf sweep), and only merged work is safe to delete in bulk. UI copy says
 "Archive"; `done` reads as "finished" wherever it surfaces.
 
+### Colour is filing, not liveness
+
+A session row carries its project hue while the work is **still the user's to
+deal with**, and goes grey only once it is **filed** — archived, or merged with
+the run ended (`isHued`). Losing the CLI is not an outcome and must never grey a
+row: idle eviction reclaims processes, a restart reaps every process group, a
+crash takes one down, and all three end in a session that the next message wakes.
+Greying those filed the work away on the user's behalf, beside something merged
+last week.
+
+So `awake` buys only the third line, never the colour — keep the two separate.
+The state instead rides a **mark**: `REST_GLYPH` in `lib/session/rest-state.ts`
+pairs each `RestToken` with one glyph, and the token union is closed so a new
+outcome must choose its mark rather than inherit a blank. Both surfaces that
+show sessions read that one table — the sidebar rows and the landing deck's
+cards — because a session that says "evicted" in the rail cannot say "stopped"
+on the overview. Grey stays the shelf's and Archived's language: both render
+`compact`, which is grey and collapsed by construction.
+
+The deck's "Needs you" band holds all three reasons a session waits on the
+operator — approval, question, unread completion — ordered so the two that hold
+a process come first. Unread is client-only state (`hasUnseenCompletion`, set
+when a result lands in a tab that is not viewing that session), so it does not
+survive a reload; treat an empty band as "nothing arrived while you watched",
+not "nothing is unread".
+
 ### Wire compatibility across peers
 
 A client talks to **several servers at once** — the primary plus one per paired

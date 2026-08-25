@@ -4,7 +4,6 @@ import {
   type DeriveBadgeInput,
   deriveBadge,
   deriveLivePhrase,
-  deriveRestToken,
   deriveWorkKind,
   isAwake,
   isHued,
@@ -202,24 +201,6 @@ describe("isHued", () => {
   });
 });
 
-describe("deriveRestToken", () => {
-  it("ranks merged over stopped over finished", () => {
-    expect(deriveRestToken({ state: "stopped", merged: true, connected: true })).toBe("merged");
-    expect(deriveRestToken({ state: "stopped", merged: false, connected: true })).toBe("stopped");
-    // "finished", never "done": the state means the CLI exited, and "done" would
-    // read as the user's verdict on the work — that verdict is Archive.
-    expect(deriveRestToken({ state: "done", merged: false, connected: true })).toBe("finished");
-  });
-
-  it("marks a disconnected idle session as evicted", () => {
-    expect(deriveRestToken({ state: "idle", merged: false, connected: false })).toBe("evicted");
-  });
-
-  it("says nothing for a connected idle session", () => {
-    expect(deriveRestToken({ state: "idle", merged: false, connected: true })).toBe("");
-  });
-});
-
 function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
   return {
     sessionId: "s-1",
@@ -335,34 +316,6 @@ describe("a cleanly-exited session reaches the shelf, not the archive", () => {
   it("never leaves an unseen outcome on the shelf", () => {
     const unseen = { state: "done", unread: true, lastActivity: now - STALE_AFTER_MS - 1, now };
     expect(isStale(unseen)).toBe(false);
-  });
-});
-
-// "evicted" is a claim about something agentique DID (reclaimed the CLI). A
-// machine we cannot reach has its sessions frozen to connected:false so no row
-// claims to be live — reading that as "evicted" turns an honest unknown into a
-// false statement about a CLI that is probably still running over there.
-describe("a session on an unreachable machine", () => {
-  it("says away, not evicted", () => {
-    expect(
-      deriveRestToken({ state: "idle", merged: false, connected: false, machineOffline: true }),
-    ).toBe("away");
-  });
-
-  it("still says evicted when the machine is reachable", () => {
-    expect(
-      deriveRestToken({ state: "idle", merged: false, connected: false, machineOffline: false }),
-    ).toBe("evicted");
-  });
-
-  // A real outcome outranks reachability: merged work is merged wherever it ran.
-  it("does not hide a real outcome behind away", () => {
-    expect(
-      deriveRestToken({ state: "stopped", merged: true, connected: false, machineOffline: true }),
-    ).toBe("merged");
-    expect(
-      deriveRestToken({ state: "done", merged: false, connected: false, machineOffline: true }),
-    ).toBe("finished");
   });
 });
 
