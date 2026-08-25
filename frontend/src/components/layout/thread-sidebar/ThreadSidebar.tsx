@@ -1,9 +1,15 @@
 /**
  * Flat session-first sidebar — orchestrator.
  *
- * Pinned (drag-orderable) / Open (attention-first) / Archived (collapsed).
- * Rows come from `useThreadGroups`; pin, archive, and reorder go over WS and
- * settle via the `session.pinned` / `session.state` pushes.
+ * Drafts / Pinned (drag-orderable) / Open (attention-first) / Archived
+ * (collapsed). Session rows come from `useThreadGroups`; pin, archive, and
+ * reorder go over WS and settle via the `session.pinned` / `session.state`
+ * pushes.
+ *
+ * Drafts sit above Pinned because they are the one thing in the list that
+ * exists nowhere else: an unsent prompt lives only in this browser's local
+ * storage, so a row nobody can find is text nobody gets back. Everything below
+ * is server state, reachable from any client.
  *
  * Archive files a session away and nothing more — it does not end a run, and
  * the server refuses it outright while a turn is in flight, which is why rows
@@ -11,7 +17,7 @@
  */
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
-import { useNavigate } from "@tanstack/react-router";
+import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -19,25 +25,35 @@ import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/sessio
 import { cn, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
+import { useUIStore } from "~/stores/ui-store";
 import { StreamSearchBar } from "../StreamSearchBar";
+import { DraftRow } from "./DraftRow";
 import { ThreadRow } from "./ThreadRow";
 import { CollapsibleBlock, ThreadSection } from "./ThreadSection";
-import type { ThreadRowVM } from "./types";
+import type { DraftRowVM, ThreadRowVM } from "./types";
+import { useDraftRows } from "./use-draft-rows";
 import { usePinDnd, usePinSortable } from "./use-pin-dnd";
 import { useThreadGroups } from "./use-thread-groups";
 
 export function ThreadSidebar() {
   const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
   const ws = useWebSocket();
   const [searchQuery, setSearchQuery] = useState("");
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [staleExpanded, setStaleExpanded] = useState(false);
   const groups = useThreadGroups(searchQuery);
+  const drafts = useDraftRows(searchQuery);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  // The New-session view has no session id, so a draft row highlights off the
+  // route it opens instead.
+  const newSessionMatch = matchRoute({ to: "/project/$projectSlug/session/new" });
+  const activeNewProjectSlug = newSessionMatch ? newSessionMatch.projectSlug : undefined;
 
   const isSearching = searchQuery.trim().length > 0;
   const showArchived = isSearching || archivedExpanded;
   const isEmpty =
+    drafts.length === 0 &&
     groups.pinned.length === 0 &&
     groups.open.length === 0 &&
     groups.stale.length === 0 &&
@@ -53,6 +69,33 @@ export function ThreadSidebar() {
     },
     [navigate],
   );
+
+  // Opening a draft is just opening that project's New-session view — the
+  // composer rehydrates from the same store key the row was built from.
+  const openDraft = useCallback(
+    (vm: DraftRowVM) => {
+      useAppStore.getState().setSidebarOpen(false);
+      navigate({
+        to: "/project/$projectSlug/session/new",
+        params: { projectSlug: vm.projectSlug },
+      });
+    },
+    [navigate],
+  );
+
+  // Discarding is the only destructive thing a draft row can do, and the text
+  // exists nowhere else, so it always comes with an undo.
+  const discardDraft = useCallback((vm: DraftRowVM) => {
+    const text = useUIStore.getState().drafts[vm.draftKey];
+    if (text === undefined) return;
+    useUIStore.getState().clearDraft(vm.draftKey);
+    toast("Draft discarded", {
+      action: {
+        label: "Undo",
+        onClick: () => useUIStore.getState().setDraft(vm.draftKey, text),
+      },
+    });
+  }, []);
 
   const togglePin = useCallback(
     (vm: ThreadRowVM) => {
@@ -136,8 +179,26 @@ export function ThreadSidebar() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {drafts.length > 0 && (
+          <ThreadSection label="Drafts" count={drafts.length}>
+            {drafts.map((vm) => (
+              <DraftRow
+                key={vm.draftKey}
+                vm={vm}
+                selected={vm.projectSlug === activeNewProjectSlug}
+                onClick={() => openDraft(vm)}
+                onDiscard={() => discardDraft(vm)}
+              />
+            ))}
+          </ThreadSection>
+        )}
+
         {groups.pinned.length > 0 && (
-          <ThreadSection label="Pinned" count={groups.pinned.length}>
+          <ThreadSection
+            label="Pinned"
+            count={groups.pinned.length}
+            className={cn(drafts.length > 0 && "mt-2")}
+          >
             <DndContext sensors={dnd.sensors} onDragEnd={dnd.handleDragEnd}>
               <SortableContext items={pinnedIds} strategy={dnd.strategy}>
                 {groups.pinned.map((vm) => (
@@ -158,7 +219,7 @@ export function ThreadSidebar() {
         <ThreadSection
           label="Open"
           count={groups.open.length}
-          className={cn(groups.pinned.length > 0 && "mt-2")}
+          className={cn((drafts.length > 0 || groups.pinned.length > 0) && "mt-2")}
         >
           {groups.open.map((vm) => (
             <ThreadRow

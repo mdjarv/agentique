@@ -21,10 +21,9 @@ import {
   X,
 } from "lucide-react";
 import { memo } from "react";
-import { useProjectIcon } from "~/hooks/useProjectIcon";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { REST_GLYPH, type RestToken } from "~/lib/session/rest-state";
 import { cn } from "~/lib/utils";
+import { Chip, MachineTag } from "./RowIdentity";
 import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
@@ -98,35 +97,29 @@ function stateGlyph(badge: ThreadBadge, workKind?: WorkKind) {
   );
 }
 
-/**
- * The machine a remote session runs on: its face and its name. Presentation
- * is this host's (docs/multi-machine.md) — the face is a recognition aid, so
- * an unset icon falls back to the generic server glyph rather than nothing.
- */
-function MachineTag({ vm }: { vm: ThreadRowVM }) {
-  if (!vm.remoteMachineLabel) return null;
-  const Icon = getMachineIcon(vm.remoteMachineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
-  const offline = !!vm.remoteMachineOffline;
-  const fault = vm.remoteMachineFault;
+/** The row's machine tag, from the session VM. */
+function SessionMachineTag({ vm }: { vm: ThreadRowVM }) {
   return (
-    <span
-      title={
-        fault ??
-        (offline ? `${vm.remoteMachineLabel} is offline — showing its last known state` : undefined)
-      }
-      className={cn(
-        "flex shrink-0 items-center gap-0.5 font-mono text-[10px]",
-        // Away is a dimmer, not an alarm: the row stays readable and
-        // navigable, it just stops claiming to be live. A *proven* fault is
-        // the exception — it will never clear on its own, so it gets the one
-        // colour that means something is wrong.
-        fault ? "text-destructive" : "text-muted-foreground-faint",
-        offline && !fault && "opacity-55",
-      )}
-    >
-      <Icon className="size-2.5 shrink-0" />
-      {vm.remoteMachineLabel}
-    </span>
+    <MachineTag
+      label={vm.remoteMachineLabel}
+      icon={vm.remoteMachineIcon}
+      offline={vm.remoteMachineOffline}
+      fault={vm.remoteMachineFault}
+    />
+  );
+}
+
+/** The row's project chip, from the session VM. Hue is the caller's call: the
+ *  filed sections render grey whatever the row's own rule says. */
+function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
+  return (
+    <Chip
+      iconId={vm.projectIconId}
+      initials={vm.projectInitials}
+      colorBg={vm.projectColorBg}
+      colorFg={vm.projectColorFg}
+      hued={hued}
+    />
   );
 }
 
@@ -147,33 +140,6 @@ function rowAriaLabel(vm: ThreadRowVM): string {
   // see ("away"). Every other badge names something happening right now.
   const spoken = vm.badge && vm.badge !== "off" ? BADGE_ARIA[vm.badge] : vm.restToken;
   return [name, spoken || "at rest", vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
-}
-
-/**
- * The 14px inline project chip on the repo line. Hued rows carry the project's
- * colour, filed rows are grey — the identity colour lives here and on the slug,
- * nowhere else. Hue is not a liveness signal (see `isHued`): a stopped or
- * evicted session keeps it, because losing the CLI is not an outcome.
- */
-function Chip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
-  const Icon = useProjectIcon(vm.projectIconId ?? "");
-  return (
-    <span
-      className={cn(
-        "flex size-3.5 shrink-0 items-center justify-center rounded",
-        !hued && "bg-border/40 text-muted-foreground",
-      )}
-      style={
-        hued ? { backgroundColor: `${vm.projectColorBg}26`, color: vm.projectColorFg } : undefined
-      }
-    >
-      {Icon ? (
-        <Icon className="size-2.5" />
-      ) : (
-        <span className="text-[7px] font-bold">{vm.projectInitials}</span>
-      )}
-    </span>
-  );
 }
 
 /** The outcome word with its mark, folded into the repo line at rest. */
@@ -287,7 +253,7 @@ export const ThreadRow = memo(function ThreadRow({
           <span className="mt-0.5 shrink-0">
             {/* The shelf and Archived are the filed sections — grey by
                 construction, whatever the row's own hue rule says. */}
-            <Chip vm={vm} hued={false} />
+            <SessionChip vm={vm} hued={false} />
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline gap-2">
@@ -310,7 +276,7 @@ export const ThreadRow = memo(function ThreadRow({
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
               <span className="min-w-0 truncate">{vm.projectLabel}</span>
-              <MachineTag vm={vm} />
+              <SessionMachineTag vm={vm} />
             </span>
           </span>
         </button>
@@ -337,7 +303,7 @@ export const ThreadRow = memo(function ThreadRow({
       >
         {/* Repo line: chip · slug · @machine · rest outcome · time */}
         <span className="flex items-center gap-1.5">
-          <Chip vm={vm} hued={vm.hued} />
+          <SessionChip vm={vm} hued={vm.hued} />
           <span
             className={cn(
               "min-w-0 shrink truncate font-mono text-[10px] font-medium",
@@ -347,7 +313,7 @@ export const ThreadRow = memo(function ThreadRow({
           >
             {vm.projectLabel}
           </span>
-          <MachineTag vm={vm} />
+          <SessionMachineTag vm={vm} />
           {/* Unread rows show the outcome word too: their third line is gone,
               so "done" / "merged" has nowhere else to live. */}
           {(!awake || vm.unread) && vm.restToken && <RestMark token={vm.restToken} />}

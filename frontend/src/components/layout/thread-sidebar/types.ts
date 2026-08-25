@@ -108,6 +108,35 @@ export interface ThreadRowVM {
   turns?: number;
 }
 
+/**
+ * An unsent New-session prompt. Deliberately NOT a `ThreadRowVM`: no session
+ * exists yet, so there is no state, no outcome, no pin and nothing to archive —
+ * only the project it targets and the words the user left behind.
+ */
+export interface DraftRowVM {
+  /** The ui-store draft key — row identity, and what Discard clears. */
+  draftKey: string;
+  projectId: string;
+  /** Routing slug — machine-qualified for a remote project, like a session's. */
+  projectSlug: string;
+  /** The slug as read: suffix dropped, since the row names the machine. */
+  projectLabel: string;
+  /** Human project name — search matches it, the row does not show it. */
+  projectName: string;
+  projectInitials: string;
+  projectColorBg: string;
+  projectColorFg: string;
+  projectIconId?: string;
+  /** First line with content, whitespace collapsed. Never empty. */
+  title: string;
+  /** More text follows the title — the row shows an excerpt. */
+  more: boolean;
+  remoteMachineLabel?: string;
+  remoteMachineIcon?: string;
+  /** That machine is unreachable — sending will fail until it is back. */
+  remoteMachineOffline?: boolean;
+}
+
 export interface ThreadGroups {
   pinned: ThreadRowVM[];
   open: ThreadRowVM[];
