@@ -187,20 +187,45 @@ group's name, colour, icon, folder, star and navigation slug.
 
 `useLogicalProjects` turns that into the row view-model every project-listing
 surface consumes, so no surface can quietly go back to listing checkouts. The
-new-session palette, the `/projects` inventory, the Run-in menu and the
-prompt-card target picker all list repos. Thread rows take a session's label,
-colour and icon from its representative while routing by its own qualified slug.
+new-session palette, the `/projects` inventory and the Run-in menu all list
+repos. Thread rows take a session's label, colour and icon from its
+representative while routing by its own qualified slug.
 
 A row is `away` only when *every* member's machine is away, so a repo that also
 lives locally is always launchable, and an unknown machine id counts as away
 rather than reachable. Where a repo spans machines, `/projects` gives each
 checkout its own launchable line with machine, path and reachability.
 
+### Launching names a machine
+
+Listing is logical; **launching is physical**, and `launch-targets.ts` is the
+seam. `launchTargets` flattens the logical rows into the checkouts a launch can
+actually name, so a repo held on three machines offers three targets rather than
+silently taking the representative — which is chosen for presentation, not for
+being reachable. A target carries both slugs and they are not interchangeable:
+`slug` routes to the checkout (a remote's is machine-qualified), `rowSlug` is the
+representative's and is the only one presentation may read.
+
+`ProjectLaunchPicker` is that list as a searchable palette (the prompt card's
+target picker). The machine is part of the search text, so "agentique zbook" is
+one query rather than a repo pick followed by a second control, and a
+single-machine repo shows no machine chrome at all. An away machine's row is
+present but refused — where the repo lives is worth knowing even when it is
+asleep.
+
+`preferredMember` is the other half: when nobody has picked, prefer a reachable
+checkout over the representative. A repo that lives only on two remotes takes its
+representative from list order, so defaulting to it blocks the composer on a
+sleeping machine while a live copy sits one entry down. The new-session panel
+fills its Run-on default in that way and re-derives it as machines come and go;
+an explicit pick always wins.
+
 A remote machine's own `favorite` flag is that host's opinion and is ignored here;
 starring a merged row writes to the representative. Sessions from every member
 interleave under one identity, each carrying its machine glyph. The new-session
 page shows a Run-on control when the group spans machines, defaulting to the
-primary, and the new-project dialog offers a machine picker whose path input,
+checkout it was opened for (see `preferredMember` above for the one case that
+overrides), and the new-project dialog offers a machine picker whose path input,
 directory browser and validation all run against the chosen machine.
 
 ### Offline behaviour

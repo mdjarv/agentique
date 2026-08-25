@@ -12,17 +12,11 @@ import {
 } from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ProjectLaunchPicker } from "~/components/projects/ProjectLaunchPicker";
 import { Button } from "~/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useLogicalProjects } from "~/hooks/useLogicalProjects";
+import { useLaunchTargets } from "~/hooks/useLaunchTargets";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
 // Re-export the prompt-parsing API from its new home so existing imports
@@ -312,10 +306,10 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
   const invalidSlug = slugOverride !== undefined && !resolvedProject && !overrideProjectId;
 
   const allProjects = useAppStore((s) => s.projects);
-  // One entry per repo (multi-machine): a repo cloned on two machines is one
-  // choice here, and starts on its representative.
-  const projectChoices = useLogicalProjects();
-  const showProjectPicker = projectChoices.length > 1;
+  // One entry per physical checkout (multi-machine): a repo cloned on two
+  // machines offers both, because starting a session names one machine.
+  const launchTargets = useLaunchTargets();
+  const showProjectPicker = launchTargets.length > 1;
   const targetProject = isCrossProject
     ? allProjects.find((p) => p.id === targetProjectId)
     : undefined;
@@ -423,8 +417,8 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
             <>
               {/* Editing first is the common move — the composer is where worktree,
                *  agent and wording get changed — so it is a button of its own rather
-               *  than a menu item. Switching project is the rare one and stays in the
-               *  menu. */}
+               *  than a menu item. Picking another target is the rare one and stays
+               *  behind the chevron. */}
               <Button
                 size="xs"
                 variant="ghost"
@@ -435,67 +429,43 @@ export function PromptCard({ title, prompt, projectSlug: slugOverride, warning }
                 <Pencil className="h-3 w-3" />
                 Edit
               </Button>
-              <DropdownMenu>
-                <div
+              <div
+                className={cn(
+                  "inline-flex items-center rounded-md text-xs font-medium",
+                  "bg-primary text-primary-foreground shadow-xs",
+                  (isStreaming || !ctx) && "opacity-50 pointer-events-none",
+                )}
+              >
+                <button
+                  type="button"
+                  disabled={isStreaming || !ctx || invalidSlug}
+                  onClick={handleStart}
                   className={cn(
-                    "inline-flex items-center rounded-md text-xs font-medium",
-                    "bg-primary text-primary-foreground shadow-xs",
-                    (isStreaming || !ctx) && "opacity-50 pointer-events-none",
+                    "inline-flex items-center gap-1.5 h-6 px-2 rounded-l-md hover:bg-primary-foreground/10 transition-colors disabled:opacity-50 disabled:pointer-events-none",
+                    !showProjectPicker && "rounded-r-md",
                   )}
                 >
-                  <button
-                    type="button"
-                    disabled={isStreaming || !ctx || invalidSlug}
-                    onClick={handleStart}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 h-6 px-2 rounded-l-md hover:bg-primary-foreground/10 transition-colors disabled:opacity-50 disabled:pointer-events-none",
-                      !showProjectPicker && "rounded-r-md",
-                    )}
-                  >
-                    <Play className="h-3 w-3" />
-                    Start Session
-                  </button>
-                  {showProjectPicker && (
-                    <>
-                      <div className="w-px h-4 bg-primary-foreground/25" />
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors"
-                          aria-label="Start in another project"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </DropdownMenuTrigger>
-                    </>
-                  )}
-                </div>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Start in project…
-                  </DropdownMenuLabel>
-                  {projectChoices.map((row) => (
-                    <DropdownMenuItem
-                      key={row.id}
-                      disabled={row.away}
-                      onClick={() => handleStartInProject(row.id)}
-                      className="text-xs gap-2"
+                  <Play className="h-3 w-3" />
+                  Start Session
+                </button>
+                {showProjectPicker && (
+                  <>
+                    <div className="w-px h-4 bg-primary-foreground/25" />
+                    <ProjectLaunchPicker
+                      targetProjectId={targetProjectId}
+                      onPick={(target) => handleStartInProject(target.projectId)}
                     >
-                      <Check
-                        className={cn(
-                          "h-3 w-3",
-                          // A remote member being the target still ticks its
-                          // repo's row — one repo, one entry.
-                          row.members.some((m) => m.projectId === targetProjectId)
-                            ? "opacity-100"
-                            : "opacity-0",
-                        )}
-                      />
-                      {row.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      <button
+                        type="button"
+                        className="inline-flex items-center h-6 px-1.5 rounded-r-md hover:bg-primary-foreground/10 transition-colors"
+                        aria-label="Start somewhere else"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </ProjectLaunchPicker>
+                  </>
+                )}
+              </div>
             </>
           )}
           {state === "creating" && (

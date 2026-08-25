@@ -463,6 +463,14 @@ session-scoped surface holds only a physical project id and so goes through
 of whichever machine happens to run it, leaving one repo red in the sidebar and
 green in the chat pane it opens.
 
+Listing is logical, **launching is physical**: `launchTargets` flattens the rows
+into the checkouts a launch can name, so a repo on three machines offers three
+targets and the machine is a searchable part of the choice, not an assumption. A
+target's `slug` routes; only `rowSlug` may feed presentation. Where nobody picked,
+`preferredMember` prefers a reachable checkout over the representative — the
+representative is chosen for presentation and can be the one machine that is
+asleep.
+
 The machine catalog is full-access account state on the primary. localStorage
 never persists bearer credentials, and per-machine data caches sanitize
 live-ness. A flaky remote re-syncs only itself and never resets primary state.

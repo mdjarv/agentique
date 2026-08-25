@@ -10,6 +10,7 @@ import { PageHeader } from "~/components/layout/PageHeader";
 import { TemplatePicker } from "~/components/templates/TemplatePicker";
 import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { useLogicalProjectOf } from "~/hooks/useLogicalProjects";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -17,6 +18,7 @@ import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { preferredMember } from "~/lib/machines/launch-targets";
 import { useNavigationGuard } from "~/lib/navigation";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
@@ -121,10 +123,16 @@ export function NewChatPanel({
   const projectPresets = parseProjectPresets(project?.default_behavior_presets ?? "");
 
   // "Run on": when this logical project spans machines, the session targets
-  // one physical member — defaulting to the primary machine's copy (the
-  // representative this panel was opened for). Choice locks at send; the
-  // created session belongs to the member, so all follow-up traffic routes
-  // to its machine.
+  // one physical member — defaulting to the checkout this panel was opened
+  // for. Choice locks at send; the created session belongs to the member, so
+  // all follow-up traffic routes to its machine.
+  //
+  // That default steps aside for one case: the opened checkout's machine is
+  // away while a sibling is up. The panel is reached through a LOGICAL row
+  // (one row per repo), so its project id is whichever copy represents the
+  // repo, which is chosen for presentation and not for being reachable —
+  // blocking the composer then would refuse a session the repo can perfectly
+  // well take. An explicit pick always wins, so this only ever fills in.
   const allProjects = useAppStore((s) => s.projects);
   const members = useMemo(
     () =>
@@ -132,7 +140,16 @@ export function NewChatPanel({
       [],
     [allProjects, projectId],
   );
-  const [targetProjectId, setTargetProjectId] = useState(projectId);
+  const logicalRow = useLogicalProjectOf(projectId);
+  const [pickedProjectId, setTargetProjectId] = useState<string | null>(null);
+  const openedIsReachable =
+    logicalRow?.members.find((m) => m.projectId === projectId)?.offline !== true;
+  // Derived rather than stored: a machine that connects while the panel sits
+  // open should move the default, and a stored one would keep pointing at the
+  // sleeper.
+  const targetProjectId =
+    pickedProjectId ??
+    (openedIsReachable ? projectId : (preferredMember(logicalRow)?.projectId ?? projectId));
   const target = members.find((m) => m.id === targetProjectId) ?? project;
 
   // A repo that lives ONLY on a machine that is away has no picker to grey
