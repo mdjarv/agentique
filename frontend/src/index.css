@@ -238,6 +238,11 @@
 .chat-frost {
   position: relative;
   isolation: isolate;
+  /* The ground carries the project hue too, not just the blobs. Left bare it is
+     --background, a blue-black, and the gaps between four corner blobs read as
+     the accent's complement — pronounced for a warm hue, invisible for a cool
+     one that already agrees with the ground. */
+  background: color-mix(in srgb, var(--agent, transparent) 7%, var(--background));
 }
 
 /* Colorful blobs — primary blob uses project color, accents are muted complements */

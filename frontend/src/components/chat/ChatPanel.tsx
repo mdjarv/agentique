@@ -34,14 +34,13 @@ import { useAgentRuns } from "~/hooks/useAgentRuns";
 import { useAutoOpenWorkflowPanel } from "~/hooks/useAutoOpenWorkflowPanel";
 import { useIsLarge } from "~/hooks/useIsLarge";
 import { useIsMobile } from "~/hooks/useIsMobile";
-import { useTheme } from "~/hooks/useTheme";
+import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { loopBadgeState } from "~/lib/loop-attention";
 import { useNavigationGuard } from "~/lib/navigation";
-import { getProjectColor } from "~/lib/project-colors";
 import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
   archiveSession,
@@ -177,15 +176,9 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
   const historyComplete = useChatStore((s) => s.sessions[sessionId]?.historyComplete ?? false);
 
-  const projectIds = useAppStore(useShallow((s) => s.projects.map((p) => p.id)));
-  const { resolvedTheme } = useTheme();
-  const agentColor = useMemo(
-    () =>
-      project
-        ? getProjectColor(project.color, project.id, projectIds, resolvedTheme).fg
-        : undefined,
-    [project, projectIds, resolvedTheme],
-  );
+  // Through the representative, never this checkout's own row: a session on a
+  // remote machine must wear the repo's colour, not that machine's opinion of it.
+  const agentColor = useProjectPresentation(projectId).color?.fg;
 
   const composerRef = useRef<ComposerHandle>(null);
   const sessionState = meta?.state ?? "idle";
@@ -570,11 +563,9 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
       <div
         className="flex flex-col h-full chat-frost"
         data-project-id={projectId}
-        style={
-          agentColor
-            ? ({ "--agent": agentColor, background: `${agentColor}08` } as React.CSSProperties)
-            : undefined
-        }
+        // Only the hue crosses over; .chat-frost derives the pane's ground and
+        // its blobs from it, so the wash lives in one place.
+        style={agentColor ? ({ "--agent": agentColor } as React.CSSProperties) : undefined}
       >
         <SessionHeader
           meta={meta}

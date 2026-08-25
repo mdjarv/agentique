@@ -397,7 +397,11 @@ Remote slugs get a machine suffix, primary slugs are never rewritten.
 Cross-machine grouping by canonical git remote is display-only — commands always
 target one physical entity. Every surface that LISTS projects lists logical ones
 (`useLogicalProjects`), never checkouts, and the representative owns presentation
-(name, colour, icon, star); a remote's own favorite flag is ignored.
+(name, colour, icon, star); a remote's own favorite flag is ignored. A
+session-scoped surface holds only a physical project id and so goes through
+`useProjectPresentation` — read that row directly and the session wears the hue
+of whichever machine happens to run it, leaving one repo red in the sidebar and
+green in the chat pane it opens.
 
 The machine catalog is full-access account state on the primary. localStorage
 never persists bearer credentials, and per-machine data caches sanitize

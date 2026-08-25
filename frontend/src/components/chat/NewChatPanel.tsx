@@ -2,7 +2,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { GitBranch, Loader2, Monitor, Plus, Users2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useShallow } from "zustand/shallow";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { SwarmComposer } from "~/components/chat/SwarmComposer";
 import { UserMessage } from "~/components/chat/UserMessage";
@@ -12,14 +11,13 @@ import { TemplatePicker } from "~/components/templates/TemplatePicker";
 import { VariableDialog } from "~/components/templates/VariableDialog";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
-import { useTheme } from "~/hooks/useTheme";
+import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { useNavigationGuard } from "~/lib/navigation";
-import { getProjectColor } from "~/lib/project-colors";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
@@ -73,14 +71,9 @@ export function NewChatPanel({
   const isMobile = useIsMobile();
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const gitStatus = useAppStore((s) => s.projectGitStatus[projectId]);
-  const { resolvedTheme } = useTheme();
-  const Icon = useProjectIcon(project?.icon ?? "");
-  const projectIds = useAppStore(useShallow((s) => s.projects.map((p) => p.id)));
-  const color = useMemo(
-    () =>
-      project ? getProjectColor(project.color, project.id, projectIds, resolvedTheme) : undefined,
-    [project, projectIds, resolvedTheme],
-  );
+  const presentation = useProjectPresentation(projectId);
+  const Icon = useProjectIcon(presentation.icon);
+  const color = presentation.color;
   const initials =
     project?.slug
       .split("-")

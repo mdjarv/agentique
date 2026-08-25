@@ -1,17 +1,14 @@
 import { Bot } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo } from "react";
-import { useShallow } from "zustand/shallow";
 import { UserMessage } from "~/components/chat/UserMessage";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { ANIMATE_CHAT, useAutoAnimate } from "~/hooks/useAutoAnimate";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
-import { useTheme } from "~/hooks/useTheme";
+import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { formatTurnTime } from "~/lib/format";
-import { getProjectColor } from "~/lib/project-colors";
 import type { Segment } from "~/lib/segments";
 import { buildSegments, buildTurnSections, segmentKey } from "~/lib/segments";
-import { useAppStore } from "~/stores/app-store";
 import type { ChatEvent, Turn } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useStreamingStore } from "~/stores/streaming-store";
@@ -84,17 +81,9 @@ export const TurnBlock = memo(function TurnBlock({
   useEffect(() => {
     setOuterAnimateEnabled(!isStreaming);
   }, [isStreaming, setOuterAnimateEnabled]);
-  const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
-  const projectIds = useAppStore(useShallow((s) => s.projects.map((p) => p.id)));
-  const { resolvedTheme } = useTheme();
-  const projectAccentColor = useMemo(
-    () =>
-      project
-        ? getProjectColor(project.color, project.id, projectIds, resolvedTheme).fg
-        : undefined,
-    [project, projectIds, resolvedTheme],
-  );
-  const ProjectIcon = useProjectIcon(project?.icon ?? "");
+  const presentation = useProjectPresentation(projectId);
+  const projectAccentColor = presentation.color?.fg;
+  const ProjectIcon = useProjectIcon(presentation.icon);
 
   const currentAssistantText = useStreamingStore((s) =>
     isStreaming ? (s.texts[sessionId] ?? "") : "",
