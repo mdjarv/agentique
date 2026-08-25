@@ -1,0 +1,177 @@
+# Live voice
+
+Spoken dialog in the composer. A conversational agent works out *what to ask*
+with the operator, drafts the prompt, and hands it to the session that does the
+work. The agent never runs the coding job and never sends the message.
+
+The feature is gated by `[experimental] voice`. What exists today is the
+transport and a loopback echo engine; the speech backend is not implemented yet.
+
+## Shape
+
+```
+Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶ Engine
+```
+
+Three participants, and keeping them separate is the design:
+
+- **The ear and mouth** — a realtime speech engine. Owns voice activity
+  detection, barge-in, turn-taking and speech synthesis. It has no tools, never
+  sees a repository, and never reaches the session pipeline.
+- **The drafter** — a warm, tool-less Claude agent that knows the project and
+  turns the conversation into prompt text.
+- **The workhorse** — the existing session, unchanged. It receives text through
+  the composer like any other message.
+
+The ear and the drafter are deliberately not the same agent. Merging them would
+mean shipping `CLAUDE.md`, the file tree and session history to the speech
+vendor on every call, and would still have a model that has never seen the
+codebase writing prompts for one that has.
+
+## Transport
+
+One WebSocket per call. **The frame type is the discriminator** — no envelope,
+no framing header:
+
+| Frame | Direction | Payload |
+|---|---|---|
+| Binary | browser → server | Int16 PCM, 16 kHz, mono, little-endian |
+| Binary | server → browser | Int16 PCM at the rate announced in `ready`, mono |
+| Text | both | JSON control messages |
+
+That keeps audio out of a JSON encoder, which matters at ~30 frames a second.
+
+Control messages are in `messages.go`. The client learns its playback rate from
+`ready` rather than assuming one: the echo engine returns audio at the input
+rate and a speech model returns it at `OutputSampleRate`, and the same client
+code has to play both.
+
+`turn_complete` carries `interrupted`. Both cases must reach the browser,
+because both mean *flush the playback queue*. A barge-in that does not flush
+leaves seconds of stale speech playing over the person who interrupted.
+
+## Why a separate socket
+
+The main `/ws` control plane is JSON in both directions (`ReadJSON`/`WriteJSON`
+over a `chan any`). A binary audio frame arriving there fails to decode, returns
+an error from the read loop, and closes the connection for every other
+subscription riding it — sessions, projects, the activity wire. Audio gets its
+own endpoint so a voice fault cannot take down the control plane.
+
+## Why it is mounted under `/api/`
+
+`auth.requiresAuth` protects the `/api/` prefix and the exact string `/ws`;
+everything else falls through as an SPA asset. A socket at `/ws/voice` would be
+**unauthenticated**, streaming a live microphone to a paid API with no
+credential.
+
+Ticket redemption is enumerated the same way. `auth.wsUpgradePaths` lists every
+path that may present a one-time `wsTicket`, and a test asserts each member is
+also a path `requiresAuth` covers. A cross-origin paired machine has no cookie
+on this origin, so without its entry there it cannot connect at all.
+
+The upgrade origin decision lives once, in `httpsecurity.WebSocketOriginAllowed`,
+so a second socket endpoint cannot arrive with a subtly different rule.
+
+## The engine seam
+
+`Engine` is caller audio in, `Event`s out. `Event` is a sealed union — a type
+switch over it carries a default case, and a new outcome is added to the union
+rather than arriving untyped at a call site.
+
+`EchoEngine` implements it as a loopback. It exists so the browser audio path —
+capture, worklet batching, framing, upload, download, playback scheduling — can
+be verified end to end with no credentials and no model. If audio is wrong
+there, it is wrong in the browser, which is a much smaller place to look than a
+live model session.
+
+A real speech backend is another implementation of `Engine`, not a change to the
+transport.
+
+`Send` must not block. The caller is a microphone that will not wait, so a full
+buffer drops the frame; blocking would stall capture and turn a transient reader
+stall into permanent added latency.
+
+**One engine per call.** Sharing one across calls means the second caller's
+stream overwrites the first's and results are delivered to whoever asked most
+recently.
+
+## Idle is a billing guard
+
+A live speech session bills for **wall-clock time with the microphone open**.
+Unlike every other cost in agentique, an abandoned tab keeps spending until
+something closes it. `[voice] idle-timeout` closes a quiet call.
+
+Frame arrival is the weak version of that signal — the microphone streams
+continuously, so frames keep coming from an empty room. An engine that performs
+voice activity detection knows when the caller last actually *spoke*, and
+exposes it through the optional `SpeechIdler` capability, type-asserted rather
+than required. Engines without it fall back to frame arrival, which still
+catches a closed laptop or a dropped connection.
+
+Costs stay out of the UI. This is an operational limit, not a price display.
+
+## Backends
+
+`[voice] backend` selects the speech transport:
+
+| Value | Credential | Notes |
+|---|---|---|
+| `echo` | none | Loopback. Contacts nothing. |
+| `aistudio` | `api-key` | Default. Free-tier content may be used to improve Google's products; paid-tier content may not. |
+| `vertex` | `project` + ADC | Enterprise data terms, IAM, audit logging. |
+
+The two real backends differ in credentials and data terms, not protocol — the
+same SDK and the same session config drive both — so switching is a config
+change, not a rewrite. Nothing outside `handler.go` and `config.go` names a
+backend; the rest of the package is written against `Engine`.
+
+A configured backend missing its credential **degrades to echo** and logs a
+warning, rather than refusing to mount the route. A plumbing problem should not
+look like a missing feature. A misconfigured `[voice]` section disables the
+feature and never takes down the server.
+
+`[voice] model` is configuration rather than a constant, for the reason the
+model catalog gives: a new upstream model must not require an agentique release.
+The two backends do not carry identical model ids, so it changes with `backend`.
+
+## The handoff contract
+
+**The dialog agent drafts. It never sends.**
+
+A spoken instruction is the least reliable input in the product — transcribed by
+one model, interpreted by a second, rewritten by a third. Its output lands in
+the composer through `ComposerTextareaHandle.setText` and stops there. There is
+exactly one path into the session pipeline, the existing send button, and it
+stays visible and interruptible.
+
+Saying "send it" is allowed and fills the composer, then presses the button that
+is already there. It does not open a second route.
+
+This keeps the feature additive in the sense the channels invariant already
+uses: no change to session rendering, the event pipeline, or turn management for
+anything not using it.
+
+### Hands-free is a different confirmation, not a different contract
+
+The primary target is Android, hands-free. A contract that terminates in a
+silent text box terminates in nothing for someone who cannot look at a screen.
+
+The invariant was never "you must read it" — it is *one send path, explicitly
+confirmed, always undoable*. Hands-free keeps all three by making the
+confirmation audible: the agent reads the drafted prompt back verbatim, the
+operator confirms with an explicit affirmative (never silence), and the send is
+announced with an undo window. Auto-approve is forced off for turns originated
+hands-free, whatever the session's setting.
+
+## Not implemented yet
+
+- The speech backends. `aistudio` and `vertex` parse and validate, and their
+  engines return "not implemented".
+- The drafter agent and its project context.
+- The browser client: AudioWorklet capture, playback scheduling, the Live panel.
+- Session resumption across the connection lifetime limit.
+- Android specifics: wake lock, audio-focus interruption, and echo cancellation
+  over Bluetooth hands-free — the last of which is the biggest open risk and is
+  meant to be tested against the real handset and head unit while the only
+  moving part is an echo.

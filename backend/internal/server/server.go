@@ -98,6 +98,13 @@ type Config struct {
 	ExperimentalTeams bool
 	// ExperimentalBrowser enables the per-session Chrome browser panel.
 	ExperimentalBrowser bool
+	// ExperimentalVoice enables the live spoken-dialog composer mode and mounts
+	// its socket. Voice below selects which speech backend that socket talks to.
+	ExperimentalVoice bool
+	// Voice configures the speech backend behind ExperimentalVoice. With the
+	// flag on and no credentials configured, the socket serves the loopback echo
+	// used to verify the audio path and contacts nothing.
+	Voice config.VoiceConfig
 
 	// IdleEvictTimeout, when > 0, stops a session idle at least this long to
 	// reclaim its CLI process and browser subtree (it resumes on the next
@@ -402,6 +409,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			"features": map[string]bool{
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
+				"voice":   cfg.ExperimentalVoice,
 			},
 		})
 	})
@@ -701,6 +709,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"pairing": cfg.AuthEnabled,
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
+				"voice":   cfg.ExperimentalVoice,
 			},
 		})
 	})
@@ -771,6 +780,23 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: modelCatalog(queries, cfg.ModelOverrides), AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
 	mux.Handle("GET /ws", wsh)
+
+	// Live voice. Mounted under /api/ deliberately: the auth middleware
+	// protects the /api/ prefix and the exact string "/ws", so a socket at
+	// /ws/voice would fall through as an SPA asset and stream a live microphone
+	// with no credential. auth.wsUpgradePaths must list this path too, or a
+	// cross-origin paired machine — which has no cookie — cannot connect.
+	//
+	// A misconfigured [voice] section disables the feature; it never takes down
+	// the server, on the same principle as the brain below.
+	if cfg.ExperimentalVoice {
+		if vh, err := newVoiceHandler(cfg, allowedOrigins); err != nil {
+			slog.Error("live voice disabled: bad configuration", "error", err)
+		} else {
+			mux.Handle("GET /api/voice/live", vh)
+			slog.Info("live voice enabled", "backend", vh.Backend())
+		}
+	}
 
 	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is
 	// set. Failure to initialize must not take down the server — memory is an

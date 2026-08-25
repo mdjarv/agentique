@@ -28,6 +28,7 @@ type Config struct {
 	Experimental ExperimentalConfig `toml:"experimental"`
 	Claude       ClaudeConfig       `toml:"claude"`
 	Brain        BrainConfig        `toml:"brain"`
+	Voice        VoiceConfig        `toml:"voice"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
 	// Models overrides the auto-detected model catalog, keyed by provider
 	// ("claude", "codex"). A non-empty list replaces that provider's generated
@@ -158,6 +159,10 @@ func ValidateDevURLs(slots []DevURLSlot) error {
 type ExperimentalConfig struct {
 	Teams   bool `toml:"teams"`
 	Browser bool `toml:"browser"`
+	// Voice enables the live spoken-dialog composer mode. The socket endpoint
+	// and its browser affordance exist only when this is on; talking to a
+	// speech model additionally needs credentials in [voice].
+	Voice bool `toml:"voice"`
 }
 
 // ClaudeConfig carries flags handed to the claude CLI when a session's provider
@@ -344,6 +349,55 @@ type BrainConfig struct {
 	// left 0 keeps the built-in default. See [brain.graph] in config.toml. Each field has an
 	// AGENTIQUE_BRAIN_GRAPH_* env override that wins when set.
 	Graph BrainGraphConfig `toml:"graph"`
+}
+
+// VoiceConfig configures the live spoken-dialog mode ("Live"). Like [brain], every
+// field has an equivalent AGENTIQUE_VOICE_* env var which takes precedence when set,
+// and an empty value means "unset" rather than a hardcoded default.
+//
+// The feature is gated by [experimental] voice; this section only says which speech
+// backend to talk to. With the flag on and no credentials here, the socket still
+// serves the loopback echo used to verify audio plumbing, and no model is contacted.
+type VoiceConfig struct {
+	// Backend selects the realtime speech transport: "aistudio" (an API key from
+	// aistudio.google.com) or "vertex" (a Google Cloud project with application
+	// default credentials). Empty = aistudio.
+	//
+	// The two differ in credentials and data terms, not in protocol — the same SDK
+	// and the same Live session config drive both — so switching is a config change
+	// rather than a rewrite. Vertex is the better fit for work accounts: enterprise
+	// data terms, IAM and audit logging come with the project.
+	// Env: AGENTIQUE_VOICE_BACKEND.
+	Backend string `toml:"backend"`
+
+	// APIKey authenticates the aistudio backend. Ignored by vertex.
+	//
+	// Note the tier matters beyond rate limits: free-tier content may be used to
+	// improve Google's products, paid-tier content may not. Env: AGENTIQUE_VOICE_API_KEY.
+	APIKey string `toml:"api-key"`
+
+	// Project is the Google Cloud project id for the vertex backend. Ignored by
+	// aistudio. Env: AGENTIQUE_VOICE_PROJECT.
+	Project string `toml:"project"`
+	// Location is the Vertex region, e.g. "us-central1". Ignored by aistudio.
+	// Env: AGENTIQUE_VOICE_LOCATION.
+	Location string `toml:"location"`
+
+	// Model is the realtime speech model id. Empty = the backend's built-in default.
+	//
+	// It is configuration rather than a constant for the same reason the model catalog
+	// keeps versions out of picker labels: a new upstream model must not require an
+	// agentique release. The two backends do not carry identical model ids, so this
+	// changes with Backend. Env: AGENTIQUE_VOICE_MODEL.
+	Model string `toml:"model"`
+
+	// IdleTimeout closes a call whose microphone has been open with no speech for
+	// this long (e.g. "90s"). Empty = the built-in default.
+	//
+	// This one is not a nicety. A live session bills for wall-clock time with the
+	// microphone open, so unlike everything else in agentique an abandoned tab keeps
+	// costing until something closes it. Env: AGENTIQUE_VOICE_IDLE_TIMEOUT.
+	IdleTimeout string `toml:"idle-timeout"`
 }
 
 // BrainGraphConfig tunes the brain knowledge-graph view. The two edge fields shape the

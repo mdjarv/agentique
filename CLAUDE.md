@@ -431,6 +431,46 @@ user to update manually", never "fall back to npm": the wrong command installs a
 second copy, and the version we probe stops describing the one that runs. See
 `docs/upgrades.md`.
 
+### Live voice — `docs/voice.md`
+
+**Audio never rides `/ws`.** That socket is `ReadJSON`/`WriteJSON` both ways, so
+one binary frame closes it for every subscription on it. Voice gets its own
+endpoint, and the frame type is the discriminator there: binary is PCM, text is
+JSON control. The client reads its playback rate from `ready` rather than
+assuming one, because the echo engine and a speech model return different rates.
+
+**A new socket path is unauthenticated until you make it otherwise.**
+`requiresAuth` covers the `/api/` prefix and the exact string `/ws`; anything
+else falls through as an SPA asset. That is why the voice socket is
+`/api/voice/live` and not `/ws/voice`. `auth.wsUpgradePaths` enumerates every
+path that may redeem a one-time `wsTicket`, and a test asserts each member is
+also a path `requiresAuth` covers — a cross-origin paired machine has no cookie,
+so a missing entry means it cannot connect at all. The upgrade origin rule lives
+once, in `httpsecurity.WebSocketOriginAllowed`.
+
+`Engine` is the seam: caller audio in, a sealed `Event` union out. A speech
+backend is another implementation, never a change to the transport, and the
+loopback `EchoEngine` is how the browser audio path gets verified without
+credentials. `Send` drops frames rather than blocking — the caller is a
+microphone that will not wait. **One engine per call**; sharing one delivers the
+first caller's result to whoever asked most recently.
+
+Backends differ in credentials and data terms, not protocol, so nothing outside
+`handler.go`/`config.go` names one. A backend missing its credential degrades to
+echo and logs it, rather than refusing to mount the route.
+
+**Idle timeout is a billing guard, not a nicety.** A live session bills for
+wall-clock time with the microphone open, so an abandoned tab keeps spending.
+Frame arrival is the weak signal (the mic streams from an empty room); an engine
+with VAD exposes the real one through the optional `SpeechIdler` capability.
+Costs still never appear in the UI.
+
+**The dialog agent drafts, it never sends.** Its output lands in the composer
+through `ComposerTextareaHandle` and stops. One path into the session pipeline,
+the visible send button. Hands-free does not change that contract, only the
+confirmation channel: spoken verbatim readback, an explicit affirmative (never
+silence), an announced undo window, and auto-approve forced off for the turn.
+
 ### Model catalog — `docs/model-catalog.md`
 
 **A new upstream model release must not require an agentique release.** Global
