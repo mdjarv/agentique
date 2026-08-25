@@ -277,13 +277,63 @@ operator confirms with an explicit affirmative (never silence), and the send is
 announced with an undo window. Auto-approve is forced off for turns originated
 hands-free, whatever the session's setting.
 
+## The Gemini engine
+
+`geminiEngine` implements `Engine` against the Live API. Three things shape it.
+
+**`v1alpha`, not `v1beta`.** Session resumption is absent from `v1beta`, and
+without resumption a call cannot outlive ten minutes.
+
+**Resumption is a precondition, not a refinement.** The connection drops at
+roughly ten minutes regardless of session length, so a call spanning a coding
+run hits it every time. On `SessionResumptionUpdate` the handle is stored; on
+`GoAway` the session is closed from our side so `Receive` returns promptly and
+the reconnect happens on our schedule rather than mid-sentence; the reconnect
+swaps the session pointer under the send mutex. The browser never learns
+anything happened.
+
+**One mutex guards sends and the session pointer together**, because the
+transport rejects concurrent writes *and* reconnect replaces the pointer.
+
+The VAD numbers are tuned rather than tasteful: 50 ms prefix padding is what
+barge-in latency is made of, 800 ms of silence tolerates a real thinking pause,
+and low sensitivity at both ends survives a noisy car. Context window
+compression is on from the start — without it a call dies at about fifteen
+minutes of audio.
+
+`Send` drops frames when the session is nil rather than queueing them. Audio
+held across a reconnect would play late, and late audio is worse than none.
+
+The engine implements the optional `SpeechIdler` capability from the model's own
+voice activity detection, which is the real idle signal the frame-arrival
+fallback only approximates.
+
+### Verifying it
+
+`TestGeminiEngineLive` talks to the real service. It is skipped by `-short` and
+without `AGENTIQUE_VOICE_API_KEY`, the same way this repo gates its other
+live-provider test. It exists because the things most likely to be wrong — the
+API version, the model id, the audio MIME type, the shape of a server message —
+cannot be checked by reasoning, only by asking:
+
+```
+AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive -v
+```
+
 ## Not implemented yet
 
-- The speech backends. `aistudio` and `vertex` parse and validate, and their
-  engines return "not implemented".
 - The drafter agent and its project context.
-- The browser client: AudioWorklet capture, playback scheduling, the Live panel.
-- Session resumption across the connection lifetime limit.
+- The runtime push for the three things a worker cannot report: blocked, died,
+  finished.
+- The call state machine (gathering / confirming / working / blocked /
+  reporting) and the phase-aware idle rule. The current timeout is flat, which
+  would close a call during a long run — it is right for a drafting exchange and
+  wrong for staying on the line.
+- The Live panel. `/dev/voice` is a loopback check, not the feature.
+- Speaking a report aloud: `SendText` exists on the engine and reports reach the
+  browser, but nothing yet relays one into the conversation.
+- The `vertex` backend is wired but unverified — it shares the engine, so only
+  credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation
   over Bluetooth hands-free — the last of which is the biggest open risk and is
   meant to be tested against the real handset and head unit while the only

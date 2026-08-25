@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,10 @@ type Options struct {
 	Location string
 	// Model overrides the backend's default realtime model id.
 	Model string
+	// SystemInstruction shapes the dialog agent. Empty leaves the model's
+	// default behaviour, which is a conversational assistant rather than a
+	// prompt drafter.
+	SystemInstruction string
 	// IdleTimeout closes a call whose caller has gone quiet. 0 = the built-in
 	// default.
 	IdleTimeout time.Duration
@@ -101,7 +106,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.activeCalls.Add(-1)
 
-	engine, err := h.newEngine()
+	// A live speech session must outlive the request that opened it: the HTTP
+	// context is cancelled when ServeHTTP returns, which for a hijacked
+	// WebSocket is not when the call ends.
+	engine, err := h.newEngine(context.WithoutCancel(r.Context()))
 	if err != nil {
 		// The detail goes to the log; an unclassified failure returns a fixed
 		// message rather than err.Error().
@@ -130,12 +138,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // A per-call engine is not an optimisation. Sharing one across calls means the
 // second caller's stream overwrites the first's, and results are delivered to
 // whoever asked most recently.
-func (h *Handler) newEngine() (Engine, error) {
+func (h *Handler) newEngine(ctx context.Context) (Engine, error) {
 	switch h.opts.Backend {
 	case BackendEcho:
 		return NewEchoEngine(), nil
 	case BackendAIStudio, BackendVertex:
-		return nil, fmt.Errorf("voice backend %q is not implemented yet", h.opts.Backend)
+		// The engine's context is the call's, not the request's: it must
+		// outlive the HTTP handler that created it.
+		return newGeminiEngine(ctx, h.opts, slog.With("subsystem", "voice"))
 	default:
 		return nil, fmt.Errorf("unknown voice backend %q", h.opts.Backend)
 	}
