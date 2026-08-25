@@ -56,7 +56,13 @@ export function useComposerSend({
   const onBeforeSendRef = useRef(onBeforeSend);
   onBeforeSendRef.current = onBeforeSend;
 
+  // Claim the ref on every mount, not just the first. A remount reuses the ref
+  // object, so a cleanup that only ever writes `false` is a one-way latch —
+  // under StrictMode's mount/unmount/mount that latch closes before the first
+  // send, and the composer then stays disabled forever after sending, because
+  // the `finally` below skips its re-enable for an "unmounted" component.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
