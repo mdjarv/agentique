@@ -148,6 +148,16 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Small assets are normally inlined as data: URIs. The audio worklet must
+    // not be: it is loaded with audioWorklet.addModule(), which the CSP judges
+    // under script-src, and that directive is 'self' plus one hash — no data:,
+    // no blob:. Inlined, the worklet is silently blocked in production while
+    // working fine in dev, where no CSP applies.
+    //
+    // Returning false forces a real emitted file, which 'self' admits. Every
+    // other asset keeps the default size rule.
+    assetsInlineLimit: (filePath: string) =>
+      filePath.includes("mic-worklet") ? false : undefined,
     // Mermaid (lazy-loaded via dynamic import) is ~2.7MB and will trigger this warning;
     // limit set so the warning fires only for that genuinely-large chunk.
     chunkSizeWarningLimit: 1000,

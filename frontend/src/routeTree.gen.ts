@@ -25,6 +25,7 @@ import { Route as DevDeckRouteImport } from "./routes/dev.deck";
 import { Route as DevDockRouteImport } from "./routes/dev.dock";
 import { Route as DevRowsRouteImport } from "./routes/dev.rows";
 import { Route as DevToolGroupsRouteImport } from "./routes/dev.tool-groups";
+import { Route as DevVoiceRouteImport } from "./routes/dev.voice";
 import { Route as DiscussionsChannelIdRouteImport } from "./routes/discussions_.$channelId";
 import { Route as ProjectProjectSlugRouteImport } from "./routes/project.$projectSlug";
 import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
@@ -119,6 +120,11 @@ const DevRowsRoute = DevRowsRouteImport.update({
 const DevToolGroupsRoute = DevToolGroupsRouteImport.update({
   id: "/dev/tool-groups",
   path: "/dev/tool-groups",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevVoiceRoute = DevVoiceRouteImport.update({
+  id: "/dev/voice",
+  path: "/dev/voice",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DiscussionsChannelIdRoute = DiscussionsChannelIdRouteImport.update({
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   "/dev/dock": typeof DevDockRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/dev/voice": typeof DevVoiceRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
   "/settings/about": typeof SettingsAboutRoute;
@@ -250,6 +257,7 @@ export interface FileRoutesByTo {
   "/dev/dock": typeof DevDockRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/dev/voice": typeof DevVoiceRoute;
   "/discussions/$channelId": typeof DiscussionsChannelIdRoute;
   "/settings/about": typeof SettingsAboutRoute;
   "/settings/account": typeof SettingsAccountRoute;
@@ -283,6 +291,7 @@ export interface FileRoutesById {
   "/dev/dock": typeof DevDockRoute;
   "/dev/rows": typeof DevRowsRoute;
   "/dev/tool-groups": typeof DevToolGroupsRoute;
+  "/dev/voice": typeof DevVoiceRoute;
   "/discussions_/$channelId": typeof DiscussionsChannelIdRoute;
   "/project/$projectSlug": typeof ProjectProjectSlugRouteWithChildren;
   "/settings/about": typeof SettingsAboutRoute;
@@ -318,6 +327,7 @@ export interface FileRouteTypes {
     | "/dev/dock"
     | "/dev/rows"
     | "/dev/tool-groups"
+    | "/dev/voice"
     | "/discussions/$channelId"
     | "/project/$projectSlug"
     | "/settings/about"
@@ -350,6 +360,7 @@ export interface FileRouteTypes {
     | "/dev/dock"
     | "/dev/rows"
     | "/dev/tool-groups"
+    | "/dev/voice"
     | "/discussions/$channelId"
     | "/settings/about"
     | "/settings/account"
@@ -382,6 +393,7 @@ export interface FileRouteTypes {
     | "/dev/dock"
     | "/dev/rows"
     | "/dev/tool-groups"
+    | "/dev/voice"
     | "/discussions_/$channelId"
     | "/project/$projectSlug"
     | "/settings/about"
@@ -416,6 +428,7 @@ export interface RootRouteChildren {
   DevDockRoute: typeof DevDockRoute;
   DevRowsRoute: typeof DevRowsRoute;
   DevToolGroupsRoute: typeof DevToolGroupsRoute;
+  DevVoiceRoute: typeof DevVoiceRoute;
   DiscussionsChannelIdRoute: typeof DiscussionsChannelIdRoute;
   ProjectProjectSlugRoute: typeof ProjectProjectSlugRouteWithChildren;
   ProjectProjectSlugSettingsRoute: typeof ProjectProjectSlugSettingsRoute;
@@ -535,6 +548,13 @@ declare module "@tanstack/react-router" {
       path: "/dev/tool-groups";
       fullPath: "/dev/tool-groups";
       preLoaderRoute: typeof DevToolGroupsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/voice": {
+      id: "/dev/voice";
+      path: "/dev/voice";
+      fullPath: "/dev/voice";
+      preLoaderRoute: typeof DevVoiceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/discussions_/$channelId": {
@@ -703,6 +723,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevDockRoute: DevDockRoute,
   DevRowsRoute: DevRowsRoute,
   DevToolGroupsRoute: DevToolGroupsRoute,
+  DevVoiceRoute: DevVoiceRoute,
   DiscussionsChannelIdRoute: DiscussionsChannelIdRoute,
   ProjectProjectSlugRoute: ProjectProjectSlugRouteWithChildren,
   ProjectProjectSlugSettingsRoute: ProjectProjectSlugSettingsRoute,

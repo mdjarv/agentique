@@ -448,6 +448,14 @@ also a path `requiresAuth` covers — a cross-origin paired machine has no cooki
 so a missing entry means it cannot connect at all. The upgrade origin rule lives
 once, in `httpsecurity.WebSocketOriginAllowed`.
 
+**The audio worklet must be an emitted file, never an inlined one.**
+`audioWorklet.addModule()` is judged under `script-src`, which is `'self'` plus
+index.html's hash — no `data:`, no `blob:`. Vite inlines small assets as `data:`
+URIs by default, which produced a worklet that worked in dev (no CSP) and was
+silently blocked in production. `build.assetsInlineLimit` in `vite.config.ts`
+forces this one to a real file; a change there reintroduces the fault, and the
+symptom appears only in a CSP-serving build.
+
 `Engine` is the seam: caller audio in, a sealed `Event` union out. A speech
 backend is another implementation, never a change to the transport, and the
 loopback `EchoEngine` is how the browser audio path gets verified without

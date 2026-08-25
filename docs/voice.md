@@ -73,6 +73,37 @@ on this origin, so without its entry there it cannot connect at all.
 The upgrade origin decision lives once, in `httpsecurity.WebSocketOriginAllowed`,
 so a second socket endpoint cannot arrive with a subtly different rule.
 
+## The browser side
+
+Capture is an `AudioWorklet`, not a `ScriptProcessorNode`: the latter is
+deprecated, runs on the main thread, and glitches under exactly the load a busy
+app applies. The worklet batches 512 samples (~32 ms at 16 kHz) before posting.
+A render quantum is 128 frames, so posting per quantum would mean 125 messages
+and 125 socket frames a second carrying 8 ms each — all overhead.
+
+Capture and playback use **separate AudioContexts**, at 16 kHz and the engine's
+announced rate. One shared context would resample every played frame down to the
+capture rate and throw the difference away.
+
+`echoCancellation: true` is load-bearing, not a nicety: it is the only thing
+stopping the agent hearing itself through the speakers and interrupting itself.
+There is no server-side echo cancellation anywhere in this design.
+
+### The worklet must be an emitted file
+
+`audioWorklet.addModule()` is judged under `script-src`, which here is `'self'`
+plus index.html's hash — no `data:`, no `blob:`.
+
+Vite inlines small assets as `data:` URIs by default, and the worklet is small
+enough to qualify. That produced a build that worked in dev, where no CSP
+applies, and was blocked in production. `build.assetsInlineLimit` in
+`vite.config.ts` forces this one file to be emitted; everything else keeps the
+default size rule.
+
+The failure is invisible in dev and invisible behind an earlier microphone
+error, so it is worth re-checking after any Vite upgrade: build, then confirm
+`dist/assets/` contains a `mic-worklet-*.js`.
+
 ## The engine seam
 
 `Engine` is caller audio in, `Event`s out. `Event` is a sealed union — a type

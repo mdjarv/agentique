@@ -124,7 +124,14 @@ func (c *call) readLoop(ctx context.Context) {
 	for {
 		msgType, payload, err := c.ws.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+			// CloseNoStatusReceived is the ordinary browser hangup: ws.close()
+			// with no code sends an empty close frame, which is 1005. Treating
+			// it as unexpected makes every normal end-of-call log a warning.
+			if websocket.IsUnexpectedCloseError(err,
+				websocket.CloseGoingAway,
+				websocket.CloseNormalClosure,
+				websocket.CloseNoStatusReceived,
+			) {
 				c.log.Warn("voice read error", "error", err)
 			}
 			return
