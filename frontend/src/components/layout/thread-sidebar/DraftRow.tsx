@@ -4,9 +4,9 @@
  * Two lines, mirroring a resting session row: the repo line it will be created
  * against, then what it says. It is not a session — no state, no outcome, no
  * pin, nothing to archive — so the only action is discarding the text, and the
- * dashed glyph marks that nothing has been created yet.
+ * row wears a dashed outline: the shape of a session, not one yet.
  */
-import { SquareDashed, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { memo } from "react";
 import { cn } from "~/lib/utils";
 import { Chip, MachineTag } from "./RowIdentity";
@@ -27,7 +27,17 @@ export const DraftRow = memo(function DraftRow({
   onDiscard,
 }: DraftRowProps) {
   return (
-    <div className={cn("group/thread relative", selected && "rounded-lg bg-sidebar-accent")}>
+    <div
+      className={cn(
+        // The outline is the mark: a row drawn but not yet filled in. It sits on
+        // the wrapper so the whole row reads as the placeholder, and it is the
+        // only thing separating a draft from a session at a glance.
+        "group/thread relative rounded-lg border border-dashed transition-colors",
+        selected
+          ? "border-border bg-sidebar-accent"
+          : "border-border/60 group-hover/thread:border-border",
+      )}
+    >
       <button
         type="button"
         aria-label={`${vm.title}, unsent draft, ${vm.projectLabel}`}
@@ -64,17 +74,14 @@ export const DraftRow = memo(function DraftRow({
         </span>
 
         {/* The draft's own words are its title — there is no name to show. */}
-        <span className="mt-px flex items-center gap-1.5">
-          <SquareDashed className="size-[11px] shrink-0 text-info" />
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-[13px] font-medium",
-              selected ? "text-foreground-bright" : "text-foreground",
-            )}
-          >
-            {vm.title}
-            {vm.more && "…"}
-          </span>
+        <span
+          className={cn(
+            "mt-px block truncate text-[13px] font-medium",
+            selected ? "text-foreground-bright" : "text-foreground",
+          )}
+        >
+          {vm.title}
+          {vm.more && "…"}
         </span>
       </button>
 

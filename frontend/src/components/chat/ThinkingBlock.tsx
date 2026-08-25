@@ -25,11 +25,17 @@ export const ThinkingBlock = memo(function ThinkingBlock({
   const debouncedContent = useDebouncedValue(content, 80);
   const displayContent = isStreaming ? debouncedContent : content;
 
+  // Named by what happened, not by who did it: a redacted block is signed but
+  // empty, and any model may return one. A model name here is a literal that
+  // goes stale the day the next one ships (docs/model-catalog.md).
   if (redacted) {
     return (
-      <div className="border rounded-md bg-muted/50 px-3 py-1.5 flex items-center gap-2 text-xs text-muted-foreground italic">
+      <div
+        title="The model returned this reasoning encrypted — only its signature came through."
+        className="border rounded-md bg-muted/50 px-3 py-1.5 flex items-center gap-2 text-xs text-muted-foreground italic"
+      >
         <ThinkingIcon className="shrink-0" />
-        <span className="truncate">Thinking (hidden by Opus 4.8)</span>
+        <span className="truncate">Thinking (encrypted by the model)</span>
       </div>
     );
   }

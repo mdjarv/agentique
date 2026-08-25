@@ -181,15 +181,19 @@ export function ThreadSidebar() {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {drafts.length > 0 && (
           <ThreadSection label="Drafts" count={drafts.length}>
-            {drafts.map((vm) => (
-              <DraftRow
-                key={vm.draftKey}
-                vm={vm}
-                selected={vm.projectSlug === activeNewProjectSlug}
-                onClick={() => openDraft(vm)}
-                onDiscard={() => discardDraft(vm)}
-              />
-            ))}
+            {/* Spaced, unlike the session sections: two dashed outlines that
+                touch read as one box with a line through it. */}
+            <div className="space-y-1">
+              {drafts.map((vm) => (
+                <DraftRow
+                  key={vm.draftKey}
+                  vm={vm}
+                  selected={vm.projectSlug === activeNewProjectSlug}
+                  onClick={() => openDraft(vm)}
+                  onDiscard={() => discardDraft(vm)}
+                />
+              ))}
+            </div>
           </ThreadSection>
         )}
 
