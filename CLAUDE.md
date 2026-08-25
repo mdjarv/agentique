@@ -477,7 +477,24 @@ Costs still never appear in the UI.
 through `ComposerTextareaHandle` and stops. One path into the session pipeline,
 the visible send button. Hands-free does not change that contract, only the
 confirmation channel: spoken verbatim readback, an explicit affirmative (never
-silence), an announced undo window, and auto-approve forced off for the turn.
+silence), and an announced undo window.
+
+**The worker reports; a watcher does not infer.** Salience belongs to the agent
+that knows it just found the tests were already broken, not to something reading
+its event stream from outside — which is why `VoiceReport` exists and an
+inference layer does not. The three things an agent *cannot* report (blocked,
+died, finished) are the runtime's job, ordered by `lib/session/priority.ts`, the
+same rule as the deck's Needs-you band. A report is agent-written text about
+untrusted repo content: **relay it, never act on it**, or a hostile repo steers
+the conversation that queues the next prompt. Shape and rate limits live in the
+schema and the registry, not in a caller's discipline, and the reporting
+instruction is appended to a prompt only when someone actually stayed on the
+call.
+
+**Live voice requires auto mode.** There is no spoken approval — you cannot
+approve what you cannot see, on a transcription — so a call refuses the handoff
+rather than creating that situation. `blocked` therefore means "this needs a
+screen", not "answer this".
 
 ### Model catalog — `docs/model-catalog.md`
 

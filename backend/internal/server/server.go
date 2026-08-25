@@ -44,6 +44,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/testmode"
 	"github.com/mdjarv/agentique/backend/internal/update"
+	"github.com/mdjarv/agentique/backend/internal/voice"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
@@ -789,9 +790,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	//
 	// A misconfigured [voice] section disables the feature; it never takes down
 	// the server, on the same principle as the brain below.
+	//
+	// voiceRegistry routes a worker's progress reports into the calls following
+	// it, and is shared with the MCP handler below so VoiceReport can reach it.
+	// It stays nil when voice is off, which is what omits the tool entirely.
+	var voiceRegistry *voice.Registry
 	if cfg.ExperimentalVoice {
-		if vh, err := newVoiceHandler(cfg, allowedOrigins); err != nil {
+		voiceRegistry = voice.NewRegistry()
+		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry); err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
+			voiceRegistry = nil
 		} else {
 			mux.Handle("GET /api/voice/live", vh)
 			slog.Info("live voice enabled", "backend", vh.Backend())
@@ -1000,7 +1008,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if sched != nil {
 		schedCreator = sched
 	}
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator)
+	// Same trap: a typed-nil *voice.Registry would register VoiceReport and
+	// then panic on the first call.
+	var voiceReporter mcphttp.VoiceReporter
+	if voiceRegistry != nil {
+		voiceReporter = voiceRegistry
+	}
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator, voiceReporter)
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)

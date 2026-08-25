@@ -40,6 +40,11 @@ const (
 	ToolScheduleCreate = "ScheduleCreate"
 	ToolScheduleReport = "ScheduleReport"
 	ToolScheduleNext   = "ScheduleNext"
+	ToolVoiceReport    = "VoiceReport"
+
+	// VoiceReportToolFullName is the name the drafted prompt tells a worker to
+	// call when someone is listening on a live voice call.
+	VoiceReportToolFullName = "mcp__" + ServerName + "__" + ToolVoiceReport
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -92,11 +97,19 @@ type ScheduleCreator interface {
 	AgentPace(ctx context.Context, sessionID, runID string, delaySeconds int, reason string, stop bool) (string, error)
 }
 
+// VoiceReporter delivers a worker's progress report to whoever is listening on
+// a live voice call following that session. Implemented by voice.Registry. May
+// be nil — VoiceReport is then not registered, which is the correct surface
+// when live voice is disabled.
+type VoiceReporter interface {
+	Report(sessionID, kind, headline string) (string, error)
+}
+
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
 // tests that don't exercise SetSessionName — calls to that tool will then
 // return an error result. mem may be nil to omit the brain memory tools;
-// sched may be nil to omit ScheduleCreate.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator) http.Handler {
+// sched may be nil to omit ScheduleCreate; voice may be nil to omit VoiceReport.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, voice VoiceReporter) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
 	register(h, akmcp.Tool{
@@ -224,8 +237,58 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 	if sched != nil {
 		registerScheduleTools(h, sched)
 	}
+	if voice != nil {
+		registerVoiceTools(h, voice)
+	}
 
 	return h
+}
+
+// registerVoiceTools exposes the worker's side of a live voice call.
+//
+// The direction matters: the worker pushes what it decides is worth saying,
+// rather than a watcher inferring salience from its event stream. Only the
+// worker knows it just found the tests were already broken, so the judgement
+// lives where the knowledge is.
+func registerVoiceTools(h *akmcp.Handler, voice VoiceReporter) {
+	type voiceReportArgs struct {
+		Kind     string `json:"kind"`
+		Headline string `json:"headline"`
+	}
+	register(h, akmcp.Tool{
+		Name: ToolVoiceReport,
+		Description: "Say something to the person listening on the live voice call following this run. " +
+			"Call it at decision points and surprises — the things that would change what they'd ask " +
+			"you to do next (a test suite that was already failing, a file that isn't where the task " +
+			"assumed, an approach you've abandoned). Do NOT report progress: opening files, running " +
+			"commands and finishing routine steps are all visible on their screen. Expect two or three " +
+			"calls in a ten-minute run, not twenty — reporting too often trains them to stop listening. " +
+			"You do not need to report finishing; that is delivered automatically. The headline is READ " +
+			"ALOUD, so write one plain spoken sentence: no markdown, no bullets, no code. If nobody is " +
+			"listening the call is a no-op and tells you so.",
+		InputSchema: akmcp.ObjectProp{
+			Properties: map[string]akmcp.Property{
+				"kind": akmcp.StringProp{
+					Enum: []string{"surprise", "decision", "milestone"},
+					Description: "surprise: something contradicts the task's premise. decision: a fork you " +
+						"took that they might have taken differently. milestone: a meaningful step finished " +
+						"in a long run.",
+				},
+				"headline": akmcp.StringProp{
+					Description: "One plain spoken sentence, written to the person: \"the auth tests were " +
+						"already failing on main\", not \"Note: pre-existing test failures detected.\"",
+				},
+			},
+			Required: []string{"kind", "headline"},
+		},
+		Handler: akmcp.TypedHandler(func(_ context.Context, sid string, args voiceReportArgs) akmcp.Result {
+			msg, err := voice.Report(sid, args.Kind, args.Headline)
+			if err != nil {
+				return akmcp.ErrorResultf("voice report failed: %v", err)
+			}
+			return akmcp.TextResult(msg)
+		}),
+	})
 }
 
 func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {

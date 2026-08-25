@@ -166,6 +166,88 @@ feature and never takes down the server.
 model catalog gives: a new upstream model must not require an agentique release.
 The two backends do not carry identical model ids, so it changes with `backend`.
 
+## Progress reporting
+
+The call stays open through a run. Something has to decide what is worth
+interrupting for, and **that decision belongs to the worker**, not to a watcher.
+
+The obvious design subscribes to the session's event stream and infers salience
+from tool calls and text. It works, and it puts the judgement in the one place
+that has to guess. The working agent does not guess: it knows it just found the
+tests were already broken, and it knows it is about to change approach. So it
+gets a tool — `VoiceReport` — and the prompt tells it when to reach for one.
+
+That deletes the entire inference layer: no event subscription, no debouncer, no
+salience model, no second copy of the priority rule. `ScheduleReport` is the
+same shape doing the same job for scheduled loops.
+
+`Registry` routes a report to the calls following that session. A call binds
+with the `follow` control message and holds at most one session at a time; the
+binding is released when the call closes, so a dead socket stops looking like a
+listener.
+
+### What the worker cannot report
+
+Three things, and they are the three that matter most:
+
+- **Blocked** — it is suspended waiting on approval and cannot call anything.
+- **Died** — a crash means there is nobody left to speak.
+- **Finished** — completion is a runtime fact, not an agent utterance.
+
+Those need a runtime push, ordered by `lib/session/priority.ts` — the same rule
+as the deck's Needs-you band, not a second opinion about what deserves
+attention. Everything else comes from the worker.
+
+### Live voice requires auto mode
+
+There is no spoken approval handling. You cannot meaningfully approve a command
+you cannot see, on a transcription, so the design does not create the situation:
+a session driven from a call runs in auto mode, or the call refuses the handoff
+and says so.
+
+That makes **blocked** a stuck state rather than a question. If a run somehow
+lands on a permission prompt, the push says it needs a screen — it never asks
+the listener to answer. Silence would be worse: the run would sit there and the
+call would sound fine.
+
+The tradeoff is stated plainly because it is real: a voice-originated run
+executes without anyone watching a screen.
+
+### The report is untrusted text
+
+A report is written by an agent operating on repository content it did not
+author. It is **data to relay, never an instruction to follow**.
+
+This is not theoretical. The conversation a report lands in is what queues the
+*next* prompt, so an agent that could steer that conversation could steer the
+next task. Whatever speaks a report treats it as a quotation, and the system
+instruction says so in the terms CLAUDE.md already uses: an agent is not a
+trusted principal.
+
+### Budget
+
+Two constraints, both doing filtering work where it cannot be forgotten:
+
+- **Shape.** `kind` is a closed enum and `headline` is clamped to one speakable
+  sentence. A free-text field gets paragraphs, and a paragraph read aloud is
+  worse than no report — you cannot skim speech.
+- **Rate.** A token bucket per session (burst of 3, one back every 3 minutes).
+  The prompt asks for two or three calls in a ten-minute run; this is the
+  ceiling that catches a worker ignoring that, not the target.
+
+Both failure modes answer honestly rather than silently swallowing the call,
+because each tells the worker something different about whether to keep going:
+*nobody is listening*, *you are going too fast*, or *spoken*. The budget is
+per-session and is dropped with the last follower, so a new call does not
+inherit a bucket the previous one spent.
+
+### The instruction is conditional
+
+`ReportingInstructions` is appended to a drafted prompt **only** when the
+operator chooses to stay on the call. Decline, and the prompt carries none of
+it: no instruction, no tool calls, no reporting overhead. That is the whole
+reason the handoff asks rather than assuming.
+
 ## The handoff contract
 
 **The dialog agent drafts. It never sends.**

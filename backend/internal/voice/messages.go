@@ -18,9 +18,16 @@ const (
 	msgError = "error"
 	// msgClosed explains why the server is ending the call.
 	msgClosed = "closed"
+	// msgReport carries a progress report from the session being followed.
+	msgReport = "report"
 
 	// msgStop is the client asking to end the call.
 	msgStop = "stop"
+	// msgFollow binds the call to a session, so that session's reports reach
+	// it. A call follows at most one session; following again replaces it.
+	msgFollow = "follow"
+	// msgUnfollow releases the binding without ending the call.
+	msgUnfollow = "unfollow"
 )
 
 // serverMessage is a JSON control frame sent to the browser.
@@ -49,11 +56,19 @@ type serverMessage struct {
 
 	// closed
 	Reason string `json:"reason,omitempty"`
+
+	// report
+	Kind      string `json:"kind,omitempty"`
+	Headline  string `json:"headline,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
 }
 
 // clientMessage is a JSON control frame from the browser.
 type clientMessage struct {
 	Type string `json:"type"`
+
+	// follow
+	SessionID string `json:"sessionId,omitempty"`
 }
 
 // handleControl processes one client control frame and reports whether the call
@@ -69,6 +84,19 @@ func (c *call) handleControl(payload []byte) (stop bool) {
 	case msgStop:
 		c.log.Info("voice call stopped by client")
 		return true
+
+	case msgFollow:
+		if msg.SessionID == "" {
+			c.log.Warn("voice follow without a session id")
+			return false
+		}
+		c.follow(msg.SessionID)
+		return false
+
+	case msgUnfollow:
+		c.unfollow()
+		return false
+
 	default:
 		// Forward compatibility: a newer client may send a control type this
 		// build does not know. Ignoring it is correct; closing the call is not.

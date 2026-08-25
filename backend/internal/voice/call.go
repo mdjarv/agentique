@@ -52,11 +52,17 @@ type SpeechIdler interface {
 // control messages. That keeps audio out of a JSON encoder, which matters at
 // 30-odd frames a second.
 type call struct {
-	ws     *websocket.Conn
-	engine Engine
-	log    *slog.Logger
+	ws       *websocket.Conn
+	engine   Engine
+	registry *Registry
+	log      *slog.Logger
 
 	idleTimeout time.Duration
+
+	// followMu guards the session binding and its unsubscribe func.
+	followMu    sync.Mutex
+	followingID string
+	unfollow_   func()
 
 	// writeMu serialises writes. gorilla/websocket rejects concurrent writers,
 	// and audio, control frames and pings all originate on different
@@ -68,17 +74,64 @@ type call struct {
 	lastFrame   time.Time
 }
 
-func newCall(ws *websocket.Conn, engine Engine, idleTimeout time.Duration, log *slog.Logger) *call {
+func newCall(ws *websocket.Conn, engine Engine, registry *Registry, idleTimeout time.Duration, log *slog.Logger) *call {
 	if idleTimeout <= 0 {
 		idleTimeout = defaultIdleTimeout
 	}
 	return &call{
 		ws:          ws,
 		engine:      engine,
+		registry:    registry,
 		log:         log,
 		idleTimeout: idleTimeout,
 		lastFrame:   time.Now(),
 	}
+}
+
+// follow binds the call to a session so that session's reports reach it. A
+// call follows at most one session; following again replaces the binding.
+func (c *call) follow(sessionID string) {
+	if c.registry == nil {
+		return
+	}
+	c.followMu.Lock()
+	previous := c.unfollow_
+	c.followingID = sessionID
+	c.unfollow_ = c.registry.Follow(sessionID, c)
+	c.followMu.Unlock()
+
+	if previous != nil {
+		previous()
+	}
+	c.log.Info("voice call following session", "session", sessionID)
+}
+
+// unfollow releases the session binding, leaving the call open.
+func (c *call) unfollow() {
+	c.followMu.Lock()
+	release := c.unfollow_
+	c.unfollow_ = nil
+	c.followingID = ""
+	c.followMu.Unlock()
+
+	if release != nil {
+		release()
+	}
+}
+
+// Notify implements [Follower]. The report is relayed to the browser as a
+// control frame — it is quoted content, never something this call acts on.
+func (c *call) Notify(r Report) error {
+	c.followMu.Lock()
+	sessionID := c.followingID
+	c.followMu.Unlock()
+
+	return c.sendControl(serverMessage{
+		Type:      msgReport,
+		Kind:      string(r.Kind),
+		Headline:  r.Headline,
+		SessionID: sessionID,
+	})
 }
 
 // run drives the call until the socket closes, the engine ends, or ctx is done.
@@ -86,6 +139,9 @@ func (c *call) run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {
+		// Release the session binding first: a report arriving mid-teardown
+		// would otherwise write to a socket that is already closing.
+		c.unfollow()
 		if err := c.engine.Close(); err != nil {
 			c.log.Warn("voice engine close failed", "error", err)
 		}

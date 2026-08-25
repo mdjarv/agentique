@@ -207,6 +207,100 @@ func TestUnknownControlIsIgnored(t *testing.T) {
 	}
 }
 
+// The whole reporting path over a real socket: the client binds the call to a
+// session, the worker's report reaches the registry, and it arrives as a text
+// control frame — never as a binary one, which is audio's channel.
+func TestFollowDeliversReportsOverTheSocket(t *testing.T) {
+	registry := NewRegistry()
+	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	if err := ws.WriteJSON(clientMessage{Type: msgFollow, SessionID: "sess-1"}); err != nil {
+		t.Fatalf("write follow: %v", err)
+	}
+
+	// Follow is processed asynchronously by the read loop.
+	deadline := time.Now().Add(3 * time.Second)
+	for !registry.Listening("sess-1") {
+		if time.Now().After(deadline) {
+			t.Fatal("the call never registered as following the session")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if _, err := registry.Report("sess-1", "surprise", "the auth tests were already failing"); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+
+	got := readControl(t, ws)
+	if got.Type != msgReport {
+		t.Fatalf("frame type = %q, want %q", got.Type, msgReport)
+	}
+	if got.Kind != string(ReportSurprise) {
+		t.Errorf("kind = %q, want %q", got.Kind, ReportSurprise)
+	}
+	if got.Headline != "the auth tests were already failing" {
+		t.Errorf("headline = %q", got.Headline)
+	}
+	if got.SessionID != "sess-1" {
+		t.Errorf("sessionId = %q, want the followed session", got.SessionID)
+	}
+}
+
+// A closed call must release its binding, or the registry keeps writing into a
+// dead socket and the session looks like it still has a listener.
+func TestClosingACallReleasesTheBinding(t *testing.T) {
+	registry := NewRegistry()
+	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q", ready.Type)
+	}
+	if err := ws.WriteJSON(clientMessage{Type: msgFollow, SessionID: "sess-2"}); err != nil {
+		t.Fatalf("write follow: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !registry.Listening("sess-2") {
+		if time.Now().After(deadline) {
+			t.Fatal("never started following")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	_ = ws.Close()
+
+	deadline = time.Now().Add(3 * time.Second)
+	for registry.Listening("sess-2") {
+		if time.Now().After(deadline) {
+			t.Fatal("the binding outlived the call")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestMaxCallsIsEnforced(t *testing.T) {
 	h, err := NewHandler(Options{Backend: BackendEcho, MaxCalls: 1})
 	if err != nil {
