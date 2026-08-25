@@ -58,6 +58,12 @@ interface SessionHeaderProps {
   git?: ReturnType<typeof useGitActions>;
   /** Project-level git status — used to surface uncommitted-dirty warning on merge. */
   projectGitStatus?: ProjectGitStatus;
+  /**
+   * Take the user to the pending approval or question. Omitted when they are
+   * already looking at it, which is what keeps the pill from offering a jump
+   * that goes nowhere.
+   */
+  onGoToPendingInput?: () => void;
 }
 
 type ActiveDialog = "none" | "delete" | "create-channel" | "join-channel" | "rename";
@@ -69,6 +75,7 @@ export function SessionHeader({
   accentColor,
   git,
   projectGitStatus,
+  onGoToPendingInput,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
@@ -160,6 +167,12 @@ export function SessionHeader({
               connected={meta.connected}
               hasPendingApproval={hasPendingInput}
               compact={false}
+              // The pill is outside the tab switch, so it reports a blocked
+              // session from every tab — but the approve/deny buttons only
+              // exist on the chat branch. Being told you are blocked and left
+              // to find your own way back is half an answer.
+              onActivate={hasPendingInput ? onGoToPendingInput : undefined}
+              activateHint="open the chat to respond"
             />
 
             {/* Identity zone: name + detail popover / inline rename */}

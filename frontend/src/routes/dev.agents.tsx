@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentsView } from "~/components/chat/AgentsView";
 import { SessionTabBar } from "~/components/chat/SessionTabBar";
+import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
 import type { AgentRun } from "~/lib/agent-runs";
 import type { LoopBadgeState } from "~/lib/loop-attention";
 
@@ -144,6 +145,30 @@ function DevAgents() {
           </Panel>
           <Panel label="Badge — idle (silent)">
             <TabBarRow hasAgents agentsRunning={0} agentsFailed={0} />
+          </Panel>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Panel label="Pill — running (status only)">
+            <div className="flex h-10 items-center px-3">
+              <SessionStatusPill state="running" connected />
+            </div>
+          </Panel>
+          <Panel label="Pill — blocked, on the chat tab (status only)">
+            <div className="flex h-10 items-center px-3">
+              <SessionStatusPill state="running" connected hasPendingApproval />
+            </div>
+          </Panel>
+          <Panel label="Pill — blocked, on another tab (a control)">
+            <div className="flex h-10 items-center px-3">
+              <SessionStatusPill
+                state="running"
+                connected
+                hasPendingApproval
+                onActivate={() => {}}
+                activateHint="open the chat to respond"
+              />
+            </div>
           </Panel>
         </div>
 

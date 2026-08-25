@@ -583,6 +583,9 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
           accentColor={agentColor}
           git={git}
           projectGitStatus={projectGitStatus}
+          // Only a jump when there is somewhere to jump to: on the chat branch
+          // the banner is already pinned above the composer.
+          onGoToPendingInput={showsChatBranch ? undefined : () => setActiveTab("chat")}
         />
 
         {/* Tab strip — mobile only (desktop renders tabs inline in the header).

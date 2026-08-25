@@ -289,6 +289,13 @@ not a transcript. Lifetime totals belong in the footer.
 The strip owns its own 1s clock: lifting it to `ChatPanel` would re-render the
 whole session view every second an agent is out.
 
+The header's `SessionStatusPill` is the matching rule for *reporting* a blocked
+session: it sits outside the tab switch, so it says "Needs approval" from every
+tab, but the approve/deny buttons only exist on the chat branch. It therefore
+becomes a button (`onActivate`) exactly when there is somewhere to go, and stays
+plain text on the chat branch where the banner is already pinned above the
+composer — a control that does nothing when clicked is worse than a label.
+
 Tab badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
 must mean one thing across surfaces: **X is "it failed", the triangle is
 "someone is waiting on you"**, and a pulse in the tab strip means live activity,
