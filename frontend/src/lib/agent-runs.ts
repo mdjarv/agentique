@@ -27,6 +27,20 @@ export interface AgentRun {
   state: AgentRunState;
   /** Flattened head of the return value. Absent while the agent is running. */
   preview?: string;
+  /**
+   * What the agent returned, whole and unflattened — the report behind the
+   * one-line preview. Absent while it is still out.
+   */
+  report?: string;
+  /**
+   * The agent's own forwarded narration (text, thinking, tool calls), oldest
+   * first: the only way to see what it is doing before it returns.
+   *
+   * Empty unless the provider forwards subagent output — Claude with
+   * `[claude] forward-subagent-text`. Without it the CLI emits no subagent
+   * messages at all, so this stays empty and the roster can only report status.
+   */
+  steps: ChatEvent[];
   lastToolName?: string;
   totalTokens: number;
   toolUses: number;
@@ -75,10 +89,11 @@ function latestString(tasks: readonly TaskEvent[], pick: (t: TaskEvent) => strin
   return hit ? asText(pick(hit)) : undefined;
 }
 
+/** The return value as written — line breaks and all. */
 function resultText(result: ToolResultEvent | undefined): string | undefined {
   for (const block of result?.contentBlocks ?? []) {
     const text = asText(block.text);
-    if (block.type === "text" && text) return flattenPreview(text);
+    if (block.type === "text" && text) return text.trim();
   }
   return undefined;
 }
@@ -109,9 +124,23 @@ export function collectAgentRuns(
   const spawns = new Map<string, { use: ToolUseEvent; turnIndex?: number }>();
   const results = new Map<string, ToolResultEvent>();
   const tasksByToolUse = new Map<string, TaskEvent[]>();
+  const stepsByToolUse = new Map<string, ChatEvent[]>();
   const order: string[] = [];
 
   const consider = (ev: ChatEvent, turnIndex?: number) => {
+    // Forwarded subagent output — the agent's own narration, addressed to the
+    // spawn it belongs to. Collected first: a subagent's tool call is not a
+    // spawn of the parent session, and its tool result is not the agent's
+    // return value.
+    if (ev.parentToolUseId && ev.type !== "task") {
+      let steps = stepsByToolUse.get(ev.parentToolUseId);
+      if (!steps) {
+        steps = [];
+        stepsByToolUse.set(ev.parentToolUseId, steps);
+      }
+      steps.push(ev);
+      return;
+    }
     if (ev.type === "tool_use" && AGENT_TOOL_NAMES.has(ev.toolName)) {
       spawns.set(ev.toolId, { use: ev, turnIndex });
       return;
@@ -152,13 +181,22 @@ export function collectAgentRuns(
       asText(input.prompt) ??
       "Agent";
 
+    const report = resultText(result);
     runs.push({
       toolUseId,
       title: flattenPreview(title),
       agentType: asText(input.subagent_type),
       state,
       preview:
-        state === "running" ? undefined : summary ? flattenPreview(summary) : resultText(result),
+        state === "running"
+          ? undefined
+          : summary
+            ? flattenPreview(summary)
+            : report
+              ? flattenPreview(report)
+              : undefined,
+      report: state === "running" ? undefined : report,
+      steps: stepsByToolUse.get(toolUseId) ?? [],
       lastToolName: latestString(tasks, (t) => t.lastToolName),
       totalTokens: latestNumber(tasks, (t) => t.totalTokens),
       toolUses: latestNumber(tasks, (t) => t.toolUses),

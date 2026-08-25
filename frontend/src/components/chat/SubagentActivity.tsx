@@ -1,5 +1,6 @@
 import { Bot, Check, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { memo, useState } from "react";
+import { SubagentSteps, subagentSteps } from "~/components/chat/SubagentSteps";
 import { ToolIcon } from "~/components/chat/ToolIcons";
 import type { ChatEvent, TaskEvent } from "~/stores/chat-store";
 
@@ -12,32 +13,6 @@ interface SubagentActivityProps {
    * the parent turn.
    */
   subagentEvents?: ChatEvent[];
-}
-
-/** One forwarded subagent event, rendered as a compact transcript line. */
-function NestedEventLine({ event }: { event: ChatEvent }) {
-  if (event.type === "text" || event.type === "thinking") {
-    return (
-      <div
-        className={
-          event.type === "thinking"
-            ? "whitespace-pre-wrap text-muted-foreground-faint italic"
-            : "whitespace-pre-wrap text-muted-foreground-dim"
-        }
-      >
-        {event.content}
-      </div>
-    );
-  }
-  if (event.type === "tool_use") {
-    return (
-      <div className="flex items-center gap-1.5 text-muted-foreground-faint min-w-0">
-        <ToolIcon name={event.toolName} />
-        <span className="truncate">{event.toolName}</span>
-      </div>
-    );
-  }
-  return null;
 }
 
 function formatDuration(ms: number): string {
@@ -69,10 +44,7 @@ export const SubagentActivity = memo(function SubagentActivity({
   if (toolCount > 0) statusParts.push(`${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
   if (duration > 0) statusParts.push(formatDuration(duration));
   const statusLine = statusParts.join(", ");
-  // tool_result carries no standalone line — it is folded into its tool_use row.
-  const nested = (subagentEvents ?? []).filter(
-    (e) => e.type === "text" || e.type === "thinking" || e.type === "tool_use",
-  );
+  const nested = subagentSteps(subagentEvents);
 
   return (
     <div className="ml-5 border-l-2 border-agent/20 pl-2.5">
@@ -123,10 +95,8 @@ export const SubagentActivity = memo(function SubagentActivity({
               </span>
             </button>
             {expanded && (
-              <div className="border-t px-2 py-1.5 space-y-1">
-                {nested.map((e) => (
-                  <NestedEventLine key={e.id} event={e} />
-                ))}
+              <div className="border-t px-2 py-1.5">
+                <SubagentSteps steps={nested} />
               </div>
             )}
           </>

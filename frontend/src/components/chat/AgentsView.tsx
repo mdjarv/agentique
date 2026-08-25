@@ -1,5 +1,7 @@
-import { memo, useMemo } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
+import { AgentRunDetail } from "~/components/chat/AgentRunDetail";
 import { type AgentRun, agentRunTotals, partitionAgentRuns } from "~/lib/agent-runs";
 import { formatDuration, formatTokens } from "~/lib/format";
 import { cn } from "~/lib/utils";
@@ -12,11 +14,29 @@ import { cn } from "~/lib/utils";
  *
  * The row's second line is the head of what the agent *returned*: the whole
  * point of the view is reading four agents' conclusions without opening any of
- * them. Lifetime totals live in the footer, which is where an odometer belongs.
+ * them. Opening one goes the rest of the way — its narration and its report in
+ * full — so the tab answers "what did it actually say" without sending the
+ * reader back to the transcript. Lifetime totals live in the footer, which is
+ * where an odometer belongs.
+ *
+ * Which rows are open is view state and deliberately not persisted: a roster
+ * that reopens yesterday's four agents is a wall, not a list.
  */
 export function AgentsView({ runs }: { runs: AgentRun[] }) {
   const totals = useMemo(() => agentRunTotals(runs), [runs]);
   const { inFlight, landed } = useMemo(() => partitionAgentRuns(runs), [runs]);
+  const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set<string>());
+
+  const toggleRow = useCallback((toolUseId: string) => {
+    setOpenRows((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(toolUseId)) next.add(toolUseId);
+      return next;
+    });
+  }, []);
+
+  // The card and the row open into the same thing — one agent read one way.
+  const renderDetail = useCallback((run: AgentRun) => <AgentRunDetail run={run} />, []);
 
   if (runs.length === 0) {
     return (
@@ -28,7 +48,7 @@ export function AgentsView({ runs }: { runs: AgentRun[] }) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <AgentFlightStrip inFlight={inFlight} density="board" />
+      <AgentFlightStrip inFlight={inFlight} density="board" renderDetail={renderDetail} />
       <div className="flex-1 overflow-y-auto min-h-0">
         {inFlight.length > 0 && landed.length > 0 && (
           <div className="flex items-center gap-2 px-4 pt-2 pb-1.5">
@@ -40,7 +60,12 @@ export function AgentsView({ runs }: { runs: AgentRun[] }) {
         )}
         <div className="divide-y divide-border/50">
           {landed.map((run) => (
-            <AgentRunRow key={run.toolUseId} run={run} />
+            <AgentRunRow
+              key={run.toolUseId}
+              run={run}
+              open={openRows.has(run.toolUseId)}
+              onToggle={() => toggleRow(run.toolUseId)}
+            />
           ))}
         </div>
       </div>
@@ -85,47 +110,81 @@ function StateDot({ state }: { state: AgentRun["state"] }) {
   );
 }
 
-/** One landed run. Agents still out are the flight strip's job, not this row's. */
-const AgentRunRow = memo(function AgentRunRow({ run }: { run: AgentRun }) {
+/**
+ * One landed run, closed or open. Agents still out are the flight strip's job,
+ * not this row's.
+ *
+ * Closed, it is what it always was: outcome, title, the head of the report.
+ * Open, it is the agent itself — so the whole row is the control, and the
+ * one-line preview steps aside rather than repeating the first line of the
+ * report printed directly under it.
+ */
+const AgentRunRow = memo(function AgentRunRow({
+  run,
+  open,
+  onToggle,
+}: {
+  run: AgentRun;
+  open: boolean;
+  onToggle: () => void;
+}) {
   // Metrics read as one sentence rather than a label/value grid — "91 tools"
   // needs no "Tools:" in front of it.
   const metrics = [
     run.totalTokens > 0 ? `${formatTokens(run.totalTokens)} tok` : null,
     run.toolUses > 0 ? `${run.toolUses} ${run.toolUses === 1 ? "tool" : "tools"}` : null,
   ].filter((part): part is string => part !== null);
+  const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
     <div className="px-4 py-2.5">
-      <div className="flex items-baseline gap-2 min-w-0">
-        <StateDot state={run.state} />
-        <span className="truncate text-sm text-foreground">{run.title}</span>
-        {run.agentType && (
-          <span className="shrink-0 rounded bg-agent/10 px-1.5 py-px font-medium text-[10px] text-agent/80">
-            {run.agentType}
-          </span>
-        )}
-        {run.durationMs > 0 && (
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground-faint tabular-nums">
-            {formatDuration(run.durationMs)}
-          </span>
-        )}
-      </div>
-
-      {run.preview && (
-        <p
-          className={cn(
-            "mt-0.5 truncate pl-3.5 text-xs",
-            run.state === "failed" ? "text-destructive/80" : "text-muted-foreground-dim",
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={`${run.title} — ${open ? "hide" : "read"} this agent`}
+        className="block w-full cursor-pointer text-left"
+      >
+        <span className="flex items-baseline gap-2 min-w-0">
+          <StateDot state={run.state} />
+          <span className="truncate text-sm text-foreground">{run.title}</span>
+          {run.agentType && (
+            <span className="shrink-0 rounded bg-agent/10 px-1.5 py-px font-medium text-[10px] text-agent/80">
+              {run.agentType}
+            </span>
           )}
-        >
-          {run.preview}
-        </p>
-      )}
+          <span className="ml-auto flex shrink-0 items-baseline gap-1.5">
+            {run.durationMs > 0 && (
+              <span className="text-[11px] text-muted-foreground-faint tabular-nums">
+                {formatDuration(run.durationMs)}
+              </span>
+            )}
+            <Chevron className="size-3 self-center text-muted-foreground-faint" />
+          </span>
+        </span>
 
-      {metrics.length > 0 && (
-        <p className="mt-0.5 pl-3.5 text-[11px] text-muted-foreground-faint tabular-nums">
-          {metrics.join(" · ")}
-        </p>
+        {run.preview && !open && (
+          <span
+            className={cn(
+              "mt-0.5 block truncate pl-3.5 text-xs",
+              run.state === "failed" ? "text-destructive/80" : "text-muted-foreground-dim",
+            )}
+          >
+            {run.preview}
+          </span>
+        )}
+
+        {metrics.length > 0 && (
+          <span className="mt-0.5 block pl-3.5 text-[11px] text-muted-foreground-faint tabular-nums">
+            {metrics.join(" · ")}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2 pl-3.5">
+          <AgentRunDetail run={run} />
+        </div>
       )}
     </div>
   );

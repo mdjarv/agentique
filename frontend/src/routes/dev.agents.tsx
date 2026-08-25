@@ -12,6 +12,22 @@ export const Route = createFileRoute("/dev/agents")({
 
 const now = Date.now();
 
+/** Forwarded narration, as the CLI would deliver it with
+ *  [claude] forward-subagent-text on. */
+function steps(...lines: Array<[type: "text" | "thinking" | "tool_use", body: string]>) {
+  return lines.map(([type, body], i) =>
+    type === "tool_use"
+      ? ({
+          id: `s${i}`,
+          type: "tool_use",
+          toolId: `s${i}`,
+          toolName: body,
+          toolInput: null,
+        } as const)
+      : ({ id: `s${i}`, type, content: body } as const),
+  ) as AgentRun["steps"];
+}
+
 const landed: AgentRun[] = [
   {
     toolUseId: "tu_1",
@@ -20,6 +36,14 @@ const landed: AgentRun[] = [
     state: "done",
     preview:
       "I have a complete picture. Here is the research report. — # t3code multi-environment architecture **One sentence:** an environment is one machine running a t3 server, identified by a server-generated UUID persisted to its state dir.",
+    report:
+      "# t3code multi-environment architecture\n\n**One sentence:** an environment is one machine running a t3 server, identified by a server-generated UUID persisted to its state dir.\n\n## Pairing\n\nThe client pins the machine id and the signing identity, then verifies a fresh signed challenge before sending credentials.",
+    steps: steps(
+      ["thinking", "Start from the connection manager and follow the id."],
+      ["tool_use", "Grep"],
+      ["text", "The environment id is generated server-side and persisted."],
+      ["tool_use", "Read"],
+    ),
     totalTokens: 245_000,
     toolUses: 91,
     durationMs: 397_000,
@@ -31,6 +55,7 @@ const landed: AgentRun[] = [
     state: "done",
     preview:
       "I have what I need. Here's the full report. — # t3code multi-machine (environment) UX — research report. Vocabulary first, because the UI leans on it everywhere: environment, project group, checkout.",
+    steps: [],
     totalTokens: 200_000,
     toolUses: 104,
     durationMs: 473_000,
@@ -42,6 +67,7 @@ const landed: AgentRun[] = [
     state: "done",
     preview:
       "Here's the map. — # 1. Client-server coupling today. **Same-origin is a hard assumption.** There is no base-URL concept anywhere in the frontend; every fetch is relative.",
+    steps: [],
     totalTokens: 143_000,
     toolUses: 76,
     durationMs: 327_000,
@@ -51,6 +77,9 @@ const landed: AgentRun[] = [
     title: "Port the reaper to FreeBSD",
     state: "failed",
     preview: "Could not determine process group ownership without /proc — aborting.",
+    report:
+      "Could not determine process group ownership without /proc — aborting.\n\nFreeBSD exposes this through kvm(3), which needs a different code path than the Linux reaper's marker check.",
+    steps: [],
     totalTokens: 9_400,
     toolUses: 5,
     durationMs: 41_000,
@@ -64,6 +93,12 @@ const inFlight: AgentRun[] = [
     agentType: "Explore",
     state: "running",
     lastToolName: "Grep",
+    steps: steps(
+      ["thinking", "The pin release has to live somewhere the archive path cannot skip."],
+      ["tool_use", "Grep"],
+      ["text", "SetSessionArchived clears pinned in the same query — that is the seam."],
+      ["tool_use", "Grep"],
+    ),
     totalTokens: 38_000,
     toolUses: 18,
     durationMs: 0,
@@ -78,6 +113,7 @@ const inFlight: AgentRun[] = [
     totalTokens: 21_000,
     toolUses: 11,
     durationMs: 0,
+    steps: [],
     startedAt: now - 58_000,
   },
   {
@@ -88,6 +124,7 @@ const inFlight: AgentRun[] = [
     totalTokens: 2_100,
     toolUses: 2,
     durationMs: 0,
+    steps: [],
     startedAt: now - 6_000,
   },
 ];

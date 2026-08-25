@@ -28,6 +28,13 @@ interface AgentFlightStripProps {
   /** `line` only — lifted so expansion survives a tab switch. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /**
+   * `board` only — what a card opens into. Given one, cards become buttons and
+   * open in place; without it they stay plain status. The strip decides *that*
+   * a card is open, never what "open" shows: reading an agent is the roster's
+   * subject, and the rail and line stay a glance.
+   */
+  renderDetail?: (run: AgentRun) => React.ReactNode;
   className?: string;
 }
 
@@ -36,9 +43,11 @@ export function AgentFlightStrip({
   density,
   expanded,
   onExpandedChange,
+  renderDetail,
   className,
 }: AgentFlightStripProps) {
   const [localExpanded, setLocalExpanded] = useState(false);
+  const [openCards, setOpenCards] = useState<ReadonlySet<string>>(() => new Set<string>());
   // The clock lives here rather than in the parent: a 1s tick in ChatPanel
   // would re-render the whole session view every second an agent is out.
   const now = useNow(1_000, inFlight.length > 0).getTime();
@@ -48,12 +57,27 @@ export function AgentFlightStrip({
   if (inFlight.length === 0) return null;
 
   if (density === "board") {
+    const toggleCard = (toolUseId: string) =>
+      setOpenCards((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(toolUseId)) next.add(toolUseId);
+        return next;
+      });
     return (
       <div className={cn("shrink-0", className)}>
         <SectionHeading label={`In flight — ${inFlight.length}`} />
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2 px-4 pb-3">
+        {/* items-start so one opened card grows alone instead of stretching
+            every card in its row to match. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] items-start gap-2 px-4 pb-3">
           {inFlight.map((run) => (
-            <FlightCard key={run.toolUseId} run={run} now={now} />
+            <FlightCard
+              key={run.toolUseId}
+              run={run}
+              now={now}
+              detail={renderDetail?.(run)}
+              open={openCards.has(run.toolUseId)}
+              onToggle={renderDetail ? () => toggleCard(run.toolUseId) : undefined}
+            />
           ))}
         </div>
       </div>
@@ -167,15 +191,27 @@ const FlightChip = memo(function FlightChip({ run, now }: { run: AgentRun; now: 
   );
 });
 
-const FlightCard = memo(function FlightCard({ run, now }: { run: AgentRun; now: number }) {
+const FlightCard = memo(function FlightCard({
+  run,
+  now,
+  detail,
+  open = false,
+  onToggle,
+}: {
+  run: AgentRun;
+  now: number;
+  detail?: React.ReactNode;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
   const elapsed = flightElapsedMs(run, now);
   const metrics = [
     run.totalTokens > 0 ? `${formatTokens(run.totalTokens)} tok` : null,
     run.toolUses > 0 ? `${run.toolUses} ${run.toolUses === 1 ? "tool" : "tools"}` : null,
   ].filter((part): part is string => part !== null);
 
-  return (
-    <div className="rounded-md border border-agent/25 bg-agent/[0.06] px-2.5 py-2">
+  const body = (
+    <>
       <div className="flex items-center gap-2">
         <span className="size-1.5 shrink-0 rounded-full bg-agent motion-safe:animate-pulse" />
         <span className="truncate text-foreground text-xs">{run.title}</span>
@@ -196,6 +232,32 @@ const FlightCard = memo(function FlightCard({ run, now }: { run: AgentRun; now: 
           {metrics.join(" · ")}
         </p>
       )}
+    </>
+  );
+
+  const shell = "rounded-md border border-agent/25 bg-agent/[0.06] px-2.5 py-2";
+
+  if (!onToggle) return <div className={shell}>{body}</div>;
+
+  return (
+    <div className={shell}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="block w-full cursor-pointer text-left"
+      >
+        {body}
+        <span className="mt-1.5 flex items-center gap-1 text-[11px] text-agent/80">
+          {open ? (
+            <ChevronDown className="size-3 shrink-0" />
+          ) : (
+            <ChevronRight className="size-3 shrink-0" />
+          )}
+          {open ? "Hide" : "Watch"}
+        </span>
+      </button>
+      {open && <div className="mt-1.5 border-t pt-1.5">{detail}</div>}
     </div>
   );
 });

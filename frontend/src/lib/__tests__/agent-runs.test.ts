@@ -77,6 +77,8 @@ describe("collectAgentRuns", () => {
         agentType: "Explore",
         state: "done",
         preview: "Auth lives in internal/auth",
+        report: "ignored when a summary exists",
+        steps: [],
         lastToolName: undefined,
         totalTokens: 245_000,
         toolUses: 91,
@@ -84,6 +86,101 @@ describe("collectAgentRuns", () => {
         turnIndex: 4,
       },
     ]);
+  });
+
+  it("keeps the report whole, and flattens only the preview", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "Map the codebase" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+          toolResult("tu_1", "# Findings\n\nThe cache is unbounded."),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs[0]?.report).toBe("# Findings\n\nThe cache is unbounded.");
+    expect(runs[0]?.preview).toBe("# Findings The cache is unbounded.");
+  });
+
+  it("collects forwarded subagent output under the agent that produced it", () => {
+    const narration: ChatEvent[] = [
+      { id: "n1", type: "thinking", content: "Start at the reaper.", parentToolUseId: "tu_1" },
+      {
+        id: "n2",
+        type: "tool_use",
+        toolId: "sub_1",
+        toolName: "Grep",
+        toolInput: null,
+        parentToolUseId: "tu_1",
+      },
+      { id: "n3", type: "text", content: "Found it.", parentToolUseId: "tu_2" },
+    ];
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "First" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+          spawn("tu_2", { description: "Second" }),
+          task("tu_2", { taskSubtype: "task_started" }),
+          ...narration,
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs[0]?.steps.map((e) => e.id)).toEqual(["n1", "n2"]);
+    expect(runs[1]?.steps.map((e) => e.id)).toEqual(["n3"]);
+  });
+
+  it("gives a running agent its narration, which is the only thing it has", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "Still out" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+        ]),
+      ],
+      [{ id: "n1", type: "text", content: "Reading the pipeline.", parentToolUseId: "tu_1" }],
+    );
+
+    expect(runs[0]).toMatchObject({ state: "running", preview: undefined, report: undefined });
+    expect(runs[0]?.steps).toHaveLength(1);
+  });
+
+  it("never mistakes a subagent's own tool call for a spawn or a return value", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "Parent" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+          // The subagent spawns nothing and returns nothing to this session:
+          // both events belong to its narration.
+          {
+            id: "n1",
+            type: "tool_use",
+            toolId: "tu_nested",
+            toolName: "Agent",
+            toolInput: { description: "Nested" },
+            parentToolUseId: "tu_1",
+          },
+          {
+            id: "n2",
+            type: "tool_result",
+            toolId: "tu_1",
+            contentBlocks: [{ type: "text", text: "not the agent's report" }],
+            parentToolUseId: "tu_1",
+          },
+          task("tu_1", { taskSubtype: "task_notification", taskStatus: "completed" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs.map((r) => r.toolUseId)).toEqual(["tu_1"]);
+    expect(runs[0]?.report).toBeUndefined();
+    expect(runs[0]?.steps.map((e) => e.id)).toEqual(["n1", "n2"]);
   });
 
   it("falls back to the tool result when no summary was reported", () => {
@@ -312,6 +409,7 @@ describe("flight elapsed", () => {
         totalTokens: 0,
         toolUses: 0,
         durationMs: 0,
+        steps: [],
         startedAt: 5_000,
       },
       {
@@ -321,6 +419,7 @@ describe("flight elapsed", () => {
         totalTokens: 0,
         toolUses: 0,
         durationMs: 0,
+        steps: [],
         startedAt: 1_000,
       },
     ];
@@ -338,6 +437,7 @@ describe("agentBadgeState", () => {
       totalTokens: 0,
       toolUses: 0,
       durationMs: 0,
+      steps: [],
       turnIndex,
     }));
   }
