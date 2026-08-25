@@ -199,6 +199,7 @@ export interface ChatState {
   setSessionHistory: (sessionId: string, turns: Turn[], complete?: boolean) => void;
 
   // Turn/event management
+  /** Appends the turn and returns its id, which rollbackOptimisticTurn takes. */
   submitQuery: (
     sessionId: string,
     prompt: string,
@@ -207,8 +208,8 @@ export interface ChatState {
       turnIndex?: number;
       origin?: import("~/lib/generated-types").QueryOrigin;
     },
-  ) => void;
-  rollbackOptimisticTurn: (sessionId: string, prompt: string) => void;
+  ) => string;
+  rollbackOptimisticTurn: (sessionId: string, turnId: string) => void;
   adoptTurnPrompt: (
     sessionId: string,
     prompt: string,
@@ -590,7 +591,8 @@ export const useChatStore = create<ChatState>((set) => ({
       return result;
     }),
 
-  submitQuery: (sessionId, prompt, attachments, meta) =>
+  submitQuery: (sessionId, prompt, attachments, meta) => {
+    const turnId = uuid();
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
@@ -598,7 +600,7 @@ export const useChatStore = create<ChatState>((set) => ({
         turns: [
           ...session.turns,
           {
-            id: uuid(),
+            id: turnId,
             prompt,
             attachments: (attachments ?? []).map(({ previewUrl: _, ...rest }) => rest),
             events: [],
@@ -609,9 +611,15 @@ export const useChatStore = create<ChatState>((set) => ({
         ],
         streamingEvents: [],
       });
-    }),
+    });
+    return turnId;
+  },
 
-  rollbackOptimisticTurn: (sessionId, prompt) =>
+  // Removes the turn `submitQuery` drew, by id — the send it stood for either
+  // failed or turned out not to be a turn at all. Identity, not prompt text:
+  // two turns can carry the same words, and taking the last one that matches
+  // could delete a turn that is genuinely running.
+  rollbackOptimisticTurn: (sessionId, turnId) =>
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) return s;
@@ -626,7 +634,7 @@ export const useChatStore = create<ChatState>((set) => ({
         !last.complete &&
         last.events.length === 0 &&
         !turnProduced &&
-        last.prompt === prompt
+        last.id === turnId
       ) {
         return updateSession(s, sessionId, { turns: turns.slice(0, -1) });
       }

@@ -163,6 +163,14 @@ type SessionGenerateNameResult struct {
 	Name string `json:"name"`
 }
 
+// SessionEnqueueResult reports what the server did with the message —
+// session.MessageDelivery: "turn", "mid_turn" or "queued". Optional on the
+// wire: a peer on an older release answers session.enqueue with an empty
+// object, and the client must read that as "unknown", not as a delivery.
+type SessionEnqueueResult struct {
+	Delivery string `json:"delivery,omitempty"`
+}
+
 type SessionArchivePayload struct {
 	SessionID string `json:"sessionId"`
 }

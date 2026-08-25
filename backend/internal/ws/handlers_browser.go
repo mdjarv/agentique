@@ -30,7 +30,7 @@ func (c *conn) handleBrowserLaunch(msg ClientMessage) {
 		// The agent's browser tools are always available; this prompt just tells it
 		// the panel is now open. Background context: the prompt must land even if
 		// the WS connection drops.
-		if err := c.svc.EnqueueMessage(context.Background(), p.SessionID, browserLaunchPrompt, nil); err != nil {
+		if _, err := c.svc.EnqueueMessage(context.Background(), p.SessionID, browserLaunchPrompt, nil); err != nil {
 			slog.Warn("browser launch prompt injection failed", "session_id", p.SessionID, "error", err)
 		}
 

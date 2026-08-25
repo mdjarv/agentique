@@ -348,6 +348,17 @@ through `runtime.Capabilities()`. Codex mid-turn send is emulated, queued and
 replayed at idle, so the wire capability is deliberately `true` while the adapter
 capability is `false`.
 
+**A message's delivery is reported, never inferred.** `session.enqueue` decides
+between three outcomes — the message opens a turn, joins the running one, or is
+buffered for the next — and only the server can know which: the client reads
+session state from a push that may be a round trip behind that decision. So
+`EnqueueMessage` returns a `session.MessageDelivery` and the reply carries it,
+because a client that guesses draws its own optimistic turn *and* renders the
+echo of the same message. A client treats an absent `delivery` (an older peer)
+as unknown, not as "turn". The composer's optimistic turn is rolled back **by
+turn id** — matching on prompt text can delete a genuinely running turn that
+happens to repeat the words.
+
 **agentique never runs a provider CLI.** No `exec` of `claude` or `codex`
 anywhere in this repo: not for a version, not for `doctor`, not to update.
 Install facts come from the connector through `runtime.InstallInspectable`, which

@@ -427,6 +427,7 @@ func main() {
 	g.register(ws.ProjectSubscribePayload{}, "ProjectSubscribePayload")
 	g.register(ws.SessionCreatePayload{}, "SessionCreatePayload")
 	g.register(ws.SessionQueryPayload{}, "SessionQueryPayload")
+	g.register(ws.SessionEnqueueResult{}, "SessionEnqueueResult")
 	g.register(ws.SessionListPayload{}, "SessionListPayload")
 	g.register(ws.SessionStopPayload{}, "SessionStopPayload")
 	g.register(ws.SessionHistoryPayload{}, "SessionHistoryPayload")

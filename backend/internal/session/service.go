@@ -789,42 +789,65 @@ func (s *Service) QuerySessionWithOutcome(ctx context.Context, sessionID, prompt
 	return turnIndex, outcome, nil
 }
 
+// MessageDelivery is what the server actually did with an enqueued message.
+//
+// The caller cannot infer it. A client reads session state from a push that is
+// at best one round trip behind the server's own transition, so it can only
+// guess whether its message opens a turn or joins one — and a wrong guess shows
+// the prompt twice, once as the turn the client drew and once as the echo of
+// the message the server delivered. The answer travels with the reply instead.
+type MessageDelivery string
+
+const (
+	// DeliveryTurn — the session was idle; the message opened a new turn, and
+	// the turn-started broadcast carries it.
+	DeliveryTurn MessageDelivery = "turn"
+	// DeliveryMidTurn — injected into the turn already running (a provider with
+	// native mid-turn send). The user_message echo is the message's only record
+	// in the timeline; no turn opens for it.
+	DeliveryMidTurn MessageDelivery = "mid_turn"
+	// DeliveryQueued — buffered and replayed as a fresh turn at the next idle
+	// boundary (a provider without native mid-turn send). The queued echo holds
+	// its place until that turn starts.
+	DeliveryQueued MessageDelivery = "queued"
+)
+
 // EnqueueMessage sends a prompt as a new turn if idle, or delivers it mid-turn
-// if running. Providers with native mid-turn injection (claude) use SendMessage
-// so the CLI picks it up at the next safe boundary within the current turn;
-// providers without it (codex) buffer the message and replay it as a fresh turn
-// at the next idle boundary. Performs lazy resume for dead/stopped sessions
-// (same as QuerySession).
-func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) error {
+// if running, and reports which of the two happened. Providers with native
+// mid-turn injection (claude) use SendMessage so the CLI picks it up at the next
+// safe boundary within the current turn; providers without it (codex) buffer the
+// message and replay it as a fresh turn at the next idle boundary. Performs lazy
+// resume for dead/stopped sessions (same as QuerySession).
+func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) (MessageDelivery, error) {
 	sess, err := s.ensureLive(ctx, sessionID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Running: deliver mid-turn.
 	if sess.State() == StateRunning {
 		if sess.supportsNativeMidTurn() {
 			if err := sess.SendMessage(prompt, attachments); err != nil {
-				return fmt.Errorf("send message failed: %w", err)
+				return "", fmt.Errorf("send message failed: %w", err)
 			}
-			return nil
+			return DeliveryMidTurn, nil
 		}
 		// No native mid-turn channel — buffer and replay on the next idle. A
 		// false return means the turn completed between the state check and the
 		// enqueue; fall through to send it as a fresh turn.
 		if sess.QueuePendingMessage(prompt, attachments) {
-			return nil
+			return DeliveryQueued, nil
 		}
 	}
 
 	// Not running — send as a new turn (same path as QuerySession).
 	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
 	if err := sess.Query(ctx, prompt, attachments); err != nil {
-		return fmt.Errorf("query failed: %w", err)
+		return "", fmt.Errorf("query failed: %w", err)
 	}
 
 	s.postQuery(ctx, sessionID, sess, prompt)
-	return nil
+	return DeliveryTurn, nil
 }
 
 // ResumeSession reconnects a stopped/done/failed session without sending a query.

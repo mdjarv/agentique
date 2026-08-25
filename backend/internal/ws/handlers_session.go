@@ -259,7 +259,11 @@ func (c *conn) handleSessionGenerateName(msg ClientMessage) {
 
 func (c *conn) handleSessionEnqueue(msg ClientMessage) {
 	// Reuse SessionQueryPayload — same shape (sessionId, prompt, attachments).
-	handleRequest(c, msg, func(ctx context.Context, p SessionQueryPayload) (struct{}, error) {
-		return struct{}{}, c.svc.EnqueueMessage(ctx, p.SessionID, p.Prompt, p.Attachments)
+	handleRequest(c, msg, func(ctx context.Context, p SessionQueryPayload) (SessionEnqueueResult, error) {
+		delivery, err := c.svc.EnqueueMessage(ctx, p.SessionID, p.Prompt, p.Attachments)
+		if err != nil {
+			return SessionEnqueueResult{}, err
+		}
+		return SessionEnqueueResult{Delivery: string(delivery)}, nil
 	})
 }

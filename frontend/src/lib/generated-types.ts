@@ -574,6 +574,10 @@ export interface SessionQueryPayload {
   attachments?: QueryAttachment[];
 }
 
+export interface SessionEnqueueResult {
+  delivery?: string;
+}
+
 export interface SessionListPayload {
   projectId: string;
 }

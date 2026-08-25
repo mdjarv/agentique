@@ -188,40 +188,57 @@ describe("chat-store", () => {
   // --- rollbackOptimisticTurn ---
 
   describe("rollbackOptimisticTurn", () => {
-    it("removes optimistic turn with matching prompt", () => {
+    it("removes the turn it is given by id", () => {
       useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().submitQuery("sess-1", "test message");
+      const id = useChatStore.getState().submitQuery("sess-1", "test message");
       expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
 
-      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", id);
       expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(0);
     });
 
     it("does not remove turn with events", () => {
       useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().submitQuery("sess-1", "test message");
+      const id = useChatStore.getState().submitQuery("sess-1", "test message");
       useChatStore.getState().handleServerEvent("sess-1", makeTextEvent("hi"));
 
-      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", id);
       expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
     });
 
-    it("does not remove turn with different prompt", () => {
+    it("does not remove a turn it was not given", () => {
       useChatStore.getState().addSession(makeMeta());
       useChatStore.getState().submitQuery("sess-1", "original message");
 
-      useChatStore.getState().rollbackOptimisticTurn("sess-1", "different message");
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", "some-other-turn");
+      expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
+    });
+
+    // Two turns can carry the same words: rolling back the second must never
+    // take the first, which may be the one actually running.
+    it("does not remove a same-prompt turn that is not the one rolled back", () => {
+      useChatStore.getState().addSession(makeMeta());
+      const running = useChatStore.getState().submitQuery("sess-1", "go");
+      const optimistic = useChatStore.getState().submitQuery("sess-1", "go");
+
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", optimistic);
+      const turns = useChatStore.getState().sessions["sess-1"]?.turns;
+      expect(turns).toHaveLength(1);
+      expect(turns?.[0]?.id).toBe(running);
+
+      // And the survivor is not removable by the id already spent.
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", optimistic);
       expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
     });
 
     it("does not remove completed turn", () => {
       useChatStore.getState().addSession(makeMeta());
-      useChatStore.getState().submitQuery("sess-1", "test message");
+      const id = useChatStore.getState().submitQuery("sess-1", "test message");
       useChatStore
         .getState()
         .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
 
-      useChatStore.getState().rollbackOptimisticTurn("sess-1", "test message");
+      useChatStore.getState().rollbackOptimisticTurn("sess-1", id);
       expect(useChatStore.getState().sessions["sess-1"]?.turns).toHaveLength(1);
     });
   });

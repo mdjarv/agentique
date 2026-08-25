@@ -11,6 +11,7 @@ import type {
   SessionCommitResult,
   SessionDeleteBulkResult,
   SessionDeleteBulkResultItem,
+  SessionEnqueueResult,
 } from "~/lib/generated-types";
 import { readArchivedAt } from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
@@ -150,11 +151,15 @@ export async function enqueueMessage(
   // For non-running sessions, create an optimistic turn for immediate feedback.
   // The session.turn-started handler in useSessionEventSubscription deduplicates
   // with this (peeling any <brain> recall envelope before matching).
+  //
+  // The state read here is a push, so it can be a round trip behind the server:
+  // "idle" may already be "running there". The guess buys instant feedback and
+  // the reply settles it — see the reconciliation below.
   const sessionState = useChatStore.getState().sessions[sessionId]?.meta.state;
-  const isOptimistic = sessionState !== "running";
-  if (isOptimistic) {
+  let optimisticTurnId: string | null = null;
+  if (sessionState !== "running") {
     useStreamingStore.getState().clearText(sessionId);
-    useChatStore.getState().submitQuery(sessionId, prompt, attachments);
+    optimisticTurnId = useChatStore.getState().submitQuery(sessionId, prompt, attachments);
   }
 
   const payload: Record<string, unknown> = { sessionId, prompt };
@@ -162,13 +167,26 @@ export async function enqueueMessage(
     payload.attachments = attachments.map(toWireAttachment);
   }
 
+  let result: SessionEnqueueResult;
   try {
-    await ws.request("session.enqueue", payload);
+    result = (await ws.request("session.enqueue", payload)) as SessionEnqueueResult;
   } catch (err) {
-    if (isOptimistic) {
-      useChatStore.getState().rollbackOptimisticTurn(sessionId, prompt);
+    if (optimisticTurnId) {
+      useChatStore.getState().rollbackOptimisticTurn(sessionId, optimisticTurnId);
     }
     throw err;
+  }
+
+  // The server says what it actually did. Anything other than "turn" means no
+  // turn opened for this message — it went into the running one, or into the
+  // queue — and the echo it broadcast is the message's representation. Keeping
+  // the optimistic turn as well would render the prompt twice.
+  //
+  // `delivery` is absent from a peer running an older release: unknown, not
+  // "turn". Leave the guess standing there — it is what shipped before, and
+  // apply-event still drops the turn if the echo contradicts it.
+  if (optimisticTurnId && result?.delivery && result.delivery !== "turn") {
+    useChatStore.getState().rollbackOptimisticTurn(sessionId, optimisticTurnId);
   }
 }
 

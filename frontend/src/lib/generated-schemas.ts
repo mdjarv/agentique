@@ -576,6 +576,10 @@ export const SessionQueryPayloadSchema = z.object({
   attachments: z.array(QueryAttachmentSchema).optional(),
 });
 
+export const SessionEnqueueResultSchema = z.object({
+  delivery: z.string().optional(),
+});
+
 export const SessionListPayloadSchema = z.object({
   projectId: z.string(),
 });
