@@ -28,12 +28,25 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// wsUpgradePaths are the WebSocket endpoints whose upgrade may present a
+// one-time wsTicket as its credential.
+//
+// Membership is exact-match and deliberately enumerated rather than derived
+// from a prefix: a ticket is a bearer credential travelling in a URL, so it
+// stays redeemable only at the handful of paths that genuinely cannot carry a
+// header. Adding a socket endpoint means adding it here — which is also the
+// moment to check that requiresAuth already covers the new path.
+var wsUpgradePaths = map[string]bool{
+	"/ws":             true,
+	"/api/voice/live": true,
+}
+
 // authenticate resolves the request credential in precedence order: a
 // one-time WebSocket ticket (upgrade requests only — browsers cannot set
 // headers on WebSocket connects), then Authorization: Bearer, then the
 // session cookie.
 func (s *Service) authenticate(r *http.Request) (*store.GetAuthSessionRow, error) {
-	if r.URL.Path == "/ws" {
+	if wsUpgradePaths[r.URL.Path] {
 		if ticket := r.URL.Query().Get("wsTicket"); ticket != "" {
 			return s.redeemWSTicket(r.Context(), ticket)
 		}

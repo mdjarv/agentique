@@ -49,18 +49,7 @@ type SessionTracker interface {
 func (h *Handler) upgrader() websocket.Upgrader {
 	return websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
-			if httpsecurity.OriginAllowed(r, h.AllowedOrigins) {
-				return true
-			}
-			// A wsTicket-bearing upgrade is authenticated by the one-time
-			// ticket (validated by the auth middleware before this handler
-			// runs), not by origin — cross-origin multi-machine clients
-			// connect this way. The origin allowlist only guards
-			// cookie-authenticated upgrades against cross-site hijacking.
-			if h.AllowTicketOrigin && r.URL.Query().Get("wsTicket") != "" {
-				return true
-			}
-			return false
+			return httpsecurity.WebSocketOriginAllowed(r, h.AllowedOrigins, h.AllowTicketOrigin)
 		},
 	}
 }

@@ -50,6 +50,22 @@ func OriginAllowed(r *http.Request, allowed map[string]bool) bool {
 	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, r.Host)
 }
 
+// WebSocketOriginAllowed reports whether a WebSocket upgrade may proceed. It
+// is the single origin decision for every socket endpoint, so a new one cannot
+// arrive with a subtly different rule.
+//
+// A wsTicket-bearing upgrade is authenticated by the one-time ticket, which the
+// auth middleware validates before the handler runs, rather than by origin —
+// cross-origin multi-machine clients connect this way. The origin allowlist
+// only guards cookie-authenticated upgrades against cross-site hijacking, so it
+// is the ambient-credential case that needs it.
+func WebSocketOriginAllowed(r *http.Request, allowed map[string]bool, allowTicketOrigin bool) bool {
+	if OriginAllowed(r, allowed) {
+		return true
+	}
+	return allowTicketOrigin && r.URL.Query().Get("wsTicket") != ""
+}
+
 // RequestsBearer reports whether the request explicitly presents a bearer
 // credential. Authentication still validates the credential later. This only
 // distinguishes explicit authority from ambient cookies for CORS handling.
