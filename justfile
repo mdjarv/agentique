@@ -130,10 +130,18 @@ release: frontend-build
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
-    echo "Building dist/agentique-linux-amd64..."
-    cd backend && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique && cd ..
-    echo "Building dist/agentique-windows-amd64.exe..."
-    cd backend && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-windows-amd64.exe" ./cmd/agentique && cd ..
+    # Keep this list in step with .github/workflows/release.yml and the asset
+    # names in backend/internal/update/platform.go. A name that disagrees with
+    # the workflow produces a local dist/ that does not match a real release.
+    for target in linux/amd64 linux/arm64 windows/amd64 darwin/arm64; do
+      GOOS="${target%%/*}"; GOARCH="${target##*/}"
+      out="dist/agentique-${GOOS}-${GOARCH}"
+      if [ "$GOOS" = "windows" ]; then out="${out}.exe"; fi
+      echo "Building ${out}..."
+      (cd backend && GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
+        go build -ldflags "$LDFLAGS" -o "../${out}" ./cmd/agentique)
+    done
+    (cd dist && sha256sum * > checksums.txt)
     echo "Release binaries in dist/:"
     ls -lh dist/
 

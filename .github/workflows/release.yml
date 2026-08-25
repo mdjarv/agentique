@@ -5,9 +5,13 @@ on:
     tags:
       - "v*"
 
+# Never cancel a release in flight. Cancelling between "create release" and the
+# asset upload publishes a tag whose downloads 404 — and install.sh, install.ps1
+# and in-app apply all fail closed on a missing asset, so a half-published
+# release is worse than a queued one. Two tags in quick succession queue.
 concurrency:
   group: release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -28,6 +32,19 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      # github.com/allbin/agentkit is private, so an unauthenticated build
+      # resolves it through the public proxy and gets a 404. Same PAT dance as
+      # ci.yml: hold the credential only for the download, then unset it, so
+      # `npm ci` and the build steps cannot read it back out of ~/.gitconfig.
+      # The module cache is warm afterwards and needs no credential.
+      - name: Download private Go modules
+        run: |
+          git config --global url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf "https://github.com/allbin/"
+          cd backend && go mod download
+          git config --global --unset-all url."https://${{ secrets.ALLBIN_GH_PAT }}@github.com/allbin/".insteadOf
+        env:
+          GOPRIVATE: github.com/allbin/*
 
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
@@ -51,6 +68,7 @@ jobs:
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
           cd backend
+          export GOPRIVATE='github.com/allbin/*'
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-arm64" ./cmd/agentique
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-windows-amd64.exe" ./cmd/agentique

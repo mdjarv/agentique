@@ -742,6 +742,47 @@ Two things to know before running a second server locally:
 [CLAUDE.md](CLAUDE.md) holds the engineering conventions and the invariants a
 change must not break. Read it before changing anything.
 
+## Cutting a release
+
+Everything the install one-liner and the in-app upgrade serve comes from a GitHub
+release, and a release is produced by pushing a tag. There is no manual upload
+step.
+
+```bash
+git tag v0.4.0
+git push origin v0.4.0
+```
+
+`.github/workflows/release.yml` then builds the frontend, embeds it, cross-
+compiles four binaries with the tag stamped into `main.version`, writes
+`checksums.txt`, and publishes them with generated release notes.
+
+Three things have to stay in step, or an install downloads a 404:
+
+- the build matrix in `release.yml`,
+- `publishedAssets` in `backend/internal/update/platform.go`, which is what in-app
+  apply matches against,
+- the `release` recipe in the justfile, which exists so you can produce the same
+  set locally.
+
+`verifiedPlatforms` in the same file is deliberately *narrower*: it is the
+allowlist for in-app apply, and a platform joins it when somebody has actually run
+agentique there, not when it compiles.
+
+Notes on the workflow itself:
+
+- **It needs `ALLBIN_GH_PAT`.** `github.com/allbin/agentkit` is private, so an
+  unauthenticated build resolves it through the public module proxy and gets a
+  404. The workflow holds the credential only for `go mod download` and unsets it
+  before anything else runs.
+- **A tag push does not run CI.** CI runs on master, so tag the commit *after* its
+  master build is green rather than relying on the release job to catch anything.
+- **Releases never cancel each other.** Cancelling between creating the release
+  and uploading its assets would publish a tag whose downloads 404, and every
+  consumer fails closed on a missing asset.
+- **Check the run**, since a failed release still leaves the tag behind:
+  `gh run list --workflow release.yml` and `gh release view <tag>`.
+
 ## Documentation
 
 | Where | What |
