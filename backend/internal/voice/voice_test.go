@@ -261,6 +261,66 @@ func TestFollowDeliversReportsOverTheSocket(t *testing.T) {
 	}
 }
 
+// Following a session suspends the conversational idle rule, and a run ending
+// restores it. Without this a call hangs up in the middle of every real task.
+func TestFollowingSuspendsTheIdleRuleUntilTheRunEnds(t *testing.T) {
+	registry := NewRegistry()
+	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q", ready.Type)
+	}
+
+	if err := ws.WriteJSON(clientMessage{Type: msgFollow, SessionID: "sess-3"}); err != nil {
+		t.Fatalf("write follow: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !registry.Listening("sess-3") {
+		if time.Now().After(deadline) {
+			t.Fatal("never started following")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Blocked still holds the process, so it must not end the working phase.
+	registry.Notice("sess-3", Notice{Kind: NoticeBlocked, Headline: "needs approval"})
+	blocked := readControl(t, ws)
+	if blocked.Type != msgNotice || blocked.Kind != string(NoticeBlocked) {
+		t.Fatalf("frame = %q/%q, want a blocked notice", blocked.Type, blocked.Kind)
+	}
+
+	registry.Notice("sess-3", Notice{Kind: NoticeFinished, Headline: "all tests pass"})
+	done := readControl(t, ws)
+	if done.Type != msgNotice {
+		t.Fatalf("frame type = %q, want %q", done.Type, msgNotice)
+	}
+	if done.Kind != string(NoticeFinished) {
+		t.Errorf("kind = %q, want %q", done.Kind, NoticeFinished)
+	}
+	if done.Headline != "all tests pass" {
+		t.Errorf("headline = %q", done.Headline)
+	}
+	if done.SessionID != "sess-3" {
+		t.Errorf("sessionId = %q, want the followed session", done.SessionID)
+	}
+
+	// The binding survives the run ending — the call is still following, it is
+	// just no longer working.
+	if !registry.Listening("sess-3") {
+		t.Error("a finished run must not unfollow the session")
+	}
+}
+
 // A closed call must release its binding, or the registry keeps writing into a
 // dead socket and the session looks like it still has a listener.
 func TestClosingACallReleasesTheBinding(t *testing.T) {

@@ -2,6 +2,7 @@ package voice
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -16,11 +17,14 @@ const (
 	reportRefillEach = 3 * time.Minute
 )
 
-// Follower receives reports for the session it is following.
+// Follower receives news about the session it is following.
 type Follower interface {
-	// Notify delivers one report. It must not block: the caller is an MCP tool
-	// handler with an agent waiting on the other end.
+	// Notify delivers one agent-written report. It must not block: the caller
+	// is an MCP tool handler with an agent waiting on the other end.
 	Notify(Report) error
+	// NotifyRuntime delivers one runtime fact — the three things the agent
+	// cannot report about itself.
+	NotifyRuntime(Notice) error
 }
 
 // Registry routes a working session's reports to whatever calls are following
@@ -119,6 +123,31 @@ func (r *Registry) Report(sessionID, kind, headline string) (string, error) {
 		return "", fmt.Errorf("no follower accepted the report")
 	}
 	return "Spoken to the listener.", nil
+}
+
+// Notice delivers a runtime fact to every call following sessionID.
+//
+// Unlike [Registry.Report] this is **not** rate limited and cannot be dropped.
+// The budget exists to stop a chatty agent monopolising the listener's
+// attention; these three are the events the listener is actually waiting for,
+// and there is no version of "you are reporting too often" that should apply to
+// "the run failed".
+//
+// It is also silent about having no audience: nothing is waiting on the answer,
+// because the runtime is not an agent deciding whether to keep going.
+func (r *Registry) Notice(sessionID string, notice Notice) {
+	r.mu.Lock()
+	followers := make([]Follower, 0, len(r.followers[sessionID]))
+	for f := range r.followers[sessionID] {
+		followers = append(followers, f)
+	}
+	r.mu.Unlock()
+
+	for _, f := range followers {
+		if err := f.NotifyRuntime(notice); err != nil {
+			slog.Warn("voice notice not delivered", "session", sessionID, "kind", notice.Kind, "error", err)
+		}
+	}
 }
 
 // takeToken spends one report from sessionID's budget. Caller holds r.mu.

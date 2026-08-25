@@ -467,11 +467,22 @@ Backends differ in credentials and data terms, not protocol, so nothing outside
 `handler.go`/`config.go` names one. A backend missing its credential degrades to
 echo and logs it, rather than refusing to mount the route.
 
-**Idle timeout is a billing guard, not a nicety.** A live session bills for
-wall-clock time with the microphone open, so an abandoned tab keeps spending.
-Frame arrival is the weak signal (the mic streams from an empty room); an engine
-with VAD exposes the real one through the optional `SpeechIdler` capability.
-Costs still never appear in the UI.
+**Idle timeout is a billing guard, not a nicety** — a live session bills for
+wall-clock time with the mic open, so an abandoned tab keeps spending. But
+**what silence means depends on the phase**: quiet while gathering is
+abandonment, quiet while a run works is the expected state, so the working
+ceiling is a backstop rather than a conversational timeout. The short rule
+during a run hangs up in the middle of every real task. Following a session
+starts work; `finished`/`failed` ends it; `blocked` does not, because the run is
+stuck rather than done. Frame arrival is the weak activity signal (the mic
+streams from an empty room); an engine with VAD exposes the real one through
+`SpeechIdler`. Costs still never appear in the UI.
+
+**Speaking is `TextInjector`, type-asserted and best-effort, and it happens
+after the screen copy** — a call whose engine has no voice still shows the
+message. A notice is the server's own words; a report is agent-written text
+about untrusted repo content and carries explicit quotation framing, so a
+hostile repo cannot steer the conversation that queues the next prompt.
 
 **The dialog agent drafts, it never sends.** Its output lands in the composer
 through `ComposerTextareaHandle` and stops. One path into the session pipeline,

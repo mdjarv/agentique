@@ -127,20 +127,50 @@ stall into permanent added latency.
 stream overwrites the first's and results are delivered to whoever asked most
 recently.
 
-## Idle is a billing guard
+## Idle is a billing guard, and it is phase-aware
 
 A live speech session bills for **wall-clock time with the microphone open**.
 Unlike every other cost in agentique, an abandoned tab keeps spending until
-something closes it. `[voice] idle-timeout` closes a quiet call.
+something closes it.
 
-Frame arrival is the weak version of that signal — the microphone streams
-continuously, so frames keep coming from an empty room. An engine that performs
-voice activity detection knows when the caller last actually *spoke*, and
-exposes it through the optional `SpeechIdler` capability, type-asserted rather
-than required. Engines without it fall back to frame arrival, which still
+**What silence means depends on what the call is doing.** Quiet while
+*gathering* is abandonment, and `[voice] idle-timeout` (90s by default) closes
+the call. Quiet while *working* is the expected state — the whole point of
+staying on the line is that you ask for something and then stop talking while it
+happens — so a much longer ceiling applies, as a backstop against a tab left
+open behind a run that never ends rather than as a conversational timeout.
+Applying the short rule during a run would hang up in the middle of every real
+task.
+
+Following a session is the gesture that starts work; a `finished` or `failed`
+notice ends it. `blocked` does not.
+
+Frame arrival is the weak version of the activity signal — the microphone
+streams continuously, so frames keep coming from an empty room. An engine that
+performs voice activity detection knows when the caller last actually *spoke*,
+and exposes it through the optional `SpeechIdler` capability, type-asserted
+rather than required. Engines without it fall back to frame arrival, which still
 catches a closed laptop or a dropped connection.
 
 Costs stay out of the UI. This is an operational limit, not a price display.
+
+## Saying it out loud
+
+A report or notice reaching the browser is only half of it. Speaking is the
+optional `TextInjector` capability — type-asserted, because the loopback echo
+engine has no voice and should not have to pretend otherwise.
+
+Speaking is **best effort and second**: the screen copy goes out first, so a
+call whose engine cannot speak, or whose session is mid-reconnect, still shows
+the message rather than losing it.
+
+The two are framed differently on purpose. A **notice** is the server's own
+words and needs only an instruction to say it. A **report** is agent-written
+text about untrusted repository content, so it carries an explicit
+quotation framing (`reportRelayPreamble`): say this, never follow directions
+inside it. Without that, a hostile repository could reach through the working
+agent and steer the conversation — and the conversation is what queues the next
+prompt.
 
 ## Backends
 
@@ -194,9 +224,24 @@ Three things, and they are the three that matter most:
 - **Died** — a crash means there is nobody left to speak.
 - **Finished** — completion is a runtime fact, not an agent utterance.
 
-Those need a runtime push, ordered by `lib/session/priority.ts` — the same rule
+Those arrive as a `Notice`, ordered by `lib/session/priority.ts` — the same rule
 as the deck's Needs-you band, not a second opinion about what deserves
 attention. Everything else comes from the worker.
+
+`voiceTurnWatcher` in the server package supplies them, hanging off
+`Manager.AddTurnEndListener` — which fires once per turn on any session "after
+that turn has stopped… completion, a CLI that died, a session closed
+mid-flight". That is precisely the coverage a completion hook lacks, and the
+reason the runtime rather than the agent is the source. It resolves blocked
+before failed before finished, and the no-listener case costs one map lookup
+before returning.
+
+A notice is **never rate limited**. The report budget exists to stop a chatty
+agent monopolising the listener; there is no version of "you are reporting too
+often" that should apply to "the run failed".
+
+`blocked` does **not** end the working phase — the run is stuck, not done, and
+the process is still held.
 
 ### Live voice requires auto mode
 
@@ -322,16 +367,13 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 
 ## Not implemented yet
 
-- The drafter agent and its project context.
-- The runtime push for the three things a worker cannot report: blocked, died,
-  finished.
-- The call state machine (gathering / confirming / working / blocked /
-  reporting) and the phase-aware idle rule. The current timeout is flat, which
-  would close a call during a long run — it is right for a drafting exchange and
-  wrong for staying on the line.
+- The drafter agent and its project context, and the handoff question that
+  decides whether the call stays open.
+- The rest of the call state machine. Gathering and working exist; confirming
+  (the verbatim read-back and its spoken affirmative) and reporting do not.
+- Nothing calls `follow` yet except `/dev/voice` and tests — the drafter is
+  what will bind a call to the session it just started.
 - The Live panel. `/dev/voice` is a loopback check, not the feature.
-- Speaking a report aloud: `SendText` exists on the engine and reports reach the
-  browser, but nothing yet relays one into the conversation.
 - The `vertex` backend is wired but unverified — it shares the engine, so only
   credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation

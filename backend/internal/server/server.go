@@ -802,6 +802,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			voiceRegistry = nil
 		} else {
 			mux.Handle("GET /api/voice/live", vh)
+			// The runtime half of what a call hears: blocked, died, finished.
+			// A worker reports everything else itself, but it cannot report
+			// these — it is suspended, gone, or done.
+			watcher := newVoiceTurnWatcher(voiceRegistry, svc, queries)
+			mgr.AddTurnEndListener(watcher.OnTurnEnd)
 			slog.Info("live voice enabled", "backend", vh.Backend())
 		}
 	}

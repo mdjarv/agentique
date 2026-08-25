@@ -56,9 +56,10 @@ func TestParseReportTruncatesRatherThanRejecting(t *testing.T) {
 }
 
 type recorder struct {
-	mu   sync.Mutex
-	got  []Report
-	fail bool
+	mu      sync.Mutex
+	got     []Report
+	notices []Notice
+	fail    bool
 }
 
 func (r *recorder) Notify(rep Report) error {
@@ -71,10 +72,26 @@ func (r *recorder) Notify(rep Report) error {
 	return nil
 }
 
+func (r *recorder) NotifyRuntime(n Notice) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fail {
+		return errFailed
+	}
+	r.notices = append(r.notices, n)
+	return nil
+}
+
 func (r *recorder) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.got)
+}
+
+func (r *recorder) noticeCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.notices)
 }
 
 var errFailed = &reportError{"follower refused"}

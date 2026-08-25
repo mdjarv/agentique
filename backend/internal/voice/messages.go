@@ -18,8 +18,13 @@ const (
 	msgError = "error"
 	// msgClosed explains why the server is ending the call.
 	msgClosed = "closed"
-	// msgReport carries a progress report from the session being followed.
+	// msgReport carries an agent-written progress report from the session being
+	// followed.
 	msgReport = "report"
+	// msgNotice carries a runtime fact about the followed session — finished,
+	// failed, or blocked. Distinct from msgReport because the source differs
+	// and so does the trust: a notice is the server's own words.
+	msgNotice = "notice"
 
 	// msgStop is the client asking to end the call.
 	msgStop = "stop"
