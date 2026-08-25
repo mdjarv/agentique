@@ -531,7 +531,8 @@ gravity              = 0.045
 # Which speech backend a live call talks to. With [experimental] voice on and
 # nothing here, the socket serves the loopback echo and no model is contacted.
 # Every key has an AGENTIQUE_VOICE_* env equivalent, which wins when set.
-backend      = ""   # "aistudio" (default) or "vertex"
+backend      = ""   # "aistudio" (the default), "vertex", or "echo" to force
+                    # the loopback and contact no model at all
 api-key      = ""   # aistudio only. Free-tier content may be used to improve
                     # Google's products; paid-tier content may not.
 project      = ""   # vertex only: Google Cloud project id
