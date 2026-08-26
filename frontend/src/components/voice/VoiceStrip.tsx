@@ -56,7 +56,14 @@ export function VoiceStrip() {
     setOpen(false);
   }, [focusSeq]);
 
-  if (!isMobile || !view.active) return null;
+  // Tucking away is a decision about *this* call. The component stays mounted
+  // between calls, so without this the next one would open already hidden.
+  const active = view.active;
+  useEffect(() => {
+    if (!active) setCollapsed(false);
+  }, [active]);
+
+  if (!isMobile || !active) return null;
 
   if (collapsed) {
     return (
