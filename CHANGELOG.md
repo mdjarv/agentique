@@ -8,6 +8,52 @@ before you upgrade.
 Starts at v0.4.0. Releases v0.1.0 through v0.3.0 are listed at the bottom with
 links to their own notes, rather than reconstructed here after the fact.
 
+## v0.6.0
+
+Nothing to do before upgrading: no migration changes schema, no credential is
+invalidated, and everything new is either off by default or additive. Everything
+here is live voice, which stays behind `[experimental] voice`.
+
+### Added
+
+- **A Live button in the composer.** v0.5.0 closed the voice loop but left
+  nothing that opened a call. The composer now carries a **Live** control next
+  to the mic, and it opens a full-screen call panel bound to that session —
+  full-screen because the target is a phone in a car mount, where the call is
+  the screen. The call log distinguishes its four sources rather than rendering
+  them all as the agent talking: what you said, what it said, the prompt
+  actually sent, and reports and notices from the session. A call requires the
+  session to be in full auto: there is no spoken approval, because you cannot
+  approve what you cannot see on a transcription, so a session that would stop
+  and ask is refused rather than stalling silently.
+- **The drafter knows which repository it is in.** It was built with an empty
+  system instruction — it knew the shape of its job and nothing about the code,
+  so it drafted vaguely. The instruction is now built per call from the
+  session's name and branch plus the head of the project's `CLAUDE.md`,
+  deliberately bounded: all of it goes to the speech vendor on every call, and a
+  drafter handed a whole guide asks worse questions than one handed an opening
+  summary.
+- **The worker is told to report.** `VoiceReport` existed but nothing had ever
+  told an agent about it. The reporting instruction is now appended when a run
+  is dispatched from a live call — and only when somebody stayed on the line, so
+  a run nobody is listening to carries no instruction and no overhead. The
+  handoff asks both questions in one breath: "does that sound right, and do you
+  want to stay on while it runs?"
+- **`[voice] summary-model`** gives the drafter a sense of what the session has
+  been doing. The recent transcript is distilled locally through the provider
+  CLI, so only the resulting paragraph ever reaches the speech vendor, and a
+  summariser that misses its budget returns nothing rather than delaying the
+  call. Off unless set.
+
+### Fixed
+
+- **Live is hidden on sessions it cannot reach.** A call is physical: the voice
+  socket opens against the server that served the page, so a session on a paired
+  machine was never dispatchable and the handoff would have failed after a whole
+  conversation. Routing a call to the owning machine belongs to the
+  multi-machine facade, not the voice socket.
+- The call log follows its own tail. Hands-free means nobody is going to scroll.
+
 ## v0.5.0
 
 Nothing to do before upgrading: no migration changes schema, no credential is
@@ -15,26 +61,16 @@ invalidated, and everything new is either off by default or additive.
 
 ### Added
 
-- **Live voice (experimental).** A spoken-dialog agent that works out *what to
-  ask* with you, drafts the prompt, and hands it to a session through the same
-  path the composer's send button uses — it never runs the job and never sends
-  without a verbatim read-back and an explicit yes. The composer's **Live**
-  button opens a call bound to that session; it then follows the run and tells
-  you when it finishes, fails, or gets stuck. Its own socket
+- **Live voice (experimental, no UI yet).** A spoken-dialog agent that works out
+  *what to ask* with you, drafts the prompt, and hands it to a session through
+  the same path the composer's send button uses — it never runs the job and
+  never sends without a verbatim read-back and an explicit yes. Its own socket
   (`/api/voice/live`) carries binary PCM and JSON control, a loopback echo
   engine verifies the browser audio path with no credentials, and the Gemini
-  Live engine backs a real conversation. The handoff asks two things in one
-  breath — "does that sound right, and do you want to stay on while it runs?" —
-  and only a call somebody stayed on teaches the worker to report progress back.
-  Idle timeout is phase-aware, because silence during a run is the expected
-  state, not abandonment. A call requires
-  the session to be in full auto: there is no spoken approval, so a session
-  that would stop and ask is refused rather than stalling silently. Turn it on
-  with `[experimental] voice`; `/dev/voice` stays the loopback check for the
-  audio path. Set `[voice] summary-model` to give the drafter a sense of what
-  the session has been doing: the transcript is distilled locally through the
-  provider CLI, so only the summary ever reaches the speech vendor. See
-  [docs/voice.md](docs/voice.md).
+  Live engine backs a real conversation. Idle timeout is phase-aware, because
+  silence during a run is the expected state, not abandonment. Turn it on with
+  `[experimental] voice`; `/dev/voice` is the loopback check. Nothing in the
+  composer opens a call yet. See [docs/voice.md](docs/voice.md).
 - **A working session reports its own progress.** Agents get a `VoiceReport`
   tool and report what is worth interrupting for; the three things an agent
   structurally cannot report — blocked, died, finished — arrive from the
