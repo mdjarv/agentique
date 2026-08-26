@@ -130,9 +130,20 @@ func (d *voiceDispatcher) ProjectContext(ctx context.Context, sessionID string) 
 
 	// What the session has been doing, distilled locally rather than shipped
 	// raw. The transcript never leaves the machine; only this paragraph does.
-	if summary := d.summarizer.Summary(ctx, sessionID); summary != "" {
+	//
+	// Cached only, with a background warm otherwise. This runs while the
+	// operator is waiting to be heard, and summarising spawns a provider-CLI
+	// subprocess that on a long session regularly outlasts any budget worth
+	// waiting out. A summary is worth having when it is already there and never
+	// worth a silent microphone, so a cold session opens without one and the
+	// next call has it. That is the same trade docs/voice.md already makes for a
+	// summariser that misses its budget — moved off the critical path rather
+	// than timed out on it.
+	if summary := d.summarizer.Cached(sessionID); summary != "" {
 		b.WriteString("\n\nWhat this session has been working on:\n\n")
 		b.WriteString(summary)
+	} else {
+		d.summarizer.Warm(ctx, sessionID)
 	}
 	return strings.TrimSpace(b.String())
 }

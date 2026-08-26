@@ -17,6 +17,16 @@ import (
 // an open microphone and, on a real backend, bills for wall-clock time.
 const defaultMaxCalls int64 = 4
 
+// briefingBudget bounds everything gathered between the socket opening and the
+// engine existing: the persona, the project context and the orientation.
+//
+// A budget rather than a hope. None of it is required — a call that opens
+// knowing less still works, and a call that never opens does not — so a read
+// that hangs must cost the drafter context rather than cost the operator the
+// call. The socket is already up by the time this applies, so it no longer
+// delays the upgrade; it only bounds how long `ready` can be held back.
+const briefingBudget = 5 * time.Second
+
 // Options configures a [Handler].
 type Options struct {
 	// Backend selects the speech transport. BackendEcho needs no credentials
@@ -70,6 +80,16 @@ type Options struct {
 type Handler struct {
 	opts Options
 
+	// newEngine builds one call's engine. A field rather than a plain method so
+	// a test can make engine creation fail or block *after* the upgrade, which
+	// is the ordering this handler exists to guarantee. Production always gets
+	// [Handler.defaultEngine].
+	newEngine func(ctx context.Context, systemInstruction string, persona Persona) (Engine, error)
+
+	// briefingBudget is [briefingBudget], as a field so a test can assert the
+	// budget without waiting one out.
+	briefingBudget time.Duration
+
 	activeCalls atomic.Int64
 }
 
@@ -90,7 +110,9 @@ func NewHandler(opts Options) (*Handler, error) {
 	default:
 		return nil, fmt.Errorf("unknown voice backend %q", opts.Backend)
 	}
-	return &Handler{opts: opts}, nil
+	h := &Handler{opts: opts, briefingBudget: briefingBudget}
+	h.newEngine = h.defaultEngine
+	return h, nil
 }
 
 // Backend reports which speech transport this handler will use.
@@ -116,55 +138,103 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.activeCalls.Add(-1)
 
-	// A live speech session must outlive the request that opened it: the HTTP
-	// context is cancelled when ServeHTTP returns, which for a hijacked
-	// WebSocket is not when the call ends.
-	// The drafter's instruction is built per call, because project context
-	// belongs to the session this call is attached to.
-	// Both are read per call, so a change in the settings page takes effect on
-	// the next call rather than the next restart.
-	//
 	// The query parameter is the call's *initial* focus — the session the
 	// operator was looking at when they pressed the button — not a fixed target.
 	initialFocus := r.URL.Query().Get("sessionId")
-	persona := h.persona(r.Context())
-	instruction := SystemInstruction(Briefing{
-		InitialFocus:   initialFocus,
-		ProjectContext: h.projectContext(r.Context(), initialFocus),
-		Orientation:    h.orientation(r.Context()),
-		Persona:        persona,
-	})
 
-	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction, persona)
-	if err != nil {
-		// The detail goes to the log; an unclassified failure returns a fixed
-		// message rather than err.Error().
-		slog.Error("voice engine start failed", "error", err, "backend", h.opts.Backend)
-		http.Error(w, "voice is unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
+	// UPGRADE FIRST, then gather. The order is the feature.
+	//
+	// Everything the drafter is told — persona, project context, orientation —
+	// and the engine handshake itself take real time, and none of it can be
+	// reported to a browser still waiting on an HTTP response. Building it
+	// before the upgrade opened the socket seconds late and, on a long session
+	// whose summary kept missing its budget, often not at all: the browser gave
+	// up, the request context was cancelled underneath the reads, and the
+	// operator got a call that transcribed their speech and never answered.
+	//
+	// So the cheap, fail-fast half of the handshake goes first, and the socket
+	// is a fact before anything slow is attempted. Every failure after this
+	// point is reported *on the socket*, because an HTTP status written into a
+	// hijacked connection is read by nobody.
 	u := h.upgrader()
 	ws, err := u.Upgrade(w, r, nil)
 	if err != nil {
 		// Upgrade has already written its own response.
-		_ = engine.Close()
 		slog.Warn("voice upgrade failed", "error", err, "remote", r.RemoteAddr)
 		return
 	}
 
 	log := slog.With("subsystem", "voice", "backend", h.opts.Backend)
 	log.Info("voice call opened", "remote", r.RemoteAddr, "session", initialFocus)
-	newCall(ws, engine, h.opts, initialFocus, log).run(r.Context())
+
+	// A live speech session must outlive the request that opened it: the HTTP
+	// context is cancelled when ServeHTTP returns, which for a hijacked
+	// WebSocket is not what the call's lifetime is made of. The read loop
+	// observing the socket close is what ends the call.
+	callCtx := context.WithoutCancel(r.Context())
+
+	engine, err := h.openEngine(callCtx, initialFocus)
+	if err != nil {
+		// The detail goes to the log; the browser gets a fixed message, the
+		// same rule an unclassified 500 follows.
+		log.Error("voice engine start failed", "error", err)
+		refuse(ws, "the voice backend is unavailable")
+		return
+	}
+
+	newCall(ws, engine, h.opts, initialFocus, log).run(callCtx)
 	log.Info("voice call closed", "remote", r.RemoteAddr)
 }
 
-// newEngine builds the configured speech engine for one call.
+// openEngine gathers what the drafter is told and starts the speech engine.
+//
+// The drafter's instruction is built per call, because project context belongs
+// to the session this call is attached to, and the persona is read per call so
+// a change in the settings page takes effect on the next call rather than the
+// next restart. Both are bounded by [briefingBudget]: they are held between the
+// socket opening and `ready` reaching the browser, which is dead air.
+func (h *Handler) openEngine(ctx context.Context, initialFocus string) (Engine, error) {
+	budget := h.briefingBudget
+	if budget <= 0 {
+		budget = briefingBudget
+	}
+	briefCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	persona := h.persona(briefCtx)
+	instruction := SystemInstruction(Briefing{
+		InitialFocus:   initialFocus,
+		ProjectContext: h.projectContext(briefCtx, initialFocus),
+		Orientation:    h.orientation(briefCtx),
+		Persona:        persona,
+	})
+	// The engine's context is the call's, not the briefing's: it must outlive
+	// both the request and the budget that bounded the gathering.
+	return h.newEngine(ctx, instruction, persona)
+}
+
+// refuse says on an already-open socket why the call is not happening, and
+// hangs up.
+//
+// The `error` frame carries the reason rather than a `closed` frame because the
+// client keeps a terminal detail across the socket closing behind it: the
+// operator reads why, not just that. Best effort throughout — there is nothing
+// left to do about a write that fails here.
+func refuse(ws *websocket.Conn, reason string) {
+	_ = ws.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_ = ws.WriteJSON(serverMessage{Type: msgError, Message: reason})
+	_ = ws.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseInternalServerErr, ""),
+		time.Now().Add(writeTimeout))
+	_ = ws.Close()
+}
+
+// defaultEngine builds the configured speech engine for one call.
 //
 // A per-call engine is not an optimisation. Sharing one across calls means the
 // second caller's stream overwrites the first's, and results are delivered to
 // whoever asked most recently.
-func (h *Handler) newEngine(ctx context.Context, systemInstruction string, persona Persona) (Engine, error) {
+func (h *Handler) defaultEngine(ctx context.Context, systemInstruction string, persona Persona) (Engine, error) {
 	switch h.opts.Backend {
 	case BackendEcho:
 		return NewEchoEngine(), nil

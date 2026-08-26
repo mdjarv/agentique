@@ -33,10 +33,16 @@ const (
 	// row should not pay for the same summary twice.
 	summaryTTL = 10 * time.Minute
 
-	// summaryBudget bounds the wait at call open. Beyond this the call opens
-	// without a summary and the cache warms for next time — a slow summariser
-	// must not turn into a silent microphone.
-	summaryBudget = 8 * time.Second
+	// summaryBudget bounds one summarising run.
+	//
+	// It used to be short because call open waited on it, and eight seconds was
+	// as much dead air as a microphone could stand. Nothing waits on it now —
+	// call open reads [sessionSummarizer.Cached] and warms in the background —
+	// so the budget can be what the work actually needs. The short one was
+	// worse than useless on exactly the sessions a summary is for: a long
+	// transcript missed it every time, so nothing was ever cached, so the next
+	// call paid the full eight seconds to fail again.
+	summaryBudget = 45 * time.Second
 )
 
 // sessionSummarizer distils a session's recent history into a paragraph the
@@ -56,6 +62,14 @@ type sessionSummarizer struct {
 
 	mu    sync.Mutex
 	cache map[string]summaryEntry
+	// inflight is the run already summarising a session, so two askers share one
+	// provider-CLI subprocess instead of racing two.
+	//
+	// There are genuinely two askers now: opening a call warms the summary in
+	// the background, and the operator asking "what has it been doing?" a moment
+	// later goes down the same path. Spawning a second CLI for an answer already
+	// on its way is the pressure this whole area was failing under.
+	inflight map[string]chan struct{}
 }
 
 type summaryEntry struct {
@@ -65,10 +79,11 @@ type summaryEntry struct {
 
 func newSessionSummarizer(runner msggen.Runner, queries *store.Queries, model string) *sessionSummarizer {
 	return &sessionSummarizer{
-		runner:  runner,
-		queries: queries,
-		model:   model,
-		cache:   make(map[string]summaryEntry),
+		runner:   runner,
+		queries:  queries,
+		model:    model,
+		cache:    make(map[string]summaryEntry),
+		inflight: make(map[string]chan struct{}),
 	}
 }
 
@@ -83,12 +98,24 @@ func (s *sessionSummarizer) Summary(ctx context.Context, sessionID string) strin
 		return ""
 	}
 
-	s.mu.Lock()
-	entry, ok := s.cache[sessionID]
-	s.mu.Unlock()
-	if ok && time.Since(entry.at) < summaryTTL {
-		return entry.text
+	if text, ok := s.cached(sessionID); ok {
+		return text
 	}
+
+	// Join a run already under way rather than starting a second subprocess for
+	// the same answer. Whoever created it owns finishing it, so a joiner that
+	// gives up leaves the work — and the caller who is still waiting — alone.
+	wait, mine := s.claim(sessionID)
+	if !mine {
+		select {
+		case <-wait:
+			text, _ := s.cached(sessionID)
+			return text
+		case <-ctx.Done():
+			return ""
+		}
+	}
+	defer s.release(sessionID, wait)
 
 	transcript := s.recentTranscript(ctx, sessionID)
 	if transcript == "" {
@@ -112,6 +139,33 @@ func (s *sessionSummarizer) Summary(ctx context.Context, sessionID string) strin
 	return text
 }
 
+// Cached returns a fresh summary if there already is one, and never waits.
+//
+// This is what call open reads. A summary is a nice-to-have for the drafter and
+// computing one runs a provider-CLI subprocess; waiting for it held the socket
+// open-but-silent for the whole budget, and on the sessions that most need one
+// it held it for the whole budget and then returned nothing.
+func (s *sessionSummarizer) Cached(sessionID string) string {
+	if s == nil {
+		return ""
+	}
+	text, _ := s.cached(sessionID)
+	return text
+}
+
+// Warm computes a summary in the background, so the answer is already there
+// next time someone reads the cache.
+//
+// Detached on purpose: the caller is usually a request that is about to return,
+// and the work outliving it is the whole point.
+func (s *sessionSummarizer) Warm(ctx context.Context, sessionID string) {
+	if s == nil || s.runner == nil || s.model == "" || sessionID == "" {
+		return
+	}
+	detached := context.WithoutCancel(ctx)
+	go s.Summary(detached, sessionID)
+}
+
 // Forget drops a session's cached summary. Called when a turn ends, so the next
 // call summarises what just happened rather than what happened before it.
 func (s *sessionSummarizer) Forget(sessionID string) {
@@ -121,6 +175,41 @@ func (s *sessionSummarizer) Forget(sessionID string) {
 	s.mu.Lock()
 	delete(s.cache, sessionID)
 	s.mu.Unlock()
+}
+
+// cached reports a summary that is still fresh.
+func (s *sessionSummarizer) cached(sessionID string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.cache[sessionID]
+	if !ok || time.Since(entry.at) >= summaryTTL {
+		return "", false
+	}
+	return entry.text, true
+}
+
+// claim takes ownership of summarising a session, or hands back the channel the
+// current owner will close. mine says which happened.
+func (s *sessionSummarizer) claim(sessionID string) (wait chan struct{}, mine bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.inflight[sessionID]; ok {
+		return existing, false
+	}
+	wait = make(chan struct{})
+	s.inflight[sessionID] = wait
+	return wait, true
+}
+
+// release ends this run and wakes everyone who joined it, whatever the outcome:
+// a joiner blocked on a run that failed must be told, not left waiting.
+func (s *sessionSummarizer) release(sessionID string, wait chan struct{}) {
+	s.mu.Lock()
+	if s.inflight[sessionID] == wait {
+		delete(s.inflight, sessionID)
+	}
+	s.mu.Unlock()
+	close(wait)
 }
 
 // summaryPrompt asks for orientation, not a record.
@@ -148,6 +237,9 @@ func summaryPrompt(transcript string) string {
 
 // recentTranscript renders the last few turns as plain text.
 func (s *sessionSummarizer) recentTranscript(ctx context.Context, sessionID string) string {
+	if s.queries == nil {
+		return ""
+	}
 	events, err := s.queries.ListRecentEventsBySession(ctx, store.ListRecentEventsBySessionParams{
 		SessionID: sessionID,
 		Column2:   summaryTurns,
