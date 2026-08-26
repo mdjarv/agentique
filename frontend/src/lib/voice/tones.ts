@@ -1,5 +1,5 @@
 /**
- * The three sounds a call makes about itself: placing, connected, ended.
+ * The sounds a call makes about itself: placing, ringing, connected, ended.
  *
  * Synthesised rather than shipped. An oscillator and a gain envelope are a few
  * hundred bytes of code with no asset to inline, nothing for the CSP to judge,
@@ -44,6 +44,12 @@ interface Note {
   peak: number;
 }
 
+/** A note that is scheduled or sounding, kept only so it can be cut short. */
+interface Sounding {
+  osc: OscillatorNode;
+  gain: GainNode;
+}
+
 /**
  * Schedules a short sequence of enveloped sine notes and lets them clean
  * themselves up.
@@ -51,9 +57,14 @@ interface Note {
  * Everything is scheduled against `ctx.currentTime` up front rather than timed
  * with setTimeout: the audio clock is the only one that does not drift under a
  * busy main thread, which is the same reason playback schedules its frames.
+ *
+ * The nodes come back so a caller that has to *interrupt* a sound can — only
+ * the ringback needs that, and only because "stop" has to mean stop rather than
+ * "after this burst".
  */
-function playNotes(ctx: AudioContext, notes: Note[]): void {
+function playNotes(ctx: AudioContext, notes: Note[]): Sounding[] {
   const begin = ctx.currentTime;
+  const sounding: Sounding[] = [];
 
   for (const note of notes) {
     const start = begin + note.at;
@@ -78,6 +89,29 @@ function playNotes(ctx: AudioContext, notes: Note[]): void {
     };
     osc.start(start);
     osc.stop(end);
+    sounding.push({ osc, gain });
+  }
+
+  return sounding;
+}
+
+/**
+ * Cuts notes short, fading rather than chopping.
+ *
+ * Stopping an oscillator outright mid-cycle is the same discontinuity a missing
+ * ramp is, so the gain is ramped to nothing first and the node stops after it.
+ */
+function silence(ctx: AudioContext, notes: Sounding[]): void {
+  const now = ctx.currentTime;
+  for (const { osc, gain } of notes) {
+    try {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS);
+      osc.stop(now + RAMP_SECONDS);
+    } catch {
+      // Already stopped, or never started. Either way there is nothing to cut.
+    }
   }
 }
 
@@ -92,6 +126,91 @@ export function playDialTone(ctx: AudioContext): void {
     { freq: 660, at: 0, duration: 0.09, peak: PEAK },
     { freq: 880, at: 0.11, duration: 0.09, peak: PEAK },
   ]);
+}
+
+/** Seconds of sound in one ring burst. */
+const RING_BURST_SECONDS = 0.4;
+
+/** Seconds of silence between bursts. A phone's cadence, roughly. */
+const RING_GAP_SECONDS = 1.8;
+
+/**
+ * Seconds between the dial tone and the first ring.
+ *
+ * Long enough that the two do not overlap — the dial tone is two notes over
+ * 0.2s — and short enough that a call refused instantly never rings at all.
+ */
+const RING_LEAD_SECONDS = 0.35;
+
+/** The two notes of a burst. A pair beats one note: it reads as a phone. */
+const RING_LOW = 440;
+const RING_HIGH = 480;
+
+/**
+ * A ringback that is playing until something stops it.
+ *
+ * A handle rather than a duration because the thing that ends it is an event —
+ * the call going live, failing, or being hung up — and none of those can be
+ * predicted from here.
+ */
+export interface Ringback {
+  /** Silences it now, within the burst. Idempotent. */
+  stop(): void;
+}
+
+/**
+ * Ringing, until it is answered: a gentle dual-tone burst, then a long gap.
+ *
+ * The explicit reason is eyes-free: between placing a call and it going live
+ * there is a socket, a briefing and a speech-model handshake, and someone
+ * driving has no way to tell "still connecting" from "dead" without looking. A
+ * ring says connecting, out loud, for as long as it is true.
+ *
+ * The second reason is diagnosis, and it is the one that pays in a car. The
+ * ring plays through the very context the model's audio will use, continuously,
+ * across the moment the microphone opens — which on Bluetooth hands-free is
+ * when the handset switches profile and reroutes the audio. If the ring dies
+ * there, the operator has *heard* the output path break, at the instant it
+ * broke, rather than inferring it from silence later.
+ *
+ * Each burst is scheduled against `ctx.currentTime` when its timer fires, never
+ * queued up ahead: bursts scheduled into the future would keep sounding after
+ * the call went live, and the one thing a ringback must never do is play over a
+ * live call.
+ */
+export function startRingback(ctx: AudioContext): Ringback {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let sounding: Sounding[] = [];
+
+  const burst = () => {
+    timer = undefined;
+    if (stopped) return;
+    try {
+      sounding = playNotes(ctx, [
+        { freq: RING_LOW, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
+        { freq: RING_HIGH, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
+      ]);
+    } catch {
+      // A context that has gone away mid-ring ends the ring, never the call.
+      stopped = true;
+      return;
+    }
+    timer = setTimeout(burst, (RING_BURST_SECONDS + RING_GAP_SECONDS) * 1000);
+  };
+
+  timer = setTimeout(burst, RING_LEAD_SECONDS * 1000);
+
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      silence(ctx, sounding);
+      sounding = [];
+    },
+  };
 }
 
 /**

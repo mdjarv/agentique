@@ -10,6 +10,7 @@
 export class FakeAudioParam {
   readonly setValues: { value: number; at: number }[] = [];
   readonly ramps: { value: number; at: number }[] = [];
+  readonly cancels: number[] = [];
 
   constructor(public value = 0) {}
 
@@ -22,6 +23,11 @@ export class FakeAudioParam {
   linearRampToValueAtTime(value: number, at: number): this {
     this.value = value;
     this.ramps.push({ value, at });
+    return this;
+  }
+
+  cancelScheduledValues(at: number): this {
+    this.cancels.push(at);
     return this;
   }
 }

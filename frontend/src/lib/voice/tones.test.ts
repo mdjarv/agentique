@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asAudioContext, FakeAudioContext } from "./__tests__/fake-audio";
-import { playConnectedTone, playDialTone, playHangupTone } from "./tones";
+import { playConnectedTone, playDialTone, playHangupTone, startRingback } from "./tones";
 
 describe("call tones", () => {
   let fake: FakeAudioContext;
@@ -86,5 +86,99 @@ describe("call tones", () => {
     osc?.onended?.();
     expect(osc?.disconnects).toBe(1);
     expect(gain?.disconnects).toBe(1);
+  });
+});
+
+describe("ringback", () => {
+  let fake: FakeAudioContext;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeAudioContext.reset();
+    fake = new FakeAudioContext();
+    fake.currentTime = 5;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not sound over the dial tone it follows", () => {
+    startRingback(asAudioContext(fake));
+
+    expect(fake.oscillators).toHaveLength(0);
+  });
+
+  it("rings in bursts of two notes, with a gap between them", () => {
+    startRingback(asAudioContext(fake));
+
+    vi.advanceTimersByTime(400);
+    expect(fake.oscillators).toHaveLength(2);
+
+    // Mid-gap: still two. The gap is silence, not a quieter ring.
+    vi.advanceTimersByTime(1000);
+    expect(fake.oscillators).toHaveLength(2);
+
+    vi.advanceTimersByTime(1500);
+    expect(fake.oscillators).toHaveLength(4);
+  });
+
+  it("keeps ringing for as long as nobody answers", () => {
+    startRingback(asAudioContext(fake));
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(fake.oscillators.length).toBeGreaterThan(8);
+  });
+
+  // The invariant: stop means stop, not "after this burst". A ring that
+  // outlives the connecting state plays over the assistant's first sentence.
+  it("silences a burst that is still sounding", () => {
+    const ring = startRingback(asAudioContext(fake));
+    vi.advanceTimersByTime(400);
+    const sounding = fake.oscillators.slice();
+    expect(sounding).toHaveLength(2);
+
+    ring.stop();
+
+    for (const osc of sounding) {
+      // Cut short: stopped at the clock rather than at the end of the burst.
+      expect(osc.stoppedAt as number).toBeLessThan(fake.currentTime + 0.4);
+    }
+    for (const gain of fake.gains) {
+      expect(gain.gain.cancels).not.toHaveLength(0);
+      expect(gain.gain.ramps.at(-1)?.value).toBe(0);
+    }
+  });
+
+  it("schedules nothing more once stopped", () => {
+    const ring = startRingback(asAudioContext(fake));
+    vi.advanceTimersByTime(400);
+    const before = fake.oscillators.length;
+
+    ring.stop();
+    vi.advanceTimersByTime(30_000);
+
+    expect(fake.oscillators).toHaveLength(before);
+  });
+
+  it("stops cleanly before it has ever sounded", () => {
+    const ring = startRingback(asAudioContext(fake));
+
+    ring.stop();
+    vi.advanceTimersByTime(30_000);
+
+    expect(fake.oscillators).toHaveLength(0);
+  });
+
+  it("is idempotent, because every exit from connecting stops it", () => {
+    const ring = startRingback(asAudioContext(fake));
+    vi.advanceTimersByTime(400);
+
+    ring.stop();
+    ring.stop();
+
+    const stops = fake.oscillators.map((o) => o.stoppedAt);
+    expect(stops.every((at) => at !== null)).toBe(true);
   });
 });
