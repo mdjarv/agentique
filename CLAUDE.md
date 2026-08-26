@@ -543,6 +543,27 @@ also a path `requiresAuth` covers — a cross-origin paired machine has no cooki
 so a missing entry means it cannot connect at all. The upgrade origin rule lives
 once, in `httpsecurity.WebSocketOriginAllowed`.
 
+**The socket upgrades before anything slow.** `ServeHTTP` upgrades first and
+builds the persona, project context, orientation and engine after, because a
+browser waiting on an HTTP response cannot be told anything — the pre-upgrade
+version opened seconds late and sometimes never, leaving a call that transcribed
+speech and answered in silence. So every failure past the upgrade is reported
+*on the socket* (an `error` frame with a fixed reason, detail in the log), the
+gathering is bounded by `briefingBudget`, and the session summary is off the
+path entirely: `ProjectContext` reads `sessionSummarizer.Cached` and warms in the
+background. A provider-CLI subprocess is never between a click and a microphone.
+
+**The playback AudioContext is created in the user gesture.** Built and resumed
+inside the click that placed the call, never when `ready` arrives: a context
+created outside a gesture stays suspended, so control frames render and nothing
+is ever heard. The engine's rate no longer gates that — the context takes the
+hardware's rate and each buffer is built at the announced source rate
+(`ctx.createBuffer(1, n, sourceRate)`). A context that will not run is reported
+in words, never left mute, and retried on the next gesture. The call's three
+tones (`lib/voice/tones.ts`) are synthesised, not assets, and the dial tone
+rides that same context on purpose: it is the unlock *and* the proof the audio
+path works.
+
 **The audio worklet must be an emitted file, never an inlined one.**
 `audioWorklet.addModule()` is judged under `script-src`, which is `'self'` plus
 index.html's hash — no `data:`, no `blob:`. Vite inlines small assets as `data:`

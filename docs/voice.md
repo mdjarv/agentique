@@ -110,6 +110,35 @@ on this origin, so without its entry there it cannot connect at all.
 The upgrade origin decision lives once, in `httpsecurity.WebSocketOriginAllowed`,
 so a second socket endpoint cannot arrive with a subtly different rule.
 
+## The socket opens before anything slow is attempted
+
+`ServeHTTP` upgrades first and gathers second. The order is load-bearing.
+
+Everything the drafter is told — persona, project context, orientation — plus
+the engine's own handshake takes real time, and none of it can be reported to a
+browser still waiting on an HTTP response. Building it first meant the socket
+opened seconds late and sometimes not at all: the browser gave up, the request
+context was cancelled underneath the directory reads, and the upgrade landed on
+a dead connection. What the operator saw was a call that transcribed their
+speech and never answered.
+
+So the cheap, fail-fast half of the handshake goes first, and the socket is a
+fact before anything slow is attempted. **Everything after the upgrade reports
+itself on the socket** — an engine that fails to start sends an `error` frame
+with a fixed reason and hangs up, because an HTTP status written into a hijacked
+connection is read by nobody, and a socket that opens and then goes silent is
+the fault this ordering exists to fix. The detail goes to the log, the same rule
+an unclassified 500 follows.
+
+The gathering is bounded by `briefingBudget`, since it is held between the
+socket opening and `ready` reaching the browser. Every part of a briefing is a
+nice-to-have; a call that opens knowing less still works, and one that never
+opens does not.
+
+The call limit, the origin check and the `context.WithoutCancel` lifetime rule
+are unchanged: the limiter is cheap enough to stay in front of the upgrade, and
+the engine's context is still the call's rather than the request's.
+
 ## The browser side
 
 Capture is an `AudioWorklet`, not a `ScriptProcessorNode`: the latter is
@@ -118,13 +147,56 @@ app applies. The worklet batches 512 samples (~32 ms at 16 kHz) before posting.
 A render quantum is 128 frames, so posting per quantum would mean 125 messages
 and 125 socket frames a second carrying 8 ms each — all overhead.
 
-Capture and playback use **separate AudioContexts**, at 16 kHz and the engine's
-announced rate. One shared context would resample every played frame down to the
-capture rate and throw the difference away.
+Capture and playback use **separate AudioContexts**. One shared context would
+resample every played frame down to the 16 kHz capture rate and throw the
+difference away.
 
 `echoCancellation: true` is load-bearing, not a nicety: it is the only thing
 stopping the agent hearing itself through the speakers and interrupting itself.
 There is no server-side echo cancellation anywhere in this design.
+
+### The playback context is created in the gesture
+
+`PlaybackQueue` is constructed and resumed inside the click that placed the
+call, before the socket is even opened — never when `ready` arrives.
+
+A context created outside a user gesture starts suspended and stays suspended:
+`resume()` resolves without the context ever running. Every control frame still
+renders, so the transcript appears and the call looks healthy, and nothing is
+ever heard. That is a mobile autoplay policy doing exactly what it says, and on
+a call that takes a moment to open it is what silence is made of.
+
+The engine's output rate was the reason it could not be built that early, and
+that constraint is gone. The context takes the **hardware's** rate, and each
+frame becomes a buffer at the rate the server announced
+(`ctx.createBuffer(1, n, sourceRate)`), which the browser resamples on playback.
+So `ready` is still where the rate is learned; learning it late now costs
+nothing.
+
+A context that will not run is **said, never swallowed**: the queue reports it
+and the call shows a status line naming the gesture that fixes it, rather than
+sitting mute and looking like a broken server. It retries on the next
+interaction anywhere on the page and clears the line once one works.
+
+### The call sounds like a call
+
+Three tones, synthesised from an oscillator and a gain envelope rather than
+shipped as audio files: no asset to inline, nothing for the CSP to judge, and no
+decode between the click and the sound. Two rising notes when the call is
+placed, one quieter blip when it goes live, two falling notes on every ending.
+
+The dial tone's second job is diagnosis. It plays from the gesture, through the
+very context playback will use, so an operator who hears it has been shown the
+audio path works before the model says a word — and one who hears nothing has
+learned something the silence would have hidden. The connected blip earns its
+place on latency: until the first word, "still connecting" and "connected,
+waiting for you" look identical.
+
+One sound for every ending — the operator hanging up, the idle guard hanging up,
+the engine failing. A distinct failure tone would be a second vocabulary to
+learn for a fact the screen already carries in words. Every play is best effort
+and nothing blocks on one; a hangup waits a quarter of a second for its own tone
+before closing the context underneath it, and no longer.
 
 ### The worklet must be an emitted file
 
@@ -597,8 +669,19 @@ orientation, not the record.
 Configured by `[voice] summary-model`; empty disables it and the drafter then
 knows the project but not the session. The result is cached for ten minutes and
 dropped whenever a turn ends, since the summary describes the session as it was
-before that turn. A summariser that misses its budget returns nothing and the
-call opens without it — a slow summary must never become a silent microphone.
+before that turn.
+
+**Call open never waits for one.** `ProjectContext` reads `Cached` and warms in
+the background otherwise, so a cold session opens without a summary and the next
+call has it. A slow summary must never become a silent microphone, and it was
+becoming one: the summariser is a provider-CLI subprocess, and on a long
+transcript — precisely the session a summary is for — it missed its budget every
+time, so nothing was ever cached, so the next call paid the whole budget to fail
+again. Being off the critical path is also what lets the budget be what the work
+needs rather than what a microphone can stand, which is what makes a long
+session's summary land at all. Two askers for one session share a subprocess
+rather than racing two, since warming and `summarize_session` now overlap
+routinely.
 
 The transcript is untrusted input: it is repository content, tool output and
 model text, none of it authored here. The summariser is told so explicitly,
