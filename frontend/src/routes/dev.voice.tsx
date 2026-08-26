@@ -14,9 +14,9 @@
  * Wear headphones on a desktop, or the echo feeds back.
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { useVoiceCall } from "~/hooks/useVoiceCall";
 import { cn } from "~/lib/utils";
 import { primaryVoiceUrl } from "~/lib/voice/call";
+import { useVoiceStore } from "~/stores/voice-store";
 
 export const Route = createFileRoute("/dev/voice")({
   component: DevVoice,
@@ -26,14 +26,19 @@ const STATE_COPY: Record<string, { label: string; tone: string }> = {
   idle: { label: "Not connected", tone: "text-muted-foreground" },
   connecting: { label: "Connecting", tone: "text-muted-foreground" },
   live: { label: "Live — speak and you should hear yourself", tone: "text-agent" },
-  closed: { label: "Call ended", tone: "text-muted-foreground" },
-  failed: { label: "Failed", tone: "text-destructive" },
+  error: { label: "Failed", tone: "text-destructive" },
 };
 
 function DevVoice() {
-  const { state, detail, log, start, stop } = useVoiceCall();
-  const running = state === "live" || state === "connecting";
-  const copy = STATE_COPY[state] ?? STATE_COPY.idle;
+  // The same call the rest of the app uses — there is only one, and a second
+  // one opened from here would fight the dock over the microphone.
+  const status = useVoiceStore((s) => s.status);
+  const detail = useVoiceStore((s) => s.detail);
+  const log = useVoiceStore((s) => s.log);
+  const start = useVoiceStore((s) => s.start);
+  const stop = useVoiceStore((s) => s.stop);
+  const running = status === "live" || status === "connecting";
+  const copy = STATE_COPY[status] ?? STATE_COPY.idle;
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6 p-8">
@@ -49,7 +54,7 @@ function DevVoice() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={running ? stop : start}
+            onClick={running ? stop : () => start()}
             className={cn(
               "h-10 rounded-lg px-4 text-sm font-medium transition-colors cursor-pointer",
               running

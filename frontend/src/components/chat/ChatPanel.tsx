@@ -13,7 +13,6 @@ import { ContextBar } from "~/components/chat/ContextBar";
 import { ChangesView } from "~/components/chat/changes/ChangesView";
 import { CommitDialog } from "~/components/chat/dialogs/CommitDialog";
 import { CreatePRDialog } from "~/components/chat/dialogs/CreatePRDialog";
-import { LiveCallPanel } from "~/components/chat/LiveCallPanel";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { finishActionKind, SessionFinishAction } from "~/components/chat/SessionFinishAction";
@@ -69,6 +68,7 @@ import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useScheduleStore } from "~/stores/schedule-store";
+import { useVoiceStore } from "~/stores/voice-store";
 
 function ApprovalBannerSwitch({
   sessionId,
@@ -221,7 +221,6 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const [resuming, setResuming] = useState(false);
   const [expandFile, setExpandFile] = useState<string | null>(null);
   const [followRequest, setFollowRequest] = useState(0);
-  const [liveOpen, setLiveOpen] = useState(false);
   const voiceEnabled = useFeatureStore((s) => s.features.voice);
   // A call is physical, not logical: the voice socket opens against the origin
   // serving this page, and dispatch goes through *that* server's session
@@ -691,7 +690,11 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
                   }
                   isRunning={sessionState === "running"}
                   onInterrupt={handleInterrupt}
-                  onStartLive={liveAvailable ? () => setLiveOpen(true) : undefined}
+                  // The call belongs to the app, not to this panel — the button
+                  // only names the session it should start on.
+                  onStartLive={
+                    liveAvailable ? () => useVoiceStore.getState().start(sessionId) : undefined
+                  }
                   attachmentsSupported={attachmentsSupported}
                   focusMode
                   placeholder={
@@ -772,13 +775,6 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
             content={pendingTemplate.template.content}
             onSubmit={handleVariableSubmit}
             onCancel={handleVariableCancel}
-          />
-        )}
-        {liveOpen && (
-          <LiveCallPanel
-            sessionId={sessionId}
-            sessionName={meta.name}
-            onClose={() => setLiveOpen(false)}
           />
         )}
       </div>

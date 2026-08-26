@@ -9,6 +9,7 @@ import { useWireCapture } from "~/components/home/use-wire-capture";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { VoiceBubble } from "~/components/voice/VoiceBubble";
 import { useActiveProjectFetch } from "~/hooks/git/useActiveProjectFetch";
 import { useSyncSweep } from "~/hooks/git/useSyncSweep";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
@@ -19,6 +20,7 @@ import { usePreventViewportScroll } from "~/hooks/usePreventViewportScroll";
 import { useProjects } from "~/hooks/useProjects";
 import { useTheme } from "~/hooks/useTheme";
 import { useUpdateChecks } from "~/hooks/useUpdateChecks";
+import { useVoiceFocusNavigation } from "~/hooks/useVoiceFocusNavigation";
 import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -61,6 +63,9 @@ function AuthenticatedLayout() {
   useActiveProjectFetch();
   useUpdateChecks();
   usePreventViewportScroll();
+  // The screen follows the voice: a `focus` frame navigates, wherever the
+  // operator happens to be.
+  useVoiceFocusNavigation();
 
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const browserEnabled = useFeatureStore((s) => s.features.browser);
@@ -168,6 +173,10 @@ function AuthenticatedLayout() {
               </div>
             );
           })()}
+          {/* Mounted at the root, not in the chat tree: the call outlives every
+              route it navigates to, and hanging up must be reachable from all
+              of them. */}
+          <VoiceBubble />
           <Toaster
             theme={resolvedTheme}
             position={isMobile ? "top-center" : "bottom-right"}

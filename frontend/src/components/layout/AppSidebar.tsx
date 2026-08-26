@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { VoiceDock } from "~/components/voice/VoiceDock";
 import { cn } from "~/lib/utils";
 import { useBrainStore } from "~/stores/brain-store";
 
@@ -57,6 +58,9 @@ export function AppSidebar({ className }: AppSidebarProps) {
       {/* Sessions, then settled work, then repos, then system: the dock's
           growth pushes down into the footer, never into the session list. */}
       <SyncDock />
+      {/* The call sits below settled work and above the system line: it is
+          always-true state, but it is the operator's, not the machine's. */}
+      <VoiceDock />
       <SidebarFooter />
     </div>
   );
