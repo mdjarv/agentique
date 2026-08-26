@@ -53,6 +53,19 @@ UPDATE sessions SET archived_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), pinned 
 -- name: UnsetSessionArchived :exec
 UPDATE sessions SET archived_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: SetSessionUnseenCompletedAt :exec
+-- Stamps "this finished while nobody was reading it". The timestamp is a
+-- parameter rather than strftime('now') because the caller is the turn-end
+-- seam, which already knows when the turn completed; it must be UTC RFC3339
+-- seconds ("2006-01-02T15:04:05Z") like every other timestamp here, since
+-- SQLite compares TEXT lexicographically.
+UPDATE sessions SET unseen_completed_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
+-- name: ClearSessionUnseenCompletedAt :exec
+-- The read receipt. Idempotent by construction: clearing an already-clear row
+-- touches nothing the client can see.
+UPDATE sessions SET unseen_completed_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UnsetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

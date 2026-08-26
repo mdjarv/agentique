@@ -17,6 +17,9 @@ type Querier interface {
 	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
 	ClaimScheduleRun(ctx context.Context, id string) (int64, error)
 	ClearScheduleActionAttention(ctx context.Context, arg ClearScheduleActionAttentionParams) error
+	// The read receipt. Idempotent by construction: clearing an already-clear row
+	// touches nothing the client can see.
+	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
 	ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
@@ -146,6 +149,12 @@ type Querier interface {
 	// multi-byte character anywhere in this file shifts those offsets and corrupts
 	// the generated code for LATER queries.
 	SetSessionArchived(ctx context.Context, id string) error
+	// Stamps "this finished while nobody was reading it". The timestamp is a
+	// parameter rather than strftime('now') because the caller is the turn-end
+	// seam, which already knows when the turn completed; it must be UTC RFC3339
+	// seconds ("2006-01-02T15:04:05Z") like every other timestamp here, since
+	// SQLite compares TEXT lexicographically.
+	SetSessionUnseenCompletedAt(ctx context.Context, arg SetSessionUnseenCompletedAtParams) error
 	SetVoiceSettings(ctx context.Context, arg SetVoiceSettingsParams) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionArchived(ctx context.Context, id string) error
