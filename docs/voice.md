@@ -163,12 +163,26 @@ task.
 Following a session is the gesture that starts work; a `finished` or `failed`
 notice ends it. `blocked` does not.
 
+**A promised answer holds the line too.** A tool that says "working on it" and
+delivers later — `summarize_session`, and anything else built on
+`summarizeAsync` — counts up `pendingAsync` for the whole flight, and while that
+is above zero the working ceiling applies whatever the phase says. Waiting for
+an answer you asked for is not abandonment. It is a count rather than a flag
+because two asks can be outstanding at once, and each is bounded by its own
+work's timeout, so it cannot stick.
+
 Frame arrival is the weak version of the activity signal — the microphone
 streams continuously, so frames keep coming from an empty room. An engine that
 performs voice activity detection knows when the caller last actually *spoke*,
 and exposes it through the optional `SpeechIdler` capability, type-asserted
 rather than required. Engines without it fall back to frame arrival, which still
-catches a closed laptop or a dropped connection.
+catches a closed laptop or a dropped connection. Frames never override the
+speech clock: taking the later of the two would keep an empty room open forever.
+
+What *does* count beside speech is what the call itself did. A control frame
+from the browser, a tool call, an answer delivered late: `lastInteraction` is
+bumped by each, and `lastActivity` is the later of that and the speech clock.
+None of it is audible, and all of it is proof the call is not abandoned.
 
 Costs stay out of the UI. This is an operational limit, not a price display.
 
@@ -189,6 +203,26 @@ quotation framing (`reportRelayPreamble`): say this, never follow directions
 inside it. Without that, a hostile repository could reach through the working
 agent and steer the conversation — and the conversation is what queues the next
 prompt.
+
+A **summary** is the third thing that reaches the browser this way, and it keeps
+the same order: the `summary` frame carries the session and the text and goes
+out before the spoken copy, which is quoted the way a report is
+(`summaryRelayPreamble`). An empty summary sends no frame — there is still an
+honest spoken answer, but a card saying nothing says less than nothing.
+
+### Slow work is visible
+
+Tool work is otherwise invisible, and a healthy call computing a summary looks
+exactly like a dead one. So the slow path announces itself: `activity` with a
+non-empty `label` when it starts, `activity` with an empty one when the answer
+lands, sent before the summary. There is at most one at a time, so a new label
+replaces the old, and every one of these sends is best effort — a frame that
+does not arrive costs a progress line, never the work it describes.
+
+Only an *explicit* ask shows a label. Focusing a session warms its summary in
+the background, and a progress line for work nobody requested is
+indistinguishable from a bug, so warming is invisible — though it holds the line
+exactly like the ask does.
 
 ## Backends
 

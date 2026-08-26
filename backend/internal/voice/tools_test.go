@@ -2,9 +2,13 @@ package voice
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // The tools that only look. Their whole job is to let the assistant talk about
@@ -17,6 +21,65 @@ func newToolCall(dir Directory, d Dispatcher, focus string) *call {
 		c.offer(SessionRow{ID: focus})
 	}
 	return c
+}
+
+// giveSocket hands a call a real websocket and returns the browser's end, so a
+// test can read the control frames it sends in the order it sent them.
+func giveSocket(t *testing.T, c *call) *websocket.Conn {
+	t.Helper()
+
+	var upgrader websocket.Upgrader
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		c.ws = conn
+		close(ready)
+	}))
+
+	browser, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		srv.Close()
+		t.Fatalf("dial: %v", err)
+	}
+	// The assignment happens on the server's goroutine; waiting here is what
+	// makes reading c.ws from the test goroutine safe.
+	<-ready
+
+	t.Cleanup(func() {
+		_ = browser.Close()
+		_ = c.ws.Close()
+		srv.Close()
+	})
+	return browser
+}
+
+// expectNoControl asserts the call said nothing more.
+func expectNoControl(t *testing.T, ws *websocket.Conn, within time.Duration) {
+	t.Helper()
+	_ = ws.SetReadDeadline(time.Now().Add(within))
+	if _, payload, err := ws.ReadMessage(); err == nil {
+		t.Errorf("an extra control frame arrived: %s", payload)
+	}
+}
+
+// waitPending waits for the call's promised answers to settle.
+func waitPending(t *testing.T, c *call, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := c.pendingAsync.Load()
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pendingAsync = %d, want %d", got, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func directoryWithTwo() *fakeDirectory {
@@ -266,6 +329,7 @@ func TestSummarizeSaysWhenThereIsNothing(t *testing.T) {
 	c.engine = engine
 	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 
+	ws := giveSocket(t, c)
 	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s2"})
 	said := engine.waitForSpeech(t, 1)
 	if len(said) == 0 {
@@ -274,4 +338,112 @@ func TestSummarizeSaysWhenThereIsNothing(t *testing.T) {
 	if !strings.Contains(strings.ToLower(said[0]), "no summary available") {
 		t.Errorf("spoken = %q, want an honest no-summary answer", said[0])
 	}
+
+	// It still stops looking busy, but there is no card: an empty summary card
+	// says less than nothing.
+	if start := readControl(t, ws); start.Type != msgActivity || start.Label == "" {
+		t.Fatalf("first frame = %+v, want the activity label", start)
+	}
+	if done := readControl(t, ws); done.Type != msgActivity || done.Label != "" {
+		t.Fatalf("second frame = %+v, want the activity cleared", done)
+	}
+	expectNoControl(t, ws, 100*time.Millisecond)
+}
+
+// Tool work is invisible, so a healthy call computing a summary looks exactly
+// like a dead one. It says what it is doing, then shows what it found.
+func TestSummarizeShowsItsWorkAndPutsTheAnswerOnScreen(t *testing.T) {
+	engine := newSpeakingEngine()
+	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
+	c.engine = engine
+	ws := giveSocket(t, c)
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+
+	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
+
+	start := readControl(t, ws)
+	if start.Type != msgActivity {
+		t.Fatalf("first frame = %+v, want %q", start, msgActivity)
+	}
+	if !strings.Contains(start.Label, "Live Voice Dialog") || !strings.HasPrefix(start.Label, "Summarizing") {
+		t.Errorf("activity label = %q, want it to name what is being summarised", start.Label)
+	}
+
+	done := readControl(t, ws)
+	if done.Type != msgActivity || done.Label != "" {
+		t.Fatalf("second frame = %+v, want an empty label to clear the activity", done)
+	}
+
+	summary := readControl(t, ws)
+	if summary.Type != msgSummary {
+		t.Fatalf("third frame = %+v, want %q", summary, msgSummary)
+	}
+	if summary.SessionID != "s1" {
+		t.Errorf("summary sessionId = %q, want the session it describes", summary.SessionID)
+	}
+	if summary.Headline != "It has been wiring the voice socket." {
+		t.Errorf("summary headline = %q, want the delivered text", summary.Headline)
+	}
+
+	// A warm answer is still an answer they asked for, so it lands in the log
+	// the same way rather than depending on what warmed the cache.
+	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
+	if again := readControl(t, ws); again.Type != msgSummary || again.Headline != summary.Headline {
+		t.Errorf("cached ask sent %+v, want the same summary on screen", again)
+	}
+}
+
+// The screen copy does not depend on the engine having a voice. A loopback call
+// still shows what the summary said.
+func TestSummaryReachesTheScreenWithoutAVoice(t *testing.T) {
+	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
+	ws := giveSocket(t, c)
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+
+	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
+	readControl(t, ws) // activity
+	readControl(t, ws) // activity cleared
+	if summary := readControl(t, ws); summary.Type != msgSummary || summary.Headline == "" {
+		t.Errorf("frame = %+v, want the summary on screen even with nothing to speak it", summary)
+	}
+}
+
+// Warming a summary is not something the operator asked for, and a progress
+// line for work nobody requested is indistinguishable from a bug.
+func TestWarmingASummaryIsInvisible(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+	ws := giveSocket(t, c)
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+
+	c.toolFocusSession(context.Background(), map[string]any{"session_id": "s1"})
+	if focus := readControl(t, ws); focus.Type != msgFocus {
+		t.Fatalf("first frame = %+v, want the screen to follow the voice", focus)
+	}
+	// The warm-up still holds the line while it runs — it is the same promise.
+	waitPending(t, c, 0)
+	if dir.calls() == 0 {
+		t.Fatal("focusing did not warm a summary")
+	}
+	expectNoControl(t, ws, 100*time.Millisecond)
+}
+
+// A summary that lands after the call is gone has nowhere to go, and must not
+// take the process with it.
+func TestDeliveryAfterTheCallClosesIsHarmless(t *testing.T) {
+	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
+	c.engine = newSpeakingEngine()
+	ws := giveSocket(t, c)
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+
+	// Tear the call down the way run() does, then answer into the wreckage.
+	c.unfollowAll()
+	if err := c.engine.Close(); err != nil {
+		t.Fatalf("engine close: %v", err)
+	}
+	_ = c.ws.Close()
+	_ = ws.Close()
+
+	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
+	waitPending(t, c, 0)
 }

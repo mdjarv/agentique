@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The second utterance of a call is where this state used to go wrong, so these
@@ -260,6 +261,118 @@ func TestPhaseIsDerivedFromTheFollowSet(t *testing.T) {
 	c.markRunEnded("sess-a")
 	if c.currentPhase() != phaseGathering {
 		t.Error("the only run ended, so the call is gathering again")
+	}
+}
+
+// The idle guard closes an abandoned call. Everything below is about the
+// difference between an abandoned call and a quiet one, which is where the
+// first real call died.
+
+// silentEngine has voice activity detection and reports that nobody has spoken
+// for a long time — the state every idle decision below is made in.
+type silentEngine struct {
+	*EchoEngine
+	speech time.Time
+}
+
+func (e *silentEngine) LastSpeech() time.Time { return e.speech }
+
+// quietCall is a call that has heard nothing since `since`: no speech, no
+// frames, no interaction.
+func quietCall(since time.Time) *call {
+	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "")
+	c.engine = &silentEngine{EchoEngine: NewEchoEngine(), speech: since}
+	c.idleTimeout = defaultIdleTimeout
+	c.lastFrame = since
+	c.lastInteraction = since
+	return c
+}
+
+func setInteraction(c *call, at time.Time) {
+	c.lastInteractionMu.Lock()
+	c.lastInteraction = at
+	c.lastInteractionMu.Unlock()
+}
+
+// Speech is not the only sign of life. The operator asking for something and
+// then listening is a conversation in progress, and the engine's voice activity
+// clock cannot see any of it.
+func TestActivityCountsWhatTheCallDidNotOnlyWhatItHeard(t *testing.T) {
+	since := time.Now().Add(-10 * time.Minute)
+
+	t.Run("a control frame", func(t *testing.T) {
+		c := quietCall(since)
+		if !c.lastActivity().Equal(since) {
+			t.Fatalf("lastActivity = %v, want the stale speech clock %v", c.lastActivity(), since)
+		}
+		if !c.idleExpired(time.Now()) {
+			t.Fatal("a call nobody has touched for ten minutes is abandoned")
+		}
+
+		c.handleControl([]byte(`{"type":"world","sessions":[]}`))
+		if !c.lastActivity().After(since) {
+			t.Error("a control frame from the browser did not count as activity")
+		}
+		if c.idleExpired(time.Now()) {
+			t.Error("the client just spoke to the server; the call is not abandoned")
+		}
+	})
+
+	t.Run("a tool call", func(t *testing.T) {
+		c := quietCall(since)
+		c.handleToolCall(ToolCallEvent{ID: "1", Name: ToolListSessions})
+		if !c.lastActivity().After(since) {
+			t.Error("the model reached for a tool because somebody asked it something")
+		}
+	})
+
+	// A microphone streams continuously from an empty room, so frame arrival
+	// must never override an engine that knows when the caller last spoke.
+	t.Run("frames do not override the speech clock", func(t *testing.T) {
+		c := quietCall(since)
+		c.noteFrame()
+		if !c.lastActivity().Equal(since) {
+			t.Error("frames kept an abandoned call alive; that is what the VAD clock is for")
+		}
+	})
+}
+
+// The field trap: the operator asked for a session summary, went quiet while a
+// local provider-CLI run computed it, and the ninety-second gathering rule hung
+// up before the answer arrived.
+func TestAPromisedAnswerHoldsTheLine(t *testing.T) {
+	since := time.Now().Add(-10 * time.Minute)
+	c := quietCall(since)
+
+	if got := c.idleLimit(); got != defaultIdleTimeout {
+		t.Fatalf("idleLimit = %v, want the conversational rule %v", got, defaultIdleTimeout)
+	}
+
+	c.beginAsync()
+	if got := c.idleLimit(); got != workingIdleCeiling {
+		t.Errorf("idleLimit = %v while an answer is being computed, want the working ceiling %v", got, workingIdleCeiling)
+	}
+	if c.idleExpired(time.Now()) {
+		t.Error("closed the call while the summary it had asked for was still in flight")
+	}
+
+	// Two asks can be outstanding at once, and the second finishing must not
+	// cancel the first one's claim on the line.
+	c.beginAsync()
+	c.endAsync()
+	setInteraction(c, since)
+	if got := c.idleLimit(); got != workingIdleCeiling {
+		t.Errorf("idleLimit = %v with one answer still outstanding, want %v", got, workingIdleCeiling)
+	}
+
+	c.endAsync()
+	if got := c.idleLimit(); got != defaultIdleTimeout {
+		t.Errorf("idleLimit = %v once everything is delivered, want %v", got, defaultIdleTimeout)
+	}
+	// Delivery is itself a sign of life: what the operator asked for just
+	// landed, and talking about it is what happens next.
+	if c.idleExpired(time.Now()) {
+		t.Error("a delivered answer did not count as activity")
 	}
 }
 

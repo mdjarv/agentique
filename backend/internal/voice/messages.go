@@ -36,6 +36,18 @@ const (
 	// asked for it out loud. The call's focus moved first; this is the screen
 	// catching up with the conversation.
 	msgFocus = "focus"
+	// msgActivity says the call is doing something slow, in words the operator
+	// can read. A non-empty label starts it and an empty one clears it; there is
+	// at most one at a time, so a new label replaces the old.
+	//
+	// Tool work is otherwise invisible: a healthy call computing a summary looks
+	// exactly like a dead one, which is what "stale and laggy" meant in the
+	// first real call's field report.
+	msgActivity = "activity"
+	// msgSummary is the screen copy of a delivered session summary. It goes out
+	// before the spoken version, the same way a report does: a call whose engine
+	// has no voice still shows what it found.
+	msgSummary = "summary"
 
 	// msgStop is the client asking to end the call.
 	msgStop = "stop"
@@ -94,10 +106,15 @@ type serverMessage struct {
 	// closed
 	Reason string `json:"reason,omitempty"`
 
-	// report
+	// report, notice, dispatched, summary
 	Kind      string `json:"kind,omitempty"`
 	Headline  string `json:"headline,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
+
+	// activity. Empty means the call has nothing slow in hand any more, which is
+	// why this one carries no omitempty of its own meaning: absent and empty say
+	// the same thing, "clear it".
+	Label string `json:"label,omitempty"`
 }
 
 // clientMessage is a JSON control frame from the browser.
@@ -155,9 +172,35 @@ func clampField(s string) string {
 	return string([]rune(s)[:maxWorldField])
 }
 
+// setActivity tells the browser the call is busy with something slow, in the
+// operator's words rather than the machine's.
+//
+// Best effort, like every other screen copy: a frame that does not arrive costs
+// a progress line, never the work it describes.
+func (c *call) setActivity(label string) {
+	_ = c.sendControl(serverMessage{Type: msgActivity, Label: label})
+}
+
+// clearActivity says the slow thing is done. An empty label is the whole
+// message — the client renders nothing rather than a stale "still working".
+func (c *call) clearActivity() {
+	_ = c.sendControl(serverMessage{Type: msgActivity})
+}
+
+// sendSummary puts a delivered summary on screen. It carries the session it
+// describes, because a call can be asked about more than one.
+func (c *call) sendSummary(sessionID, headline string) {
+	_ = c.sendControl(serverMessage{Type: msgSummary, SessionID: sessionID, Headline: headline})
+}
+
 // handleControl processes one client control frame and reports whether the call
 // should end.
 func (c *call) handleControl(payload []byte) (stop bool) {
+	// Any control frame is the operator's client doing something on their
+	// behalf — following a run, navigating, refreshing the world. None of it is
+	// speech, and all of it means the call is not abandoned.
+	c.noteInteraction()
+
 	var msg clientMessage
 	if err := json.Unmarshal(payload, &msg); err != nil {
 		c.log.Warn("voice control decode failed", "error", err)

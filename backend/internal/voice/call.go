@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -197,6 +198,25 @@ type call struct {
 	// lastFrame is the fallback idle signal for an engine without VAD.
 	lastFrameMu sync.Mutex
 	lastFrame   time.Time
+
+	// lastInteraction is everything the call did that was not speech: a control
+	// frame from the browser, a tool call, an answer delivered late.
+	//
+	// Speech is not the only sign of life on a call. The operator asking for
+	// something and then listening is a conversation in progress, and the
+	// engine's voice activity clock cannot see any of it.
+	lastInteractionMu sync.Mutex
+	lastInteraction   time.Time
+
+	// pendingAsync counts the answers this call has promised and not yet
+	// delivered — a summary being computed, and anything else that says "working
+	// on it" now and speaks later.
+	//
+	// It is a count rather than a flag because two asks can be outstanding at
+	// once, and the second one finishing must not cancel the first one's claim
+	// on the line. Each promise is bounded by the work's own timeout, so it
+	// cannot stick.
+	pendingAsync atomic.Int64
 }
 
 // followState is what one call knows about one session it is following.
@@ -221,20 +241,22 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 	if idleTimeout <= 0 {
 		idleTimeout = defaultIdleTimeout
 	}
+	now := time.Now()
 	c := &call{
-		ws:          ws,
-		engine:      engine,
-		registry:    opts.Registry,
-		dispatcher:  opts.Dispatcher,
-		directory:   opts.Directory,
-		focus:       initialFocus,
-		follows:     make(map[string]*followState),
-		offered:     make(map[string]SessionRow),
-		summaries:   make(map[string]string),
-		log:         log,
-		idleTimeout: idleTimeout,
-		lastFrame:   time.Now(),
-		runCtx:      context.Background(),
+		ws:              ws,
+		engine:          engine,
+		registry:        opts.Registry,
+		dispatcher:      opts.Dispatcher,
+		directory:       opts.Directory,
+		focus:           initialFocus,
+		follows:         make(map[string]*followState),
+		offered:         make(map[string]SessionRow),
+		summaries:       make(map[string]string),
+		log:             log,
+		idleTimeout:     idleTimeout,
+		lastFrame:       now,
+		lastInteraction: now,
+		runCtx:          context.Background(),
 	}
 	// The session the call opened on is offered by construction: the operator
 	// chose it by pressing the button, which is a stronger gesture than any
@@ -465,6 +487,10 @@ func (c *call) NotifyRuntime(sessionID string, n Notice) error {
 // tool call leaves the model paused forever, which sounds exactly like the call
 // having died.
 func (c *call) handleToolCall(ev ToolCallEvent) {
+	// A tool call is the conversation working, whatever the microphone heard:
+	// the model only reaches for one because somebody asked it something.
+	c.noteInteraction()
+
 	responder, ok := c.engine.(ToolResponder)
 	if !ok {
 		c.log.Warn("voice tool call with no responder", "tool", ev.Name)
@@ -836,21 +862,63 @@ func (c *call) pumpKeepalive(ctx context.Context) {
 			}
 
 		case <-idle.C:
-			phase := c.currentPhase()
-			timeout := phase.idleTimeout(c.idleTimeout)
-			if time.Since(c.lastActivity()) < timeout {
+			if !c.idleExpired(time.Now()) {
 				continue
 			}
-			c.log.Info("voice call idle, closing", "timeout", timeout, "phase", phase.String())
+			c.log.Info("voice call idle, closing",
+				"timeout", c.idleLimit(), "phase", c.currentPhase().String())
 			_ = c.sendControl(serverMessage{Type: msgClosed, Reason: "idle"})
 			return
 		}
 	}
 }
 
-// lastActivity is the engine's speech clock when it has one, and frame arrival
-// otherwise. See [SpeechIdler] for why the distinction matters.
+// idleLimit is how long this call may go quiet before the billing guard closes
+// it: the phase's rule, unless an answer the operator asked for is still being
+// computed.
+//
+// Waiting for an answer you asked for is not abandonment. The first real call
+// died on exactly that: the operator asked for a session summary, went quiet
+// while a local provider-CLI run worked on it, and the ninety-second gathering
+// rule hung up before the summary was ready — which then arrived after
+// teardown, so nothing was ever said. A promised answer holds the line at the
+// working ceiling for as long as the work itself may take, and no longer,
+// because each promise is bounded by that work's own timeout.
+func (c *call) idleLimit() time.Duration {
+	if c.pendingAsync.Load() > 0 {
+		return workingIdleCeiling
+	}
+	return c.currentPhase().idleTimeout(c.idleTimeout)
+}
+
+// idleExpired is the whole idle decision, in one place so the guard and the
+// tests judge it the same way.
+func (c *call) idleExpired(now time.Time) bool {
+	return now.Sub(c.lastActivity()) >= c.idleLimit()
+}
+
+// lastActivity is the most recent sign of life on this call: caller speech and
+// whatever the call itself has been doing.
+//
+// Speech comes from the engine's own voice activity detection when it has any,
+// and frame arrival otherwise — never the later of the two, because a
+// microphone streams continuously from an empty room and would keep a
+// walked-away call open forever. See [SpeechIdler].
+//
+// The interaction clock is different in kind and does count: a control frame,
+// a tool call or a delivered answer is something that demonstrably happened,
+// not a room that might be empty.
 func (c *call) lastActivity() time.Time {
+	latest := c.lastSpeech()
+	if t := c.lastInteractionAt(); t.After(latest) {
+		latest = t
+	}
+	return latest
+}
+
+// lastSpeech is the engine's speech clock when it has one, and frame arrival
+// otherwise.
+func (c *call) lastSpeech() time.Time {
 	if idler, ok := c.engine.(SpeechIdler); ok {
 		if t := idler.LastSpeech(); !t.IsZero() {
 			return t
@@ -859,6 +927,34 @@ func (c *call) lastActivity() time.Time {
 	c.lastFrameMu.Lock()
 	defer c.lastFrameMu.Unlock()
 	return c.lastFrame
+}
+
+func (c *call) lastInteractionAt() time.Time {
+	c.lastInteractionMu.Lock()
+	defer c.lastInteractionMu.Unlock()
+	return c.lastInteraction
+}
+
+// noteInteraction records that the call did something other than listen.
+func (c *call) noteInteraction() {
+	c.lastInteractionMu.Lock()
+	c.lastInteraction = time.Now()
+	c.lastInteractionMu.Unlock()
+}
+
+// beginAsync records a promised answer. Every call must be paired with exactly
+// one [call.endAsync], on the delivery path rather than at a return site, or
+// the call holds the working ceiling with nothing behind it.
+func (c *call) beginAsync() {
+	c.pendingAsync.Add(1)
+}
+
+// endAsync records that promise being kept. Delivery is itself a sign of life:
+// something the operator asked for just landed, and the conversation about it
+// is what happens next.
+func (c *call) endAsync() {
+	c.pendingAsync.Add(-1)
+	c.noteInteraction()
 }
 
 func (c *call) noteFrame() {
