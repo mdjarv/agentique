@@ -152,6 +152,11 @@ export function SessionHeader({
                   gitStatus={projectGitStatus}
                 />
               )}
+              {/* One navigation model, two presentations: the same control, and
+                  on this layout it opens the dock as a sheet. Without it the
+                  sheet is unreachable — only a `?dock=` deep link could open
+                  it. */}
+              {dockToggle}
               <ConnectionIndicator />
               {actionMenu}
             </div>
