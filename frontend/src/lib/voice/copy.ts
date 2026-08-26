@@ -47,8 +47,24 @@ export function callStatusLine(status: VoiceStatus, detail?: string): string {
   }
 }
 
-/** The heading a call surface shows when there is no session to name. */
-export function callHeadline(status: VoiceStatus, focusName: string | null): string {
-  if (status === "ended") return "Call ended";
-  return focusName || "No focus";
+/**
+ * What a call surface calls the call.
+ *
+ * Always the call's own name, never the session's. The focused session is a
+ * chip beside this, because focus moves during a call — a title that renamed
+ * itself every time the switchboard turned would make the surface look like a
+ * different thing each time — and because a call with no focus is still a call,
+ * which "No focus" as a heading did not say.
+ */
+export function callTitle(status: VoiceStatus): string {
+  switch (status) {
+    case "connecting":
+      return "Calling…";
+    case "error":
+      return "Call failed";
+    case "ended":
+      return "Call ended";
+    default:
+      return "Live call";
+  }
 }

@@ -7,7 +7,7 @@ import { useWireCapture } from "~/components/home/use-wire-capture";
 import { AppSidebar } from "~/components/layout/AppSidebar";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { TooltipProvider } from "~/components/ui/tooltip";
-import { VoiceBubble } from "~/components/voice/VoiceBubble";
+import { VoiceStrip } from "~/components/voice/VoiceStrip";
 import { useActiveProjectFetch } from "~/hooks/git/useActiveProjectFetch";
 import { useSyncSweep } from "~/hooks/git/useSyncSweep";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
@@ -105,7 +105,7 @@ function AuthenticatedLayout() {
               already holds. The call is the opposite — mounted here, not in the
               chat tree, because it outlives every route it navigates to and
               hanging up must be reachable from all of them. */}
-          <VoiceBubble />
+          <VoiceStrip />
           <Toaster
             theme={resolvedTheme}
             position={isMobile ? "top-center" : "bottom-right"}

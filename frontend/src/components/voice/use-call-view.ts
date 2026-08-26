@@ -7,6 +7,7 @@
  * would re-render forever (CLAUDE.md).
  */
 import { useMemo } from "react";
+import type { HaloState } from "~/components/voice/HaloOrb";
 import { callStatusLine } from "~/lib/voice/copy";
 import { useChatStore } from "~/stores/chat-store";
 import {
@@ -31,6 +32,56 @@ export type CallLine =
   | { kind: "spoken"; text: string }
   | { kind: "status"; text: string };
 
+/** Everything the one line is decided from, and nothing else. */
+export interface CallLineInput {
+  status: VoiceStatus;
+  detail: string | undefined;
+  activityLabel: string;
+  interim: VoiceInterim | null;
+  /** The last settled thing either side said, when there is one. */
+  lastSpoken: string | undefined;
+}
+
+/**
+ * Which of the four things claims the single line.
+ *
+ * A pure function, and exported, because both surfaces render it and a priority
+ * that lives inside a component is a priority the other surface can get wrong.
+ * Order: a call that is over or not yet up says only that; then the work it is
+ * doing, because that is the state where silence used to look like death; then
+ * the words being recognised right now; then the last settled line; then status.
+ */
+export function callLine({
+  status,
+  detail,
+  activityLabel,
+  interim,
+  lastSpoken,
+}: CallLineInput): CallLine {
+  if (status === "ended" || status === "error" || status === "connecting") {
+    return { kind: "status", text: callStatusLine(status, detail) };
+  }
+  if (activityLabel) return { kind: "activity", text: activityLabel };
+  if (interim?.text) return { kind: "interim", text: interim.text, source: interim.source };
+  if (lastSpoken) return { kind: "spoken", text: lastSpoken };
+  return { kind: "status", text: callStatusLine(status, detail) };
+}
+
+/** The call's status as the orb draws it: live plus work of its own is `working`. */
+export function orbStateFor(status: VoiceStatus, activityLabel: string): HaloState {
+  switch (status) {
+    case "connecting":
+      return "connecting";
+    case "live":
+      return activityLabel ? "working" : "live";
+    case "error":
+    case "ended":
+      return "ended";
+    default:
+      return "idle";
+  }
+}
+
 export interface CallView {
   status: VoiceStatus;
   detail: string | undefined;
@@ -48,6 +99,8 @@ export interface CallView {
   interim: VoiceInterim | null;
   /** The one subordinate line both surfaces show under the heading. */
   line: CallLine;
+  /** What the orb draws — the same call, at whatever size the surface gives it. */
+  orbState: HaloState;
   log: VoiceLogEntry[];
   stop: () => void;
   dismiss: () => void;
@@ -80,15 +133,10 @@ export function useCallView(): CallView {
     return undefined;
   }, [log]);
 
-  const line = useMemo<CallLine>(() => {
-    if (status === "ended" || status === "error" || status === "connecting") {
-      return { kind: "status", text: callStatusLine(status, detail) };
-    }
-    if (activityLabel) return { kind: "activity", text: activityLabel };
-    if (interim) return { kind: "interim", text: interim.text, source: interim.source };
-    if (lastSpoken) return { kind: "spoken", text: lastSpoken };
-    return { kind: "status", text: callStatusLine(status, detail) };
-  }, [status, detail, activityLabel, interim, lastSpoken]);
+  const line = useMemo<CallLine>(
+    () => callLine({ status, detail, activityLabel, interim, lastSpoken }),
+    [status, detail, activityLabel, interim, lastSpoken],
+  );
 
   const restart = useMemo(
     () => () => start(focusSessionId ?? activeSessionId ?? undefined),
@@ -105,6 +153,7 @@ export function useCallView(): CallView {
     activityLabel,
     interim,
     line,
+    orbState: orbStateFor(status, activityLabel),
     log,
     stop,
     dismiss,

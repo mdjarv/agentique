@@ -1,39 +1,39 @@
 /**
- * The call's status vocabulary: one dot, one subordinate line.
+ * The two small parts every call surface repeats: the focus chip and the one
+ * subordinate line.
  *
- * Both live here rather than in each surface, because the rail dock and the
- * phone sheet describe the same call and a reader moving between them should
- * not have to translate.
+ * They live here rather than in each surface because the rail dock, the phone
+ * strip and the sheet describe the same call, and a reader moving between them
+ * should not have to translate. The liveness mark is not here — that is
+ * `HaloOrb`, which is one component for the same reason.
  */
 import { Loader2 } from "lucide-react";
 import type { CallLine } from "~/components/voice/use-call-view";
 import { cn } from "~/lib/utils";
-import type { VoiceStatus } from "~/stores/voice-store";
 
 /**
- * Where the call is, as one mark.
+ * Which session the call is pointed at, beside the title rather than as it.
  *
- * Connecting is the only animated state: it is the only one that is going to
- * change on its own. Live used to pulse, which said nothing — the meter next
- * to it now says the same thing with real data, and a decorative pulse that
- * keeps going after the line has died is worse than no pulse at all.
+ * Absent when there is no focus: a call without one is still a call, and a chip
+ * saying "No focus" spends the same room saying nothing. The arrow prefix reads
+ * as "aimed at", which is exactly what focus is — the one session `run_prompt`
+ * can reach.
+ *
+ * It is capped and truncated rather than allowed to size the row. Session names
+ * are user text and go on as long as the user likes.
  */
-export function CallStatusDot({ status }: { status: VoiceStatus }) {
+export function FocusChip({ name, className }: { name: string | null; className?: string }) {
+  if (!name) return null;
   return (
-    <span aria-hidden className="relative flex size-2 shrink-0 items-center justify-center">
-      {status === "connecting" && (
-        <span className="absolute inline-flex size-2 animate-ping rounded-full bg-agent/60 motion-reduce:hidden" />
+    <span
+      title={name}
+      className={cn(
+        "max-w-[46%] shrink-0 truncate rounded-full border px-1.5 py-px text-[10px] leading-[15px]",
+        "border-primary/35 bg-primary/[0.13] text-primary",
+        className,
       )}
-      <span
-        className={cn(
-          "size-2 rounded-full transition-colors duration-200",
-          status === "live" && "bg-agent",
-          status === "connecting" && "bg-agent/70",
-          status === "error" && "bg-destructive",
-          status === "ended" && "bg-muted-foreground/50",
-          status === "idle" && "bg-muted-foreground/40",
-        )}
-      />
+    >
+      {`▸ ${name}`}
     </span>
   );
 }
@@ -44,13 +44,22 @@ export function CallStatusDot({ status }: { status: VoiceStatus }) {
  * Interim text is styled as provisional — italic and dimmed — because it is
  * about to be rewritten, and reading a half-recognised sentence as if it were
  * settled is how a transcript misleads.
+ *
+ * Every branch truncates and every branch is `min-w-0`. Dictation arrives as
+ * one unbroken run of words with no upper bound, so a line that can grow is a
+ * line that will push a card wider than the rail it sits in.
  */
 export function CallLineText({ line, className }: { line: CallLine; className?: string }) {
   if (line.kind === "activity") {
     return (
-      <span className={cn("flex min-w-0 items-center gap-1.5 text-muted-foreground", className)}>
-        <Loader2 className="size-3 shrink-0 animate-spin" />
-        <span className="truncate">{line.text}</span>
+      <span
+        className={cn(
+          "flex min-w-0 max-w-full items-center gap-1.5 text-muted-foreground",
+          className,
+        )}
+      >
+        <Loader2 className="size-3 shrink-0 animate-spin text-info motion-reduce:animate-none" />
+        <span className="min-w-0 truncate">{line.text}</span>
       </span>
     );
   }
@@ -58,8 +67,8 @@ export function CallLineText({ line, className }: { line: CallLine; className?: 
     return (
       <span
         className={cn(
-          "block truncate italic",
-          line.source === "agent" ? "text-agent/75" : "text-muted-foreground/75",
+          "block min-w-0 max-w-full truncate italic",
+          line.source === "agent" ? "text-success/75" : "text-muted-foreground/75",
           className,
         )}
       >
@@ -67,5 +76,9 @@ export function CallLineText({ line, className }: { line: CallLine; className?: 
       </span>
     );
   }
-  return <span className={cn("block truncate text-muted-foreground", className)}>{line.text}</span>;
+  return (
+    <span className={cn("block min-w-0 max-w-full truncate text-muted-foreground", className)}>
+      {line.text}
+    </span>
+  );
 }
