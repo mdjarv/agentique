@@ -519,7 +519,13 @@ during a run hangs up in the middle of every real task. Following a session
 starts work; `finished`/`failed` ends it; `blocked` does not, because the run is
 stuck rather than done. Frame arrival is the weak activity signal (the mic
 streams from an empty room); an engine with VAD exposes the real one through
-`SpeechIdler`. Costs still never appear in the UI.
+`SpeechIdler` — and neither is the whole story: control frames, tool calls and
+async deliveries bump an interaction clock, and **a pending async answer holds
+the line** (`pendingAsync` raises the ceiling to the working rule), because a
+call that hangs up while computing the summary it was asked for delivers it
+into a closed socket. Slow work is visible on the wire (`activity` frames), and
+a delivered summary gets its screen copy (`summary` frame) before it is spoken.
+Costs still never appear in the UI.
 
 **Speaking is `TextInjector`, type-asserted and best-effort, and it happens
 after the screen copy** — a call whose engine has no voice still shows the
