@@ -376,6 +376,110 @@ func TestAPromisedAnswerHoldsTheLine(t *testing.T) {
 	}
 }
 
+// --- the pickup greeting ---
+
+// greetingCall is a call wired to an engine and a directory, with no socket.
+func greetingCall(engine Engine, dir Directory, focus string) *call {
+	c := newTestCall(&recordingDispatcher{}, NewRegistry(), focus)
+	c.engine = engine
+	c.directory = dir
+	return c
+}
+
+// The assistant speaks first, because a speech model that only answers when it
+// is spoken to leaves a freshly connected call silent — and in a car that is
+// indistinguishable from a call that never came up.
+func TestPickupGreeting(t *testing.T) {
+	dir := &fakeDirectory{rows: []SessionRow{
+		{ID: "sess-1", Name: "Live Voice Dialog", ProjectName: "agentique"},
+		{ID: "sess-2"},
+	}}
+
+	t.Run("it names the session the call opened on", func(t *testing.T) {
+		engine := newSpeakingEngine()
+		c := greetingCall(engine, dir, "sess-1")
+		c.greet()
+
+		said := engine.waitForSpeech(t, 1)
+		if len(said) != 1 {
+			t.Fatalf("said %d things on pickup, want exactly the greeting cue: %q", len(said), said)
+		}
+		if !strings.Contains(said[0], "Live Voice Dialog") {
+			t.Errorf("the greeting does not name the focused session: %q", said[0])
+		}
+		// The unfocused call's extra half must not double the offer here.
+		if strings.Contains(said[0], "switch to a session by name") {
+			t.Errorf("a focused call was given the orientation offer too: %q", said[0])
+		}
+	})
+
+	t.Run("a call that opened on nothing offers orientation instead", func(t *testing.T) {
+		engine := newSpeakingEngine()
+		c := greetingCall(engine, dir, "")
+		c.greet()
+
+		said := engine.waitForSpeech(t, 1)
+		if len(said) != 1 {
+			t.Fatalf("said %d things on pickup, want exactly the greeting cue: %q", len(said), said)
+		}
+		if !strings.Contains(said[0], "switch to a session by name") {
+			t.Errorf("an unfocused greeting did not fold in the orientation offer: %q", said[0])
+		}
+	})
+
+	// A greeting that reads a UUID aloud is worse than one that does not name
+	// the session at all.
+	t.Run("a focused session nobody can name is never read out as an id", func(t *testing.T) {
+		engine := newSpeakingEngine()
+		c := greetingCall(engine, dir, "sess-2")
+		c.greet()
+
+		said := engine.waitForSpeech(t, 1)
+		if len(said) != 1 {
+			t.Fatalf("said %d things on pickup: %q", len(said), said)
+		}
+		if strings.Contains(said[0], "sess-2") {
+			t.Errorf("the greeting reads the session id aloud: %q", said[0])
+		}
+		if !strings.Contains(said[0], unnamedFocusLabel) {
+			t.Errorf("a focused call lost its focus in the greeting: %q", said[0])
+		}
+	})
+
+	// The loopback has no voice and should not have to pretend otherwise.
+	t.Run("an engine with no voice is skipped, not failed on", func(t *testing.T) {
+		c := greetingCall(NewEchoEngine(), dir, "sess-1")
+		done := make(chan struct{})
+		go func() { defer close(done); c.greet() }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("greet blocked on an engine that cannot speak")
+		}
+	})
+
+	// A long call outlives its engine's connection: Gemini's dies at roughly ten
+	// minutes and resumes from a stored handle, and the call is never told. The
+	// once-ness therefore lives here rather than in the engine — a resumption
+	// mid-run must not have the assistant introduce itself over the top of the
+	// work it is following.
+	t.Run("a session resumption does not re-greet", func(t *testing.T) {
+		engine := newSpeakingEngine()
+		c := greetingCall(engine, dir, "sess-1")
+		c.greet()
+		engine.waitForSpeech(t, 1)
+
+		// What a resumption looks like from up here: nothing at all. This is any
+		// path that re-runs the call's opening, now or later.
+		c.greet()
+		c.greet()
+
+		if got := engine.spoken(); len(got) != 1 {
+			t.Errorf("greeted %d times across a reconnect, want exactly 1: %q", len(got), got)
+		}
+	})
+}
+
 // Reports and notices must name their session, or a call following two runs
 // tells the listener something true about the wrong one.
 func TestSpokenFramingNamesTheSession(t *testing.T) {

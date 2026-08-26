@@ -481,6 +481,98 @@ func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
 	t.Fatalf("never got both halves of the gesture: created=%v dispatched=%v", created, dispatched)
 }
 
+// TestGeminiGreetsOnPickupLive is the only way to settle whether the pickup
+// greeting works at all: it asks the real model to speak with nobody having
+// spoken to it.
+//
+// Everything else about the greeting can be unit-tested — the cue's wording,
+// that it goes out once, that it names the focused session. What cannot is the
+// premise: that a realtime model handed the server's cue and no user turn will
+// actually open its mouth. If it does not, the call is silent on pickup exactly
+// as it was before, and no local test would notice.
+//
+// So: connect with the drafter instruction, inject the cue, send NO audio and
+// no user text, and require a spoken turn. The audio count is the same
+// proof-of-life the greeting exists to give the operator.
+func TestGeminiGreetsOnPickupLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Gemini test: skipped by -short")
+	}
+	key := os.Getenv("AGENTIQUE_VOICE_API_KEY")
+	if key == "" {
+		t.Skip("live Gemini test: set AGENTIQUE_VOICE_API_KEY to run")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	const focus = "Live Voice Dialog"
+	engine, err := newGeminiEngine(ctx, Options{
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, SystemInstruction(Briefing{
+		InitialFocus:   "sess-1",
+		ProjectContext: "The session is Live Voice Dialog, a Go backend with a React frontend.",
+	}), slog.Default())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer engine.Close()
+
+	// The cue is the whole of the trigger. Nothing else is sent: no microphone
+	// frames, no user turn, exactly as a freshly connected call has none.
+	if err := engine.SendText(greetingCue(focus)); err != nil {
+		t.Fatalf("send greeting cue: %v", err)
+	}
+
+	var (
+		said       string
+		audioBytes int
+	)
+	deadline := time.After(45 * time.Second)
+
+collect:
+	for {
+		select {
+		case <-deadline:
+			break collect
+		case ev, ok := <-engine.Events():
+			if !ok {
+				break collect
+			}
+			switch e := ev.(type) {
+			case TranscriptEvent:
+				if e.Source == "engine" {
+					said += e.Text
+				}
+			case AudioEvent:
+				audioBytes += len(e.PCM)
+			case ToolCallEvent:
+				// A greeting is a sentence, not a lookup: a tool call here is dead
+				// air in the first seconds of the call.
+				t.Errorf("the greeting reached for %s instead of just saying hello", e.Name)
+				respond(t, engine, &e, map[string]any{"output": "ok"})
+			case TurnCompleteEvent:
+				if said != "" {
+					break collect
+				}
+			case ErrorEvent:
+				t.Fatalf("engine error: %v (fatal=%v)", e.Err, e.Fatal)
+			}
+		}
+	}
+
+	if said == "" {
+		t.Fatal("the model said nothing unprompted — the pickup greeting does not work, and a " +
+			"connected call is silent until the operator speaks")
+	}
+	if audioBytes == 0 {
+		t.Error("the greeting was transcribed but carried no audio — nothing would be heard")
+	}
+	t.Logf("greeting (%d bytes of audio): %s", audioBytes, said)
+}
+
 // respond answers a tool call. The model is paused until it arrives, so every
 // path through the test has to answer — an unanswered call looks exactly like
 // the conversation having died.

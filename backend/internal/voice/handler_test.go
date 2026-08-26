@@ -227,6 +227,59 @@ func TestLateEngineIsClosedRatherThanLeaked(t *testing.T) {
 	}
 }
 
+// The greeting goes out when the call goes live, and once.
+//
+// Its second job is the downlink's proof of life: the client's audio-health
+// watchdog can only report "the assistant replied and no audio arrived" once
+// the assistant has replied to something, so greeting on pickup makes that
+// check happen seconds after connecting rather than after the first exchange.
+func TestPickupGreetingGoesOutWhenTheCallGoesLive(t *testing.T) {
+	engine := newSpeakingEngine()
+	h, err := NewHandler(Options{
+		Backend:   BackendEcho,
+		Directory: &fakeDirectory{rows: []SessionRow{{ID: "sess-1", Name: "Live Voice Dialog"}}},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	h.newEngine = func(context.Context, string, Persona) (Engine, error) { return engine, nil }
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"?sessionId=sess-1", nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	said := engine.waitForSpeech(t, 1)
+	if len(said) == 0 {
+		t.Fatal("nothing was injected on pickup — the call would sit silent until the operator spoke")
+	}
+	if !strings.Contains(said[0], "Live Voice Dialog") {
+		t.Errorf("the greeting does not name the session the call opened on: %q", said[0])
+	}
+
+	// Ordinary traffic must not produce a second one.
+	if err := ws.WriteJSON(clientMessage{Type: msgWorld}); err != nil {
+		t.Fatalf("write world: %v", err)
+	}
+	if err := ws.WriteMessage(websocket.BinaryMessage, pcmFrame(1, 2, 3)); err != nil {
+		t.Fatalf("write audio: %v", err)
+	}
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := ws.ReadMessage(); err != nil {
+		t.Fatalf("the call should still be up: %v", err)
+	}
+	if got := engine.spoken(); len(got) != 1 {
+		t.Errorf("greeted %d times in one call, want exactly 1: %q", len(got), got)
+	}
+}
+
 // closeCountingEngine reports when it is released.
 type closeCountingEngine struct {
 	Engine
