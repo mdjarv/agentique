@@ -1,7 +1,12 @@
 /**
- * The microphone, as five segments.
+ * The microphone, as five segments — the audio-path check's readout.
  *
- * This is the cheapest possible proof that the call is still hearing something:
+ * The call surfaces do not use this: they draw one `HaloOrb`, and one mark for
+ * one thing is the rule. What is left here is `/dev/voice`, where the question
+ * is narrower — is the capture path producing samples at all — and a bare meter
+ * beside a bare endpoint is the right shape for it.
+ *
+ * This is the cheapest possible proof that the microphone is still heard:
  * it moves when you talk, and it stops when the line dies. The level itself is
  * a module-level cell written by capture (`lib/voice/level.ts`), never store
  * state — thirty updates a second through zustand would re-render every
@@ -31,32 +36,16 @@ const UNLIT_OPACITY = 0.16;
 const ATTACK = 0.55;
 const RELEASE = 0.12;
 
-export type MicMeterVariant = "bars" | "ring";
-
 /**
  * @param live Whether audio is flowing. The loop runs only while it is true —
  *   and only while the tab is visible, since a background tab's frames are
  *   throttled and nobody is looking at the result anyway.
  */
-export function MicMeter({
-  live,
-  variant = "bars",
-  className,
-}: {
-  live: boolean;
-  variant?: MicMeterVariant;
-  className?: string;
-}) {
+export function MicMeter({ live, className }: { live: boolean; className?: string }) {
   const barsRef = useRef<(HTMLSpanElement | null)[]>([]);
-  const ringRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const paint = (level: number) => {
-      const ring = ringRef.current;
-      if (ring) {
-        ring.style.opacity = String(0.15 + level * 0.55);
-        ring.style.transform = `scale(${1 + level * 0.22})`;
-      }
       for (let i = 0; i < SEGMENTS; i++) {
         const bar = barsRef.current[i];
         if (!bar) continue;
@@ -98,20 +87,6 @@ export function MicMeter({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [live]);
-
-  if (variant === "ring") {
-    return (
-      <span
-        aria-hidden
-        ref={ringRef}
-        style={{ opacity: UNLIT_OPACITY }}
-        className={cn(
-          "pointer-events-none absolute inset-0 rounded-full ring-2 ring-agent",
-          className,
-        )}
-      />
-    );
-  }
 
   return (
     <span aria-hidden className={cn("flex h-3 shrink-0 items-end gap-[2px]", className)}>

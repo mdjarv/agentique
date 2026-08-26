@@ -1,9 +1,9 @@
 import {
-  AudioLines,
   ClipboardPaste,
   ListPlus,
   Mic,
   MicOff,
+  Phone,
   Plus,
   SendHorizonal,
   Square,
@@ -263,7 +263,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             aria-label="Start a live voice call"
             title="Live — talk it through, it drafts and runs the prompt"
           >
-            <AudioLines className="h-3.5 w-3.5" />
+            <Phone className="h-3.5 w-3.5" />
           </button>
         )}
         {isRunning && (
