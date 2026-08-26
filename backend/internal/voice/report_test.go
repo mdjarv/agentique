@@ -64,7 +64,7 @@ type recorder struct {
 	fail    bool
 }
 
-func (r *recorder) Notify(rep Report) error {
+func (r *recorder) Notify(_ string, rep Report) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.fail {
@@ -74,7 +74,7 @@ func (r *recorder) Notify(rep Report) error {
 	return nil
 }
 
-func (r *recorder) NotifyRuntime(n Notice) error {
+func (r *recorder) NotifyRuntime(_ string, n Notice) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.fail {

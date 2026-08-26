@@ -94,18 +94,24 @@ func (f *fakeDispatcher) dispatched() (int, string) {
 	return f.calls, f.gotPrompt
 }
 
+// newTestCall builds a call with no socket. sendControl writes to a nil socket;
+// every path through runTool tolerates that failing.
+func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
+	return &call{
+		engine:     NewEchoEngine(),
+		registry:   registry,
+		dispatcher: d,
+		focus:      focus,
+		follows:    make(map[string]*followState),
+		log:        testLogger(),
+		runCtx:     context.Background(),
+	}
+}
+
 // toolCall exercises runTool against a call wired to the given dispatcher.
 func toolCall(t *testing.T, d Dispatcher, target string, args map[string]any) map[string]any {
 	t.Helper()
-	c := &call{
-		engine:        NewEchoEngine(),
-		registry:      NewRegistry(),
-		dispatcher:    d,
-		targetSession: target,
-		log:           testLogger(),
-		runCtx:        context.Background(),
-		// sendControl writes to a nil socket; runTool tolerates that failing.
-	}
+	c := newTestCall(d, NewRegistry(), target)
 	return c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: args})
 }
 
@@ -237,14 +243,7 @@ func TestEveryToolPathAnswers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &call{
-				engine:        NewEchoEngine(),
-				registry:      NewRegistry(),
-				dispatcher:    tc.d,
-				targetSession: "sess-1",
-				log:           testLogger(),
-				runCtx:        context.Background(),
-			}
+			c := newTestCall(tc.d, NewRegistry(), "sess-1")
 			got := c.runTool(tc.ev)
 			if len(got) == 0 {
 				t.Fatal("no response payload — the model would stay paused forever")
@@ -257,14 +256,7 @@ func TestEveryToolPathAnswers(t *testing.T) {
 // copy in context, so a second dispatch on the same call must not repeat it.
 func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
 	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
-	c := &call{
-		engine:        NewEchoEngine(),
-		registry:      NewRegistry(),
-		dispatcher:    d,
-		targetSession: "sess-1",
-		log:           testLogger(),
-		runCtx:        context.Background(),
-	}
+	c := newTestCall(d, NewRegistry(), "sess-1")
 	args := map[string]any{"prompt": "do the thing", "stay_on_line": true}
 
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: args})
@@ -293,14 +285,7 @@ func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
 func TestASecondDispatchCannotUnfollowARunningOne(t *testing.T) {
 	registry := NewRegistry()
 	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
-	c := &call{
-		engine:        NewEchoEngine(),
-		registry:      registry,
-		dispatcher:    d,
-		targetSession: "sess-1",
-		log:           testLogger(),
-		runCtx:        context.Background(),
-	}
+	c := newTestCall(d, registry, "sess-1")
 
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{
 		"prompt": "the first thing", "stay_on_line": true,

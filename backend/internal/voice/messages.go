@@ -98,11 +98,18 @@ func (c *call) handleControl(payload []byte) (stop bool) {
 			c.log.Warn("voice follow without a session id")
 			return false
 		}
-		c.follow(msg.SessionID)
+		c.follow(msg.SessionID, "")
 		return false
 
 	case msgUnfollow:
-		c.unfollow()
+		// No session id means "stop following everything" — which is what an
+		// older client, written when a call followed exactly one session, means
+		// by the frame it sends.
+		if msg.SessionID == "" {
+			c.unfollowAll()
+			return false
+		}
+		c.unfollow(msg.SessionID)
 		return false
 
 	default:

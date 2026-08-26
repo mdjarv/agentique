@@ -17,14 +17,17 @@ const (
 	reportRefillEach = 3 * time.Minute
 )
 
-// Follower receives news about the session it is following.
+// Follower receives news about the sessions it is following.
+//
+// Every delivery names its session. A follower may be bound to several, and
+// which run just finished is the first thing its listener needs to know.
 type Follower interface {
 	// Notify delivers one agent-written report. It must not block: the caller
 	// is an MCP tool handler with an agent waiting on the other end.
-	Notify(Report) error
+	Notify(sessionID string, r Report) error
 	// NotifyRuntime delivers one runtime fact — the three things the agent
 	// cannot report about itself.
-	NotifyRuntime(Notice) error
+	NotifyRuntime(sessionID string, n Notice) error
 }
 
 // Registry routes a working session's reports to whatever calls are following
@@ -115,7 +118,7 @@ func (r *Registry) Report(sessionID, kind, headline string) (string, error) {
 
 	var failures int
 	for _, f := range followers {
-		if err := f.Notify(report); err != nil {
+		if err := f.Notify(sessionID, report); err != nil {
 			failures++
 		}
 	}
@@ -144,7 +147,7 @@ func (r *Registry) Notice(sessionID string, notice Notice) {
 	r.mu.Unlock()
 
 	for _, f := range followers {
-		if err := f.NotifyRuntime(notice); err != nil {
+		if err := f.NotifyRuntime(sessionID, notice); err != nil {
 			slog.Warn("voice notice not delivered", "session", sessionID, "kind", notice.Kind, "error", err)
 		}
 	}

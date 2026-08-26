@@ -118,9 +118,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// belongs to the session this call is attached to.
 	// Both are read per call, so a change in the settings page takes effect on
 	// the next call rather than the next restart.
-	target := r.URL.Query().Get("sessionId")
+	//
+	// The query parameter is the call's *initial* focus — the session the
+	// operator was looking at when they pressed the button — not a fixed target.
+	initialFocus := r.URL.Query().Get("sessionId")
 	persona := h.persona(r.Context())
-	instruction := SystemInstruction(h.projectContext(r.Context(), target), persona)
+	instruction := SystemInstruction(h.projectContext(r.Context(), initialFocus), persona)
 
 	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction, persona)
 	if err != nil {
@@ -141,8 +144,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log := slog.With("subsystem", "voice", "backend", h.opts.Backend)
-	log.Info("voice call opened", "remote", r.RemoteAddr, "session", target)
-	newCall(ws, engine, h.opts, target, log).run(r.Context())
+	log.Info("voice call opened", "remote", r.RemoteAddr, "session", initialFocus)
+	newCall(ws, engine, h.opts, initialFocus, log).run(r.Context())
 	log.Info("voice call closed", "remote", r.RemoteAddr)
 }
 
