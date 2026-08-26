@@ -1,18 +1,20 @@
 import {
   AlertTriangle,
   Archive,
+  Check,
   ChevronDown,
   ChevronRight,
   GitMerge,
   HardDrive,
   Loader2,
   RefreshCw,
-  Sparkles,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
+import { SelectionBar } from "~/components/storage/SelectionBar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,26 +28,38 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { deleteOrphanedWorktree } from "~/lib/api";
+import { deleteOrphanedWorktree, reclaimSessions } from "~/lib/api";
 import type { CategoryUsage, ProjectStorage, SessionStorage } from "~/lib/generated-types";
 import { deleteSession, deleteSessionsBulk } from "~/lib/session/actions";
+import { canDelete, canReclaim, freedBytes, reconcile, summarize } from "~/lib/storage/selection";
 import { cn, formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useStorageStore } from "~/stores/storage-store";
 
+/**
+ * The page offers two verbs against a session and they answer to different bars.
+ *
+ * Reclaim removes the checked-out tree, the browser profile and the scratchpad,
+ * keeping the session row and its git branch — the next message re-provisions
+ * from the branch. Reversible, so it applies to any finished session with no
+ * uncommitted work, archived ones included.
+ *
+ * Delete removes the row, the branch and the tree. Irreversible, so it needs the
+ * server to have established that the branch's commits already exist on the
+ * project's main line. That used to be approximated by `merged`, which is set
+ * only when agentique itself performed the merge — false for every branch merged
+ * from a terminal, which made the bulk affordance unreachable on repos worked
+ * that way. `safety` is the computed answer; `merged` survives only as a badge.
+ */
 type DeleteTarget =
   | { kind: "orphan"; path: string; label: string; bytes: number }
   | { kind: "orphan-all"; count: number; bytes: number }
   | { kind: "session"; id: string; label: string; bytes: number }
-  // Bulk-delete MERGED sessions. Deliberately not archived ones: archiving is a
-  // one-click sidebar tidy (including a whole-shelf sweep), while this removes
-  // worktrees AND branches AND rows. Only merged work is safe in bulk — its
-  // commits are already on main. scope is "all projects" or a project name
-  // (for the dialog copy); sessions is the exact set, named in the dialog so a
-  // count is never the only thing standing between a click and the delete.
-  | { kind: "clean-merged"; scope: string; sessions: SessionStorage[] };
+  | { kind: "reclaim"; sessions: SessionStorage[] }
+  // Bulk delete. The set is named in the dialog rather than counted, so a count
+  // is never the only thing standing between a click and an irreversible action.
+  | { kind: "delete-bulk"; sessions: SessionStorage[] };
 
-const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + s.bytes, 0);
-const mergedOf = (sessions: SessionStorage[]) => sessions.filter((s) => s.merged);
+const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + freedBytes(s), 0);
 
 const categoryColors: Record<string, string> = {
   worktrees: "bg-sky-500",
@@ -54,6 +68,8 @@ const categoryColors: Record<string, string> = {
   "session-files": "bg-emerald-500",
   certs: "bg-rose-500",
   other: "bg-muted-foreground/40",
+  "chrome-profiles": "bg-orange-500",
+  scratchpads: "bg-teal-500",
 };
 
 export function StoragePage() {
@@ -64,12 +80,34 @@ export function StoragePage() {
   const fetchUsage = useStorageStore((s) => s.fetchUsage);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetchUsage(false);
   }, [fetchUsage]);
+
+  const allSessions = useMemo(
+    () => (usage ? usage.projects.flatMap((p) => p.sessions) : []),
+    [usage],
+  );
+
+  // A selection routinely outlives the rows it was made from: the walk is cached
+  // for a minute and refreshed after every action. Drop ids that are gone rather
+  // than letting a later click act on rows the user can no longer see.
+  useEffect(() => {
+    setSelected((prev) => {
+      const next = reconcile(prev, allSessions);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [allSessions]);
+
+  const selectedSessions = useMemo(
+    () => allSessions.filter((s) => selected.has(s.sessionId)),
+    [allSessions, selected],
+  );
+  const summary = useMemo(() => summarize(selectedSessions), [selectedSessions]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -78,6 +116,35 @@ export function StoragePage() {
       else next.add(id);
       return next;
     });
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectAllReclaimable = () => {
+    const ids = allSessions.filter(canReclaim).map((s) => s.sessionId);
+    setSelected(new Set(ids));
+    // Open every card holding one: the bar is about to act on rows the user
+    // should be able to see.
+    setExpanded(new Set(usage?.projects.map((p) => p.projectId) ?? []));
+  };
+
+  const runReclaim = async (sessions: SessionStorage[]) => {
+    const res = await reclaimSessions(sessions.map((s) => s.sessionId));
+    // Report what happened, not what was asked for — the server re-plans, so a
+    // session that woke up in the meantime comes back as a skip.
+    if (res.removed.length === 0 && res.skipped.length > 0) {
+      toast.warning(`Nothing reclaimed — ${res.skipped[0]?.reason ?? "all sessions were skipped"}`);
+      return;
+    }
+    const skipNote = res.skipped.length > 0 ? `, ${res.skipped.length} skipped` : "";
+    toast.success(`Reclaimed ${formatBytes(res.freedBytes)}${skipNote}`);
+    setSelected(new Set());
+  };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -99,7 +166,9 @@ export function StoragePage() {
         });
         const removed = results.filter((r) => r.status === "fulfilled").length;
         toast.success(`Removed ${removed} of ${orphans.length} orphaned worktrees`);
-      } else if (deleteTarget.kind === "clean-merged") {
+      } else if (deleteTarget.kind === "reclaim") {
+        await runReclaim(deleteTarget.sessions);
+      } else if (deleteTarget.kind === "delete-bulk") {
         const ids = deleteTarget.sessions.map((s) => s.sessionId);
         const { results } = await deleteSessionsBulk(ws, ids);
         const removed = results.filter((r) => r.success).length;
@@ -108,14 +177,15 @@ export function StoragePage() {
           .forEach((r) => {
             console.error("Failed to delete session", r.sessionId, r.error);
           });
-        toast.success(`Deleted ${removed} of ${ids.length} merged sessions`);
+        toast.success(`Deleted ${removed} of ${ids.length} sessions`);
+        setSelected(new Set());
       } else {
         await deleteSession(ws, deleteTarget.id);
         toast.success(`Deleted session ${deleteTarget.label}`);
       }
       await fetchUsage(true);
     } catch (err) {
-      toast.error(getErrorMessage(err, "Delete failed"));
+      toast.error(getErrorMessage(err, "Action failed"));
     } finally {
       setBusy(false);
       setDeleteTarget(null);
@@ -124,9 +194,7 @@ export function StoragePage() {
 
   const disk = usage?.disk;
   const usedPct = disk ? Math.min(Math.round(disk.usagePercent), 100) : 0;
-
-  // Merged sessions across all projects — the only bulk-safe set (see DeleteTarget).
-  const allMerged = usage ? usage.projects.flatMap((p) => mergedOf(p.sessions)) : [];
+  const reclaimableCount = usage?.reclaimableCount ?? 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -139,23 +207,6 @@ export function StoragePage() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {allMerged.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() =>
-                setDeleteTarget({
-                  kind: "clean-merged",
-                  scope: "all projects",
-                  sessions: allMerged,
-                })
-              }
-            >
-              <Sparkles className="size-3.5" />
-              Delete all merged ({allMerged.length})
-            </Button>
-          )}
           <Button
             variant="outline"
             size="sm"
@@ -208,12 +259,41 @@ export function StoragePage() {
             </div>
             <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground tabular-nums">
               <span>{usedPct}% used</span>
-              {usage && <span>Agentique data: {formatBytes(usage.dataDirBytes)}</span>}
+              {usage && (
+                <span>
+                  Agentique data: {formatBytes(usage.dataDirBytes)}
+                  {usage.tempBytes ? ` · elsewhere: ${formatBytes(usage.tempBytes)}` : ""}
+                </span>
+              )}
             </div>
           </div>
         )}
 
-        {usage && <CategoryBreakdown categories={usage.categories} total={usage.dataDirBytes} />}
+        {usage && reclaimableCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card/40 px-4 py-3">
+            <RotateCcw className="size-4 text-muted-foreground" />
+            <span className="text-sm">
+              <span className="font-medium tabular-nums">
+                {formatBytes(usage.reclaimableBytes ?? 0)}
+              </span>{" "}
+              can be freed from {reclaimableCount} finished session
+              {reclaimableCount === 1 ? "" : "s"}
+            </span>
+            <span className="text-xs text-muted-foreground">branches and history are kept</span>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={selectAllReclaimable}>
+              Select all
+            </Button>
+          </div>
+        )}
+
+        {usage && (
+          <CategoryBreakdown
+            categories={usage.categories}
+            total={usage.dataDirBytes}
+            tempCategories={usage.tempCategories ?? []}
+            tempTotal={usage.tempBytes ?? 0}
+          />
+        )}
 
         {usage && usage.orphans.length > 0 && (
           <div className="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
@@ -269,26 +349,23 @@ export function StoragePage() {
                 key={p.projectId}
                 project={p}
                 expanded={expanded.has(p.projectId)}
+                selected={selected}
                 onToggle={() => toggle(p.projectId)}
+                onToggleSelected={toggleSelected}
                 onDeleteSession={(s) =>
                   setDeleteTarget({
                     kind: "session",
                     id: s.sessionId,
                     label: s.name || s.sessionId,
-                    bytes: s.bytes,
+                    bytes: freedBytes(s),
                   })
                 }
-                onCleanMerged={() => {
-                  const done = mergedOf(p.sessions);
-                  if (done.length === 0) return;
-                  // Expand the card as well: the dialog names the set, and
-                  // behind it the rows it came from are now on screen too.
+                onReclaimSession={(s) => setDeleteTarget({ kind: "reclaim", sessions: [s] })}
+                onSelectReclaimable={() => {
+                  const ids = p.sessions.filter(canReclaim).map((s) => s.sessionId);
+                  if (ids.length === 0) return;
                   setExpanded((prev) => new Set(prev).add(p.projectId));
-                  setDeleteTarget({
-                    kind: "clean-merged",
-                    scope: p.name || p.slug,
-                    sessions: done,
-                  });
+                  setSelected((prev) => new Set([...prev, ...ids]));
                 }}
               />
             ))}
@@ -300,6 +377,14 @@ export function StoragePage() {
             No session worktrees on disk.
           </div>
         )}
+
+        <SelectionBar
+          summary={summary}
+          busy={busy}
+          onClear={() => setSelected(new Set())}
+          onReclaim={() => setDeleteTarget({ kind: "reclaim", sessions: summary.reclaimable })}
+          onDelete={() => setDeleteTarget({ kind: "delete-bulk", sessions: summary.deletable })}
+        />
       </div>
 
       <AlertDialog
@@ -308,27 +393,10 @@ export function StoragePage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {deleteTarget?.kind === "orphan-all"
-                ? `Delete ${deleteTarget.count} orphaned worktrees?`
-                : deleteTarget?.kind === "clean-merged"
-                  ? `Delete ${deleteTarget.sessions.length} merged session${deleteTarget.sessions.length === 1 ? "" : "s"}?`
-                  : deleteTarget?.kind === "session"
-                    ? "Delete session?"
-                    : "Delete orphaned worktree?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget?.kind === "session"
-                ? `This stops the session "${deleteTarget.label}" and removes its worktree and branch. Frees ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
-                : deleteTarget?.kind === "orphan-all"
-                  ? `Permanently removes all orphaned worktree directories, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
-                  : deleteTarget?.kind === "clean-merged"
-                    ? `These sessions in ${deleteTarget.scope} are merged into the main branch — their commits are already there. Deleting removes each worktree, branch and row, freeing ~${formatBytes(sumBytes(deleteTarget.sessions))}. This cannot be undone.`
-                    : deleteTarget
-                      ? `Permanently removes ${deleteTarget.label}, freeing ~${formatBytes(deleteTarget.bytes)}. This cannot be undone.`
-                      : ""}
-            </AlertDialogDescription>
-            {deleteTarget?.kind === "clean-merged" && (
+            <AlertDialogTitle>{dialogTitle(deleteTarget)}</AlertDialogTitle>
+            <AlertDialogDescription>{dialogBody(deleteTarget)}</AlertDialogDescription>
+            {(deleteTarget?.kind === "delete-bulk" ||
+              (deleteTarget?.kind === "reclaim" && deleteTarget.sessions.length > 1)) && (
               <ul className="mt-1 max-h-56 overflow-y-auto rounded-md border bg-muted/30 divide-y divide-border/60 text-sm">
                 {deleteTarget.sessions.map((s) => (
                   <li key={s.sessionId} className="flex items-center gap-2 px-2.5 py-1.5">
@@ -340,7 +408,7 @@ export function StoragePage() {
                       />
                     )}
                     <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                      {formatBytes(s.bytes)}
+                      {formatBytes(freedBytes(s))}
                     </span>
                   </li>
                 ))}
@@ -355,9 +423,18 @@ export function StoragePage() {
                 confirmDelete();
               }}
               disabled={busy}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={cn(
+                deleteTarget?.kind !== "reclaim" &&
+                  "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+              )}
             >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Delete"}
+              {busy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : deleteTarget?.kind === "reclaim" ? (
+                "Reclaim"
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -366,29 +443,96 @@ export function StoragePage() {
   );
 }
 
-function CategoryBreakdown({ categories, total }: { categories: CategoryUsage[]; total: number }) {
+function dialogTitle(t: DeleteTarget | null): string {
+  switch (t?.kind) {
+    case "orphan-all":
+      return `Delete ${t.count} orphaned worktrees?`;
+    case "reclaim":
+      return t.sessions.length === 1
+        ? "Reclaim this session's disk?"
+        : `Reclaim ${t.sessions.length} sessions' disk?`;
+    case "delete-bulk":
+      return `Delete ${t.sessions.length} session${t.sessions.length === 1 ? "" : "s"}?`;
+    case "session":
+      return "Delete session?";
+    default:
+      return "Delete orphaned worktree?";
+  }
+}
+
+function dialogBody(t: DeleteTarget | null): string {
+  switch (t?.kind) {
+    case "session":
+      return `This stops the session "${t.label}" and removes its worktree and branch. Frees ~${formatBytes(t.bytes)}. This cannot be undone.`;
+    case "orphan-all":
+      return `Permanently removes all orphaned worktree directories, freeing ~${formatBytes(t.bytes)}. This cannot be undone.`;
+    case "reclaim":
+      // Say what it costs, not just what it frees: the session comes back to a
+      // repo that does not build until dependencies reinstall, and that cost
+      // lands later, on whoever resumes it.
+      return `Removes the checked-out files, browser profile and scratchpad, freeing ~${formatBytes(sumBytes(t.sessions))}. The ${t.sessions.length === 1 ? "session and its branch stay" : "sessions and their branches stay"} — the next message checks the files out again, and dependencies reinstall.`;
+    case "delete-bulk":
+      return `These branches add no commits the main branch does not already have, and their worktrees are clean. Deleting removes each worktree, branch and session row, freeing ~${formatBytes(sumBytes(t.sessions))}. Files git ignores — a local .env, downloaded fixtures — go with them. This cannot be undone.`;
+    case "orphan":
+      return `Permanently removes ${t.label}, freeing ~${formatBytes(t.bytes)}. This cannot be undone.`;
+    default:
+      return "";
+  }
+}
+
+function CategoryBreakdown({
+  categories,
+  total,
+  tempCategories,
+  tempTotal,
+}: {
+  categories: CategoryUsage[];
+  total: number;
+  tempCategories: CategoryUsage[];
+  tempTotal: number;
+}) {
   const shown = categories.filter((c) => c.bytes > 0);
-  if (shown.length === 0) return null;
+  const shownTemp = tempCategories.filter((c) => c.bytes > 0);
+  if (shown.length === 0 && shownTemp.length === 0) return null;
   return (
     <div className="rounded-lg border bg-card/40 px-4 py-3">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Breakdown</div>
-      <div className="space-y-1.5">
-        {shown.map((c) => {
-          const pct = total > 0 ? (c.bytes / total) * 100 : 0;
-          return (
-            <div key={c.key} className="flex items-center gap-2 text-xs">
-              <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
-              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full", categoryColors[c.key] ?? "bg-primary")}
-                  style={{ width: `${Math.max(pct, 1)}%` }}
-                />
-              </div>
-              <span className="w-16 text-right tabular-nums shrink-0">{formatBytes(c.bytes)}</span>
-            </div>
-          );
-        })}
+      <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+        Breakdown — data directory
       </div>
+      <CategoryBars categories={shown} total={total} />
+      {shownTemp.length > 0 && (
+        <>
+          {/* Its own group and its own total: "Agentique data" is a claim about
+              one directory, and quietly widening it would make that number wrong
+              in a different way. */}
+          <div className="mt-3 pt-3 border-t text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Elsewhere — temporary files
+          </div>
+          <CategoryBars categories={shownTemp} total={tempTotal} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function CategoryBars({ categories, total }: { categories: CategoryUsage[]; total: number }) {
+  return (
+    <div className="space-y-1.5">
+      {categories.map((c) => {
+        const pct = total > 0 ? (c.bytes / total) * 100 : 0;
+        return (
+          <div key={c.key} className="flex items-center gap-2 text-xs">
+            <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
+            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn("h-full rounded-full", categoryColors[c.key] ?? "bg-primary")}
+                style={{ width: `${Math.max(pct, 1)}%` }}
+              />
+            </div>
+            <span className="w-16 text-right tabular-nums shrink-0">{formatBytes(c.bytes)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -396,17 +540,23 @@ function CategoryBreakdown({ categories, total }: { categories: CategoryUsage[];
 function ProjectCard({
   project,
   expanded,
+  selected,
   onToggle,
+  onToggleSelected,
   onDeleteSession,
-  onCleanMerged,
+  onReclaimSession,
+  onSelectReclaimable,
 }: {
   project: ProjectStorage;
   expanded: boolean;
+  selected: Set<string>;
   onToggle: () => void;
+  onToggleSelected: (id: string) => void;
   onDeleteSession: (s: SessionStorage) => void;
-  onCleanMerged: () => void;
+  onReclaimSession: (s: SessionStorage) => void;
+  onSelectReclaimable: () => void;
 }) {
-  const mergedCount = project.sessions.filter((s) => s.merged).length;
+  const reclaimable = project.sessions.filter(canReclaim);
   return (
     <div className="rounded-lg border bg-card/40">
       <div className="group flex items-center gap-2 w-full px-3 py-2.5 hover:bg-muted/30 transition-colors rounded-lg">
@@ -427,20 +577,20 @@ function ProjectCard({
           <span className="font-medium text-sm truncate">{project.name || project.slug}</span>
           <span className="text-xs text-muted-foreground shrink-0">
             {project.sessions.length} session{project.sessions.length === 1 ? "" : "s"}
-            {mergedCount > 0 && (
-              <span className="text-muted-foreground/70"> · {mergedCount} merged</span>
+            {reclaimable.length > 0 && (
+              <span className="text-muted-foreground/70"> · {reclaimable.length} reclaimable</span>
             )}
           </span>
         </button>
-        {mergedCount > 0 && (
+        {reclaimable.length > 0 && (
           <button
             type="button"
-            onClick={onCleanMerged}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
-            title={`Delete ${mergedCount} merged session${mergedCount === 1 ? "" : "s"}`}
+            onClick={onSelectReclaimable}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all opacity-0 group-hover:opacity-100 shrink-0"
+            title={`Select ${reclaimable.length} reclaimable session${reclaimable.length === 1 ? "" : "s"}`}
           >
-            <Trash2 className="size-3" />
-            merged ({mergedCount})
+            <Check className="size-3" />
+            select ({reclaimable.length})
           </button>
         )}
         <span className="text-sm tabular-nums font-medium shrink-0">
@@ -450,7 +600,14 @@ function ProjectCard({
       {expanded && (
         <div className="px-3 pb-2 space-y-0.5">
           {project.sessions.map((s) => (
-            <SessionRow key={s.sessionId} session={s} onDelete={() => onDeleteSession(s)} />
+            <SessionRow
+              key={s.sessionId}
+              session={s}
+              selected={selected.has(s.sessionId)}
+              onToggleSelected={() => onToggleSelected(s.sessionId)}
+              onReclaim={canReclaim(s) ? () => onReclaimSession(s) : undefined}
+              onDelete={() => onDeleteSession(s)}
+            />
           ))}
         </div>
       )}
@@ -458,19 +615,46 @@ function ProjectCard({
   );
 }
 
-function SessionRow({ session, onDelete }: { session: SessionStorage; onDelete: () => void }) {
+function SessionRow({
+  session,
+  selected,
+  onToggleSelected,
+  onReclaim,
+  onDelete,
+}: {
+  session: SessionStorage;
+  selected?: boolean;
+  onToggleSelected?: () => void;
+  onReclaim?: () => void;
+  onDelete: () => void;
+}) {
+  const temp = session.tempBytes ?? 0;
   return (
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/40 text-sm",
         session.archived && "text-muted-foreground",
+        selected && "bg-muted/60",
       )}
     >
+      {/* A real checkbox rather than a styled button: this is the one control on
+          the page a keyboard user has to reach for every row, and the native
+          element already knows how to be one. */}
+      {onToggleSelected && (
+        <input
+          type="checkbox"
+          checked={selected === true}
+          onChange={onToggleSelected}
+          aria-label={`Select ${session.name || session.sessionId}`}
+          className="shrink-0 size-4 accent-primary cursor-pointer"
+        />
+      )}
       <span className="truncate min-w-0 flex-1">
         {session.name || (session.orphaned ? session.worktreePath : session.sessionId)}
       </span>
-      {/* The set "Delete merged (N)" acts on. Without it the count is a claim
-          about rows that look identical to the ones it leaves alone. */}
+      {/* `merged` is now a fact about how the merge happened, not the gate — the
+          gate is `safety`, which git answered. Kept because it still explains a
+          row at a glance. */}
       {session.merged && (
         <Badge
           variant="outline"
@@ -499,14 +683,38 @@ function SessionRow({ session, onDelete }: { session: SessionStorage; onDelete: 
             </Badge>
           )
         ))}
+      {/* Why Delete is unavailable, on the row that causes it. The bar only ever
+          reports how many blocked it; this is where the reason lives. */}
+      {!session.orphaned && !canDelete(session) && session.safetyReason && (
+        <span className="text-xs text-muted-foreground/80 shrink-0 hidden sm:inline">
+          {session.safetyReason}
+        </span>
+      )}
       {!session.orphaned && session.updatedAt && (
         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
           {relativeTime(session.updatedAt)} ago
         </span>
       )}
-      <span className="w-16 text-right tabular-nums text-muted-foreground shrink-0">
-        {formatBytes(session.bytes)}
+      <span
+        className="w-16 text-right tabular-nums text-muted-foreground shrink-0"
+        title={
+          temp > 0
+            ? `${formatBytes(session.bytes)} worktree + ${formatBytes(temp)} temp`
+            : undefined
+        }
+      >
+        {formatBytes(freedBytes(session))}
       </span>
+      {onReclaim && (
+        <button
+          type="button"
+          onClick={onReclaim}
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all"
+          title="Free the disk, keep the session"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+      )}
       <button
         type="button"
         onClick={onDelete}
