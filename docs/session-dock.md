@@ -4,6 +4,11 @@ Everything in a session that is not the transcript lives in one collapsible
 panel on the right, reached by one control in the header. The chat is the page;
 the dock is what sits beside it.
 
+`SessionDock` is the component. Two other surfaces are also called docks and are
+unrelated to this one: `VoiceDock` (the live call, in the sidebar) and `SyncDock`
+(the sidebar's git summary). Name the component rather than "the dock" anywhere
+the reader might arrive cold.
+
 ## What it replaced
 
 Three mechanisms had grown separately, each solving the same problem a

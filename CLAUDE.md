@@ -325,6 +325,11 @@ behind one header control: **Work** (Todos + Agents), **Changes**, **Loops**,
 **Browser**. The chat is the page and is always rendered; the dock sits beside
 it, or takes the pane when maximized.
 
+Three unrelated things are called a dock, so name the component, never "the
+dock", in anything a reader might land on cold: `SessionDock` (this, on the
+right of a session), `VoiceDock` (the live call's surface in the sidebar), and
+`SyncDock` (the sidebar's git summary).
+
 Tabs are **derived, never curated** — a view exists because the session has the
 thing, and `availableDockViews` is the only place that decides. State is per
 session (`ui-store.dock`), so it is pruned at a cap and reconciled:
