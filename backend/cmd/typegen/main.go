@@ -405,9 +405,14 @@ func main() {
 
 	g.register(storage.DiskStats{}, "DiskStats")
 	g.register(storage.CategoryUsage{}, "CategoryUsage")
+	g.register(storage.TempArtifact{}, "TempArtifact")
 	g.register(storage.SessionStorage{}, "SessionStorage")
 	g.register(storage.ProjectStorage{}, "ProjectStorage")
 	g.register(storage.StorageUsage{}, "StorageUsage")
+	g.register(storage.ReclaimRequest{}, "ReclaimRequest")
+	g.register(storage.ReclaimedArtifact{}, "ReclaimedArtifact")
+	g.register(storage.ReclaimSkip{}, "ReclaimSkip")
+	g.register(storage.ReclaimResponse{}, "ReclaimResponse")
 
 	// ── In-app upgrades (docs/upgrades.md) ──
 	// Progress and Arming before Status — Status embeds both (leaf-first).

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/allbin/agentkit/worktree"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/janitor"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -103,9 +104,106 @@ func (s *Service) SweepOrphans(ctx context.Context) {
 	}
 }
 
+// LiveSessionIDs returns the sessions the runtime still holds. Exposed on the
+// Service so a reporting surface can ask "who is live" without reaching into
+// the Manager itself.
+func (s *Service) LiveSessionIDs() map[string]bool { return s.mgr.LiveIDs() }
+
+// ReclaimSessions removes the on-disk artifacts of the named sessions — the
+// checked-out worktree, the Chrome profile, the Claude scratchpad — while
+// keeping each session row and its git branch. The session stays resumable:
+// recoverWorktree re-provisions from the branch on the next message.
+//
+// This is the reversible verb, so it does not need Delete's bar. It does need
+// the two guards the janitor already applies: a live session is never touched,
+// and a worktree with uncommitted or untracked changes is spared. Both are
+// re-evaluated here from the server's own snapshot rather than trusted from the
+// request — the page that produced these ids may be up to a minute stale, and a
+// session that woke up in between must come back as a skip, not a removal.
+//
+// Requested ids that reach nothing are reported as skips too, with the janitor's
+// own reason where it has one. A skip is a normal outcome, not an error.
+func (s *Service) ReclaimSessions(ctx context.Context, sessionIDs []string) (janitor.Result, []janitor.Skipped, error) {
+	if len(sessionIDs) == 0 {
+		return janitor.Result{}, nil, nil
+	}
+	want := make(map[string]bool, len(sessionIDs))
+	for _, id := range sessionIDs {
+		if id != "" {
+			want[id] = true
+		}
+	}
+	if len(want) == 0 {
+		return janitor.Result{}, nil, nil
+	}
+
+	plan, err := s.buildPlan(ctx, janitor.Options{
+		IncludeFinished: true,
+		Dirty:           func(p string) bool { d, _ := gitops.HasUncommittedChanges(p); return d },
+	})
+	if err != nil {
+		return janitor.Result{}, nil, err
+	}
+
+	selected := janitor.Plan{}
+	reached := make(map[string]bool, len(want))
+	for _, item := range plan.Reap {
+		if !want[item.SessionID] {
+			continue
+		}
+		selected.Reap = append(selected.Reap, item)
+		reached[item.SessionID] = true
+	}
+
+	// Why each requested session produced nothing. The janitor's spare reasons
+	// are the interesting ones ("session is running", "uncommitted changes");
+	// anything else simply had no artifacts left on disk.
+	reasons := make(map[string]string, len(want))
+	for _, sk := range plan.Skipped {
+		if want[sk.SessionID] && reasons[sk.SessionID] == "" {
+			reasons[sk.SessionID] = sk.Reason
+		}
+	}
+	var skipped []janitor.Skipped
+	for id := range want {
+		if reached[id] {
+			continue
+		}
+		reason := reasons[id]
+		if reason == "" {
+			reason = "nothing left on disk for this session"
+		}
+		skipped = append(skipped, janitor.Skipped{SessionID: id, Reason: reason})
+	}
+
+	if len(selected.Reap) == 0 {
+		return janitor.Result{}, skipped, nil
+	}
+
+	janitor.EnrichSizes(&selected)
+	res := janitor.Execute(ctx, selected, janitorRemover{ops: s.worktree})
+	slog.Info("reclaim complete",
+		"sessions", len(want),
+		"removed", len(res.Removed),
+		"skipped", len(skipped),
+		"failed", len(res.Failed),
+		"freed_mb", res.FreedBytes/(1024*1024))
+	for _, f := range res.Failed {
+		slog.Warn("reclaim: removal failed", "kind", f.Item.Kind, "path", f.Item.Path, "error", f.Err)
+	}
+	return res, skipped, nil
+}
+
 // buildOrphanPlan gathers the DB + registry + disk snapshot and computes an
 // orphans-only plan (IncludeFinished off).
 func (s *Service) buildOrphanPlan(ctx context.Context) (janitor.Plan, error) {
+	return s.buildPlan(ctx, janitor.Options{IncludeFinished: false})
+}
+
+// buildPlan gathers the DB + registry + disk snapshot and computes a plan under
+// the given options. Shared by the startup orphan sweep and the reclaim path so
+// both classify from an identical picture.
+func (s *Service) buildPlan(ctx context.Context, opt janitor.Options) (janitor.Plan, error) {
 	sessions, err := s.queries.ListAllSessions(ctx)
 	if err != nil {
 		return janitor.Plan{}, fmt.Errorf("list sessions: %w", err)
@@ -137,5 +235,5 @@ func (s *Service) buildOrphanPlan(ctx context.Context) (janitor.Plan, error) {
 		ScratchpadDirs: scratchDirs,
 		Now:            time.Now(),
 	}
-	return janitor.Compute(in, janitor.Options{IncludeFinished: false}), nil
+	return janitor.Compute(in, opt), nil
 }

@@ -160,9 +160,20 @@ func Compute(in Inputs, opt Options) Plan {
 		return s.ID == in.CurrentID || in.LiveIDs[s.ID] || !IsTerminal(s.State)
 	}
 
+	// A scratchpad's own directory name carries no session id — only the mangled
+	// worktree path it was derived from. Map that forward here so a reaped
+	// scratchpad can name the session it belongs to, which is what lets a caller
+	// reclaim "this session" rather than "these paths".
+	mangledOwner := make(map[string]string, len(in.Sessions))
+	for _, s := range in.Sessions {
+		if s.WorktreePath != "" {
+			mangledOwner[mangle(filepath.Clean(s.WorktreePath))] = s.ID
+		}
+	}
+
 	spareMangled := planWorktrees(in, opt, sp, &p)
 	planChrome(in, opt, sp, &p)
-	planScratchpads(in, sp, spareMangled, &p)
+	planScratchpads(in, sp, spareMangled, mangledOwner, &p)
 	return p
 }
 
@@ -268,7 +279,7 @@ func planChrome(in Inputs, opt Options, sp spared, p *Plan) {
 // (their mangled name starts with the mangled worktree base). A scratchpad whose
 // mangled name matches a spared worktree is kept; anything else in our namespace
 // is orphaned and reaped. Foreign scratchpads are ignored entirely.
-func planScratchpads(in Inputs, sp spared, spareMangled map[string]bool, p *Plan) {
+func planScratchpads(in Inputs, sp spared, spareMangled map[string]bool, mangledOwner map[string]string, p *Plan) {
 	if in.WorktreeBase == "" {
 		return
 	}
@@ -279,11 +290,12 @@ func planScratchpads(in Inputs, sp spared, spareMangled map[string]bool, p *Plan
 		if !strings.HasPrefix(base, prefix) {
 			continue // not an agentique worktree scratchpad — leave it alone
 		}
+		owner := mangledOwner[base]
 		if spareMangled[base] {
-			p.Skipped = append(p.Skipped, Skipped{KindScratchpad, dir, "", "belongs to a live/kept worktree"})
+			p.Skipped = append(p.Skipped, Skipped{KindScratchpad, dir, owner, "belongs to a live/kept worktree"})
 			continue
 		}
-		p.Reap = append(p.Reap, Item{Kind: KindScratchpad, Path: dir})
+		p.Reap = append(p.Reap, Item{Kind: KindScratchpad, Path: dir, SessionID: owner, SessionName: sp.byID[owner].Name})
 	}
 }
 

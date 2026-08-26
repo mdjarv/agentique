@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -63,10 +64,31 @@ func fileSize(path string) int64 {
 	return info.Size()
 }
 
+// UsageOptions carries what ComputeUsage cannot discover for itself: who is
+// still live according to the runtime, and how to ask git about a branch.
+//
+// Both are optional. A nil Probe means the safety verdicts are not established
+// — every session comes back unreclaimable and unsafe, which is the correct
+// failure direction for a pair of verdicts that gate destructive actions.
+type UsageOptions struct {
+	// LiveIDs are the sessions the runtime still holds, whatever their persisted
+	// state says. A session in here is never offered either verb.
+	LiveIDs map[string]bool
+	// Probe answers the git questions behind the verdicts.
+	Probe SafetyProbe
+}
+
+// terminalStates mirrors janitor.IsTerminal — a session in one of these has
+// stopped running, so its worktree is a candidate for either verb.
+func isTerminal(state string) bool {
+	return state == "done" || state == "stopped" || state == "failed"
+}
+
 // ComputeUsage walks the data directory and builds the full storage breakdown.
 // This is expensive (a recursive walk of the worktrees tree, potentially many
-// GB) and is therefore cached and computed on demand by the handler.
-func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) {
+// GB, plus up to two git calls per finished session) and is therefore cached and
+// computed on demand by the handler.
+func ComputeUsage(ctx context.Context, q *store.Queries, opt UsageOptions) (*StorageUsage, error) {
 	dataDir := paths.DataDir()
 	worktreeDir := paths.WorktreeDir()
 	sessionFilesDir := paths.SessionFilesDir()
@@ -91,9 +113,30 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 	}
 	// Cleaned worktree path -> session row.
 	byWorktree := make(map[string]store.Session, len(sessions))
+	refs := make([]sessionRef, 0, len(sessions))
 	for _, s := range sessions {
+		wt := ""
 		if s.WorktreePath.Valid && s.WorktreePath.String != "" {
-			byWorktree[filepath.Clean(s.WorktreePath.String)] = s
+			wt = filepath.Clean(s.WorktreePath.String)
+			byWorktree[wt] = s
+		}
+		refs = append(refs, sessionRef{ID: s.ID, WorktreePath: wt})
+	}
+
+	// Artifacts outside the data dir, and how many bytes each session owns there.
+	tempArtifacts := discoverTempArtifacts(refs)
+	tempBySession := make(map[string]int64, len(tempArtifacts))
+	var tempBytes, chromeBytes, scratchBytes int64
+	for _, a := range tempArtifacts {
+		tempBytes += a.Bytes
+		if a.SessionID != "" {
+			tempBySession[a.SessionID] += a.Bytes
+		}
+		switch a.Kind {
+		case TempKindChrome:
+			chromeBytes += a.Bytes
+		case TempKindScratchpad:
+			scratchBytes += a.Bytes
 		}
 	}
 
@@ -101,7 +144,8 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 	// per-session dir sizes yields the worktrees category total in a single pass.
 	projAgg := make(map[string]*ProjectStorage)
 	orphans := make([]SessionStorage, 0)
-	var worktreesBytes int64
+	var worktreesBytes, reclaimableBytes int64
+	var reclaimableCount int
 
 	buckets, _ := os.ReadDir(worktreeDir)
 	for _, bucket := range buckets {
@@ -125,6 +169,7 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 					State:        "orphaned",
 					WorktreePath: wtPath,
 					Bytes:        size,
+					TotalBytes:   size,
 					Orphaned:     true,
 				})
 				continue
@@ -147,6 +192,26 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 			if sess.ArchivedAt.Valid {
 				archivedAt = sess.ArchivedAt.String
 			}
+
+			verdicts := Verdicts{Safety: DeleteBlockedUnknown}
+			if opt.Probe != nil {
+				verdicts = Evaluate(opt.Probe, SafetyInput{
+					Terminal:     isTerminal(sess.State),
+					Live:         opt.LiveIDs[sess.ID],
+					Merged:       sess.WorktreeMerged != 0,
+					ProjectPath:  projectByID[sess.ProjectID].Path,
+					Branch:       nullString(sess.WorktreeBranch),
+					WorktreePath: wtPath,
+				})
+			}
+
+			temp := tempBySession[sess.ID]
+			total := size + temp
+			if verdicts.Reclaimable {
+				reclaimableBytes += total
+				reclaimableCount++
+			}
+
 			agg.Sessions = append(agg.Sessions, SessionStorage{
 				SessionID:    sess.ID,
 				Name:         sess.Name,
@@ -157,6 +222,11 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 				ArchivedAt:   archivedAt,
 				Archived:     archivedAt != "",
 				Merged:       sess.WorktreeMerged != 0,
+				TempBytes:    temp,
+				TotalBytes:   total,
+				Reclaimable:  verdicts.Reclaimable,
+				Safety:       verdicts.Safety,
+				SafetyReason: verdicts.Safety.Reason(),
 			})
 		}
 	}
@@ -203,12 +273,30 @@ func ComputeUsage(ctx context.Context, q *store.Queries) (*StorageUsage, error) 
 	}
 	dataDirBytes := worktreesBytes + sessionFilesBytes + backupsBytes + certsBytes + dbBytes + otherBytes
 
+	tempCategories := []CategoryUsage{
+		{Key: "chrome-profiles", Label: "Browser profiles", Bytes: chromeBytes},
+		{Key: "scratchpads", Label: "Agent scratchpads", Bytes: scratchBytes},
+	}
+
 	return &StorageUsage{
-		ComputedAt:   time.Now().UTC().Format(time.RFC3339),
-		Disk:         disk,
-		DataDirBytes: dataDirBytes,
-		Categories:   categories,
-		Projects:     projectList,
-		Orphans:      orphans,
+		ComputedAt:       time.Now().UTC().Format(time.RFC3339),
+		Disk:             disk,
+		DataDirBytes:     dataDirBytes,
+		Categories:       categories,
+		Projects:         projectList,
+		Orphans:          orphans,
+		TempBytes:        tempBytes,
+		TempCategories:   tempCategories,
+		TempArtifacts:    tempArtifacts,
+		ReclaimableBytes: reclaimableBytes,
+		ReclaimableCount: reclaimableCount,
 	}, nil
+}
+
+// nullString unwraps a nullable DB string to its value or "".
+func nullString(s sql.NullString) string {
+	if !s.Valid {
+		return ""
+	}
+	return s.String
 }

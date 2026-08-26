@@ -111,6 +111,41 @@ func TestCompute_OrphansOnly_SparesEverythingWithARow(t *testing.T) {
 	}
 }
 
+// A scratchpad's directory name carries only a mangled worktree path, so without
+// the forward map a caller reclaiming "this session" would leave the scratchpad
+// — usually the largest artifact the session owns — behind.
+func TestCompute_ScratchpadCarriesItsSessionID(t *testing.T) {
+	p := Compute(scenario(), Options{IncludeFinished: true})
+
+	want := filepath.Join(ScratchpadRoot(), mangle(wt("session-done")))
+	for _, it := range p.Reap {
+		if it.Kind != KindScratchpad || it.Path != want {
+			continue
+		}
+		if it.SessionID != "done" {
+			t.Fatalf("scratchpad SessionID = %q, want done", it.SessionID)
+		}
+		if it.SessionName != "Finished" {
+			t.Fatalf("scratchpad SessionName = %q, want Finished", it.SessionName)
+		}
+		return
+	}
+	t.Fatalf("finished session's scratchpad was not reaped: %s", want)
+}
+
+// The ghost scratchpad maps to no session row at all; it stays attributable to
+// nothing rather than being guessed onto a neighbour.
+func TestCompute_OrphanScratchpadHasNoSessionID(t *testing.T) {
+	p := Compute(scenario(), Options{IncludeFinished: true})
+
+	want := filepath.Join(ScratchpadRoot(), mangle(wt("session-ghost")))
+	for _, it := range p.Reap {
+		if it.Kind == KindScratchpad && it.Path == want && it.SessionID != "" {
+			t.Fatalf("orphan scratchpad SessionID = %q, want empty", it.SessionID)
+		}
+	}
+}
+
 func TestCompute_IncludeFinished_ReapsTerminalNotLive(t *testing.T) {
 	p := Compute(scenario(), Options{IncludeFinished: true})
 

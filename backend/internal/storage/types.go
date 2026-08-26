@@ -19,19 +19,37 @@ type CategoryUsage struct {
 	Bytes int64  `json:"bytes"`
 }
 
+// TempArtifact is an agentique-owned directory outside the data directory: a
+// per-session Chrome profile or Claude scratchpad under the OS temp dir.
+// SessionID is empty when the artifact maps to no session row — an orphan.
+type TempArtifact struct {
+	Kind      string `json:"kind"` // TempKindChrome | TempKindScratchpad
+	Path      string `json:"path"`
+	SessionID string `json:"sessionId"`
+	Bytes     int64  `json:"bytes"`
+}
+
 // SessionStorage is the disk footprint of a single worktree. For a live
 // session SessionID/Name/State/UpdatedAt are populated; for an orphan (a
 // worktree dir with no matching session row) Orphaned is true and Name carries
 // the on-disk "<bucket>/<dir>" label.
 //
 // Archived mirrors the sidebar's Archived section (a non-empty archived_at) so
-// the disk view can label a session the way the sidebar does.
+// the disk view can label a session the way the sidebar does. It is a filing
+// gesture and says nothing about safety — archiving a session with two unmerged
+// commits is exactly as ordinary as archiving a finished one.
 //
-// Merged is what the bulk sweep keys on, and the distinction matters: archiving
-// is a one-click tidy gesture (including a whole-shelf "Archive all"), while
-// this page's delete removes worktrees AND branches AND rows. Only a merged
-// session is safe to sweep in bulk — its commits are already on main, so there
-// is nothing left to lose.
+// The page offers two verbs against a session, and they answer to different
+// bars:
+//
+//   - Reclaim removes the checked-out tree, the Chrome profile and the
+//     scratchpad, keeping the row and the git branch; resume re-provisions from
+//     the branch. Reversible, so Reclaimable asks only that the session is not
+//     live and not dirty.
+//   - Delete removes the row, the branch and the tree. Irreversible, so Safety
+//     has to establish that the commits already exist on the project's main
+//     line. Merged (`worktree_merged`) is one input to that and no longer the
+//     definition — see safety.go.
 type SessionStorage struct {
 	SessionID    string `json:"sessionId"`
 	Name         string `json:"name"`
@@ -43,6 +61,20 @@ type SessionStorage struct {
 	Archived     bool   `json:"archived"`
 	Merged       bool   `json:"merged"`
 	Orphaned     bool   `json:"orphaned"`
+
+	// TempBytes is the Chrome profile plus scratchpad this session owns under
+	// the OS temp dir; TotalBytes is Bytes + TempBytes, which is what a reclaim
+	// of this session actually frees.
+	TempBytes  int64 `json:"tempBytes"`
+	TotalBytes int64 `json:"totalBytes"`
+
+	// Reclaimable reports whether the reversible verb is offered.
+	Reclaimable bool `json:"reclaimable"`
+	// Safety is the delete verdict; SafetyReason is its human phrasing, empty
+	// when safe. Both are absent from a peer that predates them, and a client
+	// must read a missing Safety as "not established" rather than as safe.
+	Safety       DeleteSafety `json:"safety,omitempty"`
+	SafetyReason string       `json:"safetyReason,omitempty"`
 }
 
 // ProjectStorage groups live-session worktree footprints under a project.
@@ -57,6 +89,11 @@ type ProjectStorage struct {
 }
 
 // StorageUsage is the full breakdown returned by GET /api/storage/usage.
+//
+// DataDirBytes and TempBytes are two separate totals on purpose: the first is
+// what lives under paths.DataDir(), the second what agentique put in the OS temp
+// dir. Summing them into one figure would make "Agentique data" mean something
+// other than the directory the volume line names.
 type StorageUsage struct {
 	ComputedAt   string           `json:"computedAt"`
 	Disk         DiskStats        `json:"disk"`
@@ -64,4 +101,45 @@ type StorageUsage struct {
 	Categories   []CategoryUsage  `json:"categories"`
 	Projects     []ProjectStorage `json:"projects"`
 	Orphans      []SessionStorage `json:"orphans"`
+
+	// TempBytes totals TempArtifacts; TempCategories groups them by kind for the
+	// breakdown bar. Both optional, so an older peer's payload still parses.
+	TempBytes      int64           `json:"tempBytes,omitempty"`
+	TempCategories []CategoryUsage `json:"tempCategories,omitempty"`
+	TempArtifacts  []TempArtifact  `json:"tempArtifacts,omitempty"`
+	// ReclaimableBytes is what reclaiming every reclaimable session would free.
+	ReclaimableBytes int64 `json:"reclaimableBytes,omitempty"`
+	// ReclaimableCount is how many sessions that is.
+	ReclaimableCount int `json:"reclaimableCount,omitempty"`
+}
+
+// ReclaimRequest is the body of POST /api/storage/reclaim. The server re-plans
+// from its own snapshot and intersects with these ids, so a stale client can
+// narrow the set but never widen it.
+type ReclaimRequest struct {
+	SessionIDs []string `json:"sessionIds"`
+}
+
+// ReclaimedArtifact is one directory a reclaim actually removed.
+type ReclaimedArtifact struct {
+	Kind      string `json:"kind"`
+	Path      string `json:"path"`
+	SessionID string `json:"sessionId"`
+	Bytes     int64  `json:"bytes"`
+}
+
+// ReclaimSkip records a requested session the server declined to reclaim, and
+// why. A skip is a normal outcome, not an error: the usual cause is that the
+// session woke up between the page's last refresh and the click.
+type ReclaimSkip struct {
+	SessionID string `json:"sessionId"`
+	Reason    string `json:"reason"`
+}
+
+// ReclaimResponse is the result of POST /api/storage/reclaim.
+type ReclaimResponse struct {
+	Removed    []ReclaimedArtifact `json:"removed"`
+	Skipped    []ReclaimSkip       `json:"skipped"`
+	Failed     []ReclaimSkip       `json:"failed"`
+	FreedBytes int64               `json:"freedBytes"`
 }

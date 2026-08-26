@@ -456,6 +456,13 @@ export const CategoryUsageSchema = z.object({
   bytes: z.number(),
 });
 
+export const TempArtifactSchema = z.object({
+  kind: z.string(),
+  path: z.string(),
+  sessionId: z.string(),
+  bytes: z.number(),
+});
+
 export const SessionStorageSchema = z.object({
   sessionId: z.string(),
   name: z.string(),
@@ -467,6 +474,11 @@ export const SessionStorageSchema = z.object({
   archived: z.boolean(),
   merged: z.boolean(),
   orphaned: z.boolean(),
+  tempBytes: z.number(),
+  totalBytes: z.number(),
+  reclaimable: z.boolean(),
+  safety: z.string().optional(),
+  safetyReason: z.string().optional(),
 });
 
 export const ProjectStorageSchema = z.object({
@@ -486,6 +498,34 @@ export const StorageUsageSchema = z.object({
   categories: z.array(CategoryUsageSchema),
   projects: z.array(ProjectStorageSchema),
   orphans: z.array(SessionStorageSchema),
+  tempBytes: z.number().optional(),
+  tempCategories: z.array(CategoryUsageSchema).optional(),
+  tempArtifacts: z.array(TempArtifactSchema).optional(),
+  reclaimableBytes: z.number().optional(),
+  reclaimableCount: z.number().optional(),
+});
+
+export const ReclaimRequestSchema = z.object({
+  sessionIds: z.array(z.string()),
+});
+
+export const ReclaimedArtifactSchema = z.object({
+  kind: z.string(),
+  path: z.string(),
+  sessionId: z.string(),
+  bytes: z.number(),
+});
+
+export const ReclaimSkipSchema = z.object({
+  sessionId: z.string(),
+  reason: z.string(),
+});
+
+export const ReclaimResponseSchema = z.object({
+  removed: z.array(ReclaimedArtifactSchema),
+  skipped: z.array(ReclaimSkipSchema),
+  failed: z.array(ReclaimSkipSchema),
+  freedBytes: z.number(),
 });
 
 export const UpdateArmingSchema = z.object({

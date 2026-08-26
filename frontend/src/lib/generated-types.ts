@@ -454,6 +454,13 @@ export interface CategoryUsage {
   bytes: number;
 }
 
+export interface TempArtifact {
+  kind: string;
+  path: string;
+  sessionId: string;
+  bytes: number;
+}
+
 export interface SessionStorage {
   sessionId: string;
   name: string;
@@ -465,6 +472,11 @@ export interface SessionStorage {
   archived: boolean;
   merged: boolean;
   orphaned: boolean;
+  tempBytes: number;
+  totalBytes: number;
+  reclaimable: boolean;
+  safety?: string;
+  safetyReason?: string;
 }
 
 export interface ProjectStorage {
@@ -484,6 +496,34 @@ export interface StorageUsage {
   categories: CategoryUsage[];
   projects: ProjectStorage[];
   orphans: SessionStorage[];
+  tempBytes?: number;
+  tempCategories?: CategoryUsage[];
+  tempArtifacts?: TempArtifact[];
+  reclaimableBytes?: number;
+  reclaimableCount?: number;
+}
+
+export interface ReclaimRequest {
+  sessionIds: string[];
+}
+
+export interface ReclaimedArtifact {
+  kind: string;
+  path: string;
+  sessionId: string;
+  bytes: number;
+}
+
+export interface ReclaimSkip {
+  sessionId: string;
+  reason: string;
+}
+
+export interface ReclaimResponse {
+  removed: ReclaimedArtifact[];
+  skipped: ReclaimSkip[];
+  failed: ReclaimSkip[];
+  freedBytes: number;
 }
 
 export interface UpdateArming {

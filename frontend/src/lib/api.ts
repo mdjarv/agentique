@@ -2,6 +2,8 @@ import type {
   BehaviorPresets,
   DiskStats,
   PresetDefinition,
+  ReclaimRequest,
+  ReclaimResponse,
   StorageUsage,
 } from "~/lib/generated-types";
 import { throwIfNotOk } from "~/lib/http";
@@ -123,6 +125,23 @@ export async function deleteOrphanedWorktree(path: string): Promise<void> {
     method: "DELETE",
   });
   await throwIfNotOk(res, "Failed to delete worktree");
+}
+
+/**
+ * Reclaim the on-disk artifacts of these sessions — worktree, browser profile,
+ * scratchpad — keeping each session row and git branch, so the session stays
+ * resumable. The server re-plans from its own snapshot, so a session that woke
+ * up since the page last refreshed comes back in `skipped` rather than being
+ * removed; the caller reports what actually happened, never what it asked for.
+ */
+export async function reclaimSessions(sessionIds: string[]): Promise<ReclaimResponse> {
+  const res = await fetch(`${BASE}/storage/reclaim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionIds } satisfies ReclaimRequest),
+  });
+  await throwIfNotOk(res, "Failed to reclaim sessions");
+  return res.json();
 }
 
 export interface DirectoryEntry {

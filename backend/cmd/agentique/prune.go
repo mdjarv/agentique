@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"sort"
@@ -66,7 +67,7 @@ func runPrune(_ *cobra.Command, _ []string) error {
 		olderThan = d
 	}
 
-	queries, cleanup, err := openDB()
+	queries, cleanup, err := openDBReadOnly()
 	if err != nil {
 		return err
 	}
@@ -107,6 +108,31 @@ func runPrune(_ *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "  failed %s: %v\n", f.Item.Path, f.Err)
 	}
 	return nil
+}
+
+// openDBReadOnly opens the database for planning only — no migrations, no WAL
+// switch, no write of any kind.
+//
+// `prune` never writes a row: it removes directories. Going through openDB meant
+// a dry run, whose entire contract is "report what I would delete", could
+// migrate the live database as a side effect of being run — and it did, every
+// time. A reporting command gets a reader.
+func openDBReadOnly() (*store.Queries, func(), error) {
+	// The "file:" prefix is required: without it the driver treats the query
+	// string as part of the filename and hands back a writable handle to the
+	// real database, which is the opposite of what this function promises.
+	db, err := sql.Open("sqlite", "file:"+resolveDBPath()+"?mode=ro")
+	if err != nil {
+		return nil, nil, fmt.Errorf("open db read-only: %w", err)
+	}
+	// SQLite pragmas are per-connection and this pool must not open a second
+	// one behind our back — same reasoning as store.Open.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+	return store.New(db), func() { _ = db.Close() }, nil
 }
 
 // buildPrunePlan gathers the DB + disk snapshot and computes a plan. It reads the

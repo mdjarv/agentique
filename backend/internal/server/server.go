@@ -763,10 +763,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	fh := &session.FilesHandler{}
 	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", fh.HandleServe)
 
-	sth := &storage.Handler{Queries: queries}
+	sth := &storage.Handler{
+		Queries: queries,
+		LiveIDs: svc.LiveSessionIDs,
+		Probe:   storage.RealSafetyProbe(),
+		Reclaim: svc,
+	}
 	mux.HandleFunc("GET /api/storage/disk", sth.HandleDisk)
 	mux.HandleFunc("GET /api/storage/usage", sth.HandleUsage)
 	mux.HandleFunc("DELETE /api/storage/worktrees", sth.HandleDeleteWorktree)
+	mux.HandleFunc("POST /api/storage/reclaim", sth.HandleReclaim)
 
 	projectGitSvc := project.NewGitService(queries, bus, project.RealGitOps(), runner)
 
