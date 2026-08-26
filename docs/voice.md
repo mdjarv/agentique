@@ -351,6 +351,28 @@ says it: "Started", "Added to what it is already doing", "Queued — it will sta
 that when the current work finishes". Only the server knows which, which is why
 the contract reports it rather than letting the model infer.
 
+### Recent history reaches it as a summary, not a transcript
+
+The drafter needs to know what this session has been doing. Handing over the
+transcript would ship whole files, tool output and prior answers to the speech
+vendor on every call.
+
+`sessionSummarizer` distils the last few turns into a paragraph **locally**,
+through the provider CLI — subscription-billed rather than metered — and only
+that paragraph leaves the machine. It is also better context: the drafter needs
+orientation, not the record.
+
+Configured by `[voice] summary-model`; empty disables it and the drafter then
+knows the project but not the session. The result is cached for ten minutes and
+dropped whenever a turn ends, since the summary describes the session as it was
+before that turn. A summariser that misses its budget returns nothing and the
+call opens without it — a slow summary must never become a silent microphone.
+
+The transcript is untrusted input: it is repository content, tool output and
+model text, none of it authored here. The summariser is told so explicitly,
+because one that followed instructions found in its input would launder them
+straight into the drafter's system prompt.
+
 ### Verified against the real service
 
 `TestGeminiToolCallLive` drives a real conversation to a real tool call.
@@ -361,6 +383,13 @@ prompt back before I can proceed."
 Both are skipped by `-short` and without `AGENTIQUE_VOICE_API_KEY`. The number
 of turns before a dispatch is not fixed: the drafter may clarify first, and
 always reads back, so the test keeps agreeing until the tool is called.
+
+### The handoff asks both questions at once
+
+The read-back and the stay-on-the-line question are one utterance, not two
+turns: *"Does that sound right, and do you want to stay on while it runs?"*
+Two questions in a row is one too many for someone driving, and the answers
+arrive together anyway.
 
 ## The handoff contract
 

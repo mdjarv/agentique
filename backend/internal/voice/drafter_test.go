@@ -65,14 +65,17 @@ type fakeDispatcher struct {
 	gotPrompt string
 	calls     int
 
+	gotReporting bool
+
 	projectContext string
 }
 
-func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string) (Delivery, error) {
+func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string, withReporting bool) (Delivery, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
 	f.gotPrompt = prompt
+	f.gotReporting = withReporting
 	if f.dispErr != nil {
 		return "", f.dispErr
 	}
@@ -108,7 +111,10 @@ func toolCall(t *testing.T, d Dispatcher, target string, args map[string]any) ma
 
 func TestRunPromptDispatchesAndReportsDelivery(t *testing.T) {
 	d := &fakeDispatcher{autoOK: true, delivery: DeliveryQueued}
-	got := toolCall(t, d, "sess-1", map[string]any{"prompt": "  fix the reconnect  "})
+	got := toolCall(t, d, "sess-1", map[string]any{
+		"prompt":       "  fix the reconnect  ",
+		"stay_on_line": true,
+	})
 
 	out, _ := got["output"].(string)
 	if !strings.Contains(strings.ToLower(out), "queue") {
@@ -155,6 +161,57 @@ func TestRunPromptRejectsAnEmptyPrompt(t *testing.T) {
 	}
 	if calls, _ := d.dispatched(); calls != 0 {
 		t.Errorf("dispatched %d times on empty prompts, want 0", calls)
+	}
+}
+
+// Staying on the line is what turns reporting on. A run nobody is listening to
+// must carry no reporting instruction at all.
+func TestStayOnLineDecidesReporting(t *testing.T) {
+	for _, staying := range []bool{true, false} {
+		d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+		got := toolCall(t, d, "sess-1", map[string]any{
+			"prompt":       "do the thing",
+			"stay_on_line": staying,
+		})
+		if _, bad := got["error"]; bad {
+			t.Fatalf("stay_on_line=%v gave %v", staying, got)
+		}
+		d.mu.Lock()
+		reporting := d.gotReporting
+		d.mu.Unlock()
+		if reporting != staying {
+			t.Errorf("stay_on_line=%v produced withReporting=%v", staying, reporting)
+		}
+	}
+}
+
+// Hanging up must be said, not silently implied — otherwise the listener waits
+// for updates that are never coming.
+func TestHangingUpSaysThereWillBeNoUpdates(t *testing.T) {
+	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	got := toolCall(t, d, "sess-1", map[string]any{
+		"prompt":       "do the thing",
+		"stay_on_line": false,
+	})
+	out, _ := got["output"].(string)
+	if !strings.Contains(strings.ToLower(out), "no further updates") {
+		t.Errorf("result = %q, want it to say no more updates are coming", out)
+	}
+}
+
+// Absent means no: an open microphone is the expensive answer, so it has to be
+// asked for rather than defaulted into.
+func TestAbsentStayOnLineDoesNotFollow(t *testing.T) {
+	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	got := toolCall(t, d, "sess-1", map[string]any{"prompt": "do the thing"})
+	if _, bad := got["error"]; bad {
+		t.Fatalf("result = %v, want a dispatch", got)
+	}
+	d.mu.Lock()
+	reporting := d.gotReporting
+	d.mu.Unlock()
+	if reporting {
+		t.Error("an absent stay_on_line must not turn reporting on")
 	}
 }
 

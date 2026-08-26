@@ -391,6 +391,15 @@ type VoiceConfig struct {
 	// changes with Backend. Env: AGENTIQUE_VOICE_MODEL.
 	Model string `toml:"model"`
 
+	// SummaryModel distils a session's recent history into the paragraph the
+	// drafter is given (haiku|sonnet|opus). Empty disables it, and the drafter
+	// then knows the project but not what this session has been doing.
+	//
+	// It runs through the provider CLI, so it is subscription-billed rather than
+	// metered — and it exists so the *transcript* never reaches the speech
+	// vendor. Only the paragraph does. Env: AGENTIQUE_VOICE_SUMMARY_MODEL.
+	SummaryModel string `toml:"summary-model"`
+
 	// IdleTimeout closes a call whose microphone has been open with no speech for
 	// this long (e.g. "90s"). Empty = the built-in default.
 	//

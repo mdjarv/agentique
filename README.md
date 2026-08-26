@@ -539,6 +539,10 @@ project      = ""   # vertex only: Google Cloud project id
 location     = ""   # vertex only: region, e.g. "us-central1"
 model        = ""   # realtime model id. "" is the backend's default, so a new
                     # upstream model needs no agentique release.
+summary-model = ""  # haiku|sonnet|opus. Distils the session's recent history
+                    # into the paragraph the drafter is given, locally through
+                    # the provider CLI, so the transcript never reaches the
+                    # speech vendor. "" disables it.
 idle-timeout = ""   # e.g. "90s". A call bills for wall-clock time with the mic
                     # open, so an abandoned tab keeps spending. "" is the default.
                     # Applies while gathering; a run in flight gets a far longer

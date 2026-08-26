@@ -33,17 +33,21 @@ const turnsBack = 1
 // send button uses, so there is one route into the session pipeline whether the
 // gesture was a click or a sentence.
 type voiceDispatcher struct {
-	svc     *session.Service
-	queries *store.Queries
+	svc        *session.Service
+	queries    *store.Queries
+	summarizer *sessionSummarizer
 }
 
 // Dispatch implements voice.Dispatcher.
 //
-// The reporting instruction is appended here rather than written by the
-// drafter, because dispatching from a live call *is* the "someone is
-// listening" condition. A run started any other way carries none of it.
-func (d *voiceDispatcher) Dispatch(ctx context.Context, sessionID, prompt string) (voice.Delivery, error) {
-	prompt += "\n\n" + voice.ReportingInstructions(mcphttp.VoiceReportToolFullName)
+// The reporting instruction rides along only when the operator said they were
+// staying on the line. A run nobody is listening to carries none of it — no
+// instruction, no tool calls, no overhead — which is the whole reason the
+// handoff asks instead of assuming.
+func (d *voiceDispatcher) Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (voice.Delivery, error) {
+	if withReporting {
+		prompt += "\n\n" + voice.ReportingInstructions(mcphttp.VoiceReportToolFullName)
+	}
 
 	delivery, err := d.svc.EnqueueMessage(ctx, sessionID, prompt, nil)
 	if err != nil {
@@ -123,6 +127,13 @@ func (d *voiceDispatcher) ProjectContext(ctx context.Context, sessionID string) 
 			b.WriteString(guide)
 		}
 	}
+
+	// What the session has been doing, distilled locally rather than shipped
+	// raw. The transcript never leaves the machine; only this paragraph does.
+	if summary := d.summarizer.Summary(ctx, sessionID); summary != "" {
+		b.WriteString("\n\nWhat this session has been working on:\n\n")
+		b.WriteString(summary)
+	}
 	return strings.TrimSpace(b.String())
 }
 
@@ -156,18 +167,24 @@ func readProjectGuide(projectPath string) string {
 // miss, which is exactly why the runtime rather than the agent is the source
 // here: a suspended or dead agent cannot call a tool.
 type voiceTurnWatcher struct {
-	registry *voice.Registry
-	svc      *session.Service
-	queries  *store.Queries
+	registry   *voice.Registry
+	svc        *session.Service
+	queries    *store.Queries
+	summarizer *sessionSummarizer
 }
 
-func newVoiceTurnWatcher(registry *voice.Registry, svc *session.Service, queries *store.Queries) *voiceTurnWatcher {
-	return &voiceTurnWatcher{registry: registry, svc: svc, queries: queries}
+func newVoiceTurnWatcher(registry *voice.Registry, svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer) *voiceTurnWatcher {
+	return &voiceTurnWatcher{registry: registry, svc: svc, queries: queries, summarizer: summarizer}
 }
 
 // OnTurnEnd is the dispatch point. It runs on the event-loop goroutine, so the
 // no-listener case must stay cheap and the rest is handed to a goroutine.
 func (w *voiceTurnWatcher) OnTurnEnd(sessionID string) {
+	// A cached summary describes the session as it was before this turn, so it
+	// is stale the moment the turn ends. Dropping it is a map delete, cheap
+	// enough to do for every session whether or not anyone is on a call.
+	w.summarizer.Forget(sessionID)
+
 	// The overwhelmingly common case: nobody is on a call for this session.
 	// One map lookup, then out.
 	if !w.registry.Listening(sessionID) {

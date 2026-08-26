@@ -148,7 +148,15 @@ func TestGeminiToolCallLive(t *testing.T) {
 			if toolCall.ID == "" {
 				t.Error("tool call has no id — the response could not be matched to it")
 			}
-			t.Logf("run_prompt after %d turns (%d chars): %s", turn, len(prompt), prompt)
+			// The handoff asks two things at once; the answer to the second must
+			// arrive as stay_on_line, or reporting is decided by a default
+			// rather than by the person.
+			stay, present := toolCall.Args["stay_on_line"].(bool)
+			if !present {
+				t.Errorf("run_prompt omitted stay_on_line: %v", toolCall.Args)
+			}
+			t.Logf("run_prompt after %d turns (stay_on_line=%v, %d chars): %s",
+				turn, stay, len(prompt), prompt)
 
 			// Answering is mandatory: the model is paused until it arrives.
 			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
@@ -162,7 +170,7 @@ func TestGeminiToolCallLive(t *testing.T) {
 			t.Fatalf("turn %d: the drafter said nothing", turn)
 		}
 		t.Logf("turn %d: %s", turn, said)
-		if err := engine.SendText("Yes, that's exactly right. Go ahead and run it."); err != nil {
+		if err := engine.SendText("Yes, that's exactly right. Go ahead and run it, and stay on the line."); err != nil {
 			t.Fatalf("confirm: %v", err)
 		}
 	}

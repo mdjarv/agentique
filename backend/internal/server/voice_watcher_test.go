@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,5 +78,43 @@ func TestClampSpoken(t *testing.T) {
 func TestAutoApproveAllIsTheBypassingMode(t *testing.T) {
 	if autoApproveAll != "fullAuto" {
 		t.Errorf("autoApproveAll = %q; it must match the string runtimeAutoApproveMode maps to runtime.AutoApproveAll", autoApproveAll)
+	}
+}
+
+func TestClampSummaryStripsMarkdownAndBounds(t *testing.T) {
+	// The summariser is told to write plain prose; this is the belt for when it
+	// reaches for markdown anyway, since the result is read aloud.
+	got := clampSummary("The **auth** work in `ws-client.ts`\n\nis nearly done.")
+	if strings.ContainsAny(got, "*`") {
+		t.Errorf("clampSummary() = %q, want no markdown punctuation", got)
+	}
+	if !strings.Contains(got, "auth") || !strings.Contains(got, "ws-client.ts") {
+		t.Errorf("clampSummary() = %q, want the words kept", got)
+	}
+	if strings.Contains(got, "\n") {
+		t.Errorf("clampSummary() = %q, want a single spoken paragraph", got)
+	}
+
+	long := strings.Repeat("ä", maxSummaryOutput*2)
+	bounded := clampSummary(long)
+	if n := len([]rune(bounded)); n > maxSummaryOutput+1 {
+		t.Errorf("kept %d runes, want <= %d plus an ellipsis", n, maxSummaryOutput+1)
+	}
+}
+
+// A summariser with no model configured is off, and must cost nothing rather
+// than failing a call.
+func TestSummarizerDisabledIsSilent(t *testing.T) {
+	s := newSessionSummarizer(nil, nil, "")
+	if got := s.Summary(context.Background(), "sess-1"); got != "" {
+		t.Errorf("Summary() = %q, want empty when disabled", got)
+	}
+	// Forget on a disabled (and on a nil) summariser must not panic: the turn
+	// watcher calls it for every session, whether or not voice is configured.
+	s.Forget("sess-1")
+	var nilSummarizer *sessionSummarizer
+	nilSummarizer.Forget("sess-1")
+	if got := nilSummarizer.Summary(context.Background(), "sess-1"); got != "" {
+		t.Errorf("nil Summary() = %q, want empty", got)
 	}
 }

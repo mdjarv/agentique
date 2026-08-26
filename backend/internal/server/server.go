@@ -797,7 +797,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var voiceRegistry *voice.Registry
 	if cfg.ExperimentalVoice {
 		voiceRegistry = voice.NewRegistry()
-		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, &voiceDispatcher{svc: svc, queries: queries}); err != nil {
+		// The summariser keeps the session transcript on this machine: it runs
+		// through the provider CLI and only its paragraph reaches the drafter.
+		voiceSummarizer := newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)
+		dispatcher := &voiceDispatcher{svc: svc, queries: queries, summarizer: voiceSummarizer}
+		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher); err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
 			voiceRegistry = nil
 		} else {
@@ -805,7 +809,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			// The runtime half of what a call hears: blocked, died, finished.
 			// A worker reports everything else itself, but it cannot report
 			// these — it is suspended, gone, or done.
-			watcher := newVoiceTurnWatcher(voiceRegistry, svc, queries)
+			watcher := newVoiceTurnWatcher(voiceRegistry, svc, queries, voiceSummarizer)
 			mgr.AddTurnEndListener(watcher.OnTurnEnd)
 			slog.Info("live voice enabled", "backend", vh.Backend())
 		}

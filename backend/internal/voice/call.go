@@ -323,6 +323,9 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	if prompt == "" {
 		return map[string]any{"error": "The prompt was empty. Say what the agent should do."}
 	}
+	// Absent means no: keeping a microphone open is the expensive answer, so it
+	// is the one that has to be asked for rather than defaulted into.
+	stayOnLine, _ := ev.Args["stay_on_line"].(bool)
 
 	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
 	defer cancel()
@@ -347,20 +350,34 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 		SessionID: c.targetSession,
 	})
 
-	delivery, err := c.dispatcher.Dispatch(ctx, c.targetSession, prompt)
+	delivery, err := c.dispatcher.Dispatch(ctx, c.targetSession, prompt, stayOnLine)
 	if err != nil {
 		c.log.Warn("voice dispatch failed", "session", c.targetSession, "error", err)
 		return map[string]any{"error": "That could not be sent."}
+	}
+	c.log.Info("voice dispatched prompt",
+		"session", c.targetSession, "delivery", delivery, "staying", stayOnLine)
+
+	// Only the server knows which of the three happened, so it is reported
+	// rather than left for the model to guess.
+	spoken := delivery.Spoken()
+
+	if !stayOnLine {
+		// Not following means no reports land, and the phase stays "gathering",
+		// so the short conversational idle rule closes the call once they stop
+		// talking. That is the billing guard doing the hanging up, and it is
+		// why "ping me later" needs no separate teardown.
+		c.unfollow()
+		return map[string]any{
+			"output": spoken + " They are not staying on the line, so there will be no further " +
+				"updates on this call — tell them it is running and they can check the session on screen.",
+		}
 	}
 
 	// Following starts here, not at connect: the call is now watching a run, so
 	// silence becomes the expected state and reports have somewhere to land.
 	c.follow(c.targetSession)
-	c.log.Info("voice dispatched prompt", "session", c.targetSession, "delivery", delivery)
-
-	// Only the server knows which of the three happened, so it is reported
-	// rather than left for the model to guess.
-	return map[string]any{"output": delivery.Spoken()}
+	return map[string]any{"output": spoken}
 }
 
 // speak hands text to the engine when it has a voice. Best effort: a call whose

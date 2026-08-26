@@ -44,7 +44,12 @@ type Dispatcher interface {
 	// Dispatch delivers prompt to sessionID and reports which of the three
 	// outcomes happened. It must return promptly — the speech model is paused
 	// waiting on the tool response, and a long stall is audible as dead air.
-	Dispatch(ctx context.Context, sessionID, prompt string) (Delivery, error)
+	//
+	// withReporting appends the instruction that teaches the worker to report
+	// progress back. It is true only when someone is actually staying on the
+	// line: a run nobody is listening to should carry no reporting overhead at
+	// all, which is the whole reason the handoff asks.
+	Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (Delivery, error)
 
 	// ProjectContext is what the drafter should know about the work before it
 	// starts asking questions: enough to name files and ask sharp questions,
