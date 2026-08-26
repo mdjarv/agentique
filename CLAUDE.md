@@ -203,9 +203,19 @@ not restore the pin, because guessing that the user still wants it at the top
 would re-create the contradiction. The sidebar decides Archived before Pinned
 (`sectionFor`) because the state push carries `archived_at` but not `pinned`.
 
-Bulk *destructive* actions key on `worktree_merged`, never on archived. Archiving
-is a one-click tidy, up to a whole-shelf sweep; only merged work is safe to delete
-in bulk. UI copy says "Archive"; `done` reads as "finished" wherever it surfaces.
+Bulk *destructive* actions key on whether the branch's commits already exist on
+the project's HEAD, never on archived. Archiving is a one-click tidy, up to a
+whole-shelf sweep; only work that survives the deletion is safe to delete in
+bulk. `worktree_merged` is **not** that test — it records that agentique itself
+performed the merge, so it is false for every branch merged from a terminal, and
+gating on it left the affordance unreachable on repos worked that way. Ask git
+(`storage.Evaluate`, `docs/storage.md`); the flag stays as a fast path only.
+
+The reversible verb needs none of this. Reclaim frees a session's disk and keeps
+its row and branch, so it applies to any finished, clean session — archived ones
+included. Reach for it before widening what Delete accepts.
+
+UI copy says "Archive"; `done` reads as "finished" wherever it surfaces.
 
 ### Drafts are client-local
 
@@ -287,6 +297,30 @@ boundary. It serialises an internal type, so it drifts whenever that type change
 and a stale cache renders wrong rather than failing loudly. It carries
 `CACHE_VERSION`: bump it on any rename, migrate the previous shape, and refuse a
 version from the future rather than hydrating a guess.
+
+### Storage and reclamation — `docs/storage.md`
+
+Two verbs, two bars. **Reclaim** frees a session's disk and keeps its row and
+branch, so it needs only finished-and-clean and applies to archived sessions.
+**Delete** is irreversible and asks git whether the branch's commits are already
+on the project's HEAD — never `worktree_merged`, which only records that
+agentique performed the merge.
+
+Verdicts fail closed: anything git cannot answer is `unknown`, and unknown is not
+safe. The dirty check runs *before* the merged fast path, because a merged branch
+with uncommitted edits still has something to lose. It sees untracked files but
+not ignored ones, so Delete's copy must admit that a local `.env` goes with the
+worktree.
+
+`internal/janitor` is a pure planner and the single mechanism behind the page,
+the startup sweep and `agentique prune`. Its guards are load-bearing: an empty
+session set reaps nothing, an unrecognised project is spared, a live session is
+never touched. `prune` opens the database read-only — a command that reports what
+it *would* delete must not migrate the live database to do it.
+
+`POST /api/storage/reclaim` re-plans server-side and intersects with the request,
+so a stale client narrows the set and never widens it. Reclamation never runs on
+a timer; the startup sweep stays orphans-only.
 
 ### Channels and teams — `docs/channels.md`
 

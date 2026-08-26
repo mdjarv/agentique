@@ -667,7 +667,7 @@ The binary is both the server and a client to a running server.
 | `agentique stop <id>` | Stop a running session. |
 | `agentique export <id>` | Export a session as a Playwright test fixture. |
 | `agentique cleanup` | Delete merged, terminal sessions. |
-| `agentique prune` | Reclaim disk from finished and orphaned worktrees, Chrome profiles and scratchpads. Dry-run by default; `--apply` to delete, `--orphans-only` for the zero-risk subset. |
+| `agentique prune` | Reclaim disk from finished and orphaned worktrees, Chrome profiles and scratchpads. Dry-run by default (and read-only against the database); `--apply` to delete, `--orphans-only` for the zero-risk subset. The Storage page does the same thing per session — see [docs/storage.md](docs/storage.md). |
 | `agentique restore [name\|index]` | List or restore database backups. |
 | `agentique completion <shell>` | Shell completion script. |
 
@@ -824,6 +824,7 @@ Subsystem docs, all describing what is built today:
 | Doc | Subsystem |
 |---|---|
 | [process-lifecycle.md](docs/process-lifecycle.md) | CLI subprocess lifecycle, the orphan reaper, idle eviction. |
+| [storage.md](docs/storage.md) | Where the disk goes, and the two ways it comes back. |
 | [multi-machine.md](docs/multi-machine.md) | Pairing, routing, offline behaviour, and the designed-not-built presentation sync. |
 | [upgrades.md](docs/upgrades.md) | In-app upgrades across machines. |
 | [scheduled-loops.md](docs/scheduled-loops.md) | Recurring prompts with run history and health. |
