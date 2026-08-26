@@ -960,6 +960,55 @@ func TestSessionUnarchive(t *testing.T) {
 	}
 }
 
+// The read receipt for a session's unread completion. Idempotent, because a
+// client reconnecting or opening the same session twice should not have to know
+// whether the mark was still set.
+func TestSessionMarkSeen(t *testing.T) {
+	ts, queries, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	projDir := t.TempDir()
+	proj := createTestProject(t, queries, "markseenproj", projDir)
+	sessID := insertTestSession(t, queries, proj.ID, "Unread", projDir, "idle")
+	if err := queries.SetSessionUnseenCompletedAt(context.Background(), store.SetSessionUnseenCompletedAtParams{
+		UnseenCompletedAt: sql.NullString{String: "2026-08-26T10:00:00Z", Valid: true},
+		ID:                sessID,
+	}); err != nil {
+		t.Fatalf("set unseen: %v", err)
+	}
+
+	conn := dialWS(t, ts)
+	defer conn.Close()
+
+	resp := sendAndReceive(t, conn, "session.list", "120",
+		ws.SessionListPayload{ProjectID: proj.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	before := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if len(before.Sessions) != 1 || before.Sessions[0].UnseenCompletedAt == nil {
+		t.Fatalf("precondition: expected an unread mark, got %+v", before.Sessions)
+	}
+
+	for i, id := range []string{"121", "122"} {
+		resp = sendAndReceive(t, conn, "session.markSeen", id,
+			ws.SessionMarkSeenPayload{SessionID: sessID})
+		if resp.Error != nil {
+			t.Fatalf("call %d: unexpected error: %s", i, resp.Error.Message)
+		}
+	}
+
+	resp = sendAndReceive(t, conn, "session.list", "123",
+		ws.SessionListPayload{ProjectID: proj.ID})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	after := unmarshalPayload[session.ListSessionsResult](t, resp)
+	if after.Sessions[0].UnseenCompletedAt != nil {
+		t.Fatalf("expected the mark cleared, got %q", *after.Sessions[0].UnseenCompletedAt)
+	}
+}
+
 func TestHandlerValidation(t *testing.T) {
 	ts, _, cleanup := setupTestServer(t)
 	defer cleanup()

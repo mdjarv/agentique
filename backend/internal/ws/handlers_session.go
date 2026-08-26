@@ -82,6 +82,15 @@ func (c *conn) handleSessionAttention(msg ClientMessage) {
 	})
 }
 
+// handleSessionMarkSeen clears a session's unread-completion mark. Idempotent:
+// a session with nothing unread succeeds and broadcasts the state it already
+// had, so a client need not track whether the mark was still set.
+func (c *conn) handleSessionMarkSeen(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionMarkSeenPayload) (struct{}, error) {
+		return struct{}{}, c.svc.MarkSessionSeen(ctx, p.SessionID)
+	})
+}
+
 func (c *conn) handleSessionMerge(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionMergePayload) (session.MergeResult, error) {
 		return c.gitSvc.Merge(ctx, p.SessionID, p.Mode)

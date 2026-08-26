@@ -214,6 +214,7 @@ export interface SessionInfo {
   worktreeBranch?: string;
   worktreeMerged?: boolean;
   archivedAt?: string;
+  unseenCompletedAt?: string;
   hasDirtyWorktree?: boolean;
   hasUncommitted?: boolean;
   commitsAhead: number;
@@ -299,6 +300,7 @@ export interface GitSnapshot {
   hasUncommitted: boolean;
   worktreeMerged: boolean;
   archivedAt?: string;
+  unseenCompletedAt?: string;
   commitsAhead: number;
   commitsBehind: number;
   branchMissing: boolean;

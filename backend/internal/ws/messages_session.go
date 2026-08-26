@@ -71,6 +71,13 @@ type SessionAttentionPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// SessionMarkSeenPayload is the read receipt for a session's unread completion:
+// the operator has seen what came back. Distinct from session.attention, which
+// only defers idle eviction and deliberately touches no session field.
+type SessionMarkSeenPayload struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionMergePayload struct {
 	SessionID string `json:"sessionId"`
 	Mode      string `json:"mode"` // "merge" | "complete" | "delete"
@@ -335,6 +342,10 @@ func (p *SessionInterruptPayload) Validate() error {
 }
 
 func (p *SessionAttentionPayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionMarkSeenPayload) Validate() error {
 	return validateSessionID(p.SessionID)
 }
 
