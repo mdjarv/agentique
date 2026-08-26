@@ -23,12 +23,27 @@ export interface TranscriptResultList {
  * on a final, sometimes not — so normalizing here is what keeps the composer
  * from rendering doubled spaces mid-sentence.
  */
-function join(left: string, right: string): string {
+export function joinTranscript(left: string, right: string): string {
   const head = left.trimEnd();
   const tail = right.trim();
   if (!head) return tail;
   if (!tail) return head;
   return `${head} ${tail}`;
+}
+
+/** What a result list holds, kept apart because the two have different lifetimes. */
+export interface TranscriptParts {
+  /**
+   * The words the engine has committed. They survive the end of a recognition
+   * session: the engine will not offer them again.
+   */
+  readonly finals: string;
+  /**
+   * The live guess at the words being spoken right now. It is not owned by
+   * anything yet — if the session ends here, the audio behind it is re-offered
+   * to whatever session comes next, so this must never be committed.
+   */
+  readonly interim: string;
 }
 
 /**
@@ -53,7 +68,19 @@ function join(left: string, right: string): string {
  * dictation duplicates phrases again.
  */
 export function reduceTranscript(results: TranscriptResultList): string {
-  let finalText = "";
+  const { finals, interim } = reduceTranscriptParts(results);
+  return joinTranscript(finals, interim);
+}
+
+/**
+ * The same reduction, with the committed half kept apart from the guess.
+ *
+ * `useSpeechRecognition` needs the split because a dictation span outlives the
+ * recognition sessions the browser slices it into, and only `finals` may cross
+ * that seam. See the hook for what the browsers actually do.
+ */
+export function reduceTranscriptParts(results: TranscriptResultList): TranscriptParts {
+  let finals = "";
   let interim = "";
 
   for (let i = 0; i < results.length; i++) {
@@ -62,7 +89,7 @@ export function reduceTranscript(results: TranscriptResultList): string {
     if (!result || !alt) continue;
 
     if (result.isFinal) {
-      finalText = join(finalText, alt.transcript);
+      finals = joinTranscript(finals, alt.transcript);
       // This final supersedes whatever was being guessed before it.
       interim = "";
       continue;
@@ -72,5 +99,5 @@ export function reduceTranscript(results: TranscriptResultList): string {
     interim = alt.transcript;
   }
 
-  return join(finalText, interim);
+  return { finals, interim: interim.trim() };
 }

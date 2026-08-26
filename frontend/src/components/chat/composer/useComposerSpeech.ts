@@ -33,10 +33,14 @@ const HOLD_THRESHOLD_MS = 500;
  * - short click (<500ms) toggles;
  * - if already listening on pointer down, force-stop immediately (escape hatch).
  *
- * `speechBaseRef` snapshots the text that existed when recognition started; every
- * transcript update replaces everything after that base. The spacer below is the
- * only whitespace this layer adds — the transcript arrives already normalized
- * (no leading or trailing space), so the two cannot double up.
+ * `speechBaseRef` snapshots the text that existed when the *dictation span*
+ * started; every transcript update replaces everything after that base. The
+ * browser ending a recognition session mid-sentence is not the end of a span —
+ * `useSpeechRecognition` continues it and does not ask for a new snapshot, which
+ * is what keeps a base that already contains dictated words from being taken
+ * again and duplicating them. The spacer below is the only whitespace this layer
+ * adds — the transcript arrives already normalized (no leading or trailing
+ * space), so the two cannot double up.
  */
 export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams): ComposerSpeech {
   const speechBaseRef = useRef("");

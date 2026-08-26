@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { reduceTranscript, type TranscriptResultList } from "~/lib/speech-transcript";
+import {
+  reduceTranscript,
+  reduceTranscriptParts,
+  type TranscriptResultList,
+} from "~/lib/speech-transcript";
 
 /** Build a result list the way the engine hands one over: ordered, `[0]` best. */
 function results(...entries: Array<[transcript: string, isFinal: boolean]>): TranscriptResultList {
@@ -73,5 +77,31 @@ describe("reduceTranscript", () => {
 
   it("ignores empty transcripts rather than emitting stray spaces", () => {
     expect(reduceTranscript(results(["hello", FINAL], ["", FINAL], [" ", INTERIM]))).toBe("hello");
+  });
+});
+
+describe("reduceTranscriptParts", () => {
+  it("keeps the committed words apart from the live guess", () => {
+    // The hook carries `finals` across a recognition session that the browser
+    // ended on its own, and drops `interim` — the audio behind the guess is
+    // re-offered to the next session.
+    expect(reduceTranscriptParts(results(["I tried", FINAL], ["opening a", INTERIM]))).toEqual({
+      finals: "I tried",
+      interim: "opening a",
+    });
+  });
+
+  it("reports nothing committed while the first utterance is still a guess", () => {
+    expect(reduceTranscriptParts(results(["I tried", INTERIM]))).toEqual({
+      finals: "",
+      interim: "I tried",
+    });
+  });
+
+  it("has no guess left once a final has superseded it", () => {
+    expect(reduceTranscriptParts(results(["hello", INTERIM], ["hello world", FINAL]))).toEqual({
+      finals: "hello world",
+      interim: "",
+    });
   });
 });
