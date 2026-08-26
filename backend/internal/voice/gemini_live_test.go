@@ -115,7 +115,15 @@ func TestGeminiToolCallLive(t *testing.T) {
 		Backend: BackendAIStudio,
 		APIKey:  key,
 		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
-	}, SystemInstruction(Briefing{ProjectContext: "A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts."}), slog.Default())
+	}, SystemInstruction(Briefing{
+		// A call opened from a session's Live button, which is the shape this
+		// test is about: there is somewhere for the work to go. Without an
+		// initial focus the drafter is right to ask where a new session should
+		// live, and this test would be asserting the wrong behaviour — see
+		// TestGeminiCreatesTheSessionItDispatchesToLive for that path.
+		InitialFocus:   "Live Voice Dialog",
+		ProjectContext: "The session is called \"Live Voice Dialog\".\nA Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts.",
+	}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -361,4 +369,124 @@ func TestPreviewLive(t *testing.T) {
 		t.Fatal("WAV carried a header and no audio")
 	}
 	t.Logf("preview: %d bytes", len(wav))
+}
+
+// TestGeminiCreatesTheSessionItDispatchesToLive drives the flow the operator
+// designed: a call opened on nothing, work that belongs in no existing session,
+// and one yes that both creates the session and sends the prompt.
+//
+// The risky part is not the wording, it is the shape: after the affirmative the
+// model has to make *two* tool calls in a row, and a model that stops after the
+// first leaves a session created and no work in it. That is what this asserts.
+func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Gemini test: skipped by -short")
+	}
+	key := os.Getenv("AGENTIQUE_VOICE_API_KEY")
+	if key == "" {
+		t.Skip("live Gemini test: set AGENTIQUE_VOICE_API_KEY to run")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// No InitialFocus: this is the app-wide entry point, where the call opens
+	// pointed at nothing at all.
+	engine, err := newGeminiEngine(ctx, Options{
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, SystemInstruction(Briefing{
+		Orientation: "There are 2 sessions on this machine. None of them are waiting on the operator.",
+	}), slog.Default())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer engine.Close()
+
+	if err := engine.SendText(
+		"I want to start something new in webtickets: add rate limiting to the login endpoint.",
+	); err != nil {
+		t.Fatalf("send text: %v", err)
+	}
+
+	const projectID = "proj-webtickets"
+	var created, dispatched bool
+
+	// Generous: the model may look up the project, read back, and only then act.
+	for turn := 1; turn <= 8; turn++ {
+		said, toolCall := waitForTurn(t, engine, 45*time.Second)
+		if toolCall == nil {
+			if said == "" {
+				t.Fatalf("turn %d: the drafter said nothing and called nothing", turn)
+			}
+			t.Logf("turn %d: %s", turn, said)
+			// Whatever it asked, the answer is yes — and the project by name,
+			// since naming it is the one thing it legitimately needs.
+			if err := engine.SendText("Yes, webtickets, with the defaults. Go ahead."); err != nil {
+				t.Fatalf("send text: %v", err)
+			}
+			continue
+		}
+
+		switch toolCall.Name {
+		case ToolListProjects:
+			t.Logf("turn %d: %s", turn, ToolListProjects)
+			respond(t, engine, toolCall, map[string]any{
+				"projects": []map[string]any{
+					{"project_id": projectID, "name": "webtickets"},
+					{"project_id": "proj-alltix", "name": "alltix-api"},
+				},
+			})
+
+		case ToolCreateSession:
+			if got, _ := toolCall.Args["project_id"].(string); got != projectID {
+				t.Fatalf("created in %q, want the project id it was offered (%q)", got, projectID)
+			}
+			created = true
+			t.Logf("turn %d: %s in %v", turn, ToolCreateSession, toolCall.Args)
+			respond(t, engine, toolCall, map[string]any{
+				"session_id":     "sess-new",
+				"name":           "Rate limit the login endpoint",
+				"project":        "webtickets",
+				"created":        true,
+				"focused":        true,
+				"can_start_work": true,
+				"note": "Created and focused: a new session in webtickets, on their screen now. " +
+					"If a prompt was already agreed, send it now with " + ToolRunPrompt + ".",
+			})
+
+		case ToolRunPrompt:
+			if !created {
+				t.Fatal("dispatched before creating anything — there was no session to send to")
+			}
+			prompt, _ := toolCall.Args["prompt"].(string)
+			if strings.TrimSpace(prompt) == "" {
+				t.Fatalf("run_prompt carried no prompt: %v", toolCall.Args)
+			}
+			t.Logf("turn %d: %s (%d chars): %s", turn, ToolRunPrompt, len(prompt), prompt)
+			dispatched = true
+			respond(t, engine, toolCall, map[string]any{"output": "Started."})
+
+		default:
+			t.Logf("turn %d: %s", turn, toolCall.Name)
+			respond(t, engine, toolCall, map[string]any{"output": "ok"})
+		}
+
+		if created && dispatched {
+			return
+		}
+	}
+
+	t.Fatalf("never got both halves of the gesture: created=%v dispatched=%v", created, dispatched)
+}
+
+// respond answers a tool call. The model is paused until it arrives, so every
+// path through the test has to answer — an unanswered call looks exactly like
+// the conversation having died.
+func respond(t *testing.T, engine *geminiEngine, call *ToolCallEvent, payload map[string]any) {
+	t.Helper()
+	if err := engine.RespondTool(call.ID, call.Name, payload); err != nil {
+		t.Fatalf("respond to %s: %v", call.Name, err)
+	}
 }
