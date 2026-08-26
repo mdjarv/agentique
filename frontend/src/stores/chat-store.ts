@@ -85,6 +85,10 @@ type StateExtras = Partial<
   unseenCompletedAt?: string | null;
 };
 
+// --- The unseen-completion mark ---
+// Server state since the switchboard: it is the same mark on the laptop and
+// the phone, and clearing it is a message rather than a local edit.
+
 /**
  * Whether any peer has ever stated `unseenCompletedAt`.
  *
@@ -136,6 +140,7 @@ function resolveUnseen(
   if (wire) seen.push(sessionId);
   return false;
 }
+
 interface PendingStateEntry {
   state: SessionState;
   extras?: StateExtras;

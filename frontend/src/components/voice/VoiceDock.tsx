@@ -102,7 +102,7 @@ function StartCallButton() {
   );
 }
 
-export function EndCallButton({ onEnd, className }: { onEnd: () => void; className?: string }) {
+function EndCallButton({ onEnd, className }: { onEnd: () => void; className?: string }) {
   return (
     <button
       type="button"
