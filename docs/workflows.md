@@ -92,10 +92,12 @@ on `task_notification`.
 It mirrors the CLI's own `/workflows` tree, so anyone who has used the feature can
 read it immediately.
 
-The view lives in a generalized collapsible right panel shared with the browser
-(`rightPanelView`), with a header toggle and auto-open on a live run. Before that
-generalization the panel was buried inside the collapsed inline activity group and
-looked missing.
+The tree renders inside the session dock's **Agents** section, above the subagent
+roster, and the dock auto-opens on `Work` for a live run (`useAutoOpenDock`). It
+is not a view of its own: a workflow's agents ride its progress events rather
+than the `Agent` tool stream, so they cannot share the roster's row type, but
+they are the same subject and belong under the same heading. See
+`docs/session-dock.md`.
 
 Tokens, agent counts and phase progress are shown freely. Cost never is.
 

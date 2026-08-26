@@ -3,10 +3,12 @@ import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentsView } from "~/components/chat/AgentsView";
 import { DockTabBar } from "~/components/chat/dock/DockTabBar";
 import { DockToggle } from "~/components/chat/dock/DockToggle";
+import { WorkSections } from "~/components/chat/dock/WorkSections";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
 import type { AgentBadgeState, AgentRun } from "~/lib/agent-runs";
 import type { LoopBadgeState } from "~/lib/loop-attention";
 import { type DockView, dockAlertState } from "~/lib/session/dock";
+import type { TodoItem } from "~/stores/chat-store";
 
 export const Route = createFileRoute("/dev/agents")({
   component: DevAgents,
@@ -132,6 +134,23 @@ const inFlight: AgentRun[] = [
 ];
 
 const runs = [...landed, ...inFlight];
+
+const devTodos: TodoItem[] = [
+  { content: "Read the current shape", status: "completed", activeForm: "Reading the shape" },
+  { content: "Build the dock shell", status: "completed", activeForm: "Building the dock shell" },
+  {
+    content: "Fold Workflow into Agents",
+    status: "in_progress",
+    activeForm: "Folding Workflow into Agents",
+  },
+  { content: "Migrate the URL", status: "pending", activeForm: "Migrating the URL" },
+];
+
+// Two turns' worth: the roster should show turn 9 and fold turn 8 behind "Earlier".
+const turnScopedRuns: AgentRun[] = [
+  ...landed.map((run, i) => ({ ...run, turnIndex: i === 0 ? 9 : 8 })),
+  { ...(inFlight[0] as AgentRun), turnIndex: 9 },
+];
 
 function Panel({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -271,6 +290,40 @@ function DevAgents() {
             </div>
             <div className="flex h-24 flex-col border-t">
               <AgentsView runs={[]} />
+            </div>
+          </Panel>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Panel label="Dock — Work at 320px">
+            <div className="flex h-[30rem] w-[20rem] flex-col">
+              <WorkSections
+                todos={devTodos}
+                runs={runs}
+                workflowEvents={[]}
+                badge={{ running: inFlight.length, failed: 0 }}
+              />
+            </div>
+          </Panel>
+          <Panel label="Dock — Work at 500px, roster scoped to this turn">
+            <div className="flex h-[30rem] flex-col">
+              <WorkSections
+                todos={devTodos}
+                runs={turnScopedRuns}
+                workflowEvents={[]}
+                badge={{ running: 1, failed: 0 }}
+                latestTurnIndex={9}
+              />
+            </div>
+          </Panel>
+          <Panel label="Dock — Work, nothing yet">
+            <div className="flex h-[30rem] flex-col">
+              <WorkSections
+                todos={null}
+                runs={[]}
+                workflowEvents={[]}
+                badge={{ running: 0, failed: 0 }}
+              />
             </div>
           </Panel>
         </div>

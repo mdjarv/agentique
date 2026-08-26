@@ -654,7 +654,8 @@ export function ChatPanel({
         onSelect={selectDockView}
         onClose={closeDock}
         maximized={dockMaximized}
-        onMaximizedChange={setDockMaximized}
+        // No maximize on mobile: the sheet is already the whole screen.
+        {...(isMobile ? {} : { onMaximizedChange: setDockMaximized })}
         accentColor={agentColor}
       >
         {dockBody}

@@ -318,27 +318,61 @@ unseen-completion: schedule attention is its own channel, not the orange pulse.
 The MCP schedule-create tool stays non-blocking, since CLI MCP clients time out.
 The boot sweep runs from serve strictly before the scheduler starts.
 
+### The session dock — `docs/session-dock.md`
+
+Everything in a session that is not the transcript is in one collapsible panel
+behind one header control: **Work** (Todos + Agents), **Changes**, **Loops**,
+**Browser**. The chat is the page and is always rendered; the dock sits beside
+it, or takes the pane when maximized.
+
+Tabs are **derived, never curated** — a view exists because the session has the
+thing, and `availableDockViews` is the only place that decides. State is per
+session (`ui-store.dock`), so it is pruned at a cap and reconciled:
+`resolveDockView` falls back when a stored view's subject is gone rather than
+collapsing the dock, because collapsing reads as the user's own gesture.
+
+`?dock=` is written; `?tab=` is still **read** through `legacyTabToDock` and
+never written, because those links are in clipboards and in deep-links this app
+minted. Mobile renders the same `SessionDock` in a sheet — one navigation model,
+two presentations — and simply omits `onMaximizedChange`, since a control that
+does nothing when pressed is worse than no control.
+
+**Workflow is not a peer of Agents.** A workflow's agents ride its own progress
+events as `WorkflowProgressEntry` (a phase, a label, a state — no report, no
+narration), and `collectAgentRuns` skips `local_workflow` deliberately. They
+cannot share a row type, so `WorkflowActivity` renders whole *inside* the Agents
+section. One subject, one heading, two renderings.
+
 ### Subagent roster
 
-A session tab badge is a claim on attention, so it carries only facts that can
-still be acted on and returns to nothing when there are none. Todos resets each
+A badge is a claim on attention, so it carries only facts that can still be
+acted on and returns to nothing when there are none. Todos resets each
 `TodoWrite`; Changes clears on commit. The Agents badge shows agents **in flight**
-plus failures **from the latest turn the user has not opened the tab on**, never a
+plus failures **from the latest turn the user has not opened Work on**, never a
 lifetime spawn count, which only grows and trains you to stop reading it. Both
 clears matter (`agentBadgeState`): a failure marker goes away on whichever comes
-first, the tab being opened or the session starting a new turn.
+first, Work being opened or the session starting a new turn.
 
-Live flight status is *not* behind the tab. `AgentFlightStrip` renders the same
-runs at three densities: `rail` (chips), `board` (cards, top of the Agents panel),
-`line` (pips plus the oldest agent's clock, mobile). The rail mounts at panel
-level in `ChatPanel`, next to the todo sidebar, so it survives a tab switch. A
-live-status surface that disappears when you change tabs is not one. "Above the
-composer" only exists on the chat branch, which is why one component has two mount
-sites. It is suppressed on the Agents tab, where the board says it louder.
+Collapsing the dock is the one gesture that costs information, since the per-tab
+badges go with it. `dockAlertState` compensates with **one** aggregate mark on
+the toggle, ranked as `lib/session/priority.ts` ranks everything: waiting-on-you,
+then failed, then live. Never a summary — a control reporting three states at
+once reports none of them.
+
+Live flight status is *not* behind a tab. `AgentFlightStrip` renders the same
+runs at three densities: `rail` (chips), `board` (cards, top of the Agents
+section), `line` (pips plus the oldest agent's clock, mobile). The rail mounts at
+panel level in `ChatPanel` so it survives navigation; it is suppressed only while
+the dock is open on Work, where the board says it louder.
 
 The roster groups by the only two states a reader acts on, still out and came
-back, never by turn. Landed rows are newest first, because a roster is not a
-transcript. Lifetime totals belong in the footer.
+back, never by turn — but it **scopes** to the current turn (`scopeAgentRuns`),
+folding older runs behind one disclosure. Same argument as the badge: a list that
+only grows stops being read, and in a 300px column a lifetime roster is a wall in
+front of the two agents you came for. Nothing is discarded, and lifetime totals
+stay in the footer. A run still streaming has no `turnIndex` and belongs to the
+latest turn; attributing it to "earlier" would fold away the agents the dock is
+for.
 
 The strip owns its own 1s clock. Lifting it to `ChatPanel` would re-render the
 whole session view every second an agent is out.
@@ -384,17 +418,16 @@ report is not news to a client either. A real one always carries a `Status`
 (`completed`, `async_launched`); do not add emptiness filtering to `isTransient`,
 which would still broadcast them.
 
-The header's `SessionStatusPill` is the matching rule for *reporting* a blocked
-session: it sits outside the tab switch, so it says "Needs approval" from every
-tab, but the approve/deny buttons only exist on the chat branch. It therefore
-becomes a button (`onActivate`) exactly when there is somewhere to go, and stays
-plain text on the chat branch where the banner is already pinned above the
-composer — a control that does nothing when clicked is worse than a label.
+The header's `SessionStatusPill` reports a blocked session from wherever you are.
+It stays plain text now that the chat branch always renders and the approval
+banner is always pinned above the composer: `onActivate` is for when there is
+somewhere to go, and a control that does nothing when clicked is worse than a
+label.
 
-Tab badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
+Dock badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
 must mean one thing across surfaces: **X is "it failed", the triangle is
-"someone is waiting on you"**, and a pulse in the tab strip means live activity,
-never blocked-ness. The Loops badge (`loopBadgeState`) reports `blocked`
+"someone is waiting on you"**, and a pulse means live activity, never
+blocked-ness. The Loops badge (`loopBadgeState`) reports `blocked`
 (schedule parked for approval, or a run waiting/overdue) above `paused` (loop
 auto-paused on repeated failures) — the same ranking as
 `lib/session/priority.ts`, where approval outranks failure. Note the asymmetry

@@ -9,6 +9,7 @@ import {
   flightElapsedMs,
   oldestFlightElapsedMs,
   partitionAgentRuns,
+  scopeAgentRuns,
 } from "~/lib/agent-runs";
 import type { ChatEvent, TaskEvent, Turn } from "~/stores/chat-types";
 
@@ -368,6 +369,68 @@ describe("partitionAgentRuns", () => {
     );
 
     expect(partitionAgentRuns(runs).inFlight.map((r) => r.title)).toEqual(["oldest", "newest"]);
+  });
+});
+
+describe("scopeAgentRuns", () => {
+  const threeTurns = () =>
+    collectAgentRuns(
+      [
+        turn(
+          [
+            spawn("tu_1", { description: "long ago" }),
+            task("tu_1", { taskSubtype: "task_notification", taskStatus: "completed" }),
+          ],
+          1,
+        ),
+        turn(
+          [
+            spawn("tu_2", { description: "last turn" }),
+            task("tu_2", { taskSubtype: "task_notification", taskStatus: "completed" }),
+          ],
+          2,
+        ),
+        turn(
+          [
+            spawn("tu_3", { description: "this turn" }),
+            task("tu_3", { taskSubtype: "task_notification", taskStatus: "completed" }),
+            spawn("tu_4", { description: "still out" }),
+            task("tu_4", { taskSubtype: "task_started" }),
+          ],
+          3,
+        ),
+      ],
+      undefined,
+    );
+
+  it("shows this turn and folds every older run away", () => {
+    const { inFlight, landed, earlier } = scopeAgentRuns(threeTurns(), 3);
+    expect(inFlight.map((r) => r.title)).toEqual(["still out"]);
+    expect(landed.map((r) => r.title)).toEqual(["this turn"]);
+    expect(earlier.map((r) => r.title)).toEqual(["last turn", "long ago"]);
+  });
+
+  it("folds nothing away without a turn to scope to", () => {
+    const { landed, earlier } = scopeAgentRuns(threeTurns(), undefined);
+    expect(landed).toHaveLength(3);
+    expect(earlier).toEqual([]);
+  });
+
+  it("attributes a still-streaming run with no turn index to the current turn", () => {
+    // Live runs carry no turnIndex until the turn is persisted; putting them
+    // in `earlier` would fold away the very agents the dock is for.
+    const runs = collectAgentRuns(undefined, [
+      spawn("tu_live", { description: "streaming" }),
+      task("tu_live", { taskSubtype: "task_notification", taskStatus: "completed" }),
+    ]);
+    const { landed, earlier } = scopeAgentRuns(runs, 7);
+    expect(landed.map((r) => r.title)).toEqual(["streaming"]);
+    expect(earlier).toEqual([]);
+  });
+
+  it("keeps earlier runs newest-first, like the roster they came from", () => {
+    const { earlier } = scopeAgentRuns(threeTurns(), 3);
+    expect(earlier.map((r) => r.title)).toEqual(["last turn", "long ago"]);
   });
 });
 

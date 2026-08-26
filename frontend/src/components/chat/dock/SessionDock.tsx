@@ -10,8 +10,13 @@ interface SessionDockProps {
   marks: Partial<Record<DockView, DockTabMark>>;
   onSelect: (view: DockView) => void;
   onClose: () => void;
-  maximized: boolean;
-  onMaximizedChange: (maximized: boolean) => void;
+  /**
+   * Maximize is offered only where there is a pane to take over — omit the
+   * handler on mobile, where the dock is already a near-full-width sheet and
+   * the control would do nothing when pressed.
+   */
+  maximized?: boolean;
+  onMaximizedChange?: (maximized: boolean) => void;
   accentColor?: string;
   children: ReactNode;
 }
@@ -31,7 +36,7 @@ export function SessionDock({
   marks,
   onSelect,
   onClose,
-  maximized,
+  maximized = false,
   onMaximizedChange,
   accentColor,
   children,
@@ -49,16 +54,18 @@ export function SessionDock({
           />
         </div>
         <div className="flex shrink-0 items-center gap-0.5 border-b px-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-muted-foreground hover:text-foreground"
-            onClick={() => onMaximizedChange(!maximized)}
-            aria-label={maximized ? "Restore dock width" : "Maximize dock"}
-            title={maximized ? "Restore dock width" : "Maximize dock"}
-          >
-            {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          </Button>
+          {onMaximizedChange && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-foreground"
+              onClick={() => onMaximizedChange(!maximized)}
+              aria-label={maximized ? "Restore dock width" : "Maximize dock"}
+              title={maximized ? "Restore dock width" : "Maximize dock"}
+            >
+              {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
