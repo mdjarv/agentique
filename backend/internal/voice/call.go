@@ -475,17 +475,23 @@ func (c *call) handleToolCall(ev ToolCallEvent) {
 // something sayable, including the refusals — what comes back is what the
 // listener hears next.
 func (c *call) runTool(ev ToolCallEvent) map[string]any {
+	// One deadline for the whole call, tools included: a database read that
+	// hangs is dead air exactly like a dispatch that hangs, and the model is
+	// paused for both.
+	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
+	defer cancel()
+
 	switch ev.Name {
 	case ToolRunPrompt:
-		return c.runPrompt(ev)
+		return c.runPrompt(ctx, ev)
 	case ToolListSessions:
-		return c.toolListSessions(ev.Args)
+		return c.toolListSessions(ctx, ev.Args)
 	case ToolFindSession:
-		return c.toolFindSession(ev.Args)
+		return c.toolFindSession(ctx, ev.Args)
 	case ToolFocusSession:
-		return c.toolFocusSession(ev.Args)
+		return c.toolFocusSession(ctx, ev.Args)
 	case ToolSummarizeSession:
-		return c.toolSummarizeSession(ev.Args)
+		return c.toolSummarizeSession(ctx, ev.Args)
 	default:
 		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
 	}
@@ -496,7 +502,7 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 // It acts on the focus and nothing else. Which session that is has already been
 // said out loud — the read-back names it — so the tool never takes a session
 // argument and cannot be pointed somewhere the listener did not hear.
-func (c *call) runPrompt(ev ToolCallEvent) map[string]any {
+func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 	target := c.currentFocus()
 	if c.dispatcher == nil {
 		return map[string]any{"error": "This call is not attached to a session, so there is nothing to hand work to."}
@@ -507,9 +513,9 @@ func (c *call) runPrompt(ev ToolCallEvent) map[string]any {
 	// A session on another machine can be looked at from here and nothing more:
 	// dispatch goes through *this* server's session service, and that CLI, that
 	// worktree and that transcript are somewhere else.
-	row, local := c.localRow(target)
+	row, local := c.localRow(ctx, target)
 	if !local {
-		if known, ok := c.lookupRow(target); ok {
+		if known, ok := c.lookupRow(ctx, target); ok {
 			row = known
 		}
 		return map[string]any{"error": fmt.Sprintf("%q runs on %s, so work cannot be started there "+
@@ -525,9 +531,6 @@ func (c *call) runPrompt(ev ToolCallEvent) map[string]any {
 	// Absent means no: keeping a microphone open is the expensive answer, so it
 	// is the one that has to be asked for rather than defaulted into.
 	stayOnLine, _ := ev.Args["stay_on_line"].(bool)
-
-	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
-	defer cancel()
 
 	// Live voice has no spoken approval, so a session that would stop and ask
 	// is refused here rather than stalling silently with the call sounding fine.

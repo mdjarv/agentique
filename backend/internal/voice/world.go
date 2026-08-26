@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -83,7 +84,10 @@ func (c *call) allowViewingNote() bool {
 
 // injectViewingNote hands the model a data-framed note about what is on screen.
 func (c *call) injectViewingNote(sessionID string) {
-	row, known := c.lookupRow(sessionID)
+	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
+	defer cancel()
+
+	row, known := c.lookupRow(ctx, sessionID)
 	if !known {
 		row = SessionRow{ID: sessionID}
 	}
@@ -149,12 +153,12 @@ func (c *call) offeredRow(sessionID string) (SessionRow, bool) {
 
 // lookupRow finds what the call knows about a session: this machine's database
 // first, then the browser's snapshot, then whatever was already offered.
-func (c *call) lookupRow(sessionID string) (SessionRow, bool) {
+func (c *call) lookupRow(ctx context.Context, sessionID string) (SessionRow, bool) {
 	if sessionID == "" {
 		return SessionRow{}, false
 	}
 	if c.directory != nil {
-		if row, ok := c.directory.SessionBrief(c.ctx(), sessionID); ok {
+		if row, ok := c.directory.SessionBrief(ctx, sessionID); ok {
 			return row, true
 		}
 	}
@@ -176,12 +180,12 @@ func (c *call) lookupRow(sessionID string) (SessionRow, bool) {
 // the ones on machines this server cannot reach at all. Dedupe by id with the
 // local row winning, because the browser's copy of a local session is a render
 // of a push that may be a round trip behind.
-func (c *call) mergedRows(filter string) []SessionRow {
+func (c *call) mergedRows(ctx context.Context, filter string) []SessionRow {
 	var rows []SessionRow
 	seen := make(map[string]bool)
 
 	if c.directory != nil {
-		for _, row := range c.directory.ListSessions(c.ctx(), filter) {
+		for _, row := range c.directory.ListSessions(ctx, filter) {
 			if row.ID == "" || seen[row.ID] {
 				continue
 			}
@@ -234,19 +238,19 @@ func matchesFilter(row SessionRow, filter string) bool {
 //
 // A call with no directory is the single-session call this feature grew out of:
 // it knows one session, the one it opened on, and that one is local.
-func (c *call) localRow(sessionID string) (SessionRow, bool) {
+func (c *call) localRow(ctx context.Context, sessionID string) (SessionRow, bool) {
 	if sessionID == "" {
 		return SessionRow{}, false
 	}
 	if c.directory == nil {
 		return SessionRow{ID: sessionID}, true
 	}
-	return c.directory.SessionBrief(c.ctx(), sessionID)
+	return c.directory.SessionBrief(ctx, sessionID)
 }
 
 // isLocal reports whether this machine owns the session.
-func (c *call) isLocal(sessionID string) bool {
-	_, ok := c.localRow(sessionID)
+func (c *call) isLocal(ctx context.Context, sessionID string) bool {
+	_, ok := c.localRow(ctx, sessionID)
 	return ok
 }
 

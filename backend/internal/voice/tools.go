@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -39,9 +40,9 @@ func summaryRelayPreamble(session string) string {
 }
 
 // toolListSessions answers "what is going on" for one filter.
-func (c *call) toolListSessions(args map[string]any) map[string]any {
+func (c *call) toolListSessions(ctx context.Context, args map[string]any) map[string]any {
 	filter := normalizeFilter(stringArg(args, "filter"))
-	rows := c.mergedRows(filter)
+	rows := c.mergedRows(ctx, filter)
 	if len(rows) == 0 {
 		if c.directory == nil && len(c.worldRows()) == 0 {
 			return map[string]any{"error": "I cannot see the other sessions from this call — " +
@@ -74,13 +75,13 @@ func (c *call) toolListSessions(args map[string]any) map[string]any {
 }
 
 // toolFindSession turns a spoken name into candidates. It never picks one.
-func (c *call) toolFindSession(args map[string]any) map[string]any {
+func (c *call) toolFindSession(ctx context.Context, args map[string]any) map[string]any {
 	query := strings.TrimSpace(stringArg(args, "query"))
 	if query == "" {
 		return map[string]any{"error": "Nothing to look for. Ask them which session they mean."}
 	}
 
-	rows := c.mergedRows(FilterAll)
+	rows := c.mergedRows(ctx, FilterAll)
 	if len(rows) == 0 {
 		return map[string]any{"error": "I cannot see any sessions from this call."}
 	}
@@ -118,7 +119,7 @@ func (c *call) toolFindSession(args map[string]any) map[string]any {
 }
 
 // toolFocusSession aims the call — and the browser — at one session.
-func (c *call) toolFocusSession(args map[string]any) map[string]any {
+func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[string]any {
 	sessionID := strings.TrimSpace(stringArg(args, "session_id"))
 	if sessionID == "" {
 		return map[string]any{"error": "No session id. Use " + ToolFindSession + " first."}
@@ -132,7 +133,7 @@ func (c *call) toolFocusSession(args map[string]any) map[string]any {
 			"Call " + ToolListSessions + " or " + ToolFindSession + " and use an id from the result."}
 	}
 
-	row, known := c.lookupRow(sessionID)
+	row, known := c.lookupRow(ctx, sessionID)
 	if !known {
 		row = SessionRow{ID: sessionID}
 		if offeredRow, ok := c.offeredRow(sessionID); ok {
@@ -148,7 +149,7 @@ func (c *call) toolFocusSession(args map[string]any) map[string]any {
 	_ = c.sendControl(serverMessage{Type: msgFocus, SessionID: sessionID})
 	c.log.Info("voice call focused session", "session", sessionID)
 
-	local := c.isLocal(sessionID)
+	local := c.isLocal(ctx, sessionID)
 	out := c.rowPayload(row)
 	out["focused"] = true
 	out["note"] = fmt.Sprintf("Confirm out loud that you are now on %q before you do anything else.",
@@ -164,7 +165,7 @@ func (c *call) toolFocusSession(args map[string]any) map[string]any {
 
 	out["can_start_work"] = true
 	if c.dispatcher != nil {
-		if ok, why, err := c.dispatcher.AutoRunnable(c.ctx(), sessionID); err == nil && !ok {
+		if ok, why, err := c.dispatcher.AutoRunnable(ctx, sessionID); err == nil && !ok {
 			out["can_start_work"] = false
 			out["note"] = fmt.Sprintf("You are now on %q, but it is not in full auto, so work cannot "+
 				"be started there from a call — there is no way to approve anything by voice. %s",
@@ -175,7 +176,7 @@ func (c *call) toolFocusSession(args map[string]any) map[string]any {
 	// A question about a session is usually followed by "what has it been
 	// doing?". Warming the summary here makes that answer instant; it is never
 	// spoken unless they ask.
-	c.warmSummary(sessionID)
+	c.warmSummary(ctx, sessionID)
 	return out
 }
 
@@ -183,7 +184,7 @@ func (c *call) toolFocusSession(args map[string]any) map[string]any {
 //
 // The slow path answers at once and delivers later: summarising runs a local
 // model, and holding the tool response for it is a silent microphone.
-func (c *call) toolSummarizeSession(args map[string]any) map[string]any {
+func (c *call) toolSummarizeSession(ctx context.Context, args map[string]any) map[string]any {
 	sessionID := strings.TrimSpace(stringArg(args, "session_id"))
 	if sessionID == "" {
 		sessionID = c.currentFocus()
@@ -196,13 +197,13 @@ func (c *call) toolSummarizeSession(args map[string]any) map[string]any {
 			"Call " + ToolListSessions + " or " + ToolFindSession + " first."}
 	}
 
-	row, _ := c.lookupRow(sessionID)
+	row, _ := c.lookupRow(ctx, sessionID)
 	if row.ID == "" {
 		row = SessionRow{ID: sessionID}
 	}
 	label := displayFor(row)
 
-	if !c.isLocal(sessionID) {
+	if !c.isLocal(ctx, sessionID) {
 		return map[string]any{"error": fmt.Sprintf("%q runs on %s, and its transcript is not on "+
 			"this machine, so I cannot summarise it from here. Say that, and offer to switch to "+
 			"something local instead.", label, machineWords(row))}
@@ -220,7 +221,7 @@ func (c *call) toolSummarizeSession(args map[string]any) map[string]any {
 	}
 
 	// Answer now, speak later.
-	c.directory.Summarize(c.ctx(), sessionID, func(summary string) {
+	c.directory.Summarize(ctx, sessionID, func(summary string) {
 		summary = strings.TrimSpace(summary)
 		c.cacheSummary(sessionID, summary)
 		if summary == "" {
@@ -239,14 +240,14 @@ func (c *call) toolSummarizeSession(args map[string]any) map[string]any {
 
 // warmSummary asks for a summary in the background and keeps it for the rest of
 // the call. Nothing is spoken: this is a cache, not an interruption.
-func (c *call) warmSummary(sessionID string) {
+func (c *call) warmSummary(ctx context.Context, sessionID string) {
 	if c.directory == nil || sessionID == "" {
 		return
 	}
 	if _, ok := c.cachedSummary(sessionID); ok {
 		return
 	}
-	c.directory.Summarize(c.ctx(), sessionID, func(summary string) {
+	c.directory.Summarize(ctx, sessionID, func(summary string) {
 		c.cacheSummary(sessionID, strings.TrimSpace(summary))
 	})
 }

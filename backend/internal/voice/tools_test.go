@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func TestEveryDirectoryToolAnswers(t *testing.T) {
 func TestListSessionsOffersWhatItNames(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 
-	got := c.toolListSessions(map[string]any{"filter": FilterAll})
+	got := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 	rows, _ := got["sessions"].([]map[string]any)
 	if len(rows) != 2 {
 		t.Fatalf("listed %v, want both sessions", got)
@@ -76,7 +77,7 @@ func TestListSessionsOffersWhatItNames(t *testing.T) {
 	}
 
 	// needs_attention is a real filter, not a relabelling of "everything".
-	only := c.toolListSessions(map[string]any{"filter": FilterNeedsAttention})
+	only := c.toolListSessions(context.Background(), map[string]any{"filter": FilterNeedsAttention})
 	rows, _ = only["sessions"].([]map[string]any)
 	if len(rows) != 1 || rows[0]["session_id"] != "s2" {
 		t.Errorf("needs_attention gave %v, want only the session waiting on approval", only)
@@ -91,7 +92,7 @@ func TestListSessionsIncludesRemoteRowsFromTheSnapshot(t *testing.T) {
 		SessionID: "s9", Name: "Remote Work", MachineName: "laptop", State: "running",
 	}})
 
-	got := c.toolListSessions(map[string]any{"filter": FilterAll})
+	got := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 	rows, _ := got["sessions"].([]map[string]any)
 	var found bool
 	for _, row := range rows {
@@ -109,7 +110,7 @@ func TestListSessionsIncludesRemoteRowsFromTheSnapshot(t *testing.T) {
 func TestFindSessionNeverPicks(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 
-	got := c.toolFindSession(map[string]any{"query": "live voice dialogue"})
+	got := c.toolFindSession(context.Background(), map[string]any{"query": "live voice dialogue"})
 	candidates, _ := got["candidates"].([]map[string]any)
 	if len(candidates) == 0 || candidates[0]["session_id"] != "s1" {
 		t.Fatalf("find gave %v, want the mangled name to reach Live Voice Dialog", got)
@@ -121,7 +122,7 @@ func TestFindSessionNeverPicks(t *testing.T) {
 		t.Error("find_session moved the focus — finding is not choosing")
 	}
 
-	miss := c.toolFindSession(map[string]any{"query": "kubernetes upgrade"})
+	miss := c.toolFindSession(context.Background(), map[string]any{"query": "kubernetes upgrade"})
 	if clear, _ := miss["top_is_clear"].(bool); clear {
 		t.Error("nothing matched, so nothing can be clear")
 	}
@@ -136,7 +137,7 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 	dir := directoryWithTwo()
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 
-	refused := c.toolFocusSession(map[string]any{"session_id": "8f1c-invented"})
+	refused := c.toolFocusSession(context.Background(), map[string]any{"session_id": "8f1c-invented"})
 	if _, bad := refused["error"]; !bad {
 		t.Fatalf("focus accepted an id nobody offered: %v", refused)
 	}
@@ -144,8 +145,8 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 		t.Error("a refused focus still moved the call")
 	}
 
-	c.toolListSessions(map[string]any{"filter": FilterAll})
-	got := c.toolFocusSession(map[string]any{"session_id": "s1"})
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	got := c.toolFocusSession(context.Background(), map[string]any{"session_id": "s1"})
 	if _, bad := got["error"]; bad {
 		t.Fatalf("focus refused a listed session: %v", got)
 	}
@@ -175,9 +176,9 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 func TestRemoteSessionsCanBeSeenButNotWorkedIn(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 	c.setWorld([]wireSessionRow{{SessionID: "s9", Name: "Remote Work", MachineName: "laptop"}})
-	c.toolListSessions(map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 
-	focused := c.toolFocusSession(map[string]any{"session_id": "s9"})
+	focused := c.toolFocusSession(context.Background(), map[string]any{"session_id": "s9"})
 	if _, bad := focused["error"]; bad {
 		t.Fatalf("focusing a remote session should work: %v", focused)
 	}
@@ -199,7 +200,7 @@ func TestRemoteSessionsCanBeSeenButNotWorkedIn(t *testing.T) {
 		t.Errorf("refusal = %q, want it to name the machine", msg)
 	}
 
-	summary := c.toolSummarizeSession(map[string]any{"session_id": "s9"})
+	summary := c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s9"})
 	msg, _ = summary["error"].(string)
 	if !strings.Contains(msg, "laptop") {
 		t.Errorf("summary refusal = %q, want it to say the transcript is on another machine", msg)
@@ -225,9 +226,9 @@ func TestSummarizeAnswersNowAndSpeaksLater(t *testing.T) {
 	dir := directoryWithTwo()
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 	c.engine = engine
-	c.toolListSessions(map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 
-	got := c.toolSummarizeSession(map[string]any{"session_id": "s1"})
+	got := c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 	if _, bad := got["error"]; bad {
 		t.Fatalf("summarize refused a local session: %v", got)
 	}
@@ -249,7 +250,7 @@ func TestSummarizeAnswersNowAndSpeaksLater(t *testing.T) {
 	}
 
 	// Delivered once, then it is warm: asking again answers inline.
-	again := c.toolSummarizeSession(map[string]any{"session_id": "s1"})
+	again := c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 	if again["summary"] != "It has been wiring the voice socket." {
 		t.Errorf("second ask = %v, want the cached summary inline", again)
 	}
@@ -263,9 +264,9 @@ func TestSummarizeSaysWhenThereIsNothing(t *testing.T) {
 	dir.summaries = map[string]string{}
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 	c.engine = engine
-	c.toolListSessions(map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
 
-	c.toolSummarizeSession(map[string]any{"session_id": "s2"})
+	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s2"})
 	said := engine.waitForSpeech(t, 1)
 	if len(said) == 0 {
 		t.Fatal("an empty summary must still be answered out loud")

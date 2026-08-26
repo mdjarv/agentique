@@ -171,7 +171,7 @@ func TestMergedRowsPreferTheLocalTruth(t *testing.T) {
 		{SessionID: "sess-remote", Name: "Remote Work", MachineName: "laptop", LastActivityAt: "2026-08-26T09:00:00Z"},
 	})
 
-	rows := c.mergedRows(FilterAll)
+	rows := c.mergedRows(context.Background(), FilterAll)
 	if len(rows) != 2 {
 		t.Fatalf("merged %d rows, want 2: %v", len(rows), rows)
 	}
