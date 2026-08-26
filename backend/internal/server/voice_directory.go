@@ -222,7 +222,11 @@ func attentionOf(info session.SessionInfo) string {
 	if info.PendingQuestion != nil {
 		return voice.AttentionQuestion
 	}
-	// TODO(integration): unread once SessionInfo carries unseenCompletedAt.
+	// Unread mirrors the deck's rule (use-deck-rows / needs-you): a completion
+	// nobody has looked at counts only once the run has actually stopped.
+	if info.UnseenCompletedAt != nil && info.State != string(session.StateRunning) {
+		return voice.AttentionUnread
+	}
 	return ""
 }
 

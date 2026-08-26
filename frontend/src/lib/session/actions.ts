@@ -13,7 +13,7 @@ import type {
   SessionDeleteBulkResultItem,
   SessionEnqueueResult,
 } from "~/lib/generated-types";
-import { readArchivedAt } from "~/lib/wire-compat";
+import { readArchivedAt, readUnseenCompletedAt } from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
 import { define, LONG, QUICK } from "~/lib/ws-rpc";
 import type {
@@ -483,6 +483,7 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
     mergeConflictFiles: gs.mergeConflictFiles,
     gitOperation: gs.gitOperation ?? "",
     gitVersion: gs.version,
+    unseenCompletedAt: readUnseenCompletedAt(gs) ?? null,
   });
 }
 
@@ -524,6 +525,7 @@ export async function resumeSession(ws: WsClient, sessionId: string): Promise<vo
     gitVersion: info.gitVersion,
     worktreeBranch: info.worktreeBranch,
     worktreePath: info.worktreePath,
+    unseenCompletedAt: readUnseenCompletedAt(info) ?? null,
   });
 }
 
