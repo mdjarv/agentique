@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { _clearPendingStateUpdates, useChatStore } from "~/stores/chat-store";
+import {
+  _clearPendingStateUpdates,
+  _resetUnseenWireLearning,
+  useChatStore,
+} from "~/stores/chat-store";
 import type { ChatEvent, SessionMetadata } from "~/stores/chat-types";
 
 function makeMeta(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
@@ -84,6 +88,7 @@ function makeCompactBoundaryEvent(
 describe("chat-store", () => {
   beforeEach(() => {
     _clearPendingStateUpdates();
+    _resetUnseenWireLearning();
     useChatStore.setState({
       sessions: {},
       activeSessionId: null,
@@ -503,6 +508,76 @@ describe("chat-store", () => {
         .getState()
         .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
       expect(useChatStore.getState().sessions["sess-1"]?.hasUnseenCompletion).toBe(false);
+    });
+  });
+
+  // --- The unseen-completion mark, as the owning machine tells it ---
+
+  describe("unseen completion from the server", () => {
+    beforeEach(() => {
+      useChatStore.getState().addSession(makeMeta());
+    });
+
+    const unseen = () => useChatStore.getState().sessions["sess-1"]?.hasUnseenCompletion;
+
+    it("marks a session the server says finished unread", () => {
+      useChatStore
+        .getState()
+        .setSessionState("sess-1", "idle", { unseenCompletedAt: "2026-08-26T09:00:00Z" });
+      expect(unseen()).toBe(true);
+    });
+
+    it("clears the mark when a peer that keeps it stops reporting one", () => {
+      useChatStore
+        .getState()
+        .setSessionState("sess-1", "idle", { unseenCompletedAt: "2026-08-26T09:00:00Z" });
+      useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: null });
+      expect(unseen()).toBe(false);
+    });
+
+    // A machine on a release that predates the field says nothing about the
+    // mark on every push, and reading that as a denial would wipe the local
+    // one on the next git refresh.
+    it("leaves the local mark alone until some peer has spoken the field", () => {
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
+      expect(unseen()).toBe(true);
+
+      useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: null });
+      expect(unseen()).toBe(true);
+    });
+
+    // A git refresh is about git. It reports no mark at all, which is not the
+    // same as reporting that there is none.
+    it("ignores a snapshot that does not report the mark", () => {
+      useChatStore
+        .getState()
+        .setSessionState("sess-1", "idle", { unseenCompletedAt: "2026-08-26T09:00:00Z" });
+      useChatStore.getState().setSessionState("sess-1", "idle", { gitVersion: 2 });
+      expect(unseen()).toBe(true);
+    });
+
+    // Being looked at is what "seen" means.
+    it("never marks the session on screen", () => {
+      useChatStore.getState().setActiveSessionId("sess-1");
+      useChatStore
+        .getState()
+        .setSessionState("sess-1", "idle", { unseenCompletedAt: "2026-08-26T09:00:00Z" });
+      expect(unseen()).toBe(false);
+    });
+
+    it("takes the mark from the session list too", () => {
+      useChatStore.getState().setSessions(
+        [
+          {
+            ...makeMeta({ id: "sess-2" }),
+            unseenCompletedAt: "2026-08-26T09:00:00Z",
+          } as SessionMetadata,
+        ],
+        "proj-1",
+      );
+      expect(useChatStore.getState().sessions["sess-2"]?.hasUnseenCompletion).toBe(true);
     });
   });
 

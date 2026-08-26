@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { GitSnapshotSchema } from "~/lib/generated-schemas";
-import { isUnknownOpError, LEGACY_OP, readArchivedAt } from "~/lib/wire-compat";
+import {
+  isUnknownOpError,
+  LEGACY_OP,
+  readArchivedAt,
+  readUnseenCompletedAt,
+} from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
 import { define } from "~/lib/ws-rpc";
 
@@ -36,6 +41,30 @@ describe("readArchivedAt", () => {
     expect(readArchivedAt({})).toBeUndefined();
     expect(readArchivedAt({ completedAt: "" })).toBeUndefined();
     expect(readArchivedAt(undefined)).toBeUndefined();
+  });
+});
+
+describe("readUnseenCompletedAt", () => {
+  it("reads the mark a peer that keeps it sends", () => {
+    expect(readUnseenCompletedAt({ unseenCompletedAt: "2026-08-26T09:00:00Z" })).toBe(
+      "2026-08-26T09:00:00Z",
+    );
+  });
+
+  // omitempty on the server side: nothing unread and the field is simply gone.
+  it("reports nothing for an empty or absent mark", () => {
+    expect(readUnseenCompletedAt({ unseenCompletedAt: "" })).toBeUndefined();
+    expect(readUnseenCompletedAt({})).toBeUndefined();
+  });
+
+  // Raw push payloads arrive here from any release, including ones that
+  // predate the field and ones that put something else in its place.
+  it("survives a payload that is not what it expected", () => {
+    expect(readUnseenCompletedAt(undefined)).toBeUndefined();
+    expect(readUnseenCompletedAt(null)).toBeUndefined();
+    expect(readUnseenCompletedAt("nonsense")).toBeUndefined();
+    expect(readUnseenCompletedAt({ unseenCompletedAt: 1756198800 })).toBeUndefined();
+    expect(readUnseenCompletedAt({ unseenCompletedAt: null })).toBeUndefined();
   });
 });
 

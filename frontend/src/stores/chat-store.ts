@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { extractContextUsageFromTurns, extractTodosFromTurns } from "~/lib/event-extractors";
+import { markSessionSeen } from "~/lib/session/seen";
 import { uuid } from "~/lib/utils";
+import { readUnseenCompletedAt } from "~/lib/wire-compat";
 import { type ApplyResult, applyServerEvent } from "~/stores/apply-event";
 import type {
   AutoApproveMode,
@@ -69,7 +71,71 @@ type StateExtras = Partial<
     | "worktreeBranch"
     | "worktreePath"
   >
->;
+> & {
+  /**
+   * When this session finished a turn nobody has read yet, per the machine
+   * that owns it. Spelled out rather than picked off `SessionMetadata`: the
+   * generated wire type does not carry it until the next typegen run.
+   *
+   * Three-valued on purpose. `undefined` means this snapshot does not report
+   * the mark at all — a git refresh is about git, and must not be read as a
+   * statement that nothing is unread. `null` means it reports the mark and
+   * there is none; a timestamp means there is one.
+   */
+  unseenCompletedAt?: string | null;
+};
+
+/**
+ * Whether any peer has ever stated `unseenCompletedAt`.
+ *
+ * The field is authoritative when a peer speaks it: absent means "not marked",
+ * and the local optimistic flag gives way. But a machine on a release that
+ * predates the field never says it at all, and treating *that* silence as a
+ * denial would wipe the mark on the very next state push — including the git
+ * refreshes that arrive constantly. So silence only counts once we have heard
+ * the vocabulary spoken. It is learned per client rather than per machine
+ * because the failure it guards against is a whole fleet predating the field,
+ * and the first real mark from anywhere settles it.
+ */
+let serverSpeaksUnseen = false;
+
+/** Exported for tests. */
+export function _resetUnseenWireLearning(): void {
+  serverSpeaksUnseen = false;
+}
+
+/** What a peer's snapshot says about the mark, or undefined when it says nothing. */
+function unseenFromWire(stated: string | null | undefined): boolean | undefined {
+  if (stated === undefined) return undefined; // this snapshot is not about the mark
+  if (stated) {
+    serverSpeaksUnseen = true;
+    return true;
+  }
+  return serverSpeaksUnseen ? false : undefined;
+}
+
+/**
+ * The mark to store, given what the peer said and what we already had.
+ *
+ * The session on screen is never marked: being looked at is what "seen" means.
+ * When the server still believes otherwise, its id is collected in `seen` so it
+ * can be told once the store update is done — a request does not belong inside
+ * a reducer.
+ */
+function resolveUnseen(
+  stated: string | null | undefined,
+  sessionId: string,
+  activeSessionId: string | null,
+  current: boolean,
+  seen: string[],
+): boolean {
+  const wire = unseenFromWire(stated);
+  const next = wire ?? current;
+  if (!next) return false;
+  if (sessionId !== activeSessionId) return true;
+  if (wire) seen.push(sessionId);
+  return false;
+}
 interface PendingStateEntry {
   state: SessionState;
   extras?: StateExtras;
@@ -228,7 +294,9 @@ export const useChatStore = create<ChatState>((set) => ({
   loadedProjects: new Set<string>(),
   historyLoading: new Set<string>(),
 
-  setSessions: (metas, projectId, authoritative = false) =>
+  setSessions: (metas, projectId, authoritative = false) => {
+    // Sessions the server still thinks are unread while they are on screen.
+    const seen: string[] = [];
     set((s) => {
       // Keep sessions from other projects, replace sessions for this project
       const sessions: Record<string, SessionData> = {};
@@ -257,6 +325,15 @@ export const useChatStore = create<ChatState>((set) => ({
           sessions[meta.id] = {
             ...existing,
             meta: mergedMeta,
+            // The list is a snapshot from the owning machine, so it carries the
+            // unseen mark as well — that is what makes it survive a reload.
+            hasUnseenCompletion: resolveUnseen(
+              readUnseenCompletedAt(meta) ?? null,
+              meta.id,
+              s.activeSessionId,
+              existing.hasUnseenCompletion,
+              seen,
+            ),
             planMode: mergedMeta.permissionMode === "plan",
             autoApproveMode: (mergedMeta.autoApproveMode as AutoApproveMode) ?? "manual",
             // On the reconnect (authoritative) path the fetched list is the
@@ -278,13 +355,22 @@ export const useChatStore = create<ChatState>((set) => ({
           const data = emptySessionData(tagged);
           if (tagged.pendingApproval) data.pendingApproval = tagged.pendingApproval;
           if (tagged.pendingQuestion) data.pendingQuestion = tagged.pendingQuestion;
+          data.hasUnseenCompletion = resolveUnseen(
+            readUnseenCompletedAt(meta) ?? null,
+            meta.id,
+            s.activeSessionId,
+            false,
+            seen,
+          );
           sessions[meta.id] = data;
         }
       }
       const loadedProjects = new Set(s.loadedProjects);
       loadedProjects.add(projectId);
       return { sessions, loadedProjects };
-    }),
+    });
+    for (const id of seen) markSessionSeen(id);
+  },
 
   addSession: (meta) =>
     set((s) => ({
@@ -342,7 +428,15 @@ export const useChatStore = create<ChatState>((set) => ({
       return changed ? { sessions } : s;
     }),
 
-  setActiveSessionId: (id) =>
+  setActiveSessionId: (id) => {
+    // Opening a session is what reading it means, and the mark is server state
+    // now: tell the machine that owns it, so the badge clears on every client
+    // and not just this tab. Best effort — the local clear below is what the
+    // operator sees, and an older peer that rejects the op simply keeps the
+    // behaviour it had before.
+    if (id && useChatStore.getState().sessions[id]?.hasUnseenCompletion) {
+      markSessionSeen(id);
+    }
     set((s) => {
       const mark = `session:switch ${id?.slice(0, 8) ?? "null"}`;
       performance.mark(`${mark}:start`);
@@ -377,9 +471,11 @@ export const useChatStore = create<ChatState>((set) => ({
       performance.mark(`${mark}:end`);
       performance.measure(mark, `${mark}:start`, `${mark}:end`);
       return { activeSessionId: id, sessions };
-    }),
+    });
+  },
 
-  setSessionState: (sessionId, state, extras) =>
+  setSessionState: (sessionId, state, extras) => {
+    const seen: string[] = [];
     set((s) => {
       const session = s.sessions[sessionId];
       if (!session) {
@@ -430,6 +526,19 @@ export const useChatStore = create<ChatState>((set) => ({
         worktreeBranch: extras?.worktreeBranch ?? m.worktreeBranch,
         worktreePath: extras?.worktreePath ?? m.worktreePath,
       };
+      // The unseen mark rides every state snapshot, the way archivedAt does:
+      // it is session state rather than a computed git field, so a peer that
+      // keeps it states it every time — including while running.
+      const unseenPatch: Partial<SessionData> = {
+        hasUnseenCompletion: resolveUnseen(
+          extras?.unseenCompletedAt,
+          sessionId,
+          s.activeSessionId,
+          session.hasUnseenCompletion,
+          seen,
+        ),
+      };
+
       // Evict turns when a session is archived and isn't being viewed. Still
       // gated on !transient: a session cannot become archived by starting a
       // turn, and dropping the tail out from under a live turn would be wrong.
@@ -438,10 +547,13 @@ export const useChatStore = create<ChatState>((set) => ({
         return updateSession(s, sessionId, {
           meta: { ...m, ...patch },
           ...evictTurns(session),
+          ...unseenPatch,
         });
       }
-      return updateMeta(s, sessionId, patch);
-    }),
+      return updateSession(s, sessionId, { meta: { ...m, ...patch }, ...unseenPatch });
+    });
+    for (const id of seen) markSessionSeen(id);
+  },
 
   setSessionName: (sessionId, name) => set((s) => updateMeta(s, sessionId, { name })),
   setSessionPinned: (sessionId, pinned, pinOrder) =>

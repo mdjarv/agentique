@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import type { useWebSocket } from "~/hooks/useWebSocket";
 import { navigateToSession } from "~/lib/navigation";
 import { findNearestActiveSession } from "~/lib/session/utils";
-import { readArchivedAt } from "~/lib/wire-compat";
+import { readArchivedAt, readUnseenCompletedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
 import { useChannelStore } from "~/stores/channel-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -36,6 +36,11 @@ export function useSessionLifecycleSubscription(
         hasDirtyWorktree: payload.hasDirtyWorktree,
         worktreeMerged: payload.worktreeMerged,
         archivedAt: readArchivedAt(payload),
+        // The unseen-completion mark, from the machine that owns the session —
+        // which is what makes the badge clear on the laptop when the phone
+        // opens it. Absent from a peer that predates the field, and the store
+        // knows not to read that as "nothing is unread".
+        unseenCompletedAt: readUnseenCompletedAt(payload),
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,

@@ -44,6 +44,27 @@ export function readArchivedAt(wire: ArchivableWire | undefined): string | undef
 }
 
 /**
+ * When a session finished a turn nobody has looked at yet, as the peer that
+ * owns it says — or `undefined` when it did not say.
+ *
+ * The mark used to be client-only, so it lived in one tab and died with it. It
+ * is server state now, which makes it cross-tab and cross-machine — but only
+ * from a peer new enough to keep it. Reading through here rather than off the
+ * generated type is deliberate twice over: a paired machine may predate the
+ * field entirely, and the generated types do not carry it until the next
+ * typegen run.
+ *
+ * Takes `unknown` because it is asked of raw push payloads as often as of typed
+ * rows, and a payload from any release is exactly what it exists to survive.
+ */
+export function readUnseenCompletedAt(row: unknown): string | undefined {
+  if (typeof row !== "object" || row === null) return undefined;
+  const value = (row as { unseenCompletedAt?: unknown }).unseenCompletedAt;
+  if (typeof value !== "string") return undefined;
+  return value || undefined;
+}
+
+/**
  * Old names for renamed RPCs, tried when a peer rejects the current one.
  *
  * Keep this list short: an entry is a promise to support a release that is on
