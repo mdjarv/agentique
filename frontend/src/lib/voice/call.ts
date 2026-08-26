@@ -12,6 +12,7 @@ import {
   type VoiceTranscript,
   type VoiceWorldSession,
 } from "./protocol";
+import { HANGUP_TONE_SECONDS, playConnectedTone, playDialTone, playHangupTone } from "./tones";
 
 export type VoiceCallState = "idle" | "connecting" | "live" | "closed" | "failed";
 
@@ -56,6 +57,25 @@ function micFailureMessage(err: unknown): string {
 }
 
 /**
+ * Playback rate assumed until the server announces its own in `ready`.
+ *
+ * A fallback rather than a guess that matters: the announced rate is what every
+ * buffer is actually built at, and this only covers audio arriving before the
+ * announcement, which the protocol does not produce.
+ */
+const FALLBACK_OUTPUT_RATE = 24000;
+
+/**
+ * What the operator is told when the browser will not let the call make a
+ * sound. Written as the gesture that fixes it, because there is one.
+ */
+const AUDIO_BLOCKED_LABEL = "Sound is blocked — tap the call to enable it";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * URL of the voice socket on the machine serving this page.
  *
  * sessionId names the session the call hands work to. Without it the call can
@@ -81,6 +101,12 @@ export class VoiceCall {
   private handlers: VoiceCallHandlers;
   private state: VoiceCallState = "idle";
 
+  /** The rate the server said its audio is at. Every buffer is built at it. */
+  private outputSampleRate = FALLBACK_OUTPUT_RATE;
+
+  /** Whether the browser let the playback context run, settled during start. */
+  private audioReady: Promise<boolean> | null = null;
+
   /** Guards against a late close handler reopening or re-reporting a call. */
   private generation = 0;
 
@@ -91,6 +117,21 @@ export class VoiceCall {
   async start(url: string = primaryVoiceUrl()): Promise<void> {
     if (this.state === "connecting" || this.state === "live") return;
     const generation = ++this.generation;
+
+    // Playback is built HERE, in the gesture that placed the call, and NOT when
+    // `ready` arrives.
+    //
+    // An AudioContext created outside a user gesture starts suspended and stays
+    // suspended: `resume()` resolves without the context ever running, control
+    // frames keep rendering, and nothing is ever heard. `ready` is a socket, a
+    // briefing and a speech-model handshake later, by which time the activation
+    // has lapsed — which is exactly the call that transcribed the operator and
+    // answered in silence. The engine's rate is not known yet and no longer has
+    // to be; see PlaybackQueue.
+    //
+    // Nothing here may be awaited before `resume()` is invoked, or the gesture
+    // is over by the time the browser is asked.
+    this.startPlayback();
     this.setState("connecting");
 
     let ws: WebSocket;
@@ -109,7 +150,7 @@ export class VoiceCall {
         this.handleControl(event.data);
         return;
       }
-      this.playback?.enqueue(event.data as ArrayBuffer);
+      this.playback?.enqueue(event.data as ArrayBuffer, this.outputSampleRate);
     };
 
     ws.onerror = () => {
@@ -227,19 +268,42 @@ export class VoiceCall {
   }
 
   /**
-   * Opens the microphone and playback once the server has announced its rates.
+   * Creates the playback context and asks the browser to run it.
+   *
+   * Split out only so its one constraint is visible: it must be reachable
+   * synchronously from the click. The dial tone rides the same context, so a
+   * caller who hears it has been shown the audio path works.
+   */
+  private startPlayback(): void {
+    try {
+      const playback = new PlaybackQueue();
+      this.playback = playback;
+      this.audioReady = playback.ready();
+      playback.tone(playDialTone);
+    } catch (err) {
+      // No AudioContext at all is a browser that cannot do this. The call is
+      // still worth opening — transcripts and dispatch do not need one.
+      console.warn("[voice] playback unavailable", err);
+      this.playback = null;
+      this.audioReady = null;
+    }
+  }
+
+  /**
+   * Opens the microphone once the server has announced its rates.
    *
    * Capture starts only after `ready`, so the recording indicator never lights
-   * for a connection that turned out to be refused.
+   * for a connection that turned out to be refused. Playback is already open by
+   * then — it was built in the gesture, several seconds earlier.
    */
   private async goLive(outputSampleRate?: number): Promise<void> {
     const generation = this.generation;
-    try {
-      // The rate comes off the wire rather than a constant: the echo engine
-      // answers at the input rate and a speech model at its own.
-      this.playback = new PlaybackQueue(outputSampleRate ?? 24000);
-      await this.playback.ready();
+    // The rate comes off the wire rather than a constant: the echo engine
+    // answers at the input rate and a speech model at its own. It reaches each
+    // buffer rather than the context, so learning it late costs nothing.
+    if (outputSampleRate && outputSampleRate > 0) this.outputSampleRate = outputSampleRate;
 
+    try {
       await this.mic.start({
         onFrame: (frame) => {
           if (generation !== this.generation) return;
@@ -262,6 +326,32 @@ export class VoiceCall {
       return;
     }
     this.setState("live");
+    this.playback?.tone(playConnectedTone);
+    void this.reportBlockedAudio(generation);
+  }
+
+  /**
+   * Says so when the browser will not let the call be heard.
+   *
+   * Loud rather than mute: a suspended context renders every transcript and
+   * plays nothing, which reads as a broken server. It is reported as a status
+   * line rather than a failed call because the call is not failed — it hears,
+   * it drafts, it dispatches — and because a gesture fixes it, so the line
+   * clears itself when one does.
+   */
+  private async reportBlockedAudio(generation: number): Promise<void> {
+    const playback = this.playback;
+    if (!playback) return;
+
+    const running = await (this.audioReady ?? playback.ready());
+    if (generation !== this.generation || running) return;
+
+    console.warn("[voice] playback is suspended; audio will not be heard");
+    this.handlers.onActivity?.({ type: "activity", label: AUDIO_BLOCKED_LABEL });
+    playback.resumeOnNextGesture(() => {
+      if (generation !== this.generation) return;
+      this.handlers.onActivity?.({ type: "activity", label: "" });
+    });
   }
 
   private fail(detail: string): void {
@@ -283,6 +373,12 @@ export class VoiceCall {
 
     const playback = this.playback;
     this.playback = null;
+    this.audioReady = null;
+
+    // Every ending sounds, whoever ended it: the operator, the idle guard, a
+    // broken engine. The one the operator cannot otherwise explain is the
+    // server hanging up mid-silence, and that arrives here like any other.
+    const sounded = playback?.tone(playHangupTone) ?? false;
 
     const errors: unknown[] = [];
     try {
@@ -290,6 +386,9 @@ export class VoiceCall {
     } catch (err) {
       errors.push(err);
     }
+    // Closing the context cancels anything scheduled on it, so the tone gets
+    // its moment first. A quarter of a second, and only when there is a tone.
+    if (sounded) await sleep(HANGUP_TONE_SECONDS * 1000);
     try {
       await playback?.close();
     } catch (err) {

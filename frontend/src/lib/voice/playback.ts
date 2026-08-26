@@ -14,10 +14,12 @@
  */
 const DRIFT_GUARD_SECONDS = 0.01;
 
+/** Gestures that count as "the operator touched the call" for a retry. */
+const GESTURE_EVENTS = ["pointerdown", "touchend", "keydown"] as const;
+
 export class PlaybackQueue {
   private ctx: AudioContext;
   private gain: GainNode;
-  private sampleRate: number;
 
   /** Sources still scheduled or playing, so a flush can stop every one. */
   private active: AudioBufferSourceNode[] = [];
@@ -25,28 +27,121 @@ export class PlaybackQueue {
   /** Context time at which the next frame should start. */
   private nextStart = 0;
 
+  /** Removes the gesture retry listeners, when one is armed. */
+  private disarm: (() => void) | null = null;
+
+  private closed = false;
+
   /**
-   * Playback gets its own AudioContext, running at the engine's output rate.
+   * Playback gets its own AudioContext, and it is built inside the gesture that
+   * started the call.
    *
    * Capture runs at 16 kHz and an engine returns audio at its own rate, so a
-   * single shared context would resample every played frame down to the
-   * capture rate and throw away the difference. Two contexts is the cost of
-   * both directions sounding right.
+   * single shared context would resample every played frame down to the capture
+   * rate and throw away the difference. Two contexts is the cost of both
+   * directions sounding right.
+   *
+   * The engine's rate is deliberately NOT forced on the context. It is not
+   * known at the moment the operator clicks, and waiting to learn it is what
+   * broke playback: a context constructed seconds after the gesture starts
+   * suspended and stays suspended, so control frames still rendered and nothing
+   * was ever heard. The context takes the hardware's rate instead and each
+   * buffer is created at the rate the server announced, which the browser
+   * resamples on playback.
    */
-  constructor(sampleRate: number) {
-    this.sampleRate = sampleRate;
-    this.ctx = new AudioContext({ sampleRate });
+  constructor() {
+    this.ctx = new AudioContext();
     this.gain = this.ctx.createGain();
     this.gain.connect(this.ctx.destination);
   }
 
-  /** Resumes a context that started suspended, as mobile ones do. */
-  async ready(): Promise<void> {
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+  /** Whether the browser is actually letting audio out of this context. */
+  get isRunning(): boolean {
+    return this.ctx.state === "running";
   }
 
-  /** Queues one frame of Int16 little-endian mono PCM. */
-  enqueue(pcm: ArrayBuffer): void {
+  /**
+   * Resumes the context and reports whether it is running.
+   *
+   * A boolean rather than a throw, because a suspended context is a normal
+   * browser decision rather than an exception: `resume()` on a context created
+   * outside a gesture resolves happily while the context stays suspended. The
+   * caller decides what to say about it — the point is that it is said, rather
+   * than the call sitting mute.
+   */
+  async ready(): Promise<boolean> {
+    if (this.closed) return false;
+    if (this.ctx.state === "suspended") {
+      try {
+        await this.ctx.resume();
+      } catch (err) {
+        console.warn("[voice] playback resume rejected", err);
+      }
+    }
+    return this.isRunning;
+  }
+
+  /**
+   * Tries again on the operator's next gesture, and calls back once it works.
+   *
+   * Belt and braces for mobile, where a lapsed activation is the difference
+   * between a call you can hear and one you cannot. Listening at the window
+   * rather than on a component keeps it self-contained: anything the operator
+   * touches — the call surface included — is a fresh activation.
+   */
+  resumeOnNextGesture(onResumed: () => void): void {
+    if (this.disarm || this.closed || typeof window === "undefined") return;
+
+    const attempt = () => {
+      void this.ready().then((running) => {
+        if (!running) return;
+        this.disarmGesture();
+        onResumed();
+      });
+    };
+    for (const name of GESTURE_EVENTS) {
+      window.addEventListener(name, attempt, { capture: true });
+    }
+    this.disarm = () => {
+      for (const name of GESTURE_EVENTS) {
+        window.removeEventListener(name, attempt, { capture: true });
+      }
+    };
+  }
+
+  private disarmGesture(): void {
+    this.disarm?.();
+    this.disarm = null;
+  }
+
+  /**
+   * Plays a short tone through this call's context, best effort.
+   *
+   * Here rather than at the call site so the context stays private and every
+   * play is guarded in one place: a sound is never worth aborting a call, or a
+   * hangup, over. Reports whether anything was scheduled, which is what lets a
+   * hangup wait for its own tone before closing the context underneath it.
+   */
+  tone(play: (ctx: AudioContext) => void): boolean {
+    if (this.closed || this.ctx.state === "closed") return false;
+    try {
+      play(this.ctx);
+      return true;
+    } catch (err) {
+      console.warn("[voice] tone failed", err);
+      return false;
+    }
+  }
+
+  /**
+   * Queues one frame of Int16 little-endian mono PCM, recorded at sampleRate.
+   *
+   * The rate is the server's announced one, not the context's: the browser
+   * resamples a buffer whose rate differs from the context it plays in, which
+   * is what lets the context be created before the engine has said anything.
+   */
+  enqueue(pcm: ArrayBuffer, sampleRate: number): void {
+    if (this.closed) return;
     const samples = new Int16Array(pcm);
     if (samples.length === 0) return;
 
@@ -57,7 +152,10 @@ export class PlaybackQueue {
       floats[i] = (samples[i] ?? 0) / 32768;
     }
 
-    const buffer = this.ctx.createBuffer(1, floats.length, this.sampleRate);
+    // A rate the server never announced would throw and take the frame with it;
+    // the context's own is the only other honest guess.
+    const rate = sampleRate > 0 ? sampleRate : this.ctx.sampleRate;
+    const buffer = this.ctx.createBuffer(1, floats.length, rate);
     buffer.getChannelData(0).set(floats);
 
     const source = this.ctx.createBufferSource();
@@ -101,6 +199,8 @@ export class PlaybackQueue {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
+    this.disarmGesture();
     this.flush();
     this.gain.disconnect();
     if (this.ctx.state !== "closed") {
