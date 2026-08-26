@@ -135,6 +135,18 @@ socket opening and `ready` reaching the browser. Every part of a briefing is a
 nice-to-have; a call that opens knowing less still works, and one that never
 opens does not.
 
+The engine handshake behind it is bounded separately, by `engineDialBudget`. It
+is a network round trip to somebody else's service, and a dial that never
+answered used to hold one of very few call slots until the browser gave up —
+now that the client rings while it connects, it would also ring forever at a
+backend that was never going to answer. On expiry the call is refused down the
+same path an engine failure takes, which is what stops the ring. The budget
+cannot be a deadline on the engine's own context, because that context is the
+*call's*: cancelling it would take a successful engine down later, mid-
+conversation. So the dial outlives the wait, and an engine that turns up late is
+closed rather than abandoned — an engine nobody holds is a paid session nobody
+is listening to.
+
 The call limit, the origin check and the `context.WithoutCancel` lifetime rule
 are unchanged: the limiter is cheap enough to stay in front of the upgrade, and
 the engine's context is still the call's rather than the request's.
@@ -180,10 +192,11 @@ interaction anywhere on the page and clears the line once one works.
 
 ### The call sounds like a call
 
-Three tones, synthesised from an oscillator and a gain envelope rather than
+Four sounds, synthesised from an oscillator and a gain envelope rather than
 shipped as audio files: no asset to inline, nothing for the CSP to judge, and no
 decode between the click and the sound. Two rising notes when the call is
-placed, one quieter blip when it goes live, two falling notes on every ending.
+placed, a ringback while it connects, one quieter blip when it goes live, two
+falling notes on every ending.
 
 The dial tone's second job is diagnosis. It plays from the gesture, through the
 very context playback will use, so an operator who hears it has been shown the
@@ -192,11 +205,74 @@ learned something the silence would have hidden. The connected blip earns its
 place on latency: until the first word, "still connecting" and "connected,
 waiting for you" look identical.
 
+**The ringback is the same argument, held down.** Opening a call is a socket, a
+briefing and a speech-model handshake, and someone driving cannot look at the
+phone to see which of those is still going. A gentle dual-tone burst every two
+seconds says *connecting*, out loud, for exactly as long as that is true.
+
+It is also a continuous probe of the output path, and that is what it is really
+for. It plays through the context the model's audio will use, across the moment
+`getUserMedia` opens the microphone — which on Bluetooth hands-free is when the
+handset and the head unit switch from A2DP to HFP and the audio route is rebuilt
+underneath everything. A ring that dies there is the operator *hearing* the
+route break, at the instant it broke, instead of inferring it from a silence
+that arrives minutes later.
+
+So the ring has one invariant: it never sounds over a live call and never
+outlives the call object. One owner in `VoiceCall`, stopped on every exit from
+connecting — live, an `error` frame, the socket closing, a hangup, teardown —
+and the `error` frame stops it without waiting for the close behind it, because
+a call ringing over its own refusal says the opposite of what happened. Bursts
+are scheduled against `ctx.currentTime` when their timer fires, never queued
+ahead, and stopping silences the burst that is playing rather than waiting for
+it to end.
+
 One sound for every ending — the operator hanging up, the idle guard hanging up,
 the engine failing. A distinct failure tone would be a second vocabulary to
 learn for a fact the screen already carries in words. Every play is best effort
 and nothing blocks on one; a hangup waits a quarter of a second for its own tone
 before closing the context underneath it, and no longer.
+
+### Silence has three causes, and the call names one
+
+A call that has gone quiet is three different faults wearing the same face, and
+in a car it is diagnosed by ear or not at all. `lib/voice/health.ts` is the
+judgement — a pure function over evidence the client already holds — and the
+call samples it once a second while live, putting the answer on the same status
+line the blocked-audio message always used.
+
+| Verdict | The evidence | What the operator is told |
+|---|---|---|
+| `cannot-play` | The playback context is not running, or frames are arriving while its clock has stopped | Sound is blocked — tap the call to enable it |
+| `mic-silent` | Six seconds of live call with the mic level at the floor throughout | The microphone is picking up nothing — check Bluetooth audio. |
+| `no-audio` | The engine's transcript arrived and no PCM followed it within five seconds | The assistant replied but no audio is arriving. |
+
+One verdict at a time, never a summary: the line holds a single message, and a
+line reporting three faults at once reports none of them. They are ranked by
+what can be done about them — a broken output path first, because it is the only
+one a gesture fixes and because everything else would be inaudible anyway; then
+a silent microphone, which is the *cause* of a missing reply rather than its
+symptom; then the missing reply itself. Each clears when its condition stops
+holding, and clearing hands the status line back to whatever the call was
+working on rather than blanking it.
+
+The three are deliberately closed. A fourth state would be a fourth thing to
+learn by ear, and the value here is that each one names a different thing to
+check.
+
+**A wedged context is recovered by replacing it.** `resumeOnNextGesture` retries
+`resume()` on the next touch anywhere on the page, as it always did; if that
+does not get the context running, the touch after it builds a **fresh** context
+instead — a route change can leave one in a state `resume()` resolves happily
+about and never revives. The new context is built synchronously inside the
+gesture, where it is allowed to start. Missed audio is not replayed: recovery
+applies from the next reply, and audio nobody could hear is not worth carrying
+into a context that works.
+
+The call also counts the PCM bytes it has received (`audioBytesReceived`). It is
+one number, and it is the whole difference between "no audio came" and "audio
+came and could not be played" — two identical silences and two entirely
+different bugs.
 
 ### The worklet must be an emitted file
 
@@ -798,6 +874,10 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 - The `vertex` backend is wired but unverified — it shares the engine, so only
   credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation
-  over Bluetooth hands-free — the last of which is the biggest open risk and is
-  meant to be tested against the real handset and head unit while the only
-  moving part is an echo.
+  over Bluetooth hands-free. The profile switch remains the biggest open risk —
+  the dial tone plays over A2DP, and `getUserMedia` then moves the handset and
+  the head unit onto HFP, rebuilding the route underneath a call that is already
+  running. Nothing here *fixes* that; the ringback and the health watchdog make
+  it audible and nameable, which is what the second car test was missing. Fixing
+  it, if it is ours to fix, is still meant to be worked out against the real
+  handset and head unit while the only moving part is an echo.

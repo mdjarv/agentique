@@ -549,9 +549,13 @@ browser waiting on an HTTP response cannot be told anything — the pre-upgrade
 version opened seconds late and sometimes never, leaving a call that transcribed
 speech and answered in silence. So every failure past the upgrade is reported
 *on the socket* (an `error` frame with a fixed reason, detail in the log), the
-gathering is bounded by `briefingBudget`, and the session summary is off the
-path entirely: `ProjectContext` reads `sessionSummarizer.Cached` and warms in the
-background. A provider-CLI subprocess is never between a click and a microphone.
+gathering is bounded by `briefingBudget`, the engine handshake by
+`engineDialBudget` — expiry refuses down the same path, which is what stops the
+client ringing, and an engine that arrives late is closed rather than abandoned,
+since the dial cannot be bounded by a deadline on the call's own context — and
+the session summary is off the path entirely: `ProjectContext` reads
+`sessionSummarizer.Cached` and warms in the background. A provider-CLI
+subprocess is never between a click and a microphone.
 
 **The playback AudioContext is created in the user gesture.** Built and resumed
 inside the click that placed the call, never when `ready` arrives: a context
@@ -562,7 +566,26 @@ hardware's rate and each buffer is built at the announced source rate
 in words, never left mute, and retried on the next gesture. The call's three
 tones (`lib/voice/tones.ts`) are synthesised, not assets, and the dial tone
 rides that same context on purpose: it is the unlock *and* the proof the audio
-path works.
+path works. A context that resume alone will not revive is **rebuilt** on the
+next gesture, since a route switch wedges one in a way resume never fixes; the
+audio it missed is not replayed.
+
+**The ringback never sounds over a live call and never outlives the call
+object.** One owner in `VoiceCall`, stopped on every exit from connecting —
+live, `error`, closed, hangup, teardown — and an `error` frame stops it without
+waiting for the close behind it. Bursts are scheduled against `ctx.currentTime`
+when their timer fires, never queued ahead, or a burst outlives the state it
+reports. It is a probe as much as a status: it is the same context playback
+uses, playing across the moment the microphone opens, which is when Bluetooth
+switches profile.
+
+**Silence has three causes and the call names one.** `lib/voice/health.ts` is a
+pure verdict over evidence the client already holds — mic level, engine
+transcripts, PCM frames — ranked (`cannot-play`, then `mic-silent`, then
+`no-audio`) because the status line holds one message and a line reporting three
+faults reports none. The set is closed: a fourth state is a fourth thing to
+learn by ear. Each clears when its condition stops holding, and clearing hands
+the line back to the server's activity label rather than blanking it.
 
 **The audio worklet must be an emitted file, never an inlined one.**
 `audioWorklet.addModule()` is judged under `script-src`, which is `'self'` plus
