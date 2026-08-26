@@ -375,6 +375,11 @@ export class VoiceCall {
     this.playback = null;
     this.audioReady = null;
 
+    // Whatever the agent was mid-sentence on stops here rather than when the
+    // context closes: hanging up is the one gesture that means "stop talking",
+    // and the ending tone should not have to compete with a queue.
+    playback?.flush();
+
     // Every ending sounds, whoever ended it: the operator, the idle guard, a
     // broken engine. The one the operator cannot otherwise explain is the
     // server hanging up mid-silence, and that arrives here like any other.
