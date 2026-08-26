@@ -450,7 +450,11 @@ export class VoiceCall {
     if (!playback) return;
 
     await (this.audioReady ?? playback.ready());
-    if (generation !== this.generation) return;
+    // A call torn down across that await has already stopped a watchdog that
+    // did not exist yet; arming one now would leave it ticking forever. The
+    // generation does not always move — a server hangup tears down without
+    // touching it — so the queue being gone is what says so.
+    if (generation !== this.generation || this.playback !== playback) return;
 
     this.lastClock = -1;
     this.checkHealth(generation);
