@@ -106,7 +106,8 @@ function SessionMachineTag({ vm }: { vm: ThreadRowVM }) {
 }
 
 /** The row's project chip, from the session VM. Hue is the caller's call: the
- *  filed sections render grey whatever the row's own rule says. */
+ *  filed sections render grey whatever the row's own rule says. The unread
+ *  notch is not — an archived row you have not read is still unread. */
 function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
   return (
     <Chip
@@ -115,6 +116,7 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
       colorBg={vm.projectColorBg}
       colorFg={vm.projectColorFg}
       hued={hued}
+      unread={vm.unread}
     />
   );
 }
@@ -168,17 +170,24 @@ function RestMark({ token }: { token: Exclude<RestToken, ""> }) {
 }
 
 /**
- * The unread marker: a finished session flags it at the right edge of its
- * **title** line until you open it. Not the identity line's time slot, which is
- * where the row's actions come in on hover and stay on the focused row — a pill
- * that cannot fade is a pill the buttons land on top of. One line down it still
- * forms an always-aligned column, scannable without reading, and the timestamp
- * keeps its slot instead of being evicted by the pill.
+ * The unread marker's spoken half: one word at the right edge of the **title**
+ * line, in the same 10px mono the rest tokens use one line above it. Only the
+ * colour differs, and that is the point — every state on this row is stated as
+ * a lowercase word (`stopped`, `finished`, `merged`), so unread is too. It was
+ * a filled and outlined pill, which made it the only object anywhere in the
+ * sidebar that was both, and 42px wide on a 252px line.
+ *
+ * It sits on the title line and not the identity line's time slot because that
+ * slot is where the row's actions come in on hover and stay on the focused row,
+ * and a mark that means *unread* cannot yield the way a timestamp can.
+ *
+ * The other half is the notch on the chip ({@link Chip}) — this says what that
+ * one means.
  */
-function NewPill() {
+function NewMark() {
   return (
-    <span className="shrink-0 rounded-full border border-success/45 bg-success/20 px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-wider text-success">
-      NEW
+    <span className="shrink-0 font-mono text-[10px] font-medium tracking-[0.04em] text-success">
+      new
     </span>
   );
 }
@@ -310,7 +319,7 @@ export const ThreadRow = memo(function ThreadRow({
               <SessionMachineTag vm={vm} />
               {vm.unread && (
                 <span className="ml-auto">
-                  <NewPill />
+                  <NewMark />
                 </span>
               )}
             </span>
@@ -371,7 +380,7 @@ export const ThreadRow = memo(function ThreadRow({
           >
             {vm.untitled ? "Untitled" : vm.name}
           </span>
-          {vm.unread && <NewPill />}
+          {vm.unread && <NewMark />}
         </span>
 
         {/* State line — awake rows only: glyph names the state, words carry

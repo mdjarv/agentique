@@ -1042,3 +1042,18 @@
   animation: deep-link-flash 2.4s ease-out;
   border-radius: 0.5rem;
 }
+
+/* The unread notch on a sidebar row's project chip: the chip is cut away where
+   the dot sits, so the gap around the dot is the row's *real* background —
+   whatever that is. A painted ring cannot be: the ground changes on hover and
+   on selection, the hover fill is translucent over a translucent sidebar, and a
+   static colour would be right in exactly one of those states. The circle is
+   the dot's 3.5px radius plus a 1.5px gap, centred on the chip's corner; the
+   soft stop is there because a hard one aliases at 14px. */
+.chip-notched {
+  mask-image: radial-gradient(
+    circle at calc(100% + 1.5px) 1.5px,
+    transparent 4.7px,
+    #000 5.4px
+  );
+}
