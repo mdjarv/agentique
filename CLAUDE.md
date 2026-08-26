@@ -629,6 +629,17 @@ message. A notice is the server's own words; a report is agent-written text
 about untrusted repo content and carries explicit quotation framing, so a
 hostile repo cannot steer the conversation that queues the next prompt.
 
+**The pickup greeting is once per *call*, never per engine connection.** The
+model has no "call opened" event, so the server's own cue (`greetingCue`,
+injected from `call.greet` when the call goes live) is the trigger that makes it
+speak first — and the `sync.Once` guarding it lives at the call layer because a
+Gemini session resumption mid-run is invisible there and must not re-greet over
+the work being followed. It names the initial focus, or, unfocused, folds in and
+**replaces** the instruction's one line of orientation rather than doubling it.
+It is also the downlink's proof of life: the client's health watchdog cannot
+compare engine transcripts against PCM arrival until the assistant has replied
+to something.
+
 **The dialog agent drafts, it never sends.** Its output lands in the composer
 through `ComposerTextareaHandle` and stops. One path into the session pipeline,
 the visible send button. Hands-free does not change that contract, only the

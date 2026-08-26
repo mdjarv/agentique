@@ -233,6 +233,41 @@ learn for a fact the screen already carries in words. Every play is best effort
 and nothing blocks on one; a hangup waits a quarter of a second for its own tone
 before closing the context underneath it, and no longer.
 
+### The assistant speaks first
+
+The speech model answers when it is spoken to and does nothing otherwise, so a
+connected call used to sit silent until the operator said something — which, in
+a car, is indistinguishable from a call that never came up. There is no "call
+opened" event to hook, so the greeting is triggered the only way there is: the
+first injected text. `greetingCue` is the server's own words, handed down
+`TextInjector` the moment the call goes live, and it asks for one short
+sentence in character and then a wait. It carries no quotation framing, because
+unlike a report or a summary there is no agent-written content in it.
+
+Two variants. A call opened from a session names it — *"You're on with the
+switchboard, we're looking at Live Voice Dialog. What do you need?"* — and a
+focused session nothing can name falls back to a phrase rather than reading a
+UUID aloud. A call opened on nothing folds in the one line of orientation the
+instruction already allows, and the cue says it **replaces** that offer, or the
+operator hears the same three options twice inside ten seconds.
+
+**Once per call, and the once-ness lives at the call layer.** `call.greet` runs
+from `run`, behind a `sync.Once`; the engine's own reconnect — Gemini's
+connection dies at roughly ten minutes and resumes from a stored handle — never
+reaches up here, which is the point. A session resumption mid-run must not have
+the assistant introduce itself over the top of the work it is following. It is
+best effort in both directions: the loopback echo engine has no voice and is
+skipped without an error, and a failed injection costs the greeting and nothing
+else.
+
+Its second job is diagnosis, the same as the dial tone's. The health watchdog
+below reports *the assistant replied but no audio is arriving* by comparing
+engine transcripts against PCM arrival, and that comparison cannot happen until
+the assistant has replied to something. Greeting on pickup makes it happen
+seconds after going live rather than after the first exchange: ring stops, blip
+lands, a voice speaks, and the whole downlink has been proven by ear before
+anything is asked of it.
+
 ### Silence has three causes, and the call names one
 
 A call that has gone quiet is three different faults wearing the same face, and
