@@ -127,6 +127,7 @@ type call struct {
 	engine     Engine
 	registry   *Registry
 	dispatcher Dispatcher
+	directory  Directory
 	log        *slog.Logger
 
 	// focusMu guards focus, the session this call is currently aimed at.
@@ -191,6 +192,7 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 		engine:      engine,
 		registry:    opts.Registry,
 		dispatcher:  opts.Dispatcher,
+		directory:   opts.Directory,
 		focus:       initialFocus,
 		follows:     make(map[string]*followState),
 		log:         log,

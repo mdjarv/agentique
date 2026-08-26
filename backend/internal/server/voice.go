@@ -16,7 +16,7 @@ import (
 // route — makes a plumbing problem look like a missing feature. The degrade is
 // logged at warn, because silently answering with an echo when someone expected
 // a model would be worse than either.
-func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice.Registry, dispatcher voice.Dispatcher, personas voice.PersonaSource) (*voice.Handler, error) {
+func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice.Registry, dispatcher voice.Dispatcher, personas voice.PersonaSource, directory voice.Directory) (*voice.Handler, error) {
 	opts, err := resolveVoiceOptions(cfg)
 	if err != nil {
 		return nil, err
@@ -26,6 +26,7 @@ func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice
 	opts.Registry = registry
 	opts.Dispatcher = dispatcher
 	opts.Personas = personas
+	opts.Directory = directory
 	return voice.NewHandler(opts)
 }
 

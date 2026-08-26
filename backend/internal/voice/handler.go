@@ -54,6 +54,11 @@ type Options struct {
 	// Nil disables following — a call still works, it just hears nothing from
 	// the sessions it starts.
 	Registry *Registry
+	// Directory is what this machine knows about its own sessions. Nil is
+	// valid: the assistant's directory tools then answer, in words, that they
+	// are not available, and the call is exactly the single-session call it was
+	// before.
+	Directory Directory
 }
 
 // Handler serves the live voice socket.

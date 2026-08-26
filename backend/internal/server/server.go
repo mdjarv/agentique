@@ -815,7 +815,15 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// through the provider CLI and only its paragraph reaches the drafter.
 		voiceSummarizer := newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)
 		dispatcher := &voiceDispatcher{svc: svc, queries: queries, summarizer: voiceSummarizer}
-		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher, voiceSettings); err != nil {
+		// What the call can see beyond the session it opened on. Machine
+		// presentation is read per call rather than captured, so a rename takes
+		// effect on the next call rather than the next restart.
+		directory := newVoiceDirectory(svc, queries, voiceSummarizer, cfg.MachineID,
+			func(ctx context.Context) string {
+				label, _ := hostPresentation(ctx)
+				return label
+			})
+		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher, voiceSettings, directory); err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
 			voiceRegistry = nil
 		} else {
