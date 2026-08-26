@@ -19,8 +19,9 @@ const ToolRunPrompt = "run_prompt"
 // treating silence as consent.
 //
 // projectContext is what the model knows about the work — empty is valid and
-// yields a generic but still correctly-shaped drafter.
-func SystemInstruction(projectContext string) string {
+// yields a generic but still correctly-shaped drafter. persona is the
+// operator's chosen character; its zero value is the built-in behaviour.
+func SystemInstruction(projectContext string, persona Persona) string {
 	var b strings.Builder
 
 	b.WriteString("You are a voice interface to a coding agent. You are on a live call with a developer.\n\n")
@@ -37,9 +38,12 @@ func SystemInstruction(projectContext string) string {
 	b.WriteString("that can. If you catch yourself about to explain something technical, stop: that ")
 	b.WriteString("is the coding agent's job.\n\n")
 
+	b.WriteString(persona.personaSection())
+	b.WriteString("\n")
+
 	b.WriteString("# How to talk\n\n")
 	b.WriteString("Everything you say is spoken aloud, often to someone driving. So:\n\n")
-	b.WriteString("- Short. One or two sentences. Never a list, never a heading, never code.\n")
+	b.WriteString("- No lists, no headings, no code, however long you are speaking for.\n")
 	b.WriteString("- Ask at most one or two clarifying questions before drafting. Prefer drafting ")
 	b.WriteString("something concrete and letting them correct it over interrogating them.\n")
 	b.WriteString("- Silence is fine. When work is running you have nothing to say; do not fill the ")

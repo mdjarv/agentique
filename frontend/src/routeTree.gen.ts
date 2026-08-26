@@ -33,6 +33,7 @@ import { Route as SettingsAboutRouteImport } from "./routes/settings.about";
 import { Route as SettingsAccountRouteImport } from "./routes/settings.account";
 import { Route as SettingsAppearanceRouteImport } from "./routes/settings.appearance";
 import { Route as SettingsMachinesRouteImport } from "./routes/settings.machines";
+import { Route as SettingsVoiceRouteImport } from "./routes/settings.voice";
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index";
 import { Route as ProjectProjectSlugFilesRouteImport } from "./routes/project.$projectSlug.files";
 import { Route as ProjectProjectSlugSettingsRouteImport } from "./routes/project.$projectSlug_.settings";
@@ -162,6 +163,11 @@ const SettingsMachinesRoute = SettingsMachinesRouteImport.update({
   path: "/machines",
   getParentRoute: () => SettingsRoute,
 } as any);
+const SettingsVoiceRoute = SettingsVoiceRouteImport.update({
+  id: "/voice",
+  path: "/voice",
+  getParentRoute: () => SettingsRoute,
+} as any);
 const ProjectProjectSlugIndexRoute = ProjectProjectSlugIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -231,6 +237,7 @@ export interface FileRoutesByFullPath {
   "/settings/account": typeof SettingsAccountRoute;
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings/voice": typeof SettingsVoiceRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
@@ -263,6 +270,7 @@ export interface FileRoutesByTo {
   "/settings/account": typeof SettingsAccountRoute;
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings/voice": typeof SettingsVoiceRoute;
   "/settings": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug/settings": typeof ProjectProjectSlugSettingsRoute;
@@ -298,6 +306,7 @@ export interface FileRoutesById {
   "/settings/account": typeof SettingsAccountRoute;
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
+  "/settings/voice": typeof SettingsVoiceRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/project/$projectSlug/files": typeof ProjectProjectSlugFilesRoute;
   "/project/$projectSlug_/settings": typeof ProjectProjectSlugSettingsRoute;
@@ -334,6 +343,7 @@ export interface FileRouteTypes {
     | "/settings/account"
     | "/settings/appearance"
     | "/settings/machines"
+    | "/settings/voice"
     | "/settings/"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
@@ -366,6 +376,7 @@ export interface FileRouteTypes {
     | "/settings/account"
     | "/settings/appearance"
     | "/settings/machines"
+    | "/settings/voice"
     | "/settings"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug/settings"
@@ -400,6 +411,7 @@ export interface FileRouteTypes {
     | "/settings/account"
     | "/settings/appearance"
     | "/settings/machines"
+    | "/settings/voice"
     | "/settings/"
     | "/project/$projectSlug/files"
     | "/project/$projectSlug_/settings"
@@ -606,6 +618,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsMachinesRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/voice": {
+      id: "/settings/voice";
+      path: "/voice";
+      fullPath: "/settings/voice";
+      preLoaderRoute: typeof SettingsVoiceRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/project/$projectSlug/": {
       id: "/project/$projectSlug/";
       path: "/";
@@ -670,6 +689,7 @@ interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRoute;
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute;
   SettingsMachinesRoute: typeof SettingsMachinesRoute;
+  SettingsVoiceRoute: typeof SettingsVoiceRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
 }
 
@@ -678,6 +698,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAccountRoute: SettingsAccountRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsMachinesRoute: SettingsMachinesRoute,
+  SettingsVoiceRoute: SettingsVoiceRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 };
 

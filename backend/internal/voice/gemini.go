@@ -100,16 +100,15 @@ func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string
 		return nil, fmt.Errorf("gemini client: %w", err)
 	}
 
-	model := opts.Model
-	if model == "" {
-		model = defaultModel
-	}
+	// The persona's model wins over config: it is the more specific choice, and
+	// it is the one somebody just made in the settings page.
+	model := firstNonEmptyString(opts.Persona.Model, opts.Model, defaultModel)
 
 	engineCtx, cancel := context.WithCancel(ctx)
 	e := &geminiEngine{
 		client: client,
 		model:  model,
-		config: liveConfig(systemInstruction),
+		config: liveConfig(systemInstruction, opts.Persona),
 		log:    log,
 		events: make(chan Event, geminiEventBuffer),
 		ctx:    engineCtx,
@@ -132,7 +131,7 @@ func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string
 }
 
 // liveConfig builds the session configuration.
-func liveConfig(systemInstruction string) *genai.LiveConnectConfig {
+func liveConfig(systemInstruction string, persona Persona) *genai.LiveConnectConfig {
 	trigger, target := compressionTrigger, compressionTarget
 	cfg := &genai.LiveConnectConfig{
 		ResponseModalities: []genai.Modality{genai.ModalityAudio},
@@ -173,6 +172,16 @@ func liveConfig(systemInstruction string) *genai.LiveConnectConfig {
 				Parameters:  runPromptSchema(),
 			}},
 		}},
+	}
+	// The chosen voice is the audible half of the persona; the instruction is
+	// the other. An empty name leaves the backend's default rather than
+	// guessing at a value that may not exist upstream.
+	if persona.VoiceName != "" {
+		cfg.SpeechConfig = &genai.SpeechConfig{
+			VoiceConfig: &genai.VoiceConfig{
+				PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{VoiceName: persona.VoiceName},
+			},
+		}
 	}
 	if systemInstruction != "" {
 		cfg.SystemInstruction = &genai.Content{
@@ -422,4 +431,14 @@ func (e *geminiEngine) reconnect() bool {
 	}
 	e.log.Info("voice session resumed", "resumed", handle != "")
 	return true
+}
+
+// firstNonEmptyString returns the first value that is set.
+func firstNonEmptyString(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

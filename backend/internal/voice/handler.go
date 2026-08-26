@@ -29,6 +29,10 @@ type Options struct {
 	Location string
 	// Model overrides the backend's default realtime model id.
 	Model string
+	// Personas supplies the operator's chosen voice and character per call.
+	// Nil leaves the built-in behaviour, which is what an operator who has
+	// never opened the settings page gets.
+	Personas PersonaSource
 	// IdleTimeout closes a call whose caller has gone quiet. 0 = the built-in
 	// default.
 	IdleTimeout time.Duration
@@ -41,6 +45,8 @@ type Options struct {
 	AllowTicketOrigin bool
 	// MaxCalls bounds concurrent calls. 0 = the built-in default.
 	MaxCalls int64
+	// Persona is resolved per call from Personas; callers do not set it.
+	Persona Persona
 	// Dispatcher hands a drafted prompt to the session that does the work.
 	// Nil leaves the call conversational — it can talk, but cannot start work.
 	Dispatcher Dispatcher
@@ -110,10 +116,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// WebSocket is not when the call ends.
 	// The drafter's instruction is built per call, because project context
 	// belongs to the session this call is attached to.
+	// Both are read per call, so a change in the settings page takes effect on
+	// the next call rather than the next restart.
 	target := r.URL.Query().Get("sessionId")
-	instruction := SystemInstruction(h.projectContext(r.Context(), target))
+	persona := h.persona(r.Context())
+	instruction := SystemInstruction(h.projectContext(r.Context(), target), persona)
 
-	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction)
+	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction, persona)
 	if err != nil {
 		// The detail goes to the log; an unclassified failure returns a fixed
 		// message rather than err.Error().
@@ -142,14 +151,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // A per-call engine is not an optimisation. Sharing one across calls means the
 // second caller's stream overwrites the first's, and results are delivered to
 // whoever asked most recently.
-func (h *Handler) newEngine(ctx context.Context, systemInstruction string) (Engine, error) {
+func (h *Handler) newEngine(ctx context.Context, systemInstruction string, persona Persona) (Engine, error) {
 	switch h.opts.Backend {
 	case BackendEcho:
 		return NewEchoEngine(), nil
 	case BackendAIStudio, BackendVertex:
 		// The engine's context is the call's, not the request's: it must
 		// outlive the HTTP handler that created it.
-		return newGeminiEngine(ctx, h.opts, systemInstruction, slog.With("subsystem", "voice"))
+		opts := h.opts
+		opts.Persona = persona
+		return newGeminiEngine(ctx, opts, systemInstruction, slog.With("subsystem", "voice"))
 	default:
 		return nil, fmt.Errorf("unknown voice backend %q", h.opts.Backend)
 	}
@@ -162,4 +173,17 @@ func (h *Handler) projectContext(ctx context.Context, sessionID string) string {
 		return ""
 	}
 	return h.opts.Dispatcher.ProjectContext(ctx, sessionID)
+}
+
+// PersonaSource supplies the operator's current voice settings.
+type PersonaSource interface {
+	Persona(ctx context.Context) Persona
+}
+
+// persona reads the current settings, falling back to the built-in behaviour.
+func (h *Handler) persona(ctx context.Context) Persona {
+	if h.opts.Personas == nil {
+		return Persona{}.Sanitize()
+	}
+	return h.opts.Personas.Persona(ctx).Sanitize()
 }

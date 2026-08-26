@@ -115,7 +115,7 @@ func TestGeminiToolCallLive(t *testing.T) {
 		Backend: BackendAIStudio,
 		APIKey:  key,
 		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
-	}, SystemInstruction("A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts."), slog.Default())
+	}, SystemInstruction("A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts.", Persona{}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGeminiRefusesToSkipTheReadbackLive(t *testing.T) {
 		Backend: BackendAIStudio,
 		APIKey:  key,
 		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
-	}, SystemInstruction("A Go backend with a React frontend."), slog.Default())
+	}, SystemInstruction("A Go backend with a React frontend.", Persona{}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -266,5 +266,71 @@ func TestGeminiRefusesToSkipTheReadbackLive(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestGeminiPersonaLive proves the settings page reaches the model: a chosen
+// voice must be accepted by the service and produce audio.
+//
+// This is the half that cannot be unit-tested. A voice name the backend
+// rejects fails at Connect, so a passing run is evidence the name travelled
+// and was understood — not merely that we put it in a struct.
+func TestGeminiPersonaLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Gemini test: skipped by -short")
+	}
+	key := os.Getenv("AGENTIQUE_VOICE_API_KEY")
+	if key == "" {
+		t.Skip("live Gemini test: set AGENTIQUE_VOICE_API_KEY to run")
+	}
+
+	for _, voiceName := range []string{"Puck", "Charon"} {
+		t.Run(voiceName, func(t *testing.T) {
+			persona := Persona{VoiceName: voiceName, Verbosity: VerbosityBrief}.Sanitize()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			engine, err := newGeminiEngine(ctx, Options{
+				Backend: BackendAIStudio,
+				APIKey:  key,
+				Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+				Persona: persona,
+			}, SystemInstruction("", persona), slog.Default())
+			if err != nil {
+				t.Fatalf("connect with voice %q: %v", voiceName, err)
+			}
+			defer engine.Close()
+
+			if err := engine.SendText("Say the word ready and nothing else."); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+
+			var bytes int
+			deadline := time.After(40 * time.Second)
+		collect:
+			for {
+				select {
+				case <-deadline:
+					break collect
+				case ev, ok := <-engine.Events():
+					if !ok {
+						break collect
+					}
+					switch e := ev.(type) {
+					case AudioEvent:
+						bytes += len(e.PCM)
+					case TurnCompleteEvent:
+						break collect
+					case ErrorEvent:
+						t.Fatalf("engine error with voice %q: %v", voiceName, e.Err)
+					}
+				}
+			}
+			if bytes == 0 {
+				t.Errorf("voice %q produced no audio", voiceName)
+			}
+			t.Logf("voice %q: %d bytes of audio", voiceName, bytes)
+		})
 	}
 }

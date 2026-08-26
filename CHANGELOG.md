@@ -39,6 +39,14 @@ here is live voice, which stays behind `[experimental] voice`.
   a run nobody is listening to carries no instruction and no overhead. The
   handoff asks both questions in one breath: "does that sound right, and do you
   want to stay on while it runs?"
+- **Settings → Voice.** Choose how the live agent sounds (the backend's
+  prebuilt voices, or any name it accepts), how much it says, and its character
+  in a sentence or two. Every voice has a **Listen** button, so you can compare
+  them without starting a call — the sample is synthesised on the same engine a
+  call uses, so what you hear is what you get. Stored server-side and read at
+  the start of each call, so a change lands on the next call without a restart.
+  Character is tone only: it never loosens the read-back or the explicit
+  confirmation, and the instruction says so where the model reads it.
 - **`[voice] summary-model`** gives the drafter a sense of what the session has
   been doing. The recent transcript is distilled locally through the provider
   CLI, so only the resulting paragraph ever reaches the speech vendor, and a

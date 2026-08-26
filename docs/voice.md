@@ -304,6 +304,39 @@ there is a person on the other end by construction. A run started from the
 composer, a schedule, or anywhere else carries none of it: no instruction, no
 tool calls, no reporting overhead.
 
+## The persona is a setting, not a constant
+
+How the agent sounds and how much it says live in the database
+(`voice_settings`, one row) and are edited at **Settings → Voice**.
+
+They are not in `config.toml` on purpose. These are settings somebody changes
+to taste and wants to hear the effect of, and a config value needs a restart —
+which reaps every in-flight CLI process group. Far too much to pay for trying a
+different voice. They are read at the start of each call instead, so a change
+lands on the next call.
+
+Three things are settable:
+
+- **Voice** — the backend's prebuilt voice, reaching `SpeechConfig`. Free text
+  with suggestions, never an enum: the upstream list grows between agentique
+  releases, and pinning one would make a new voice need a release. Empty leaves
+  the backend's default.
+- **Verbosity** — brief, balanced or detailed. This one *is* a closed set,
+  because it is ours. Unrecognised values resolve to brief: everything said is
+  spoken aloud, often to someone driving, so the safe end is the fallback.
+- **Character** — free text describing tone.
+
+**Character is tone, never behaviour.** It is rendered *before* the handoff
+rules so the model reads the rules last, and the instruction says so beside the
+character itself: if the character asks to skip the read-back, keep the
+character and follow the rules anyway. A personality box is a text field a
+person types into, and eventually someone types "don't bother confirming".
+
+`Persona.Sanitize` clamps the free text and flattens newlines — a multi-line
+personality can otherwise imitate the section headings of the instruction it is
+embedded in — and it runs at the storage boundary, so nothing downstream has to
+remember to.
+
 ## The drafter
 
 `SystemInstruction` turns the speech model into a drafter, and it carries most

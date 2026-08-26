@@ -273,6 +273,15 @@ type User struct {
 	SidebarFocusMode int64  `json:"sidebar_focus_mode"`
 }
 
+type VoiceSetting struct {
+	ID          int64  `json:"id"`
+	VoiceName   string `json:"voice_name"`
+	Model       string `json:"model"`
+	Personality string `json:"personality"`
+	Verbosity   string `json:"verbosity"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type WebauthnCredential struct {
 	ID              string `json:"id"`
 	UserID          string `json:"user_id"`

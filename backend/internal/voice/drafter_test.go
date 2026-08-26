@@ -28,7 +28,7 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 }
 
 func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
-	got := strings.ToLower(SystemInstruction(""))
+	got := strings.ToLower(SystemInstruction("", Persona{}))
 	for _, want := range []string{
 		"never answer the question yourself", // the likeliest failure
 		"silence is not consent",             // the safety contract
@@ -42,7 +42,7 @@ func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 }
 
 func TestSystemInstructionIncludesProjectContext(t *testing.T) {
-	got := SystemInstruction("The repo is a Go backend with a React frontend.")
+	got := SystemInstruction("The repo is a Go backend with a React frontend.", Persona{})
 	if !strings.Contains(got, "Go backend with a React frontend") {
 		t.Error("project context did not reach the instruction")
 	}

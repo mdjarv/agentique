@@ -797,11 +797,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var voiceRegistry *voice.Registry
 	if cfg.ExperimentalVoice {
 		voiceRegistry = voice.NewRegistry()
+		// Persona settings are read per call, so a change here takes effect on
+		// the next call rather than the next restart.
+		voiceSettings := &voiceSettingsHandler{queries: queries, configModel: cfg.Voice.Model}
+		mux.HandleFunc("GET /api/voice/settings", voiceSettings.HandleGet)
+		mux.HandleFunc("PUT /api/voice/settings", voiceSettings.HandlePut)
 		// The summariser keeps the session transcript on this machine: it runs
 		// through the provider CLI and only its paragraph reaches the drafter.
 		voiceSummarizer := newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)
 		dispatcher := &voiceDispatcher{svc: svc, queries: queries, summarizer: voiceSummarizer}
-		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher); err != nil {
+		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher, voiceSettings); err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
 			voiceRegistry = nil
 		} else {

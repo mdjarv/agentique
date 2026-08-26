@@ -7,7 +7,7 @@
  * its URL so a link can point at one.
  */
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
-import { Info, type LucideIcon, Palette, Server, UserCircle } from "lucide-react";
+import { AudioLines, Info, type LucideIcon, Palette, Server, UserCircle } from "lucide-react";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { cn } from "~/lib/utils";
 
@@ -31,6 +31,12 @@ export const SETTINGS_CATEGORIES: Category[] = [
     label: "Appearance",
     icon: Palette,
     blurb: "How agentique looks on this device.",
+  },
+  {
+    to: "/settings/voice",
+    label: "Voice",
+    icon: AudioLines,
+    blurb: "How the live voice agent sounds and how much it says.",
   },
   {
     to: "/settings/account",

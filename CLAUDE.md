@@ -502,6 +502,16 @@ schema and the registry, not in a caller's discipline, and the reporting
 instruction is appended to a prompt only when someone actually stayed on the
 call.
 
+**The voice persona is a setting, not a constant.** Voice, verbosity and
+character live in `voice_settings` (one row) and are read per call, so a change
+takes effect on the next call rather than the next restart — a restart would
+reap every in-flight CLI process group, which is absurd for trying a voice. The
+voice name is free text with suggestions, never an enum, for the model-catalog
+reason. **Character is tone, never behaviour**: it renders before the handoff
+rules so the model reads those last, and the instruction says the rules win. A
+personality field is a text box, and eventually someone types "skip the
+confirmation".
+
 **Live voice requires auto mode.** There is no spoken approval — you cannot
 approve what you cannot see, on a transcription — so a call refuses the handoff
 rather than creating that situation. `blocked` therefore means "this needs a

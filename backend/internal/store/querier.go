@@ -76,6 +76,7 @@ type Querier interface {
 	GetTeam(ctx context.Context, id string) (Team, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (User, error)
+	GetVoiceSettings(ctx context.Context) (GetVoiceSettingsRow, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertEventWithMessageID(ctx context.Context, arg InsertEventWithMessageIDParams) error
 	InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error)
@@ -145,6 +146,7 @@ type Querier interface {
 	// multi-byte character anywhere in this file shifts those offsets and corrupts
 	// the generated code for LATER queries.
 	SetSessionArchived(ctx context.Context, id string) error
+	SetVoiceSettings(ctx context.Context, arg SetVoiceSettingsParams) error
 	SetWorktreeMerged(ctx context.Context, id string) error
 	UnsetSessionArchived(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
