@@ -21,6 +21,13 @@ Tapping it opens the log as a sheet — the room rather than the line — and th
 sheet closes itself when the call focuses somewhere else, because the point of
 focusing is to put that session on screen and a sheet is in front of it.
 
+The way *in* is not the call, so it stays in the rail on both. `VoiceDock`
+renders its idle entry row inside the phone's nav drawer exactly while no call
+exists — starting one closes the drawer, and from there the strip is the only
+surface, because two places to read one call's status is one too many. Without
+that row the phone could only start a call from the composer's Live button,
+which is tied to whichever session is open.
+
 ## Shape
 
 ```

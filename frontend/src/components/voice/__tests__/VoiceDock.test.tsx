@@ -9,10 +9,11 @@
  * is actually stated in.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VoiceDock } from "~/components/voice/VoiceDock";
 import { VoiceStrip } from "~/components/voice/VoiceStrip";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useVoiceStore } from "~/stores/voice-store";
@@ -118,6 +119,60 @@ describe("VoiceDock", () => {
     render(<VoiceDock />);
     expect(screen.getByRole("button", { name: "Start live call" })).toBeInTheDocument();
     expect(screen.getByText("⌥V")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The phone splits the dock in two, and the split is the whole design: the way
+ * *in* is navigation and belongs in the drawer, a live call is the thing that is
+ * happening and belongs on the strip in front of it. Before this, mobile got
+ * neither — the dock returned null outright, so the only way to start a call was
+ * the composer's Live button, which is tied to a session.
+ */
+describe("VoiceDock on a phone", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+    window.innerWidth = 390;
+    liveCall();
+  });
+
+  it("carries the way in when there is no call", () => {
+    useVoiceStore.setState({ status: "idle", interim: null, focusSessionId: null });
+    render(<VoiceDock />);
+    expect(screen.getByRole("button", { name: "Start live call" })).toBeInTheDocument();
+  });
+
+  it("does not advertise a shortcut the phone has no keys for", () => {
+    useVoiceStore.setState({ status: "idle", interim: null, focusSessionId: null });
+    render(<VoiceDock />);
+    expect(screen.queryByText("⌥V")).not.toBeInTheDocument();
+  });
+
+  it("renders nothing at all once a call exists — the strip owns it", () => {
+    const { container } = render(<VoiceDock />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button", { name: "End call" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start live call" })).not.toBeInTheDocument();
+  });
+
+  it("leaves an ended call to the strip too", () => {
+    useVoiceStore.setState({ status: "ended" });
+    const { container } = render(<VoiceDock />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("closes the drawer it is in when the call starts", () => {
+    const start = vi.fn();
+    const realStart = useVoiceStore.getState().start;
+    useAppStore.setState({ sidebarOpen: true });
+    useVoiceStore.setState({ status: "idle", interim: null, focusSessionId: null, start });
+
+    render(<VoiceDock />);
+    fireEvent.click(screen.getByRole("button", { name: "Start live call" }));
+
+    expect(start).toHaveBeenCalled();
+    expect(useAppStore.getState().sidebarOpen).toBe(false);
+    useVoiceStore.setState({ start: realStart });
   });
 });
 

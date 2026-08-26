@@ -21,8 +21,13 @@
  * report of this feature was a call that ended by itself with a summary still
  * owed.
  *
- * The phone gets `VoiceStrip` instead: the rail is behind a sheet there, and a
- * hangup you have to open a drawer to reach is not a hangup.
+ * **The phone keeps the trace and gives up the card.** A *live* call belongs to
+ * `VoiceStrip` there: the rail is behind a sheet, and a hangup you have to open
+ * a drawer to reach is not a hangup — two surfaces for one call would also be
+ * two places to read its status. But the way *in* is not the call, and it was
+ * gone from the phone entirely: the composer's Live button is session-scoped, so
+ * there was nowhere to start a call that is not already looking at a session.
+ * So on a phone this row exists exactly while no call does.
  */
 import { PhoneOff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -34,6 +39,7 @@ import { useCallView } from "~/components/voice/use-call-view";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { cn } from "~/lib/utils";
 import { callStatusLine, callTitle } from "~/lib/voice/copy";
+import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useVoiceStore } from "~/stores/voice-store";
@@ -48,12 +54,11 @@ export function VoiceDock() {
   // when the entry does — and hooks run before the early returns below.
   useLiveCallShortcut(voiceEnabled && !isMobile);
 
-  // On a phone the rail lives inside a sheet; the strip is the call's surface
-  // there, and two of them would compete.
-  if (isMobile) return null;
   // A call already running outlives the flag being read: never strand one
   // without a way to hang it up.
   if (!voiceEnabled && !view.active) return null;
+  // On a phone the strip owns a call that exists; this row is only the way in.
+  if (isMobile && view.active) return null;
 
   return (
     <div className="shrink-0 border-t border-sidebar-border px-2 py-1.5">
@@ -142,7 +147,9 @@ export function VoiceDock() {
           </PopoverContent>
         </Popover>
       ) : (
-        <StartCallRow />
+        // The shortcut chip is mounted with the shortcut and not without it: a
+        // phone has no ⌥ to press.
+        <StartCallRow showShortcut={!isMobile} />
       )}
     </div>
   );
@@ -158,21 +165,28 @@ export function VoiceDock() {
  * The hover is doing the work a second line of copy would otherwise do: the
  * halo fills, "Live" rolls up to "Start live call", and the shortcut appears.
  * At rest it is four characters and a grey ring, which is all a row that is
- * true all the time should cost.
+ * true all the time should cost. On a phone there is no hover and no shortcut,
+ * so it is the same row saying the same thing, quietly, all the time.
  */
-function StartCallRow() {
+function StartCallRow({ showShortcut }: { showShortcut: boolean }) {
   const start = useVoiceStore((s) => s.start);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   return (
     <button
       type="button"
-      onClick={() => start(activeSessionId ?? undefined)}
+      onClick={() => {
+        // The phone's drawer is in front of the strip that is about to become
+        // the call's surface, so starting one closes it — the same gesture
+        // every other row down here makes.
+        useAppStore.getState().setSidebarOpen(false);
+        start(activeSessionId ?? undefined);
+      }}
       aria-label="Start live call"
-      title="Start live call (⌥V)"
+      title={showShortcut ? "Start live call (⌥V)" : "Start live call"}
       className={cn(
         "group flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left",
         "text-[11.5px] text-muted-foreground transition-colors duration-150",
-        "hover:bg-sidebar-accent/60",
+        "max-md:py-2 hover:bg-sidebar-accent/60",
       )}
     >
       <HaloOrb
@@ -183,15 +197,17 @@ function StartCallRow() {
         arcClassName="group-hover:[stroke-dashoffset:0]"
       />
       <LabelSwap resting="Live" hovered="Start live call" />
-      <kbd
-        className={cn(
-          "ml-auto shrink-0 rounded border border-border px-1 py-px font-mono text-[9.5px]",
-          "text-muted-foreground-faint opacity-0 transition-opacity duration-150",
-          "group-hover:opacity-100",
-        )}
-      >
-        ⌥V
-      </kbd>
+      {showShortcut && (
+        <kbd
+          className={cn(
+            "ml-auto shrink-0 rounded border border-border px-1 py-px font-mono text-[9.5px]",
+            "text-muted-foreground-faint opacity-0 transition-opacity duration-150",
+            "group-hover:opacity-100",
+          )}
+        >
+          ⌥V
+        </kbd>
+      )}
     </button>
   );
 }
