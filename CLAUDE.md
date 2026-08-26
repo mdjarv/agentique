@@ -466,6 +466,21 @@ banner is always pinned above the composer: `onActivate` is for when there is
 somewhere to go, and a control that does nothing when clicked is worse than a
 label.
 
+**The state word is not the work, and the header says both.** The pill (mobile:
+the subline) reports what the CLI process is doing; `SessionWorkLine` reports
+what is happening, from the same `formatPulse` the sidebar row narrates with, so
+the surface you are *inside* never says less than the one you have to open. Its
+agent clause is separate from the state on purpose: a background subagent
+outlives the turn that spawned it, so the run settles to idle while agents are
+still out, and that was exactly when the header looked most like nothing was
+happening. `hasLiveWork` is the one predicate, so a caller choosing what to show
+*instead* (the mobile subline's branch line) cannot drift from what the line
+renders.
+
+Every control the header carries is carried on **both** layouts. The dock toggle
+lived only in the desktop branch once, which left the mobile sheet reachable by
+nothing but a `?dock=` link — and took the dock's aggregate live mark with it.
+
 Dock badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
 must mean one thing across surfaces: **X is "it failed", the triangle is
 "someone is waiting on you"**, and a pulse means live activity, never

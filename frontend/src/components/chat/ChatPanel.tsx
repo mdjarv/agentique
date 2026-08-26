@@ -668,6 +668,7 @@ export function ChatPanel({
           meta={meta}
           hasPendingInput={!!pendingApproval || !!pendingQuestion}
           dockToggle={dockToggle}
+          agentsInFlight={agentFlight.inFlight.length}
           accentColor={agentColor}
           git={git}
           projectGitStatus={projectGitStatus}

@@ -16,6 +16,7 @@ import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDial
 import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
+import { hasLiveWork, SessionWorkLine } from "~/components/chat/SessionWorkLine";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
 import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -49,6 +50,12 @@ interface SessionHeaderProps {
    * dock has to show is derived from session state the panel already holds.
    */
   dockToggle?: React.ReactNode;
+  /**
+   * Subagents still out. Carried separately from `meta.state` because a
+   * background agent outlives the turn that spawned it: the run settles to idle
+   * while the work continues.
+   */
+  agentsInFlight?: number;
   /** Project accent color hex for the top border. */
   accentColor?: string;
   /** Git actions for the session — enables inline merge dropdown on desktop. */
@@ -69,6 +76,7 @@ export function SessionHeader({
   meta,
   hasPendingInput,
   dockToggle,
+  agentsInFlight = 0,
   accentColor,
   git,
   projectGitStatus,
@@ -142,7 +150,13 @@ export function SessionHeader({
               onRename={actions.rename}
               onIconChange={actions.handleIconChange}
               stacked
-              subline={<MobileSubline meta={meta} hasPendingApproval={hasPendingInput} />}
+              subline={
+                <MobileSubline
+                  meta={meta}
+                  hasPendingApproval={hasPendingInput}
+                  agentsInFlight={agentsInFlight}
+                />
+              }
             />
             <div className="ml-auto flex items-center gap-1 shrink-0">
               {projectSlug && !isWorktree && (
@@ -182,6 +196,16 @@ export function SessionHeader({
               sessionRef={sessionRef}
               onRename={actions.rename}
               onIconChange={actions.handleIconChange}
+            />
+
+            {/* What it is doing, beside what it is. The pill reports the run
+                state; this reports the work, so the chat says as much as the
+                sidebar row does about the session you are actually inside. */}
+            <SessionWorkLine
+              sessionId={meta.id}
+              state={meta.state}
+              agentsInFlight={agentsInFlight}
+              className="hidden min-w-0 max-w-[44ch] text-[11px] text-muted-foreground lg:flex"
             />
 
             {/* Actions zone */}
@@ -332,9 +356,11 @@ function ParkedScheduleChip({ sessionId, state }: { sessionId: string; state: st
 function MobileSubline({
   meta,
   hasPendingApproval,
+  agentsInFlight,
 }: {
   meta: SessionMetadata;
   hasPendingApproval: boolean;
+  agentsInFlight: number;
 }) {
   const badgeState = resolveSessionState({ state: meta.state, hasPendingApproval });
   const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
@@ -346,14 +372,27 @@ function MobileSubline({
   const nextSchedule = useNextSchedule(meta.id);
   const now = useNow();
   const parked = meta.state === "stopped" ? nextSchedule : null;
+  // While there is work to narrate, the narration wins the line: "editing
+  // derive.ts · 12 tool calls" is what the operator came to know, and the
+  // branch is one tap away in the detail sheet.
+  const live = !parked && hasLiveWork({ state: meta.state, agentsInFlight });
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
       <SessionBadge state={badgeState} size="sm" bare />
-      <span className="truncate">
-        {parked
-          ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}`
-          : `${label}${branch ? ` · ${branch}` : ""}`}
-      </span>
+      {live ? (
+        <SessionWorkLine
+          sessionId={meta.id}
+          state={meta.state}
+          agentsInFlight={agentsInFlight}
+          className="min-w-0 flex-1"
+        />
+      ) : (
+        <span className="truncate">
+          {parked
+            ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}`
+            : `${label}${branch ? ` · ${branch}` : ""}`}
+        </span>
+      )}
       {machine && (
         <span className="flex items-center gap-0.5 shrink-0" title={`Runs on ${machine.label}`}>
           <Server className="size-2.5" />
