@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,6 +91,11 @@ func directoryWithTwo() *fakeDirectory {
 			{ID: "s2", Name: "Reconnect Drops", ProjectName: "agentique", MachineName: "workstation",
 				State: "idle", Attention: AttentionApproval, LastActivity: "2026-08-26T11:00:00Z"},
 		},
+		projects: []ProjectRow{
+			{ID: "p1", Name: "agentique", Slug: "agentique", LastActivity: "2026-08-26T12:00:00Z"},
+			{ID: "p2", Name: "webtickets", Slug: "webtickets", LastActivity: "2026-08-25T09:00:00Z"},
+		},
+		families:  []string{"Haiku", "Sonnet", "Opus", "Fable"},
 		summaries: map[string]string{"s1": "It has been wiring the voice socket."},
 	}
 }
@@ -110,6 +116,11 @@ func TestEveryDirectoryToolAnswers(t *testing.T) {
 		{"find with nothing to find", directoryWithTwo(), ToolCallEvent{Name: ToolFindSession, Args: map[string]any{"query": "  "}}},
 		{"focus on an id nobody offered", directoryWithTwo(), ToolCallEvent{Name: ToolFocusSession, Args: map[string]any{"session_id": "made-up"}}},
 		{"summarize with no arguments at all", directoryWithTwo(), ToolCallEvent{Name: ToolSummarizeSession}},
+		{"projects with no directory", nil, ToolCallEvent{Name: ToolListProjects}},
+		{"create with no directory", nil, ToolCallEvent{Name: ToolCreateSession, Args: map[string]any{"project_id": "p1"}}},
+		{"projects nothing matches", directoryWithTwo(), ToolCallEvent{Name: ToolListProjects, Args: map[string]any{"query": "kubernetes"}}},
+		{"create with no project at all", directoryWithTwo(), ToolCallEvent{Name: ToolCreateSession}},
+		{"create in a project nobody offered", directoryWithTwo(), ToolCallEvent{Name: ToolCreateSession, Args: map[string]any{"project_id": "p9"}}},
 		{"a tool this build does not have", directoryWithTwo(), ToolCallEvent{Name: "teleport"}},
 	}
 
@@ -267,6 +278,168 @@ func TestRemoteSessionsCanBeSeenButNotWorkedIn(t *testing.T) {
 	msg, _ = summary["error"].(string)
 	if !strings.Contains(msg, "laptop") {
 		t.Errorf("summary refusal = %q, want it to say the transcript is on another machine", msg)
+	}
+}
+
+// A project list is a menu to choose from, and only what the server named is
+// somewhere a session may be created.
+func TestListProjectsOffersWhatItNames(t *testing.T) {
+	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
+
+	got := c.toolListProjects(context.Background(), nil)
+	rows, _ := got["projects"].([]map[string]any)
+	if len(rows) != 2 {
+		t.Fatalf("listed %v, want both projects", got)
+	}
+	for _, id := range []string{"p1", "p2"} {
+		if _, ok := c.offeredProject(id); !ok {
+			t.Errorf("%q was listed but cannot be created in", id)
+		}
+	}
+
+	// A spoken name arrives mangled, and the same matcher find_session uses is
+	// what has to reach it.
+	narrowed := c.toolListProjects(context.Background(), map[string]any{"query": "web tickets"})
+	rows, _ = narrowed["projects"].([]map[string]any)
+	if len(rows) != 1 || rows[0]["project_id"] != "p2" {
+		t.Errorf("narrowed to %v, want only webtickets", narrowed)
+	}
+
+	// A miss is not an empty machine, and must not be answered as one.
+	miss := c.toolListProjects(context.Background(), map[string]any{"query": "kubernetes"})
+	if note, _ := miss["note"].(string); !strings.Contains(note, "another way") {
+		t.Errorf("a miss said %q, want it to ask them to say it differently", note)
+	}
+}
+
+// Creation aims at a project the server listed, never an id assembled out of a
+// transcript.
+func TestCreateSessionRequiresAnOfferedProject(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+
+	refused := c.toolCreateSession(context.Background(), map[string]any{"project_id": "8f1c-invented"})
+	msg, _ := refused["error"].(string)
+	if msg == "" {
+		t.Fatalf("created in a project nobody offered: %v", refused)
+	}
+	if !strings.Contains(msg, ToolListProjects) {
+		t.Errorf("refusal = %q, want it to say how to get a real id", msg)
+	}
+	if len(dir.creations()) != 0 {
+		t.Error("a refused create still reached the directory")
+	}
+	if c.currentFocus() != "" {
+		t.Error("a refused create still moved the call")
+	}
+}
+
+// Creating focuses: the screen lands on the new session, and everything that
+// acts on "the session" now acts on it.
+func TestCreateSessionFocusesTheNewSession(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+	ws := giveSocket(t, c)
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project_id": "p2", "model": "fable"})
+	if _, bad := got["error"]; bad {
+		t.Fatalf("create refused an offered project: %v", got)
+	}
+
+	created := dir.creations()
+	if len(created) != 1 || created[0].projectID != "p2" || created[0].model != "fable" {
+		t.Fatalf("directory saw %v, want one create in p2 on fable", created)
+	}
+
+	sessionID, _ := got["session_id"].(string)
+	if sessionID == "" {
+		t.Fatal("the brief does not name the session it made")
+	}
+	if c.currentFocus() != sessionID {
+		t.Errorf("focus = %q, want the session just created", c.currentFocus())
+	}
+	if _, offered := c.offeredRow(sessionID); !offered {
+		t.Error("the new session is not focusable")
+	}
+	if frame := readControl(t, ws); frame.Type != msgFocus || frame.SessionID != sessionID {
+		t.Fatalf("frame = %+v, want the screen to follow onto the new session", frame)
+	}
+
+	// The brief has to carry what was said out loud: where it is, and what it
+	// runs — the read-back named both.
+	if got["project"] != "webtickets" {
+		t.Errorf("brief said project %v, want webtickets", got["project"])
+	}
+	if got["model"] != "Fable" {
+		t.Errorf("brief said model %v, want the resolved family", got["model"])
+	}
+	// Create and send are one gesture, so the result has to say so.
+	note, _ := got["note"].(string)
+	if !strings.Contains(note, ToolRunPrompt) {
+		t.Errorf("note = %q, want it to send the agreed prompt straight away", note)
+	}
+}
+
+// An empty model is the default, and it is the composer's default rather than
+// one this package invents.
+func TestCreateSessionWithNoModelTakesTheDefault(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project_id": "p1"})
+	if _, bad := got["error"]; bad {
+		t.Fatalf("create refused the default model: %v", got)
+	}
+	if created := dir.creations(); len(created) != 1 || created[0].model != "" {
+		t.Errorf("directory saw %v, want the model left to the service", created)
+	}
+}
+
+// A model nobody has is a spoken question, not a substitution — and nothing is
+// created while it is asked.
+func TestCreateSessionRefusesAnUnknownModelByNamingTheRealOnes(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project_id": "p1", "model": "grok"})
+	msg, _ := got["error"].(string)
+	if msg == "" {
+		t.Fatalf("an unknown model was accepted: %v", got)
+	}
+	if !strings.Contains(msg, "grok") {
+		t.Errorf("refusal = %q, want it to repeat what was asked for", msg)
+	}
+	for _, family := range []string{"Haiku", "Sonnet", "Opus", "Fable"} {
+		if !strings.Contains(msg, family) {
+			t.Errorf("refusal = %q, want it to name %q as an option", msg, family)
+		}
+	}
+	if c.currentFocus() != "" {
+		t.Error("a refused model still moved the call")
+	}
+}
+
+// A creation that fails is said plainly. It must not leave the call aimed at a
+// session that does not exist.
+func TestCreateSessionThatFailsSaysSoAndLeavesTheCallAlone(t *testing.T) {
+	dir := directoryWithTwo()
+	dir.createErr = errors.New("project quota exceeded")
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project_id": "p1"})
+	msg, _ := got["error"].(string)
+	if msg == "" {
+		t.Fatalf("a failed create reported success: %v", got)
+	}
+	if !strings.Contains(msg, "agentique") {
+		t.Errorf("refusal = %q, want it to name where it was trying to create", msg)
+	}
+	if c.currentFocus() != "" {
+		t.Error("a failed create still moved the call")
 	}
 }
 

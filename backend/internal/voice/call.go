@@ -183,6 +183,9 @@ type call struct {
 	// model assembled from a transcript.
 	offeredMu sync.Mutex
 	offered   map[string]SessionRow
+	// offeredProjects is the same guard for the places a session can be
+	// created. create_session accepts only these.
+	offeredProjects map[string]ProjectRow
 
 	// summaryMu guards the summaries delivered for this call, kept per session
 	// because that is what they describe. A summary warmed by focusing a session
@@ -251,6 +254,7 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 		focus:           initialFocus,
 		follows:         make(map[string]*followState),
 		offered:         make(map[string]SessionRow),
+		offeredProjects: make(map[string]ProjectRow),
 		summaries:       make(map[string]string),
 		log:             log,
 		idleTimeout:     idleTimeout,
@@ -505,9 +509,9 @@ func (c *call) handleToolCall(ev ToolCallEvent) {
 
 // runTool executes the call and returns the model's result payload.
 //
-// Four of the five tools only look; one starts work. Every branch returns
-// something sayable, including the refusals — what comes back is what the
-// listener hears next.
+// Five of the seven tools only look; one creates a session and one starts work.
+// Every branch returns something sayable, including the refusals — what comes
+// back is what the listener hears next.
 func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	// One deadline for the whole call, tools included: a database read that
 	// hangs is dead air exactly like a dispatch that hangs, and the model is
@@ -526,6 +530,10 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 		return c.toolFocusSession(ctx, ev.Args)
 	case ToolSummarizeSession:
 		return c.toolSummarizeSession(ctx, ev.Args)
+	case ToolListProjects:
+		return c.toolListProjects(ctx, ev.Args)
+	case ToolCreateSession:
+		return c.toolCreateSession(ctx, ev.Args)
 	default:
 		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
 	}

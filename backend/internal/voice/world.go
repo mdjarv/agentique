@@ -143,6 +143,32 @@ func (c *call) offer(rows ...SessionRow) {
 	}
 }
 
+// offerProjects records that the server named these projects to the model, so
+// create_session will accept them.
+//
+// The same guard as [call.offer], for the same reason and with the same limit:
+// it is not a permission boundary — the operator could open a session on screen
+// — but it is the difference between creating one in a project the server
+// listed and creating one in an id a speech model assembled from a transcript.
+func (c *call) offerProjects(rows ...ProjectRow) {
+	c.offeredMu.Lock()
+	defer c.offeredMu.Unlock()
+	for _, row := range rows {
+		if row.ID == "" {
+			continue
+		}
+		c.offeredProjects[row.ID] = row
+	}
+}
+
+// offeredProject returns a project the server has already named to the model.
+func (c *call) offeredProject(projectID string) (ProjectRow, bool) {
+	c.offeredMu.Lock()
+	defer c.offeredMu.Unlock()
+	row, ok := c.offeredProjects[projectID]
+	return row, ok
+}
+
 // offeredRow returns a session the server has already named to the model.
 func (c *call) offeredRow(sessionID string) (SessionRow, bool) {
 	c.offeredMu.Lock()

@@ -779,7 +779,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		slog.Info("experimental teams feature enabled")
 	}
 
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: modelCatalog(queries, cfg.ModelOverrides), AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
+	// One catalog for both the picker and the voice assistant: a model family
+	// someone can choose on screen is one they can ask for out loud.
+	catalog := modelCatalog(queries, cfg.ModelOverrides)
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: catalog, AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
 	mux.Handle("GET /ws", wsh)
 
 	// Live voice. Mounted under /api/ deliberately: the auth middleware
@@ -818,7 +821,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// What the call can see beyond the session it opened on. Machine
 		// presentation is read per call rather than captured, so a rename takes
 		// effect on the next call rather than the next restart.
-		directory := newVoiceDirectory(svc, queries, voiceSummarizer, cfg.MachineID,
+		directory := newVoiceDirectory(svc, queries, voiceSummarizer, catalog, cfg.MachineID,
 			func(ctx context.Context) string {
 				label, _ := hostPresentation(ctx)
 				return label

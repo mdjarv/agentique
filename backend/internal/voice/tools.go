@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -288,6 +289,161 @@ func (c *call) summarizeAsync(ctx context.Context, sessionID, label string, anno
 	})
 }
 
+// maxSpokenProjects is how many projects one list answer carries. Smaller than
+// the session cap: a project list is a menu the operator picks from out loud,
+// and past a handful nobody is choosing, they are being read a directory.
+const maxSpokenProjects = 6
+
+// toolListProjects answers "where could this go".
+//
+// Local projects only, because that is what "could a session be created here"
+// means: creation goes through this server's session service, and a repository
+// checked out on another machine is somewhere else entirely.
+func (c *call) toolListProjects(ctx context.Context, args map[string]any) map[string]any {
+	if c.directory == nil {
+		return map[string]any{"error": "I cannot see the projects on this machine from this call — " +
+			"tell the user they will need to start the session on screen."}
+	}
+
+	rows := c.directory.ListProjects(ctx)
+	if len(rows) == 0 {
+		return map[string]any{
+			"projects": []any{},
+			"note": "There are no projects on this machine, so there is nowhere to create a session. " +
+				"Say that plainly rather than guessing at one.",
+		}
+	}
+
+	query := strings.TrimSpace(stringArg(args, "query"))
+	if query != "" {
+		if narrowed := MatchProjects(query, rows); len(narrowed) > 0 {
+			rows = narrowed
+		} else {
+			// A miss is not an empty machine, and saying so as "there are none"
+			// would be a lie the operator cannot check.
+			return map[string]any{
+				"projects": []any{},
+				"note": fmt.Sprintf("Nothing here is called %q. Ask them to say the project another "+
+					"way, or offer to read out the few there are.", query),
+			}
+		}
+	}
+
+	// Only what the server names may be created in.
+	c.offerProjects(rows...)
+
+	omitted := 0
+	if len(rows) > maxSpokenProjects {
+		omitted = len(rows) - maxSpokenProjects
+		rows = rows[:maxSpokenProjects]
+	}
+
+	out := map[string]any{
+		"projects": c.projectPayloads(rows),
+		"note": "Most recently worked in first. Name two or three rather than reading the list, " +
+			"and let them choose — never pick for them.",
+	}
+	if omitted > 0 {
+		out["omitted"] = omitted
+	}
+	return out
+}
+
+// toolCreateSession opens a new session and puts it on the operator's screen.
+//
+// Creating is cheap and visible: a new session does nothing until something is
+// sent to it, and the screen follows this the way it follows a focus. So the
+// guarded act stays where it was — the prompt, with its read-back — and this
+// one only has to be aimed at a project the operator actually named.
+func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[string]any {
+	if c.directory == nil {
+		return map[string]any{"error": "I cannot create sessions from this call — tell the user " +
+			"they will need to start one on screen."}
+	}
+
+	projectID := strings.TrimSpace(stringArg(args, "project_id"))
+	if projectID == "" {
+		return map[string]any{"error": "No project. Ask which project it should go in, then use " +
+			ToolListProjects + " to find its id."}
+	}
+	project, offered := c.offeredProject(projectID)
+	if !offered {
+		return map[string]any{"error": "That is not a project I have offered you. Call " +
+			ToolListProjects + " and use an id from the result — ask me to list projects first."}
+	}
+
+	model := strings.TrimSpace(stringArg(args, "model"))
+	row, err := c.directory.CreateSession(ctx, projectID, model)
+	if err != nil {
+		// A model nobody has is a question, not a failure: the words name the
+		// families that do exist, and nothing was created.
+		var unknown *UnknownModelError
+		if errors.As(err, &unknown) {
+			return map[string]any{"error": unknown.Error()}
+		}
+		c.log.Warn("voice session creation failed", "project", projectID, "error", err)
+		return map[string]any{"error": fmt.Sprintf("That could not be created in %s. Say so plainly, "+
+			"and offer to use a session that already exists.", project.displayName())}
+	}
+	if row.ID == "" {
+		c.log.Warn("voice session creation returned no session", "project", projectID)
+		return map[string]any{"error": "That could not be created. Say so plainly, and offer to use " +
+			"a session that already exists."}
+	}
+
+	// The new session is now something the server named, so everything that
+	// acts on "the session" may act on it.
+	c.offer(row)
+	c.setFocus(row.ID)
+	c.noteSessionName(row.ID, row.Name)
+	// The screen follows the conversation. The focus moved first: if the browser
+	// never gets this, the call is still aimed correctly.
+	_ = c.sendControl(serverMessage{Type: msgFocus, SessionID: row.ID})
+	c.log.Info("voice created session", "session", row.ID, "project", projectID, "model", row.Model)
+
+	out := c.rowPayload(row)
+	out["created"] = true
+	out["focused"] = true
+	out["can_start_work"] = true
+	out["project"] = project.displayName()
+	// The read-back that authorised this already named the new session and the
+	// prompt, so the two calls are one gesture: stopping here to announce a
+	// session and ask again is a round trip the operator has already paid for.
+	out["note"] = fmt.Sprintf("Created and focused: a new session in %s%s, on their screen now. "+
+		"If a prompt was already agreed, send it now with %s. Otherwise say in one sentence that it "+
+		"is created and move straight on to working out the prompt.",
+		project.displayName(), modelWords(row.Model), ToolRunPrompt)
+	return out
+}
+
+// modelWords names the model a new session runs, when there is one to name. A
+// family name, never a version: that is what the operator asked for.
+func modelWords(model string) string {
+	if model == "" {
+		return ""
+	}
+	return " on " + model
+}
+
+// projectPayloads renders projects for the model.
+func (c *call) projectPayloads(rows []ProjectRow) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		payload := map[string]any{
+			"project_id": row.ID,
+			"name":       row.displayName(),
+		}
+		if row.Slug != "" && row.Slug != row.Name {
+			payload["slug"] = row.Slug
+		}
+		if row.LastActivity != "" {
+			payload["last_activity"] = row.LastActivity
+		}
+		out = append(out, payload)
+	}
+	return out
+}
+
 // rowPayloads renders rows for the model.
 func (c *call) rowPayloads(rows []SessionRow) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
@@ -320,6 +476,9 @@ func (c *call) rowPayload(row SessionRow) map[string]any {
 	}
 	if row.Branch != "" {
 		out["branch"] = row.Branch
+	}
+	if row.Model != "" {
+		out["model"] = row.Model
 	}
 	if row.LastActivity != "" {
 		out["last_activity"] = row.LastActivity

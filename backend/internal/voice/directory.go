@@ -1,6 +1,10 @@
 package voice
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 // Directory is what the call knows about the sessions on this machine.
 //
@@ -38,6 +42,92 @@ type Directory interface {
 	// waiting to say something, so "nothing to say" has to arrive as an answer
 	// rather than as silence.
 	Summarize(ctx context.Context, id string, deliver func(summary string))
+
+	// ListProjects answers "where could a new session go", most recently worked
+	// in first. LOCAL projects only: a session is created through this server's
+	// session service, so a repository checked out on another machine is not a
+	// place this call can start one.
+	//
+	// Like every other method here it degrades to nothing rather than failing.
+	ListProjects(ctx context.Context) []ProjectRow
+
+	// CreateSession opens a new session in projectID and returns it, already
+	// described the way the assistant will speak about it.
+	//
+	// model is a SPOKEN FAMILY NAME ("fable", "opus") or "" for the same default
+	// the composer's new-session flow gets. A name the catalog does not have
+	// yields an [UnknownModelError] and no session — the assistant asks again
+	// rather than running something nobody chose.
+	//
+	// It goes down the same path the composer's send button's sibling uses, for
+	// the same reason dispatch does: one route into the session pipeline,
+	// whether the gesture was a click or a sentence.
+	CreateSession(ctx context.Context, projectID, model string) (SessionRow, error)
+}
+
+// UnknownModelError is what a spoken model name that is not in the catalog
+// comes back as.
+//
+// It carries the families that ARE available, because the answer to "let's use
+// fable" on a deployment without Fable is the list, not a substitute: this is
+// the one place a wrong guess would be invisible to the operator until the
+// session had already run on the wrong model.
+type UnknownModelError struct {
+	// Spoken is what the assistant asked for.
+	Spoken string
+	// Families are the labels this deployment does offer.
+	Families []string
+}
+
+func (e *UnknownModelError) Error() string {
+	if len(e.Families) == 0 {
+		return fmt.Sprintf("There is no model called %q here, and I cannot see which ones there are. "+
+			"Ask them to pick the model on screen instead.", e.Spoken)
+	}
+	return fmt.Sprintf("There is no model called %q. The ones available are %s. "+
+		"Ask which of those they want; do not choose for them.", e.Spoken, spokenList(e.Families))
+}
+
+// spokenList renders a short list the way a person reads one out.
+func spokenList(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// ProjectRow is one project as the voice assistant sees it: enough to name it,
+// tell it from a similarly-named one, and rank it by how recently it was worked
+// in. Not enough to render it — that is the browser's job.
+//
+// Local by construction. Every row here is a repository this server can check
+// out a worktree from, which is what makes it somewhere a session can be
+// created; the world snapshot's remote projects are talked about, never used.
+type ProjectRow struct {
+	// ID is the project id, and is what [Directory.CreateSession] takes.
+	ID string
+	// Name is what the operator calls it.
+	Name string
+	// Slug is its stable handle, and is often what they say instead.
+	Slug string
+	// LastActivity is UTC RFC3339 seconds of the most recent work in it, or ""
+	// when nothing has run there. Compared as text, which is correct for that
+	// format and for nothing else.
+	LastActivity string
+}
+
+// displayName is what to call a project out loud.
+func (r ProjectRow) displayName() string {
+	if r.Name != "" {
+		return r.Name
+	}
+	if r.Slug != "" {
+		return r.Slug
+	}
+	return "an unnamed project"
 }
 
 // Session list filters, as declared to the speech model.
@@ -114,6 +204,10 @@ type SessionRow struct {
 	Attention string
 	// Branch is the worktree branch, where there is one.
 	Branch string
+	// Model is the stable family name the session runs — "Opus", "Fable" —
+	// never a version or a slug, for the same reason the picker's labels carry
+	// none. Empty where the machine that reported the row does not say.
+	Model string
 	// LastActivity is UTC RFC3339 seconds, or "" when unknown. Compared as
 	// text, which is correct for that format and for nothing else.
 	LastActivity string

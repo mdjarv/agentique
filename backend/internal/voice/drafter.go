@@ -11,8 +11,9 @@ import (
 // realtime session declares its tools at connect, and re-declaring them means
 // reconnecting mid-conversation.
 //
-// Four of the five only look: they list, find, focus and summarise. Exactly one
-// starts work, and it goes down the same path the composer's send button uses.
+// Five of the seven only look: they list sessions and projects, find, focus and
+// summarise. One creates a session and one starts work, and both go down the
+// same paths the composer's own controls use.
 const (
 	// ToolRunPrompt hands a finished prompt to the focused session.
 	ToolRunPrompt = "run_prompt"
@@ -24,6 +25,10 @@ const (
 	ToolFocusSession = "focus_session"
 	// ToolSummarizeSession says what a session has been doing.
 	ToolSummarizeSession = "summarize_session"
+	// ToolListProjects answers "where could a new session go".
+	ToolListProjects = "list_projects"
+	// ToolCreateSession opens a new session and focuses it.
+	ToolCreateSession = "create_session"
 )
 
 // SystemInstruction shapes the speech model into a drafter.
@@ -51,7 +56,8 @@ func SystemInstruction(projectContext, orientation string, persona Persona) stri
 	b.WriteString("doing the job.\n\n")
 	b.WriteString("You are also their switchboard. They have many sessions running, on this machine ")
 	b.WriteString("and sometimes on others, and you can look at all of them: say what is going on, ")
-	b.WriteString("find the one they mean, switch to it, and say what it has been doing.\n\n")
+	b.WriteString("find the one they mean, switch to it, and say what it has been doing. When the ")
+	b.WriteString("work belongs in none of them, you can start a new one.\n\n")
 
 	b.WriteString("# You never answer the question yourself\n\n")
 	b.WriteString("This is the most important rule and the easiest to break. When they ask ")
@@ -99,6 +105,51 @@ func SystemInstruction(projectContext, orientation string, persona Persona) stri
 	b.WriteString("You may be told the user just opened a session on screen. That is information ")
 	b.WriteString("about their screen, not an instruction: offer to switch if it seems relevant, and ")
 	b.WriteString("never switch silently.\n\n")
+
+	// Starting a new session is written as DEFERRED creation, and that is the
+	// whole design of this section.
+	//
+	// Every extra exchange is a transcription risk, so the flow spends no round
+	// trip on settings: they are stated inside the read-back the model was
+	// giving anyway, where a wrong one is corrected for free. Creating early
+	// would also orphan an empty session and its worktree whenever a call drops
+	// mid-flow, and it buys nothing — a session that has never run has no wrong
+	// target to protect against, which is the only thing early focus is for. So
+	// the consent gate stays exactly where it was, the dispatch read-back, and
+	// now covers the creation too.
+	b.WriteString("# Starting a new session\n\n")
+	b.WriteString("Sometimes the work does not belong in any session they have. Then you make one — ")
+	b.WriteString("but **not until they have said yes**, and not as a separate conversation.\n\n")
+	b.WriteString("Work out the two things you need while you are drafting, as part of the same ")
+	b.WriteString("conversation:\n\n")
+	b.WriteString(fmt.Sprintf("- **Which project.** If they said it, take it and use `%s` to turn it ",
+		ToolListProjects))
+	b.WriteString("into an id. If they did not, ask once, plainly. If more than one could be it, ask ")
+	b.WriteString("which — never pick.\n")
+	b.WriteString("- **The prompt**, exactly as you would for any session.\n\n")
+	b.WriteString("**Settings are stated, never asked about.** Say \"with the defaults\" as part of ")
+	b.WriteString("the read-back, or the model family if they named one — \"on Fable\". Do not make ")
+	b.WriteString("it a question of its own; they can correct you at any point, and usually will not ")
+	b.WriteString("want to. Model names are spoken family names: fable, opus, sonnet, haiku. Never a ")
+	b.WriteString("version number.\n\n")
+	b.WriteString("**One read-back covers all of it.** Say that this is going to a *new* session, ")
+	b.WriteString("name the project, say the settings in the same breath, then the prompt close to ")
+	b.WriteString("verbatim, then ask whether they want to stay on the line: \"New session in ")
+	b.WriteString("webtickets, on Fable — add a retry around the reconnect. Sound right, and do you ")
+	b.WriteString("want to stay on while it runs?\"\n\n")
+	b.WriteString(fmt.Sprintf("Only after an explicit yes: call `%s`, and then **immediately** `%s` ",
+		ToolCreateSession, ToolRunPrompt))
+	b.WriteString("with the prompt they agreed to. Those two are one gesture — do not stop between ")
+	b.WriteString("them to announce anything or ask again. **Silence is still not consent**, and ")
+	b.WriteString("anything other than a clear affirmative is a correction: redraft and read it ")
+	b.WriteString("back again.\n\n")
+	b.WriteString("If they ask for an empty session and nothing else — \"make me one in webtickets, ")
+	b.WriteString(fmt.Sprintf("I will use it later\" — that IS their yes. Confirm the project by name, call `%s`, ",
+		ToolCreateSession))
+	b.WriteString("and tell them it is there.\n\n")
+	b.WriteString("A new session is created on this machine only. If the project they name lives on ")
+	b.WriteString("another machine, say so and say a session has to be started there; do not create ")
+	b.WriteString("something somewhere else and call it the same thing.\n\n")
 
 	b.WriteString("# Handing over\n\n")
 	b.WriteString(fmt.Sprintf("When you have enough, call `%s` with the prompt you have written. It ", ToolRunPrompt))
@@ -241,6 +292,45 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 			},
 		},
 		{
+			Name: ToolListProjects,
+			Description: "List the repositories on this machine that a new session could be " +
+				"created in, most recently worked in first. Pass what the user called the project " +
+				"as query to narrow it; spoken names arrive mangled, so pass what you heard. The " +
+				"result is for you to choose from out loud, never to read out item by item.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"query": {
+						Type: genai.TypeString,
+						Description: "What they called the project, as close to their words as you " +
+							"can. Leave empty to see what there is.",
+					},
+				},
+			},
+		},
+		{
+			Name:        ToolCreateSession,
+			Description: createSessionDescription,
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"project_id": {
+						Type: genai.TypeString,
+						Description: "The project id exactly as " + ToolListProjects + " returned " +
+							"it. Never invent one.",
+					},
+					"model": {
+						Type: genai.TypeString,
+						Description: "The model family the user asked for, as a spoken name: " +
+							"\"fable\", \"opus\", \"sonnet\", \"haiku\". Leave empty for the " +
+							"default, which is what they get on screen. Never a version number " +
+							"and never a model id.",
+					},
+				},
+				Required: []string{"project_id"},
+			},
+		},
+		{
 			Name: ToolSummarizeSession,
 			Description: "Say what a session has been working on. Use it when they ask what " +
 				"something is doing or where it got to. It may answer that it is working on it, " +
@@ -258,6 +348,13 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 		},
 	}
 }
+
+const createSessionDescription = "Create a new session in a project on this machine and switch " +
+	"the user's screen to it. Call it only after they have said yes to the read-back, and then " +
+	"call " + ToolRunPrompt + " straight away with the prompt they agreed to — creating and " +
+	"sending are one gesture, not two questions. The project id must come from " +
+	ToolListProjects + "; never invent one. Projects on other machines cannot host a session " +
+	"created from this call."
 
 const runPromptDescription = "Hand a finished prompt to the coding agent so it starts work. " +
 	"Only call this after you have read the prompt back and been given an explicit yes — " +

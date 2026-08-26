@@ -108,6 +108,61 @@ func MatchSessions(query string, rows []SessionRow) (candidates []Candidate, top
 	return scored, topIsClear
 }
 
+// MatchProjects narrows a project list by what the operator called it.
+//
+// The same normalized matcher as [MatchSessions], for the same reason: a
+// project name said out loud arrives mangled, and "web tickets" has to reach
+// "webtickets". It ranks and filters; like everything else here it never picks,
+// and an empty query keeps the list in the order it arrived — which is already
+// most recently worked in first.
+func MatchProjects(query string, rows []ProjectRow) []ProjectRow {
+	tokens := normalizeTokens(query)
+	if len(tokens) == 0 {
+		return rows
+	}
+
+	type scoredProject struct {
+		row   ProjectRow
+		score float64
+	}
+
+	scored := make([]scoredProject, 0, len(rows))
+	for _, row := range rows {
+		if row.ID == "" {
+			continue
+		}
+		// A project has a name and a slug and nothing else worth matching, so it
+		// borrows the session scorer's project fields rather than growing a
+		// second scoring rule to drift from this one.
+		field := SessionRow{ProjectName: row.Name, ProjectSlug: row.Slug}
+		score := scoreRow(tokens, field)
+		// A slug is a compound word and a transcript splits it: "webtickets"
+		// comes back as "web tickets", which scores as two weak partial matches
+		// and falls under the floor. So the run-together spelling is tried too,
+		// and the better of the two wins.
+		if joined := strings.Join(tokens, ""); len(tokens) > 1 {
+			score = max(score, scoreRow([]string{joined}, field))
+		}
+		if score < matchFloor {
+			continue
+		}
+		scored = append(scored, scoredProject{row: row, score: score})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if a, b := scoreBucket(scored[i].score), scoreBucket(scored[j].score); a != b {
+			return a > b
+		}
+		return scored[i].row.LastActivity > scored[j].row.LastActivity
+	})
+
+	out := make([]ProjectRow, 0, len(scored))
+	for _, s := range scored {
+		out = append(out, s.row)
+	}
+	return out
+}
+
 // scoreBucket coarsens a score so that near-ties are ties.
 func scoreBucket(score float64) int { return int(score*20 + 0.5) }
 

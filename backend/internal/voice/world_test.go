@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -190,11 +191,25 @@ func TestMergedRowsPreferTheLocalTruth(t *testing.T) {
 // fakeDirectory answers from a fixed set of rows.
 type fakeDirectory struct {
 	rows      []SessionRow
+	projects  []ProjectRow
 	summaries map[string]string
+	// families is what a spoken model name may be, standing in for the model
+	// catalog. Anything else comes back as an UnknownModelError.
+	families []string
+	// createErr, when set, is what CreateSession fails with.
+	createErr error
+
 	// summarizeCalls counts how many times a summary was asked for, so a test
 	// can see that focusing warmed one.
 	mu             sync.Mutex
 	summarizeCalls int
+	created        []createdSession
+}
+
+// createdSession is one call to fakeDirectory.CreateSession.
+type createdSession struct {
+	projectID string
+	model     string
 }
 
 func (f *fakeDirectory) Orientation(context.Context) string { return "Two sessions, none waiting." }
@@ -225,8 +240,58 @@ func (f *fakeDirectory) Summarize(_ context.Context, id string, deliver func(str
 	go deliver(f.summaries[id])
 }
 
+func (f *fakeDirectory) ListProjects(context.Context) []ProjectRow { return f.projects }
+
+func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string) (SessionRow, error) {
+	if f.createErr != nil {
+		return SessionRow{}, f.createErr
+	}
+
+	family := "Opus"
+	if model != "" {
+		matched := ""
+		for _, candidate := range f.families {
+			if strings.EqualFold(candidate, model) {
+				matched = candidate
+				break
+			}
+		}
+		if matched == "" {
+			return SessionRow{}, &UnknownModelError{Spoken: model, Families: f.families}
+		}
+		family = matched
+	}
+
+	f.mu.Lock()
+	f.created = append(f.created, createdSession{projectID: projectID, model: model})
+	id := fmt.Sprintf("new-%d", len(f.created))
+	f.mu.Unlock()
+
+	var project ProjectRow
+	for _, row := range f.projects {
+		if row.ID == projectID {
+			project = row
+		}
+	}
+	return SessionRow{
+		ID:          id,
+		ProjectName: project.Name,
+		ProjectSlug: project.Slug,
+		MachineName: "workstation",
+		State:       "idle",
+		Model:       family,
+	}, nil
+}
+
 func (f *fakeDirectory) calls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.summarizeCalls
+}
+
+// creations is what CreateSession was asked for, in order.
+func (f *fakeDirectory) creations() []createdSession {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]createdSession(nil), f.created...)
 }

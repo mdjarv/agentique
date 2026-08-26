@@ -63,6 +63,36 @@ func TestSystemInstructionCarriesTheSwitchboardRules(t *testing.T) {
 	}
 }
 
+// Creating a session is deferred to the same yes that sends the prompt.
+//
+// Every rule asserted here answers a specific failure: an extra round trip is
+// another chance for a transcription to go wrong, creating before the yes
+// orphans an empty session and its worktree when a call drops, and stopping
+// between the create and the send turns one agreed gesture into a second
+// question.
+func TestSystemInstructionDefersCreationToTheOneYes(t *testing.T) {
+	got := strings.ToLower(SystemInstruction("", "", Persona{}))
+	for _, want := range []string{
+		ToolListProjects,
+		ToolCreateSession,
+		"not until they have said yes",     // nothing exists before consent
+		"settings are stated, never asked", // no defaults question of its own
+		"one read-back covers all of it",   // project, settings and prompt in one breath
+		"new* session",                     // the read-back says it is a new one
+		"immediately",                      // create then send, without a pause
+		"never pick",                       // an ambiguous project is asked about
+		"created on this machine only",     // a remote project cannot host one
+	} {
+		if !strings.Contains(got, strings.ToLower(want)) {
+			t.Errorf("system instruction is missing %q", want)
+		}
+	}
+	// The consent gate did not move: it is still the read-back before the send.
+	if !strings.Contains(got, "silence is still not consent") {
+		t.Error("creating a session must not weaken the consent rule")
+	}
+}
+
 // Orientation is what is going on when the call opens — reference material with
 // a shelf life, and it must say so rather than being quoted as current.
 func TestSystemInstructionIncludesOrientation(t *testing.T) {
@@ -137,15 +167,16 @@ func (f *fakeDispatcher) dispatched() (int, string) {
 // every path through runTool tolerates that failing.
 func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
 	return &call{
-		engine:     NewEchoEngine(),
-		registry:   registry,
-		dispatcher: d,
-		focus:      focus,
-		follows:    make(map[string]*followState),
-		offered:    make(map[string]SessionRow),
-		summaries:  make(map[string]string),
-		log:        testLogger(),
-		runCtx:     context.Background(),
+		engine:          NewEchoEngine(),
+		registry:        registry,
+		dispatcher:      d,
+		focus:           focus,
+		follows:         make(map[string]*followState),
+		offered:         make(map[string]SessionRow),
+		offeredProjects: make(map[string]ProjectRow),
+		summaries:       make(map[string]string),
+		log:             testLogger(),
+		runCtx:          context.Background(),
 	}
 }
 

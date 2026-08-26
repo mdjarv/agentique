@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/voice"
@@ -34,6 +36,10 @@ type voiceDirectory struct {
 	svc        *session.Service
 	queries    *store.Queries
 	summarizer *sessionSummarizer
+	// catalog resolves a spoken model family to a slug. It is the same catalog
+	// the picker renders, so a family the operator can choose on screen is one
+	// they can ask for out loud, with no release in between.
+	catalog *providers.Catalog
 
 	// machineID is this host's identity, stamped on every local row so the
 	// assistant can tell its own sessions from a snapshot's remote ones.
@@ -44,12 +50,13 @@ type voiceDirectory struct {
 }
 
 func newVoiceDirectory(svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer,
-	machineID string, machineName func(ctx context.Context) string,
+	catalog *providers.Catalog, machineID string, machineName func(ctx context.Context) string,
 ) *voiceDirectory {
 	return &voiceDirectory{
 		svc:         svc,
 		queries:     queries,
 		summarizer:  summarizer,
+		catalog:     catalog,
 		machineID:   machineID,
 		machineName: machineName,
 	}
@@ -146,6 +153,143 @@ func (d *voiceDirectory) Summarize(ctx context.Context, id string, deliver func(
 	go deliver(d.summarizer.Summary(detached, id))
 }
 
+// ListProjects implements voice.Directory: this machine's projects, most
+// recently worked in first.
+//
+// Local only, and that is the point rather than a limitation. A project row
+// here is somewhere [voiceDirectory.CreateSession] can actually put a session,
+// and creation goes through this server's session service — a repository
+// checked out on a paired machine is not one of those places.
+func (d *voiceDirectory) ListProjects(ctx context.Context) []voice.ProjectRow {
+	list, err := d.queries.ListProjects(ctx)
+	if err != nil {
+		slog.Warn("voice directory: project list failed", "error", err)
+		return nil
+	}
+
+	// "Recent" means work, not metadata: a project's own updated_at moves when
+	// it is renamed, which is not what the operator means by the one they were
+	// just in. The sessions already read for every other answer are what say so.
+	lastWork := d.lastWorkByProject(ctx)
+
+	rows := make([]voice.ProjectRow, 0, len(list))
+	for _, project := range list {
+		rows = append(rows, voice.ProjectRow{
+			ID:           project.ID,
+			Name:         project.Name,
+			Slug:         project.Slug,
+			LastActivity: lastWork[project.ID],
+		})
+	}
+
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].LastActivity > rows[j].LastActivity
+	})
+	if len(rows) > maxDirectoryRows {
+		rows = rows[:maxDirectoryRows]
+	}
+	return rows
+}
+
+// CreateSession implements voice.Directory.
+//
+// One route in: this is the same [session.Service.CreateSession] the composer's
+// new-session flow reaches through the `session.create` WS handler, with the
+// same worktree default. A second creation path would be a second set of rules
+// about worktrees, quotas and idempotency to drift apart.
+//
+// The session is born **fullAuto** deliberately. Live voice has no spoken
+// approval — you cannot approve what you cannot see, on a transcription — so a
+// session created any other way would be refused at its own first dispatch,
+// which is a worse outcome than the default: an empty session nobody can use
+// from the call that made it. The consent gate is not weakened by this, because
+// it was never the session's mode: it is the prompt, read back and agreed to
+// out loud, and that read-back now names the new session too.
+func (d *voiceDirectory) CreateSession(ctx context.Context, projectID, model string) (voice.SessionRow, error) {
+	if projectID == "" {
+		return voice.SessionRow{}, errors.New("no project")
+	}
+
+	slug, family, err := d.resolveSpokenModel(ctx, model)
+	if err != nil {
+		return voice.SessionRow{}, err
+	}
+
+	result, err := d.svc.CreateSession(ctx, session.CreateSessionParams{
+		ProjectID: projectID,
+		Model:     slug,
+		// The composer's default, so a session started by voice is the same
+		// thing as one started on screen.
+		Worktree:        true,
+		AutoApproveMode: "fullAuto",
+	})
+	if err != nil {
+		return voice.SessionRow{}, fmt.Errorf("create session in %q: %w", projectID, err)
+	}
+
+	row := voice.SessionRow{
+		ID:           result.SessionID,
+		Name:         result.Name,
+		MachineID:    d.machineID,
+		State:        result.State,
+		Branch:       result.WorktreeBranch,
+		Model:        family,
+		LastActivity: result.CreatedAt,
+	}
+	if d.machineName != nil {
+		row.MachineName = d.machineName(ctx)
+	}
+	if project, err := d.queries.GetProject(ctx, projectID); err == nil {
+		row.ProjectName = project.Name
+		row.ProjectSlug = project.Slug
+	}
+	if row.Model == "" {
+		row.Model = providers.ModelFamilyName(result.Model)
+	}
+	return row, nil
+}
+
+// resolveSpokenModel turns a spoken family name into a slug to create with, and
+// the label to say back.
+//
+// Empty means the default, which is whatever the service gives the composer —
+// resolving one here would be a second copy of that decision. Anything else
+// must be a family the catalog actually lists: guessing at a model id is the
+// one mistake in this flow the operator cannot see happening.
+func (d *voiceDirectory) resolveSpokenModel(ctx context.Context, spoken string) (slug, family string, err error) {
+	spoken = strings.TrimSpace(spoken)
+	if spoken == "" {
+		return "", "", nil
+	}
+	if d.catalog == nil {
+		return "", "", &voice.UnknownModelError{Spoken: spoken}
+	}
+	if model, ok := d.catalog.ResolveFamily(ctx, "claude", spoken); ok {
+		return model.Slug, model.DisplayName, nil
+	}
+	return "", "", &voice.UnknownModelError{
+		Spoken:   spoken,
+		Families: d.catalog.FamilyNames(ctx, "claude"),
+	}
+}
+
+// lastWorkByProject is when each project was last actually worked in.
+func (d *voiceDirectory) lastWorkByProject(ctx context.Context) map[string]string {
+	result, err := d.svc.ListAllSessions(ctx)
+	if err != nil {
+		slog.Warn("voice directory: session list failed", "error", err)
+		return nil
+	}
+	out := make(map[string]string, len(result.Sessions))
+	for _, info := range result.Sessions {
+		at := firstNonEmptyOf(info.LastQueryAt, info.UpdatedAt, info.CreatedAt)
+		if at > out[info.ProjectID] {
+			out[info.ProjectID] = at
+		}
+	}
+	return out
+}
+
 // rows reads every live session on this machine, newest activity first.
 func (d *voiceDirectory) rows(ctx context.Context) []voice.SessionRow {
 	result, err := d.svc.ListAllSessions(ctx)
@@ -179,12 +323,15 @@ func (d *voiceDirectory) rows(ctx context.Context) []voice.SessionRow {
 // toRow turns one SessionInfo into something speakable.
 func (d *voiceDirectory) toRow(ctx context.Context, info session.SessionInfo, projects map[string]store.Project) voice.SessionRow {
 	row := voice.SessionRow{
-		ID:           info.ID,
-		Name:         info.Name,
-		MachineID:    d.machineID,
-		State:        info.State,
-		Attention:    attentionOf(info),
-		Branch:       info.WorktreeBranch,
+		ID:        info.ID,
+		Name:      info.Name,
+		MachineID: d.machineID,
+		State:     info.State,
+		Attention: attentionOf(info),
+		Branch:    info.WorktreeBranch,
+		// The family name, never the version: that is the vocabulary the
+		// operator chose in and the one they will hear back.
+		Model:        providers.ModelFamilyName(info.Model),
 		LastActivity: firstNonEmptyOf(info.LastQueryAt, info.UpdatedAt, info.CreatedAt),
 	}
 	if d.machineName != nil {
