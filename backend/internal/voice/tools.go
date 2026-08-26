@@ -133,12 +133,11 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 			"Call " + ToolListSessions + " or " + ToolFindSession + " and use an id from the result."}
 	}
 
-	row, known := c.lookupRow(ctx, sessionID)
-	if !known {
-		row = SessionRow{ID: sessionID}
-		if offeredRow, ok := c.offeredRow(sessionID); ok {
-			row = offeredRow
-		}
+	// One lookup answers both questions: what to call it, and whether this
+	// machine owns it.
+	row, local := c.localRow(ctx, sessionID)
+	if !local {
+		row = c.bestKnownRow(ctx, sessionID)
 	}
 
 	c.setFocus(sessionID)
@@ -149,7 +148,6 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 	_ = c.sendControl(serverMessage{Type: msgFocus, SessionID: sessionID})
 	c.log.Info("voice call focused session", "session", sessionID)
 
-	local := c.isLocal(ctx, sessionID)
 	out := c.rowPayload(row)
 	out["focused"] = true
 	out["note"] = fmt.Sprintf("Confirm out loud that you are now on %q before you do anything else.",
@@ -197,13 +195,13 @@ func (c *call) toolSummarizeSession(ctx context.Context, args map[string]any) ma
 			"Call " + ToolListSessions + " or " + ToolFindSession + " first."}
 	}
 
-	row, _ := c.lookupRow(ctx, sessionID)
-	if row.ID == "" {
-		row = SessionRow{ID: sessionID}
+	row, local := c.localRow(ctx, sessionID)
+	if !local {
+		row = c.bestKnownRow(ctx, sessionID)
 	}
 	label := displayFor(row)
 
-	if !c.isLocal(ctx, sessionID) {
+	if !local {
 		return map[string]any{"error": fmt.Sprintf("%q runs on %s, and its transcript is not on "+
 			"this machine, so I cannot summarise it from here. Say that, and offer to switch to "+
 			"something local instead.", label, machineWords(row))}

@@ -254,6 +254,19 @@ func (c *call) isLocal(ctx context.Context, sessionID string) bool {
 	return ok
 }
 
+// bestKnownRow is the most complete description the call has of a session it
+// does not own: the snapshot's row, then whatever was already offered, then the
+// bare id — which is still something to answer with.
+func (c *call) bestKnownRow(ctx context.Context, sessionID string) SessionRow {
+	if row, ok := c.lookupRow(ctx, sessionID); ok {
+		return row
+	}
+	if row, ok := c.offeredRow(sessionID); ok {
+		return row
+	}
+	return SessionRow{ID: sessionID}
+}
+
 // cacheSummary stores a delivered summary for the rest of the call.
 func (c *call) cacheSummary(sessionID, summary string) {
 	if sessionID == "" || summary == "" {
