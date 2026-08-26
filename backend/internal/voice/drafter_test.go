@@ -28,7 +28,7 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 }
 
 func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
-	got := strings.ToLower(SystemInstruction("", "", Persona{}))
+	got := strings.ToLower(SystemInstruction(Briefing{Persona: Persona{}}))
 	for _, want := range []string{
 		"never answer the question yourself", // the likeliest failure
 		"silence is not consent",             // the safety contract
@@ -45,7 +45,7 @@ func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 // wrong out loud: acting on a session nobody heard named, picking between two
 // similar names, or promising work on a machine that cannot receive it.
 func TestSystemInstructionCarriesTheSwitchboardRules(t *testing.T) {
-	got := strings.ToLower(SystemInstruction("", "", Persona{}))
+	got := strings.ToLower(SystemInstruction(Briefing{Persona: Persona{}}))
 	for _, want := range []string{
 		ToolListSessions,
 		ToolFindSession,
@@ -71,7 +71,7 @@ func TestSystemInstructionCarriesTheSwitchboardRules(t *testing.T) {
 // between the create and the send turns one agreed gesture into a second
 // question.
 func TestSystemInstructionDefersCreationToTheOneYes(t *testing.T) {
-	got := strings.ToLower(SystemInstruction("", "", Persona{}))
+	got := strings.ToLower(SystemInstruction(Briefing{Persona: Persona{}}))
 	for _, want := range []string{
 		ToolListProjects,
 		ToolCreateSession,
@@ -93,10 +93,72 @@ func TestSystemInstructionDefersCreationToTheOneYes(t *testing.T) {
 	}
 }
 
+// Asked what it can do, the assistant answers rather than sending the question
+// to a coding agent — and answers with what is true.
+//
+// The carve-out has to sit beside the never-answer rule: read apart, the two
+// contradict, and the model resolves that by drafting a prompt for "what can
+// you do?". The CANNOT list is the other half: a speech model with tools will
+// offer to approve and merge unless it is told in words that it cannot.
+func TestSystemInstructionAnswersQuestionsAboutItself(t *testing.T) {
+	full := SystemInstruction(Briefing{})
+	got := strings.ToLower(full)
+
+	for _, want := range []string{
+		"that rule is about their code and their work", // the carve-out
+		"questions about *you*",
+		"you can do, how to switch or start a session",
+		"never turn a question about this call into", // and never into a prompt
+		"you can:",
+		"you cannot, and must never offer to",
+		"approve anything",          // no spoken approval
+		"another machine",           // remote sessions are look-only
+		"archive, merge",            // not its to do
+		"without reading it back",   // the consent gate holds even here
+		"talk about cost",           // costs never appear
+		"never invent a capability", // the hallucination guard
+		"one or two sentences",      // help follows the speech rules
+	} {
+		if !strings.Contains(got, strings.ToLower(want)) {
+			t.Errorf("system instruction is missing %q", want)
+		}
+	}
+
+	// The carve-out is worthless if it lands in a different part of the prompt
+	// from the rule it modifies.
+	rule := strings.Index(full, "You never answer the question yourself")
+	carveOut := strings.Index(full, "That rule is about their code and their work")
+	if rule < 0 || carveOut < 0 || carveOut < rule {
+		t.Fatalf("the carve-out is at %d and the rule at %d — they must be read together", carveOut, rule)
+	}
+	if strings.Contains(full[rule:carveOut], "\n# ") {
+		t.Error("a section heading separates the never-answer rule from its carve-out")
+	}
+}
+
+// A call that opened on nothing may orient them once. One that opened on a
+// session must not: they pressed the button from it and know where they are.
+func TestOrientationOfferOnlyWhenTheCallOpenedOnNothing(t *testing.T) {
+	const offer = "did not open on any session"
+
+	unfocused := SystemInstruction(Briefing{})
+	if !strings.Contains(unfocused, offer) {
+		t.Error("an unfocused call was given nothing to offer")
+	}
+	if !strings.Contains(unfocused, "never again in this call") {
+		t.Error("the orientation offer must be once, not a tutorial")
+	}
+
+	focused := SystemInstruction(Briefing{InitialFocus: "sess-1"})
+	if strings.Contains(focused, offer) {
+		t.Error("a call that opened on a session still offers to orient them")
+	}
+}
+
 // Orientation is what is going on when the call opens — reference material with
 // a shelf life, and it must say so rather than being quoted as current.
 func TestSystemInstructionIncludesOrientation(t *testing.T) {
-	got := SystemInstruction("", "Three sessions, one waiting on approval.", Persona{})
+	got := SystemInstruction(Briefing{Orientation: "Three sessions, one waiting on approval."})
 	if !strings.Contains(got, "one waiting on approval") {
 		t.Error("orientation did not reach the instruction")
 	}
@@ -105,13 +167,13 @@ func TestSystemInstructionIncludesOrientation(t *testing.T) {
 	}
 
 	// Absent is the ordinary case for a machine with no directory wired.
-	if strings.Contains(SystemInstruction("", "", Persona{}), "What is going on right now") {
+	if strings.Contains(SystemInstruction(Briefing{Persona: Persona{}}), "What is going on right now") {
 		t.Error("an empty orientation must not leave an empty section behind")
 	}
 }
 
 func TestSystemInstructionIncludesProjectContext(t *testing.T) {
-	got := SystemInstruction("The repo is a Go backend with a React frontend.", "", Persona{})
+	got := SystemInstruction(Briefing{ProjectContext: "The repo is a Go backend with a React frontend."})
 	if !strings.Contains(got, "Go backend with a React frontend") {
 		t.Error("project context did not reach the instruction")
 	}

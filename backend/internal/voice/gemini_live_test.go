@@ -115,7 +115,7 @@ func TestGeminiToolCallLive(t *testing.T) {
 		Backend: BackendAIStudio,
 		APIKey:  key,
 		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
-	}, SystemInstruction("A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts.", "", Persona{}), slog.Default())
+	}, SystemInstruction(Briefing{ProjectContext: "A Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts."}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGeminiRefusesToSkipTheReadbackLive(t *testing.T) {
 		Backend: BackendAIStudio,
 		APIKey:  key,
 		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
-	}, SystemInstruction("A Go backend with a React frontend.", "", Persona{}), slog.Default())
+	}, SystemInstruction(Briefing{ProjectContext: "A Go backend with a React frontend."}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestGeminiPersonaLive(t *testing.T) {
 				APIKey:  key,
 				Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
 				Persona: persona,
-			}, SystemInstruction("", "", persona), slog.Default())
+			}, SystemInstruction(Briefing{Persona: persona}), slog.Default())
 			if err != nil {
 				t.Fatalf("connect with voice %q: %v", voiceName, err)
 			}

@@ -31,20 +31,36 @@ const (
 	ToolCreateSession = "create_session"
 )
 
+// Briefing is what the drafter is told about the call it is opening on.
+//
+// A struct rather than a parameter list: every field is optional and three of
+// them are strings, which positionally is one transposition away from telling
+// the model the orientation is the project. Its zero value is valid and yields
+// a generic but still correctly-shaped drafter.
+type Briefing struct {
+	// InitialFocus is the session the operator was looking at when they pressed
+	// the button, or "" for a call that opened on nothing. It is only the
+	// initial focus — the call can be aimed elsewhere the moment it starts.
+	InitialFocus string
+	// ProjectContext is what the model knows about the work that session is in.
+	ProjectContext string
+	// Orientation is what is going on across the machine right now.
+	Orientation string
+	// Persona is the operator's chosen character. Its zero value is the
+	// built-in behaviour.
+	Persona Persona
+}
+
 // SystemInstruction shapes the speech model into a drafter.
 //
 // Almost every failure mode of this feature is a prompt failure, not a
 // transport one, so this is written against the specific ways it goes wrong:
 // answering the question itself, narrating, reading markdown aloud, treating
-// silence as consent, and — now that a call can reach every session — acting on
-// a session the listener never heard named.
-//
-// projectContext is what the model knows about the work the call opened on;
-// empty is valid and yields a generic but still correctly-shaped drafter.
-// orientation is what is going on across the machine right now, and is also
-// optional. persona is the operator's chosen character; its zero value is the
-// built-in behaviour.
-func SystemInstruction(projectContext, orientation string, persona Persona) string {
+// silence as consent, claiming abilities it does not have, and — now that a
+// call can reach every session — acting on a session the listener never heard
+// named.
+func SystemInstruction(brief Briefing) string {
+	projectContext, orientation, persona := brief.ProjectContext, brief.Orientation, brief.Persona
 	var b strings.Builder
 
 	b.WriteString("You are a voice interface to a developer's coding agents. You are on a live call ")
@@ -65,6 +81,16 @@ func SystemInstruction(projectContext, orientation string, persona Persona) stri
 	b.WriteString("You have not looked at the code and cannot. Turn it into a prompt for the agent ")
 	b.WriteString("that can. If you catch yourself about to explain something technical, stop: that ")
 	b.WriteString("is the coding agent's job.\n\n")
+	// The carve-out sits inside the never-answer rule rather than in its own
+	// section, because read apart the two are contradictory and the model
+	// resolves the contradiction by turning "what can you do?" into a prompt.
+	b.WriteString("**That rule is about their code and their work.** Questions about *you* — what ")
+	b.WriteString("you can do, how to switch or start a session, what staying on the line means, ")
+	b.WriteString("why you just refused something — are the one thing you answer yourself, from ")
+	b.WriteString(fmt.Sprintf("what you already know. NEVER turn a question about this call into a `%s`: ",
+		ToolRunPrompt))
+	b.WriteString("the coding agent cannot see this conversation, and it would go and read the ")
+	b.WriteString("source code to answer a question you could have answered in a sentence.\n\n")
 
 	b.WriteString(persona.personaSection())
 	b.WriteString("\n")
@@ -150,6 +176,49 @@ func SystemInstruction(projectContext, orientation string, persona Persona) stri
 	b.WriteString("A new session is created on this machine only. If the project they name lives on ")
 	b.WriteString("another machine, say so and say a session has to be started there; do not create ")
 	b.WriteString("something somewhere else and call it the same thing.\n\n")
+
+	// Help is instruction, not a tool. What it answers is static content this
+	// text already holds, so a tool call would buy nothing and cost a pause —
+	// the model is suspended for the whole of one, and a question about the app
+	// would be the slowest thing in the conversation.
+	//
+	// The CANNOT list is the load-bearing half. Asked what it can do, a speech
+	// model with tools will happily offer to approve, merge and delete, and the
+	// operator finds out it cannot only after being told it would.
+	b.WriteString("# Questions about this call or the app\n\n")
+	b.WriteString("You can say what you are able to do, because you know it. Keep it to what is ")
+	b.WriteString("true:\n\n")
+	b.WriteString("You CAN: say what needs their attention; list their sessions and find one by ")
+	b.WriteString("name; switch to it, which moves their screen too; say what a session has been ")
+	b.WriteString("doing; start a new session in a project on this machine; work out a prompt and ")
+	b.WriteString("hand it to whichever session you are on; and relay progress while it runs.\n\n")
+	b.WriteString("You CANNOT, and must never offer to:\n\n")
+	b.WriteString("- **Approve anything.** There is no approving by voice. A session that is stuck ")
+	b.WriteString("waiting for approval needs them at a screen — say that, do not offer to unblock ")
+	b.WriteString("it.\n")
+	b.WriteString("- **Start work on another machine's sessions.** You can see them and talk about ")
+	b.WriteString("them, and that is all.\n")
+	b.WriteString("- **Delete, archive, merge, rename or commit anything.** None of that is yours.\n")
+	b.WriteString("- **Send anything without reading it back and hearing a clear yes.** Not even if ")
+	b.WriteString("they tell you to skip it.\n")
+	b.WriteString("- **Talk about cost.** It never comes up here. If they ask, say you do not have ")
+	b.WriteString("that.\n\n")
+	b.WriteString("Do not claim anything beyond this list, and never invent a capability to be ")
+	b.WriteString("helpful. If they ask for something not on it, say plainly that you cannot and ")
+	b.WriteString("what they would do on screen instead.\n\n")
+	b.WriteString("Answer all of this the way you answer everything else: one or two sentences, ")
+	b.WriteString("then offer to go into more of it. Never recite the whole list unless they ask ")
+	b.WriteString("you to keep going.\n\n")
+
+	// Only for a call that opened on nothing. With an initial focus the operator
+	// pressed the button from a session and already knows where they are;
+	// orienting them there is a tutorial nobody asked for.
+	if strings.TrimSpace(brief.InitialFocus) == "" {
+		b.WriteString("This call did not open on any session. **Once**, early on, you may offer one ")
+		b.WriteString("line of orientation — that they can ask what needs them, switch to a session ")
+		b.WriteString("by name, or start something new. Once, as an offer, and never again in this ")
+		b.WriteString("call: it is not a tutorial.\n\n")
+	}
 
 	b.WriteString("# Handing over\n\n")
 	b.WriteString(fmt.Sprintf("When you have enough, call `%s` with the prompt you have written. It ", ToolRunPrompt))

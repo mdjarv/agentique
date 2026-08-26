@@ -128,11 +128,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// operator was looking at when they pressed the button — not a fixed target.
 	initialFocus := r.URL.Query().Get("sessionId")
 	persona := h.persona(r.Context())
-	instruction := SystemInstruction(
-		h.projectContext(r.Context(), initialFocus),
-		h.orientation(r.Context()),
-		persona,
-	)
+	instruction := SystemInstruction(Briefing{
+		InitialFocus:   initialFocus,
+		ProjectContext: h.projectContext(r.Context(), initialFocus),
+		Orientation:    h.orientation(r.Context()),
+		Persona:        persona,
+	})
 
 	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction, persona)
 	if err != nil {
