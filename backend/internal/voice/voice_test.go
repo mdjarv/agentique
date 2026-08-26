@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -358,6 +359,50 @@ func TestClosingACallReleasesTheBinding(t *testing.T) {
 			t.Fatal("the binding outlived the call")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A full world snapshot must not close the call. The read limit is applied
+// before the frame type is known, so a limit sized for audio would end a call
+// over a sidebar refresh.
+func TestAFullWorldSnapshotDoesNotCloseTheCall(t *testing.T) {
+	ws, cleanup := dialVoice(t, Options{Backend: BackendEcho})
+	defer cleanup()
+
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	rows := make([]wireSessionRow, 0, maxWorldRows)
+	for i := range maxWorldRows {
+		rows = append(rows, wireSessionRow{
+			SessionID:      fmt.Sprintf("8f1c0000-0000-4000-8000-%012d", i),
+			Name:           strings.Repeat("session name ", 4),
+			ProjectSlug:    "agentique-backend",
+			ProjectName:    "agentique backend",
+			MachineID:      fmt.Sprintf("9a2d0000-0000-4000-8000-%012d", i),
+			MachineName:    "workstation-in-the-office",
+			State:          "running",
+			Branch:         "feature/some-reasonably-long-branch-name",
+			LastActivityAt: "2026-08-26T12:00:00Z",
+		})
+	}
+	if err := ws.WriteJSON(clientMessage{Type: msgWorld, Sessions: rows}); err != nil {
+		t.Fatalf("write world: %v", err)
+	}
+
+	// The call is still up if it still echoes.
+	sent := pcmFrame(7, -7)
+	if err := ws.WriteMessage(websocket.BinaryMessage, sent); err != nil {
+		t.Fatalf("write audio: %v", err)
+	}
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	msgType, got, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("the call should have survived a full snapshot: %v", err)
+	}
+	if msgType != websocket.BinaryMessage || string(got) != string(sent) {
+		t.Errorf("after a world snapshot, echo = (%d, %v), want (binary, %v)", msgType, got, sent)
 	}
 }
 

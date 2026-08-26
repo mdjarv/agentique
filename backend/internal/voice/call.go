@@ -21,10 +21,18 @@ const (
 	pongTimeout  = 60 * time.Second
 	pingInterval = 25 * time.Second
 
-	// maxFrameBytes bounds one inbound frame. Caller audio arrives in ~32ms
-	// batches (about 1KB at 16kHz mono s16le), so this is generous for a real
-	// frame and still refuses anything that is not audio.
-	maxFrameBytes = 64 << 10
+	// maxFrameBytes bounds one inbound frame, audio and control alike — the
+	// read limit is applied before the frame type is known, so it has to fit
+	// the larger of the two.
+	//
+	// Audio is the small one: ~1KB per 32ms batch at 16kHz mono s16le. The
+	// world snapshot is what sets this number. Two hundred rows of session
+	// name, project, machine and branch is tens of kilobytes of JSON, and
+	// exceeding the limit does not truncate the frame — it closes the socket,
+	// which would end the call over a sidebar refresh. So there is room for a
+	// full snapshot several times over, and it still refuses anything that is
+	// neither.
+	maxFrameBytes = 256 << 10
 
 	// defaultIdleTimeout closes a call whose caller has gone quiet while nobody
 	// is working. It exists because a live speech session bills for wall-clock
