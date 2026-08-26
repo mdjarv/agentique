@@ -2,14 +2,33 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { ModelId } from "~/lib/session/actions";
+import type { DockView } from "~/lib/session/dock";
 import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type Theme = "light" | "dark" | "system";
 
-/** Which view the shared collapsible right panel shows. */
-export type RightPanelView = "browser" | "workflow";
-
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
+
+/** What one session remembers about its dock. */
+export interface SessionDockState {
+  open: boolean;
+  view: DockView;
+}
+
+/**
+ * The dock is per session, because "what I had open beside this work" is a
+ * property of the work. That makes the map unbounded, so it is pruned in
+ * insertion order — the oldest sessions to touch their dock lose the memory
+ * first, which is the least surprising thing to forget.
+ */
+const MAX_DOCK_SESSIONS = 120;
+
+function pruneDock(dock: Record<string, SessionDockState>): Record<string, SessionDockState> {
+  const keys = Object.keys(dock);
+  if (keys.length <= MAX_DOCK_SESSIONS) return dock;
+  const keep = keys.slice(keys.length - MAX_DOCK_SESSIONS);
+  return Object.fromEntries(keep.map((key) => [key, dock[key] as SessionDockState]));
+}
 
 export interface SessionDefaults {
   worktree: boolean;
@@ -33,13 +52,16 @@ interface UIState {
   /** Pre-migration cache of locally-pinned project IDs.
    *  Drained once on startup and pushed to the server (see usePinnedMigration). */
   legacyPinnedProjectIds: string[];
-  rightPanelCollapsed: boolean;
-  /** Which content the shared right panel shows when expanded. */
-  rightPanelView: RightPanelView;
-  todoSidebarCollapsed: boolean;
+  /** Per-session dock state, keyed by session id. Absent means "never opened". */
+  dock: Record<string, SessionDockState>;
+  /**
+   * Dock width and maximization are viewport preferences, not session state:
+   * how wide you like a side panel does not change with what is in it.
+   */
+  dockWidth: number;
+  dockMaximized: boolean;
   /** Sync dock: expansion is a preference, not a gesture — it is remembered. */
   syncDockExpanded: boolean;
-  browserPanelWidth: number;
   theme: Theme;
 
   setDraft: (sessionId: string, text: string) => void;
@@ -48,12 +70,24 @@ interface UIState {
   popStash: (sessionId: string) => string | undefined;
   clearStash: (sessionId: string) => void;
   clearLegacyPinnedProjectIds: () => void;
-  setRightPanelCollapsed: (collapsed: boolean) => void;
-  setRightPanelView: (view: RightPanelView) => void;
-  setTodoSidebarCollapsed: (collapsed: boolean) => void;
+  /** Open the dock on a view. Use for any gesture that means "show me this". */
+  openDock: (sessionId: string, view: DockView) => void;
+  setDockOpen: (sessionId: string, open: boolean) => void;
+  setDockView: (sessionId: string, view: DockView) => void;
+  setDockWidth: (width: number) => void;
+  setDockMaximized: (maximized: boolean) => void;
   setSyncDockExpanded: (expanded: boolean) => void;
-  setBrowserPanelWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
+}
+
+const DEFAULT_DOCK: SessionDockState = { open: false, view: "work" };
+
+export function sessionDock(
+  state: Pick<UIState, "dock">,
+  sessionId: string | null,
+): SessionDockState {
+  if (!sessionId) return DEFAULT_DOCK;
+  return state.dock[sessionId] ?? DEFAULT_DOCK;
 }
 
 export const useUIStore = create<UIState>()(
@@ -62,11 +96,10 @@ export const useUIStore = create<UIState>()(
       drafts: {},
       stashes: {},
       legacyPinnedProjectIds: [],
-      rightPanelCollapsed: true,
-      rightPanelView: "browser" as RightPanelView,
-      todoSidebarCollapsed: false,
+      dock: {},
+      dockWidth: 500,
+      dockMaximized: false,
       syncDockExpanded: false,
-      browserPanelWidth: 500,
       theme: "dark" as Theme,
 
       setDraft: (sessionId, text) =>
@@ -116,20 +149,35 @@ export const useUIStore = create<UIState>()(
 
       clearLegacyPinnedProjectIds: () => set({ legacyPinnedProjectIds: [] }),
 
-      setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
-      setRightPanelView: (view) => set({ rightPanelView: view }),
+      openDock: (sessionId, view) =>
+        set((s) => ({
+          dock: pruneDock({ ...s.dock, [sessionId]: { open: true, view } }),
+        })),
 
-      setTodoSidebarCollapsed: (collapsed) => set({ todoSidebarCollapsed: collapsed }),
+      setDockOpen: (sessionId, open) =>
+        set((s) => {
+          const current = s.dock[sessionId] ?? DEFAULT_DOCK;
+          if (current.open === open) return s;
+          return { dock: pruneDock({ ...s.dock, [sessionId]: { ...current, open } }) };
+        }),
+
+      setDockView: (sessionId, view) =>
+        set((s) => {
+          const current = s.dock[sessionId] ?? DEFAULT_DOCK;
+          if (current.view === view && current.open) return s;
+          return { dock: pruneDock({ ...s.dock, [sessionId]: { open: true, view } }) };
+        }),
+
+      setDockWidth: (width) => set({ dockWidth: Math.max(300, Math.min(900, width)) }),
+      setDockMaximized: (maximized) => set({ dockMaximized: maximized }),
+
       setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
-
-      setBrowserPanelWidth: (width) =>
-        set({ browserPanelWidth: Math.max(300, Math.min(900, width)) }),
 
       setTheme: (theme) => set({ theme }),
     }),
     {
       name: "agentique:ui",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
@@ -168,17 +216,29 @@ export const useUIStore = create<UIState>()(
           delete state.expandedFolders;
           delete state.sidebarFocusMode;
         }
+        if (version < 6) {
+          // The two global toggles (browser / workflow) and the todo sidebar
+          // became one per-session dock. There is no session id to attach the
+          // old global choice to, so only the width — a viewport preference —
+          // survives; every session starts with a closed dock.
+          state.dockWidth = (state.browserPanelWidth as number | undefined) ?? 500;
+          state.dock = {};
+          state.dockMaximized = false;
+          delete state.browserPanelWidth;
+          delete state.rightPanelCollapsed;
+          delete state.rightPanelView;
+          delete state.todoSidebarCollapsed;
+        }
         return state;
       },
       partialize: (state) => ({
         drafts: state.drafts,
         stashes: state.stashes,
         legacyPinnedProjectIds: state.legacyPinnedProjectIds,
-        rightPanelCollapsed: state.rightPanelCollapsed,
-        rightPanelView: state.rightPanelView,
-        todoSidebarCollapsed: state.todoSidebarCollapsed,
+        dock: state.dock,
+        dockWidth: state.dockWidth,
+        dockMaximized: state.dockMaximized,
         syncDockExpanded: state.syncDockExpanded,
-        browserPanelWidth: state.browserPanelWidth,
         theme: state.theme,
       }),
       onRehydrateStorage: () => () => {

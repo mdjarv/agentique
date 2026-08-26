@@ -260,6 +260,37 @@ export function partitionAgentRuns(runs: readonly AgentRun[]): AgentRunPartition
   return { inFlight, landed };
 }
 
+export interface AgentRunScope extends AgentRunPartition {
+  /** Landed before the current turn — folded away by default. */
+  earlier: AgentRun[];
+}
+
+/**
+ * The roster as the dock shows it: still out, landed **this turn**, and
+ * everything older held back.
+ *
+ * A lifetime roster is the same mistake `agentBadgeState` already refuses to
+ * make. A list that only grows stops being read, and in a 300px column it is a
+ * wall in front of the two agents you actually came for. Nothing is discarded —
+ * `earlier` is one disclosure away, because an agent is readable, not just
+ * reportable — but the default is the turn you are in.
+ *
+ * Runs still streaming have no `turnIndex` yet and belong to the latest turn,
+ * which is exactly where the fallback puts them.
+ */
+export function scopeAgentRuns(runs: readonly AgentRun[], latestTurnIndex?: number): AgentRunScope {
+  const { inFlight, landed } = partitionAgentRuns(runs);
+  if (latestTurnIndex === undefined) return { inFlight, landed, earlier: [] };
+
+  const current: AgentRun[] = [];
+  const earlier: AgentRun[] = [];
+  for (const run of landed) {
+    if ((run.turnIndex ?? latestTurnIndex) >= latestTurnIndex) current.push(run);
+    else earlier.push(run);
+  }
+  return { inFlight, landed: current, earlier };
+}
+
 /** Elapsed wall-clock for a run that is still out, or `undefined` if unknowable. */
 export function flightElapsedMs(run: AgentRun, now: number): number | undefined {
   if (run.startedAt !== undefined) return Math.max(0, now - run.startedAt);

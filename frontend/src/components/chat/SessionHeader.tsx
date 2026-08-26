@@ -6,11 +6,9 @@ import {
   FolderGit2,
   Gauge,
   GitBranch,
-  Globe,
   Server,
-  Workflow,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
@@ -39,19 +37,18 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
 import { cn, sessionShortId } from "~/lib/utils";
-import { latestWorkflowToolUseId } from "~/lib/workflow-events";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
-import { useBrowserStore } from "~/stores/browser-store";
-import { type SessionMetadata, useChatStore } from "~/stores/chat-store";
-import { useFeatureStore } from "~/stores/feature-store";
+import type { SessionMetadata } from "~/stores/chat-store";
 import { useScheduleStore } from "~/stores/schedule-store";
-import { useUIStore } from "~/stores/ui-store";
 
 interface SessionHeaderProps {
   meta: SessionMetadata;
   hasPendingInput: boolean;
-  /** Tab bar rendered inline in the header on desktop. */
-  tabBar?: React.ReactNode;
+  /**
+   * The session dock's toggle. Rendered here rather than built here: what the
+   * dock has to show is derived from session state the panel already holds.
+   */
+  dockToggle?: React.ReactNode;
   /** Project accent color hex for the top border. */
   accentColor?: string;
   /** Git actions for the session — enables inline merge dropdown on desktop. */
@@ -71,7 +68,7 @@ type ActiveDialog = "none" | "delete" | "create-channel" | "join-channel" | "ren
 export function SessionHeader({
   meta,
   hasPendingInput,
-  tabBar,
+  dockToggle,
   accentColor,
   git,
   projectGitStatus,
@@ -79,7 +76,6 @@ export function SessionHeader({
 }: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
-  const browserEnabled = useFeatureStore((s) => s.features.browser);
   const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = isRunning;
@@ -183,9 +179,6 @@ export function SessionHeader({
               onIconChange={actions.handleIconChange}
             />
 
-            {/* Navigation zone: tab bar (inline in the header on desktop) */}
-            {tabBar && <div className="flex items-stretch gap-1 ml-6 self-stretch">{tabBar}</div>}
-
             {/* Actions zone */}
             <div className="ml-auto flex items-center gap-1.5">
               <ParkedScheduleChip sessionId={meta.id} state={meta.state} />
@@ -196,9 +189,7 @@ export function SessionHeader({
                 worktreeBranch={meta.worktreeBranch}
               />
 
-              <WorkflowToggle sessionId={meta.id} />
-
-              {browserEnabled && <BrowserToggle sessionId={meta.id} />}
+              {dockToggle}
 
               {git && canMerge && (
                 <MergeDropdown
@@ -420,82 +411,5 @@ function ReadOnlyIndicators({
         </span>
       )}
     </>
-  );
-}
-
-function BrowserToggle({ sessionId }: { sessionId: string }) {
-  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
-  const rightPanelView = useUIStore((s) => s.rightPanelView);
-  const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed);
-  const setRightPanelView = useUIStore((s) => s.setRightPanelView);
-  const launched = useBrowserStore((s) => s.sessions[sessionId]?.launched ?? false);
-
-  // Active only when the panel is open AND showing the browser view — the panel
-  // is shared with the workflow view now.
-  const active = !rightPanelCollapsed && rightPanelView === "browser";
-  const handleToggle = () => {
-    if (active) {
-      setRightPanelCollapsed(true);
-    } else {
-      setRightPanelView("browser");
-      setRightPanelCollapsed(false);
-    }
-  };
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={cn(
-        "h-7 px-2 text-xs gap-1 relative",
-        active ? "text-foreground" : "text-muted-foreground",
-      )}
-      title="Toggle browser panel"
-      onClick={handleToggle}
-    >
-      <Globe className="h-3.5 w-3.5" />
-      {launched && <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-green-500" />}
-    </Button>
-  );
-}
-
-// WorkflowToggle appears once the session has run (or is running) a dynamic
-// workflow; it opens the shared right panel to the workflow view. Hidden
-// otherwise so it doesn't clutter sessions that never use workflows.
-function WorkflowToggle({ sessionId }: { sessionId: string }) {
-  const turns = useChatStore((s) => s.sessions[sessionId]?.turns);
-  const streamingEvents = useChatStore((s) => s.sessions[sessionId]?.streamingEvents);
-  const hasWorkflow = useMemo(
-    () => latestWorkflowToolUseId(turns, streamingEvents) !== null,
-    [turns, streamingEvents],
-  );
-
-  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
-  const rightPanelView = useUIStore((s) => s.rightPanelView);
-  const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed);
-  const setRightPanelView = useUIStore((s) => s.setRightPanelView);
-
-  if (!hasWorkflow) return null;
-
-  const active = !rightPanelCollapsed && rightPanelView === "workflow";
-  const handleToggle = () => {
-    if (active) {
-      setRightPanelCollapsed(true);
-    } else {
-      setRightPanelView("workflow");
-      setRightPanelCollapsed(false);
-    }
-  };
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={cn("h-7 px-2 text-xs gap-1", active ? "text-foreground" : "text-muted-foreground")}
-      title="Toggle workflow panel"
-      onClick={handleToggle}
-    >
-      <Workflow className="h-3.5 w-3.5" />
-    </Button>
   );
 }

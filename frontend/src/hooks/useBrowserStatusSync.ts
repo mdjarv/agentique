@@ -9,7 +9,8 @@ interface BrowserStatusResponse {
 
 /**
  * Syncs browser state from the backend when the active session changes.
- * - If the session has a running browser, marks it as launched and auto-opens the panel.
+ * - If the session has a running browser, marks it as launched and opens the
+ *   dock on Browser.
  * - Runs on mount and on session switch to survive page reloads.
  */
 export function useBrowserStatusSync(sessionId: string | null): void {
@@ -32,8 +33,11 @@ export function useBrowserStatusSync(sessionId: string | null): void {
         if (info.url) {
           useBrowserStore.getState().setUrl(sessionId, info.url);
         }
-        // Auto-open the panel for sessions with a running browser
-        useUIStore.getState().setRightPanelCollapsed(false);
+        // A browser this session already launched is worth showing, but not
+        // worth stealing a dock the user has open on something else.
+        if (!useUIStore.getState().dock[sessionId]?.open) {
+          useUIStore.getState().openDock(sessionId, "browser");
+        }
       })
       .catch(() => {
         // Status check failed — not critical

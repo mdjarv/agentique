@@ -1,9 +1,7 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { LoginPage } from "~/components/auth/LoginPage";
-import { BrowserPanel } from "~/components/browser/BrowserPanel";
-import { WorkflowPanel } from "~/components/chat/WorkflowPanel";
 import { ErrorBoundary } from "~/components/ErrorBoundary";
 import { useWireCapture } from "~/components/home/use-wire-capture";
 import { AppSidebar } from "~/components/layout/AppSidebar";
@@ -25,7 +23,6 @@ import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
-import { useUIStore } from "~/stores/ui-store";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -75,47 +72,7 @@ function AuthenticatedLayout() {
   const isMobile = useIsMobile();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
-  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed);
-  const rightPanelView = useUIStore((s) => s.rightPanelView);
-  const browserPanelWidth = useUIStore((s) => s.browserPanelWidth);
-  const setBrowserPanelWidth = useUIStore((s) => s.setBrowserPanelWidth);
   const loadFeatures = useFeatureStore((s) => s.load);
-
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  // Holds the teardown for an in-flight drag so we can run it on unmount.
-  const dragCleanupRef = useRef<(() => void) | null>(null);
-
-  const handleDragStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const currentWidth = useUIStore.getState().browserPanelWidth;
-      dragRef.current = { startX: e.clientX, startWidth: currentWidth };
-
-      const onMove = (ev: MouseEvent) => {
-        if (!dragRef.current) return;
-        const delta = dragRef.current.startX - ev.clientX;
-        setBrowserPanelWidth(dragRef.current.startWidth + delta);
-      };
-      const onUp = () => {
-        dragRef.current = null;
-        dragCleanupRef.current = null;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      dragCleanupRef.current = onUp;
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [setBrowserPanelWidth],
-  );
-
-  // If the panel unmounts mid-drag (e.g. activeSessionId clears), tear down the
-  // document listeners + body style overrides so the cursor/selection don't stick.
-  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   useEffect(() => {
     loadFeatures();
@@ -143,39 +100,11 @@ function AuthenticatedLayout() {
               <Outlet />
             </ErrorBoundary>
           </main>
-          {(() => {
-            // Shared collapsible right panel — content switches on rightPanelView.
-            const showWorkflow = rightPanelView === "workflow";
-            const showBrowser = rightPanelView === "browser" && browserEnabled;
-            if (
-              isMobile ||
-              rightPanelCollapsed ||
-              !activeSessionId ||
-              (!showWorkflow && !showBrowser)
-            )
-              return null;
-            return (
-              <div
-                className="border-l flex flex-col shrink-0 relative"
-                style={{ width: browserPanelWidth }}
-              >
-                <div
-                  className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-primary/20 active:bg-primary/30"
-                  onMouseDown={handleDragStart}
-                />
-                <ErrorBoundary>
-                  {showWorkflow ? (
-                    <WorkflowPanel sessionId={activeSessionId} />
-                  ) : (
-                    <BrowserPanel sessionId={activeSessionId} />
-                  )}
-                </ErrorBoundary>
-              </div>
-            );
-          })()}
-          {/* Mounted at the root, not in the chat tree: the call outlives every
-              route it navigates to, and hanging up must be reachable from all
-              of them. */}
+          {/* The session dock mounts inside ChatPanel, beside the transcript:
+              it is session chrome, and it needs the session state that panel
+              already holds. The call is the opposite — mounted here, not in the
+              chat tree, because it outlives every route it navigates to and
+              hanging up must be reachable from all of them. */}
           <VoiceBubble />
           <Toaster
             theme={resolvedTheme}

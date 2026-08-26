@@ -2,30 +2,52 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentRunDetail } from "~/components/chat/AgentRunDetail";
-import { type AgentRun, agentRunTotals, partitionAgentRuns } from "~/lib/agent-runs";
+import { type AgentRun, agentRunTotals, scopeAgentRuns } from "~/lib/agent-runs";
 import { formatDuration, formatTokens } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
 /**
- * Roster of every subagent this session spawned, in the only two groups a
- * reader acts on: still out, and came back. Landed rows are newest first —
- * this is a roster, not a transcript, and the reports you just asked for are
- * the ones you came to read.
+ * Roster of this session's subagents, in the only two groups a reader acts on:
+ * still out, and came back. Landed rows are newest first — this is a roster,
+ * not a transcript, and the reports you just asked for are the ones you came to
+ * read.
  *
  * The row's second line is the head of what the agent *returned*: the whole
  * point of the view is reading four agents' conclusions without opening any of
  * them. Opening one goes the rest of the way — its narration and its report in
- * full — so the tab answers "what did it actually say" without sending the
+ * full — so the roster answers "what did it actually say" without sending the
  * reader back to the transcript. Lifetime totals live in the footer, which is
  * where an odometer belongs.
+ *
+ * Given `latestTurnIndex` it shows **this turn** and folds the rest behind one
+ * disclosure (see `scopeAgentRuns`); without one it shows everything, which is
+ * what a full-height surface should do.
  *
  * Which rows are open is view state and deliberately not persisted: a roster
  * that reopens yesterday's four agents is a wall, not a list.
  */
-export function AgentsView({ runs }: { runs: AgentRun[] }) {
+export function AgentsView({
+  runs,
+  latestTurnIndex,
+  workflow,
+}: {
+  runs: AgentRun[];
+  /** Scope the roster to this turn, folding older runs away. */
+  latestTurnIndex?: number;
+  /**
+   * The session's live workflow tree, rendered under the flight board. A
+   * workflow's agents are not `AgentRun`s — they ride the workflow's own
+   * progress events — so this is a slot, not a merge.
+   */
+  workflow?: React.ReactNode;
+}) {
   const totals = useMemo(() => agentRunTotals(runs), [runs]);
-  const { inFlight, landed } = useMemo(() => partitionAgentRuns(runs), [runs]);
+  const { inFlight, landed, earlier } = useMemo(
+    () => scopeAgentRuns(runs, latestTurnIndex),
+    [runs, latestTurnIndex],
+  );
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [earlierOpen, setEarlierOpen] = useState(false);
 
   const toggleRow = useCallback((toolUseId: string) => {
     setOpenRows((prev) => {
@@ -49,6 +71,7 @@ export function AgentsView({ runs }: { runs: AgentRun[] }) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <AgentFlightStrip inFlight={inFlight} density="board" renderDetail={renderDetail} />
+      {workflow && <div className="shrink-0 px-3 pb-2">{workflow}</div>}
       <div className="flex-1 overflow-y-auto min-h-0">
         {inFlight.length > 0 && landed.length > 0 && (
           <div className="flex items-center gap-2 px-4 pt-2 pb-1.5">
@@ -68,6 +91,38 @@ export function AgentsView({ runs }: { runs: AgentRun[] }) {
             />
           ))}
         </div>
+        {earlier.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setEarlierOpen((v) => !v)}
+              aria-expanded={earlierOpen}
+              className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-muted-foreground-faint transition-colors hover:text-foreground"
+            >
+              {earlierOpen ? (
+                <ChevronDown className="size-3 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3 shrink-0" />
+              )}
+              <span className="font-medium text-[10px] uppercase tracking-[0.12em]">
+                Earlier · {earlier.length}
+              </span>
+              <span className="h-px flex-1 bg-border/60" />
+            </button>
+            {earlierOpen && (
+              <div className="divide-y divide-border/50">
+                {earlier.map((run) => (
+                  <AgentRunRow
+                    key={run.toolUseId}
+                    run={run}
+                    open={openRows.has(run.toolUseId)}
+                    onToggle={() => toggleRow(run.toolUseId)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
       <div className="shrink-0 flex items-center gap-3 border-t px-4 py-1.5 text-[11px] text-muted-foreground-faint">
         <span>

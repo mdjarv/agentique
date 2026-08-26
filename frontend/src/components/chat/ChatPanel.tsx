@@ -2,8 +2,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { BrowserPanel } from "~/components/browser/BrowserPanel";
 import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
-import { AgentsView } from "~/components/chat/AgentsView";
 import { ApprovalBanner } from "~/components/chat/banners/ApprovalBanner";
 import { PlanReviewBanner } from "~/components/chat/banners/PlanReviewBanner";
 import { QuestionBanner } from "~/components/chat/banners/QuestionBanner";
@@ -13,26 +13,28 @@ import { ContextBar } from "~/components/chat/ContextBar";
 import { ChangesView } from "~/components/chat/changes/ChangesView";
 import { CommitDialog } from "~/components/chat/dialogs/CommitDialog";
 import { CreatePRDialog } from "~/components/chat/dialogs/CreatePRDialog";
+import { DockResizeHandle } from "~/components/chat/dock/DockResizeHandle";
+import type { DockTabMark } from "~/components/chat/dock/DockTabBar";
+import { DockToggle } from "~/components/chat/dock/DockToggle";
+import { SessionDock } from "~/components/chat/dock/SessionDock";
+import { WorkView } from "~/components/chat/dock/WorkView";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
 import { finishActionKind, SessionFinishAction } from "~/components/chat/SessionFinishAction";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { SessionMachineContext } from "~/components/chat/SessionMachineContext";
-import { SessionTabBar } from "~/components/chat/SessionTabBar";
-import { CollapsedTodoStrip, TodoPanel } from "~/components/chat/TodoPanel";
-import { TodosView } from "~/components/chat/TodosView";
 import { StatusPage } from "~/components/layout/PageHeader";
 import { LoopsPanel } from "~/components/schedules/LoopsPanel";
 import { ScheduleApprovalBanner } from "~/components/schedules/ScheduleApprovalBanner";
 import { TemplatePicker } from "~/components/templates/TemplatePicker";
 import { VariableDialog } from "~/components/templates/VariableDialog";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { useGitActions } from "~/hooks/git/useGitActions";
 import { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
 import { useSessionAttention } from "~/hooks/session/useSessionAttention";
 import { useSessionState } from "~/hooks/session/useSessionState";
 import { useAgentRuns } from "~/hooks/useAgentRuns";
-import { useAutoOpenWorkflowPanel } from "~/hooks/useAutoOpenWorkflowPanel";
-import { useIsLarge } from "~/hooks/useIsLarge";
+import { useAutoOpenDock } from "~/hooks/useAutoOpenDock";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -59,6 +61,13 @@ import {
   stopSession,
   unarchiveSession,
 } from "~/lib/session/actions";
+import {
+  availableDockViews,
+  type DockAvailability,
+  type DockView,
+  dockAlertState,
+  resolveDockView,
+} from "~/lib/session/dock";
 import { loadSessionHistory } from "~/lib/session/history";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
@@ -101,17 +110,17 @@ function ApprovalBannerSwitch({
   );
 }
 
-import { useUIStore } from "~/stores/ui-store";
-
-export type SessionTab = "chat" | "todos" | "git" | "changes" | "agents" | "loops"; // "git" kept for backward compat URLs
+import { sessionDock, useUIStore } from "~/stores/ui-store";
 
 interface ChatPanelProps {
   projectId: string;
   sessionId: string;
-  tab?: SessionTab;
+  /** Which dock view the URL asks for, if any. */
+  dock?: DockView;
   /** Deep-link target: persisted turn index to scroll to (?turn= search param). */
   targetTurn?: number;
-  onTabChange?: (tab: SessionTab) => void;
+  /** Reflect the dock's view back into the URL — null closes it. */
+  onDockChange?: (view: DockView | null) => void;
 }
 
 const resumePlaceholders: Record<string, string> = {
@@ -122,12 +131,18 @@ const resumePlaceholders: Record<string, string> = {
 
 const resumableStates = new Set(["stopped", "failed", "done"]);
 
-export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }: ChatPanelProps) {
+export function ChatPanel({
+  projectId,
+  sessionId,
+  dock,
+  targetTurn,
+  onDockChange,
+}: ChatPanelProps) {
   const navigate = useNavigate();
   const navGuard = useNavigationGuard();
   const ws = useWebSocket();
-  // Pop the workflow panel open when this session launches a live workflow.
-  useAutoOpenWorkflowPanel(sessionId);
+  // Pop the dock open on Work when this session launches a live workflow.
+  useAutoOpenDock(sessionId);
   // Keep the open session out of the idle-eviction sweep: server-side idleness
   // is measured from the last turn, which says nothing about a user reading or
   // typing.
@@ -200,8 +215,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
     template: PromptTemplate;
     variables: string[];
   } | null>(null);
-  const activeTab: SessionTab = tab === "git" ? "changes" : (tab ?? "chat");
-  const setActiveTab = useCallback((t: SessionTab) => onTabChange?.(t), [onTabChange]);
+  const dockState = useUIStore((s) => sessionDock(s, sessionId));
+  const openDock = useUIStore((s) => s.openDock);
+  const setDockOpen = useUIStore((s) => s.setDockOpen);
+  const dockWidth = useUIStore((s) => s.dockWidth);
+  const dockMaximized = useUIStore((s) => s.dockMaximized);
+  const setDockMaximized = useUIStore((s) => s.setDockMaximized);
 
   const latestTurnIndex = turns[turns.length - 1]?.turnIndex;
   const seenFailureTurn = seenFailure?.session === sessionId ? seenFailure.turn : undefined;
@@ -214,14 +233,11 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   // (`schedule.mark-viewed`, sent by LoopsPanel), and a failed loop
   // deliberately survives being looked at.
   const loopsAttention = useMemo(() => loopBadgeState(sessionSchedules), [sessionSchedules]);
-  useEffect(() => {
-    if (activeTab !== "agents") return;
-    setSeenFailure({ session: sessionId, turn: latestTurnIndex ?? 0 });
-  }, [activeTab, sessionId, latestTurnIndex]);
   const [resuming, setResuming] = useState(false);
   const [expandFile, setExpandFile] = useState<string | null>(null);
   const [followRequest, setFollowRequest] = useState(0);
   const voiceEnabled = useFeatureStore((s) => s.features.voice);
+  const browserEnabled = useFeatureStore((s) => s.features.browser);
   // A call is physical, not logical: the voice socket opens against the origin
   // serving this page, and dispatch goes through *that* server's session
   // service. A session on a paired machine is not there, so the handoff would
@@ -365,11 +381,6 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const handleSend = useCallback(
     async (prompt: string, attachments?: Attachment[]): Promise<boolean> => {
       setFollowRequest((n) => n + 1);
-      // Switch to chat BEFORE the round trip. This navigates (tab lives in the
-      // URL), and doing it after the await would race the user: if they picked
-      // another session while the send was in flight, the stale route params
-      // would yank them back to this one.
-      if (activeTab !== "chat") setActiveTab("chat");
       try {
         await enqueueMessage(ws, sessionId, prompt, attachments);
         useUIStore.getState().clearDraft(sessionId);
@@ -386,7 +397,7 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         return false;
       }
     },
-    [ws, sessionId, activeTab, setActiveTab],
+    [ws, sessionId],
   );
 
   const handleStartFresh = useCallback(
@@ -494,18 +505,12 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   const modelSwitchSupported = caps?.modelSwitch !== false;
   const blockedMidTurn = sessionState === "running" && !midTurnSendSupported;
   const isMobile = useIsMobile();
-  const isLarge = useIsLarge();
-  const todoSidebarCollapsed = useUIStore((s) => s.todoSidebarCollapsed);
-  const setTodoSidebarCollapsed = useUIStore((s) => s.setTodoSidebarCollapsed);
 
   if (!meta) {
     return <StatusPage message="Loading session..." />;
   }
   const uncommittedCount = git.uncommittedFiles?.length ?? 0;
   const hasGitContent = isWorktree || isDirty || hasRemoteChanges || hasChanges;
-  const hideTodosTab = isLarge && hasTodos;
-  const effectiveTab: SessionTab = hideTodosTab && activeTab === "todos" ? "chat" : activeTab;
-  const showTodoSidebar = hideTodosTab && effectiveTab === "chat";
   const hasLoops = sessionSchedules.length > 0;
   const hasAgents = agentRuns.length > 0;
   const pendingApprovalSchedules = sessionSchedules.filter(
@@ -515,50 +520,90 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
   // scheduler resumes it on the next fire, so don't offer manual resume.
   const isParkedLoop =
     sessionState === "stopped" && sessionSchedules.some((sc) => sc.enabled && sc.nextRunAt !== "");
-  const showTabs =
-    (hasTodos && !hideTodosTab) || hasGitContent || hasChanges || hasAgents || hasLoops;
-  // The mobile finish action shares the tab strip; compute it here so the strip
-  // renders even when there are no tabs (e.g. a clean session that can be marked done).
+  // The mobile finish action shares the strip below the header; compute it here
+  // so the strip renders even when there is nothing else in it.
   const finishKind = isMobile ? finishActionKind(meta, git) : null;
   const ahead = isWorktree ? (meta?.commitsAhead ?? 0) : (projectGitStatus?.aheadRemote ?? 0);
   const behind = isWorktree ? (meta?.commitsBehind ?? 0) : (projectGitStatus?.behindRemote ?? 0);
 
-  const tabBarElement = showTabs ? (
-    <SessionTabBar
-      activeTab={effectiveTab}
-      onTabChange={setActiveTab}
-      hasTodos={hasTodos && !hideTodosTab}
-      todosCompleted={todos?.filter((t) => t.status === "completed").length}
-      todosTotal={todos?.length}
-      hasGitContent={hasGitContent}
-      ahead={ahead}
-      behind={behind}
-      uncommittedCount={uncommittedCount}
-      hasChanges={hasChanges}
-      totalAdd={totalAdd}
-      totalDel={totalDel}
-      hasLoops={hasLoops}
-      loopsAttention={loopsAttention}
-      hasAgents={hasAgents}
-      agentsRunning={agentBadge.running}
-      agentsFailed={agentBadge.failed}
-      accentColor={agentColor}
-    />
-  ) : null;
+  // Derived, never curated: a view exists because the session has the thing.
+  const availability: DockAvailability = {
+    work: hasTodos || hasAgents,
+    changes: hasGitContent || hasChanges,
+    loops: hasLoops,
+    browser: browserEnabled,
+  };
+  const dockViews = availableDockViews(availability);
+  // The reconciler: a stored view whose subject has since gone falls back
+  // rather than collapsing the dock, which would read as the user's own gesture.
+  const activeDockView = resolveDockView(dock ?? dockState.view, availability);
+  const dockOpen = !!activeDockView && (dockState.open || dock !== undefined);
+  const dockAlert = dockAlertState(agentBadge, loopsAttention);
 
-  // Which branch of the tab switch below renders — mirrors it exactly, because
-  // the flight rail mounts above the composer on the chat branch and directly
-  // under the tab strip everywhere else. Two slots, one component: "above the
-  // composer" is not a position that exists on a tab without a composer.
-  const showsChatBranch = !(
-    (effectiveTab === "todos" && hasTodos) ||
-    (effectiveTab === "changes" && hasGitContent) ||
-    (effectiveTab === "agents" && hasAgents) ||
-    (effectiveTab === "loops" && hasLoops)
+  const changesMark: DockTabMark =
+    ahead > 0 || behind > 0 || uncommittedCount > 0
+      ? {
+          kind: "count",
+          label: [
+            ahead > 0 ? `↑${ahead}` : null,
+            behind > 0 ? `↓${behind}` : null,
+            uncommittedCount > 0 ? `●${uncommittedCount}` : null,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        }
+      : totalAdd > 0 || totalDel > 0
+        ? { kind: "count", label: `+${totalAdd}/-${totalDel}` }
+        : null;
+
+  const dockMarks: Partial<Record<DockView, DockTabMark>> = {
+    work:
+      agentBadge.running > 0
+        ? { kind: "live", count: agentBadge.running }
+        : agentBadge.failed > 0
+          ? { kind: "failed", count: agentBadge.failed }
+          : hasTodos && todos
+            ? {
+                kind: "count",
+                label: `${todos.filter((t) => t.status === "completed").length}/${todos.length}`,
+              }
+            : null,
+    changes: changesMark,
+    loops: loopsAttention
+      ? loopsAttention.kind === "blocked"
+        ? { kind: "blocked", count: loopsAttention.count }
+        : { kind: "failed", count: loopsAttention.count }
+      : null,
+  };
+
+  const selectDockView = (view: DockView) => {
+    openDock(sessionId, view);
+    onDockChange?.(view);
+    // A failure marker clears on whichever comes first: opening Work, or the
+    // session starting a new turn. `agentBadgeState` owns the second rule.
+    if (view === "work") setSeenFailure({ session: sessionId, turn: latestTurnIndex ?? 0 });
+  };
+  const closeDock = () => {
+    setDockOpen(sessionId, false);
+    onDockChange?.(null);
+  };
+  const toggleDock = () => {
+    if (dockOpen) closeDock();
+    else if (activeDockView) selectDockView(activeDockView);
+  };
+
+  const dockToggle = (
+    <DockToggle
+      open={dockOpen}
+      onToggle={toggleDock}
+      available={dockViews.length > 0}
+      alert={dockAlert}
+    />
   );
-  // Suppressed on the Agents tab, where the panel is already saying it louder.
+
+  // Suppressed while the dock is showing Work, where the board says it louder.
   const showFlightRail =
-    agentFlight.inFlight.length > 0 && !(effectiveTab === "agents" && hasAgents);
+    agentFlight.inFlight.length > 0 && !(dockOpen && activeDockView === "work");
   const flightRail = showFlightRail ? (
     <AgentFlightStrip
       inFlight={agentFlight.inFlight}
@@ -567,6 +612,54 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
       onExpandedChange={setFlightExpanded}
     />
   ) : null;
+
+  const dockBody = !activeDockView ? null : activeDockView === "work" ? (
+    <WorkView
+      sessionId={sessionId}
+      todos={todos}
+      latestTurnIndex={latestTurnIndex}
+      seenFailureTurn={seenFailureTurn}
+    />
+  ) : activeDockView === "changes" ? (
+    <ChangesView
+      meta={meta}
+      git={git}
+      mainBranch={mainBranch}
+      projectGitStatus={projectGitStatus}
+      projectGitActions={projectGitActions}
+      committedDiff={git.diffResult}
+      uncommittedDiff={git.uncommittedDiffResult}
+      sessionState={sessionState}
+      onSendMessage={handleSend}
+      onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
+      expandFile={expandFile}
+      onExpandFileConsumed={handleExpandFileConsumed}
+    />
+  ) : activeDockView === "loops" ? (
+    <LoopsPanel sessionId={sessionId} />
+  ) : (
+    <BrowserPanel sessionId={sessionId} />
+  );
+
+  // Maximized is a desktop mode: on mobile the dock is a sheet over the chat,
+  // so the chat never gives up its pane.
+  const chatHidden = !isMobile && dockMaximized && dockOpen && !!activeDockView;
+
+  const dockElement =
+    dockOpen && activeDockView ? (
+      <SessionDock
+        views={dockViews}
+        active={activeDockView}
+        marks={dockMarks}
+        onSelect={selectDockView}
+        onClose={closeDock}
+        maximized={dockMaximized}
+        onMaximizedChange={setDockMaximized}
+        accentColor={agentColor}
+      >
+        {dockBody}
+      </SessionDock>
+    ) : null;
 
   return (
     <SessionMachineContext.Provider value={project?.machineId ?? null}>
@@ -580,169 +673,155 @@ export function ChatPanel({ projectId, sessionId, tab, targetTurn, onTabChange }
         <SessionHeader
           meta={meta}
           hasPendingInput={!!pendingApproval || !!pendingQuestion}
-          tabBar={tabBarElement}
+          dockToggle={dockToggle}
           accentColor={agentColor}
           git={git}
           projectGitStatus={projectGitStatus}
-          // Only a jump when there is somewhere to jump to: on the chat branch
-          // the banner is already pinned above the composer.
-          onGoToPendingInput={showsChatBranch ? undefined : () => setActiveTab("chat")}
         />
 
-        {/* Tab strip — mobile only (desktop renders tabs inline in the header).
-          Also hosts the state-aware finish action on its right edge. */}
-        {isMobile && (showTabs || finishKind) && (
-          <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b text-xs">
-            <div className="flex-1 min-w-0 flex gap-1 overflow-x-auto">
-              {showTabs ? tabBarElement : null}
-            </div>
-            {finishKind && (
-              <SessionFinishAction
-                meta={meta}
-                git={git}
-                projectGitStatus={projectGitStatus}
-                onArchive={handleArchive}
-                onUnarchive={handleUnarchive}
-              />
-            )}
+        {/* Mobile-only strip for the state-aware finish action. The dock's own
+            control lives in the header, where it is on every layout. */}
+        {isMobile && finishKind && (
+          <div className="shrink-0 flex items-center justify-end gap-2 px-2 py-1 border-b text-xs">
+            <SessionFinishAction
+              meta={meta}
+              git={git}
+              projectGitStatus={projectGitStatus}
+              onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
+            />
           </div>
         )}
 
-        {/* Tab content + optional desktop todo sidebar */}
+        {/* The chat is the page; the dock sits beside it. */}
         <div className="flex-1 flex min-h-0 min-w-0">
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">
-            {!showsChatBranch && flightRail}
-            {effectiveTab === "todos" && hasTodos ? (
-              <TodosView todos={todos} />
-            ) : effectiveTab === "changes" && hasGitContent ? (
-              <ChangesView
-                meta={meta}
-                git={git}
-                mainBranch={mainBranch}
-                projectGitStatus={projectGitStatus}
-                projectGitActions={projectGitActions}
-                committedDiff={git.diffResult}
-                uncommittedDiff={git.uncommittedDiffResult}
+          {!chatHidden && (
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
+              <MessageList
+                turns={turns}
+                sessionId={sessionId}
+                projectId={projectId}
                 sessionState={sessionState}
-                onSendMessage={handleSend}
-                onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
-                expandFile={expandFile}
-                onExpandFileConsumed={handleExpandFileConsumed}
+                projectPath={project?.path}
+                worktreePath={meta.worktreePath}
+                isLoadingHistory={isLoadingHistory}
+                isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
+                targetTurnIndex={targetTurn}
+                followRequest={followRequest}
+                onFollowRequestConsumed={handleFollowRequestConsumed}
               />
-            ) : effectiveTab === "agents" && hasAgents ? (
-              <AgentsView runs={agentRuns} />
-            ) : effectiveTab === "loops" && hasLoops ? (
-              <LoopsPanel sessionId={sessionId} />
-            ) : (
-              <>
-                <MessageList
-                  turns={turns}
+              {pendingApproval && (
+                <ApprovalBannerSwitch
                   sessionId={sessionId}
-                  projectId={projectId}
-                  sessionState={sessionState}
+                  approval={pendingApproval}
+                  onStartFresh={handleStartFresh}
                   projectPath={project?.path}
                   worktreePath={meta.worktreePath}
-                  isLoadingHistory={isLoadingHistory}
-                  isBackfilling={isLoadingHistory && hasTurns && !historyComplete}
-                  targetTurnIndex={targetTurn}
-                  followRequest={followRequest}
-                  onFollowRequestConsumed={handleFollowRequestConsumed}
                 />
-                {pendingApproval && (
-                  <ApprovalBannerSwitch
-                    sessionId={sessionId}
-                    approval={pendingApproval}
-                    onStartFresh={handleStartFresh}
-                    projectPath={project?.path}
-                    worktreePath={meta.worktreePath}
-                  />
-                )}
-                {pendingQuestion && (
-                  <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
-                )}
-                {pendingApprovalSchedules.map((sc) => (
-                  <ScheduleApprovalBanner key={sc.id} schedule={sc} />
-                ))}
+              )}
+              {pendingQuestion && (
+                <QuestionBanner sessionId={sessionId} pending={pendingQuestion} />
+              )}
+              {pendingApprovalSchedules.map((sc) => (
+                <ScheduleApprovalBanner key={sc.id} schedule={sc} />
+              ))}
 
-                {(contextUsage || compacting) && (
-                  <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
-                )}
-                {/* Suppressed while parked: the schedule will resume this session. */}
-                {isResumable && !isParkedLoop && (
-                  <ResumeBanner
-                    state={sessionState as "stopped" | "failed" | "done"}
-                    onResume={handleResume}
-                    resuming={resuming}
-                    branchMissing={meta?.branchMissing}
-                    resumeUnsupported={!resumeSupported}
-                  />
-                )}
-                {flightRail}
-                <MessageComposer
-                  key={sessionId}
-                  projectId={projectId}
-                  ref={composerRef}
-                  onSend={handleSend}
-                  initialText={draft}
-                  onTextPersist={handleTextPersist}
-                  disabled={
-                    machineAway || sessionState === "merging" || compacting || blockedMidTurn
-                  }
-                  isRunning={sessionState === "running"}
-                  onInterrupt={handleInterrupt}
-                  // The call belongs to the app, not to this panel — the button
-                  // only names the session it should start on.
-                  onStartLive={
-                    liveAvailable ? () => useVoiceStore.getState().start(sessionId) : undefined
-                  }
-                  attachmentsSupported={attachmentsSupported}
-                  focusMode
-                  placeholder={
-                    machineAway
-                      ? machineFault
-                        ? `${machineName}: ${machineFault.detail}`
-                        : `${machineName} is offline — this session picks up when it's back`
-                      : compacting
-                        ? "Compacting context..."
-                        : sessionState === "merging"
-                          ? "Git operation in progress..."
-                          : blockedMidTurn
-                            ? "Provider can't accept mid-turn messages — wait for the turn to finish"
-                            : resumePlaceholders[sessionState]
-                  }
-                  worktree={isWorktree}
-                  planMode={planModeSupported ? planMode : undefined}
-                  onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
-                  autoApproveMode={autoApproveMode}
-                  onAutoApproveModeChange={handleAutoApproveModeChange}
-                  provider={(meta.provider as ProviderId) || undefined}
-                  model={(meta.model as ModelId) ?? undefined}
-                  modelDisplayName={sessionModelLabel(meta.model, meta.resolvedModel)}
-                  onModelChange={modelSwitchSupported ? handleModelChange : undefined}
-                  effort={(meta.effort as EffortLevel) ?? ""}
-                  onEmptySubmit={isResumable ? handleResume : undefined}
-                  stashedText={stashedText || undefined}
-                  stashDepth={stashDepth}
-                  onStash={handleStash}
-                  onUnstash={handleUnstash}
-                  templatePicker={
-                    <TemplatePicker
-                      onSelect={handleTemplateSelect}
-                      disabled={sessionState === "merging" || compacting}
-                    />
-                  }
+              {(contextUsage || compacting) && (
+                <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
+              )}
+              {/* Suppressed while parked: the schedule will resume this session. */}
+              {isResumable && !isParkedLoop && (
+                <ResumeBanner
+                  state={sessionState as "stopped" | "failed" | "done"}
+                  onResume={handleResume}
+                  resuming={resuming}
+                  branchMissing={meta?.branchMissing}
+                  resumeUnsupported={!resumeSupported}
                 />
-              </>
-            )}
-          </div>
-          {showTodoSidebar &&
-            todos &&
-            (todoSidebarCollapsed ? (
-              <CollapsedTodoStrip todos={todos} onExpand={() => setTodoSidebarCollapsed(false)} />
-            ) : (
-              <TodoPanel todos={todos} onCollapse={() => setTodoSidebarCollapsed(true)} />
-            ))}
+              )}
+              {flightRail}
+              <MessageComposer
+                key={sessionId}
+                projectId={projectId}
+                ref={composerRef}
+                onSend={handleSend}
+                initialText={draft}
+                onTextPersist={handleTextPersist}
+                disabled={machineAway || sessionState === "merging" || compacting || blockedMidTurn}
+                isRunning={sessionState === "running"}
+                onInterrupt={handleInterrupt}
+                // The call belongs to the app, not to this panel — the button
+                // only names the session it should start on.
+                onStartLive={
+                  liveAvailable ? () => useVoiceStore.getState().start(sessionId) : undefined
+                }
+                attachmentsSupported={attachmentsSupported}
+                focusMode
+                placeholder={
+                  machineAway
+                    ? machineFault
+                      ? `${machineName}: ${machineFault.detail}`
+                      : `${machineName} is offline — this session picks up when it's back`
+                    : compacting
+                      ? "Compacting context..."
+                      : sessionState === "merging"
+                        ? "Git operation in progress..."
+                        : blockedMidTurn
+                          ? "Provider can't accept mid-turn messages — wait for the turn to finish"
+                          : resumePlaceholders[sessionState]
+                }
+                worktree={isWorktree}
+                planMode={planModeSupported ? planMode : undefined}
+                onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
+                autoApproveMode={autoApproveMode}
+                onAutoApproveModeChange={handleAutoApproveModeChange}
+                provider={(meta.provider as ProviderId) || undefined}
+                model={(meta.model as ModelId) ?? undefined}
+                modelDisplayName={sessionModelLabel(meta.model, meta.resolvedModel)}
+                onModelChange={modelSwitchSupported ? handleModelChange : undefined}
+                effort={(meta.effort as EffortLevel) ?? ""}
+                onEmptySubmit={isResumable ? handleResume : undefined}
+                stashedText={stashedText || undefined}
+                stashDepth={stashDepth}
+                onStash={handleStash}
+                onUnstash={handleUnstash}
+                templatePicker={
+                  <TemplatePicker
+                    onSelect={handleTemplateSelect}
+                    disabled={sessionState === "merging" || compacting}
+                  />
+                }
+              />
+            </div>
+          )}
+
+          {/* Maximized, the dock takes the pane instead of splitting it — the
+              same control serves a diff, a long report and a browser. */}
+          {!isMobile && dockElement && (
+            <div
+              className="relative flex shrink-0 flex-col border-l"
+              style={dockMaximized ? { flex: "1 1 auto" } : { width: dockWidth }}
+            >
+              {!dockMaximized && <DockResizeHandle />}
+              {dockElement}
+            </div>
+          )}
         </div>
+
+        {/* Mobile: the same dock, as a sheet. One navigation model, two
+            presentations — a second model on mobile is how the chrome
+            fragmented in the first place. */}
+        {isMobile && (
+          <Sheet open={dockOpen && !!dockElement} onOpenChange={(open) => !open && closeDock()}>
+            <SheetContent side="right" className="w-[92vw] p-0" showCloseButton={false}>
+              <SheetTitle className="sr-only">Session dock</SheetTitle>
+              <SheetDescription className="sr-only">
+                Todos, agents, changes and loops for this session
+              </SheetDescription>
+              {dockElement}
+            </SheetContent>
+          </Sheet>
+        )}
 
         {/* Dialogs */}
         <CreatePRDialog

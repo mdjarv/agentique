@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AgentFlightStrip } from "~/components/chat/AgentFlightStrip";
 import { AgentsView } from "~/components/chat/AgentsView";
-import { SessionTabBar } from "~/components/chat/SessionTabBar";
+import { DockTabBar } from "~/components/chat/dock/DockTabBar";
+import { DockToggle } from "~/components/chat/dock/DockToggle";
 import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
-import type { AgentRun } from "~/lib/agent-runs";
+import type { AgentBadgeState, AgentRun } from "~/lib/agent-runs";
 import type { LoopBadgeState } from "~/lib/loop-attention";
+import { type DockView, dockAlertState } from "~/lib/session/dock";
 
 export const Route = createFileRoute("/dev/agents")({
   component: DevAgents,
@@ -151,15 +153,36 @@ function TabBarRow(props: {
   hasLoops?: boolean;
   loopsAttention?: LoopBadgeState | null;
 }) {
+  const agents: AgentBadgeState = {
+    running: props.agentsRunning ?? 0,
+    failed: props.agentsFailed ?? 0,
+  };
+  const views: DockView[] = props.hasLoops ? ["work", "loops"] : ["work"];
   return (
-    <div className="flex h-10 items-stretch px-2">
-      <SessionTabBar
-        activeTab="chat"
-        onTabChange={() => {}}
-        hasTodos={false}
-        hasGitContent={false}
-        hasChanges={false}
-        {...props}
+    <div className="flex h-10 items-center gap-2 px-2">
+      <DockTabBar
+        views={views}
+        active="work"
+        marks={{
+          work:
+            agents.running > 0
+              ? { kind: "live", count: agents.running }
+              : agents.failed > 0
+                ? { kind: "failed", count: agents.failed }
+                : null,
+          loops: props.loopsAttention
+            ? props.loopsAttention.kind === "blocked"
+              ? { kind: "blocked", count: props.loopsAttention.count }
+              : { kind: "failed", count: props.loopsAttention.count }
+            : null,
+        }}
+        onSelect={() => {}}
+      />
+      <DockToggle
+        open={false}
+        onToggle={() => {}}
+        available
+        alert={dockAlertState(agents, props.loopsAttention ?? null)}
       />
     </div>
   );

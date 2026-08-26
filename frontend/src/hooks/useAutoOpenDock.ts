@@ -4,14 +4,15 @@ import { useChatStore } from "~/stores/chat-store";
 import { useUIStore } from "~/stores/ui-store";
 
 /**
- * Auto-opens the shared right panel to the workflow view when a session has a
- * **running** dynamic workflow — once per run, and only when the panel is
- * currently collapsed. Gating on "running" (no terminal notification) means
- * reopening a session with an old, completed workflow does NOT pop the panel;
- * only a live run does. Once auto-opened, we record the run id so a manual close
- * is respected (we don't re-open the same run).
+ * Pops the dock open on `Work` when a session launches a **running** dynamic
+ * workflow — once per run, and only while the dock is shut.
+ *
+ * Gating on "running" (no terminal notification yet) is what keeps reopening an
+ * old session from popping the dock at a workflow that finished last week. The
+ * run id is recorded once opened, so a manual close is respected rather than
+ * fought.
  */
-export function useAutoOpenWorkflowPanel(sessionId: string | null) {
+export function useAutoOpenDock(sessionId: string | null) {
   const turns = useChatStore((s) => (sessionId ? s.sessions[sessionId]?.turns : undefined));
   const streamingEvents = useChatStore((s) =>
     sessionId ? s.sessions[sessionId]?.streamingEvents : undefined,
@@ -26,11 +27,9 @@ export function useAutoOpenWorkflowPanel(sessionId: string | null) {
   }, [turns, streamingEvents]);
 
   useEffect(() => {
-    if (!toolUseId || !running || seenRef.current === toolUseId) return;
+    if (!sessionId || !toolUseId || !running || seenRef.current === toolUseId) return;
     seenRef.current = toolUseId;
-    if (useUIStore.getState().rightPanelCollapsed) {
-      useUIStore.getState().setRightPanelView("workflow");
-      useUIStore.getState().setRightPanelCollapsed(false);
-    }
-  }, [toolUseId, running]);
+    const store = useUIStore.getState();
+    if (!store.dock[sessionId]?.open) store.openDock(sessionId, "work");
+  }, [sessionId, toolUseId, running]);
 }
