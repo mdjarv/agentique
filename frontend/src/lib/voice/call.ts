@@ -2,10 +2,13 @@ import { MicCapture } from "./capture";
 import { PlaybackQueue } from "./playback";
 import {
   parseServerMessage,
+  type VoiceClientMessage,
   type VoiceDispatched,
+  type VoiceFocus,
   type VoiceNotice,
   type VoiceReportMessage,
   type VoiceTranscript,
+  type VoiceWorldSession,
 } from "./protocol";
 
 export type VoiceCallState = "idle" | "connecting" | "live" | "closed" | "failed";
@@ -19,6 +22,8 @@ export interface VoiceCallHandlers {
   onNotice?: (n: VoiceNotice) => void;
   /** The prompt the voice agent handed over, so it is visible as well as spoken. */
   onDispatched?: (d: VoiceDispatched) => void;
+  /** The call moved its focus — the screen is expected to follow. */
+  onFocus?: (f: VoiceFocus) => void;
 }
 
 /**
@@ -117,11 +122,41 @@ export class VoiceCall {
   /** Ends the call, telling the server first so it can close cleanly. */
   async stop(): Promise<void> {
     this.generation++;
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "stop" }));
-    }
+    this.send({ type: "stop" });
     await this.teardown();
     this.setState("idle");
+  }
+
+  /**
+   * Tells the call which sessions exist, across every machine this client can
+   * reach. The server has no way to ask — only the browser holds the merged
+   * picture — so it arrives as a snapshot rather than a query.
+   */
+  sendWorld(sessions: VoiceWorldSession[]): void {
+    this.send({ type: "world", sessions });
+  }
+
+  /**
+   * Reports that the operator navigated themselves. An empty id means they
+   * left the session view.
+   *
+   * It is a report, never a retarget: what the call does about it is the
+   * server's decision.
+   */
+  sendViewing(sessionId: string): void {
+    this.send({ type: "viewing", sessionId });
+  }
+
+  /**
+   * Control frames are dropped when the socket is not open.
+   *
+   * Everything sent from here is a snapshot of something the client still
+   * holds — the world, where the operator is looking — so a dropped frame is
+   * superseded by the next one rather than lost.
+   */
+  private send(msg: VoiceClientMessage): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify(msg));
   }
 
   private handleControl(raw: string): void {
@@ -153,6 +188,10 @@ export class VoiceCall {
 
       case "dispatched":
         this.handlers.onDispatched?.(msg);
+        return;
+
+      case "focus":
+        this.handlers.onFocus?.(msg);
         return;
 
       case "error":

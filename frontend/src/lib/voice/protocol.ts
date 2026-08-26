@@ -60,6 +60,18 @@ export interface VoiceDispatched {
   sessionId?: string;
 }
 
+/**
+ * The screen follows the voice: the call has moved its focus, and the client
+ * navigates there.
+ *
+ * It is an instruction, not a status — the operator may have wandered off to
+ * another session since, and the point of the frame is to bring them back.
+ */
+export interface VoiceFocus {
+  type: "focus";
+  sessionId?: string;
+}
+
 export type VoiceServerMessage =
   | VoiceReady
   | VoiceTurnComplete
@@ -68,10 +80,60 @@ export type VoiceServerMessage =
   | VoiceClosed
   | VoiceReportMessage
   | VoiceNotice
-  | VoiceDispatched;
+  | VoiceDispatched
+  | VoiceFocus;
+
+/** Why a session is waiting on the operator. Absent means it is not. */
+export type VoiceAttention = "approval" | "question" | "unread";
+
+/**
+ * One session as the call's agent sees it — enough to name it, place it, and
+ * know whether it is waiting on someone.
+ *
+ * This is a snapshot of the client's merged view across every machine, not a
+ * server-side query: the browser is the only party that holds all of them.
+ */
+export interface VoiceWorldSession {
+  sessionId: string;
+  name: string;
+  /** Routing slug — machine-qualified, as the route param wants it. */
+  projectSlug: string;
+  projectName: string;
+  machineId?: string;
+  machineName?: string;
+  state: string;
+  attention?: VoiceAttention;
+  branch?: string;
+  lastActivityAt?: string;
+}
+
+/** The client's view of every session it can see. */
+export interface VoiceWorld {
+  type: "world";
+  sessions: VoiceWorldSession[];
+}
+
+/**
+ * The operator navigated somewhere themselves.
+ *
+ * An empty `sessionId` means they left the session view. The server decides
+ * what to make of it; the client never retargets the call on its own.
+ */
+export interface VoiceViewing {
+  type: "viewing";
+  sessionId: string;
+}
+
+/**
+ * Rows the world snapshot carries at most, newest first.
+ *
+ * Everything in it goes to the speech vendor on every change, so the cap is a
+ * budget rather than a limit anyone is expected to hit.
+ */
+export const WORLD_ROW_CAP = 200;
 
 /** Control messages the browser sends. */
-export type VoiceClientMessage = { type: "stop" };
+export type VoiceClientMessage = { type: "stop" } | VoiceWorld | VoiceViewing;
 
 /**
  * Parses a text frame, returning null for anything unrecognised.
@@ -99,6 +161,7 @@ export function parseServerMessage(raw: string): VoiceServerMessage | null {
     case "report":
     case "notice":
     case "dispatched":
+    case "focus":
       return parsed as VoiceServerMessage;
     default:
       return null;
