@@ -119,6 +119,24 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
   );
 }
 
+/**
+ * The right-aligned timestamp. It yields the corner to {@link RowActions} —
+ * on hover, and for as long as the row is the focused one — rather than being
+ * overlapped by them; `opacity` and not `hidden`, so the row never reflows.
+ */
+function TimeSlot({ label, yielded }: { label: string; yielded: boolean }) {
+  return (
+    <span
+      className={cn(
+        "ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint",
+        yielded ? "opacity-0" : "md:group-hover/thread:opacity-0",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 interface ThreadRowProps {
   vm: ThreadRowVM;
   selected: boolean;
@@ -150,32 +168,50 @@ function RestMark({ token }: { token: Exclude<RestToken, ""> }) {
 }
 
 /**
- * The unread marker: a finished session spends its right-aligned time slot on
- * this until you open it, then the timestamp comes back. The slot is the one
- * always-present, always-aligned position on the row, so a column of pills is
- * scannable without reading — which "bold title + green check" never was.
+ * The unread marker: a finished session flags it at the right edge of its
+ * **title** line until you open it. Not the identity line's time slot, which is
+ * where the row's actions come in on hover and stay on the focused row — a pill
+ * that cannot fade is a pill the buttons land on top of. One line down it still
+ * forms an always-aligned column, scannable without reading, and the timestamp
+ * keeps its slot instead of being evicted by the pill.
  */
 function NewPill() {
   return (
-    <span className="ml-auto shrink-0 rounded-full border border-success/45 bg-success/20 px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-wider text-success">
+    <span className="shrink-0 rounded-full border border-success/45 bg-success/20 px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-wider text-success">
       NEW
     </span>
   );
 }
 
+/**
+ * Pin and archive, in the row's top-right corner over the time slot.
+ *
+ * `persistent` is the focused row (and the touch path with it): the same two
+ * buttons in the same corner, just no longer hover-gated. They stay a corner
+ * affordance rather than growing a labelled row beneath the card, because that
+ * row's height is paid by every selection, on a list whose whole point is
+ * density.
+ */
 function RowActions({
   vm,
+  persistent = false,
   onTogglePin,
   onArchive,
 }: {
   vm: ThreadRowVM;
+  persistent?: boolean;
   onTogglePin: () => void;
   onArchive: () => void;
 }) {
   const PinIcon = vm.pinned ? PinOff : Pin;
   const ArchiveIcon = vm.archived ? ArchiveRestore : Archive;
   return (
-    <span className="absolute right-2 top-1.5 hidden gap-0.5 md:group-hover/thread:flex">
+    <span
+      className={cn(
+        "absolute right-2 top-0.5 gap-0.5",
+        persistent ? "flex" : "hidden md:group-hover/thread:flex",
+      )}
+    >
       {[
         {
           label: vm.pinned ? "Unpin" : "Pin",
@@ -203,7 +239,12 @@ function RowActions({
             e.stopPropagation();
             action();
           }}
-          className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground-bright"
+          className={cn(
+            "flex size-5 cursor-pointer items-center justify-center rounded-md",
+            "text-muted-foreground hover:bg-secondary hover:text-foreground-bright",
+            // Persistent is the only variant a finger ever meets.
+            persistent && "max-md:size-6",
+          )}
         >
           {icon}
         </button>
@@ -262,21 +303,20 @@ export const ThreadRow = memo(function ThreadRow({
               >
                 {vm.untitled ? "Untitled" : vm.name}
               </span>
-              {vm.unread ? (
-                <NewPill />
-              ) : (
-                <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
-                  {vm.timeLabel}
-                </span>
-              )}
+              <TimeSlot label={vm.timeLabel} yielded={selected} />
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
               <span className="min-w-0 truncate">{vm.projectLabel}</span>
               <SessionMachineTag vm={vm} />
+              {vm.unread && (
+                <span className="ml-auto">
+                  <NewPill />
+                </span>
+              )}
             </span>
           </span>
         </button>
-        <RowActions vm={vm} onTogglePin={onTogglePin} onArchive={onArchive} />
+        <RowActions vm={vm} persistent={selected} onTogglePin={onTogglePin} onArchive={onArchive} />
       </div>
     );
   }
@@ -313,27 +353,25 @@ export const ThreadRow = memo(function ThreadRow({
           {/* Unread rows show the outcome word too: their third line is gone,
               so "done" / "merged" has nowhere else to live. */}
           {(!awake || vm.unread) && vm.restToken && <RestMark token={vm.restToken} />}
-          {vm.unread ? (
-            <NewPill />
-          ) : (
-            <span className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint md:group-hover/thread:opacity-0">
-              {vm.timeLabel}
-            </span>
-          )}
+          <TimeSlot label={vm.timeLabel} yielded={selected} />
         </span>
 
-        {/* Title line */}
-        <span
-          className={cn(
-            "mt-px block truncate text-[13px] font-medium text-foreground",
-            selected && "text-foreground-bright",
-            vm.unread && "font-semibold text-foreground-bright",
-            vm.untitled && "font-normal italic text-muted-foreground",
-            vm.struck &&
-              "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
-          )}
-        >
-          {vm.untitled ? "Untitled" : vm.name}
+        {/* Title line — and the unread pill, which lives a line below the
+            corner the actions occupy. */}
+        <span className="mt-px flex items-center gap-2">
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-[13px] font-medium text-foreground",
+              selected && "text-foreground-bright",
+              vm.unread && "font-semibold text-foreground-bright",
+              vm.untitled && "font-normal italic text-muted-foreground",
+              vm.struck &&
+                "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
+            )}
+          >
+            {vm.untitled ? "Untitled" : vm.name}
+          </span>
+          {vm.unread && <NewPill />}
         </span>
 
         {/* State line — awake rows only: glyph names the state, words carry
@@ -362,8 +400,9 @@ export const ThreadRow = memo(function ThreadRow({
         )}
 
         {/* Focused card (S1) — the row you're inside carries its identity
-            facts, a real todo bar, and persistent actions (also the touch
-            path: the selected row is the one mobile row with buttons). */}
+            facts and a real todo bar. Its actions are not here: they are the
+            corner buttons, un-gated (also the touch path — the selected row is
+            the one mobile row with buttons). */}
         {selected && (
           <>
             {(vm.branch || vm.model || vm.turns) && (
@@ -390,35 +429,7 @@ export const ThreadRow = memo(function ThreadRow({
         )}
       </button>
 
-      {selected ? (
-        <span className="mt-0.5 flex gap-1 px-2.5 pb-1.5">
-          <FocusedAction label={vm.pinned ? "Unpin" : "Pin"} onAction={onTogglePin} />
-          {(vm.archived || vm.canArchive) && (
-            <FocusedAction label={vm.archived ? "Unarchive" : "Archive"} onAction={onArchive} />
-          )}
-        </span>
-      ) : (
-        <RowActions vm={vm} onTogglePin={onTogglePin} onArchive={onArchive} />
-      )}
+      <RowActions vm={vm} persistent={selected} onTogglePin={onTogglePin} onArchive={onArchive} />
     </div>
   );
 });
-
-/** Persistent ghost button on the focused card — no hover gating, all devices. */
-function FocusedAction({ label, onAction }: { label: string; onAction: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onAction();
-      }}
-      className={cn(
-        "cursor-pointer rounded-md border border-border/50 px-2 py-1 text-[10px] font-semibold",
-        "text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground-bright",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
