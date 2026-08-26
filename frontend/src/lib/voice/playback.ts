@@ -30,6 +30,9 @@ export class PlaybackQueue {
   /** Removes the gesture retry listeners, when one is armed. */
   private disarm: (() => void) | null = null;
 
+  /** Set once resume() has been tried and failed: the next gesture rebuilds. */
+  private rebuildNext = false;
+
   private closed = false;
 
   /**
@@ -58,6 +61,18 @@ export class PlaybackQueue {
   /** Whether the browser is actually letting audio out of this context. */
   get isRunning(): boolean {
     return this.ctx.state === "running";
+  }
+
+  /**
+   * The context's own clock, in seconds.
+   *
+   * Exposed for one reason: a running context's clock always advances, so a
+   * clock that has stopped while the context still calls itself "running" is a
+   * wedged audio path — which is what a Bluetooth profile switch mid-call looks
+   * like from in here.
+   */
+  get contextTime(): number {
+    return this.ctx.currentTime;
   }
 
   /**
@@ -93,8 +108,20 @@ export class PlaybackQueue {
     if (this.disarm || this.closed || typeof window === "undefined") return;
 
     const attempt = () => {
+      if (this.closed) return;
+      // A context that resume() could not revive is not merely suspended, it is
+      // wedged — which is what an audio route changing underneath it does, and
+      // no amount of resuming fixes that. The next gesture gets a fresh context
+      // instead, built synchronously so it is still inside the activation.
+      if (this.rebuildNext && this.ctx.state !== "running") {
+        this.rebuildNext = false;
+        if (!this.rebuild()) return;
+      }
       void this.ready().then((running) => {
-        if (!running) return;
+        if (!running) {
+          this.rebuildNext = true;
+          return;
+        }
         this.disarmGesture();
         onResumed();
       });
@@ -115,6 +142,37 @@ export class PlaybackQueue {
   }
 
   /**
+   * Replaces the context with a fresh one, abandoning the old.
+   *
+   * The old one is not awaited and barely even closed: it is by definition the
+   * one that would not run, and a wedged context can leave `close()` pending
+   * forever. Anything queued on it is gone, which is the right trade — audio
+   * nobody could hear is not worth carrying into a context that works, and
+   * recovery applies from the next reply rather than by replaying the last.
+   */
+  private rebuild(): boolean {
+    let next: AudioContext;
+    try {
+      next = new AudioContext();
+    } catch (err) {
+      console.warn("[voice] playback rebuild failed", err);
+      return false;
+    }
+    const old = this.ctx;
+    this.ctx = next;
+    this.gain = next.createGain();
+    this.gain.connect(next.destination);
+    this.active = [];
+    this.nextStart = 0;
+    void Promise.resolve()
+      .then(() => (old.state === "closed" ? undefined : old.close()))
+      .catch(() => {
+        // The context we are walking away from. Its failure is not news.
+      });
+    return true;
+  }
+
+  /**
    * Plays a short tone through this call's context, best effort.
    *
    * Here rather than at the call site so the context stays private and every
@@ -130,6 +188,24 @@ export class PlaybackQueue {
     } catch (err) {
       console.warn("[voice] tone failed", err);
       return false;
+    }
+  }
+
+  /**
+   * Starts a repeating sound through this call's context and hands back its
+   * handle, or null if there was no context to start it on.
+   *
+   * Separate from [tone] because a ring is not a sound you play, it is a sound
+   * you stop: the caller owns the handle and is responsible for stopping it,
+   * and a null return means there is nothing to stop.
+   */
+  ring<T>(start: (ctx: AudioContext) => T): T | null {
+    if (this.closed || this.ctx.state === "closed") return null;
+    try {
+      return start(this.ctx);
+    } catch (err) {
+      console.warn("[voice] ring failed", err);
+      return null;
     }
   }
 

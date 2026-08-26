@@ -1,4 +1,12 @@
 import { MicCapture } from "./capture";
+import {
+  type AudioHealthSample,
+  assessAudioHealth,
+  HEALTH_MESSAGE,
+  MIC_SILENCE_FLOOR,
+  type VoiceAudioHealth,
+} from "./health";
+import { readMicLevel } from "./level";
 import { PlaybackQueue } from "./playback";
 import {
   parseServerMessage,
@@ -12,7 +20,14 @@ import {
   type VoiceTranscript,
   type VoiceWorldSession,
 } from "./protocol";
-import { HANGUP_TONE_SECONDS, playConnectedTone, playDialTone, playHangupTone } from "./tones";
+import {
+  HANGUP_TONE_SECONDS,
+  playConnectedTone,
+  playDialTone,
+  playHangupTone,
+  type Ringback,
+  startRingback,
+} from "./tones";
 
 export type VoiceCallState = "idle" | "connecting" | "live" | "closed" | "failed";
 
@@ -66,10 +81,13 @@ function micFailureMessage(err: unknown): string {
 const FALLBACK_OUTPUT_RATE = 24000;
 
 /**
- * What the operator is told when the browser will not let the call make a
- * sound. Written as the gesture that fixes it, because there is one.
+ * How often the call checks that it can still be heard and heard from.
+ *
+ * Coarse on purpose. Every threshold it feeds is measured in seconds, and the
+ * thing being watched — an audio route surviving a Bluetooth profile switch —
+ * does not need sub-second resolution to be caught.
  */
-const AUDIO_BLOCKED_LABEL = "Sound is blocked — tap the call to enable it";
+const HEALTH_TICK_MS = 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -110,13 +128,61 @@ export class VoiceCall {
   /** Guards against a late close handler reopening or re-reporting a call. */
   private generation = 0;
 
+  /**
+   * The ringback, while the call is connecting. One owner, and the only one:
+   * every exit from connecting goes through [stopRinging].
+   */
+  private ring: Ringback | null = null;
+
+  /** The audio-health watchdog's timer, while the call is live. */
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+
+  /** When the call went live, in epoch ms. 0 until it does. */
+  private liveSince = 0;
+
+  /** Last time the microphone was above the silence floor. */
+  private micSoundAt = 0;
+
+  /** Last time the engine's own transcript arrived — the assistant spoke. */
+  private engineSpokeAt = 0;
+
+  /** Last time a PCM frame arrived from the server. */
+  private audioFrameAt = 0;
+
+  /** The context clock at the previous health check, for detecting a wedge. */
+  private lastClock = -1;
+
+  /**
+   * Total PCM received this call, in bytes.
+   *
+   * The one number that separates "the audio never came" from "the audio came
+   * and could not be played", which are the same silence to the operator and
+   * two entirely different bugs to whoever reads the report afterwards.
+   */
+  private pcmBytes = 0;
+
+  /** What the watchdog last decided. Changes are what reach the status line. */
+  private health: VoiceAudioHealth = "ok";
+
+  /**
+   * The server's own activity label, held so a health line can be lifted off
+   * the status line without erasing what the call was actually working on.
+   */
+  private serverActivity = "";
+
   constructor(handlers: VoiceCallHandlers) {
     this.handlers = handlers;
+  }
+
+  /** Total PCM bytes received from the server this call. */
+  get audioBytesReceived(): number {
+    return this.pcmBytes;
   }
 
   async start(url: string = primaryVoiceUrl()): Promise<void> {
     if (this.state === "connecting" || this.state === "live") return;
     const generation = ++this.generation;
+    this.resetHealth();
 
     // Playback is built HERE, in the gesture that placed the call, and NOT when
     // `ready` arrives.
@@ -150,7 +216,10 @@ export class VoiceCall {
         this.handleControl(event.data);
         return;
       }
-      this.playback?.enqueue(event.data as ArrayBuffer, this.outputSampleRate);
+      const pcm = event.data as ArrayBuffer;
+      this.audioFrameAt = Date.now();
+      this.pcmBytes += pcm.byteLength;
+      this.playback?.enqueue(pcm, this.outputSampleRate);
     };
 
     ws.onerror = () => {
@@ -222,6 +291,9 @@ export class VoiceCall {
         return;
 
       case "transcript":
+        // The assistant speaking is what makes its audio *expected*. Caller
+        // transcripts say nothing about whether a reply is coming.
+        if (msg.source && msg.source !== "caller") this.engineSpokeAt = Date.now();
         this.handlers.onTranscript?.(msg);
         return;
 
@@ -242,7 +314,11 @@ export class VoiceCall {
         return;
 
       case "activity":
-        this.handlers.onActivity?.(msg);
+        // Held rather than forwarded blindly: the status line carries one
+        // message, and a fault in the audio path outranks what the call is
+        // busy with. The label is restored when the fault clears.
+        this.serverActivity = (msg.label ?? "").trim();
+        if (this.health === "ok") this.handlers.onActivity?.(msg);
         return;
 
       case "summary":
@@ -250,11 +326,17 @@ export class VoiceCall {
         return;
 
       case "error":
+        // The ring stops here rather than waiting for the socket to close
+        // behind the refusal. A refusal is an answer, and ringing over it says
+        // the opposite of what happened — the one thing an eyes-free operator
+        // would act on.
+        this.stopRinging();
         this.handlers.onState("failed", msg.message ?? "the voice engine reported a problem");
         return;
 
       case "closed":
         // The server is hanging up; its close frame drives teardown.
+        this.stopRinging();
         this.handlers.onState("closed", msg.reason);
         return;
 
@@ -273,6 +355,11 @@ export class VoiceCall {
    * Split out only so its one constraint is visible: it must be reachable
    * synchronously from the click. The dial tone rides the same context, so a
    * caller who hears it has been shown the audio path works.
+   *
+   * The ringback follows it immediately, and for the same two reasons doubled:
+   * connecting is audible without looking at the phone, and the ring keeps
+   * proving the output path right through the moment the microphone opens —
+   * which on Bluetooth hands-free is when the route changes underneath it.
    */
   private startPlayback(): void {
     try {
@@ -280,6 +367,7 @@ export class VoiceCall {
       this.playback = playback;
       this.audioReady = playback.ready();
       playback.tone(playDialTone);
+      this.ring = playback.ring(startRingback);
     } catch (err) {
       // No AudioContext at all is a browser that cannot do this. The call is
       // still worth opening — transcripts and dispatch do not need one.
@@ -325,33 +413,123 @@ export class VoiceCall {
       await this.teardown();
       return;
     }
+    this.liveSince = Date.now();
+    // Live: the ring stops here, before the blip, because setState is the one
+    // door out of connecting.
     this.setState("live");
     this.playback?.tone(playConnectedTone);
-    void this.reportBlockedAudio(generation);
+    void this.startWatchdog(generation);
   }
 
   /**
-   * Says so when the browser will not let the call be heard.
+   * Silences the ringback, whatever ended the connecting state.
    *
-   * Loud rather than mute: a suspended context renders every transcript and
-   * plays nothing, which reads as a broken server. It is reported as a status
-   * line rather than a failed call because the call is not failed — it hears,
-   * it drafts, it dispatches — and because a gesture fixes it, so the line
-   * clears itself when one does.
+   * The invariant lives here and only here: the ring must never sound over a
+   * live call and must never outlive the call object, so every exit — live,
+   * error, closed, hangup, teardown — passes through this, and calling it twice
+   * is the normal case rather than a bug.
    */
-  private async reportBlockedAudio(generation: number): Promise<void> {
+  private stopRinging(): void {
+    this.ring?.stop();
+    this.ring = null;
+  }
+
+  /**
+   * Watches, once a second, whether the call can still be heard and heard from.
+   *
+   * A call that has gone quiet is three faults wearing one face, and in a car
+   * none of them can be seen. [assessAudioHealth] names which one; this
+   * supplies it with evidence and puts the answer on the status line.
+   *
+   * The first verdict waits for the playback context to settle: `ready()` is
+   * what decides whether the browser let this call make a sound at all, and
+   * asking before it resolves would report a blocked context on every call.
+   */
+  private async startWatchdog(generation: number): Promise<void> {
     const playback = this.playback;
     if (!playback) return;
 
-    const running = await (this.audioReady ?? playback.ready());
-    if (generation !== this.generation || running) return;
+    await (this.audioReady ?? playback.ready());
+    if (generation !== this.generation) return;
 
-    console.warn("[voice] playback is suspended; audio will not be heard");
-    this.handlers.onActivity?.({ type: "activity", label: AUDIO_BLOCKED_LABEL });
-    playback.resumeOnNextGesture(() => {
-      if (generation !== this.generation) return;
-      this.handlers.onActivity?.({ type: "activity", label: "" });
-    });
+    this.lastClock = -1;
+    this.checkHealth(generation);
+    this.watchdog = setInterval(() => this.checkHealth(generation), HEALTH_TICK_MS);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdog === null) return;
+    clearInterval(this.watchdog);
+    this.watchdog = null;
+  }
+
+  /** One reading of the audio path, turned into at most one thing to say. */
+  private checkHealth(generation: number): void {
+    if (generation !== this.generation) return;
+    const playback = this.playback;
+    if (!playback) return;
+
+    const now = Date.now();
+    // The level is already being published by capture for the meter; reading it
+    // here costs a variable rather than a second audio node.
+    if (readMicLevel() > MIC_SILENCE_FLOOR) this.micSoundAt = now;
+
+    const clock = playback.contextTime;
+    // Nothing to compare the first sample against, and unknown is not broken.
+    const clockAdvancing = this.lastClock < 0 || clock > this.lastClock;
+    this.lastClock = clock;
+
+    const sample: AudioHealthSample = {
+      now,
+      liveSince: this.liveSince,
+      micSoundAt: this.micSoundAt,
+      engineSpokeAt: this.engineSpokeAt,
+      audioFrameAt: this.audioFrameAt,
+      audioRunning: playback.isRunning,
+      clockAdvancing,
+    };
+    this.applyHealth(assessAudioHealth(sample), generation);
+  }
+
+  /**
+   * Puts a change of verdict on the status line, and nothing else there.
+   *
+   * Only changes are published, so the line does not rewrite itself every
+   * second, and clearing restores whatever the call itself was working on
+   * rather than blanking it — the health line borrowed that line, it does not
+   * own it.
+   */
+  private applyHealth(next: VoiceAudioHealth, generation: number): void {
+    if (next === this.health) return;
+    this.health = next;
+
+    if (next === "ok") {
+      this.handlers.onActivity?.({ type: "activity", label: this.serverActivity });
+      return;
+    }
+
+    // The byte count is the difference between "no audio came" and "audio came
+    // and could not be played", which are one silence to the operator.
+    console.warn("[voice] audio health", next, { pcmBytes: this.pcmBytes });
+    this.handlers.onActivity?.({ type: "activity", label: HEALTH_MESSAGE[next] });
+
+    // The only fault with a gesture that fixes it. Re-arming is free: the queue
+    // ignores a second arm while one is outstanding.
+    if (next === "cannot-play") {
+      this.playback?.resumeOnNextGesture(() => this.checkHealth(generation));
+    }
+  }
+
+  /** Forgets the previous call's evidence. A new call is diagnosed fresh. */
+  private resetHealth(): void {
+    this.liveSince = 0;
+    this.micSoundAt = 0;
+    this.engineSpokeAt = 0;
+    this.audioFrameAt = 0;
+    this.lastClock = -1;
+    this.pcmBytes = 0;
+    this.health = "ok";
+    this.serverActivity = "";
   }
 
   private fail(detail: string): void {
@@ -360,6 +538,11 @@ export class VoiceCall {
   }
 
   private async teardown(): Promise<void> {
+    // Both before anything else: the ring must not survive the call object, and
+    // a watchdog firing against a torn-down playback queue has nothing to read.
+    this.stopRinging();
+    this.stopWatchdog();
+
     const ws = this.ws;
     this.ws = null;
     if (ws) {
@@ -405,6 +588,9 @@ export class VoiceCall {
   }
 
   private setState(state: VoiceCallState, detail?: string): void {
+    // Connecting is the only state a ring belongs to, so leaving it — for any
+    // reason, including the ones that arrive by throwing — is what stops it.
+    if (state !== "connecting") this.stopRinging();
     this.state = state;
     this.handlers.onState(state, detail);
   }

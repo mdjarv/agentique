@@ -152,4 +152,37 @@ describe("PlaybackQueue", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(resumed).toBe(1);
   });
+
+  // A context resume() will not revive is not suspended, it is wedged — which
+  // is what an audio route changing underneath it does, and no amount of
+  // resuming fixes that. A fresh context on a gesture is the reliable recovery.
+  it("rebuilds the context when resuming it twice was not enough", async () => {
+    FakeAudioContext.resumeBehaviour = "stay";
+    const queue = new PlaybackQueue();
+    await queue.ready();
+    expect(FakeAudioContext.created).toHaveLength(1);
+
+    let resumed = 0;
+    queue.resumeOnNextGesture(() => {
+      resumed++;
+    });
+
+    // The first gesture tries the cheap thing, and only that.
+    window.dispatchEvent(new Event("pointerdown"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(FakeAudioContext.created).toHaveLength(1);
+    expect(resumed).toBe(0);
+
+    // The second builds a new one, inside the gesture, where it can run.
+    FakeAudioContext.resumeBehaviour = "run";
+    window.dispatchEvent(new Event("pointerdown"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(FakeAudioContext.created).toHaveLength(2);
+    expect(resumed).toBe(1);
+
+    // And the queue plays into the context it actually has now.
+    queue.enqueue(new Int16Array([1, 2, 3, 4]).buffer, 24000);
+    expect(FakeAudioContext.last.sources).toHaveLength(1);
+    expect(FakeAudioContext.created[0]?.closeCalls).toBe(1);
+  });
 });
