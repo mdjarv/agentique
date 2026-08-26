@@ -211,6 +211,16 @@ type call struct {
 	lastInteractionMu sync.Mutex
 	lastInteraction   time.Time
 
+	// greetOnce guards the pickup greeting.
+	//
+	// Once per CALL, and this is the layer that can say that. The engine
+	// reconnects underneath a long call — Gemini's connection dies at roughly ten
+	// minutes and resumes from a handle — and none of that reaches here, which is
+	// exactly why the once-ness lives at the call layer rather than the engine's:
+	// a resumption mid-run must not have the assistant introduce itself again
+	// over the top of the work it is following.
+	greetOnce sync.Once
+
 	// pendingAsync counts the answers this call has promised and not yet
 	// delivered — a summary being computed, and anything else that says "working
 	// on it" now and speaks later.
@@ -676,6 +686,41 @@ func (c *call) markBriefed(sessionID string) {
 	}
 }
 
+// greet makes the assistant speak first, so the operator hears that the call is
+// up without having to say anything into it.
+//
+// Everything about why is in [greetingCue]; what belongs here is the timing and
+// the once-ness. It runs off the caller's goroutine because naming the focused
+// session can touch the database, and the caller is the one that has to start
+// reading the socket. It is best effort in both directions: an engine with no
+// voice (the loopback) is skipped by [call.speak] without an error, and a
+// failed injection costs the greeting and nothing else — a call that opens mute
+// is still a call, and hanging one up over an unspoken hello would be worse
+// than the silence this exists to fix.
+func (c *call) greet() {
+	c.greetOnce.Do(func() {
+		go func() {
+			ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
+			defer cancel()
+			c.speak(greetingCue(c.greetingFocusName(ctx)))
+		}()
+	})
+}
+
+// greetingFocusName is what the greeting should call the session this call
+// opened on, or "" for a call that opened on nothing — which is a different
+// greeting, not a missing word.
+func (c *call) greetingFocusName(ctx context.Context) string {
+	focus := c.currentFocus()
+	if focus == "" {
+		return ""
+	}
+	if row, ok := c.lookupRow(ctx, focus); ok && row.Name != "" {
+		return row.Name
+	}
+	return unnamedFocusLabel
+}
+
 // speak hands text to the engine when it has a voice. Best effort: a call whose
 // engine cannot speak, or whose session is mid-reconnect, still showed the
 // message on screen rather than losing it.
@@ -733,6 +778,11 @@ func (c *call) run(ctx context.Context) {
 		c.log.Warn("voice ready send failed", "error", err)
 		return
 	}
+
+	// The call is live: the engine exists and the browser has been told the rate
+	// it will play at. This is the moment to say hello, and the only one — after
+	// this the model speaks when it is spoken to.
+	c.greet()
 
 	var wg sync.WaitGroup
 	wg.Add(2)

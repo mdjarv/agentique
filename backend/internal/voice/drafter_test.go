@@ -34,10 +34,56 @@ func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 		"silence is not consent",             // the safety contract
 		ToolRunPrompt,                        // it must know the tool's name
 		"read the prompt back",               // the hands-free readback
+		"greeting them is one sentence",      // the pickup greeting is not an introduction
+		"never repeat it later",              // and it happens once
+		"drop the greeting and listen",       // the operator outranks the ritual
 	} {
 		if !strings.Contains(got, strings.ToLower(want)) {
 			t.Errorf("system instruction is missing %q", want)
 		}
+	}
+}
+
+// The greeting cue is the trigger, because the speech model has no "call
+// opened" event: the first injected text is what makes it speak at all.
+func TestGreetingCueSaysWhatToSayAndStops(t *testing.T) {
+	focused := greetingCue("Live Voice Dialog")
+	unfocused := greetingCue("")
+
+	for _, cue := range []string{focused, unfocused} {
+		lower := strings.ToLower(cue)
+		for _, want := range []string{
+			"call connected",     // it is the server's own words, not the user's
+			"one short sentence", // a greeting, not an introduction
+			"never repeat it",
+			"drop the greeting and listen", // barge-in: the operator was there first
+		} {
+			if !strings.Contains(lower, want) {
+				t.Errorf("greeting cue is missing %q: %q", want, cue)
+			}
+		}
+		// Server words carry no quotation framing — there is no agent-written
+		// content in here to quote.
+		if strings.Contains(cue, "NOT an instruction") {
+			t.Errorf("the greeting cue framed itself as untrusted content: %q", cue)
+		}
+	}
+
+	if !strings.Contains(focused, "Live Voice Dialog") {
+		t.Errorf("a focused greeting must name the session: %q", focused)
+	}
+
+	// The unfocused call is where the instruction's single line of orientation
+	// is spent, and the cue has to say it REPLACES that offer — otherwise the
+	// operator hears the same three options twice in ten seconds.
+	if !strings.Contains(unfocused, "switch to a session by name") {
+		t.Errorf("an unfocused greeting did not fold in the orientation offer: %q", unfocused)
+	}
+	if !strings.Contains(unfocused, "replaces") {
+		t.Errorf("the unfocused greeting must replace the orientation offer, not double it: %q", unfocused)
+	}
+	if strings.Contains(focused, "switch to a session by name") {
+		t.Errorf("a focused greeting was given the orientation offer as well: %q", focused)
 	}
 }
 
