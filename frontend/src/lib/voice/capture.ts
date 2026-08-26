@@ -1,3 +1,4 @@
+import { frameLevel, publishMicLevel, resetMicLevel } from "./level";
 import workletUrl from "./mic-worklet.js?url";
 
 /** The rate the voice socket expects, fixed by the realtime speech API. */
@@ -50,6 +51,10 @@ export class MicCapture {
     this.source = this.ctx.createMediaStreamSource(this.stream);
     this.node = new AudioWorkletNode(this.ctx, "mic-processor");
     this.node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+      // The level is a scan of a frame we already hold — no second audio node,
+      // no analyser, no extra graph. Measured before the frame is handed on,
+      // because the socket send is the slower of the two.
+      publishMicLevel(frameLevel(event.data));
       opts.onFrame(event.data);
     };
 
@@ -64,6 +69,7 @@ export class MicCapture {
   }
 
   async stop(): Promise<void> {
+    resetMicLevel();
     this.node?.port.close();
     this.node?.disconnect();
     this.source?.disconnect();

@@ -6,16 +6,29 @@
  * the sidebar, next to the other things that are always true — quiet when there
  * is no call, and never more than a line plus a popover when there is.
  *
+ * The band is two rows in the space of one: the session the call is working
+ * with is the anchor, and everything the call is doing — hearing you, working
+ * on a summary, hanging up — is subordinate to it on the second line. The meter
+ * sits right, where the rail's other bands keep their state.
+ *
+ * A call that ends stays here as an ended band until it is dismissed. A dock
+ * that vanishes on hangup takes the call's answers with it, and the first field
+ * report of this feature was a call that ended by itself with a summary still
+ * owed.
+ *
  * The phone gets `VoiceBubble` instead: the rail is behind a sheet there, and a
  * hangup you have to open a drawer to reach is not a hangup.
  */
-import { AudioLines, PhoneOff } from "lucide-react";
+import { AudioLines, PhoneOff, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { CallLog, CallStatusDot, callStatusLine } from "~/components/voice/CallLog";
+import { CallLog } from "~/components/voice/CallLog";
+import { CallLineText, CallStatusDot } from "~/components/voice/CallStatus";
+import { MicMeter } from "~/components/voice/MicMeter";
 import { useCallView } from "~/components/voice/use-call-view";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { cn } from "~/lib/utils";
+import { callHeadline, callStatusLine } from "~/lib/voice/copy";
 import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useVoiceStore } from "~/stores/voice-store";
@@ -42,20 +55,54 @@ export function VoiceDock() {
               <button
                 type="button"
                 aria-label="Show the call"
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent/60"
+                className={cn(
+                  "flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left",
+                  "transition-colors duration-150 hover:bg-sidebar-accent/60",
+                )}
               >
                 <CallStatusDot status={view.status} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[11.5px] font-medium">
-                    {view.focusName || "No focus"}
+                  <span
+                    className={cn(
+                      "block truncate text-[11.5px] font-medium transition-colors duration-150",
+                      view.ended && "text-muted-foreground",
+                    )}
+                  >
+                    {callHeadline(view.status, view.focusName)}
                   </span>
-                  <span className="block truncate text-[10.5px] text-muted-foreground">
-                    {view.lastSpoken || callStatusLine(view.status, view.detail)}
-                  </span>
+                  <CallLineText line={view.line} className="text-[10.5px]" />
                 </span>
+                {/* Right-aligned state, the same place the sync band keeps its
+                    meter. It is the only thing on the band moving on real data. */}
+                <MicMeter live={view.live} className="ml-1" />
               </button>
             </PopoverTrigger>
-            <EndCallButton onEnd={view.stop} />
+            {view.ended ? (
+              <>
+                <IconButton
+                  onClick={view.restart}
+                  label="Call again"
+                  className="text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                >
+                  <RotateCcw className="size-3.5" />
+                </IconButton>
+                <IconButton
+                  onClick={view.dismiss}
+                  label="Dismiss the ended call"
+                  className="text-muted-foreground-faint hover:bg-sidebar-accent/60 hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </IconButton>
+              </>
+            ) : (
+              <IconButton
+                onClick={view.stop}
+                label="End call"
+                className="text-destructive hover:bg-destructive/15"
+              >
+                <PhoneOff className="size-3.5" />
+              </IconButton>
+            )}
           </div>
 
           {/* Above the bar, and scrolling inside itself — the page never moves
@@ -64,8 +111,9 @@ export function VoiceDock() {
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <CallStatusDot status={view.status} />
               <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
-                {view.focusName || "No focus"}
+                {callHeadline(view.status, view.focusName)}
               </span>
+              <MicMeter live={view.live} />
               <span className="shrink-0 text-[10.5px] text-muted-foreground">
                 {callStatusLine(view.status, view.detail)}
               </span>
@@ -94,7 +142,11 @@ function StartCallButton() {
     <button
       type="button"
       onClick={() => start(activeSessionId ?? undefined)}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-[11.5px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-[11.5px]",
+        "text-muted-foreground transition-colors duration-150",
+        "hover:bg-sidebar-accent/60 hover:text-foreground",
+      )}
     >
       <AudioLines className="size-3.5 shrink-0" />
       Voice
@@ -102,19 +154,30 @@ function StartCallButton() {
   );
 }
 
-function EndCallButton({ onEnd, className }: { onEnd: () => void; className?: string }) {
+function IconButton({
+  onClick,
+  label,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
-      onClick={onEnd}
-      aria-label="End call"
-      title="End call"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
       className={cn(
-        "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/15",
+        "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md",
+        "transition-colors duration-150",
         className,
       )}
     >
-      <PhoneOff className="size-3.5" />
+      {children}
     </button>
   );
 }

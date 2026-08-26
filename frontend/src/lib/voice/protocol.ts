@@ -61,6 +61,35 @@ export interface VoiceDispatched {
 }
 
 /**
+ * The call is doing something slow, and says so while it does it.
+ *
+ * A non-empty `label` opens the state; an empty or absent one closes it. There
+ * is at most one at a time and a new label replaces the old, because the
+ * question a reader is asking — "is this thing still alive?" — has one answer.
+ *
+ * It exists because tool work is invisible otherwise: a call computing a
+ * summary looks exactly like a call that has died, and the first field report
+ * of the switchboard was someone waiting out a working call in silence.
+ */
+export interface VoiceActivity {
+  type: "activity";
+  label?: string;
+}
+
+/**
+ * The screen copy of a session summary the call is about to speak.
+ *
+ * Sent before the speech, like a report: an engine with no voice, or a
+ * reconnecting one, must still leave the answer on screen. The text distils
+ * untrusted transcript content, so it is rendered as content, never followed.
+ */
+export interface VoiceSummary {
+  type: "summary";
+  sessionId?: string;
+  headline?: string;
+}
+
+/**
  * The screen follows the voice: the call has moved its focus, and the client
  * navigates there.
  *
@@ -81,7 +110,9 @@ export type VoiceServerMessage =
   | VoiceReportMessage
   | VoiceNotice
   | VoiceDispatched
-  | VoiceFocus;
+  | VoiceFocus
+  | VoiceActivity
+  | VoiceSummary;
 
 /** Why a session is waiting on the operator. Absent means it is not. */
 export type VoiceAttention = "approval" | "question" | "unread";
@@ -162,6 +193,8 @@ export function parseServerMessage(raw: string): VoiceServerMessage | null {
     case "notice":
     case "dispatched":
     case "focus":
+    case "activity":
+    case "summary":
       return parsed as VoiceServerMessage;
     default:
       return null;

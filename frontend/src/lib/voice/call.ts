@@ -2,11 +2,13 @@ import { MicCapture } from "./capture";
 import { PlaybackQueue } from "./playback";
 import {
   parseServerMessage,
+  type VoiceActivity,
   type VoiceClientMessage,
   type VoiceDispatched,
   type VoiceFocus,
   type VoiceNotice,
   type VoiceReportMessage,
+  type VoiceSummary,
   type VoiceTranscript,
   type VoiceWorldSession,
 } from "./protocol";
@@ -24,6 +26,10 @@ export interface VoiceCallHandlers {
   onDispatched?: (d: VoiceDispatched) => void;
   /** The call moved its focus — the screen is expected to follow. */
   onFocus?: (f: VoiceFocus) => void;
+  /** The call started or finished something slow. Empty label means finished. */
+  onActivity?: (a: VoiceActivity) => void;
+  /** A session summary, on screen before it is spoken. */
+  onSummary?: (s: VoiceSummary) => void;
 }
 
 /**
@@ -192,6 +198,14 @@ export class VoiceCall {
 
       case "focus":
         this.handlers.onFocus?.(msg);
+        return;
+
+      case "activity":
+        this.handlers.onActivity?.(msg);
+        return;
+
+      case "summary":
+        this.handlers.onSummary?.(msg);
         return;
 
       case "error":

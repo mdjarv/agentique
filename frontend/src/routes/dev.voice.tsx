@@ -14,6 +14,7 @@
  * Wear headphones on a desktop, or the echo feeds back.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { MicMeter } from "~/components/voice/MicMeter";
 import { cn } from "~/lib/utils";
 import { primaryVoiceUrl } from "~/lib/voice/call";
 import { useVoiceStore } from "~/stores/voice-store";
@@ -27,6 +28,7 @@ const STATE_COPY: Record<string, { label: string; tone: string }> = {
   connecting: { label: "Connecting", tone: "text-muted-foreground" },
   live: { label: "Live — speak and you should hear yourself", tone: "text-agent" },
   error: { label: "Failed", tone: "text-destructive" },
+  ended: { label: "Call ended", tone: "text-muted-foreground" },
 };
 
 function DevVoice() {
@@ -65,6 +67,9 @@ function DevVoice() {
             {running ? "End call" : "Start call"}
           </button>
           <span className={cn("text-sm", copy?.tone)}>{copy?.label}</span>
+          {/* The audio path's own readout: if this does not move while you
+              talk, the fault is upstream of the socket. */}
+          <MicMeter live={status === "live"} className="ml-auto" />
         </div>
 
         {detail && <p className="text-sm text-destructive">{detail}</p>}
