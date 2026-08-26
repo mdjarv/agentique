@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/voice"
 )
@@ -92,6 +96,57 @@ func TestNamesWithReasonIsBoundedAndSaysWhy(t *testing.T) {
 	}
 	if !strings.Contains(got, "and 3 more") {
 		t.Errorf("%q does not account for the sessions it left out", got)
+	}
+}
+
+// A spoken model name resolves through the same catalog the picker renders, so
+// a family somebody can choose on screen is one they can ask for out loud.
+func TestResolveSpokenModelUsesTheCatalog(t *testing.T) {
+	d := &voiceDirectory{catalog: providers.New(
+		providers.WithCLIOptionsPath(filepath.Join(t.TempDir(), "absent.json")),
+	)}
+
+	slug, family, err := d.resolveSpokenModel(context.Background(), "fable")
+	if err != nil {
+		t.Fatalf("resolveSpokenModel(fable): %v", err)
+	}
+	if slug != "fable" || family != "Fable" {
+		t.Errorf("resolved to %q/%q, want the fable slug and its family label", slug, family)
+	}
+
+	// Empty is the composer's default, and resolving one here would be a second
+	// copy of a decision the session service already makes.
+	slug, family, err = d.resolveSpokenModel(context.Background(), "")
+	if err != nil || slug != "" || family != "" {
+		t.Errorf("an unspecified model resolved to %q/%q (%v), want the service's own default",
+			slug, family, err)
+	}
+}
+
+// A model nobody has is a spoken question. The error carries the families that
+// DO exist, because the answer is the list, not a substitute.
+func TestResolveSpokenModelNamesTheFamiliesItHas(t *testing.T) {
+	d := &voiceDirectory{catalog: providers.New(
+		providers.WithCLIOptionsPath(filepath.Join(t.TempDir(), "absent.json")),
+	)}
+
+	_, _, err := d.resolveSpokenModel(context.Background(), "grok")
+	var unknown *voice.UnknownModelError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("error = %v, want an UnknownModelError the tool can speak", err)
+	}
+	if unknown.Spoken != "grok" {
+		t.Errorf("Spoken = %q, want what was asked for", unknown.Spoken)
+	}
+	for _, want := range []string{"Opus", "Fable"} {
+		if !strings.Contains(unknown.Error(), want) {
+			t.Errorf("%q does not offer %q as an option", unknown.Error(), want)
+		}
+	}
+
+	// No catalog at all still refuses rather than guessing an id.
+	if _, _, err := (&voiceDirectory{}).resolveSpokenModel(context.Background(), "opus"); err == nil {
+		t.Error("a directory with no catalog invented a model")
 	}
 }
 
