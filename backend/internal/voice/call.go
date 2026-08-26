@@ -224,6 +224,13 @@ func (c *call) unfollow() {
 	}
 }
 
+// following reports whether the call is bound to a session.
+func (c *call) following() bool {
+	c.followMu.Lock()
+	defer c.followMu.Unlock()
+	return c.followingID != ""
+}
+
 // currentPhase reports what the call is doing.
 func (c *call) currentPhase() callPhase {
 	c.followMu.Lock()
@@ -370,11 +377,21 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	spoken := delivery.Spoken()
 
 	if !stayOnLine {
-		// Not following means no reports land, and the phase stays "gathering",
-		// so the short conversational idle rule closes the call once they stop
-		// talking. That is the billing guard doing the hanging up, and it is
-		// why "ping me later" needs no separate teardown.
-		c.unfollow()
+		// Declining to stay does NOT release an existing binding. A second
+		// request mid-run answering "no" would otherwise retroactively cancel
+		// the first request's "yes", and the reports from a run still in
+		// flight would go nowhere while the listener waited for them.
+		//
+		// So this only means "do not start following". When nothing is being
+		// followed the phase stays "gathering", and the short conversational
+		// idle rule closes the call once they stop talking — the billing guard
+		// does the hanging up, which is why "ping me later" needs no teardown.
+		if c.following() {
+			return map[string]any{
+				"output": spoken + " You are still following the earlier run, so its updates will " +
+					"keep coming.",
+			}
+		}
 		return map[string]any{
 			"output": spoken + " They are not staying on the line, so there will be no further " +
 				"updates on this call — tell them it is running and they can check the session on screen.",

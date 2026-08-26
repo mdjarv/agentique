@@ -283,3 +283,36 @@ func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
 		t.Error("the second dispatch repeated the whole reporting instruction")
 	}
 }
+
+// A later "no, don't stay" must not tear down the follow from an earlier "yes".
+//
+// Reproduces a real call: dispatch, ask to stay, then add a second thing
+// mid-run. If that second dispatch says "not staying", the first run's reports
+// went nowhere — the listener asked for progress and got nothing, because the
+// binding had been quietly released underneath them.
+func TestASecondDispatchCannotUnfollowARunningOne(t *testing.T) {
+	registry := NewRegistry()
+	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	c := &call{
+		engine:        NewEchoEngine(),
+		registry:      registry,
+		dispatcher:    d,
+		targetSession: "sess-1",
+		log:           testLogger(),
+		runCtx:        context.Background(),
+	}
+
+	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "the first thing", "stay_on_line": true,
+	}})
+	if !registry.Listening("sess-1") {
+		t.Fatal("staying on the line did not start following")
+	}
+
+	c.runTool(ToolCallEvent{ID: "2", Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "and also this", "stay_on_line": false,
+	}})
+	if !registry.Listening("sess-1") {
+		t.Error("a second dispatch released the follow the first one established")
+	}
+}
