@@ -28,7 +28,7 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 }
 
 func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
-	got := strings.ToLower(SystemInstruction("", Persona{}))
+	got := strings.ToLower(SystemInstruction("", "", Persona{}))
 	for _, want := range []string{
 		"never answer the question yourself", // the likeliest failure
 		"silence is not consent",             // the safety contract
@@ -41,8 +41,47 @@ func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 	}
 }
 
+// The switchboard rules. Each one exists because of a specific way this goes
+// wrong out loud: acting on a session nobody heard named, picking between two
+// similar names, or promising work on a machine that cannot receive it.
+func TestSystemInstructionCarriesTheSwitchboardRules(t *testing.T) {
+	got := strings.ToLower(SystemInstruction("", "", Persona{}))
+	for _, want := range []string{
+		ToolListSessions,
+		ToolFindSession,
+		ToolFocusSession,
+		ToolSummarizeSession,
+		"naming the session it is going to", // the read-back names the target
+		"it never picks for you",            // ambiguity is asked about, not resolved
+		"by its full name",                  // a clear winner is still confirmed
+		"other machines",                    // remote sessions can be seen, not worked in
+		"never switch silently",             // a viewing note is data
+	} {
+		if !strings.Contains(got, strings.ToLower(want)) {
+			t.Errorf("system instruction is missing %q", want)
+		}
+	}
+}
+
+// Orientation is what is going on when the call opens — reference material with
+// a shelf life, and it must say so rather than being quoted as current.
+func TestSystemInstructionIncludesOrientation(t *testing.T) {
+	got := SystemInstruction("", "Three sessions, one waiting on approval.", Persona{})
+	if !strings.Contains(got, "one waiting on approval") {
+		t.Error("orientation did not reach the instruction")
+	}
+	if !strings.Contains(got, ToolListSessions) {
+		t.Error("orientation must point at the tool that refreshes it")
+	}
+
+	// Absent is the ordinary case for a machine with no directory wired.
+	if strings.Contains(SystemInstruction("", "", Persona{}), "What is going on right now") {
+		t.Error("an empty orientation must not leave an empty section behind")
+	}
+}
+
 func TestSystemInstructionIncludesProjectContext(t *testing.T) {
-	got := SystemInstruction("The repo is a Go backend with a React frontend.", Persona{})
+	got := SystemInstruction("The repo is a Go backend with a React frontend.", "", Persona{})
 	if !strings.Contains(got, "Go backend with a React frontend") {
 		t.Error("project context did not reach the instruction")
 	}

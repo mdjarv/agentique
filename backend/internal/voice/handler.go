@@ -128,7 +128,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// operator was looking at when they pressed the button — not a fixed target.
 	initialFocus := r.URL.Query().Get("sessionId")
 	persona := h.persona(r.Context())
-	instruction := SystemInstruction(h.projectContext(r.Context(), initialFocus), persona)
+	instruction := SystemInstruction(
+		h.projectContext(r.Context(), initialFocus),
+		h.orientation(r.Context()),
+		persona,
+	)
 
 	engine, err := h.newEngine(context.WithoutCancel(r.Context()), instruction, persona)
 	if err != nil {
@@ -181,6 +185,19 @@ func (h *Handler) projectContext(ctx context.Context, sessionID string) string {
 		return ""
 	}
 	return h.opts.Dispatcher.ProjectContext(ctx, sessionID)
+}
+
+// orientation is what is going on across this machine when the call opens.
+//
+// It costs one paragraph and saves the assistant a tool call before it can
+// answer the first question, which over a call is the difference between an
+// answer and a pause. A call with no directory opens without it, exactly as a
+// call with no session opens without project context.
+func (h *Handler) orientation(ctx context.Context) string {
+	if h.opts.Directory == nil {
+		return ""
+	}
+	return h.opts.Directory.Orientation(ctx)
 }
 
 // PersonaSource supplies the operator's current voice settings.
