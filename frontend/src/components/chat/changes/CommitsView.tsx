@@ -54,7 +54,6 @@ interface CommitsViewProps {
   projectGitStatus?: ProjectGitStatus;
   projectGitActions?: ReturnType<typeof useProjectGitActions>;
   onSendMessage: (prompt: string) => void;
-  onSelectFile?: (path: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +374,6 @@ function ProjectDirtySection({
   committing,
   onDiscard,
   discarding,
-  onSelectFile,
 }: {
   projectId: string;
   uncommittedCount: number;
@@ -383,7 +381,6 @@ function ProjectDirtySection({
   committing: boolean;
   onDiscard: () => Promise<void>;
   discarding: boolean;
-  onSelectFile?: (path: string) => void;
 }) {
   const ws = useWebSocket();
   const [expanded, setExpanded] = useState(false);
@@ -440,20 +437,7 @@ function ProjectDirtySection({
                 files.map((f) => (
                   <li key={f.path} className="flex items-center gap-1.5 text-muted-foreground">
                     <UncommittedFileIcon status={f.status} />
-                    {onSelectFile ? (
-                      <button
-                        type="button"
-                        onClick={() => onSelectFile(f.path)}
-                        className="font-mono truncate min-w-0 text-[11px] hover:text-foreground transition-colors text-left flex"
-                      >
-                        <FilePath path={f.path} className="truncate min-w-0 flex" />
-                      </button>
-                    ) : (
-                      <FilePath
-                        path={f.path}
-                        className="font-mono truncate min-w-0 text-[11px] flex"
-                      />
-                    )}
+                    <FilePath path={f.path} className="font-mono text-[11px]" />
                   </li>
                 ))
               )}
@@ -538,7 +522,6 @@ export function CommitsView({
   projectGitStatus,
   projectGitActions,
   onSendMessage,
-  onSelectFile,
 }: CommitsViewProps) {
   const isWorktree = !!meta.worktreeBranch;
   const ahead = meta.commitsAhead ?? 0;
@@ -572,7 +555,6 @@ export function CommitsView({
             committing={projectGitActions.committing}
             onDiscard={projectGitActions.handleDiscard}
             discarding={projectGitActions.discarding}
-            onSelectFile={onSelectFile}
           />
         )}
     </div>

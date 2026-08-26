@@ -1,18 +1,17 @@
 import { ArrowDown, ArrowUp, CheckCircle2, FileX2, GitMerge, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import type { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
-import { useIsMobile } from "~/hooks/useIsMobile";
 import type { DiffResult } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { ProjectGitStatus } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import type { SessionState } from "~/stores/chat-types";
+import { ChangesToolbar, type DiffScope } from "./ChangesToolbar";
 import { CommitsView } from "./CommitsView";
-import { DiffViewer } from "./DiffViewer";
-import { FileList } from "./FileList";
+import { FileDiffList } from "./FileDiffList";
 import { GitStatusBar } from "./GitStatusBar";
-import { groupFiles, type MergedFile } from "./types";
+import { diffTotals, filesForScope } from "./types";
 
 type SubTab = "files" | "commits";
 
@@ -27,10 +26,23 @@ interface ChangesViewProps {
   sessionState?: SessionState;
   onSendMessage: (prompt: string) => void;
   onOpenDialog: (dialog: "pr" | "commit") => void;
+  /** Writes into the composer and stops there. Absent where there is none. */
+  onQuoteToComposer?: (text: string) => void;
   expandFile?: string | null;
   onExpandFileConsumed?: () => void;
 }
 
+/**
+ * What this session changed, and what you can do about it.
+ *
+ * Two sub-tabs, because they answer different questions: **Files** is the diff
+ * — one scroll, every file foldable — and **Commits** is the history around it,
+ * the PR, the rebase, the conflicts. Files leads when there are any, because
+ * that is what the tab is named after.
+ *
+ * The old two-pane arrangement (a file list beside one file's diff) is gone;
+ * see `FileDiffList` for why a dock-width column cannot afford it.
+ */
 export function ChangesView({
   meta,
   git,
@@ -42,87 +54,48 @@ export function ChangesView({
   sessionState,
   onSendMessage,
   onOpenDialog,
+  onQuoteToComposer,
   expandFile,
   onExpandFileConsumed,
 }: ChangesViewProps) {
-  const isMobile = useIsMobile();
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<SubTab>("commits");
+  const [scope, setScope] = useState<DiffScope>("session");
+  const [collapseAll, setCollapseAll] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  const [subTab, setSubTab] = useState<SubTab>("files");
 
-  const { committed, uncommitted } = useMemo(
-    () => groupFiles(committedDiff, uncommittedDiff),
+  const isWorktree = !!meta.worktreeBranch;
+  const sessionFiles = useMemo(
+    () => filesForScope("session", committedDiff, uncommittedDiff),
     [committedDiff, uncommittedDiff],
   );
-  const allFiles = useMemo(() => [...committed, ...uncommitted], [committed, uncommitted]);
+  const files = useMemo(
+    () =>
+      scope === "session" ? sessionFiles : filesForScope("working", committedDiff, uncommittedDiff),
+    [scope, sessionFiles, committedDiff, uncommittedDiff],
+  );
+  const totals = useMemo(() => diffTotals(files), [files]);
 
-  const fileMap = useMemo(() => {
-    const m = new Map<string, MergedFile>();
-    for (const f of allFiles) {
-      m.set(f.path, f);
-    }
-    return m;
-  }, [allFiles]);
-
-  const selectedMergedFile = selectedFile ? (fileMap.get(selectedFile) ?? null) : null;
-
-  // Auto-select first file when files change and nothing is selected
-  const prevFilesRef = useRef(allFiles);
+  // A link from the transcript names a file, so the view has to be showing the
+  // scope that contains it before it can reveal it.
   useEffect(() => {
-    if (allFiles !== prevFilesRef.current) {
-      prevFilesRef.current = allFiles;
-      const first = allFiles[0];
-      if (first && (!selectedFile || !fileMap.has(selectedFile))) {
-        setSelectedFile(first.path);
-      }
-    }
-  }, [allFiles, selectedFile, fileMap]);
+    if (!expandFile) return;
+    setSubTab("files");
+    if (
+      !files.some((f) => f.path === expandFile) &&
+      sessionFiles.some((f) => f.path === expandFile)
+    )
+      setScope("session");
+  }, [expandFile, files, sessionFiles]);
 
-  // Handle expandFile prop (external navigation)
-  useEffect(() => {
-    if (expandFile && fileMap.has(expandFile)) {
-      setSelectedFile(expandFile);
-      setSubTab("files");
-      onExpandFileConsumed?.();
-    } else if (expandFile) {
-      onExpandFileConsumed?.();
-    }
-  }, [expandFile, fileMap, onExpandFileConsumed]);
-
-  const handleSelectFile = useCallback((path: string) => {
-    setSelectedFile(path);
-  }, []);
-
-  const handleBack = useCallback(() => {
-    setSelectedFile(null);
-  }, []);
-
-  // Keyboard navigation: arrow keys to move between files
-  useEffect(() => {
-    if (subTab !== "files" || allFiles.length === 0) return;
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-      // Don't hijack if user is in an input/textarea
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      e.preventDefault();
-      const currentIdx = allFiles.findIndex((f) => f.path === selectedFile);
-      const nextIdx =
-        e.key === "ArrowDown"
-          ? Math.min(currentIdx + 1, allFiles.length - 1)
-          : Math.max(currentIdx - 1, 0);
-      const next = allFiles[nextIdx];
-      if (next) setSelectedFile(next.path);
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [subTab, allFiles, selectedFile]);
+  const handleQuote = useCallback(
+    (text: string) => {
+      onQuoteToComposer?.(text);
+    },
+    [onQuoteToComposer],
+  );
 
   const truncated = (committedDiff?.truncated ?? false) || (uncommittedDiff?.truncated ?? false);
-  const hasFiles = allFiles.length > 0;
-  const isWorktree = !!meta.worktreeBranch;
+  const hasFiles = sessionFiles.length > 0 || (uncommittedDiff?.files.length ?? 0) > 0;
   const isMerged =
     meta.worktreeMerged && (meta.commitsAhead ?? 0) === 0 && (meta.commitsBehind ?? 0) === 0;
   const hasGitContent =
@@ -136,14 +109,12 @@ export function ChangesView({
   const behind = meta.commitsBehind ?? 0;
   const main = mainBranch || "main";
 
-  // Empty state: no files and no git content worth showing
   if (!hasFiles && !hasGitContent) {
     return <EmptyState sessionState={sessionState} worktreeMerged={meta.worktreeMerged} />;
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Zone 1: Git status bar (branch + actions) */}
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <GitStatusBar
         meta={meta}
         git={git}
@@ -153,63 +124,51 @@ export function ChangesView({
         onOpenDialog={onOpenDialog}
       />
 
-      {/* Merged state */}
       {isMerged && !hasFiles && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-          <GitMerge className="h-5 w-5 text-success/60" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+          <GitMerge className="size-5 text-success/60" />
           All changes merged.
         </div>
       )}
 
-      {/* Sub-tab bar */}
       {hasFiles && (
         <>
           <SubTabBar
             activeTab={subTab}
             onTabChange={setSubTab}
-            fileCount={allFiles.length}
+            fileCount={files.length}
             ahead={ahead}
             behind={behind}
           />
 
-          {subTab === "files" && !isMobile && (
-            <div className="flex-1 flex min-h-0">
-              <div className="w-72 shrink-0 bg-muted/15 flex flex-col min-h-0">
-                <FileList
-                  committed={committed}
-                  uncommitted={uncommitted}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectFile}
-                  truncated={truncated}
-                />
-              </div>
-              <DiffViewer file={selectedMergedFile} />
-            </div>
-          )}
-
-          {subTab === "files" && isMobile && !selectedFile && (
-            <div className="flex-1 flex flex-col min-h-0">
-              <FileList
-                committed={committed}
-                uncommitted={uncommitted}
-                selectedFile={null}
-                onSelectFile={handleSelectFile}
-                truncated={truncated}
+          {subTab === "files" && (
+            <>
+              <ChangesToolbar
+                scope={scope}
+                onScopeChange={setScope}
+                // Without a worktree there is no base commit to measure from, so
+                // the two scopes are the same diff under two names.
+                scopeChoice={isWorktree}
+                isWorktree={isWorktree}
+                fileCount={files.length}
+                insertions={totals.insertions}
+                deletions={totals.deletions}
+                allCollapsed={collapseAll}
+                onToggleCollapseAll={() => setCollapseAll((v) => !v)}
+                wrap={wrap}
+                onWrapChange={setWrap}
               />
-            </div>
-          )}
-
-          {subTab === "files" && isMobile && selectedFile && (
-            <div className="flex-1 flex flex-col min-h-0">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground border-b shrink-0 transition-colors"
-              >
-                Back to files
-              </button>
-              <DiffViewer file={selectedMergedFile} />
-            </div>
+              <FileDiffList
+                files={files}
+                scopeKey={scope}
+                truncated={truncated}
+                wrap={wrap}
+                collapseAll={collapseAll}
+                {...(onQuoteToComposer ? { onQuote: handleQuote } : {})}
+                revealFile={expandFile ?? null}
+                {...(onExpandFileConsumed ? { onRevealConsumed: onExpandFileConsumed } : {})}
+              />
+            </>
           )}
 
           {subTab === "commits" && (
@@ -220,13 +179,11 @@ export function ChangesView({
               projectGitStatus={projectGitStatus}
               projectGitActions={projectGitActions}
               onSendMessage={onSendMessage}
-              onSelectFile={handleSelectFile}
             />
           )}
         </>
       )}
 
-      {/* No files but git content */}
       {!hasFiles && hasGitContent && !isMerged && (
         <>
           <CommitsView
@@ -236,10 +193,9 @@ export function ChangesView({
             projectGitStatus={projectGitStatus}
             projectGitActions={projectGitActions}
             onSendMessage={onSendMessage}
-            onSelectFile={handleSelectFile}
           />
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-            <FileX2 className="h-5 w-5 text-muted-foreground-faint" />
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+            <FileX2 className="size-5 text-muted-foreground-faint" />
             No file changes yet.
           </div>
         </>
@@ -254,10 +210,10 @@ export function ChangesView({
 
 function subTabClass(active: boolean) {
   return cn(
-    "flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors cursor-pointer border-b-2",
+    "flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-1.5 text-xs transition-colors",
     active
-      ? "text-foreground border-b-primary"
-      : "text-muted-foreground border-b-transparent hover:text-foreground hover:border-b-muted-foreground/30",
+      ? "border-b-primary text-foreground"
+      : "border-b-transparent text-muted-foreground hover:border-b-muted-foreground/30 hover:text-foreground",
   );
 }
 
@@ -275,7 +231,15 @@ function SubTabBar({
   behind: number;
 }) {
   return (
-    <div className="flex items-center border-b shrink-0">
+    <div className="flex shrink-0 items-center border-b">
+      <button
+        type="button"
+        onClick={() => onTabChange("files")}
+        className={subTabClass(activeTab === "files")}
+      >
+        Files
+        <span className="text-[11px] text-muted-foreground tabular-nums">{fileCount}</span>
+      </button>
       <button
         type="button"
         onClick={() => onTabChange("commits")}
@@ -286,26 +250,18 @@ function SubTabBar({
           <span className="flex items-center gap-1 text-[11px]">
             {ahead > 0 && (
               <span className="flex items-center gap-0.5 text-success">
-                <ArrowUp className="h-2.5 w-2.5" />
+                <ArrowUp className="size-2.5" />
                 {ahead}
               </span>
             )}
             {behind > 0 && (
               <span className="flex items-center gap-0.5 text-orange">
-                <ArrowDown className="h-2.5 w-2.5" />
+                <ArrowDown className="size-2.5" />
                 {behind}
               </span>
             )}
           </span>
         )}
-      </button>
-      <button
-        type="button"
-        onClick={() => onTabChange("files")}
-        className={subTabClass(activeTab === "files")}
-      >
-        Files
-        <span className="text-[11px] tabular-nums text-muted-foreground">{fileCount}</span>
       </button>
     </div>
   );
@@ -324,30 +280,30 @@ function EmptyState({
 }) {
   if (worktreeMerged) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-5 w-5 text-success/60" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+        <CheckCircle2 className="size-5 text-success/60" />
         All changes merged into main.
       </div>
     );
   }
   if (sessionState === "running" || sessionState === "idle") {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground-dim" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+        <Loader2 className="size-5 animate-spin text-muted-foreground-dim" />
         Changes will appear as the session works.
       </div>
     );
   }
   if (sessionState === "stopped" || sessionState === "done" || sessionState === "failed") {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        <FileX2 className="h-5 w-5 text-muted-foreground-faint" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+        <FileX2 className="size-5 text-muted-foreground-faint" />
         No changes were made in this session.
       </div>
     );
   }
   return (
-    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+    <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
       No changes detected.
     </div>
   );

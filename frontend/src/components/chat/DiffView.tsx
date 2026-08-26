@@ -119,7 +119,7 @@ export function FileEntry({
         }
       >
         {statusIcon(status)}
-        <FilePath path={path} className="font-mono truncate min-w-0 flex" />
+        <FilePath path={path} className="font-mono" />
       </ExpandableRow>
       {expanded && (
         <div className="relative border-t bg-muted/30 max-h-80 overflow-y-auto">

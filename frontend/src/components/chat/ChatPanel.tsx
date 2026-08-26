@@ -40,6 +40,7 @@ import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
 import type { EffortLevel } from "~/lib/composer-constants";
+import { appendQuote } from "~/lib/diff-quote";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { loopBadgeState } from "~/lib/loop-attention";
 import { sessionModelLabel } from "~/lib/model-catalog";
@@ -238,6 +239,16 @@ export function ChatPanel({
 
   const handleExpandFileConsumed = useCallback(() => {
     setExpandFile(null);
+  }, []);
+  /**
+   * A diff selection becomes text in the composer and stops there — the same
+   * contract the live call honours. One path into the session pipeline, and it
+   * is the send button the reader can see.
+   */
+  const handleQuoteToComposer = useCallback((quote: string) => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    composer.setText(appendQuote(composer.getText(), quote));
   }, []);
   const handleFollowRequestConsumed = useCallback(() => {
     setFollowRequest(0);
@@ -613,6 +624,7 @@ export function ChatPanel({
       sessionState={sessionState}
       onSendMessage={handleSend}
       onOpenDialog={(d: "pr" | "commit") => setActiveDialog(d)}
+      onQuoteToComposer={handleQuoteToComposer}
       expandFile={expandFile}
       onExpandFileConsumed={handleExpandFileConsumed}
     />
