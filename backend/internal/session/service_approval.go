@@ -129,6 +129,40 @@ func (s *Service) ArchiveSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// MarkSessionSeen clears the session's unread-completion mark: the operator has
+// read what came back. The read receipt behind the session.markSeen RPC.
+//
+// Idempotent, and deliberately so — a client that opens the same session twice,
+// or one catching up after a reconnect, should not have to know whether the mark
+// was still set. Clearing an already-clear session writes a no-op row and
+// broadcasts the same snapshot the client already has.
+//
+// Works for both live and non-live sessions, split the same way
+// UnarchiveSession is: a live session clears its own mirror and broadcasts from
+// it, and a stopped one is a row write plus a snapshot rebuilt from the row.
+func (s *Service) MarkSessionSeen(ctx context.Context, sessionID string) error {
+	if live := s.mgr.Get(sessionID); live != nil {
+		return live.MarkSeen()
+	}
+
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+
+	if err := s.queries.ClearSessionUnseenCompletedAt(ctx, sessionID); err != nil {
+		return fmt.Errorf("clear session unseen completion: %w", err)
+	}
+
+	if s.gitSvc != nil {
+		if snap, err := s.gitSvc.computeGitSnapshot(ctx, sessionID); err == nil {
+			s.hub.Publish(dbSess.ProjectID, "session.state", snap)
+		}
+	}
+
+	return nil
+}
+
 // UnarchiveSession clears the archive marker so the session returns to the
 // sidebar's open list. The exact inverse of ArchiveSession — one field, no
 // residue, whatever the session's state happens to be.

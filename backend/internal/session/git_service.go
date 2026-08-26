@@ -146,10 +146,12 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 		snap.WorktreeMerged = merged
 		snap.ArchivedAt = archivedAt
 		snap.GitOperation = gitOp
+		snap.UnseenCompletedAt = live.UnseenCompletedAt()
 	} else {
 		snap.State = dbSess.State
 		snap.WorktreeMerged = dbSess.WorktreeMerged != 0
 		snap.ArchivedAt = nullStr(dbSess.ArchivedAt)
+		snap.UnseenCompletedAt = nullStr(dbSess.UnseenCompletedAt)
 	}
 
 	if !snap.WorktreeMerged {
@@ -827,7 +829,11 @@ type GitSnapshot struct {
 	//     REJECT the whole payload from a peer that predates the rename — every
 	//     session.state push from that machine silently dropped, so its rows
 	//     freeze. Wire fields are optional-by-default for exactly this reason.
-	ArchivedAt         string   `json:"archivedAt,omitempty"`
+	ArchivedAt string `json:"archivedAt,omitempty"`
+	// UnseenCompletedAt is the unread-completion marker, and reads the same way
+	// ArchivedAt does: absent means "nothing waiting", never "unchanged". That
+	// is what lets a read receipt clear the mark by simply not carrying it.
+	UnseenCompletedAt  string   `json:"unseenCompletedAt,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`

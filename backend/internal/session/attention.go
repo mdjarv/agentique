@@ -19,10 +19,18 @@ import "time"
 // MarkActive records that a client is actively viewing this session, deferring
 // idle eviction as a turn would.
 //
-// Deliberately does NOT touch state, unseen-completion, or turn bookkeeping —
-// attention is not activity in the conversational sense, and must not make a
-// session look like it did something. lastActiveAt is read only by the idle
-// sweep (beginIdleEvict / idleFor), so this is confined to eviction.
+// Deliberately does NOT touch state or turn bookkeeping — attention is not
+// activity in the conversational sense, and must not make a session look like
+// it did something. lastActiveAt is read only by the idle sweep
+// (beginIdleEvict / idleFor), so this is confined to eviction.
+//
+// It does not clear the unread-completion mark either, and that separation
+// survived the mark moving server-side (unseen.go). Attention is a heartbeat: a
+// client sends it repeatedly while a tab is merely open and visible, which is
+// not the same claim as "the operator has read what came back". The read
+// receipt is its own gesture, session.markSeen, sent once. Ranking is unchanged
+// too — the deck still puts unread below approval and question, because those
+// two hold a process.
 func (s *Session) MarkActive() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -48,6 +48,7 @@ func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
 	s.mu.Lock()
 	snap.WorktreeMerged = s.git.worktreeMerged
 	snap.ArchivedAt = s.archivedAt
+	snap.UnseenCompletedAt = s.unseenCompletedAt
 	snap.GitOperation = s.git.gitOperation
 	s.git.gitVersion++
 	snap.Version = s.git.gitVersion
@@ -133,15 +134,16 @@ func (s *Session) broadcastMidTurnGitStatus(dirty bool) {
 	s.mu.Lock()
 	s.git.gitVersion++
 	snap := GitSnapshot{
-		SessionID:        s.ID,
-		State:            string(s.state),
-		Connected:        true,
-		HasDirtyWorktree: dirty,
-		HasUncommitted:   dirty,
-		WorktreeMerged:   s.git.worktreeMerged,
-		ArchivedAt:       s.archivedAt,
-		GitOperation:     s.git.gitOperation,
-		Version:          s.git.gitVersion,
+		SessionID:         s.ID,
+		State:             string(s.state),
+		Connected:         true,
+		HasDirtyWorktree:  dirty,
+		HasUncommitted:    dirty,
+		WorktreeMerged:    s.git.worktreeMerged,
+		ArchivedAt:        s.archivedAt,
+		UnseenCompletedAt: s.unseenCompletedAt,
+		GitOperation:      s.git.gitOperation,
+		Version:           s.git.gitVersion,
 	}
 	s.mu.Unlock()
 

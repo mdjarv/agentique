@@ -25,6 +25,8 @@ type sessionWriter interface {
 	UpdateSessionPermissionMode(ctx context.Context, arg store.UpdateSessionPermissionModeParams) error
 	SetSessionArchived(ctx context.Context, id string) error
 	UnsetSessionArchived(ctx context.Context, id string) error
+	SetSessionUnseenCompletedAt(ctx context.Context, arg store.SetSessionUnseenCompletedAtParams) error
+	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
 	UpdateSessionResolvedModel(ctx context.Context, arg store.UpdateSessionResolvedModelParams) error
 	UpsertModelResolution(ctx context.Context, arg store.UpsertModelResolutionParams) error
 }

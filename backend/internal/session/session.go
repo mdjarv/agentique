@@ -53,6 +53,16 @@ func nullStr(ns sql.NullString) string {
 	return ""
 }
 
+// optStr returns nil for the empty string, so a wire field tagged omitempty is
+// absent rather than present-and-blank. Used where "not set" is a distinct
+// answer the client reads (see SessionInfo.UnseenCompletedAt).
+func optStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // syntheticApproval is an agentique-side pending approval that doesn't pass
 // through the runtime approval pump. Used for the plan-review dance (where
 // agentique synthesizes an approval after the pipeline observes ExitPlanMode
@@ -150,6 +160,24 @@ type Session struct {
 	broadcast      func(pushType string, payload any)
 	archivedAt     string        // ISO8601 timestamp, or "" when the user has not filed it away
 	stateChangedCh chan struct{} // buffered(1), signaled on state transitions
+
+	// unseenCompletedAt mirrors the sessions.unseen_completed_at column so a
+	// snapshot built from memory (buildLocalSnapshot) says the same thing as
+	// one built from the row (GitService.buildSnapshot). The column is
+	// authoritative and is always written before this is updated, so the
+	// mirror can lag a write but never lead one. Guarded by mu. See unseen.go.
+	unseenCompletedAt string
+
+	// lastOriginTurn / lastOriginKind record which turn the most recent
+	// QueryOrigin belongs to, so the turn-end seam can ask "was the turn that
+	// just ended a schedule fire?" — the outcome itself does not carry it, and
+	// schedule attention is its own channel. Turn starts are serialized by
+	// queryMu and wait for the previous completion to drain, so a completion
+	// always describes the most recently started turn; the index is compared
+	// anyway, and a mismatch falls back to "user", the marking case.
+	// Guarded by mu.
+	lastOriginTurn int
+	lastOriginKind string
 
 	// pendingMessages buffers user messages sent while a turn is running on a
 	// provider without native mid-turn injection (codex). Flushed as a fresh
@@ -501,6 +529,11 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			// to this turn (discussion orchestrator, scheduler); delivery is
 			// buffered and never blocks the event loop.
 			s.turnReg.Deliver(outcome)
+			// A turn that produced a completion is news the operator has not
+			// read yet. Off the event loop: the mark's snapshot re-reads git
+			// status, and the pump behind this callback is the one carrying
+			// the session's events. See unseen.go.
+			go s.markUnseenCompletion(outcome.TurnIndex)
 		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
@@ -936,6 +969,7 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	}
 
 	turnIndex := s.pipeline.AdvanceTurn()
+	s.recordTurnOrigin(turnIndex, origin)
 	var outcome <-chan TurnOutcome
 	if subscribe {
 		outcome = s.turnReg.Subscribe(turnIndex)

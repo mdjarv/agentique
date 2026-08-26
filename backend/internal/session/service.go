@@ -93,6 +93,7 @@ type SessionInfo struct {
 	WorktreeBranch     string               `json:"worktreeBranch,omitempty"`
 	WorktreeMerged     bool                 `json:"worktreeMerged,omitempty"`
 	ArchivedAt         string               `json:"archivedAt,omitempty"`
+	UnseenCompletedAt  *string              `json:"unseenCompletedAt,omitempty"`
 	HasDirtyWorktree   bool                 `json:"hasDirtyWorktree,omitempty"`
 	HasUncommitted     bool                 `json:"hasUncommitted,omitempty"`
 	CommitsAhead       int                  `json:"commitsAhead"`
@@ -1111,14 +1112,18 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		WorktreeBranch:  nullStr(ss.WorktreeBranch),
 		WorktreeMerged:  ss.WorktreeMerged != 0,
 		ArchivedAt:      nullStr(ss.ArchivedAt),
-		PrUrl:           ss.PrUrl,
-		BehaviorPresets: ParsePresets(ss.BehaviorPresets),
-		ParentSessionID: nullStr(ss.ParentSessionID),
-		Pinned:          ss.Pinned != 0,
-		PinOrder:        ss.PinOrder,
-		CreatedAt:       ss.CreatedAt,
-		UpdatedAt:       ss.UpdatedAt,
-		LastQueryAt:     nullStr(ss.LastQueryAt),
+		// The row is authoritative for the unread mark: a live session's mirror
+		// is only ever written after the row is, so reading it here needs no
+		// liveness check.
+		UnseenCompletedAt: optStr(nullStr(ss.UnseenCompletedAt)),
+		PrUrl:             ss.PrUrl,
+		BehaviorPresets:   ParsePresets(ss.BehaviorPresets),
+		ParentSessionID:   nullStr(ss.ParentSessionID),
+		Pinned:            ss.Pinned != 0,
+		PinOrder:          ss.PinOrder,
+		CreatedAt:         ss.CreatedAt,
+		UpdatedAt:         ss.UpdatedAt,
+		LastQueryAt:       nullStr(ss.LastQueryAt),
 	}
 }
 
@@ -1599,14 +1604,18 @@ func (s *Service) wireEnsureBrowserCallback(sess *Session) {
 	})
 }
 
-// applyPostResumeFlags re-applies persisted lifecycle flags (merged/archived)
-// onto the live Session so the in-memory state matches what the DB reflects.
+// applyPostResumeFlags re-applies persisted lifecycle flags (merged, archived,
+// unread completion) onto the live Session so the in-memory state matches what
+// the DB reflects.
 func applyPostResumeFlags(sess *Session, dbSess store.Session) {
 	if dbSess.WorktreeMerged != 0 {
 		sess.MarkMerged()
 	}
 	if dbSess.ArchivedAt.Valid {
 		sess.MarkArchived(dbSess.ArchivedAt.String)
+	}
+	if dbSess.UnseenCompletedAt.Valid {
+		sess.MarkUnseenCompletedAt(dbSess.UnseenCompletedAt.String)
 	}
 }
 
