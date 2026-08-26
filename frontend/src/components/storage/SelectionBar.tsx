@@ -30,6 +30,16 @@ export function SelectionBar({
   const canReclaim = summary.reclaimBlockedReason === "" && summary.reclaimable.length > 0;
   const canDelete = summary.deleteBlockedReason === "" && summary.deletable.length > 0;
 
+  // Name the verb. "1 of 2 are not eligible" beside two buttons says nothing
+  // about which one is off. Everything Delete accepts, Reclaim accepts too, so
+  // when Reclaim is blocked it is the surprising half and the one worth saying;
+  // the individual reasons are on the rows either way.
+  const note = summary.reclaimBlockedReason
+    ? `Can't reclaim — ${lowerFirst(summary.reclaimBlockedReason)}`
+    : summary.deleteBlockedReason
+      ? `Can't delete — ${lowerFirst(summary.deleteBlockedReason)}`
+      : "";
+
   return (
     <div className="sticky bottom-0 z-10 -mx-4 mt-2 border-t bg-background/95 px-4 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2">
@@ -47,11 +57,7 @@ export function SelectionBar({
           <span className="text-muted-foreground"> · {formatBytes(summary.bytes)}</span>
         </span>
 
-        {(summary.reclaimBlockedReason || summary.deleteBlockedReason) && (
-          <span className="text-xs text-muted-foreground">
-            {summary.deleteBlockedReason || summary.reclaimBlockedReason}
-          </span>
-        )}
+        {note && <span className="text-xs text-muted-foreground">{note}</span>}
 
         <div className="ml-auto flex items-center gap-2">
           <Button
@@ -83,4 +89,9 @@ export function SelectionBar({
       </div>
     </div>
   );
+}
+
+/** Lowercase the first letter so a reason reads on after an em dash. */
+function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1);
 }

@@ -423,9 +423,13 @@ export function StoragePage() {
                 confirmDelete();
               }}
               disabled={busy}
+              // AlertDialogAction is destructive by construction, which is right
+              // for three of the four targets. Reclaim is reversible and must
+              // not wear the colour that means "this cannot be undone".
               className={cn(
-                deleteTarget?.kind !== "reclaim" &&
-                  "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                deleteTarget?.kind === "reclaim"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90",
               )}
             >
               {busy ? (
