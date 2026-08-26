@@ -252,3 +252,34 @@ func TestEveryToolPathAnswers(t *testing.T) {
 		})
 	}
 }
+
+// The reporting instruction is a page of prose and the worker keeps the first
+// copy in context, so a second dispatch on the same call must not repeat it.
+func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
+	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	c := &call{
+		engine:        NewEchoEngine(),
+		registry:      NewRegistry(),
+		dispatcher:    d,
+		targetSession: "sess-1",
+		log:           testLogger(),
+		runCtx:        context.Background(),
+	}
+	args := map[string]any{"prompt": "do the thing", "stay_on_line": true}
+
+	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: args})
+	d.mu.Lock()
+	first := d.gotReporting
+	d.mu.Unlock()
+	if !first {
+		t.Fatal("the first dispatch must teach the worker how to report")
+	}
+
+	c.runTool(ToolCallEvent{ID: "2", Name: ToolRunPrompt, Args: args})
+	d.mu.Lock()
+	second := d.gotReporting
+	d.mu.Unlock()
+	if second {
+		t.Error("the second dispatch repeated the whole reporting instruction")
+	}
+}

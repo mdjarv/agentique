@@ -128,6 +128,13 @@ type call struct {
 	// dispatcher, which is a much larger feature wearing the same button.
 	targetSession string
 
+	// briefed records that this call already taught the session how to report.
+	// The instruction is a page of prose, and the worker still has the first
+	// copy in context — repeating it on every follow-up prompt is noise that
+	// crowds out the actual request.
+	briefedMu sync.Mutex
+	briefed   bool
+
 	// runCtx is the call's lifetime, for work that must not outlive it.
 	runCtxMu sync.Mutex
 	runCtx   context.Context
@@ -350,7 +357,7 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 		SessionID: c.targetSession,
 	})
 
-	delivery, err := c.dispatcher.Dispatch(ctx, c.targetSession, prompt, stayOnLine)
+	delivery, err := c.dispatcher.Dispatch(ctx, c.targetSession, prompt, stayOnLine && c.needsBriefing())
 	if err != nil {
 		c.log.Warn("voice dispatch failed", "session", c.targetSession, "error", err)
 		return map[string]any{"error": "That could not be sent."}
@@ -378,6 +385,22 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	// silence becomes the expected state and reports have somewhere to land.
 	c.follow(c.targetSession)
 	return map[string]any{"output": spoken}
+}
+
+// needsBriefing reports whether this call still has to teach the session how to
+// report progress, and records that it has.
+//
+// Once per call, not once per prompt: the worker keeps the first copy in its
+// context, so a second copy is a page of prose competing with the request it is
+// attached to.
+func (c *call) needsBriefing() bool {
+	c.briefedMu.Lock()
+	defer c.briefedMu.Unlock()
+	if c.briefed {
+		return false
+	}
+	c.briefed = true
+	return true
 }
 
 // speak hands text to the engine when it has a voice. Best effort: a call whose
