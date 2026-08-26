@@ -27,6 +27,20 @@ const defaultMaxCalls int64 = 4
 // delays the upgrade; it only bounds how long `ready` can be held back.
 const briefingBudget = 5 * time.Second
 
+// engineDialBudget bounds the speech backend's handshake.
+//
+// The backend is a network round trip to somebody else's service, and it had no
+// timeout of ours: a dial that never answered held its call slot open until the
+// browser gave up, and there are only [defaultMaxCalls] of those. It is worse
+// now that the client rings while it connects — the operator would hear a call
+// ringing forever at a backend that is never going to answer, which is exactly
+// the wrong thing to tell someone who cannot look at the screen.
+//
+// Generous rather than tight: a cold realtime session legitimately takes
+// seconds, and a call that opens late still works, so this is the point at
+// which "slow" has become "not coming" rather than a latency target.
+const engineDialBudget = 15 * time.Second
+
 // Options configures a [Handler].
 type Options struct {
 	// Backend selects the speech transport. BackendEcho needs no credentials
@@ -90,6 +104,9 @@ type Handler struct {
 	// budget without waiting one out.
 	briefingBudget time.Duration
 
+	// engineDialBudget is [engineDialBudget], a field for the same reason.
+	engineDialBudget time.Duration
+
 	activeCalls atomic.Int64
 }
 
@@ -110,7 +127,7 @@ func NewHandler(opts Options) (*Handler, error) {
 	default:
 		return nil, fmt.Errorf("unknown voice backend %q", opts.Backend)
 	}
-	h := &Handler{opts: opts, briefingBudget: briefingBudget}
+	h := &Handler{opts: opts, briefingBudget: briefingBudget, engineDialBudget: engineDialBudget}
 	h.newEngine = h.defaultEngine
 	return h, nil
 }
@@ -210,7 +227,49 @@ func (h *Handler) openEngine(ctx context.Context, initialFocus string) (Engine, 
 	})
 	// The engine's context is the call's, not the briefing's: it must outlive
 	// both the request and the budget that bounded the gathering.
-	return h.newEngine(ctx, instruction, persona)
+	return h.dialEngine(ctx, instruction, persona)
+}
+
+// dialEngine builds the engine, giving up on a backend that will not answer.
+//
+// The wait is bounded here rather than by handing [Handler.newEngine] a
+// deadline context, because that context is the *call's*: cancelling it on
+// expiry would take the engine down later, mid-conversation, having succeeded.
+// So the dial runs where it can outlive the wait, and a late arrival is closed
+// rather than abandoned — an engine nobody is holding is a paid session nobody
+// is listening to.
+func (h *Handler) dialEngine(ctx context.Context, instruction string, persona Persona) (Engine, error) {
+	budget := h.engineDialBudget
+	if budget <= 0 {
+		budget = engineDialBudget
+	}
+
+	type dialed struct {
+		engine Engine
+		err    error
+	}
+	// Buffered: the dial must be able to finish and exit even after the wait
+	// has been given up on, or a slow backend leaks a goroutine per call.
+	done := make(chan dialed, 1)
+	go func() {
+		engine, err := h.newEngine(ctx, instruction, persona)
+		done <- dialed{engine, err}
+	}()
+
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+
+	select {
+	case d := <-done:
+		return d.engine, d.err
+	case <-timer.C:
+		go func() {
+			if d := <-done; d.engine != nil {
+				_ = d.engine.Close()
+			}
+		}()
+		return nil, fmt.Errorf("the speech backend did not answer within %s", budget)
+	}
 }
 
 // refuse says on an already-open socket why the call is not happening, and

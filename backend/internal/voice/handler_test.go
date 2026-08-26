@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -143,4 +144,97 @@ func TestEngineFailureAfterUpgradeIsSaidOnTheSocket(t *testing.T) {
 	if _, _, err := ws.ReadMessage(); err == nil {
 		t.Error("the socket stayed open after the refusal")
 	}
+}
+
+// A backend that never answers is refused, rather than held.
+//
+// Without a budget of ours the dial ran until the browser gave up, holding one
+// of very few call slots — and since the client rings while it connects, the
+// operator would hear a call ringing forever at a backend that was never going
+// to answer.
+func TestEngineDialTimeoutIsRefusedOnTheSocket(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	dialing := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	h.newEngine = func(context.Context, string, Persona) (Engine, error) {
+		close(dialing)
+		<-release
+		return NewEchoEngine(), nil
+	}
+	// The real budget is measured in seconds; a test should not wait one out.
+	h.engineDialBudget = 100 * time.Millisecond
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v — the socket opens before the engine", err)
+	}
+	defer ws.Close()
+
+	<-dialing
+	msg := readControl(t, ws)
+	if msg.Type != msgError {
+		t.Fatalf("control frame = %q, want %q — a stuck dial must be said, not waited out", msg.Type, msgError)
+	}
+	if msg.Message == "" {
+		t.Error("the refusal carried no reason; the reader is left with a mute call")
+	}
+
+	// And it hangs up, which is what stops the client ringing.
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Error("the socket stayed open after the refusal")
+	}
+}
+
+// An engine that turns up after the budget is closed, not abandoned: it is a
+// live session on somebody's paid backend with nobody listening to it.
+func TestLateEngineIsClosedRatherThanLeaked(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	engine := &closeCountingEngine{Engine: NewEchoEngine(), closed: make(chan struct{})}
+	release := make(chan struct{})
+	h.newEngine = func(context.Context, string, Persona) (Engine, error) {
+		<-release
+		return engine, nil
+	}
+	h.engineDialBudget = 50 * time.Millisecond
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+
+	if msg := readControl(t, ws); msg.Type != msgError {
+		t.Fatalf("control frame = %q, want %q", msg.Type, msgError)
+	}
+	close(release)
+
+	select {
+	case <-engine.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the late engine was never closed")
+	}
+}
+
+// closeCountingEngine reports when it is released.
+type closeCountingEngine struct {
+	Engine
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (e *closeCountingEngine) Close() error {
+	e.once.Do(func() { close(e.closed) })
+	return e.Engine.Close()
 }
