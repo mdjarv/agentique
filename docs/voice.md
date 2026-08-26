@@ -28,9 +28,12 @@ Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶
    │                                                │
    │ world / viewing ──▶ call: focus + follow set   │ tools: list_sessions,
    │ ◀── focus (the screen navigates) ──────────────┘ find_session, focus_session,
-   │                                                  summarize_session, run_prompt
-   │                                      run_prompt │ Dispatcher (focus only)
-   │                                                 ▼
+   │                                                  summarize_session,
+   │                                                  list_projects,
+   │                                                  create_session, run_prompt
+   │                                   create_session │ Directory ──▶ Service.CreateSession
+   │                                      run_prompt  │ Dispatcher (focus only)
+   │                                                  ▼
    │                                      Service.EnqueueMessage ──▶ the session
    │                                                 │
    │                 VoiceReport (agent) + Notice (runtime) ──▶ back to the call
@@ -39,10 +42,12 @@ Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶
 Two participants, not three:
 
 - **The drafter** — the realtime speech model. It owns voice activity detection,
-  barge-in, turn-taking and synthesis, *and* it writes the prompt. It has one
-  tool and never runs anything itself.
-- **The workhorse** — the existing session, unchanged. It receives the prompt
-  through the same path the composer's send button uses.
+  barge-in, turn-taking and synthesis, *and* it writes the prompt. It never runs
+  anything itself: its tools look, aim, and hand text over.
+- **The workhorse** — the session, unchanged, and sometimes one the call just
+  made. It receives the prompt through the same path the composer's send button
+  uses, and it was created through the same path the composer's new-session
+  flow uses.
 
 An earlier design had a third participant, a separate Claude agent doing the
 drafting behind the speech model, on the reasoning that a model which has never
@@ -423,11 +428,50 @@ so the model cannot focus an id it hallucinated.
 until a tool call is answered, so a slow handler is audible dead air. The tool
 set is fixed at engine open (`LiveConnectConfig`); there is no adding one
 mid-call. `list_sessions` and `find_session` read held state; `focus_session`
-is one DB read plus a frame; `summarize_session` answers immediately and
-injects the result through `TextInjector` when the local summarizer delivers —
-with quotation framing (`summaryRelayPreamble`), because a summary distills
-untrusted transcript content. Focusing a local session warms its summary in the
-background so the likely next question is already answered.
+is one DB read plus a frame; `list_projects` is one query plus the session list
+already read for everything else; `create_session` is synchronous through the
+session service, bounded by `toolCallTimeout` like any other tool;
+`summarize_session` answers immediately and injects the result through
+`TextInjector` when the local summarizer delivers — with quotation framing
+(`summaryRelayPreamble`), because a summary distills untrusted transcript
+content. Focusing a local session warms its summary in the background so the
+likely next question is already answered.
+
+**Starting a session is deferred to the one yes that sends the prompt.**
+`list_projects` answers "where could this go" — LOCAL projects only, ranked by
+the most recent work in them, narrowable by the same normalized matcher
+`find_session` uses (a slug said as two words, "web tickets", reaches
+`webtickets`). Its ids join the offered set, and `create_session` accepts only
+those, exactly as `focus_session` does for sessions. Creation goes through
+`session.Service.CreateSession`, the same call the composer's new-session flow
+makes through the `session.create` WS handler, with the same worktree default —
+a second creation path would be a second set of rules about worktrees, quotas
+and idempotency to drift apart. A project that exists only on a paired machine
+is never listed: creation is local because the service is.
+
+The instruction gathers the project and drafts the prompt without creating
+anything, states the settings inside the read-back rather than asking about
+them as a step ("New session in webtickets, on Fable — …"), and only after the
+explicit yes calls `create_session` and then `run_prompt` straight away. The
+create's result text says so, so the two calls stay one gesture. Three reasons:
+every extra round trip is another transcription that can go wrong; creating on
+the way to a yes that never comes orphans an empty session and its worktree;
+and a session that has never run has no wrong-target risk, so early focus buys
+nothing. Explicitly asking for an empty session ("make me one in webtickets,
+I'll use it later") is itself the yes — it is a cheap, visible act.
+
+The new session is born `fullAuto` deliberately: there is no spoken approval, so
+any other mode would be refused at its own first dispatch. That does not move
+the consent gate, which was never the session's mode — it is the prompt, read
+back and agreed to out loud, and that read-back now names the new session too.
+On success the call focuses it and sends the `focus` frame, so it is on screen
+before anything is sent. The model argument is a **spoken family name**
+("fable", "opus"), resolved through `providers.Catalog.ResolveFamily` — the same
+catalog the picker renders, so a family somebody can choose on screen is one
+they can ask for out loud with no release in between. An unresolvable name comes
+back as `voice.UnknownModelError`, whose text names the families that do exist,
+and nothing is created; empty means the service's own default. Nothing is ever
+guessed into a model id.
 
 **The world snapshot is a view, never authority.** The merged multi-machine
 session list and the unread set exist only in the browser, so the client sends
@@ -459,7 +503,8 @@ the second thing said in one call; this is the structural answer.
 
 **The directory seam.** The voice package stays independent of the session
 pipeline: it sees the app through `voice.Directory`
-(orientation/list/brief/summarize), implemented in the server package
+(orientation/list/brief/summarize, plus list-projects/create-session),
+implemented in the server package
 (`voice_directory.go`) over `ListAllSessions`/`GetSessionInfo` and the
 summarizer. The system instruction opens with a one-paragraph orientation —
 counts and the names of sessions needing attention — built through the same
@@ -484,11 +529,27 @@ a transport one, so it is written against the specific failures:
   headings, no code, no file paths read aloud.
 - **Silence is not consent**, and neither is being told to skip the read-back.
 
-The model's only *acting* tool is `run_prompt`; the switchboard's other four
-(list, find, focus, summarize) look and never touch. It never runs anything
-itself: the prompt goes through `Dispatcher` to `Service.EnqueueMessage`, the
-same path the composer's send button uses. One route into the session pipeline
+The model's *acting* tools are `run_prompt` and `create_session`; the other five
+(list sessions, list projects, find, focus, summarize) look and never touch. It
+never runs anything itself: the prompt goes through `Dispatcher` to
+`Service.EnqueueMessage` and a new session through `Service.CreateSession`, the
+same paths the composer's controls use. One route into the session pipeline
 whether the gesture was a click or a sentence.
+
+**Help is instruction, not a tool.** Questions about the switchboard itself —
+what it can do, how to switch or start a session, why something was refused —
+are answered from what the instruction already holds, so a tool would buy
+nothing and cost a pause: the model is suspended for the whole of a tool call,
+and a question about the app would be the slowest thing in the conversation.
+The text carries the carve-out *inside* the never-answer rule, because read
+apart the two contradict and the model resolves that by drafting a prompt for
+"what can you do?" — a coding agent then reads the source to answer something
+that was one sentence away. It carries an explicit CANNOT list too (no
+approving, no work on another machine's sessions, no delete/archive/merge, no
+sending without the read-back and a yes, no costs), because a speech model with
+tools will otherwise offer all of those. A call that opened unfocused
+(`Briefing.InitialFocus` empty) may offer one line of orientation, once; one
+opened from a session skips it, since they pressed the button from there.
 
 Use the typed `Parameters` schema on the declaration, not
 `ParametersJsonSchema` — they are mutually exclusive and the Live API honours

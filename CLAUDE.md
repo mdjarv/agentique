@@ -607,7 +607,20 @@ speech model, so a slow handler is audible dead air. Anything computed (a
 session summary) answers immediately and injects the result later through
 `TextInjector` — with quotation framing, because a summary distills untrusted
 transcript content. The tool set is fixed at engine open; there is no adding
-one mid-call.
+one mid-call. Questions about the switchboard itself are answered from the
+system instruction, never a tool and never a `run_prompt` — the carve-out is
+worded inside the never-answer rule, because read apart the two contradict.
+
+**A session the call creates goes through `session.Service.CreateSession`**,
+the same path the composer's new-session flow takes, and only into a **local**
+project — creation is local because the service is. It is born `fullAuto`: any
+other mode would be refused at its own first dispatch, since there is no spoken
+approval. That does not move the consent gate, which was never the session's
+mode. Creation is deferred to the one yes that sends the prompt, and the
+dispatch read-back names the new session — so nothing exists until the operator
+has agreed to the work that goes in it. A spoken model name resolves through the
+picker's own catalog (`Catalog.ResolveFamily`); unresolvable names the families
+that exist and creates nothing, never a guessed model id.
 
 **The world snapshot is a view, never authority.** The browser sends the merged
 multi-machine session list as `world` frames because that merge exists only
