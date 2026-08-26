@@ -227,13 +227,26 @@ func matchesFilter(row SessionRow, filter string) bool {
 	}
 }
 
-// isLocal reports whether this machine owns the session, which is what decides
-// whether work can be started in it from this call.
-func (c *call) isLocal(sessionID string) bool {
-	if c.directory == nil || sessionID == "" {
-		return false
+// localRow looks a session up in this machine's own database. Whether it is
+// there is what decides if work can be started in it from this call: dispatch
+// goes through this server's session service, and a remote session's CLI,
+// worktree and transcript are somewhere else entirely.
+//
+// A call with no directory is the single-session call this feature grew out of:
+// it knows one session, the one it opened on, and that one is local.
+func (c *call) localRow(sessionID string) (SessionRow, bool) {
+	if sessionID == "" {
+		return SessionRow{}, false
 	}
-	_, ok := c.directory.SessionBrief(c.ctx(), sessionID)
+	if c.directory == nil {
+		return SessionRow{ID: sessionID}, true
+	}
+	return c.directory.SessionBrief(c.ctx(), sessionID)
+}
+
+// isLocal reports whether this machine owns the session.
+func (c *call) isLocal(sessionID string) bool {
+	_, ok := c.localRow(sessionID)
 	return ok
 }
 

@@ -103,6 +103,8 @@ func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
 		dispatcher: d,
 		focus:      focus,
 		follows:    make(map[string]*followState),
+		offered:    make(map[string]SessionRow),
+		summaries:  make(map[string]string),
 		log:        testLogger(),
 		runCtx:     context.Background(),
 	}

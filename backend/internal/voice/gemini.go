@@ -163,15 +163,11 @@ func liveConfig(systemInstruction string, persona Persona) *genai.LiveConnectCon
 		// supplied on reconnect.
 		SessionResumption: &genai.SessionResumptionConfig{},
 
-		// One tool: hand a finished prompt to the session that does the work.
-		// The speech model never runs anything itself.
-		Tools: []*genai.Tool{{
-			FunctionDeclarations: []*genai.FunctionDeclaration{{
-				Name:        ToolRunPrompt,
-				Description: runPromptDescription,
-				Parameters:  runPromptSchema(),
-			}},
-		}},
+		// The assistant's tools. Four of them look — list, find, focus,
+		// summarise — and exactly one starts work, down the same path the
+		// composer's send button uses. The speech model never runs anything
+		// itself.
+		Tools: []*genai.Tool{{FunctionDeclarations: toolDeclarations()}},
 	}
 	// The chosen voice is the audible half of the persona; the instruction is
 	// the other. An empty name leaves the backend's default rather than

@@ -470,18 +470,51 @@ func (c *call) handleToolCall(ev ToolCallEvent) {
 }
 
 // runTool executes the call and returns the model's result payload.
+//
+// Four of the five tools only look; one starts work. Every branch returns
+// something sayable, including the refusals — what comes back is what the
+// listener hears next.
 func (c *call) runTool(ev ToolCallEvent) map[string]any {
-	if ev.Name != ToolRunPrompt {
+	switch ev.Name {
+	case ToolRunPrompt:
+		return c.runPrompt(ev)
+	case ToolListSessions:
+		return c.toolListSessions(ev.Args)
+	case ToolFindSession:
+		return c.toolFindSession(ev.Args)
+	case ToolFocusSession:
+		return c.toolFocusSession(ev.Args)
+	case ToolSummarizeSession:
+		return c.toolSummarizeSession(ev.Args)
+	default:
 		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
 	}
-	return c.runPrompt(ev)
 }
 
 // runPrompt hands a drafted prompt to the call's focused session.
+//
+// It acts on the focus and nothing else. Which session that is has already been
+// said out loud — the read-back names it — so the tool never takes a session
+// argument and cannot be pointed somewhere the listener did not hear.
 func (c *call) runPrompt(ev ToolCallEvent) map[string]any {
 	target := c.currentFocus()
-	if c.dispatcher == nil || target == "" {
+	if c.dispatcher == nil {
 		return map[string]any{"error": "This call is not attached to a session, so there is nothing to hand work to."}
+	}
+	if target == "" {
+		return map[string]any{"error": "Nothing is focused yet — ask which session first."}
+	}
+	// A session on another machine can be looked at from here and nothing more:
+	// dispatch goes through *this* server's session service, and that CLI, that
+	// worktree and that transcript are somewhere else.
+	row, local := c.localRow(target)
+	if !local {
+		if known, ok := c.lookupRow(target); ok {
+			row = known
+		}
+		return map[string]any{"error": fmt.Sprintf("%q runs on %s, so work cannot be started there "+
+			"from this call. Tell the user that, and offer to hand this to a session on this "+
+			"machine instead.", displayFor(row), machineWords(row))}
 	}
 
 	prompt, _ := ev.Args["prompt"].(string)
@@ -521,7 +554,7 @@ func (c *call) runPrompt(ev ToolCallEvent) map[string]any {
 	// for that to land.
 	wasFollowing := c.following(target)
 	if stayOnLine {
-		c.follow(target, "")
+		c.follow(target, row.Name)
 	}
 
 	briefing := stayOnLine && c.needsBriefing(target)

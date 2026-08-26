@@ -126,6 +126,90 @@ func runPromptSchema() *genai.Schema {
 	}
 }
 
+// toolDeclarations is what the speech model is given at connect.
+//
+// Fixed for the call: a realtime session declares its tools when it connects,
+// and changing them means reconnecting mid-conversation. So the assistant
+// always has all five, and the ones that cannot be answered on this deployment
+// refuse in words rather than being absent.
+func toolDeclarations() []*genai.FunctionDeclaration {
+	return []*genai.FunctionDeclaration{
+		{
+			Name:        ToolRunPrompt,
+			Description: runPromptDescription,
+			Parameters:  runPromptSchema(),
+		},
+		{
+			Name: ToolListSessions,
+			Description: "List the user's sessions. Use it when they ask what is going on, what " +
+				"needs them, or what is running. The result is for you to summarise out loud, " +
+				"never to read out item by item.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"filter": {
+						Type: genai.TypeString,
+						Enum: []string{FilterNeedsAttention, FilterRunning, FilterRecent, FilterAll},
+						Description: "needs_attention: waiting on the user. running: a turn is in " +
+							"flight. recent: whatever was active last. all: everything.",
+					},
+				},
+				Required: []string{"filter"},
+			},
+		},
+		{
+			Name: ToolFindSession,
+			Description: "Find a session by what the user called it — its name, its project, or " +
+				"the machine it runs on. Spoken names arrive mangled, so pass what you heard and " +
+				"let this do the matching. It returns candidates and never picks one for you.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"query": {
+						Type: genai.TypeString,
+						Description: "What they called it, as close to their words as you can. " +
+							"A project or machine name alone is a fine query.",
+					},
+				},
+				Required: []string{"query"},
+			},
+		},
+		{
+			Name: ToolFocusSession,
+			Description: "Switch the conversation — and the user's screen — to one session. " +
+				"Everything after this, including " + ToolRunPrompt + ", acts on it. The id must " +
+				"come from " + ToolListSessions + " or " + ToolFindSession + "; never invent one. " +
+				"Say the session's full name as you switch.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"session_id": {
+						Type:        genai.TypeString,
+						Description: "The session id exactly as it was returned to you.",
+					},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name: ToolSummarizeSession,
+			Description: "Say what a session has been working on. Use it when they ask what " +
+				"something is doing or where it got to. It may answer that it is working on it, " +
+				"in which case say so briefly and wait — the summary arrives on its own.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"session_id": {
+						Type: genai.TypeString,
+						Description: "The session id, from " + ToolListSessions + " or " +
+							ToolFindSession + ". Leave empty for the one you are focused on.",
+					},
+				},
+			},
+		},
+	}
+}
+
 const runPromptDescription = "Hand a finished prompt to the coding agent so it starts work. " +
 	"Only call this after you have read the prompt back and been given an explicit yes — " +
 	"silence is not consent. Ask whether they want to stay on the line and pass the answer as " +
