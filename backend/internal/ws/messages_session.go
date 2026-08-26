@@ -204,6 +204,14 @@ type SessionUncommittedDiffPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// SessionDiscardFilePayload names one file to revert in a session's work tree.
+// Path is repo-relative and untrusted; the service checks it and requires it to
+// be a file git already reports as changed.
+type SessionDiscardFilePayload struct {
+	SessionID string `json:"sessionId"`
+	Path      string `json:"path"`
+}
+
 type SessionRefreshGitPayload struct {
 	SessionID string `json:"sessionId"`
 }
@@ -481,6 +489,13 @@ func (p *SessionUncommittedFilesPayload) Validate() error {
 }
 
 func (p *SessionUncommittedDiffPayload) Validate() error {
+	return validateSessionID(p.SessionID)
+}
+
+func (p *SessionDiscardFilePayload) Validate() error {
+	if p.Path == "" {
+		return errors.New("path is required")
+	}
 	return validateSessionID(p.SessionID)
 }
 

@@ -1,9 +1,21 @@
 import { ArrowDown, ArrowUp, CheckCircle2, FileX2, GitMerge, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import type { useProjectGitActions } from "~/hooks/git/useProjectGitActions";
-import type { DiffResult } from "~/lib/session/actions";
-import { cn } from "~/lib/utils";
+import { useWebSocket } from "~/hooks/useWebSocket";
+import { type DiffResult, discardSessionFile } from "~/lib/session/actions";
+import { cn, getErrorMessage } from "~/lib/utils";
 import type { ProjectGitStatus } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import type { SessionState } from "~/stores/chat-types";
@@ -58,7 +70,12 @@ export function ChangesView({
   expandFile,
   onExpandFileConsumed,
 }: ChangesViewProps) {
+  const ws = useWebSocket();
   const [scope, setScope] = useState<DiffScope>("session");
+  // The path awaiting confirmation. Discarding uncommitted work is the one
+  // irreversible thing in this view, so it never happens on the first click.
+  const [pendingDiscard, setPendingDiscard] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState(false);
   const [collapseAll, setCollapseAll] = useState(false);
   const [wrap, setWrap] = useState(false);
   const [subTab, setSubTab] = useState<SubTab>("files");
@@ -93,6 +110,20 @@ export function ChangesView({
     },
     [onQuoteToComposer],
   );
+
+  const confirmDiscard = useCallback(async () => {
+    if (!pendingDiscard) return;
+    setDiscarding(true);
+    try {
+      await discardSessionFile(ws, meta.id, pendingDiscard);
+      setPendingDiscard(null);
+      await git.handleRefreshGit();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to discard changes"));
+    } finally {
+      setDiscarding(false);
+    }
+  }, [ws, meta.id, pendingDiscard, git]);
 
   const truncated = (committedDiff?.truncated ?? false) || (uncommittedDiff?.truncated ?? false);
   const hasFiles = sessionFiles.length > 0 || (uncommittedDiff?.files.length ?? 0) > 0;
@@ -165,6 +196,7 @@ export function ChangesView({
                 wrap={wrap}
                 collapseAll={collapseAll}
                 {...(onQuoteToComposer ? { onQuote: handleQuote } : {})}
+                {...(scope === "working" ? { onDiscardFile: setPendingDiscard } : {})}
                 revealFile={expandFile ?? null}
                 {...(onExpandFileConsumed ? { onRevealConsumed: onExpandFileConsumed } : {})}
               />
@@ -200,6 +232,35 @@ export function ChangesView({
           </div>
         </>
       )}
+
+      <AlertDialog
+        open={pendingDiscard !== null}
+        onOpenChange={(open) => !open && setPendingDiscard(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes to this file?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-mono text-xs">{pendingDiscard}</span> goes back to its committed
+              state, or is deleted if it was never committed. There is no undo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                // Keep the dialog up while the discard runs, so a slow git call
+                // cannot read as "nothing happened".
+                event.preventDefault();
+                void confirmDiscard();
+              }}
+              disabled={discarding}
+            >
+              {discarding ? "Discarding\u2026" : "Discard"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

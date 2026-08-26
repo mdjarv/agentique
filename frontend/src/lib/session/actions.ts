@@ -449,6 +449,25 @@ export function getUncommittedDiff(ws: WsClient, sessionId: string): Promise<Dif
   return uncommittedDiffRpc(ws, { sessionId });
 }
 
+const discardFileRpc = define<UncommittedFilesResult, { sessionId: string; path: string }>(
+  "session.discard-file",
+);
+/**
+ * Throw away one file's uncommitted changes, restoring it to its committed
+ * state or deleting it if it was never committed.
+ *
+ * Irreversible — an uncommitted change has no reflog entry — so every caller
+ * confirms with a person first. The server refuses any path git does not
+ * already report as changed in this session.
+ */
+export function discardSessionFile(
+  ws: WsClient,
+  sessionId: string,
+  path: string,
+): Promise<UncommittedFilesResult> {
+  return discardFileRpc(ws, { sessionId, path });
+}
+
 export interface PRStatusResult {
   number: number;
   state: string; // OPEN, MERGED, CLOSED

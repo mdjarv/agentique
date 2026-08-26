@@ -248,6 +248,15 @@ func (c *conn) handleSessionUncommittedDiff(msg ClientMessage) {
 	})
 }
 
+// handleSessionDiscardFile reverts one file. Irreversible for uncommitted work,
+// so it is only ever reached from an explicit confirmation in the UI — never
+// from an agent, a schedule, or a voice call.
+func (c *conn) handleSessionDiscardFile(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionDiscardFilePayload) (session.UncommittedFilesResult, error) {
+		return c.gitSvc.DiscardFile(ctx, p.SessionID, p.Path)
+	})
+}
+
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
 	handleRequest(c, msg, func(ctx context.Context, p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(ctx, p.SessionID)

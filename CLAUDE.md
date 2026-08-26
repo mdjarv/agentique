@@ -350,6 +350,27 @@ section. One subject, one heading, two renderings.
 
 ### Subagent roster
 
+**Changes is one scroll, and its scope is picked rather than inferred.** Every
+changed file is a foldable section with a sticky header in a single column
+(`FileDiffList`); the file-list-beside-a-diff-pane arrangement is gone, and with
+it the separate mobile layout. The `session` scope is everything since the
+worktree's base commit and `working` is only what is uncommitted — and note that
+`session.diff` is a *working-tree-vs-base* diff, so it already carries
+uncommitted edits to tracked files and lacks only untracked ones.
+`filesForScope` is the one place that reconciles the two RPCs.
+
+**A diff selection drafts into the composer; it never sends.** Selecting lines
+and choosing "Ask about this" writes a fenced block with the path, range and
+enclosing hunk into the composer and stops — the same contract the live call
+honours. Lines are addressed by delegation from the container, never one button
+per line, or a long diff becomes a wall of tab stops in front of the composer.
+
+**Discarding a file is allowlisted, not merely validated.** `session.discard-file`
+refuses any path git does not already report as changed for that session;
+`gitops.SafeRelativePath` runs as well, but it is the allowlist that makes the
+operation safe. It is offered only in the `working` scope, only behind a
+confirmation, and is reachable by no agent, schedule or voice call.
+
 **Only subagents are in the roster.** The CLI carries three unrelated things on
 one `task` stream — a subagent, a backgrounded shell command, a workflow — told
 apart solely by `taskType`, and background shells outnumber agents roughly forty

@@ -51,6 +51,71 @@ view nobody stumbles into.
 `availableDockViews` computes the set; **nothing else may decide a tab's
 existence**, or two surfaces will disagree about what a session has.
 
+## Changes is one scroll, not two panes
+
+`Files` renders every changed file in a single column, each one a foldable
+section with a header that sticks while you read its diff (`FileDiffList`,
+`FileDiffSection`). There is no file list beside a diff pane any more.
+
+The pane model needed width the dock does not have. At 380px the list took
+three quarters of the column and the diff read through a slot; the mobile sheet
+needed a whole second arrangement with a "Back to files" step. One column asks
+nothing of the layout and reads the same docked, maximized and on a phone.
+
+Files fold themselves once a change touches more than `COLLAPSE_ALL_ABOVE` of
+them, because a scroll that opens on forty expanded diffs is not a list of what
+changed. Folds are keyed by scope and reset when it changes — a fold is an
+opinion about the files you were looking at.
+
+**The scope is picked, not inferred.** `session` is everything since the
+worktree's base commit; `working` is only what is not committed yet. The old
+view merged both into one list where uncommitted silently overrode committed,
+so a file that was committed *and* then edited appeared once, under whichever
+label won, and neither question could be asked. The choice appears only for a
+worktree session: without a base commit the two scopes are the same diff under
+two names.
+
+Note what the RPCs actually return, because the names mislead: `session.diff` is
+a **working-tree-vs-base** diff, so it already contains uncommitted edits to
+tracked files and lacks only untracked ones. `filesForScope` is where that is
+reconciled — the session scope is the session diff plus the untracked files the
+uncommitted diff found.
+
+## A diff selection drafts; it never sends
+
+Click a line, shift-click another, and "Ask about this" writes the range into
+the composer as a fenced `diff` block with the path, the line numbers and the
+enclosing hunk header — then stops. Same contract the live call honours
+(`docs/voice.md`): one path into the session pipeline, and it is the send button
+the reader can see.
+
+Lines are addressed by **delegation** from the container rather than by making
+each line a button: a 2000-line diff would otherwise put 2000 tab stops in front
+of the composer. Keyboard readers get the file-level actions from the row menu,
+which are reachable, and Escape clears a selection made by pointer. The action
+bar renders under the last selected line, never at the end of the patch, and
+never floating — in a narrow column a floating bar covers the code it is about.
+
+Only one file holds a selection at a time. Two selections would mean two answers
+to "ask about this", and the composer takes one thing at a time.
+
+## Discarding a file is allowlisted, not just validated
+
+`session.discard-file` is the one irreversible thing the view can do — an
+uncommitted change has no reflog entry — so it is offered only in the
+`working` scope, only from a row's own menu, and only behind a confirmation.
+
+The path is untrusted. `gitops.SafeRelativePath` refuses traversal before the
+path reaches a git argument list, but **the allowlist is what makes it safe**:
+the path must already appear in git's own list of changed files for that
+session, so a path git does not report as changed cannot be discarded whatever
+it points at. What "discard" means then follows from the status git reported —
+restore from HEAD, drop a staged addition, clean an untracked file, or undo
+*both halves* of a rename, since porcelain reports one as a single
+`old -> new` entry and undoing half of it leaves two copies.
+
+Nothing else reaches it: not an agent, not a schedule, not a voice call.
+
 ## Three things ride one task stream
 
 The provider CLI reports a subagent, a backgrounded shell command and a workflow

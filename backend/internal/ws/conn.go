@@ -238,6 +238,7 @@ var handlerRegistry = map[string]handlerFunc{
 	"session.commit-log":              (*conn).handleSessionCommitLog,
 	"session.uncommitted-files":       (*conn).handleSessionUncommittedFiles,
 	"session.uncommitted-diff":        (*conn).handleSessionUncommittedDiff,
+	"session.discard-file":            (*conn).handleSessionDiscardFile,
 	"session.pr-status":               (*conn).handleSessionPRStatus,
 	"session.enqueue":                 (*conn).handleSessionEnqueue,
 
