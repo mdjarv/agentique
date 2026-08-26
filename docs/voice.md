@@ -8,11 +8,18 @@ does the work. The agent never runs the coding job and never sends the message.
 
 The feature is gated by `[experimental] voice`. The call belongs to the app,
 not to a session: it is owned by the frontend's `voice-store` and survives
-navigation, the sidebar's voice dock (desktop) and the floating bubble (mobile)
-are its surfaces, and the composer's Live button is a shortcut that opens the
-same call with that session as its initial focus. From there you converse, it
-drafts, reads back naming the target, dispatches, follows the runs, and tells
-you what happened.
+navigation, the sidebar's voice dock (desktop) and the caption strip above the
+composer (mobile) are its surfaces, and the composer's Live button is a
+shortcut that opens the same call with that session as its initial focus. From
+there you converse, it drafts, reads back naming the target, dispatches,
+follows the runs, and tells you what happened.
+
+On the phone the session owns the screen and the call is a caption under it:
+the strip carries what is being recognised right now, what the call is working
+on, and which session it is pointed at, with hanging up one thumb-reach away.
+Tapping it opens the log as a sheet — the room rather than the line — and the
+sheet closes itself when the call focuses somewhere else, because the point of
+focusing is to put that session on screen and a sheet is in front of it.
 
 ## Shape
 

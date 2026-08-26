@@ -1,7 +1,7 @@
 /**
  * The words a call is described in.
  *
- * One module, because the rail dock, the phone bubble and the sheet all report
+ * One module, because the rail dock, the phone strip and the sheet all report
  * the same call: a call that says "hung up after silence" in one place and
  * "closed: idle" in another is two calls to the reader.
  */

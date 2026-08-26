@@ -541,7 +541,7 @@ silence), and an announced undo window.
 
 **The call is the app's, not a session's.** `?sessionId=` is only the *initial*
 focus; the call outlives navigation (it is owned by `voice-store`, never a
-component), and the sidebar dock / mobile bubble are its surfaces. **Dispatch is
+component), and the sidebar dock / mobile caption strip are its surfaces. **Dispatch is
 focus-only and the screen follows the voice**: `run_prompt` has no session
 parameter — to send anywhere the model must `focus_session` first, which emits
 the `focus` frame and navigates the calling tab, so the target is on screen

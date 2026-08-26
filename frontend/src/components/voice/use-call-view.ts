@@ -1,7 +1,7 @@
 /**
  * What both docks show about the call.
  *
- * Store reads live here so the rail bar and the phone bubble cannot drift into
+ * Store reads live here so the rail card and the phone strip cannot drift into
  * describing the same call two different ways. Every selector returns a
  * primitive or a value the store already holds — never a fresh array, which
  * would re-render forever (CLAUDE.md).
@@ -87,8 +87,6 @@ export interface CallView {
   detail: string | undefined;
   /** True while the call is on screen at all — connecting, live, broken or over. */
   active: boolean;
-  /** True only while audio is actually flowing, which is what the meter needs. */
-  live: boolean;
   /** True once the call is over and waiting to be dismissed or replaced. */
   ended: boolean;
   /** Name of the session the call is working with, or null when it has none. */
@@ -147,7 +145,6 @@ export function useCallView(): CallView {
     status,
     detail,
     active: status !== "idle",
-    live: status === "live",
     ended: status === "ended",
     focusName,
     activityLabel,
