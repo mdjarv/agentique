@@ -12,6 +12,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
+import { type NeedsYouKind, needsYou } from "~/lib/session/needs-you";
 import { deriveRestToken, type RestToken } from "~/lib/session/rest-state";
 import type { Project } from "~/lib/types";
 import { useAppStore } from "~/stores/app-store";
@@ -20,9 +21,10 @@ import { usePulseStore } from "~/stores/pulse-store";
 
 /**
  * Why a card is on the deck. Ordered: the two that hold a process come before
- * the one that only holds the operator's curiosity.
+ * the one that only holds the operator's curiosity. The rule itself lives in
+ * `lib/session/needs-you.ts`, shared with the voice call's world snapshot.
  */
-export type DeckKind = "approval" | "question" | "unread";
+export type DeckKind = NeedsYouKind;
 
 const KIND_RANK: Record<DeckKind, number> = { approval: 0, question: 1, unread: 2 };
 
@@ -71,15 +73,6 @@ function approvalSummary(data: SessionData): string {
   return command ? `${approval.toolName} · ${command}` : approval.toolName;
 }
 
-function deckKind(data: SessionData): DeckKind | null {
-  if (data.pendingApproval) return "approval";
-  if (data.pendingQuestion) return "question";
-  // A running session's completion is the *previous* turn's — it is not
-  // waiting to be read, it is being superseded.
-  if (data.hasUnseenCompletion && data.meta.state !== "running") return "unread";
-  return null;
-}
-
 function lastActivity(meta: SessionData["meta"]): number {
   const ts = meta.lastQueryAt || meta.updatedAt || meta.createdAt;
   const ms = ts ? Date.parse(ts) : 0;
@@ -118,7 +111,7 @@ export function useDeckRows(): DeckRows {
         lastActivity: lastActivity(meta),
       };
 
-      const kind = deckKind(data);
+      const kind = needsYou(data);
       if (kind) {
         needs.push({
           ...identity,
