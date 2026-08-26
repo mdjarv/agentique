@@ -46,6 +46,10 @@ type wireVoiceSettings struct {
 	Verbosity   string `json:"verbosity,omitempty"`
 	// ConfigModel is read-only: what a blank Model falls back to on this host.
 	ConfigModel string `json:"configModel,omitempty"`
+	// DefaultVoice is read-only: which voice a blank VoiceName actually uses.
+	// The page can then mark that suggestion rather than saying "Default" and
+	// leaving the operator to find out by calling.
+	DefaultVoice string `json:"defaultVoice,omitempty"`
 	// Voices are suggestions, not a closed set — the field accepts anything,
 	// because the upstream list grows between agentique releases.
 	Voices []wireVoiceOption `json:"voices,omitempty"`
@@ -65,7 +69,7 @@ type wireVoiceOption struct {
 // list, so a voice added upstream tomorrow is usable today by typing its name.
 // Pinning an enum here would make a new voice need an agentique release.
 var suggestedVoices = []wireVoiceOption{
-	{Value: "", Label: "Default", Hint: "whatever the backend picks"},
+	{Value: "", Label: "Default", Hint: "uses " + voice.DefaultVoiceName},
 	{Value: "Puck", Label: "Puck", Hint: "bright, quick"},
 	{Value: "Charon", Label: "Charon", Hint: "low, measured"},
 	{Value: "Kore", Label: "Kore", Hint: "even, neutral"},
@@ -105,13 +109,14 @@ func (h *voiceSettingsHandler) Persona(ctx context.Context) voice.Persona {
 func (h *voiceSettingsHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	persona := h.Persona(r.Context()).Sanitize()
 	httperror.JSON(w, http.StatusOK, wireVoiceSettings{
-		VoiceName:   persona.VoiceName,
-		Model:       persona.Model,
-		Personality: persona.Personality,
-		Verbosity:   string(persona.Verbosity),
-		ConfigModel: h.configModel,
-		Voices:      suggestedVoices,
-		Verbosities: verbosityOptions,
+		VoiceName:    persona.VoiceName,
+		Model:        persona.Model,
+		Personality:  persona.Personality,
+		Verbosity:    string(persona.Verbosity),
+		ConfigModel:  h.configModel,
+		DefaultVoice: voice.DefaultVoiceName,
+		Voices:       suggestedVoices,
+		Verbosities:  verbosityOptions,
 	})
 }
 

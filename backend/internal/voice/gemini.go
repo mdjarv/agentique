@@ -170,14 +170,15 @@ func liveConfig(systemInstruction string, persona Persona) *genai.LiveConnectCon
 		Tools: []*genai.Tool{{FunctionDeclarations: toolDeclarations()}},
 	}
 	// The chosen voice is the audible half of the persona; the instruction is
-	// the other. An empty name leaves the backend's default rather than
-	// guessing at a value that may not exist upstream.
-	if persona.VoiceName != "" {
-		cfg.SpeechConfig = &genai.SpeechConfig{
-			VoiceConfig: &genai.VoiceConfig{
-				PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{VoiceName: persona.VoiceName},
+	// the other. An unset name means DefaultVoiceName rather than whatever the
+	// vendor currently defaults to: that default moves between model releases,
+	// and the voice is most of how this feature comes across.
+	cfg.SpeechConfig = &genai.SpeechConfig{
+		VoiceConfig: &genai.VoiceConfig{
+			PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{
+				VoiceName: firstNonEmptyString(persona.VoiceName, DefaultVoiceName),
 			},
-		}
+		},
 	}
 	if systemInstruction != "" {
 		cfg.SystemInstruction = &genai.Content{

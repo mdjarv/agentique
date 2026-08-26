@@ -13,6 +13,19 @@ import (
 // competing with the real one.
 const maxPersonality = 1200
 
+// DefaultVoiceName is the voice a call uses when the operator has not chosen
+// one.
+//
+// A choice, not a fallback to whatever the backend happens to pick. The
+// vendor's default changes between model releases, so leaving it unset meant
+// the product's voice could change without anyone deciding to — and the voice
+// is most of how this feature comes across. The settings page reports this name
+// so "Default" says what it will actually sound like.
+//
+// It stays a name rather than an enum for the model-catalog reason: the list of
+// voices grows between agentique releases.
+const DefaultVoiceName = "Aoede"
+
 // Verbosity is how much the agent says.
 //
 // It is separate from the free-text traits because it is the one trait with a
@@ -63,7 +76,7 @@ func (v Verbosity) instruction() string {
 type Persona struct {
 	// VoiceName is the speech backend's prebuilt voice. Free text, because the
 	// set of voices grows between agentique releases and pinning an enum here
-	// would make a new one need a release. Empty = the backend's default.
+	// would make a new one need a release. Empty = [DefaultVoiceName].
 	VoiceName string
 	// Model overrides the realtime model id. Empty = the [voice] config value.
 	Model string

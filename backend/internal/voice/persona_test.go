@@ -101,3 +101,22 @@ func TestVerbosityChangesTheInstruction(t *testing.T) {
 		t.Error("detailed must still forbid lists and code")
 	}
 }
+
+// An unset voice is a choice, not a shrug. The vendor's own default moves
+// between model releases, and the voice is most of how this feature comes
+// across — so leaving it unset must still land on a named voice.
+func TestUnsetVoiceUsesTheDefaultVoice(t *testing.T) {
+	cfg := liveConfig("", Persona{}.Sanitize())
+	if cfg.SpeechConfig == nil || cfg.SpeechConfig.VoiceConfig == nil ||
+		cfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig == nil {
+		t.Fatal("no voice was configured at all")
+	}
+	if got := cfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName; got != DefaultVoiceName {
+		t.Errorf("voice = %q, want %q", got, DefaultVoiceName)
+	}
+
+	chosen := liveConfig("", Persona{VoiceName: "Puck"}.Sanitize())
+	if got := chosen.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName; got != "Puck" {
+		t.Errorf("voice = %q, want the operator's choice to win", got)
+	}
+}
