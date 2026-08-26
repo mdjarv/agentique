@@ -383,8 +383,10 @@ cleared.
 - The session badge takes the worst across that session's schedules, ranked below
   approval and question in the priority cascade.
 
-**Schedule-origin results are second-class in the ambient signal layer.** They do
-not set unseen-completion unless the run resolved `action_needed` or `error`, do
+**Schedule-origin results are second-class in the ambient signal layer.** They
+never set unseen-completion (the server's turn-completion mark and the client's
+optimistic one both skip schedule-origin turns — schedule attention has its own
+badge channel), do
 not bump the Active-section sort key, and their per-fire activity items coalesce
 ("Deploy check, 12 runs, all ok"). Without this, every result bolds the row and an
 hourly loop pins itself permanently to the top of Active, killing the "what

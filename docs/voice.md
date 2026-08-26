@@ -1,24 +1,32 @@
 # Live voice
 
-Spoken dialog in the composer. A conversational agent works out *what to ask*
-with the operator, drafts the prompt, and hands it to the session that does the
-work. The agent never runs the coding job and never sends the message.
+A spoken interface to agentique — the switchboard. A conversational agent works
+out *what to ask* with the operator, and it can see the state of the app: list
+the sessions that need attention, resolve a spoken name, put a session on
+screen, summarize it, then draft the prompt and hand it to the session that
+does the work. The agent never runs the coding job and never sends the message.
 
-The feature is gated by `[experimental] voice`. The loop is closed end to end:
-the composer's Live button opens a call bound to that session, and from there
-you converse, it drafts, reads back, dispatches, follows the run, and tells you
-what happened.
+The feature is gated by `[experimental] voice`. The call belongs to the app,
+not to a session: it is owned by the frontend's `voice-store` and survives
+navigation, the sidebar's voice dock (desktop) and the floating bubble (mobile)
+are its surfaces, and the composer's Live button is a shortcut that opens the
+same call with that session as its initial focus. From there you converse, it
+drafts, reads back naming the target, dispatches, follows the runs, and tells
+you what happened.
 
 ## Shape
 
 ```
 Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶ Engine (speech model)
-                                                    │
-                                          run_prompt │ Dispatcher
-                                                    ▼
-                                          Service.EnqueueMessage ──▶ the session
-                                                    │
-                     VoiceReport (agent) + Notice (runtime) ──▶ back to the call
+   │                                                │
+   │ world / viewing ──▶ call: focus + follow set   │ tools: list_sessions,
+   │ ◀── focus (the screen navigates) ──────────────┘ find_session, focus_session,
+   │                                                  summarize_session, run_prompt
+   │                                      run_prompt │ Dispatcher (focus only)
+   │                                                 ▼
+   │                                      Service.EnqueueMessage ──▶ the session
+   │                                                 │
+   │                 VoiceReport (agent) + Notice (runtime) ──▶ back to the call
 ```
 
 Two participants, not three:
@@ -221,10 +229,11 @@ That deletes the entire inference layer: no event subscription, no debouncer, no
 salience model, no second copy of the priority rule. `ScheduleReport` is the
 same shape doing the same job for scheduled loops.
 
-`Registry` routes a report to the calls following that session. A call binds
-with the `follow` control message and holds at most one session at a time; the
-binding is released when the call closes, so a dead socket stops looking like a
-listener.
+`Registry` routes a report to the calls following that session. A call follows
+every session it has dispatched into with someone staying on the line — a
+follow *set*, not a single binding — and each report or notice is spoken with
+the session named, so two live runs cannot be confused. All bindings are
+released when the call closes, so a dead socket stops looking like a listener.
 
 ### What the worker cannot report
 
@@ -319,8 +328,9 @@ Three things are settable:
 
 - **Voice** — the backend's prebuilt voice, reaching `SpeechConfig`. Free text
   with suggestions, never an enum: the upstream list grows between agentique
-  releases, and pinning one would make a new voice need a release. Empty leaves
-  the backend's default.
+  releases, and pinning one would make a new voice need a release. Empty
+  resolves to `DefaultVoiceName` (Aoede) — a chosen default rather than
+  whatever the backend ships, so a fresh install sounds deliberate.
 - **Verbosity** — brief, balanced or detailed. This one *is* a closed set,
   because it is ours. Unrecognised values resolve to brief: everything said is
   spoken aloud, often to someone driving, so the safe end is the fallback.
@@ -348,6 +358,74 @@ personality can otherwise imitate the section headings of the instruction it is
 embedded in — and it runs at the storage boundary, so nothing downstream has to
 remember to.
 
+## The switchboard
+
+The call holds one **focus** — the session work would go to — and a **follow
+set** — the sessions it has dispatched into. `?sessionId=` on the socket URL is
+only the *initial* focus; a call opened without one starts unfocused and can
+still answer questions.
+
+**Dispatch is focus-only, and the screen follows the voice.** `run_prompt` has
+no session parameter: to send anywhere the model must call `focus_session`
+first, which moves the call's focus, sends the `focus` control frame, and the
+calling tab navigates there (`useVoiceFocusNavigation`). So the target is on
+screen before any yes can be given, and the read-back names it ("To Live Voice
+Dialog: …"). This is the safety contract extended to a target chosen by voice
+rather than fixed by the URL. It is one-way: manual navigation never retargets
+the call — the client sends a `viewing` frame, which the server injects as a
+data-framed note the model may *ask* about ("switch to what you're looking
+at?"), and never acts on silently. `focus_session` accepts only ids the call
+was actually offered (a find/list result, the initial focus, a viewing note),
+so the model cannot focus an id it hallucinated.
+
+**Tools answer from what the server already holds.** The speech model is paused
+until a tool call is answered, so a slow handler is audible dead air. The tool
+set is fixed at engine open (`LiveConnectConfig`); there is no adding one
+mid-call. `list_sessions` and `find_session` read held state; `focus_session`
+is one DB read plus a frame; `summarize_session` answers immediately and
+injects the result through `TextInjector` when the local summarizer delivers —
+with quotation framing (`summaryRelayPreamble`), because a summary distills
+untrusted transcript content. Focusing a local session warms its summary in the
+background so the likely next question is already answered.
+
+**The world snapshot is a view, never authority.** The merged multi-machine
+session list and the unread set exist only in the browser, so the client sends
+them as `world` frames (after `ready`, then coalesced on change, capped at 200
+rows, every field clamped server-side). Listing and name resolution merge the
+snapshot with the local DB — the DB wins for local rows. Dispatch re-checks the
+local DB every time: a snapshot row can make the assistant *say* things, never
+*do* things. Remote sessions are listed and focusable like any other; a
+`run_prompt` on one refuses naming the machine, because dispatch and the report
+registry are local — a remote run would report into nothing. Routed dispatch
+remains the multi-machine routing facade's feature, not the voice socket's.
+
+**Resolution never guesses.** `find_session` (match.go) does normalized fuzzy
+matching over name, project and machine — built for transcription mangling
+("live voice dialogue" finds "Live Voice Dialog") — and returns up to five
+ranked candidates with disambiguators and a `top_is_clear` flag. A clear winner
+is confirmed by full name while focusing; several candidates become a spoken
+question naming what distinguishes them. Ambiguity costs one exchange, never a
+wrong-target dispatch.
+
+**Per-call state is only the focus.** Everything else that spans requests is
+per-session: the follow set (a "no" to staying never releases an existing
+follow), the reporting briefing (each session is taught once — a per-call flag
+would leave the second session reporting into silence), the in-flight bit. The
+phase is *derived* — working iff any followed run is in flight — never toggled
+by events. Reports and notices are spoken with the session named, so two live
+runs cannot be confused. Both shipped voice bugs were per-call state broken by
+the second thing said in one call; this is the structural answer.
+
+**The directory seam.** The voice package stays independent of the session
+pipeline: it sees the app through `voice.Directory`
+(orientation/list/brief/summarize), implemented in the server package
+(`voice_directory.go`) over `ListAllSessions`/`GetSessionInfo` and the
+summarizer. The system instruction opens with a one-paragraph orientation —
+counts and the names of sessions needing attention — built through the same
+seam, so "do I have unread sessions?" is answered before the first tool call.
+Unread itself is server state since the switchboard
+(`sessions.unseen_completed_at`, cleared by `session.markSeen`; see CLAUDE.md).
+
 ## The drafter
 
 `SystemInstruction` turns the speech model into a drafter, and it carries most
@@ -365,10 +443,11 @@ a transport one, so it is written against the specific failures:
   headings, no code, no file paths read aloud.
 - **Silence is not consent**, and neither is being told to skip the read-back.
 
-The model gets exactly one tool, `run_prompt`. It never runs anything itself:
-the prompt goes through `Dispatcher` to `Service.EnqueueMessage`, the same path
-the composer's send button uses. One route into the session pipeline whether the
-gesture was a click or a sentence.
+The model's only *acting* tool is `run_prompt`; the switchboard's other four
+(list, find, focus, summarize) look and never touch. It never runs anything
+itself: the prompt goes through `Dispatcher` to `Service.EnqueueMessage`, the
+same path the composer's send button uses. One route into the session pipeline
+whether the gesture was a click or a sentence.
 
 Use the typed `Parameters` schema on the declaration, not
 `ParametersJsonSchema` — they are mutually exclusive and the Live API honours
@@ -512,15 +591,14 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 - **The handoff question.** The call always stays open; it never asks "shall I
   stay on the line, or ping you when it's done?". Answering "ping me" would end
   the call and notify instead — a real saving, since only an open call bills.
-- **Recent transcript is not in the context.** The drafter gets the session's
-  identity and the project's CLAUDE.md, but not what the session has been doing,
-  so it cannot pick up a thread mid-conversation.
-- **A call is local-only.** The voice socket opens against the origin serving
-  the page, and dispatch goes through *that* server's session service, so a
-  session on a paired machine cannot be handed work. The Live button is hidden
-  there rather than failing after a whole conversation. Making it work means
-  routing the call to the owning machine, which is the multi-machine routing
-  facade's problem, not the voice socket's.
+- **Dispatch is local-only.** A paired machine's sessions are listed, resolved,
+  focused and navigated to like any other (they arrive in the world snapshot),
+  but `run_prompt` on one refuses naming the machine: dispatch goes through
+  *this* server's session service and the report registry is local, so a remote
+  run would report into nothing. The composer's Live button stays hidden on
+  remote sessions for the same reason — a call opened there could never send.
+  Routed dispatch is the multi-machine routing facade's feature, not the voice
+  socket's.
 - **The confirming phase is a prompt rule, not a state.** The read-back and its
   affirmative are enforced by the system instruction — and hold up well in
   testing — but nothing in the call machinery would stop a model that ignored

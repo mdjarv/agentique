@@ -246,10 +246,15 @@ on the overview. Grey stays the shelf's and Archived's language: both render
 
 The deck's "Needs you" band holds all three reasons a session waits on the
 operator — approval, question, unread completion — ordered so the two that hold
-a process come first. Unread is client-only state (`hasUnseenCompletion`, set
-when a result lands in a tab that is not viewing that session), so it does not
-survive a reload; treat an empty band as "nothing arrived while you watched",
-not "nothing is unread".
+a process come first. Unread is **server state**: `sessions.unseen_completed_at`
+is set at turn completion (schedule-origin turns never set it), cleared only by
+the `session.markSeen` RPC, and rides the wire as the optional
+`unseenCompletedAt`. The client keeps an optimistic set in `apply-event.ts` for
+snappiness, reconciled by pushes through `readUnseenCompletedAt` in
+`wire-compat.ts` — which is deliberately three-valued: an absent field from a
+peer that has never spoken it means "not reported", never "not unread"
+(`serverSpeaksUnseen` in `chat-store.ts`). Viewing a session is what clears it;
+nothing else does — archiving or merging leaves the mark in place.
 
 ### Wire compatibility across peers
 
@@ -489,6 +494,41 @@ through `ComposerTextareaHandle` and stops. One path into the session pipeline,
 the visible send button. Hands-free does not change that contract, only the
 confirmation channel: spoken verbatim readback, an explicit affirmative (never
 silence), and an announced undo window.
+
+**The call is the app's, not a session's.** `?sessionId=` is only the *initial*
+focus; the call outlives navigation (it is owned by `voice-store`, never a
+component), and the sidebar dock / mobile bubble are its surfaces. **Dispatch is
+focus-only and the screen follows the voice**: `run_prompt` has no session
+parameter — to send anywhere the model must `focus_session` first, which emits
+the `focus` frame and navigates the calling tab, so the target is on screen
+before any yes, and the read-back names it. Manual navigation never retargets
+the call; a `viewing` frame is data the model may *ask* about, never a switch.
+Focus changes go one way for the same reason "no" never means "stop": an idle
+click must not move where "send it" lands.
+
+**Tools answer from what the server already holds.** A tool call pauses the
+speech model, so a slow handler is audible dead air. Anything computed (a
+session summary) answers immediately and injects the result later through
+`TextInjector` — with quotation framing, because a summary distills untrusted
+transcript content. The tool set is fixed at engine open; there is no adding
+one mid-call.
+
+**The world snapshot is a view, never authority.** The browser sends the merged
+multi-machine session list as `world` frames because that merge exists only
+client-side; the call stores it for listing and name resolution. Dispatch
+re-checks the local DB every time — a snapshot row can make the assistant *say*
+things, never *do* things. Remote sessions are listed and focusable; `run_prompt`
+on one refuses naming the machine, because the report registry is local and a
+remote run would report into nothing. `find_session` ranks and returns
+candidates, it never picks — ambiguity costs a spoken question, not a
+wrong-target dispatch.
+
+**Per-call state is only the focus.** Everything else that spans requests is
+per-session — the follow *set*, the briefing flag, the in-flight bit — and the
+phase is *derived* (working iff any followed run is in flight), never toggled.
+Both shipped voice bugs were per-call state broken by the second thing said in
+one call; do not add another `bool` to `call` without asking which session it
+belongs to.
 
 **The worker reports; a watcher does not infer.** Salience belongs to the agent
 that knows it just found the tests were already broken, not to something reading
