@@ -88,6 +88,16 @@ const landed: AgentRun[] = [
     toolUses: 5,
     durationMs: 41_000,
   },
+  {
+    toolUseId: "tu_8",
+    title: "Sweep the worktrees for stale locks",
+    state: "stopped",
+    preview: "Interrupted after the second pass.",
+    steps: [],
+    totalTokens: 4_100,
+    toolUses: 3,
+    durationMs: 18_000,
+  },
 ];
 
 const inFlight: AgentRun[] = [
@@ -168,14 +178,10 @@ function Panel({ label, children }: { label: string; children: React.ReactNode }
 function TabBarRow(props: {
   hasAgents?: boolean;
   agentsRunning?: number;
-  agentsFailed?: number;
   hasLoops?: boolean;
   loopsAttention?: LoopBadgeState | null;
 }) {
-  const agents: AgentBadgeState = {
-    running: props.agentsRunning ?? 0,
-    failed: props.agentsFailed ?? 0,
-  };
+  const agents: AgentBadgeState = { running: props.agentsRunning ?? 0 };
   const views: DockView[] = props.hasLoops ? ["work", "loops"] : ["work"];
   return (
     <div className="flex h-10 items-center gap-2 px-2">
@@ -183,12 +189,7 @@ function TabBarRow(props: {
         views={views}
         active="work"
         marks={{
-          work:
-            agents.running > 0
-              ? { kind: "live", count: agents.running }
-              : agents.failed > 0
-                ? { kind: "failed", count: agents.failed }
-                : null,
+          work: agents.running > 0 ? { kind: "live", count: agents.running } : null,
           loops: props.loopsAttention
             ? props.loopsAttention.kind === "blocked"
               ? { kind: "blocked", count: props.loopsAttention.count }
@@ -217,13 +218,13 @@ function DevAgents() {
 
         <div className="grid gap-4 md:grid-cols-3">
           <Panel label="Badge — 3 running">
-            <TabBarRow hasAgents agentsRunning={3} agentsFailed={0} />
+            <TabBarRow hasAgents agentsRunning={3} />
           </Panel>
-          <Panel label="Badge — 1 failed this turn">
-            <TabBarRow hasAgents agentsRunning={0} agentsFailed={1} />
+          <Panel label="Badge — 1 running">
+            <TabBarRow hasAgents agentsRunning={1} />
           </Panel>
-          <Panel label="Badge — idle (silent)">
-            <TabBarRow hasAgents agentsRunning={0} agentsFailed={0} />
+          <Panel label="Badge — idle (silent, failures included)">
+            <TabBarRow hasAgents agentsRunning={0} />
           </Panel>
         </div>
 
@@ -301,7 +302,7 @@ function DevAgents() {
                 todos={devTodos}
                 runs={runs}
                 workflowEvents={[]}
-                badge={{ running: inFlight.length, failed: 0 }}
+                badge={{ running: inFlight.length }}
               />
             </div>
           </Panel>
@@ -311,19 +312,14 @@ function DevAgents() {
                 todos={devTodos}
                 runs={turnScopedRuns}
                 workflowEvents={[]}
-                badge={{ running: 1, failed: 0 }}
+                badge={{ running: 1 }}
                 latestTurnIndex={9}
               />
             </div>
           </Panel>
           <Panel label="Dock — Work, nothing yet">
             <div className="flex h-[30rem] flex-col">
-              <WorkSections
-                todos={null}
-                runs={[]}
-                workflowEvents={[]}
-                badge={{ running: 0, failed: 0 }}
-              />
+              <WorkSections todos={null} runs={[]} workflowEvents={[]} badge={{ running: 0 }} />
             </div>
           </Panel>
         </div>

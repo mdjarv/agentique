@@ -51,11 +51,35 @@ view nobody stumbles into.
 `availableDockViews` computes the set; **nothing else may decide a tab's
 existence**, or two surfaces will disagree about what a session has.
 
+## Three things ride one task stream
+
+The provider CLI reports a subagent, a backgrounded shell command and a workflow
+as the same kind of event, distinguished only by `taskType`
+(`local_agent` / `local_bash` / `local_workflow`). Only the first is a subagent,
+and in a long session the second outnumbers it roughly forty to one — a session
+that ran `make check` in the background all afternoon and spawned two agents had
+sixty-odd rows, sixty of which were shell commands wearing an agent's row.
+
+`isSubagentRun` decides membership **once per run**, from two signals:
+
+- the run's **sticky** `taskType` — the first non-empty one seen for that tool
+  use, because older CLIs stamp it on `task_started` and leave it empty on every
+  later event. Judged per event, a workflow's terminal notification arrives
+  untyped, misses the exclusion, and invents a roster row for a workflow that
+  `WorkflowActivity` is already rendering properly.
+- the **spawning tool call's name**, which is ground truth when a task carries
+  no type at all: a background shell's task points at `Bash`, an agent's at
+  `Agent`/`Task`.
+
+Unknown on both counts is excluded. Every `task_started` the CLI writes today
+carries a type, so the ambiguous case is old history, and a stray background
+command is a worse row than a missing one.
+
 ## Workflow is not a peer of Agents
 
 A workflow's agents are not `AgentRun`s. They ride the workflow's own
 `task_progress` events as `WorkflowProgressEntry` values, carrying a phase, a
-label and a state but **no report and no narration**; `collectAgentRuns` skips
+label and a state but **no report and no narration**; `collectAgentRuns` drops
 `local_workflow` deliberately so the synthetic workflow task does not sit in the
 roster pretending to be an agent.
 
@@ -79,6 +103,28 @@ Runs still streaming carry no `turnIndex`; they belong to the latest turn, and
 the fallback in `scopeAgentRuns` puts them there. Attributing them to "earlier"
 would fold away the very agents the dock exists for.
 
+## A failed subagent is not the operator's problem
+
+The Agents badge reports agents **in flight**, and nothing else
+(`agentBadgeState`). A subagent that failed does not raise it, and neither does
+the collapsed dock's aggregate mark.
+
+The parent session reads the failure and acts on it — usually by trying again,
+often within seconds. Raising it to the operator said "this session needs you"
+about a turn that was proceeding fine, which is the way to teach someone to stop
+reading badges. The outcome is not hidden: the row still carries its mark for
+anyone who opens Work, and the footer still counts it.
+
+`stopped`, `killed` and `cancelled` are a **state of their own**, never `failed`.
+The CLI reports them when the agent shut a run down on purpose — the dev server
+it started for a screenshot, the tail it no longer needs — and roughly half of
+everything previously painted red was that. A grey dot and the word "Stopped"
+report it honestly.
+
+Loops are the other way round and keep their failure mark: an auto-paused
+schedule stops running until a person acts, so it is worth interrupting for
+(`loopBadgeState`, and the `failed` branch of `dockAlertState`).
+
 ## Collapsing costs information, so the toggle carries one mark
 
 Per-tab badges go dark when the dock shuts. `dockAlertState` compensates with a
@@ -88,7 +134,7 @@ single aggregate on the toggle, ranked the way the app ranks everything else
 **One mark, never a summary.** A button trying to report three states at once
 reports none of them. The glyphs are the sidebar's (`ThreadRow`): X is "it
 failed", the triangle is "someone is waiting on you", a pulsing dot is live
-activity.
+activity. Here `failed` can only be a paused loop; see above.
 
 ## State is per session, and therefore versioned
 

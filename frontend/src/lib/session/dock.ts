@@ -86,6 +86,11 @@ export function legacyTabToDock(tab: string | undefined): DockView | null {
  *
  * One mark, never a summary. A toggle that tries to report three states at
  * once reports none of them.
+ *
+ * `failed` here means a **loop** that auto-paused, never a subagent. An agent
+ * that failed is the session's problem and the session handles it
+ * (`agentBadgeState`); a paused schedule stops running until a person acts,
+ * which is what makes it worth interrupting for.
  */
 export type DockAlertKind = "blocked" | "failed" | "live";
 
@@ -100,7 +105,6 @@ export function dockAlertState(
   loops: LoopBadgeState | null,
 ): DockAlert | null {
   if (loops?.kind === "blocked") return { kind: "blocked", count: loops.count };
-  if (agents.failed > 0) return { kind: "failed", count: agents.failed };
   if (loops?.kind === "paused") return { kind: "failed", count: loops.count };
   if (agents.running > 0) return { kind: "live", count: agents.running };
   return null;

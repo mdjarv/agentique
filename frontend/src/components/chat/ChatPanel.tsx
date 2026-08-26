@@ -179,11 +179,6 @@ export function ChatPanel({
     compacting,
   } = useSessionState(sessionId);
   const agentRuns = useAgentRuns(sessionId);
-  // A failure marker clears on whichever comes first: opening the tab, or the
-  // session moving to a new turn. `agentBadgeState` owns the second rule; this
-  // holds the first. Keyed by session so switching sessions cannot carry one
-  // session's "already seen" over to another.
-  const [seenFailure, setSeenFailure] = useState<{ session: string; turn: number } | null>(null);
   const [flightExpanded, setFlightExpanded] = useState(false);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   // Schedules targeting this session (loops). Element refs are stable in the
@@ -223,12 +218,8 @@ export function ChatPanel({
   const setDockMaximized = useUIStore((s) => s.setDockMaximized);
 
   const latestTurnIndex = turns[turns.length - 1]?.turnIndex;
-  const seenFailureTurn = seenFailure?.session === sessionId ? seenFailure.turn : undefined;
   const agentFlight = useMemo(() => partitionAgentRuns(agentRuns), [agentRuns]);
-  const agentBadge = useMemo(
-    () => agentBadgeState(agentRuns, latestTurnIndex, seenFailureTurn),
-    [agentRuns, latestTurnIndex, seenFailureTurn],
-  );
+  const agentBadge = useMemo(() => agentBadgeState(agentRuns), [agentRuns]);
   // No local seen-state: the server owns when a loop's attention clears
   // (`schedule.mark-viewed`, sent by LoopsPanel), and a failed loop
   // deliberately survives being looked at.
@@ -560,14 +551,12 @@ export function ChatPanel({
     work:
       agentBadge.running > 0
         ? { kind: "live", count: agentBadge.running }
-        : agentBadge.failed > 0
-          ? { kind: "failed", count: agentBadge.failed }
-          : hasTodos && todos
-            ? {
-                kind: "count",
-                label: `${todos.filter((t) => t.status === "completed").length}/${todos.length}`,
-              }
-            : null,
+        : hasTodos && todos
+          ? {
+              kind: "count",
+              label: `${todos.filter((t) => t.status === "completed").length}/${todos.length}`,
+            }
+          : null,
     changes: changesMark,
     loops: loopsAttention
       ? loopsAttention.kind === "blocked"
@@ -579,9 +568,6 @@ export function ChatPanel({
   const selectDockView = (view: DockView) => {
     openDock(sessionId, view);
     onDockChange?.(view);
-    // A failure marker clears on whichever comes first: opening Work, or the
-    // session starting a new turn. `agentBadgeState` owns the second rule.
-    if (view === "work") setSeenFailure({ session: sessionId, turn: latestTurnIndex ?? 0 });
   };
   const closeDock = () => {
     setDockOpen(sessionId, false);
@@ -614,12 +600,7 @@ export function ChatPanel({
   ) : null;
 
   const dockBody = !activeDockView ? null : activeDockView === "work" ? (
-    <WorkView
-      sessionId={sessionId}
-      todos={todos}
-      latestTurnIndex={latestTurnIndex}
-      seenFailureTurn={seenFailureTurn}
-    />
+    <WorkView sessionId={sessionId} todos={todos} latestTurnIndex={latestTurnIndex} />
   ) : activeDockView === "changes" ? (
     <ChangesView
       meta={meta}

@@ -11,8 +11,6 @@ interface WorkViewProps {
   todos: TodoItem[] | null;
   /** Scopes the roster: landed this turn shows, older folds away. */
   latestTurnIndex?: number;
-  /** Turn whose agent failures the user has already seen — see `agentBadgeState`. */
-  seenFailureTurn?: number;
 }
 
 /**
@@ -28,7 +26,7 @@ interface WorkViewProps {
  * This reads the store; `WorkSections` renders. The fold happens in `useMemo`
  * over referentially-stable `turns`/`streamingEvents`, never inside a selector.
  */
-export function WorkView({ sessionId, todos, latestTurnIndex, seenFailureTurn }: WorkViewProps) {
+export function WorkView({ sessionId, todos, latestTurnIndex }: WorkViewProps) {
   const runs = useAgentRuns(sessionId);
   const turns = useChatStore((s) => s.sessions[sessionId]?.turns);
   const streamingEvents = useChatStore((s) => s.sessions[sessionId]?.streamingEvents);
@@ -36,10 +34,7 @@ export function WorkView({ sessionId, todos, latestTurnIndex, seenFailureTurn }:
     () => collectLatestWorkflow(turns, streamingEvents),
     [turns, streamingEvents],
   );
-  const badge = useMemo(
-    () => agentBadgeState(runs, latestTurnIndex, seenFailureTurn),
-    [runs, latestTurnIndex, seenFailureTurn],
-  );
+  const badge = useMemo(() => agentBadgeState(runs), [runs]);
 
   return (
     <WorkSections

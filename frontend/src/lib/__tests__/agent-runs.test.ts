@@ -220,7 +220,7 @@ describe("collectAgentRuns", () => {
     });
   });
 
-  it("treats a non-completed terminal status as failed", () => {
+  it("treats an error status as failed", () => {
     const runs = collectAgentRuns(
       [
         turn([
@@ -232,6 +232,44 @@ describe("collectAgentRuns", () => {
     );
 
     expect(runs[0]?.state).toBe("failed");
+  });
+
+  it.each(["stopped", "killed", "cancelled", "canceled", "aborted"])(
+    "reports %s as stopped, not failed",
+    (status) => {
+      const runs = collectAgentRuns(
+        [
+          turn([
+            spawn("tu_1", { description: "Shut down on purpose" }),
+            task("tu_1", { taskSubtype: "task_notification", taskStatus: status }),
+          ]),
+        ],
+        undefined,
+      );
+
+      expect(runs[0]?.state).toBe("stopped");
+    },
+  );
+
+  it("drops a preview that only repeats the title", () => {
+    // Background task streams set `summary` to the description verbatim; a row
+    // that prints itself twice is noise, not an outcome.
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "Run make check" }),
+          task("tu_1", {
+            taskSubtype: "task_notification",
+            taskStatus: "completed",
+            taskSummary: "Run make check",
+          }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs[0]?.title).toBe("Run make check");
+    expect(runs[0]?.preview).toBeUndefined();
   });
 
   it("keeps metrics from the newest event that carries them", () => {
@@ -265,6 +303,74 @@ describe("collectAgentRuns", () => {
     );
 
     expect(runs.map((r) => r.toolUseId)).toEqual(["tu_1"]);
+  });
+
+  it("keeps the exclusion when only task_started carried the type", () => {
+    // Older CLIs stamp `taskType` on task_started and leave it empty on every
+    // later event. Judged per event, the terminal notification slips through
+    // and invents a roster row for a workflow the workflow panel already shows.
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_wf", { description: "Run the workflow" }),
+          task("tu_wf", { taskSubtype: "task_started", taskType: "local_workflow" }),
+          task("tu_wf", { taskSubtype: "task_notification", taskStatus: "completed" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs).toEqual([]);
+  });
+
+  it("excludes backgrounded shell commands", () => {
+    // A long session runs dozens of these and no subagents at all; they are the
+    // transcript's business, not the roster's.
+    const bash: ChatEvent = {
+      id: "tu_bash",
+      type: "tool_use",
+      toolId: "tu_bash",
+      toolName: "Bash",
+      toolInput: { command: "make check", description: "Run make check" },
+    };
+    const runs = collectAgentRuns(
+      [
+        turn([
+          bash,
+          task("tu_bash", {
+            taskSubtype: "task_started",
+            taskType: "local_bash",
+            taskDescription: "Run make check",
+          }),
+          task("tu_bash", { taskSubtype: "task_notification", taskStatus: "killed" }),
+          spawn("tu_1", { description: "A real agent" }),
+          task("tu_1", { taskSubtype: "task_started", taskType: "local_agent" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs.map((r) => r.toolUseId)).toEqual(["tu_1"]);
+  });
+
+  it("admits a typeless task whose spawn is an Agent call", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "No taskType anywhere" }),
+          task("tu_1", { taskSubtype: "task_started" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(runs.map((r) => r.toolUseId)).toEqual(["tu_1"]);
+  });
+
+  it("excludes a task with neither a type nor a known spawn", () => {
+    const runs = collectAgentRuns([turn([task("tu_orphan", { taskSubtype: "task_started" })])], []);
+
+    expect(runs).toEqual([]);
   });
 
   it("includes agents still streaming in the live turn, spawn order preserved", () => {
@@ -323,7 +429,27 @@ describe("agentRunTotals", () => {
       undefined,
     );
 
-    expect(agentRunTotals(runs)).toEqual({ running: 1, done: 1, failed: 1, totalTokens: 15 });
+    expect(agentRunTotals(runs)).toEqual({
+      running: 1,
+      done: 1,
+      failed: 1,
+      stopped: 0,
+      totalTokens: 15,
+    });
+  });
+
+  it("counts stopped runs apart from failed ones", () => {
+    const runs = collectAgentRuns(
+      [
+        turn([
+          spawn("tu_1", { description: "a" }),
+          task("tu_1", { taskSubtype: "task_notification", taskStatus: "killed" }),
+        ]),
+      ],
+      undefined,
+    );
+
+    expect(agentRunTotals(runs)).toMatchObject({ stopped: 1, failed: 0, done: 0 });
   });
 });
 
@@ -510,7 +636,7 @@ describe("agentBadgeState", () => {
       ["done", 1],
       ["done", 2],
     ]);
-    expect(agentBadgeState(runs, 2)).toEqual({ running: 0, failed: 0 });
+    expect(agentBadgeState(runs)).toEqual({ running: 0 });
   });
 
   it("counts agents still out, never the lifetime total", () => {
@@ -520,45 +646,31 @@ describe("agentBadgeState", () => {
       ["running", 2],
       ["running", 2],
     ]);
-    expect(agentBadgeState(runs, 2).running).toBe(2);
+    expect(agentBadgeState(runs).running).toBe(2);
   });
 
-  it("raises failures from the latest turn", () => {
+  it("stays silent about a failed subagent, which the session handles itself", () => {
     const runs = runsWith([
       ["failed", 4],
       ["failed", 4],
       ["done", 4],
     ]);
-    expect(agentBadgeState(runs, 4)).toEqual({ running: 0, failed: 2, failedTurn: 4 });
+    expect(agentBadgeState(runs)).toEqual({ running: 0 });
   });
 
-  it("clears a failure once the session moves to a new turn", () => {
-    const runs = runsWith([["failed", 4]]);
-    expect(agentBadgeState(runs, 5).failed).toBe(0);
+  it("stays silent about a stopped subagent", () => {
+    expect(agentBadgeState(runsWith([["stopped", 4]]))).toEqual({ running: 0 });
   });
 
-  it("clears a failure once the tab has been opened on that turn", () => {
-    const runs = runsWith([["failed", 4]]);
-    expect(agentBadgeState(runs, 4, 4).failed).toBe(0);
-    // A later turn failing again is a new fact, not the seen one.
-    expect(agentBadgeState(runsWith([["failed", 5]]), 5, 4).failed).toBe(1);
-  });
-
-  it("attributes streaming runs to the turn they are part of", () => {
-    const runs = runsWith([["failed", undefined]]);
-    expect(agentBadgeState(runs, 7)).toEqual({ running: 0, failed: 1, failedTurn: 7 });
-    expect(agentBadgeState(runs, 7, 7).failed).toBe(0);
-  });
-
-  it("only counts failures from the newest failing turn", () => {
+  it("still counts an agent that is out while another failed", () => {
     const runs = runsWith([
-      ["failed", 3],
       ["failed", 4],
+      ["running", 4],
     ]);
-    expect(agentBadgeState(runs, 4)).toEqual({ running: 0, failed: 1, failedTurn: 4 });
+    expect(agentBadgeState(runs)).toEqual({ running: 1 });
   });
 
   it("says nothing at all for a session with no agents", () => {
-    expect(agentBadgeState([], 3)).toEqual({ running: 0, failed: 0 });
+    expect(agentBadgeState([])).toEqual({ running: 0 });
   });
 });

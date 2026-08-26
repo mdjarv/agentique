@@ -350,19 +350,35 @@ section. One subject, one heading, two renderings.
 
 ### Subagent roster
 
+**Only subagents are in the roster.** The CLI carries three unrelated things on
+one `task` stream — a subagent, a backgrounded shell command, a workflow — told
+apart solely by `taskType`, and background shells outnumber agents roughly forty
+to one. `isSubagentRun` judges a run **once**, from its sticky `taskType` plus
+its spawning tool name, never per event: older CLIs stamp `taskType` on
+`task_started` and leave it empty afterwards, so a per-event rule lets a
+workflow's terminal notification through and invents a row for it. Unknown on
+both counts is excluded — a stray `make check` is a worse row than a missing one.
+
 A badge is a claim on attention, so it carries only facts that can still be
 acted on and returns to nothing when there are none. Todos resets each
-`TodoWrite`; Changes clears on commit. The Agents badge shows agents **in flight**
-plus failures **from the latest turn the user has not opened Work on**, never a
-lifetime spawn count, which only grows and trains you to stop reading it. Both
-clears matter (`agentBadgeState`): a failure marker goes away on whichever comes
-first, Work being opened or the session starting a new turn.
+`TodoWrite`; Changes clears on commit. The Agents badge shows agents **in
+flight** and nothing else (`agentBadgeState`) — never a lifetime spawn count,
+and deliberately **not** failures. A subagent that failed is the session's
+problem, not the operator's: the parent reads the outcome and usually retries,
+so raising it said "this needs you" about a turn that was proceeding fine. The
+row still carries the outcome for anyone who opens Work.
+
+`stopped`/`killed`/`cancelled` are their own state, never `failed`. The CLI
+reports them when the agent shut a run down on purpose, and painting that red
+teaches the reader to ignore red. A preview identical to the row's title is
+dropped rather than printed twice.
 
 Collapsing the dock is the one gesture that costs information, since the per-tab
 badges go with it. `dockAlertState` compensates with **one** aggregate mark on
 the toggle, ranked as `lib/session/priority.ts` ranks everything: waiting-on-you,
 then failed, then live. Never a summary — a control reporting three states at
-once reports none of them.
+once reports none of them. Its `failed` means a **loop** that auto-paused, which
+stays paused until a person acts; agent failures never reach it.
 
 Live flight status is *not* behind a tab. `AgentFlightStrip` renders the same
 runs at three densities: `rail` (chips), `board` (cards, top of the Agents

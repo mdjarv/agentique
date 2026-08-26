@@ -1,4 +1,4 @@
-import { Bot, ListTodo, X } from "lucide-react";
+import { Bot, ListTodo } from "lucide-react";
 import { useState } from "react";
 import { AgentsView } from "~/components/chat/AgentsView";
 import { DockSection } from "~/components/chat/dock/DockSection";
@@ -73,7 +73,7 @@ export function WorkSections({
         <DockSection
           icon={<Bot className="size-3.5" />}
           title="Agents"
-          mark={<AgentsMark running={badge.running} failed={badge.failed} />}
+          mark={<AgentsMark running={badge.running} />}
           open={agentsOpen}
           onToggle={() => setAgentsOpen((v) => !v)}
           grow
@@ -93,23 +93,17 @@ export function WorkSections({
   );
 }
 
-/** Same rule as the tab badge: state that can be acted on, never a lifetime tally. */
-function AgentsMark({ running, failed }: { running: number; failed: number }) {
-  if (running > 0) {
-    return (
-      <span className="flex items-center gap-1" title={`${running} still out`}>
-        <span className="size-1.5 rounded-full bg-agent motion-safe:animate-pulse" />
-        <span className="font-medium text-[10px] text-agent tabular-nums">{running}</span>
-      </span>
-    );
-  }
-  if (failed > 0) {
-    return (
-      <span className="flex items-center gap-0.5 text-destructive" title={`${failed} failed`}>
-        <X className="size-3" />
-        <span className="font-medium text-[10px] tabular-nums">{failed}</span>
-      </span>
-    );
-  }
-  return null;
+/**
+ * Same rule as the tab badge: agents still out, and nothing else. A failed
+ * subagent is the session's to handle, not the operator's — see
+ * `agentBadgeState`.
+ */
+function AgentsMark({ running }: { running: number }) {
+  if (running === 0) return null;
+  return (
+    <span className="flex items-center gap-1" title={`${running} still out`}>
+      <span className="size-1.5 rounded-full bg-agent motion-safe:animate-pulse" />
+      <span className="font-medium text-[10px] text-agent tabular-nums">{running}</span>
+    </span>
+  );
 }

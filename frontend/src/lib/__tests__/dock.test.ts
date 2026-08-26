@@ -15,7 +15,7 @@ const NOTHING: DockAvailability = {
   loops: false,
   browser: false,
 };
-const quiet: AgentBadgeState = { running: 0, failed: 0 };
+const quiet: AgentBadgeState = { running: 0 };
 
 describe("availableDockViews", () => {
   it("keeps the declared order regardless of which views exist", () => {
@@ -83,26 +83,19 @@ describe("dockAlertState", () => {
     expect(dockAlertState(quiet, null)).toBeNull();
   });
 
-  it("ranks waiting-on-you above a failure", () => {
-    expect(dockAlertState({ running: 0, failed: 3 }, blocked)).toEqual({
+  it("ranks waiting-on-you above a paused loop", () => {
+    expect(dockAlertState({ running: 3 }, blocked)).toEqual({
       kind: "blocked",
       count: 2,
     });
   });
 
-  it("ranks a failure above something merely live", () => {
-    expect(dockAlertState({ running: 4, failed: 1 }, null)).toEqual({ kind: "failed", count: 1 });
-  });
-
-  it("treats a paused loop as a failure, below an agent failure", () => {
-    expect(dockAlertState({ running: 0, failed: 2 }, paused)).toEqual({
-      kind: "failed",
-      count: 2,
-    });
+  it("ranks a paused loop above something merely live", () => {
+    expect(dockAlertState({ running: 4 }, paused)).toEqual({ kind: "failed", count: 1 });
     expect(dockAlertState(quiet, paused)).toEqual({ kind: "failed", count: 1 });
   });
 
   it("reports live agents when nothing worse is happening", () => {
-    expect(dockAlertState({ running: 2, failed: 0 }, null)).toEqual({ kind: "live", count: 2 });
+    expect(dockAlertState({ running: 2 }, null)).toEqual({ kind: "live", count: 2 });
   });
 });

@@ -7,7 +7,15 @@ import type {
   Turn,
 } from "~/stores/chat-types";
 
-export type AgentRunState = "running" | "done" | "failed";
+/**
+ * What became of a run.
+ *
+ * `stopped` is deliberately not `failed`: the CLI reports `stopped`/`killed`
+ * when *the agent itself* shut a run down — the dev server it started for a
+ * screenshot, the tail it no longer needs. Nothing went wrong, and painting it
+ * red taught the reader to ignore red.
+ */
+export type AgentRunState = "running" | "done" | "failed" | "stopped";
 
 /**
  * One subagent spawned by this session, folded from the three event streams
@@ -63,6 +71,35 @@ export interface AgentRun {
 /** Tool names that spawn a subagent. Providers disagree on the label. */
 const AGENT_TOOL_NAMES = new Set(["Agent", "Task"]);
 
+/**
+ * The CLI carries three unrelated things on one `task` stream — a subagent, a
+ * backgrounded shell command, and a workflow — and `taskType` is the only thing
+ * that tells them apart. A session that ran `make check` in the background
+ * forty times has forty of these; none of them is an agent.
+ */
+const AGENT_TASK_TYPE = "local_agent";
+const NON_AGENT_TASK_TYPES = new Set(["local_bash", "local_workflow"]);
+
+/**
+ * Whether a run belongs in the subagent roster, judged once per run rather than
+ * per event.
+ *
+ * Both signals are needed. `taskType` is stamped on `task_started` but older
+ * CLIs leave it empty on every later event, so a rule applied per event lets a
+ * workflow's terminal notification through and invents a row for it. And the
+ * spawning tool call is the ground truth when a task carries no type at all:
+ * a background shell's task points at a `Bash` call, an agent's at `Agent`.
+ *
+ * Unknown on both counts means excluded. Every `task_started` the CLI writes
+ * today carries a type, so the ambiguous case is old history — and a stray
+ * background command is a worse row than a missing one.
+ */
+function isSubagentRun(taskType: string | undefined, toolName: string | undefined): boolean {
+  if (taskType === AGENT_TASK_TYPE) return true;
+  if (taskType !== undefined && NON_AGENT_TASK_TYPES.has(taskType)) return false;
+  return toolName !== undefined && AGENT_TOOL_NAMES.has(toolName);
+}
+
 function readInput(input: unknown): Record<string, unknown> {
   return input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 }
@@ -103,9 +140,14 @@ function resultText(result: ToolResultEvent | AgentResultEvent | undefined): str
   return undefined;
 }
 
+const DONE_STATUSES = new Set(["completed", "success"]);
+/** Shut down on purpose — an outcome, but never an incident. */
+const STOPPED_STATUSES = new Set(["stopped", "killed", "cancelled", "canceled", "aborted"]);
+
 function runState(tasks: readonly TaskEvent[], hasResult: boolean): AgentRunState {
   const status = tasks.findLast((t) => t.taskSubtype === "task_notification")?.taskStatus;
-  if (status === "completed" || status === "success") return "done";
+  if (status !== undefined && DONE_STATUSES.has(status)) return "done";
+  if (status !== undefined && STOPPED_STATUSES.has(status)) return "stopped";
   if (status !== undefined && status !== "in_progress") return "failed";
   // A tool result without a notification still means the spawn returned — the
   // parent agent cannot continue until it does.
@@ -114,9 +156,11 @@ function runState(tasks: readonly TaskEvent[], hasResult: boolean): AgentRunStat
 
 /**
  * Fold a session's events into its subagent roster, oldest spawn first.
- * Workflow tasks are excluded — they have their own panel, and the single
- * synthetic task representing a workflow would otherwise sit in the roster
- * pretending to be an agent.
+ *
+ * Only subagents. Background shell commands and workflows ride the same task
+ * stream and are dropped by `isSubagentRun` — the first because they are the
+ * transcript's business and outnumber real agents roughly forty to one, the
+ * second because `WorkflowActivity` already renders them properly.
  *
  * Callers should `useMemo` this over the session's `turns` + `streamingEvents`
  * (both referentially stable between store updates) — never call it inside a
@@ -126,7 +170,12 @@ export function collectAgentRuns(
   turns: Turn[] | undefined,
   streamingEvents: ChatEvent[] | undefined,
 ): AgentRun[] {
+  // Every top-level tool call, not only the spawns: a task's tool name is half
+  // of what decides whether the task is an agent at all.
   const spawns = new Map<string, { use: ToolUseEvent; turnIndex?: number }>();
+  // First non-empty `taskType` seen for a run. Sticky, because only
+  // `task_started` reliably carries one.
+  const taskTypeByToolUse = new Map<string, string>();
   const results = new Map<string, ToolResultEvent>();
   const tasksByToolUse = new Map<string, TaskEvent[]>();
   const stepsByToolUse = new Map<string, ChatEvent[]>();
@@ -158,7 +207,7 @@ export function collectAgentRuns(
       steps.push(ev);
       return;
     }
-    if (ev.type === "tool_use" && AGENT_TOOL_NAMES.has(ev.toolName)) {
+    if (ev.type === "tool_use") {
       spawns.set(ev.toolId, { use: ev, turnIndex });
       return;
     }
@@ -167,7 +216,9 @@ export function collectAgentRuns(
       return;
     }
     if (ev.type !== "task" || !ev.toolUseId) return;
-    if (ev.taskType === "local_workflow") return;
+    if (ev.taskType && !taskTypeByToolUse.has(ev.toolUseId)) {
+      taskTypeByToolUse.set(ev.toolUseId, ev.taskType);
+    }
     if (ev.taskId) toolUseIdByTaskId.set(ev.taskId, ev.toolUseId);
     let list = tasksByToolUse.get(ev.toolUseId);
     if (!list) {
@@ -195,6 +246,7 @@ export function collectAgentRuns(
   for (const toolUseId of order) {
     const tasks = tasksByToolUse.get(toolUseId) ?? [];
     const spawn = spawns.get(toolUseId);
+    if (!isSubagentRun(taskTypeByToolUse.get(toolUseId), spawn?.use.toolName)) continue;
     const input = readInput(spawn?.use.toolInput);
     const started = tasks.find((t) => t.taskSubtype === "task_started");
     const result = results.get(toolUseId);
@@ -212,19 +264,17 @@ export function collectAgentRuns(
     // is the same text with its middle cut out. The roster promises the whole
     // report, so it reads the copy that still is one.
     const report = agentReportByToolUse.get(toolUseId) ?? resultText(result);
+    const flatTitle = flattenPreview(title);
+    const preview = summary ? flattenPreview(summary) : report ? flattenPreview(report) : undefined;
     runs.push({
       toolUseId,
-      title: flattenPreview(title),
+      title: flatTitle,
       agentType: asText(input.subagent_type),
       state,
-      preview:
-        state === "running"
-          ? undefined
-          : summary
-            ? flattenPreview(summary)
-            : report
-              ? flattenPreview(report)
-              : undefined,
+      // A preview that repeats the title says nothing twice. Some task streams
+      // set `summary` to the description verbatim, and a row that prints itself
+      // over again reads as noise rather than as an outcome.
+      preview: state === "running" || preview === flatTitle ? undefined : preview,
       report: state === "running" ? undefined : report,
       steps: stepsByToolUse.get(toolUseId) ?? [],
       lastToolName: latestString(tasks, (t) => t.lastToolName),
@@ -311,72 +361,46 @@ export function oldestFlightElapsedMs(
 }
 
 export interface AgentBadgeState {
+  /** Agents still out. The only fact the badge raises. */
   running: number;
-  /**
-   * Failures the badge should still be raising. Zero unless they are in the
-   * session's latest turn and the user has not opened the tab since.
-   */
-  failed: number;
-  /** Turn the live failures belong to — feed back as `seenTurn` once seen. */
-  failedTurn?: number;
 }
 
-const NO_BADGE: AgentBadgeState = { running: 0, failed: 0 };
+const NO_BADGE: AgentBadgeState = { running: 0 };
 
 /**
- * What the Agents tab badge should say right now.
+ * What the Agents badge should say right now: how many agents are out, and
+ * nothing else.
  *
- * A lifetime count is never the answer: the badge is a claim on attention, so
- * it carries only the two facts that can still be acted on — agents out, and
- * failures from the current turn. A failure marker clears on whichever comes
- * first, the user opening the tab (`seenTurn`) or the session moving to a new
- * turn; that is why both indices are parameters rather than derived here.
+ * A subagent that failed is deliberately *not* here. A badge is a claim on the
+ * operator's attention, and a failed subagent is not the operator's to deal
+ * with — the session that spawned it reads the failure and decides, usually by
+ * trying again. Raising it said "this session needs you" about a turn that was
+ * proceeding fine. The row still carries the outcome for anyone who opens Work;
+ * what changed is that it no longer interrupts.
  *
- * Runs from the live stream have no `turnIndex` yet, so they are attributed to
- * `latestTurnIndex` — the turn they are, in fact, part of.
+ * Loops are the other way round and keep their failure mark: an auto-paused
+ * schedule stays paused until a person acts (`loopBadgeState`).
  */
-export function agentBadgeState(
-  runs: readonly AgentRun[],
-  latestTurnIndex?: number,
-  seenTurn?: number,
-): AgentBadgeState {
+export function agentBadgeState(runs: readonly AgentRun[]): AgentBadgeState {
   if (runs.length === 0) return NO_BADGE;
 
   let running = 0;
-  let failedTurn: number | undefined;
-  let failed = 0;
-
   for (const run of runs) {
-    if (run.state === "running") {
-      running += 1;
-      continue;
-    }
-    if (run.state !== "failed") continue;
-    const turn = run.turnIndex ?? latestTurnIndex ?? 0;
-    if (failedTurn === undefined || turn > failedTurn) {
-      failedTurn = turn;
-      failed = 1;
-    } else if (turn === failedTurn) {
-      failed += 1;
-    }
+    if (run.state === "running") running += 1;
   }
-
-  if (failedTurn === undefined) return { running, failed: 0 };
-
-  const stale = failedTurn < (latestTurnIndex ?? failedTurn);
-  if (stale || failedTurn === seenTurn) return { running, failed: 0 };
-  return { running, failed, failedTurn };
+  return { running };
 }
 
 export interface AgentRunTotals {
   running: number;
   done: number;
   failed: number;
+  stopped: number;
   totalTokens: number;
 }
 
 export function agentRunTotals(runs: readonly AgentRun[]): AgentRunTotals {
-  const totals: AgentRunTotals = { running: 0, done: 0, failed: 0, totalTokens: 0 };
+  const totals: AgentRunTotals = { running: 0, done: 0, failed: 0, stopped: 0, totalTokens: 0 };
   for (const run of runs) {
     totals[run.state] += 1;
     totals.totalTokens += run.totalTokens;

@@ -128,6 +128,7 @@ export function AgentsView({
         <span>
           {totals.done} done
           {totals.running > 0 && ` · ${totals.running} running`}
+          {totals.stopped > 0 && ` · ${totals.stopped} stopped`}
           {totals.failed > 0 && ` · ${totals.failed} failed`}
         </span>
         {totals.totalTokens > 0 && (
@@ -142,12 +143,15 @@ const stateDotClass: Record<AgentRun["state"], string> = {
   running: "bg-agent animate-pulse",
   done: "bg-success",
   failed: "bg-destructive",
+  // Grey, because being shut down on purpose is not an incident.
+  stopped: "bg-muted-foreground-faint",
 };
 
 const stateLabel: Record<AgentRun["state"], string> = {
   running: "Running",
   done: "Done",
   failed: "Failed",
+  stopped: "Stopped",
 };
 
 /**
