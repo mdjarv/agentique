@@ -515,6 +515,26 @@ Every control the header carries is carried on **both** layouts. The dock toggle
 lived only in the desktop branch once, which left the mobile sheet reachable by
 nothing but a `?dock=` link — and took the dock's aggregate live mark with it.
 
+**The branch gets one control, and it names the verb the branch needs.** Merge
+and rebase are not two options for one job: merge applies when the branch is
+*ahead*, rebase when it is *behind*. Being behind with nothing committed yet is
+ordinary, so rebase can never live inside merge's dropdown — there would be no
+merge control to open. `lib/session/branch-sync.ts` is the one closed union that
+decides, read by the desktop header, the mobile strip and the dock's
+`GitStatusBar`; before it, each computed its own eligibility and they disagreed
+(the header counted `merging` as busy, the Changes bar did not, so it offered a
+rebase while one was already running).
+
+Colour says what a body click does, on both layouts: **orange acts, green opens
+a menu.** On a diverged branch the control is a split — Rebase on the body,
+merge behind the caret — and that demotion is the design, not a compromise: the
+server's merge is `--ff-only`, so merging a branch that is behind can only ever
+answer `needs_rebase`. Conflicts outrank both verbs and the control becomes
+"Resolve", which hands the named files to the agent through
+`resolveConflictsPrompt` — the same prompt the Changes tab has always sent, now
+spelled once. Rebase auto-commits the worktree server-side before replaying;
+that is invisible everywhere else, so the tooltip is where it gets said.
+
 Dock badges share the sidebar's glyph vocabulary (`ThreadRow`), because one mark
 must mean one thing across surfaces: **X is "it failed", the triangle is
 "someone is waiting on you"**, and a pulse means live activity, never

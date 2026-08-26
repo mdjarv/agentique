@@ -13,6 +13,7 @@ import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { branchSync } from "~/lib/session/branch-sync";
 import { cn } from "~/lib/utils";
 import type { ProjectGitStatus } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -45,7 +46,13 @@ export function GitStatusBar({
   const hasUncommitted = !!git.uncommittedFiles && git.uncommittedFiles.length > 0;
   const uncommittedCount = git.uncommittedFiles?.length ?? 0;
   const projectDirty = !!projectGitStatus && projectGitStatus.uncommittedCount > 0;
-  const canRebase = isWorktree && behind > 0 && meta.mergeStatus !== "conflicts";
+  // Eligibility comes from the shared rule, not a second copy of it. This bar
+  // and the header used to compute their own and disagree — the header counted
+  // `merging` as busy, this one did not, so a rebase was offered here while one
+  // was already in flight.
+  const sync = branchSync(meta, true);
+  const canRebase = sync.kind === "rebase" || sync.kind === "rebase-first";
+  const canMerge = sync.kind === "merge" || sync.kind === "rebase-first";
 
   const handleCommit = useCallback(() => {
     onSendMessage(
@@ -83,7 +90,7 @@ export function GitStatusBar({
         </Button>
       )}
 
-      {isWorktree && !meta.branchMissing && !isMerged && ahead > 0 && !isBusy && (
+      {canMerge && (
         <MergeDropdown
           git={git}
           projectDirty={projectDirty}

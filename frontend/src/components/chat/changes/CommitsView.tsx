@@ -38,6 +38,7 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { FileStatus } from "~/lib/generated-types";
 import { getProjectUncommittedFiles } from "~/lib/project-actions";
 import { type CommitLogEntry, getPRStatus, type PRStatusResult } from "~/lib/session/actions";
+import { resolveConflictsPrompt } from "~/lib/session/branch-sync";
 import { cn, getErrorMessage, relativeTime } from "~/lib/utils";
 import type { ProjectGitStatus } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -263,10 +264,7 @@ function ConflictsSection({
             size="xs"
             className="text-warning hover:text-warning hover:bg-warning/10"
             onClick={() => {
-              const files = meta.mergeConflictFiles?.join(", ") ?? "";
-              onSendMessage(
-                `This is a git worktree. Rebase onto the local project HEAD (not origin). Get it via: main_wt=$(git worktree list --porcelain | head -1 | sed 's/worktree //') && git rebase $(git -C "$main_wt" rev-parse HEAD). Resolve conflicts in: ${files}`,
-              );
+              onSendMessage(resolveConflictsPrompt(meta.mergeConflictFiles ?? []));
             }}
           >
             <Sparkles className="h-3 w-3 text-primary/60" />

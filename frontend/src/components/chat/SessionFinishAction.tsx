@@ -1,29 +1,28 @@
 import { Archive, ArchiveRestore, CheckCircle2 } from "lucide-react";
-import { MergeDropdown } from "~/components/chat/MergeDropdown";
+import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
 import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
+import { hasBranchSync } from "~/lib/session/branch-sync";
 import type { ProjectGitStatus } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 
 type GitActions = ReturnType<typeof useGitActions>;
 
-export type FinishActionKind = "merge" | "merged" | "archive" | null;
+export type FinishActionKind = "branch" | "merged" | "archive" | null;
 
 /**
  * Which finishing control (if any) applies to a session in its current state.
  * Kept as a pure function so the mobile tab strip can decide whether to render
- * the row at all without duplicating the merge-eligibility logic — it mirrors
- * the `canMerge` computation in {@link SessionHeader}.
+ * the row at all without duplicating the logic.
+ *
+ * `"branch"` defers entirely to {@link branchSync} — the header and this strip
+ * carry the *same* control, so the eligibility rule lives in one place rather
+ * than being mirrored here and drifting, which is exactly what happened between
+ * this file and `GitStatusBar` before.
  */
 export function finishActionKind(meta: SessionMetadata, git?: GitActions): FinishActionKind {
-  const isWorktree = !!meta.worktreeBranch;
-  const isBusy = meta.state === "running" || meta.state === "merging";
-  const ahead = meta.commitsAhead ?? 0;
-  const behind = meta.commitsBehind ?? 0;
-  const isMerged = !!meta.worktreeMerged && ahead === 0 && behind === 0;
-
-  if (git && isWorktree && !meta.branchMissing && !isMerged && ahead > 0 && !isBusy) return "merge";
-  if (isWorktree && isMerged) return "merged";
+  if (hasBranchSync(meta, !!git)) return "branch";
+  if (meta.worktreeBranch && meta.worktreeMerged) return "merged";
   // Archive is offered only off a settled session — the server refuses it while
   // a turn is in flight, and the composer already owns Stop mid-turn.
   if (meta.state === "idle" || meta.state === "stopped" || meta.state === "failed")
@@ -35,33 +34,42 @@ interface SessionFinishActionProps {
   meta: SessionMetadata;
   git?: GitActions;
   projectGitStatus?: ProjectGitStatus;
+  mainBranch?: string;
+  onSendMessage?: (prompt: string) => void;
   onArchive: () => void;
   onUnarchive: () => void;
 }
 
 /**
- * The mobile "finish the session" control: a single, state-aware slot that lives
- * on the tab strip. It shows the right verb for where the session is — merge
- * when there are commits ahead, archive when there's nothing to merge, a quiet
- * confirmation once merged — and nothing while the session is busy (the composer
- * already owns Stop mid-turn). Desktop keeps its own inline controls in the header.
+ * The mobile "what's next for this session" slot on the tab strip. It shows the
+ * right verb for where the session is — the branch control when the branch
+ * needs rebasing, merging or untangling, archive when it does not, a quiet
+ * confirmation once merged — and nothing while the session is busy (the
+ * composer already owns Stop mid-turn).
+ *
+ * Desktop puts the same branch control in the header. Same rule, same control,
+ * two placements.
  */
 export function SessionFinishAction({
   meta,
   git,
   projectGitStatus,
+  mainBranch,
+  onSendMessage,
   onArchive,
   onUnarchive,
 }: SessionFinishActionProps) {
   const kind = finishActionKind(meta, git);
 
-  if (kind === "merge" && git) {
-    const projectDirty = !!projectGitStatus && projectGitStatus.uncommittedCount > 0;
+  if (kind === "branch") {
     return (
-      <MergeDropdown
+      <BranchSyncControl
+        meta={meta}
         git={git}
-        projectDirty={projectDirty}
-        className="h-7 gap-1 rounded-md border border-success/40 bg-success/15 px-2.5 text-xs text-success hover:bg-success/25"
+        projectGitStatus={projectGitStatus}
+        mainBranch={mainBranch}
+        onSendMessage={onSendMessage}
+        className="h-7 text-xs [&>button]:h-7 [&>button]:text-xs"
       />
     );
   }

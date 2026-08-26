@@ -9,11 +9,11 @@ import {
   Server,
 } from "lucide-react";
 import { useState } from "react";
+import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
 import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
-import { MergeDropdown } from "~/components/chat/MergeDropdown";
 import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
 import { hasLiveWork, SessionWorkLine } from "~/components/chat/SessionWorkLine";
@@ -62,6 +62,14 @@ interface SessionHeaderProps {
   git?: ReturnType<typeof useGitActions>;
   /** Project-level git status — used to surface uncommitted-dirty warning on merge. */
   projectGitStatus?: ProjectGitStatus;
+  /** The project's main branch, named in the rebase tooltip and the merge menu. */
+  mainBranch?: string;
+  /**
+   * Sends a prompt to the session. The branch control needs it for one state
+   * only — handing a conflicted branch to the agent, which is the established
+   * answer to conflicts and not something the header can do itself.
+   */
+  onSendMessage?: (prompt: string) => void;
   /**
    * Take the user to the pending approval or question. Omitted when they are
    * already looking at it, which is what keeps the pill from offering a jump
@@ -80,6 +88,8 @@ export function SessionHeader({
   accentColor,
   git,
   projectGitStatus,
+  mainBranch,
+  onSendMessage,
   onGoToPendingInput,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
@@ -98,13 +108,6 @@ export function SessionHeader({
   const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
   const shortId = sessionShortId(meta.id);
   const sessionRef = projectSlug ? `${projectSlug}/${shortId}` : shortId;
-
-  const ahead = meta.commitsAhead ?? 0;
-  const behind = meta.commitsBehind ?? 0;
-  const isMerged = meta.worktreeMerged && ahead === 0 && behind === 0;
-  const canMerge = !!git && isWorktree && !meta.branchMissing && !isMerged && ahead > 0 && !isBusy;
-  const projectDirty = !!projectGitStatus && projectGitStatus.uncommittedCount > 0;
-  const hasUncommitted = !!git?.uncommittedFiles && git.uncommittedFiles.length > 0;
 
   // The overflow menu is identical on both layouts — declared once, placed in
   // whichever actions zone is rendered.
@@ -220,18 +223,18 @@ export function SessionHeader({
 
               {dockToggle}
 
-              {git && canMerge && (
-                <MergeDropdown
-                  git={git}
-                  projectDirty={projectDirty}
-                  className={cn(
-                    "h-7 px-2 text-xs border",
-                    meta.mergeStatus === "clean" && !hasUncommitted
-                      ? "bg-success/10 text-success border-success/30 hover:bg-success/20"
-                      : "hover:bg-accent",
-                  )}
-                />
-              )}
+              {/* One slot, naming the verb the branch needs — rebase when
+                  behind, merge when ahead, and on a diverged branch rebase with
+                  merge demoted behind its caret. Same control on both layouts;
+                  the rule is `branchSync`, read from one place. */}
+              <BranchSyncControl
+                meta={meta}
+                git={git}
+                projectGitStatus={projectGitStatus}
+                mainBranch={mainBranch}
+                onSendMessage={onSendMessage}
+                className="h-7 px-2 text-xs [&>button]:h-7 [&>button]:text-xs"
+              />
 
               {/* Push belongs to the checkout you are standing in. A worktree
                   session has two different "ahead" counts — its branch vs

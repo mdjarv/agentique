@@ -672,6 +672,8 @@ export function ChatPanel({
           accentColor={agentColor}
           git={git}
           projectGitStatus={projectGitStatus}
+          mainBranch={mainBranch}
+          onSendMessage={handleSend}
         />
 
         {/* Mobile-only strip for the state-aware finish action. The dock's own
@@ -682,6 +684,8 @@ export function ChatPanel({
               meta={meta}
               git={git}
               projectGitStatus={projectGitStatus}
+              mainBranch={mainBranch}
+              onSendMessage={handleSend}
               onArchive={handleArchive}
               onUnarchive={handleUnarchive}
             />
