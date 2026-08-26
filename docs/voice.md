@@ -326,6 +326,17 @@ Three things are settable:
   spoken aloud, often to someone driving, so the safe end is the fallback.
 - **Character** — free text describing tone.
 
+Each voice has a **Listen** button, because choosing one by starting a whole
+call and hoping is not choosing. An audition runs `voice.Preview`, which opens a
+short session on the *same* engine a call uses and returns the line as WAV — the
+audition is the thing itself, not an approximation from some other endpoint that
+might not match. WAV rather than raw PCM so the browser decodes it in one call
+instead of reproducing the call's scheduling queue for two seconds of audio.
+
+Each click is a real paid session, so auditions are serialised server-side and
+the sample is one sentence. The loopback backend refuses rather than returning
+silence, which would look like a broken speaker.
+
 **Character is tone, never behaviour.** It is rendered *before* the handoff
 rules so the model reads the rules last, and the instruction says so beside the
 character itself: if the character asks to skip the read-back, keep the

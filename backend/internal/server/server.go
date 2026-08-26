@@ -799,9 +799,18 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		voiceRegistry = voice.NewRegistry()
 		// Persona settings are read per call, so a change here takes effect on
 		// the next call rather than the next restart.
-		voiceSettings := &voiceSettingsHandler{queries: queries, configModel: cfg.Voice.Model}
+		// Ignore the error here: newVoiceHandler below reports the same bad
+		// configuration and disables the feature. A zero Options just means the
+		// audition refuses, which is the right answer on a broken config.
+		previewOpts, _ := resolveVoiceOptions(cfg)
+		voiceSettings := &voiceSettingsHandler{
+			queries:     queries,
+			configModel: cfg.Voice.Model,
+			previewOpts: previewOpts,
+		}
 		mux.HandleFunc("GET /api/voice/settings", voiceSettings.HandleGet)
 		mux.HandleFunc("PUT /api/voice/settings", voiceSettings.HandlePut)
+		mux.HandleFunc("POST /api/voice/preview", voiceSettings.HandlePreview)
 		// The summariser keeps the session transcript on this machine: it runs
 		// through the provider CLI and only its paragraph reaches the drafter.
 		voiceSummarizer := newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)

@@ -17,9 +17,28 @@ import (
 // logged at warn, because silently answering with an echo when someone expected
 // a model would be worse than either.
 func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice.Registry, dispatcher voice.Dispatcher, personas voice.PersonaSource) (*voice.Handler, error) {
+	opts, err := resolveVoiceOptions(cfg)
+	if err != nil {
+		return nil, err
+	}
+	opts.AllowedOrigins = allowedOrigins
+	opts.AllowTicketOrigin = cfg.AuthEnabled
+	opts.Registry = registry
+	opts.Dispatcher = dispatcher
+	opts.Personas = personas
+	return voice.NewHandler(opts)
+}
+
+// resolveVoiceOptions turns [voice] config into engine options.
+//
+// Shared by the call socket and the settings page's audition, so a preview is
+// synthesised on exactly the engine a call would use — the same backend, the
+// same credentials, the same model. A preview from somewhere else would be a
+// pleasant lie.
+func resolveVoiceOptions(cfg Config) (voice.Options, error) {
 	backend, err := voice.ParseBackend(cfg.Voice.Backend)
 	if err != nil {
-		return nil, fmt.Errorf("resolve voice backend: %w", err)
+		return voice.Options{}, fmt.Errorf("resolve voice backend: %w", err)
 	}
 
 	switch backend {
@@ -39,25 +58,20 @@ func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice
 	if raw := cfg.Voice.IdleTimeout; raw != "" {
 		d, err := time.ParseDuration(raw)
 		if err != nil {
-			return nil, fmt.Errorf("parse [voice] idle-timeout %q: %w", raw, err)
+			return voice.Options{}, fmt.Errorf("parse [voice] idle-timeout %q: %w", raw, err)
 		}
 		if d <= 0 {
-			return nil, fmt.Errorf("[voice] idle-timeout %q must be positive", raw)
+			return voice.Options{}, fmt.Errorf("[voice] idle-timeout %q must be positive", raw)
 		}
 		idleTimeout = d
 	}
 
-	return voice.NewHandler(voice.Options{
-		Backend:           backend,
-		APIKey:            cfg.Voice.APIKey,
-		Project:           cfg.Voice.Project,
-		Location:          cfg.Voice.Location,
-		Model:             cfg.Voice.Model,
-		IdleTimeout:       idleTimeout,
-		AllowedOrigins:    allowedOrigins,
-		AllowTicketOrigin: cfg.AuthEnabled,
-		Registry:          registry,
-		Dispatcher:        dispatcher,
-		Personas:          personas,
-	})
+	return voice.Options{
+		Backend:     backend,
+		APIKey:      cfg.Voice.APIKey,
+		Project:     cfg.Voice.Project,
+		Location:    cfg.Voice.Location,
+		Model:       cfg.Voice.Model,
+		IdleTimeout: idleTimeout,
+	}, nil
 }

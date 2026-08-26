@@ -334,3 +334,31 @@ func TestGeminiPersonaLive(t *testing.T) {
 		})
 	}
 }
+
+// TestPreviewLive proves the settings page can audition a voice for real:
+// the sample must come back as decodable WAV with audio in it.
+func TestPreviewLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Gemini test: skipped by -short")
+	}
+	key := os.Getenv("AGENTIQUE_VOICE_API_KEY")
+	if key == "" {
+		t.Skip("live Gemini test: set AGENTIQUE_VOICE_API_KEY to run")
+	}
+
+	wav, err := Preview(context.Background(), Options{
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, "Puck")
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if string(wav[0:4]) != "RIFF" {
+		t.Fatalf("not a WAV: %q", wav[:12])
+	}
+	if len(wav) <= 44 {
+		t.Fatal("WAV carried a header and no audio")
+	}
+	t.Logf("preview: %d bytes", len(wav))
+}

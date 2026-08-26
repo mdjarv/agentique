@@ -1,5 +1,5 @@
-import { Check, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Check, Loader2, Play, Volume2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { cn } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
@@ -36,6 +36,7 @@ export function VoiceSettings() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
+  const preview = useVoicePreview();
 
   useEffect(() => {
     let cancelled = false;
@@ -114,31 +115,57 @@ export function VoiceSettings() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
           {voices.map((option) => {
             const active = (settings.voiceName ?? "") === option.value;
+            const playing = preview.playing === option.value;
             return (
-              <button
+              <div
                 key={option.value || "default"}
-                type="button"
-                onClick={() => void save({ ...settings, voiceName: option.value })}
                 className={cn(
-                  "flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors cursor-pointer",
+                  "flex items-center gap-1 rounded-lg border pr-1 transition-colors",
                   active
                     ? "border-agent bg-agent/10"
                     : "border-border/60 bg-card hover:border-border hover:bg-muted/40",
                 )}
-                aria-pressed={active}
               >
-                <span className="flex w-full items-center gap-1.5">
-                  <span className="truncate text-[13px] font-medium text-foreground">
-                    {option.label || option.value}
+                <button
+                  type="button"
+                  onClick={() => void save({ ...settings, voiceName: option.value })}
+                  className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left cursor-pointer"
+                  aria-pressed={active}
+                >
+                  <span className="flex w-full items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium text-foreground">
+                      {option.label || option.value}
+                    </span>
+                    {active && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-agent" />}
                   </span>
-                  {active && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-agent" />}
-                </span>
-                {option.hint && (
-                  <span className="truncate text-[11.5px] text-muted-foreground-faint">
-                    {option.hint}
-                  </span>
-                )}
-              </button>
+                  {option.hint && (
+                    <span className="truncate text-[11.5px] text-muted-foreground-faint">
+                      {option.hint}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void preview.play(option.value)}
+                  disabled={preview.busy && !playing}
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+                    playing
+                      ? "text-agent"
+                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+                  )}
+                  aria-label={`Listen to ${option.label || option.value || "the default voice"}`}
+                  title="Listen"
+                >
+                  {playing ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : preview.loading === option.value ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -232,6 +259,7 @@ export function VoiceSettings() {
           </span>
         )}
         {loadError && settings && <span className="text-destructive">{loadError}</span>}
+        {preview.error && <span className="text-destructive">{preview.error}</span>}
       </div>
     </div>
   );
@@ -313,4 +341,70 @@ function TextArea({
       </span>
     </>
   );
+}
+
+/**
+ * Auditioning a voice.
+ *
+ * Each play is a short real session on the speech backend — the same engine a
+ * call uses, so what you hear is what you get. That costs something per click,
+ * so only one is in flight at a time and starting a new one stops the old.
+ */
+function useVoicePreview() {
+  const [loading, setLoading] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  const stop = useCallback(() => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (urlRef.current) {
+      // Revoke or every audition leaks a blob for the life of the page.
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
+    setPlaying(null);
+  }, []);
+
+  useEffect(() => stop, [stop]);
+
+  const play = useCallback(
+    async (voiceName: string) => {
+      stop();
+      setError(null);
+      setLoading(voiceName);
+      try {
+        const resp = await fetch("/api/voice/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ voiceName }),
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => null);
+          throw new Error(body?.error ?? body?.message ?? `preview failed (${resp.status})`);
+        }
+        const url = URL.createObjectURL(await resp.blob());
+        urlRef.current = url;
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = stop;
+        audio.onerror = () => {
+          setError("could not play the sample");
+          stop();
+        };
+        setPlaying(voiceName);
+        await audio.play();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        stop();
+      } finally {
+        setLoading(null);
+      }
+    },
+    [stop],
+  );
+
+  return { play, loading, playing, error, busy: loading !== null };
 }
