@@ -1,6 +1,10 @@
 package voice
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+	"unicode/utf8"
+)
 
 // Control message types. Audio never appears here — it rides binary frames.
 const (
@@ -28,15 +32,40 @@ const (
 	// failed, or blocked. Distinct from msgReport because the source differs
 	// and so does the trust: a notice is the server's own words.
 	msgNotice = "notice"
+	// msgFocus asks the browser to navigate to a session, because the operator
+	// asked for it out loud. The call's focus moved first; this is the screen
+	// catching up with the conversation.
+	msgFocus = "focus"
 
 	// msgStop is the client asking to end the call.
 	msgStop = "stop"
-	// msgFollow binds the call to a session, so that session's reports reach
-	// it. A call follows at most one session; following again replaces it.
+	// msgFollow adds a session to the call's follow set, so that session's
+	// reports reach it.
 	msgFollow = "follow"
-	// msgUnfollow releases the binding without ending the call.
+	// msgUnfollow releases one session's binding, or all of them when it
+	// carries no session id.
 	msgUnfollow = "unfollow"
+	// msgWorld is the browser's picture of every session the operator can see,
+	// including ones on machines this server cannot reach. It is a VIEW, never
+	// authority: this machine's own database wins for its own sessions.
+	msgWorld = "world"
+	// msgViewing says the operator navigated to a session on screen. It is
+	// context for the conversation, never a command — a call never follows the
+	// screen around by itself.
+	msgViewing = "viewing"
 )
+
+// maxWorldRows bounds one world snapshot.
+//
+// Generous: an operator with two hundred live sessions is unusual but not
+// wrong, and the cap exists to bound memory on a socket anyone authenticated
+// can open, not to second-guess how they work.
+const maxWorldRows = 200
+
+// maxWorldField bounds each string in a snapshot row. Long enough for any real
+// session or project name, short enough that a hostile client cannot use the
+// snapshot as a channel into the speech model's context.
+const maxWorldField = 200
 
 // serverMessage is a JSON control frame sent to the browser.
 //
@@ -75,8 +104,55 @@ type serverMessage struct {
 type clientMessage struct {
 	Type string `json:"type"`
 
-	// follow
+	// follow, unfollow, viewing
 	SessionID string `json:"sessionId,omitempty"`
+
+	// world
+	Sessions []wireSessionRow `json:"sessions,omitempty"`
+}
+
+// wireSessionRow is one session in the browser's world snapshot.
+//
+// Every field is optional, per the wire rule: a peer that omits one means "not
+// set", and a required field would let one older client's payload be rejected
+// whole. Nothing here is trusted — it is the client's picture of the world,
+// used to talk about sessions this server cannot see.
+type wireSessionRow struct {
+	SessionID      string `json:"sessionId,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProjectSlug    string `json:"projectSlug,omitempty"`
+	ProjectName    string `json:"projectName,omitempty"`
+	MachineID      string `json:"machineId,omitempty"`
+	MachineName    string `json:"machineName,omitempty"`
+	State          string `json:"state,omitempty"`
+	Attention      string `json:"attention,omitempty"`
+	Branch         string `json:"branch,omitempty"`
+	LastActivityAt string `json:"lastActivityAt,omitempty"`
+}
+
+// toRow clamps one snapshot row into the shape the rest of the package uses.
+func (w wireSessionRow) toRow() SessionRow {
+	return SessionRow{
+		ID:           clampField(w.SessionID),
+		Name:         clampField(w.Name),
+		ProjectSlug:  clampField(w.ProjectSlug),
+		ProjectName:  clampField(w.ProjectName),
+		MachineID:    clampField(w.MachineID),
+		MachineName:  clampField(w.MachineName),
+		State:        clampField(w.State),
+		Attention:    clampField(w.Attention),
+		Branch:       clampField(w.Branch),
+		LastActivity: clampField(w.LastActivityAt),
+	}
+}
+
+// clampField bounds one snapshot string on a rune boundary.
+func clampField(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= maxWorldField {
+		return s
+	}
+	return string([]rune(s)[:maxWorldField])
 }
 
 // handleControl processes one client control frame and reports whether the call
@@ -110,6 +186,14 @@ func (c *call) handleControl(payload []byte) (stop bool) {
 			return false
 		}
 		c.unfollow(msg.SessionID)
+		return false
+
+	case msgWorld:
+		c.setWorld(msg.Sessions)
+		return false
+
+	case msgViewing:
+		c.noteViewing(msg.SessionID)
 		return false
 
 	default:

@@ -155,6 +155,32 @@ type call struct {
 	followMu sync.Mutex
 	follows  map[string]*followState
 
+	// worldMu guards the browser's picture of every session the operator can
+	// see, and the last time the call mentioned what they are looking at.
+	//
+	// The snapshot is a VIEW, never authority. It is how a call talks about
+	// sessions on machines this server cannot reach; for this machine's own
+	// sessions the database wins, because it is the thing that is true.
+	worldMu     sync.Mutex
+	world       []SessionRow
+	viewing     string
+	viewingNote time.Time
+
+	// offeredMu guards the sessions the server has named to the model.
+	//
+	// focus_session accepts only these. It is not a permission boundary — an
+	// operator on a call can already start work — but it is the difference
+	// between focusing a session and focusing a plausible-looking id a speech
+	// model assembled from a transcript.
+	offeredMu sync.Mutex
+	offered   map[string]SessionRow
+
+	// summaryMu guards the summaries delivered for this call, kept per session
+	// because that is what they describe. A summary warmed by focusing a session
+	// answers the question that usually follows it, with no second wait.
+	summaryMu sync.Mutex
+	summaries map[string]string
+
 	// writeMu serialises writes. gorilla/websocket rejects concurrent writers,
 	// and audio, control frames and pings all originate on different
 	// goroutines.
@@ -187,7 +213,7 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 	if idleTimeout <= 0 {
 		idleTimeout = defaultIdleTimeout
 	}
-	return &call{
+	c := &call{
 		ws:          ws,
 		engine:      engine,
 		registry:    opts.Registry,
@@ -195,11 +221,20 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 		directory:   opts.Directory,
 		focus:       initialFocus,
 		follows:     make(map[string]*followState),
+		offered:     make(map[string]SessionRow),
+		summaries:   make(map[string]string),
 		log:         log,
 		idleTimeout: idleTimeout,
 		lastFrame:   time.Now(),
 		runCtx:      context.Background(),
 	}
+	// The session the call opened on is offered by construction: the operator
+	// chose it by pressing the button, which is a stronger gesture than any
+	// list the assistant could read back.
+	if initialFocus != "" {
+		c.offered[initialFocus] = SessionRow{ID: initialFocus}
+	}
+	return c
 }
 
 // ctx returns the call's lifetime context.
@@ -336,9 +371,9 @@ func (c *call) currentPhase() callPhase {
 	return phaseGathering
 }
 
-// sessionLabel is what to call a session out loud. The follow set's name where
-// there is one, the id otherwise — never nothing, since an unnamed report is a
-// report the listener cannot place.
+// sessionLabel is what to call a session out loud: the name the follow set
+// learned, then any name the server has already offered the model, then the id.
+// Never nothing — an unnamed report is a report the listener cannot place.
 func (c *call) sessionLabel(sessionID string) string {
 	c.followMu.Lock()
 	if st, ok := c.follows[sessionID]; ok && st.name != "" {
@@ -347,6 +382,10 @@ func (c *call) sessionLabel(sessionID string) string {
 		return name
 	}
 	c.followMu.Unlock()
+
+	if row, ok := c.offeredRow(sessionID); ok && row.Name != "" {
+		return row.Name
+	}
 	return sessionID
 }
 

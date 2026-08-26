@@ -84,6 +84,10 @@ func AttentionRank(attention string) int {
 	}
 }
 
+// stateRunning is the one session state this package reasons about: a turn is
+// in flight. Every other state it only repeats.
+const stateRunning = "running"
+
 // SessionRow is one session as the voice assistant sees it: enough to name it,
 // tell it apart from a session with a similar name on another machine, and say
 // what it is doing. Not enough to render it — that is the browser's job.

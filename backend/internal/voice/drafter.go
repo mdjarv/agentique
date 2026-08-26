@@ -7,9 +7,24 @@ import (
 	"google.golang.org/genai"
 )
 
-// ToolRunPrompt is the one tool the speech model gets. It hands a finished
-// prompt to the session that does the work.
-const ToolRunPrompt = "run_prompt"
+// The tools the speech model may call. They are fixed when the call opens: a
+// realtime session declares its tools at connect, and re-declaring them means
+// reconnecting mid-conversation.
+//
+// Four of the five only look: they list, find, focus and summarise. Exactly one
+// starts work, and it goes down the same path the composer's send button uses.
+const (
+	// ToolRunPrompt hands a finished prompt to the focused session.
+	ToolRunPrompt = "run_prompt"
+	// ToolListSessions answers "what is going on" for one filter.
+	ToolListSessions = "list_sessions"
+	// ToolFindSession turns a spoken name into candidates. It never picks.
+	ToolFindSession = "find_session"
+	// ToolFocusSession aims the call — and the browser — at one session.
+	ToolFocusSession = "focus_session"
+	// ToolSummarizeSession says what a session has been doing.
+	ToolSummarizeSession = "summarize_session"
+)
 
 // SystemInstruction shapes the speech model into a drafter.
 //
