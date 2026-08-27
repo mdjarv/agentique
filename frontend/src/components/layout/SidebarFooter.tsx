@@ -89,16 +89,21 @@ export function SidebarFooter() {
             <PopoverTrigger asChild>
               <button
                 type="button"
-                // The mark it wears is a dot, so this button says what waits.
-                aria-label={waiting ? `Subscription usage — ${waiting}` : "Subscription usage"}
-                title={waiting ?? undefined}
-                className="relative flex h-6 shrink-0 cursor-pointer items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
+                // The mark it leads with is a glyph, so this button says what
+                // waits — in words, once, for hover and for a screen reader.
+                aria-label={
+                  waiting ? `Subscription usage — ${waiting.label}` : "Subscription usage"
+                }
+                title={waiting?.label}
+                className="flex h-6 shrink-0 cursor-pointer items-center gap-3 rounded-md px-1.5 transition-colors hover:bg-muted/50"
               >
+                {/* Leading the cluster, inside its trigger: a mark notched onto
+                    the last vendor's logo reads as a claim about that vendor,
+                    and one in the gap is dead pixels beside the control it is
+                    about. Inline, it costs width — which the account name pays,
+                    the way everything else on this line is arranged to. */}
+                <UpdateMark />
                 <UsageCluster agents={allowances} />
-                {/* Inside the button, not beside it: a mark that sat in the gap
-                    would be 8px of dead pixels next to the control it is about,
-                    and every instinct is to click the dot. */}
-                <UpdateMark className="absolute right-0 top-0" />
               </button>
             </PopoverTrigger>
           )}

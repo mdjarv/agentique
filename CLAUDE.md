@@ -254,20 +254,27 @@ mark's width is what it means, and the name is the only thing on the line that
 can give ground. A pill spelling "Rebuild available" wrapped to two rows and
 pushed the codex and disk marks outside the sidebar.
 
-`UpdateMark` is therefore a dot, on the same argument the sidebar row settled for
-parked sessions. The words are not lost — `UpdatePopoverRows` renders the label,
-the detail and the button one click away, so the pill was spending a third of the
-footer duplicating what it fronts. The dot rides **inside** the usage trigger
-(one in the gap would be dead pixels beside the control it is about, and every
-instinct is to click it) and is `pointer-events-none`, so the click reaches the
-button. Since a dot cannot say which kind of thing waits, the button says it:
-`useUpdateWaiting` is what its tooltip and accessible name are built from, and
-that trigger stays mounted for a machine with no windows but a waiting update,
-because it is what the mark rides.
+`UpdateMark` is therefore a glyph, on the same argument the sidebar row settled
+for parked sessions. The words are not lost — `UpdatePopoverRows` renders the
+label, the detail and the button one click away, so the pill was spending a third
+of the footer duplicating what it fronts.
+
+It **leads the usage cluster** from inside that cluster's own trigger, inline
+rather than notched onto a corner: a mark overlapping the last vendor's logo
+reads as a claim about that vendor, and one in the gap is dead pixels beside the
+control it is about. Inline it costs width, which is honest — the name pays.
+`MARK_GLYPH` pairs each kind with the icon `UpdatePopoverRows` gives its row, so
+the mark and the row it opens onto cannot disagree, and it is drawn in the accent
+colour because the cluster beside it is muted: colour is what separates asking
+from reporting. 14px, since at 12px `GitBranch` loses its branch node the way
+`FolderGit2` does at 10px. `useUpdateWaiting` is the one predicate behind both
+the glyph and the button's tooltip and accessible name, and that trigger stays
+mounted for a machine with no windows but a waiting update, because it is what
+the mark rides.
 
 Nothing here can be dismissed. The old chip's × existed because a sentence in the
-footer is loud; a dot is not, and an update that can be waved away is one nobody
-applies.
+footer is loud; a glyph is not, and an update that can be waved away is one
+nobody applies.
 
 ### A row names a project by its name
 
