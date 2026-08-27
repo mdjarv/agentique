@@ -16,12 +16,13 @@
  *     TURN, and the override says so before it is taken.
  *   - Cancel is real until something is installed, and then it goes.
  */
-import { ArrowUpCircle, GitBranch, Loader2, X } from "lucide-react";
+import { Loader2, type LucideIcon, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import type { UpdateStatus } from "~/lib/generated-types";
 import type { UpdateKind } from "~/lib/update-api";
 import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
+import { MARK_GLYPH } from "~/lib/update-mark";
 import { sourceVerdict } from "~/lib/update-source";
 import { cn, getErrorMessage } from "~/lib/utils";
 import type { Flight } from "~/stores/update-store";
@@ -33,7 +34,10 @@ interface Waiting {
   label: string;
   detail?: string;
   action: string;
-  icon: typeof GitBranch;
+  /** From `MARK_GLYPH`, never picked here: the footer's mark reads the same
+   *  table, and a row that showed a different picture from the mark that
+   *  opened it would be reporting two things about one fact. */
+  icon: LucideIcon;
 }
 
 /**
@@ -52,7 +56,7 @@ function waitingFor(status: UpdateStatus | undefined): Waiting[] {
       label: `${status.latest} available`,
       detail: status.current,
       action: "Upgrade",
-      icon: ArrowUpCircle,
+      icon: MARK_GLYPH.release,
     });
   }
 
@@ -63,7 +67,7 @@ function waitingFor(status: UpdateStatus | undefined): Waiting[] {
       label: source.text,
       detail: source.detail,
       action: source.action.kind === "restart" ? "Restart" : "Rebuild",
-      icon: GitBranch,
+      icon: MARK_GLYPH[source.action.kind === "restart" ? "restart" : "rebuild"],
     });
   }
   return out;

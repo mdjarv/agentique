@@ -233,13 +233,27 @@ beside the control it is about. Inline it also *costs width*, which is the hones
 thing for it to do; the account name truncates to pay for it, the way everything
 else on this line is arranged to.
 
-The glyph says WHICH kind of thing waits — `MARK_GLYPH` pairs each kind with the
-icon `UpdatePopoverRows` gives its row, so the mark and the row it opens onto
-cannot disagree — and it is drawn in the accent colour, because the cluster
-beside it is deliberately muted and colour is what separates a thing asking for
-something from a thing merely reporting. 14px, a little larger than the 11px
-vendor marks: at 12px `GitBranch` loses its branch node, the same way
-`FolderGit2` does at 10px.
+`lib/update-mark.ts` owns what a kind looks like, and **both** surfaces read that
+one table — the footer's mark and the popover's rows — on the `REST_GLYPH`
+precedent: a mark that says "upgrade" in the footer cannot say something else in
+the popover it opens.
+
+`MARK_GLYPH` is deliberately not four different pictures. Downloading a release
+and compiling a checkout are the same offer to a reader — there is a newer build,
+and taking it costs the current turn — so both wear `CircleArrowUp` and the row's
+words say which. A **restart** is the one genuinely different act (nothing to
+fetch, nothing to compile, just bounce the process) and keeps `RotateCw`; that is
+the same split `sourceVerdict` makes when it ranks `staged` above everything
+else.
+
+`CircleArrowUp` earns the slot by being a **closed round form**, which is what
+makes it findable beside the usage cluster's field of vertical strokes — an arrow
+drawn in strokes disappears into them, which is how `ArrowBigUpDash` lost. It is
+drawn in the accent colour, because the cluster beside it is deliberately muted
+and colour is what separates a thing asking for something from a thing merely
+reporting, at 14px against the 11px vendor marks. `GitBranch` held the slot first
+and was wrong twice over: it said "git" rather than "upgrade", and it was already
+losing its branch node by 12px, the way `FolderGit2` does at 10px.
 
 The sentence stays with the button, which is what a reader hovers and what a
 screen reader announces: `useUpdateWaiting` is the one predicate behind both the
