@@ -114,8 +114,13 @@ export function NewChatPanel({
     DEFAULT_SESSION_DEFAULTS.autoApproveMode,
   );
   const [provider, setProvider] = useState<ProviderId>("claude");
-  const [model, setModel] = useState<ModelId>(DEFAULT_SESSION_DEFAULTS.model);
-  const [effort, setEffort] = useState<EffortLevel>(DEFAULT_SESSION_DEFAULTS.effort);
+  // Model and effort carry over from the last session created (see
+  // `LastUsedSettings`). Read once, as the initial value: this is a starting
+  // point, not a binding — a session created in another tab must not move the
+  // dropdowns under someone mid-compose.
+  const lastUsed = useRef(useUIStore.getState().lastUsed).current;
+  const [model, setModel] = useState<ModelId>(lastUsed.model);
+  const [effort, setEffort] = useState<EffortLevel>(lastUsed.effort);
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -201,6 +206,10 @@ export function NewChatPanel({
         effort: effort || undefined,
         behaviorPresets,
       });
+      // A session exists with these, so they are now what "last used" means.
+      // Recorded here rather than on selection, and before the query, because
+      // the choice is spent at creation whatever the first prompt does.
+      useUIStore.getState().recordLastUsed({ model, effort });
       await submitQuery(ws, sessionId, prompt, attachments);
       useUIStore.getState().clearDraft(draftKey);
       if (!stillHere()) return true;
@@ -367,6 +376,7 @@ export function NewChatPanel({
           onModelChange={setModel}
           effort={effort}
           onEffortChange={setEffort}
+          lastUsed={lastUsed}
           templatePicker={<TemplatePicker onSelect={handleTemplateSelect} disabled={sending} />}
         />
       ) : (

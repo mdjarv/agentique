@@ -66,6 +66,13 @@ interface ComposerToolbarProps {
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  /**
+   * What the New-session panel opened with, carried over from the last session
+   * created. Marked in the model and effort dropdowns so a deviation from the
+   * habit is visible and reversible. Absent everywhere else: an existing
+   * session's model is its own fact, not a memory of the last one started.
+   */
+  lastUsed?: { model: ModelId; effort: EffortLevel };
 }
 
 /**
@@ -97,6 +104,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onModelChange,
   effort,
   onEffortChange,
+  lastUsed,
 }: ComposerToolbarProps) {
   const catalog = useProviderStore((s) => s.models);
   const { options: modelOptions, providerOf } = useMemo(
@@ -192,6 +200,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
               : undefined
           }
           options={modelOptions}
+          lastUsedValue={lastUsed?.model}
         />
       )}
       {showEffortDropdown && effort !== undefined && (
@@ -202,6 +211,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           icon={<Gauge className="h-3 w-3" />}
           triggerColor={EFFORT_COLORS[effort]}
           readOnlyColor={EFFORT_COLORS[effort]}
+          lastUsedValue={lastUsed?.effort}
         />
       )}
     </div>

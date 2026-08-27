@@ -46,6 +46,38 @@ export const DEFAULT_SESSION_DEFAULTS: SessionDefaults = {
   effort: "xhigh",
 };
 
+/**
+ * What the New-session panel starts a session with, carried from the last one.
+ *
+ * Only model and effort. The other three are safety-shaped: `autoApproveMode`
+ * decides whether an agent asks before acting, and a mode silently inherited
+ * from a session started days ago is exactly the kind of default nobody reads.
+ * Model and effort are a working habit — you pick a tier and stay on it for an
+ * afternoon — so re-picking it every time is the friction worth removing.
+ *
+ * It is one pair, not one per project: which model you want is a property of
+ * the task in front of you, not of the repo. A per-project map would also grow
+ * without bound and need the pruning the dock map needs.
+ *
+ * Written when a session is actually **created**, never on selection — opening
+ * the dropdown and closing it again is not a use, and a stray poke must not
+ * rewrite what the next panel opens with.
+ *
+ * `ModelId` is deliberately a bare string (docs/model-catalog.md), so a
+ * remembered model may name something this build no longer offers. The panel
+ * seeds from it anyway: the catalog resolves what it can, and a stale id is a
+ * visibly wrong dropdown rather than a broken one.
+ */
+export interface LastUsedSettings {
+  model: ModelId;
+  effort: EffortLevel;
+}
+
+const DEFAULT_LAST_USED: LastUsedSettings = {
+  model: DEFAULT_SESSION_DEFAULTS.model,
+  effort: DEFAULT_SESSION_DEFAULTS.effort,
+};
+
 interface UIState {
   drafts: Record<string, string>;
   stashes: Record<string, string[]>;
@@ -62,6 +94,8 @@ interface UIState {
   dockMaximized: boolean;
   /** Sync dock: expansion is a preference, not a gesture — it is remembered. */
   syncDockExpanded: boolean;
+  /** Model and effort the last created session used. See LastUsedSettings. */
+  lastUsed: LastUsedSettings;
   theme: Theme;
 
   setDraft: (sessionId: string, text: string) => void;
@@ -77,6 +111,8 @@ interface UIState {
   setDockWidth: (width: number) => void;
   setDockMaximized: (maximized: boolean) => void;
   setSyncDockExpanded: (expanded: boolean) => void;
+  /** Call once a session has been created with these. Never on selection. */
+  recordLastUsed: (settings: LastUsedSettings) => void;
   setTheme: (theme: Theme) => void;
 }
 
@@ -100,6 +136,7 @@ export const useUIStore = create<UIState>()(
       dockWidth: 500,
       dockMaximized: false,
       syncDockExpanded: false,
+      lastUsed: DEFAULT_LAST_USED,
       theme: "dark" as Theme,
 
       setDraft: (sessionId, text) =>
@@ -173,6 +210,13 @@ export const useUIStore = create<UIState>()(
 
       setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
 
+      recordLastUsed: (settings) =>
+        set((s) =>
+          s.lastUsed.model === settings.model && s.lastUsed.effort === settings.effort
+            ? s
+            : { lastUsed: settings },
+        ),
+
       setTheme: (theme) => set({ theme }),
     }),
     {
@@ -239,6 +283,7 @@ export const useUIStore = create<UIState>()(
         dockWidth: state.dockWidth,
         dockMaximized: state.dockMaximized,
         syncDockExpanded: state.syncDockExpanded,
+        lastUsed: state.lastUsed,
         theme: state.theme,
       }),
       onRehydrateStorage: () => () => {

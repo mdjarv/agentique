@@ -63,6 +63,8 @@ interface MessageComposerProps {
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  /** Marks the model/effort carried over from the last created session. */
+  lastUsed?: { model: ModelId; effort: EffortLevel };
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
   /**
@@ -114,6 +116,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onModelChange,
       effort,
       onEffortChange,
+      lastUsed,
       onEmptySubmit,
       templatePicker,
       focusMode,
@@ -228,6 +231,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         onModelChange={onModelChange}
         effort={effort}
         onEffortChange={onEffortChange}
+        lastUsed={lastUsed}
       />
     );
 

@@ -29,6 +29,15 @@ interface ToolbarDropdownProps {
   triggerColor?: string;
   triggerBgColor?: string;
   readOnlyColor?: string;
+  /**
+   * The option this control carried into the panel — marked "last used".
+   *
+   * It shows only while it is NOT the current selection, because that is the
+   * only moment it says anything: on open the two coincide, and a row wearing
+   * both a tick and a note about itself reports one fact twice. Once you pick
+   * something else, the note is the way back.
+   */
+  lastUsedValue?: string;
 }
 
 const BASE =
@@ -43,10 +52,16 @@ export function ToolbarDropdown({
   triggerColor = "text-muted-foreground",
   triggerBgColor,
   readOnlyColor,
+  lastUsedValue,
 }: ToolbarDropdownProps) {
   const selected = options.find((o) => o.value === value);
   const label = selectedLabel ?? selected?.label ?? value;
   const hasDescriptions = options.some((o) => o.description);
+  // A remembered value the catalog no longer offers has no row to mark.
+  const markable =
+    lastUsedValue && lastUsedValue !== value && options.some((o) => o.value === lastUsedValue)
+      ? lastUsedValue
+      : undefined;
 
   if (!onChange) {
     return (
@@ -73,7 +88,7 @@ export function ToolbarDropdown({
         <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className={hasDescriptions ? "min-w-[16rem]" : undefined}>
-        {renderItems(options, value, onChange, hasDescriptions)}
+        {renderItems(options, value, onChange, hasDescriptions, markable)}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -84,10 +99,11 @@ function renderItems(
   value: string,
   onChange: (v: string) => void,
   hasDescriptions: boolean,
+  lastUsedValue?: string,
 ) {
   const grouped = options.some((o) => o.group);
   if (!grouped) {
-    return options.map((opt) => renderItem(opt, value, onChange, hasDescriptions));
+    return options.map((opt) => renderItem(opt, value, onChange, hasDescriptions, lastUsedValue));
   }
 
   const groups: { key: string; items: ToolbarDropdownOption[] }[] = [];
@@ -109,7 +125,7 @@ function renderItems(
           {g.key}
         </div>
       )}
-      {g.items.map((opt) => renderItem(opt, value, onChange, hasDescriptions))}
+      {g.items.map((opt) => renderItem(opt, value, onChange, hasDescriptions, lastUsedValue))}
     </Fragment>
   ));
 }
@@ -119,7 +135,9 @@ function renderItem(
   value: string,
   onChange: (v: string) => void,
   hasDescriptions: boolean,
+  lastUsedValue?: string,
 ) {
+  const isLastUsed = opt.value === lastUsedValue;
   return (
     <DropdownMenuItem
       key={opt.value || "__default"}
@@ -143,6 +161,11 @@ function renderItem(
         </div>
       ) : (
         <span className={opt.color}>{opt.label}</span>
+      )}
+      {isLastUsed && (
+        <span className="ml-auto shrink-0 pl-3 text-[10px] text-muted-foreground-faint">
+          last used
+        </span>
       )}
     </DropdownMenuItem>
   );

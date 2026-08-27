@@ -256,6 +256,27 @@ in `frontend/src/lib/utils.ts` (the rename dialog). Both **transliterate** a
 letter rather than treating it as punctuation — replacing everything outside
 `[a-z0-9]` with a separator turned "Träffbild" into `tr-ffbild`.
 
+### The New-session panel remembers model and effort
+
+`ui-store.lastUsed` carries model and effort from the last session **created**
+into the next New-session panel, and nothing else does. The other three session
+defaults are safety-shaped — `autoApproveMode` decides whether an agent asks
+before acting — and a mode silently inherited from days ago is the kind of
+default nobody reads. Model and effort are a working habit.
+
+It is written at creation, never on selection: opening a dropdown and closing it
+is not a use. It is read **once**, as the panel's initial state, so a session
+created in another tab cannot move the dropdowns under someone mid-compose. One
+pair, not one per project — which model you want belongs to the task, not the
+repo, and a per-project map would need the pruning `dock` needs.
+
+`ToolbarDropdown`'s `lastUsedValue` marks that option, and only while it is
+*not* the current selection: on open the two coincide, and a row wearing both a
+tick and a note about itself reports one fact twice. A remembered id the catalog
+no longer offers marks nothing — `ModelId` is a bare string by design
+(`docs/model-catalog.md`), so a stale one is a visibly wrong dropdown rather
+than a broken one.
+
 ### Drafts are client-local
 
 An unsent New-session prompt lives only in this browser's localStorage
