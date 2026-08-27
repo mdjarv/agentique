@@ -44,15 +44,31 @@ export async function fetchUpdateStatus(key: string, refresh = false): Promise<U
 export async function applyUpdate(
   key: string,
   expect: string,
-  opts: { force?: boolean; whenIdle?: boolean } = {},
+  opts: { force?: boolean; whenIdle?: boolean; kind?: UpdateKind } = {},
 ): Promise<void> {
   const resp = await apiFetch(targetFor(key), "/api/update/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ expect, force: !!opts.force, whenIdle: !!opts.whenIdle }),
+    body: JSON.stringify({
+      expect,
+      force: !!opts.force,
+      whenIdle: !!opts.whenIdle,
+      // Omitted for a release, which is what every server predating the source
+      // channel expects to receive.
+      ...(opts.kind && opts.kind !== "release" ? { kind: opts.kind } : {}),
+    }),
   });
   if (!resp.ok) throw new Error(await errorText(resp));
 }
+
+/**
+ * Which channel an upgrade comes from (docs/upgrades.md).
+ *
+ * `release` downloads a published asset; `source` compiles the machine's local
+ * checkout; `restart` installs nothing and only restarts into a binary already
+ * sitting at the install path.
+ */
+export type UpdateKind = "release" | "source" | "restart";
 
 /** Cancel an armed or in-flight upgrade. Refused past `replacing`. */
 export async function cancelUpdate(key: string): Promise<void> {

@@ -530,6 +530,7 @@ export const ReclaimResponseSchema = z.object({
 
 export const UpdateArmingSchema = z.object({
   target: z.string(),
+  kind: z.string().optional(),
   armedAt: z.string(),
   deadlineAt: z.string(),
 });
@@ -537,10 +538,12 @@ export const UpdateArmingSchema = z.object({
 export const UpdateProgressSchema = z.object({
   machineId: z.string(),
   phase: z.string(),
+  kind: z.string().optional(),
   target: z.string(),
   from: z.string(),
   downloaded: z.number(),
   total: z.number(),
+  log: z.array(z.string()).optional(),
   cancellable: z.boolean(),
   error: z.string().optional(),
   startedAt: z.string(),
@@ -572,6 +575,26 @@ export const UpdateCLIStatusSchema = z.object({
   lastRan: z.string().optional(),
 });
 
+export const UpdateSourceStatusSchema = z.object({
+  dir: z.string(),
+  branch: z.string(),
+  head: z.string().optional(),
+  headSubject: z.string().optional(),
+  builtFrom: z.string().optional(),
+  ahead: z.number(),
+  behind: z.boolean(),
+  dirty: z.boolean(),
+  checkedOut: z.string().optional(),
+  origin: z.string().optional(),
+  staged: z.boolean(),
+  installedVersion: z.string().optional(),
+  stagedIsCurrent: z.boolean().optional(),
+  buildable: z.boolean(),
+  blocker: z.string().optional(),
+  checkedAt: z.string().optional(),
+  checkError: z.string().optional(),
+});
+
 export const UpdateStatusSchema = z.object({
   current: z.string(),
   latest: z.string(),
@@ -590,7 +613,36 @@ export const UpdateStatusSchema = z.object({
   busyTurns: z.number(),
   armed: UpdateArmingSchema.optional(),
   clis: z.array(UpdateCLIStatusSchema).optional(),
+  source: UpdateSourceStatusSchema.optional(),
   progress: UpdateProgressSchema.optional(),
+});
+
+export const UsageLimitSchema = z.object({
+  label: z.string(),
+  percent: z.number(),
+  severity: z.string().optional(),
+  resetsAt: z.string().optional(),
+  detail: z.string().optional(),
+});
+
+export const UsageAgentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.string().optional(),
+  tierLabel: z.string().optional(),
+  ready: z.boolean(),
+  updatedAt: z.string().optional(),
+  usageStatusText: z.string().optional(),
+  authHelpText: z.string().optional(),
+  limits: z.array(UsageLimitSchema).optional(),
+  todayTokens: z.number().optional(),
+  todayPrompts: z.number().optional(),
+});
+
+export const UsageDocumentSchema = z.object({
+  schemaVersion: z.number(),
+  agents: z.array(UsageAgentSchema),
+  fetchedAt: z.string().optional(),
 });
 
 export const ProjectSubscribePayloadSchema = z.object({

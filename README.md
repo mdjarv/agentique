@@ -470,6 +470,12 @@ disabled     = false  # no version check at all
 interval     = "1h"   # how often this machine asks GitHub for the latest release
 api-url      = ""     # override the releases endpoint (a fork, or a test stub)
 arm-deadline = "4h"   # how long "upgrade when idle" waits before giving up
+# The source channel: watch a local agentique checkout and say when the branch
+# you work on has moved past the build this server is running. Offline — it
+# never fetches. Empty source-dir leaves it off (docs/upgrades.md).
+source-dir    = ""       # absolute path to your agentique checkout
+source-branch = "master" # the ref to compare against
+source-apply  = false    # also offer the button that rebuilds and restarts
 
 [setup]
 initial-project = ""  # absolute path registered as a project when none exist

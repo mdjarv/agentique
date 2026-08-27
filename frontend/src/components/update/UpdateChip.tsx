@@ -9,8 +9,28 @@
 import { ArrowUpCircle, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { UpdateDialog } from "~/components/update/UpdateDialog";
+import type { UpdateStatus } from "~/lib/generated-types";
+import { sourceVerdict } from "~/lib/update-source";
 import { cn } from "~/lib/utils";
 import { behindKeys, useUpdateStore } from "~/stores/update-store";
+
+/**
+ * What the chip says.
+ *
+ * Two claims can light it — a published release, or a local checkout that has
+ * moved — and only one of them has a version to name. So a single machine
+ * behind a release still says which version, and everything else says what kind
+ * of thing is waiting rather than inventing a number for it.
+ */
+function chipLabel(behind: string[], statuses: Record<string, UpdateStatus>): string {
+  if (behind.length !== 1) return `${behind.length} machines behind`;
+  const status = statuses[behind[0] as string];
+  if (status?.behind) return `Update ${status.latest || "available"}`;
+  const verdict = sourceVerdict(status?.source);
+  if (verdict.token === "staged") return "Restart to finish";
+  if (verdict.token === "ready") return "Rebuild available";
+  return "Update available";
+}
 
 export function UpdateChip({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
@@ -23,11 +43,7 @@ export function UpdateChip({ className }: { className?: string }) {
   const behind = useMemo(() => behindKeys(statuses), [statuses]);
 
   const visible = !dismissed && behind.length > 0;
-  const first = behind[0];
-  const label =
-    behind.length === 1 && first
-      ? `Update ${statuses[first]?.latest ?? "available"}`
-      : `${behind.length} machines behind`;
+  const label = useMemo(() => chipLabel(behind, statuses), [behind, statuses]);
 
   return (
     <>

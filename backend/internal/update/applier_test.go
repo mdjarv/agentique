@@ -131,7 +131,7 @@ func TestApplyInstallsAndRestarts(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("the new binary"))
 	h := newHarness(t, fr, "v0.4.1")
 
-	if err := h.applier.Start("v9.9.9", false); err != nil {
+	if err := h.applier.Start(KindRelease, "v9.9.9", false); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseRestarting)
@@ -156,7 +156,7 @@ func TestApplyNarratesEveryPhase(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("payload"))
 	h := newHarness(t, fr, "v0.4.1")
 
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -198,7 +198,7 @@ func TestChecksumMismatchAbortsBeforeInstalling(t *testing.T) {
 	fr.mu.Unlock()
 	h := newHarness(t, fr, "v0.4.1")
 
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 	p := h.waitPhase(t, PhaseFailed)
@@ -234,7 +234,7 @@ func TestCancelDuringDownload(t *testing.T) {
 	}()
 
 	h := newHarness(t, fr, "v0.4.1")
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseDownloading)
@@ -252,7 +252,7 @@ func TestCancelDuringDownload(t *testing.T) {
 func TestCancelIsRefusedOnceInstalled(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("new"))
 	h := newHarness(t, fr, "v0.4.1")
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseRestarting)
@@ -289,14 +289,14 @@ func TestBusyRefusesUnlessForced(t *testing.T) {
 	h := newHarness(t, fr, "v0.4.1")
 	h.busy = []string{"session-a", "session-b"}
 
-	err := h.applier.Start("", false)
+	err := h.applier.Start(KindRelease, "", false)
 	if !errors.Is(err, ErrBusy) {
 		t.Fatalf("a busy machine must refuse: %v", err)
 	}
 	assertFile(t, h.target, "the old binary")
 
 	// Override is allowed — it just has to be asked for.
-	if err := h.applier.Start("", true); err != nil {
+	if err := h.applier.Start(KindRelease, "", true); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseRestarting)
@@ -307,7 +307,7 @@ func TestStaleExpectationIsRefused(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("new"))
 	h := newHarness(t, fr, "v0.4.1")
 
-	if err := h.applier.Start("v8.0.0", false); !errors.Is(err, ErrStale) {
+	if err := h.applier.Start(KindRelease, "v8.0.0", false); !errors.Is(err, ErrStale) {
 		t.Fatalf("installing something other than what was asked for must be refused: %v", err)
 	}
 	assertFile(t, h.target, "the old binary")
@@ -325,11 +325,11 @@ func TestSecondApplyIsRefused(t *testing.T) {
 	}()
 
 	h := newHarness(t, fr, "v0.4.1")
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseDownloading)
-	if err := h.applier.Start("", false); !errors.Is(err, ErrAlreadyRunning) {
+	if err := h.applier.Start(KindRelease, "", false); !errors.Is(err, ErrAlreadyRunning) {
 		t.Fatalf("got %v, want ErrAlreadyRunning", err)
 	}
 }
@@ -363,7 +363,7 @@ func TestPreflightRefusesWithoutAService(t *testing.T) {
 func TestProgressSurvivesForALaterReader(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("new"))
 	h := newHarness(t, fr, "v0.4.1")
-	if err := h.applier.Start("", false); err != nil {
+	if err := h.applier.Start(KindRelease, "", false); err != nil {
 		t.Fatal(err)
 	}
 	h.waitPhase(t, PhaseRestarting)

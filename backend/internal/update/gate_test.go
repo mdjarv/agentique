@@ -14,7 +14,7 @@ func TestArmWaitsForIdleThenFires(t *testing.T) {
 	h := newHarness(t, fr, "v0.4.1")
 	h.busy = []string{"session-a"}
 
-	armed, err := h.applier.Arm("v9.9.9", time.Hour)
+	armed, err := h.applier.Arm(KindRelease, "v9.9.9", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestArmOnAnIdleMachineFiresImmediately(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("new"))
 	h := newHarness(t, fr, "v0.4.1") // not busy
 
-	if _, err := h.applier.Arm("", time.Hour); err != nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	// No turn will ever end on an idle machine — arming must not wait for one.
@@ -57,7 +57,7 @@ func TestArmedUpgradeIsCancellable(t *testing.T) {
 	h := newHarness(t, fr, "v0.4.1")
 	h.busy = []string{"session-a"}
 
-	if _, err := h.applier.Arm("", time.Hour); err != nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.applier.Disarm(); err != nil {
@@ -87,10 +87,10 @@ func TestArmingTwiceIsRefused(t *testing.T) {
 	h := newHarness(t, fr, "v0.4.1")
 	h.busy = []string{"session-a"}
 
-	if _, err := h.applier.Arm("", time.Hour); err != nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.applier.Arm("", time.Hour); !errors.Is(err, ErrAlreadyArmed) {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); !errors.Is(err, ErrAlreadyArmed) {
 		t.Fatalf("got %v, want ErrAlreadyArmed", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestArmedUpgradeExpires(t *testing.T) {
 	h.busy = []string{"session-a"}
 
 	// A deadline already in the past: the next evaluation must give up.
-	if _, err := h.applier.Arm("", time.Nanosecond); err != nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Nanosecond); err != nil {
 		t.Fatal(err)
 	}
 	h.busy = nil
@@ -129,7 +129,7 @@ func TestArmRefusedWhenTheMachineCannotUpgrade(t *testing.T) {
 	h.applier.deps.ServiceInstalled = func() bool { return false }
 
 	// No point arming something that could never fire.
-	if _, err := h.applier.Arm("", time.Hour); err == nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); err == nil {
 		t.Fatal("arming must run the same preflight as applying")
 	}
 	if h.applier.Arming() != nil {
@@ -141,7 +141,7 @@ func TestArmingIsForgottenByAFreshApplier(t *testing.T) {
 	fr := newFakeRelease(t, "v9.9.9", []byte("new"))
 	h := newHarness(t, fr, "v0.4.1")
 	h.busy = []string{"session-a"}
-	if _, err := h.applier.Arm("", time.Hour); err != nil {
+	if _, err := h.applier.Arm(KindRelease, "", time.Hour); err != nil {
 		t.Fatal(err)
 	}
 

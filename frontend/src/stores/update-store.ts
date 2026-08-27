@@ -6,7 +6,9 @@ import {
   cancelUpdate,
   fetchUpdateStatus,
   PRIMARY_MACHINE_KEY,
+  type UpdateKind,
 } from "~/lib/update-api";
+import { sourceWantsAttention } from "~/lib/update-source";
 import { useMachineStore } from "~/stores/machine-store";
 
 /**
@@ -52,8 +54,11 @@ interface UpdateState {
   /** Fold a progress push (or a status read) into the flight for a machine. */
   applyProgress: (key: string, progress: UpdateProgress) => void;
   /** Start an upgrade on one machine — now, when idle, or over the top of the
-   *  turns in flight. */
-  apply: (key: string, opts?: { force?: boolean; whenIdle?: boolean }) => Promise<void>;
+   *  turns in flight. `kind` picks the channel; absent means release. */
+  apply: (
+    key: string,
+    opts?: { force?: boolean; whenIdle?: boolean; kind?: UpdateKind },
+  ) => Promise<void>;
   /** Disarm an armed upgrade, or cancel one that has not installed anything. */
   cancel: (key: string) => Promise<void>;
   /** Forget a finished flight so the row goes back to normal. */
@@ -130,7 +135,16 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   apply: async (key, opts = {}) => {
     const status = get().statuses[key];
     if (!status) throw new Error("no version information for that machine");
-    await applyUpdate(key, status.latest, opts);
+    // `expect` is the staleness guard, and each channel measures it in its own
+    // units: a tag for a release, the branch head's commit for a source build.
+    // A restart installs nothing, so there is nothing to be stale about.
+    const expect =
+      opts.kind === "source"
+        ? (status.source?.head ?? "")
+        : opts.kind === "restart"
+          ? ""
+          : status.latest;
+    await applyUpdate(key, expect, opts);
     // The 202's body is the queued progress (or the arming); the WS topic
     // carries the rest. Read it back so a client whose socket is slow still
     // starts narrating, and so an arming lands in the status immediately.
@@ -186,11 +200,27 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 }));
 
-/** Machine keys with a published upgrade waiting. Ordered primary-first. */
+/**
+ * Machine keys with something waiting. Ordered primary-first.
+ *
+ * Two independent claims count: a published release this machine is behind, and
+ * a local checkout that has moved past the build it is running. They have
+ * different costs and neither hides the other (docs/upgrades.md), so a machine
+ * appears here if either holds.
+ */
 export function behindKeys(statuses: Record<string, UpdateStatus>): string[] {
   return Object.keys(statuses)
-    .filter((key) => statuses[key]?.behind)
+    .filter((key) => {
+      const status = statuses[key];
+      return Boolean(status?.behind) || sourceWantsAttention(status?.source);
+    })
     .sort((a, b) => (a === PRIMARY_MACHINE_KEY ? -1 : b === PRIMARY_MACHINE_KEY ? 1 : 0));
+}
+
+/** Machine keys behind a published RELEASE, which is what the chip names when
+ *  it can name a version. A source verdict has no version to name. */
+export function releaseBehindKeys(statuses: Record<string, UpdateStatus>): string[] {
+  return behindKeys(statuses).filter((key) => statuses[key]?.behind);
 }
 
 /** Whether a flight is still going, so the UI keeps narrating. */

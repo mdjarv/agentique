@@ -42,8 +42,12 @@ const armCheckInterval = 30 * time.Second
 
 // Arming is the public shape of an armed upgrade.
 type Arming struct {
-	// Target is the release it will install.
+	// Target is the release it will install — or, on the source channel, the
+	// commit it will build.
 	Target string `json:"target"`
+	// Kind is which channel armed it. Omitted for a release, so a client that
+	// predates the source channel reads the payload unchanged.
+	Kind Kind `json:"kind,omitempty"`
 	// ArmedAt and DeadlineAt are RFC3339 UTC.
 	ArmedAt    string `json:"armedAt"`
 	DeadlineAt string `json:"deadlineAt"`
@@ -52,13 +56,14 @@ type Arming struct {
 // armState is the gate's private half of an arming.
 type armState struct {
 	public   Arming
+	kind     Kind
 	deadline time.Time
 }
 
 // Arm holds an upgrade until the machine goes idle. Refused when the machine
 // could not upgrade at all — no point arming something that can never fire.
-func (a *Applier) Arm(expect string, deadline time.Duration) (Arming, error) {
-	p, err := a.Preflight()
+func (a *Applier) Arm(kind Kind, expect string, deadline time.Duration) (Arming, error) {
+	p, err := a.preflightFor(kind)
 	if err != nil {
 		return Arming{}, err
 	}
@@ -83,9 +88,11 @@ func (a *Applier) Arm(expect string, deadline time.Duration) (Arming, error) {
 	a.arm = &armState{
 		public: Arming{
 			Target:     p.target,
+			Kind:       wireKind(p.kind),
 			ArmedAt:    now.Format(time.RFC3339),
 			DeadlineAt: until.Format(time.RFC3339),
 		},
+		kind:     p.kind,
 		deadline: until,
 	}
 	armed := a.arm.public
@@ -148,6 +155,7 @@ func (a *Applier) tryFire() {
 	}
 	expired := time.Now().After(a.arm.deadline)
 	target := a.arm.public.Target
+	kind := a.arm.kind
 	a.mu.Unlock()
 
 	if expired {
@@ -171,13 +179,13 @@ func (a *Applier) tryFire() {
 	a.mu.Unlock()
 	a.stopArmWatch()
 
-	slog.Info("update: machine went idle, applying armed upgrade", "target", target)
-	if err := a.Start(target, false); err != nil {
+	slog.Info("update: machine went idle, applying armed upgrade", "kind", kind, "target", target)
+	if err := a.Start(kind, target, false); err != nil {
 		// Losing the race back to busy is not a failure — re-arm rather than
 		// dropping an upgrade the operator asked for.
 		if errors.Is(err, ErrBusy) {
 			slog.Info("update: re-arming, machine went busy again", "target", target)
-			if _, aerr := a.Arm(target, 0); aerr != nil {
+			if _, aerr := a.Arm(kind, target, 0); aerr != nil {
 				slog.Warn("update: could not re-arm", "error", aerr)
 			}
 			return

@@ -157,6 +157,12 @@ type Querier interface {
 	SetSessionUnseenCompletedAt(ctx context.Context, arg SetSessionUnseenCompletedAtParams) error
 	SetVoiceSettings(ctx context.Context, arg SetVoiceSettingsParams) error
 	SetWorktreeMerged(ctx context.Context, id string) error
+	// What this server itself spent today, per provider, from its own turn results.
+	// Deliberately NOT a scan of the CLI's transcripts: agentique is the thing that
+	// ran these turns, so it already knows, and this answers for every provider
+	// rather than only the one that writes JSONL.
+	// 'now' is local (no 'utc' modifier) so "today" means the operator's day.
+	TodaySpendByProvider(ctx context.Context) ([]TodaySpendByProviderRow, error)
 	UnsetSessionArchived(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateAgentProfile(ctx context.Context, arg UpdateAgentProfileParams) (AgentProfile, error)

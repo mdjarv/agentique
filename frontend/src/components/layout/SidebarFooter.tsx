@@ -1,7 +1,13 @@
 /**
- * Sidebar footer — one 30px line: account identity on the left, a three-column
- * instrument cluster (5h / 7d usage · disk) on the right, and a reconnecting
- * chip that only exists while the socket is down. Both open one popover.
+ * Sidebar footer — one line: account identity on the left, the usage cluster on
+ * the right, and a reconnecting chip that only exists while the socket is down.
+ * Both open one popover.
+ *
+ * The cluster is one group per agent — a run of meters, then that vendor's mark
+ * (docs/usage.md). Its numbers come from ONE server-side collector rather than
+ * from whatever a running session happened to emit, so they are current with no
+ * session open and they cover every provider rather than only the one that
+ * volunteers events.
  *
  * The popover is deliberately thin: the meters it fronts, and the way through
  * to everything else. Machines, theme, the Claude account and sign-out moved
@@ -9,73 +15,35 @@
  * a control panel.
  */
 import { Link } from "@tanstack/react-router";
-import { HardDrive, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
+import { Boxes, HardDrive, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { UpdateChip } from "~/components/update/UpdateChip";
+import { UpdateDialog } from "~/components/update/UpdateDialog";
+import { UpdatePopoverRows } from "~/components/update/UpdatePopoverRows";
+import { UsageCluster } from "~/components/usage/UsageCluster";
+import { UsagePanel } from "~/components/usage/UsagePanel";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
-import { cn, formatBytes } from "~/lib/utils";
+import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
+import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
-import type { RateLimitEntry } from "~/stores/rate-limit-store";
-import { useRateLimitStore } from "~/stores/rate-limit-store";
-import { useStorageStore } from "~/stores/storage-store";
+import { useUpdateStore } from "~/stores/update-store";
+import { startUsagePolling, useUsageStore } from "~/stores/usage-store";
 import { ClaudeLoginDialog } from "./ClaudeLoginDialog";
-
-// ── Meter tiers (shared by the cluster columns and the popover bars) ──
-
-type Tier = "normal" | "warning" | "critical";
-
-const TIER_FILL: Record<Tier, string> = {
-  normal: "bg-primary",
-  warning: "bg-warning",
-  critical: "bg-destructive",
-};
-
-function usageTier(utilization: number): Tier {
-  if (utilization >= 0.9) return "critical";
-  if (utilization >= 0.7) return "warning";
-  return "normal";
-}
-
-function effectiveUtilization(entry: RateLimitEntry | undefined): number {
-  if (!entry) return 0;
-  if (entry.resetsAt > 0 && Date.now() > entry.resetsAt * 1000) return 0;
-  return entry.utilization;
-}
-
-function formatResetTime(resetsAt: number): string | null {
-  const diffMs = resetsAt * 1000 - Date.now();
-  if (diffMs <= 0) return null;
-  const totalMin = Math.ceil(diffMs / 60_000);
-  if (totalMin < 60) return `resets in ${totalMin}m`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return m > 0 ? `resets in ${h}h ${m}m` : `resets in ${h}h`;
-}
-
-const GB = 1024 ** 3;
-
-function diskTier(freeBytes: number, totalBytes: number): Tier {
-  const frac = totalBytes > 0 ? freeBytes / totalBytes : 1;
-  if (frac < 0.05 || freeBytes < 5 * GB) return "critical";
-  if (frac < 0.1 || freeBytes < 10 * GB) return "warning";
-  return "normal";
-}
 
 export function SidebarFooter() {
   const [open, setOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const connection = useConnectionStatus();
+  const doc = useUsageStore((s) => s.doc);
+  const version = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]?.current) ?? "";
   const close = () => setOpen(false);
 
-  // Disk polling lives here because the cluster shows it permanently.
-  const fetchDiskStats = useStorageStore((s) => s.fetchDiskStats);
-  useEffect(() => {
-    fetchDiskStats();
-    const id = setInterval(fetchDiskStats, 60_000);
-    return () => clearInterval(id);
-  }, [fetchDiskStats]);
+  // One poll for the whole app, started here because the footer outlives every
+  // route. The server holds the cache and does the probing, so this is a cheap
+  // read rather than a round trip to a vendor.
+  useEffect(() => startUsagePolling(), []);
 
   return (
     <div className="border-t border-sidebar-border px-2 py-1.5">
@@ -98,139 +66,54 @@ export function SidebarFooter() {
               {connection === "reconnecting" ? "reconnecting" : "disconnected"}
             </span>
           )}
-          <InstrumentCluster onOpen={() => setOpen(true)} />
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Subscription usage"
+              className="flex h-6 cursor-pointer items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
+            >
+              <UsageCluster doc={doc} />
+            </button>
+          </PopoverTrigger>
         </div>
-        <PopoverContent side="top" align="end" className="w-72 p-1.5">
-          <SectionLabel>Usage</SectionLabel>
-          <UsageDetail />
-          <Separator />
+        {/* The content grows with what is true: an upgrade row, a window per
+            allowance, the disk gauge and the ways out. On a short window that
+            can exceed the space above the trigger, so it scrolls rather than
+            clipping its own first row — which is the one carrying the verb. */}
+        <PopoverContent
+          side="top"
+          align="end"
+          collisionPadding={8}
+          className="max-h-(--radix-popover-content-available-height) w-72 overflow-y-auto p-1.5"
+        >
+          {/* Above the meters, and only when populated: the verbs come first
+              because they are the only thing here that can be acted on. */}
+          <UpdatePopoverRows />
+          <UsagePanel />
+          <div className="mx-2 my-1 h-px bg-border/60" />
+          <button
+            type="button"
+            onClick={() => {
+              close();
+              setVersionsOpen(true);
+            }}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50"
+          >
+            <Boxes className="size-3.5 text-muted-foreground" />
+            Versions
+            <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground-faint">
+              {version}
+            </span>
+          </button>
           <NavRow to="/settings" icon={SettingsIcon} label="Settings" onNavigate={close} />
           <NavRow to="/storage" icon={HardDrive} label="Storage" onNavigate={close} />
         </PopoverContent>
       </Popover>
+      {/* The fleet view. The popover carries this machine's verb; a row per
+          machine needs the room only a dialog has. */}
+      <UpdateDialog open={versionsOpen} onOpenChange={setVersionsOpen} />
       <ClaudeLoginDialog />
     </div>
-  );
-}
-
-// ── The instrument cluster: 5h · 7d · disk as three 3px columns ──
-
-function InstrumentCluster({ onOpen }: { onOpen: () => void }) {
-  const fiveHour = useRateLimitStore((s) => s.entries.five_hour);
-  const sevenDay = useRateLimitStore((s) => s.entries.seven_day);
-  const disk = useStorageStore((s) => s.disk);
-
-  const fiveUtil = effectiveUtilization(fiveHour);
-  const sevenUtil = effectiveUtilization(sevenDay);
-  const diskPct = disk && disk.totalBytes > 0 ? Math.min(disk.usagePercent, 100) / 100 : 0;
-  const dTier = disk ? diskTier(disk.freeBytes, disk.totalBytes) : "normal";
-
-  const title = [
-    `5h ${Math.round(fiveUtil * 100)}%`,
-    `7d ${Math.round(sevenUtil * 100)}%`,
-    disk ? `disk ${formatBytes(disk.freeBytes)} free` : "disk —",
-  ].join(" · ");
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={`System meters: ${title}`}
-          onClick={onOpen}
-          className="flex h-6 cursor-pointer items-end gap-[3px] rounded-md px-1.5 pb-1 pt-1 transition-colors hover:bg-muted/50"
-        >
-          <MeterColumn fraction={fiveUtil} tier={usageTier(fiveUtil)} />
-          <MeterColumn fraction={sevenUtil} tier={usageTier(sevenUtil)} />
-          <MeterColumn fraction={diskPct} tier={dTier} />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{title}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function MeterColumn({ fraction, tier }: { fraction: number; tier: Tier }) {
-  // A sliver stays visible at zero so the instrument reads as present, not broken.
-  const pct = Math.max(Math.round(fraction * 100), 8);
-  return (
-    <span className="relative h-full w-[3px] overflow-hidden rounded-full bg-border/80">
-      <span
-        className={cn("absolute inset-x-0 bottom-0 rounded-full", TIER_FILL[tier])}
-        style={{ height: `${pct}%`, opacity: fraction === 0 ? 0.35 : 1 }}
-      />
-    </span>
-  );
-}
-
-// ── Popover building blocks ──
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
-      {children}
-    </div>
-  );
-}
-
-function Separator() {
-  return <div className="mx-2 my-1 h-px bg-border/60" />;
-}
-
-function UsageDetail() {
-  const fiveHour = useRateLimitStore((s) => s.entries.five_hour);
-  const sevenDay = useRateLimitStore((s) => s.entries.seven_day);
-  const disk = useStorageStore((s) => s.disk);
-
-  return (
-    <div className="flex flex-col gap-1.5 px-3 py-1">
-      <UsageRow label="5h" entry={fiveHour} />
-      <UsageRow label="7d" entry={sevenDay} />
-      {disk && disk.totalBytes > 0 && (
-        <Link
-          to="/storage"
-          className="group flex items-center gap-2"
-          title={`${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}`}
-        >
-          <HardDrive className="size-3 shrink-0 text-muted-foreground" />
-          <MeterBar
-            fraction={Math.min(disk.usagePercent, 100) / 100}
-            tier={diskTier(disk.freeBytes, disk.totalBytes)}
-          />
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground group-hover:text-foreground">
-            {formatBytes(disk.freeBytes)} free
-          </span>
-        </Link>
-      )}
-    </div>
-  );
-}
-
-function UsageRow({ label, entry }: { label: string; entry: RateLimitEntry | undefined }) {
-  const util = effectiveUtilization(entry);
-  const pct = Math.round(util * 100);
-  const resetLabel = entry?.resetsAt ? formatResetTime(entry.resetsAt) : null;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-3 shrink-0 font-mono text-[10px] text-muted-foreground-faint">
-        {label}
-      </span>
-      <MeterBar fraction={util} tier={usageTier(util)} />
-      <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-        {pct}%{resetLabel ? ` · ${resetLabel}` : ""}
-      </span>
-    </div>
-  );
-}
-
-function MeterBar({ fraction, tier }: { fraction: number; tier: Tier }) {
-  return (
-    <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-border/80">
-      <span
-        className={cn("block h-full rounded-full", TIER_FILL[tier])}
-        style={{ width: `${Math.min(Math.round(fraction * 100), 100)}%` }}
-      />
-    </span>
   );
 }
 

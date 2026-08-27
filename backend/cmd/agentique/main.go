@@ -21,7 +21,18 @@ var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
-	addr    string
+	// buildOrigin says how this binary was produced, because nothing else can.
+	// A local build sitting exactly on a tag stamps the bare tag, byte-identical
+	// to what CI stamps, and main.commit is set on both paths — so the source
+	// channel cannot infer whether the checkout it is watching is where this
+	// binary came from (docs/upgrades.md).
+	//
+	// "local" is set by the justfile's backend-build, "release" by
+	// .github/workflows/release.yml and `just release`. Empty means a plain
+	// `go build`, and the source channel stays off: unknown is never a licence
+	// to offer a rebuild over a binary somebody downloaded.
+	buildOrigin = ""
+	addr        string
 	// addrChanged records whether --addr was explicitly passed (set in the
 	// root PersistentPreRun — baseURL cannot ask rootCmd directly without an
 	// initialization cycle).

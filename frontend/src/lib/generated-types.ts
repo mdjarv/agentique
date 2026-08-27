@@ -528,6 +528,7 @@ export interface ReclaimResponse {
 
 export interface UpdateArming {
   target: string;
+  kind?: string;
   armedAt: string;
   deadlineAt: string;
 }
@@ -535,10 +536,12 @@ export interface UpdateArming {
 export interface UpdateProgress {
   machineId: string;
   phase: string;
+  kind?: string;
   target: string;
   from: string;
   downloaded: number;
   total: number;
+  log?: string[];
   cancellable: boolean;
   error?: string;
   startedAt: string;
@@ -570,6 +573,26 @@ export interface UpdateCLIStatus {
   lastRan?: string;
 }
 
+export interface UpdateSourceStatus {
+  dir: string;
+  branch: string;
+  head?: string;
+  headSubject?: string;
+  builtFrom?: string;
+  ahead: number;
+  behind: boolean;
+  dirty: boolean;
+  checkedOut?: string;
+  origin?: string;
+  staged: boolean;
+  installedVersion?: string;
+  stagedIsCurrent?: boolean;
+  buildable: boolean;
+  blocker?: string;
+  checkedAt?: string;
+  checkError?: string;
+}
+
 export interface UpdateStatus {
   current: string;
   latest: string;
@@ -588,7 +611,36 @@ export interface UpdateStatus {
   busyTurns: number;
   armed?: UpdateArming;
   clis?: UpdateCLIStatus[];
+  source?: UpdateSourceStatus;
   progress?: UpdateProgress;
+}
+
+export interface UsageLimit {
+  label: string;
+  percent: number;
+  severity?: string;
+  resetsAt?: string;
+  detail?: string;
+}
+
+export interface UsageAgent {
+  id: string;
+  name: string;
+  kind?: string;
+  tierLabel?: string;
+  ready: boolean;
+  updatedAt?: string;
+  usageStatusText?: string;
+  authHelpText?: string;
+  limits?: UsageLimit[];
+  todayTokens?: number;
+  todayPrompts?: number;
+}
+
+export interface UsageDocument {
+  schemaVersion: number;
+  agents: UsageAgent[];
+  fetchedAt?: string;
 }
 
 export interface ProjectSubscribePayload {

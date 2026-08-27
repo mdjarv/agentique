@@ -580,6 +580,103 @@ user to update manually", never "fall back to npm": the wrong command installs a
 second copy, and the version we probe stops describing the one that runs. See
 `docs/upgrades.md`.
 
+**Two channels, and a dev build nags only about its own checkout.** The release
+channel asks GitHub for a tag; the **source** channel asks a local git checkout
+whether the branch this build came from has moved past it. A machine can be
+behind on both, and neither hides the other — different claims, different costs.
+The source check never fetches and never writes to the checkout.
+
+**`main.buildOrigin` decides whether the source channel speaks at all, and it is
+stamped because it cannot be inferred.** A local build on an exact tag produces
+the same bare `v1.2.3` CI produces, and `main.commit` is set on both paths, so a
+downloaded release beside a clone of the repo looks exactly like a build from
+that clone. `just build` stamps `local`, `just release` and `release.yml` stamp
+`release`, a plain `go build` leaves it empty — and only `local` gets a verdict.
+Keep those three sites in step; a missing stamp silently disables the feature,
+and a wrong one offers to rebuild over somebody's downloaded install.
+
+Its verdict is withheld far more often than it is given, and each refusal is
+load-bearing. A **dirty** tree says nothing, because uncommitted work is not a
+version. A checkout **on another branch** says nothing either, and that one is
+correctness rather than noise: the build runs *in place*, so it compiles what is
+checked out, and reporting master's commit before building a feature branch
+would install a binary no part of the status described. A `builtFrom` commit git
+does not recognise is **unknown, which is not behind** — the same fail-closed
+rule `docs/storage.md` applies to Delete. `lib/update-source.ts` is the one
+closed union that turns those facts into a row, read by the row and the chip
+alike, and rebuild outranks restart because a staged binary can itself be stale.
+
+Building is `just build`, never `just install`: the install recipe rewrites the
+systemd unit, and doing that *from inside the service* re-bakes
+`Environment=PATH` from the service's own environment, narrowing it a little
+further every time. The swap stays `installOver`, so `agentique rollback` covers
+a source build for free.
+
+**Busy is checked twice on the source channel.** A download lands before the
+gate's answer goes stale; a build takes minutes, so a turn can open underneath
+it — one that started *after* the operator accepted the cost. A finished build
+that finds the machine busy holds at `waiting-idle`, which is cancellable and
+deliberately not terminal.
+
+The one exception to "agentique never runs a provider CLI" is agentique running
+**agentique**: the staged-binary check asks the install path for its `--version`.
+That rule is about binaries another library owns. Any failure there means "not
+staged", never a guess.
+
+### Subscription usage — `docs/usage.md`
+
+One server-side collector per vendor, one normalized record, and a client that
+never learns which vendor is HTTP and which is a subprocess. Polling is
+server-side on the update checker's precedent, so five tabs cost one probe.
+
+**`percent` is a fraction 0..1 and `< 0` means unknown, not zero.** Unknown is
+filtered from every surface by `usableLimits`, the one filter the indicator and
+the panel share — so they can never disagree about which windows exist. The set
+of limits is never hardcoded: model-scoped allowances come and go.
+
+The Claude payload has four traps, all verified live. **`limits[]` is the source
+of truth and the flat buckets are only a fallback** — the model-scoped window
+exists nowhere else, and the legacy per-model buckets sit at null. **Never
+iterate the buckets**: codenamed ones (`nimbus_quill`) carry real utilizations
+with no `limits[]` entry, so a thorough collector invents a meter nobody can
+name. **Scale is decided once per payload**, or a genuine `1.0` renders as 100%.
+**Windows are named from `kind`**, never a model name — "Opus 5 (1M context)"
+parses to a one-minute window. Severity comes from the vendor where it gives
+one; a client threshold is a guess about somebody else's limit.
+
+**`kind: "gauge"` is what stops disk pretending to be an allowance.** An
+allowance resets, so it may escalate and shows a countdown. A gauge is a level:
+a small disk at 88% is its normal state, not news, so it never escalates, never
+counts down, and shows its absolute figure. A permanent warning teaches the
+reader to ignore warnings.
+
+Today's tokens come from agentique's own `result` events, not a JSONL scan — it
+ran those turns, and it can answer for every provider rather than the one that
+writes transcripts.
+
+**Codex goes through `runtime.AccountInspectable`, type-asserted off the
+connector** — the same seam `InstallInspectable` uses, because agentique never
+runs a provider CLI. That makes `connector.go` vendor-neutral: a provider whose
+connector implements the capability becomes a record with no collector of its
+own. A failed probe splits **structural from transient**: `ErrNotSupported` is
+what an uninstalled CLI looks like, so the record is forgotten entirely, while a
+timeout or a dial failure keeps the last numbers with a line saying why they are
+old. A meter kept alive for a provider that is gone never stops being wrong.
+Collectors run in parallel, each bounded, and the provider id rides the result —
+a collector that says "nothing at all" returns a zero record, and deleting by
+its empty id would leave the stale one in place.
+
+**Every failure is a state on the record, never an error that blanks the
+component**, on both sides of the wire. A transport failure and an HTTP status
+are different: nothing-answered retries fast, a server that answered is left
+alone. The four auth states each need their own words, because only the CLI can
+mint a token. A cached percentage expires **when its window rolls over**, not on
+a timer — but an unreadable timestamp is kept, not discarded.
+
+The token reaches an `Authorization` header and nothing else: not the cache, not
+the response, not a log. A test asserts it does not survive into the marshalled
+record.
+
 ### Live voice — `docs/voice.md`
 
 **Audio never rides `/ws`.** That socket is `ReadJSON`/`WriteJSON` both ways, so

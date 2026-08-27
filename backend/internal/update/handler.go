@@ -21,6 +21,10 @@ type Handler struct {
 	// CLIs reports the provider CLIs this machine would spawn. Nil when nothing
 	// can answer — the rest of the status is unaffected.
 	CLIs *CLIProbe
+	// Source watches the local checkout this server was built from. Nil when no
+	// [update] source-dir is configured, which is the normal state on a machine
+	// that only ever installs releases.
+	Source *SourceChecker
 }
 
 // HandleStatus answers GET /api/update/status. `?refresh=1` forces a check
@@ -42,6 +46,11 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		if h.CLIs != nil {
 			h.CLIs.Refresh(r.Context())
 		}
+		// And the checkout, for the same reason: "check again" that skips the
+		// half you were looking at is not a check.
+		if h.Source != nil {
+			h.Source.Refresh(r.Context())
+		}
 	}
 	h.decorate(&st)
 	httperror.JSON(w, http.StatusOK, st)
@@ -56,6 +65,10 @@ func (h *Handler) decorate(st *Status) {
 	if h.CLIs != nil {
 		st.CLIs = h.CLIs.Status()
 	}
+	if h.Source != nil {
+		src := h.Source.Status()
+		st.Source = &src
+	}
 	if h.Applier == nil {
 		st.Blocker = "this server was built without in-app upgrades"
 		return
@@ -65,6 +78,31 @@ func (h *Handler) decorate(st *Status) {
 	st.BusyTurns = len(busy)
 	st.Progress = h.Applier.Progress()
 	st.Armed = h.Applier.Arming()
+
+	// The source channel's own preflight, so its row can offer a button on the
+	// same terms the release row does — and say why not, when it cannot.
+	if st.Source != nil {
+		_, err := h.Applier.PreflightSource()
+		switch {
+		case err == nil:
+			st.Source.Buildable = true
+			st.Source.Blocker = ""
+		case errors.Is(err, ErrNoSource):
+			// We are HERE because a checkout is configured — h.Source is what
+			// produced st.Source. So the applier not having one means only that
+			// the button is switched off, and saying "no source checkout is
+			// configured" would contradict the row it sits in.
+			if st.Source.Blocker == "" {
+				st.Source.Blocker = "rebuilding from source is switched off here — set [update] source-apply"
+			}
+		default:
+			// Not an error to shout about: a clean checkout in step with the
+			// running build lands here on every ordinary day.
+			if st.Source.Blocker == "" {
+				st.Source.Blocker = err.Error()
+			}
+		}
+	}
 
 	if _, err := h.Applier.Preflight(); err != nil {
 		// Not an error to report loudly: most of the time it just means this
@@ -84,15 +122,18 @@ func (h *Handler) HandleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		// Expect is the tag the client believes is latest. A mismatch means
-		// its picture is older than ours, and it is refused rather than
-		// silently installing something else.
+		// Expect is the tag the client believes is latest — or, on the source
+		// channel, the commit. A mismatch means its picture is older than ours,
+		// and it is refused rather than silently installing something else.
 		Expect string `json:"expect"`
 		// Force overrides the busy refusal, at the cost of the running turns.
 		Force bool `json:"force"`
 		// WhenIdle arms the drain gate instead of upgrading now: a one-shot
 		// that fires when the last turn on this machine ends.
 		WhenIdle bool `json:"whenIdle"`
+		// Kind picks the channel. Absent means "release", so every client that
+		// predates the source channel keeps working unchanged.
+		Kind Kind `json:"kind"`
 	}
 	// An empty body is fine — it means "whatever is latest, if idle".
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -100,22 +141,27 @@ func (h *Handler) HandleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	kind := req.Kind
+	if kind == "" {
+		kind = KindRelease
+	}
+
 	if req.WhenIdle {
-		armed, err := h.Applier.Arm(req.Expect, 0)
+		armed, err := h.Applier.Arm(kind, req.Expect, 0)
 		if err != nil {
 			httperror.RespondError(w, applyError(err))
 			return
 		}
-		slog.Info("update: armed for idle", "expect", req.Expect, "deadline", armed.DeadlineAt)
+		slog.Info("update: armed for idle", "kind", kind, "expect", req.Expect, "deadline", armed.DeadlineAt)
 		httperror.JSON(w, http.StatusAccepted, armed)
 		return
 	}
 
-	if err := h.Applier.Start(req.Expect, req.Force); err != nil {
+	if err := h.Applier.Start(kind, req.Expect, req.Force); err != nil {
 		httperror.RespondError(w, applyError(err))
 		return
 	}
-	slog.Info("update: apply accepted", "expect", req.Expect, "force", req.Force)
+	slog.Info("update: apply accepted", "kind", kind, "expect", req.Expect, "force", req.Force)
 	httperror.JSON(w, http.StatusAccepted, h.Applier.Progress())
 }
 
@@ -151,7 +197,9 @@ func applyError(err error) *httperror.Error {
 		return httperror.NotFound(err.Error())
 	case errors.Is(err, ErrStale):
 		return httperror.BadRequest(err.Error())
-	case errors.Is(err, ErrNotSupported), errors.Is(err, ErrNoRelease):
+	case errors.Is(err, ErrNotSupported), errors.Is(err, ErrNoRelease),
+		errors.Is(err, ErrNoSource), errors.Is(err, ErrSourceNotReady),
+		errors.Is(err, ErrNothingStaged), errors.Is(err, ErrToolMissing):
 		return &httperror.Error{Status: http.StatusUnprocessableEntity, Message: err.Error()}
 	default:
 		return httperror.Internal(err.Error(), err)

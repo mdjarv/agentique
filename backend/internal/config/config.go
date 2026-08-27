@@ -259,6 +259,24 @@ type UpdateConfig struct {
 	// waits before giving up and saying so (e.g. "4h"); empty takes the
 	// default. Env: AGENTIQUE_UPDATE_ARM_DEADLINE.
 	ArmDeadline string `toml:"arm-deadline"`
+
+	// SourceDir is the local agentique checkout this server was built from.
+	// Setting it turns the source channel on: the server compares the running
+	// build's commit against that checkout's branch and offers to rebuild when
+	// it has moved. Empty leaves the channel off entirely — a machine that only
+	// ever installs releases has nothing to compare against. Env:
+	// AGENTIQUE_UPDATE_SOURCE_DIR.
+	SourceDir string `toml:"source-dir"`
+	// SourceBranch is the ref the source channel compares against; empty means
+	// "master". The checkout must be sitting on this branch and clean for a
+	// build to be offered, so that an in-place build can only ever produce the
+	// commit the status reported. Env: AGENTIQUE_UPDATE_SOURCE_BRANCH.
+	SourceBranch string `toml:"source-branch"`
+	// SourceApply enables the button, as opposed to the verdict. Off by
+	// default: the check is read-only and safe everywhere, while applying
+	// compiles in your checkout and restarts the service, which ends every turn
+	// in flight. Env: AGENTIQUE_UPDATE_SOURCE_APPLY.
+	SourceApply bool `toml:"source-apply"`
 }
 
 type BackupConfig struct {

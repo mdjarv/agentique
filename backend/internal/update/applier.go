@@ -82,6 +82,10 @@ type Applier struct {
 	// arm is the drain gate's one-shot (gate.go). In-memory only, deliberately:
 	// a restart for any other reason must forget it.
 	arm *armState
+	// source is the local checkout this machine may build from (source.go).
+	// Nil on every machine with no [update] source-dir configured, which
+	// leaves the source channel off rather than half-present.
+	source *SourceChecker
 
 	// The gate's backstop ticker, kept off the main mutex so a fire attempt
 	// can stop it without deadlocking on itself.
@@ -111,12 +115,36 @@ func (a *Applier) Progress() *Progress {
 
 // plan is everything resolved before anything is touched.
 type plan struct {
+	// kind decides which middle `run` takes: download-and-verify, compile, or
+	// neither. Everything after the swap is shared.
+	kind        Kind
 	target      string
 	assetName   string
 	assetURL    string
 	checksumURL string
 	binary      string
 	size        int64
+	// sourceDir is the checkout to build in, on KindSource only.
+	sourceDir string
+	// force carries the operator's override past the start check, so the
+	// source channel's second busy check — after the build, before the restart
+	// — honours the same decision rather than re-asking.
+	force bool
+}
+
+// preflightFor resolves the plan for one channel. Never offer a button that
+// cannot work — so every refusal here is a sentence the row can render.
+func (a *Applier) preflightFor(kind Kind) (*plan, error) {
+	switch kind {
+	case KindSource:
+		return a.PreflightSource()
+	case KindRestart:
+		return a.PreflightRestart()
+	case KindRelease, "":
+		return a.Preflight()
+	default:
+		return nil, fmt.Errorf("unknown upgrade kind %q", kind)
+	}
 }
 
 // Preflight resolves the upgrade and proves it could run: verified platform,
@@ -166,6 +194,7 @@ func (a *Applier) Preflight() (*plan, error) {
 	}
 
 	return &plan{
+		kind:        KindRelease,
 		target:      rel.TagName,
 		assetName:   asset,
 		assetURL:    bin.URL,
@@ -173,6 +202,23 @@ func (a *Applier) Preflight() (*plan, error) {
 		binary:      binary,
 		size:        bin.Size,
 	}, nil
+}
+
+// installTarget is the shared tail of every preflight: the binary to replace,
+// a writable directory to replace it in, and something that would bring the new
+// one up afterwards.
+func (a *Applier) installTarget() (string, error) {
+	binary, err := a.deps.BinaryPath()
+	if err != nil {
+		return "", fmt.Errorf("resolve install path: %w", err)
+	}
+	if err := writableDir(filepath.Dir(binary)); err != nil {
+		return "", fmt.Errorf("install directory %s is not writable: %w", filepath.Dir(binary), err)
+	}
+	if a.deps.ServiceInstalled != nil && !a.deps.ServiceInstalled() {
+		return "", errors.New("no agentique service is installed, so nothing would restart the new binary")
+	}
+	return binary, nil
 }
 
 // ErrInsecureAsset rejects a release asset that is not served over TLS.
@@ -213,14 +259,14 @@ func (a *Applier) Busy() []string {
 	return a.deps.BusyTurns()
 }
 
-// Start begins an upgrade to `expect` and returns as soon as it is under way —
-// the caller replies 202 and the narration continues over the WS topic.
+// Start begins an upgrade on one channel and returns as soon as it is under
+// way — the caller replies 202 and the narration continues over the WS topic.
 //
-// `expect` guards against a client acting on a staler picture than ours;
-// empty means "whatever is latest". `force` overrides the busy refusal, and
-// costs the running turns.
-func (a *Applier) Start(expect string, force bool) error {
-	p, err := a.Preflight()
+// `expect` guards against a client acting on a staler picture than ours: a tag
+// on the release channel, a commit on the source channel. Empty means "whatever
+// you have". `force` overrides the busy refusal, and costs the running turns.
+func (a *Applier) Start(kind Kind, expect string, force bool) error {
+	p, err := a.preflightFor(kind)
 	if err != nil {
 		return err
 	}
@@ -230,6 +276,7 @@ func (a *Applier) Start(expect string, force bool) error {
 	if busy := a.Busy(); len(busy) > 0 && !force {
 		return fmt.Errorf("%w (%d)", ErrBusy, len(busy))
 	}
+	p.force = force
 
 	a.mu.Lock()
 	if a.progress != nil && !a.progress.Phase.Terminal() {
@@ -243,6 +290,7 @@ func (a *Applier) Start(expect string, force bool) error {
 	a.progress = &Progress{
 		MachineID:   a.deps.MachineID,
 		Phase:       PhaseQueued,
+		Kind:        wireKind(p.kind),
 		Target:      p.target,
 		From:        a.checker.Version(),
 		Total:       p.size,
@@ -295,8 +343,31 @@ func (a *Applier) commit() bool {
 	return true
 }
 
-// run is the whole upgrade, off the request goroutine.
+// wireKind omits the release kind, so a client that predates the source channel
+// sees exactly the payload it has always seen.
+func wireKind(k Kind) Kind {
+	if k == KindRelease {
+		return ""
+	}
+	return k
+}
+
+// run is the whole upgrade, off the request goroutine. The middle differs per
+// channel; everything from the swap onward is shared.
 func (a *Applier) run(ctx context.Context, p *plan) {
+	switch p.kind {
+	case KindSource:
+		a.runSource(ctx, p)
+	case KindRestart:
+		a.finish(p, "")
+	default:
+		a.runRelease(ctx, p)
+	}
+}
+
+// runRelease downloads a published asset, proves it against the release's own
+// checksums, and installs it.
+func (a *Applier) runRelease(ctx context.Context, p *plan) {
 	dir := filepath.Dir(p.binary)
 
 	a.setPhase(func(pr *Progress) { pr.Phase = PhaseDownloading })
@@ -342,16 +413,32 @@ func (a *Applier) run(ctx context.Context, p *plan) {
 		return
 	}
 
+	a.finish(p, tmp)
+}
+
+// finish is the shared tail of every channel: take the point of no return under
+// the cancel lock, swap the binary, restart.
+//
+// `staged` is the new binary to install, or "" for KindRestart, where the
+// binary at the install path is already the one we want and only the process is
+// stale.
+func (a *Applier) finish(p *plan, staged string) {
 	// The point of no return, taken under the cancel lock.
 	if !a.commit() {
-		a.fail(errors.Join(context.Canceled, os.Remove(tmp)))
+		if staged != "" {
+			a.fail(errors.Join(context.Canceled, os.Remove(staged)))
+			return
+		}
+		a.fail(context.Canceled)
 		return
 	}
-	if err := installOver(tmp, p.binary); err != nil {
-		a.fail(err)
-		return
+	if staged != "" {
+		if err := installOver(staged, p.binary); err != nil {
+			a.fail(err)
+			return
+		}
+		slog.Info("update: installed", "kind", p.kind, "target", p.target, "binary", p.binary, "previous", p.binary+PrevSuffix)
 	}
-	slog.Info("update: installed", "target", p.target, "binary", p.binary, "previous", p.binary+PrevSuffix)
 
 	// Nobody is left to report after this: the process making the call is the
 	// process being replaced. The client treats the drop as expected and

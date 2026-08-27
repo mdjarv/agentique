@@ -31,6 +31,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/update"
+	"github.com/mdjarv/agentique/backend/internal/usage"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
@@ -424,8 +425,19 @@ func main() {
 	// reach the UI shapeless.
 	g.register(update.CLIAutoUpdate{}, "UpdateCLIAutoUpdate")
 	g.register(update.CLIStatus{}, "UpdateCLIStatus")
+	// Same reason as CLIStatus: Status carries the source verdict as a pointer,
+	// and an unregistered target generates `unknown` — the row would reach the
+	// UI shapeless.
+	g.register(update.SourceStatus{}, "UpdateSourceStatus")
 	g.register(update.Status{}, "UpdateStatus")
 	g.addPushEvent("update.progress", updateProgressRef)
+
+	// Usage: Limit before Agent before Document (leaf-first), for the same
+	// reason CLIStatus is registered explicitly — an unregistered element type
+	// generates `unknown[]` and the rows reach the UI shapeless.
+	g.register(usage.Limit{}, "UsageLimit")
+	g.register(usage.Agent{}, "UsageAgent")
+	g.register(usage.Document{}, "UsageDocument")
 
 	// ── WS request payloads ──
 

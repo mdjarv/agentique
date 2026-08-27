@@ -76,8 +76,12 @@ backend-build: frontend-build
     VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo local)"
     COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
     DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # main.buildOrigin=local is what turns the source channel on (docs/upgrades.md).
+    # Nothing else can tell a local build from a downloaded one: building at an
+    # exact tag stamps the bare tag, identical to what CI stamps. Keep this
+    # `local` here and `release` in the release recipe and release.yml.
     cd backend && go build \
-        -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+        -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.buildOrigin=local" \
         -o ../agentique ./cmd/agentique
 
 # Test
@@ -129,7 +133,10 @@ release: frontend-build
     VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
     DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+    # buildOrigin=release, NOT local: these are the artifacts that get uploaded
+    # and installed on other machines, where the local checkout — if there even
+    # is one — is not where this binary came from.
+    LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.buildOrigin=release"
     # Keep this list in step with .github/workflows/release.yml and the asset
     # names in backend/internal/update/platform.go. A name that disagrees with
     # the workflow produces a local dist/ that does not match a real release.

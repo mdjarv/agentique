@@ -66,6 +66,11 @@ type Status struct {
 	// CLI simply is not installed: a machine without codex is a normal state,
 	// not a row saying so (docs/upgrades.md V5).
 	CLIs []CLIStatus `json:"clis,omitempty"`
+	// Source is what the local checkout says: whether the branch this server
+	// was built from has moved past it, and whether a binary is already staged
+	// at the install path. Absent when no [update] source-dir is configured,
+	// which is the normal state on a machine that only installs releases.
+	Source *SourceStatus `json:"source,omitempty"`
 	// Progress is the live upgrade; absent when none is running. Held as state
 	// (not only pushed as events) so reloading mid-upgrade still shows it.
 	// omitempty rather than an explicit null: typegen unwraps pointers, so an

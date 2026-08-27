@@ -66,7 +66,11 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           COMMIT="$(git rev-parse --short HEAD)"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+          # buildOrigin=release keeps the source channel OFF on every machine
+          # that installs one of these. It is the only thing that can: building
+          # locally at an exact tag stamps the same bare tag, and main.commit is
+          # set on both paths (docs/upgrades.md).
+          LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.buildOrigin=release"
           cd backend
           export GOPRIVATE='github.com/allbin/*'
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "../dist/agentique-linux-amd64" ./cmd/agentique

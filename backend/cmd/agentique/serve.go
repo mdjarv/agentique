@@ -502,7 +502,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 			Interval:    firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_INTERVAL"), fileCfg.Update.Interval),
 			Disabled:    envBoolOr("AGENTIQUE_UPDATE_DISABLED", fileCfg.Update.Disabled),
 			ArmDeadline: firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_ARM_DEADLINE"), fileCfg.Update.ArmDeadline),
+			// The source channel (docs/upgrades.md): unset source-dir leaves it
+			// off, which is the state on every machine that only installs
+			// releases.
+			SourceDir:    firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_SOURCE_DIR"), fileCfg.Update.SourceDir),
+			SourceBranch: firstNonEmpty(os.Getenv("AGENTIQUE_UPDATE_SOURCE_BRANCH"), fileCfg.Update.SourceBranch),
+			SourceApply:  envBoolOr("AGENTIQUE_UPDATE_SOURCE_APPLY", fileCfg.Update.SourceApply),
 		},
+		Commit:              commit,
+		BuildOrigin:         buildOrigin,
 		AdminSecret:         adminSecret,
 		TestMode:            testMode,
 		DevMode:             !isRelease(),
@@ -619,6 +627,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// no network, no config writes, no session started.
 	if cp := srv.UpdateCLIProbe(); cp != nil {
 		cp.Start(context.Background())
+	}
+
+	// Has local master moved past the build we are running (docs/upgrades.md).
+	// Started here for the third time for the same reason: it shells out to git
+	// and to the installed binary, and a constructor a test calls must do
+	// neither. Read-only — it never fetches and never writes to the checkout.
+	if sc := srv.UpdateSourceChecker(); sc != nil {
+		sc.Start(context.Background())
+	}
+
+	// Subscription usage (docs/usage.md). Started here for the same reason as
+	// the checkers above: it reads the CLI's credential store and reaches
+	// api.anthropic.com, and a constructor a test calls must do neither.
+	if uc := srv.UsageCollector(); uc != nil {
+		uc.Start(context.Background())
 	}
 
 	// Cross-machine project identity: recompute each project's canonical git

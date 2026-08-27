@@ -4,9 +4,15 @@ A tagged release lands; every client says so, names which machines are behind, a
 upgrades them one at a time on request. Without ending a turn that is mid-flight,
 and without pretending to work on a platform nobody has ever run.
 
-**Status: V1 through V5b shipped. V5c, the button that updates a provider CLI, is
-the last phase.** It is specified at the end of this document, in full, because it
-is not built.
+There are two channels, and a machine can be behind on both at once. The
+**release** channel asks GitHub what the newest tag is. The **source** channel
+asks a local git checkout whether the branch this server was built from has moved
+past it. They are different claims with different costs, so neither hides the
+other.
+
+**Status: V1 through V5b shipped, and the source channel with them. V5c, the
+button that updates a provider CLI, is the last phase.** It is specified at the
+end of this document, in full, because it is not built.
 
 ## The contract
 
@@ -212,6 +218,143 @@ allowlist of verified platforms, starting with `linux/amd64`. Everything else
 reports `supported: false` and the row says "manual upgrade". A platform graduates
 when someone actually runs it, not when it compiles.
 
+## The source channel
+
+A dev build never nags — about a *release*. That invariant is right, and it is
+also why a machine someone develops on used to say nothing at all about its own
+version. `Channel()` classifies a git-describe build as `dev`, `statusFrom`
+refuses to set `behind` on one, and the question that machine actually has is a
+different question: **is the server running what I wrote.**
+
+That one is answerable offline, from a checkout already on disk. `[update]
+source-dir` names it; unset leaves the channel off entirely, which is the state
+on every machine that only installs releases. `internal/update/source.go` reads
+it on the same hourly tick as the release check, never fetches, and never writes
+to the checkout.
+
+### The build has to say it is a local build
+
+**`main.buildOrigin` is stamped, because it cannot be inferred.** A local build
+sitting on an exact tag stamps the bare tag — `git describe` returns `v0.6.0`
+with no suffix on a clean tree at that tag — which is byte-identical to what CI
+stamps, and `main.commit` is set on both paths. So a binary downloaded from a
+release page, on a machine that also happens to have a clone of the repo, is
+indistinguishable from one built out of that clone. Without the stamp the source
+channel would offer to rebuild over somebody's downloaded install.
+
+The justfile's `backend-build` sets `local`; `just release` and
+`.github/workflows/release.yml` set `release`; a plain `go build` leaves it
+empty. **Only `local` produces a verdict**, and the other two do not even run the
+staged probe — the relationship this channel describes does not exist for them.
+A release install says so in `blocker` and its row renders nothing, because its
+updates come from the release row directly above it.
+
+That is also why the three values matter more than they look: `release` is a
+*claim*, `""` is an *absence*, and both must fail closed, but only one of them is
+worth wording as a fact about the install rather than a shortcoming of the build.
+
+```
+"source": {
+  "dir": "…", "branch": "master",
+  "head": "a1b2c3d", "headSubject": "…",   // the branch's HEAD
+  "builtFrom": "1ae969a",                  // main.commit, stamped and until now unused
+  "ahead": 5, "behind": true,
+  "dirty": false, "checkedOut": "master",
+  "staged": false, "installedVersion": "",
+  "buildable": true, "blocker": ""
+}
+```
+
+**The comparison is one command**, `git rev-list --count <builtFrom>..<branch>`,
+and it answers both questions at once: how far the branch has moved, and whether
+the running build is even an ancestor of it. A `builtFrom` this repo does not
+recognise — a binary installed from a release, a rebased history, a shallow clone
+— makes the count fail, and **unknown is not behind**. Same fail-closed rule
+`docs/storage.md` applies to Delete.
+
+**A dirty checkout says nothing.** Uncommitted work is not a version, and a tree
+someone is typing in would light the chip permanently. The facts are still
+reported (`ahead` stays true to the commits); it is the *verdict* that is
+withheld, and `blocker` says why.
+
+**A checkout on another branch says nothing either**, and that one is about
+correctness rather than noise. The build runs **in place**, so it compiles what
+is checked out. Reporting master's commit and then building a feature branch
+would install a binary no part of the status described. Requiring clean-and-on-
+branch is what makes the in-place build honest: the binary is, by construction,
+the commit the row named.
+
+### Three states, three costs
+
+`lib/update-source.ts` is the one closed union that decides what the row says,
+read by the row and by the chip. It ranks by the cheapest **complete** answer,
+which is not the same as the cheapest one:
+
+- A staged binary **built from the head** wins outright. A restart is seconds
+  and there is nothing left to compile, so offering a rebuild would spend two
+  minutes reproducing the identical commit. That is precisely what
+  `just install` leaves behind, and it is the state this box was in while the
+  feature was being verified.
+- Otherwise the rebuild wins. A staged binary the branch has since moved past is
+  itself stale, and restarting into it lands the operator one commit short and
+  asking again.
+
+`stagedIsCurrent` is what separates the two, and the **server** answers it, by
+reading the commit a `git describe` version already carries (`describesCommit`).
+A plain release tag names no commit and therefore never matches — the right
+answer, since we cannot prove a release binary is the branch head. The client
+does no version arithmetic, here or anywhere.
+
+| State | What is true | The verb |
+|---|---|---|
+| `in-step` | the running build is the branch's HEAD | nothing |
+| `staged` | a newer binary is at the install path, but not in the process | restart, seconds |
+| `ready` | the branch has moved and this machine can build it | rebuild, minutes |
+| `blocked` | it has moved, but building would be wrong or impossible | say why |
+| `unknown` | git could not answer | say so |
+
+`staged` is what `just install` leaves behind until the service restarts, and
+what a failed restart leaves behind. It is detected by asking the binary at the
+install path for its `--version` — **agentique running agentique**, which the
+"never run a provider CLI" invariant does not cover: that rule is about binaries
+another library owns, and this one is ours. Once an hour, not per request, and
+any failure means "not staged" rather than a guess.
+
+### Building
+
+`just build`, not `just install`. The install recipe also rewrites the systemd
+unit and regenerates completions, and rewriting the unit *from inside the
+service* re-bakes `Environment=PATH` from the service's own environment — which
+narrows PATH a little further on every upgrade. The swap is `installOver`, the
+same one the release path uses, so `agentique.prev` and `agentique rollback`
+keep working for a source build with no extra code.
+
+`building` replaces `downloading`, and the log tail replaces the byte counter: a
+build has no total to count against, and "is it hung?" is asked just as often —
+usually while npm is silent for ninety seconds.
+
+**The toolchain is resolved before the button is offered.** `just`, `go`, `git`,
+`node` and `npm`, through `exec.LookPath`, from the server's PATH rather than a
+login shell's. That is not defensive: on this dev box the unit's baked PATH
+reaches node only through `/run/user/1000/fnm_multishells/<pid>_<stamp>/bin`, a
+tmpfs directory created per login shell. After a reboot the entry dangles, and
+nothing else on that PATH provides node. A missing tool is a `blocker`, never a
+button that fails halfway.
+
+**Busy is checked twice.** A download takes seconds and the drain gate's answer
+at the start still holds when it lands. A build takes minutes, so a turn can
+open underneath it — one that began *after* the operator agreed to the cost. So
+a finished build that finds the machine busy holds at `waiting-idle` (which is
+cancellable and deliberately **not** terminal) rather than either killing that
+turn or throwing the build away. `force` skips it: an operator who already
+accepted the cost is not asked twice by a different code path.
+
+### Knowing and acting are separate, here too
+
+The same split the CLI rows draw (C4). The verdict is read-only and safe
+everywhere, so it ships on. The button compiles in the operator's own checkout
+and restarts the service, so it waits for `[update] source-apply`, default off.
+
 ## Claude and Codex CLIs
 
 **Nobody in this repo runs a CLI.** Each provider's Go library owns its own
@@ -307,7 +450,14 @@ starts calling a shared-tree rewrite self-managed.
 - **Version numbers never gate behaviour**; capabilities do. For the CLIs the same
   holds of install-method enums: they are labels, and the two provider libraries
   define them differently on purpose.
-- **A dev build never nags.**
+- **A dev build never nags about a release.** It may nag about its own checkout,
+  and only when one is configured, clean, and on the branch it names.
+- **The source channel never fetches, and never writes to the checkout.** The
+  check is a read; the build is the only thing that touches the tree, and only
+  behind an explicit flag.
+- **Unknown is not behind.** A commit git does not recognise, an unstamped
+  build, an unreadable checkout — all withhold the verdict rather than guessing
+  either way.
 - **agentique never runs a provider CLI.** Versions, install methods and updates
   all come through `runtime.InstallInspectable`. A missing fact is a gap in the
   provider library, not a reason to shell out.
@@ -325,6 +475,14 @@ starts calling a shared-tree rewrite self-managed.
 | U6 | CLI updates deferred to V5 | Install method has to be detected first. |
 | U7 | Auto-upgrade per machine, default off | Ships as a setting; stays off until apply is exercised by hand. |
 | U8 | No pre-release channel | Everything goes to master and out; `releases/latest` is all of it. |
+| S0 | The build stamps its own origin | Nothing else can tell a local build from a downloaded one: building at an exact tag stamps the same bare tag, and `main.commit` is set both ways. Only `local` gets a verdict. |
+| S1 | The checkout is named explicitly, never auto-detected | One place to look. Deriving it from the project registry would make the feature depend on a coincidence. |
+| S2 | Local branch only, no fetch | The question is "is the server running what I wrote", and that is answerable offline. A background service doing network git in your repo is a different feature. |
+| S3 | Build in place, refused unless clean and on the branch | Fast, and it reuses `node_modules`. The refusal is what makes it honest: an in-place build compiles what is checked out. |
+| S4 | `just build`, not `just install` | `install` rewrites the systemd unit from inside the service, re-baking its PATH. |
+| S5 | Restart-only is its own verb | "The binary on disk is newer than the process" is a real state with a two-second fix; charging a rebuild for it would be wrong. |
+| S6 | Both channels show, neither wins | Different claims, different costs. Picking one for the operator hides a true statement. |
+| S7 | The cheapest COMPLETE answer wins | A staged binary built from the head needs only a restart, so it outranks a rebuild that would recompile the identical commit. A staged binary the branch has moved past is itself stale, so there the rebuild wins. `stagedIsCurrent` is the server's answer; the client does no version arithmetic. |
 | C1 | The target is the binary agentique spawns | Anything else describes a binary nobody here executes. |
 | C2 | claudecli-go owns the claude command | Detection already exists there, read-only and network-free. |
 | C3 | codexcli-go owns the codex command | Its own report beats our inference. |

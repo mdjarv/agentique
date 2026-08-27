@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { CLIRow } from "~/components/update/CLIRow";
+import { SourceRow } from "~/components/update/SourceRow";
 import { UpdateRowAction } from "~/components/update/UpdateRowAction";
 import type { UpdateStatus } from "~/lib/generated-types";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
@@ -145,6 +146,17 @@ function MachineRow({
           />
         </span>
       </div>
+
+      {/* The checkout gets its own line rather than competing for the version
+          row's single action: "a newer tag is published" and "the branch you
+          work on has moved" are different claims with different costs. */}
+      <SourceRow
+        status={row.status}
+        flight={row.flight}
+        online={row.online}
+        onApply={(opts) => apply(row.key, opts)}
+        onCancel={() => cancel(row.key)}
+      />
 
       {expanded && clis.length > 0 ? (
         <div className="flex flex-col divide-y divide-border/40 border-t border-border/40 bg-secondary/20 px-3.5 py-1">

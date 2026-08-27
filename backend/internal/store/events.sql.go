@@ -241,3 +241,52 @@ func (q *Queries) SessionSummariesByProject(ctx context.Context, projectID strin
 	}
 	return items, nil
 }
+
+const todaySpendByProvider = `-- name: TodaySpendByProvider :many
+SELECT
+  s.provider AS provider,
+  CAST(COALESCE(SUM(
+    COALESCE(json_extract(e.data, '$.inputTokens'), 0) +
+    COALESCE(json_extract(e.data, '$.outputTokens'), 0)
+  ), 0) AS INTEGER) AS tokens,
+  CAST(COUNT(*) AS INTEGER) AS prompts
+FROM session_events e
+JOIN sessions s ON s.id = e.session_id
+WHERE e.type = 'result'
+  AND date(e.created_at) = date('now', 'localtime')
+GROUP BY s.provider
+`
+
+type TodaySpendByProviderRow struct {
+	Provider string `json:"provider"`
+	Tokens   int64  `json:"tokens"`
+	Prompts  int64  `json:"prompts"`
+}
+
+// What this server itself spent today, per provider, from its own turn results.
+// Deliberately NOT a scan of the CLI's transcripts: agentique is the thing that
+// ran these turns, so it already knows, and this answers for every provider
+// rather than only the one that writes JSONL.
+// 'now' is local (no 'utc' modifier) so "today" means the operator's day.
+func (q *Queries) TodaySpendByProvider(ctx context.Context) ([]TodaySpendByProviderRow, error) {
+	rows, err := q.db.QueryContext(ctx, todaySpendByProvider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TodaySpendByProviderRow{}
+	for rows.Next() {
+		var i TodaySpendByProviderRow
+		if err := rows.Scan(&i.Provider, &i.Tokens, &i.Prompts); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

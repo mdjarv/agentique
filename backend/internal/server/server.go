@@ -44,6 +44,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/team"
 	"github.com/mdjarv/agentique/backend/internal/testmode"
 	"github.com/mdjarv/agentique/backend/internal/update"
+	"github.com/mdjarv/agentique/backend/internal/usage"
 	"github.com/mdjarv/agentique/backend/internal/voice"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
@@ -78,6 +79,16 @@ type Config struct {
 	ListenPort string
 	// Version is the build version string ("dev" for non-release builds).
 	Version string
+	// Commit is main.commit — the commit this binary was built from. It is what
+	// the source channel compares the local checkout against (docs/upgrades.md).
+	// Empty, "none" or "unknown" all mean "this build does not say", and the
+	// source verdict is then withheld rather than guessed.
+	Commit string
+	// BuildOrigin is main.buildOrigin: "local" for `just build`, "release" for a
+	// published asset, empty for a plain `go build`. Only a local build gets a
+	// source verdict — nothing else can tell the two apart, since building at an
+	// exact tag stamps the same bare tag CI does.
+	BuildOrigin string
 	// Update configures the in-app upgrade check (docs/upgrades.md). The
 	// checker is constructed here but never started here — serve.go's
 	// production block runs the poll loop.
@@ -243,6 +254,8 @@ type Server struct {
 	updateChecker  *update.Checker
 	updateApplier  *update.Applier
 	updateCLIs     *update.CLIProbe
+	updateSource   *update.SourceChecker
+	usageCollector *usage.Collector
 	allowedOrigins map[string]bool
 	authEnabled    bool
 	// csp is the SPA document policy, computed once from the embedded bundle
@@ -260,6 +273,29 @@ func (s *Server) UpdateChecker() *update.Checker { return s.updateChecker }
 // `--version`, and nothing that touches a subprocess may run from a
 // constructor a test might call. Nil when update checking is disabled.
 func (s *Server) UpdateCLIProbe() *update.CLIProbe { return s.updateCLIs }
+
+// UpdateSourceChecker exposes the local-checkout watcher so serve.go can start
+// its poll loop, for the same reason the other two are exposed: it shells out
+// to git, and no constructor a test might call may do that. Nil when no
+// [update] source-dir is configured.
+func (s *Server) UpdateSourceChecker() *update.SourceChecker { return s.updateSource }
+
+// UsageCollector exposes the subscription-usage collector so serve.go can start
+// its poll loop. Same reason as the update checkers: it reaches the network and
+// reads the CLI's credential store, and no constructor a test might call may do
+// either.
+func (s *Server) UsageCollector() *usage.Collector { return s.usageCollector }
+
+// installPathOrEmpty resolves the binary the service would start. An empty
+// answer disables only the staged-binary check, which is the right degradation:
+// not knowing where the binary lives is not evidence that one is waiting.
+func installPathOrEmpty() string {
+	path, err := service.BinaryPath()
+	if err != nil {
+		return ""
+	}
+	return path
+}
 
 // Scheduler exposes the scheduled-loop service so serve.go can run the boot
 // sweep and start the tick loop (deliberately not started in New — see the
@@ -330,12 +366,23 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if in, ok := connector.(runtime.InstallInspectable); ok {
 		cliInspectors["claude"] = in
 	}
+	// The same seam, for "what is this account allowed to spend" (docs/usage.md).
+	// A provider whose connector implements it needs no collector of its own;
+	// Claude does not, because Anthropic exposes usage over HTTP rather than
+	// through its CLI.
+	accountInspectors := map[string]runtime.AccountInspectable{}
+	if ai, ok := connector.(runtime.AccountInspectable); ok {
+		accountInspectors["claude"] = ai
+	}
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
 	if !cfg.TestMode {
 		codexConnector := codexadapter.NewConnector()
 		mgr.SetProviderConnector("codex", codexConnector)
 		if in, ok := codexConnector.(runtime.InstallInspectable); ok {
 			cliInspectors["codex"] = in
+		}
+		if ai, ok := codexConnector.(runtime.AccountInspectable); ok {
+			accountInspectors["codex"] = ai
 		}
 	}
 	mgr.SetMCPHTTP(mcpTokens, cfg.MCPInternalURL)
@@ -432,6 +479,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	var updateChecker *update.Checker
 	var updateApplier *update.Applier
 	var updateCLIs *update.CLIProbe
+	var updateSource *update.SourceChecker
+	var usageCollector *usage.Collector
 	if !cfg.Update.Disabled {
 		interval, ierr := parseUpdateInterval(cfg.Update.Interval)
 		if ierr != nil {
@@ -470,7 +519,33 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// it that comes from something that happened rather than from inspecting
 		// a binary — the one check on detection being right.
 		mgr.SetOnCLIVersion(updateCLIs.RecordRan)
-		uh := &update.Handler{Checker: updateChecker, Applier: applier, CLIs: updateCLIs}
+
+		// The source channel (docs/upgrades.md). Off unless a checkout is
+		// named: a machine that only installs releases has nothing to compare
+		// against, and half a channel is worse than none.
+		if cfg.Update.SourceDir != "" {
+			updateSource = update.NewSourceChecker(update.SourceOptions{
+				Dir:         cfg.Update.SourceDir,
+				Branch:      cfg.Update.SourceBranch,
+				BuiltFrom:   cfg.Commit,
+				Origin:      update.BuildOrigin(cfg.BuildOrigin),
+				Version:     cfg.Version,
+				InstallPath: installPathOrEmpty(),
+				Interval:    interval,
+			})
+			// Knowing and acting are separate questions, the same split the CLI
+			// rows draw. The verdict is read-only and safe everywhere; the
+			// button compiles in the operator's checkout and restarts the
+			// service, so it waits for [update] source-apply.
+			if cfg.Update.SourceApply {
+				applier.SetSource(updateSource)
+			} else {
+				slog.Info("update: source channel is reporting only — set [update] source-apply to enable the button",
+					"dir", cfg.Update.SourceDir)
+			}
+		}
+
+		uh := &update.Handler{Checker: updateChecker, Applier: applier, CLIs: updateCLIs, Source: updateSource}
 		mux.HandleFunc("GET /api/update/status", uh.HandleStatus)
 		// Applying replaces this machine's binary and restarts its service, and
 		// `force` ends every turn in flight (docs/process-lifecycle.md). That is
@@ -773,6 +848,41 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/storage/usage", sth.HandleUsage)
 	mux.HandleFunc("DELETE /api/storage/worktrees", sth.HandleDeleteWorktree)
 	mux.HandleFunc("POST /api/storage/reclaim", sth.HandleReclaim)
+
+	// Subscription usage: one probe per machine, shared by every client
+	// (docs/usage.md). Deliberately NOT gated on [update] disabled — that
+	// switch is about version checks, and a rate-limit window is a different
+	// question. Constructed here, started from serve.go's production block.
+	usageCollector = usage.New(usage.Options{
+		Accounts: accountInspectors,
+		Disk: func() (usage.DiskReading, bool) {
+			st, err := storage.Stats()
+			if err != nil {
+				return usage.DiskReading{}, false
+			}
+			return usage.DiskReading{
+				UsedPercent: st.UsagePercent,
+				FreeBytes:   int64(st.FreeBytes),
+			}, true
+		},
+		Today: func(ctx context.Context) (map[string]usage.Today, error) {
+			rows, err := queries.TodaySpendByProvider(ctx)
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[string]usage.Today, len(rows))
+			for _, r := range rows {
+				id := r.Provider
+				if id == "" {
+					id = "claude"
+				}
+				out[id] = usage.Today{Tokens: r.Tokens, Prompts: int(r.Prompts)}
+			}
+			return out, nil
+		},
+	})
+	ush := &usage.Handler{Collector: usageCollector}
+	mux.HandleFunc("GET /api/usage", ush.HandleStatus)
 
 	projectGitSvc := project.NewGitService(queries, bus, project.RealGitOps(), runner)
 
@@ -1084,6 +1194,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		updateChecker:  updateChecker,
 		updateApplier:  updateApplier,
 		updateCLIs:     updateCLIs,
+		updateSource:   updateSource,
+		usageCollector: usageCollector,
 		allowedOrigins: allowedOrigins,
 		authEnabled:    cfg.AuthEnabled,
 		csp:            spaCSP(frontendSub),
@@ -1130,6 +1242,12 @@ func (s *Server) SweepOrphans(ctx context.Context) {
 func (s *Server) Shutdown() {
 	if s.scheduler != nil {
 		s.scheduler.Stop()
+	}
+	if s.usageCollector != nil {
+		s.usageCollector.Stop()
+	}
+	if s.updateSource != nil {
+		s.updateSource.Stop()
 	}
 	if s.updateChecker != nil {
 		s.updateChecker.Stop()
