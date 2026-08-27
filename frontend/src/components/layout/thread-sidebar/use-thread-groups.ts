@@ -21,6 +21,7 @@ import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { sessionModelLabel } from "~/lib/model-catalog";
 import { getProjectColor } from "~/lib/project-colors";
+import { projectInitials, projectLabel } from "~/lib/project-label";
 import { deriveRestToken } from "~/lib/session/rest-state";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
@@ -40,15 +41,6 @@ import {
   sectionFor,
 } from "./derive";
 import type { ThreadGroups, ThreadRowVM } from "./types";
-
-function projectInitials(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 /** Compact summary for the machine line while an approval blocks the agent. */
 function approvalSummary(data: SessionData): string | undefined {
@@ -149,6 +141,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
       const remoteMachineLabel = remoteMachine?.label;
       const color = getProjectColor(rep.color, rep.id, projectIds, resolvedTheme);
+      const repLabel = projectLabel(rep.name, displaySlug(rep.slug));
       const isTerminal = isTerminalState(meta.state);
       const todoTotal = data.todos?.length ?? 0;
       const todoDone = data.todos?.filter((t) => t.status === "completed").length ?? 0;
@@ -161,8 +154,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         // Routing needs the session's OWN (machine-qualified) slug; the label
         // beside it is the repo's, so both copies read as one project.
         projectSlug: project.slug,
-        projectLabel: displaySlug(rep.slug),
-        projectInitials: projectInitials(displaySlug(rep.slug)),
+        projectLabel: repLabel,
+        projectInitials: projectInitials(repLabel),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: rep.icon || undefined,

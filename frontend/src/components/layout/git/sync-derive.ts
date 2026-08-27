@@ -9,6 +9,7 @@
  */
 import type { ProjectGitStatus } from "~/lib/generated-types";
 import { displaySlug } from "~/lib/machines/slug";
+import { projectInitials, projectLabel } from "~/lib/project-label";
 import type { Project } from "~/lib/types";
 
 /**
@@ -84,15 +85,6 @@ export interface SyncRowInput {
   colorFg: string;
 }
 
-export function projectInitials(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
-
 /** A pull that would have to replay local work, or stash it, is not mechanical. */
 export function deriveAction(status: ProjectGitStatus): SyncAction {
   const messy = status.behindRemote > 0 && (status.aheadRemote > 0 || status.uncommittedCount > 0);
@@ -126,8 +118,8 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
     rows.push({
       projectId: project.id,
       slug: project.slug,
-      label: displaySlug(project.slug),
-      initials: projectInitials(displaySlug(project.slug)),
+      label: projectLabel(project.name, displaySlug(project.slug)),
+      initials: projectInitials(projectLabel(project.name, displaySlug(project.slug))),
       colorBg,
       colorFg,
       iconId: project.icon || undefined,

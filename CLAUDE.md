@@ -238,6 +238,24 @@ Discussions is a control on the Teams page's profile section.
 A moved route keeps its old path as a `redirect`: `/projects` and `/templates`
 are in bookmarks and in deep links this app minted.
 
+### A row names a project by its name
+
+`lib/project-label.ts` is the one place that turns a project into the label and
+initials a row shows, and it reads the **name**. A slug is an identity — it
+routes, it is unique per server, and it is derived from the name *once*, at
+creation — so it lags a rename and can only spell `[a-z0-9-]`. A row showing it
+reported the wrong thing twice: the name the project used to have, and an ASCII
+flattening of it always.
+
+The name also needs no `displaySlug`: only a slug carries the `~machineid`
+qualifier, so nothing has to be stripped before it is shown.
+
+Both slugifiers must agree, because two of them derive slugs from the same
+names: `Slugify` in `backend/internal/project/slug.go` (create) and `slugify`
+in `frontend/src/lib/utils.ts` (the rename dialog). Both **transliterate** a
+letter rather than treating it as punctuation — replacing everything outside
+`[a-z0-9]` with a separator turned "Träffbild" into `tr-ffbild`.
+
 ### Drafts are client-local
 
 An unsent New-session prompt lives only in this browser's localStorage

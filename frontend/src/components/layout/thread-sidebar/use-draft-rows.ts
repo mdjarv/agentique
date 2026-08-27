@@ -12,6 +12,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
+import { projectInitials, projectLabel } from "~/lib/project-label";
 import { newSessionDraftProjectId } from "~/lib/session/new-session-draft";
 import type { Project } from "~/lib/types";
 import { useAppStore } from "~/stores/app-store";
@@ -19,15 +20,6 @@ import { useMachineStore } from "~/stores/machine-store";
 import { useUIStore } from "~/stores/ui-store";
 import { compareDraftRows, draftHasMore, draftMatchesQuery, draftTitle } from "./draft-rows";
 import type { DraftRowVM } from "./types";
-
-function projectInitials(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 export function useDraftRows(searchQuery: string): DraftRowVM[] {
   const drafts = useUIStore((s) => s.drafts);
@@ -62,14 +54,15 @@ export function useDraftRows(searchQuery: string): DraftRowVM[] {
       const rep = repById.get(project.id) ?? project;
       const color = getProjectColor(rep.color, rep.id, projectIds, resolvedTheme);
       const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
+      const repLabel = projectLabel(rep.name, displaySlug(rep.slug));
 
       const vm: DraftRowVM = {
         draftKey,
         projectId,
         projectSlug: project.slug,
-        projectLabel: displaySlug(rep.slug),
+        projectLabel: repLabel,
         projectName: rep.name,
-        projectInitials: projectInitials(displaySlug(rep.slug)),
+        projectInitials: projectInitials(repLabel),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: rep.icon || undefined,

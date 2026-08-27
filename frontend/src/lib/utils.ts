@@ -79,11 +79,47 @@ function fallbackCopy(text: string): Promise<void> {
 }
 
 /** Convert a name to a URL-safe lowercase slug (mirrors backend Slugify). */
+/**
+ * Letters NFD leaves alone, because they are their own letter rather than an
+ * ASCII letter plus a mark. Decomposition cannot help there, so the
+ * conventional Latin spelling is spelled out. Mirrors `Slugify` in
+ * `backend/internal/project/slug.go` — the rename dialog derives a slug here,
+ * the create endpoint derives one there, and the two must agree.
+ */
+const NON_DECOMPOSING: [RegExp, string][] = [
+  [/ß/g, "ss"],
+  [/ø/g, "o"],
+  [/æ/g, "ae"],
+  [/œ/g, "oe"],
+  [/đ|ð/g, "d"],
+  [/þ/g, "th"],
+  [/ł/g, "l"],
+  [/ħ/g, "h"],
+  [/ı/g, "i"],
+  [/ŋ/g, "ng"],
+  [/ſ/g, "s"],
+  [/·/g, "-"],
+  [/&/g, "-and-"],
+];
+
+/**
+ * A name as a URL-safe lowercase ASCII slug.
+ *
+ * A letter is transliterated, not treated as punctuation: replacing everything
+ * outside `[a-z0-9]` with a separator turned "Träffbild" into `tr-ffbild`,
+ * which reads as two words and is not what anyone would type. NFD splits an
+ * accented letter into its ASCII base plus a combining mark, and only the mark
+ * is dropped. A script with no ASCII base at all (Cyrillic, CJK, emoji) still
+ * strips away, and a name made entirely of those falls back to "project".
+ */
 export function slugify(name: string): string {
-  const s = name
-    .toLowerCase()
+  let s = name.toLowerCase();
+  for (const [pattern, replacement] of NON_DECOMPOSING) s = s.replace(pattern, replacement);
+  s = s
+    .normalize("NFD")
+    .replace(/\p{Mn}/gu, "")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/^-+|-+$/g, "");
   return s || "project";
 }
 

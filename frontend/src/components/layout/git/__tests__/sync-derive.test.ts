@@ -102,12 +102,17 @@ describe("deriveSyncRows", () => {
     expect(rows).toEqual([]);
   });
 
-  // The row already prints "@zbook", so repeating the machine hash in the slug
-  // is noise; routing keeps the qualified slug.
-  it("drops the machine suffix from the label but not the routing slug", () => {
+  // The label is the project's name, which carries no machine suffix to drop;
+  // routing keeps the qualified slug, which is the one that is actually unique.
+  it("labels a remote checkout by name while routing by its qualified slug", () => {
     const [row] = deriveSyncRows([
       input({
-        project: project({ id: "p-z", slug: "alltix-ui~ad3e932", machineId: "m-z" }),
+        project: project({
+          id: "p-z",
+          name: "alltix-ui",
+          slug: "alltix-ui~ad3e932",
+          machineId: "m-z",
+        }),
         status: status({ behindRemote: 31 }),
         machineLabel: "zbook",
       }),
@@ -115,6 +120,17 @@ describe("deriveSyncRows", () => {
     expect(row?.slug).toBe("alltix-ui~ad3e932");
     expect(row?.label).toBe("alltix-ui");
     expect(row?.initials).toBe("AU");
+  });
+
+  // The whole point of the change: a renamed project reads by its name, not by
+  // the ASCII slug derived from whatever it was called when it was created.
+  it("labels by the name, not the slug it was registered under", () => {
+    const [row] = deriveSyncRows([
+      input({ project: project({ id: "p-t", name: "Träffbild", slug: "traffbild" }) }),
+    ]);
+    expect(row?.slug).toBe("traffbild");
+    expect(row?.label).toBe("Träffbild");
+    expect(row?.initials).toBe("TR");
   });
 
   it("orders mechanical work first, messy last, slug-stable within a rank", () => {
@@ -142,7 +158,12 @@ describe("summarize", () => {
         machineLabel: "zbook",
       }),
       input({
-        project: project({ id: "p-2", slug: "agentkit", remote_url: "github.com/org/agentkit" }),
+        project: project({
+          id: "p-2",
+          name: "agentkit",
+          slug: "agentkit",
+          remote_url: "github.com/org/agentkit",
+        }),
         status: status({ aheadRemote: 5 }),
       }),
     ]);
@@ -180,11 +201,21 @@ describe("syncSegments", () => {
     const rows = deriveSyncRows([
       input({ status: status({ aheadRemote: 12 }) }),
       input({
-        project: project({ id: "p-2", slug: "webticket-ui", remote_url: "github.com/org/wt" }),
+        project: project({
+          id: "p-2",
+          name: "webticket-ui",
+          slug: "webticket-ui",
+          remote_url: "github.com/org/wt",
+        }),
         status: status({ projectId: "p-2", behindRemote: 3 }),
       }),
       input({
-        project: project({ id: "p-3", slug: "alltix-api", remote_url: "github.com/org/ax" }),
+        project: project({
+          id: "p-3",
+          name: "alltix-api",
+          slug: "alltix-api",
+          remote_url: "github.com/org/ax",
+        }),
         status: status({ projectId: "p-3", aheadRemote: 2, behindRemote: 3 }),
       }),
     ]);
@@ -201,7 +232,12 @@ describe("bulkPlan / bulkLabel", () => {
     deriveSyncRows([
       input({ status: status({ aheadRemote: 12 }) }),
       input({
-        project: project({ id: "p-2", slug: "agentkit", remote_url: "github.com/org/ak" }),
+        project: project({
+          id: "p-2",
+          name: "agentkit",
+          slug: "agentkit",
+          remote_url: "github.com/org/ak",
+        }),
         status: status({ projectId: "p-2", aheadRemote: 9 }),
       }),
     ]);
@@ -212,17 +248,27 @@ describe("bulkPlan / bulkLabel", () => {
     const mixed = deriveSyncRows([
       input({ status: status({ aheadRemote: 12 }) }),
       input({
-        project: project({ id: "p-2", slug: "agentkit", remote_url: "github.com/org/ak" }),
+        project: project({
+          id: "p-2",
+          name: "agentkit",
+          slug: "agentkit",
+          remote_url: "github.com/org/ak",
+        }),
         status: status({ projectId: "p-2", aheadRemote: 9 }),
       }),
       input({
-        project: project({ id: "p-3", slug: "webticket-ui", remote_url: "github.com/org/wt" }),
+        project: project({
+          id: "p-3",
+          name: "webticket-ui",
+          slug: "webticket-ui",
+          remote_url: "github.com/org/wt",
+        }),
         status: status({ projectId: "p-3", behindRemote: 3 }),
       }),
     ]);
     expect(bulkLabel(bulkPlan(mixed), "push")).toBe("Push 2 · ↑21");
     expect(bulkLabel(bulkPlan(mixed), "pull")).toBe("Pull ↓3");
-    expect(bulkTargets(mixed, "push").map((r) => r.label)).toEqual(["agentique", "agentkit"]);
+    expect(bulkTargets(mixed, "push").map((r) => r.label)).toEqual(["Agentique", "agentkit"]);
     expect(bulkTargets(mixed, "pull").map((r) => r.label)).toEqual(["webticket-ui"]);
   });
 
@@ -235,11 +281,21 @@ describe("bulkPlan / bulkLabel", () => {
     const rows = deriveSyncRows([
       input({ status: status({ aheadRemote: 12 }) }),
       input({
-        project: project({ id: "p-2", slug: "alltix-api", remote_url: "github.com/org/ax" }),
+        project: project({
+          id: "p-2",
+          name: "alltix-api",
+          slug: "alltix-api",
+          remote_url: "github.com/org/ax",
+        }),
         status: status({ projectId: "p-2", aheadRemote: 2, behindRemote: 3 }),
       }),
       input({
-        project: project({ id: "p-3", slug: "agentique~zbook", machineId: "m-z" }),
+        project: project({
+          id: "p-3",
+          name: "agentique",
+          slug: "agentique~zbook",
+          machineId: "m-z",
+        }),
         status: status({ projectId: "p-3", aheadRemote: 4 }),
         machineLabel: "zbook",
         machineOffline: true,

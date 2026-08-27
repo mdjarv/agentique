@@ -12,6 +12,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
+import { projectLabel } from "~/lib/project-label";
 import { type NeedsYouKind, needsYou } from "~/lib/session/needs-you";
 import { deriveRestToken, type RestToken } from "~/lib/session/rest-state";
 import type { Project } from "~/lib/types";
@@ -33,7 +34,7 @@ export interface DeckRow {
   name: string;
   /** Routing slug — machine-qualified, as the route param wants it. */
   projectSlug: string;
-  /** The slug as read: machine suffix dropped. */
+  /** The project as a reader names it — its name, not its slug. */
   projectLabel: string;
   /** Theme-appropriate project accent. Identity colour, same as the rail's. */
   projectColorFg: string;
@@ -106,7 +107,7 @@ export function useDeckRows(): DeckRows {
         sessionId: meta.id,
         name: meta.name || "",
         projectSlug: project.slug,
-        projectLabel: displaySlug(rep.slug),
+        projectLabel: projectLabel(rep.name, displaySlug(rep.slug)),
         projectColorFg: getProjectColor(rep.color, rep.id, projectIds, resolvedTheme).fg,
         lastActivity: lastActivity(meta),
       };
