@@ -187,13 +187,13 @@ group's name, colour, icon, folder, star and navigation slug.
 
 `useLogicalProjects` turns that into the row view-model every project-listing
 surface consumes, so no surface can quietly go back to listing checkouts. The
-new-session palette, the `/projects` inventory and the Run-in menu all list
+new-session palette, the `/settings/projects` inventory and the Run-in menu all list
 repos. Thread rows take a session's label, colour and icon from its
 representative while routing by its own qualified slug.
 
 A row is `away` only when *every* member's machine is away, so a repo that also
 lives locally is always launchable, and an unknown machine id counts as away
-rather than reachable. Where a repo spans machines, `/projects` gives each
+rather than reachable. Where a repo spans machines, `/settings/projects` gives each
 checkout its own launchable line with machine, path and reachability.
 
 ### Launching names a machine

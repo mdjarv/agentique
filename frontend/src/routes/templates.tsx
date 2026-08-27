@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { TemplateListPage } from "~/components/templates/TemplateListPage";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+/** The prompt library moved into Settings; the old path still resolves. */
 export const Route = createFileRoute("/templates")({
-  component: TemplateListPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/templates" });
+  },
 });

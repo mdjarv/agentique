@@ -1,17 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  Brain,
-  Clock,
-  Cpu,
-  Ellipsis,
-  FileText,
-  FolderGit2,
-  FolderPlus,
-  HardDrive,
-  Hash,
-  MessagesSquare,
-  Settings as SettingsIcon,
-} from "lucide-react";
+import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { SyncDock } from "~/components/layout/git/SyncDock";
@@ -100,6 +88,20 @@ function SidebarHeader() {
               <Ellipsis className="size-4" />
             </button>
           </DropdownMenuTrigger>
+          {/*
+            The menu lists PLACES WHERE WORK LIVES, and nothing else.
+
+            What a thing *is* decides where it goes. Projects and Templates are
+            registrations — a path, a name, a saved prompt, nothing that changes
+            on its own — so they are in Settings beside Machines. Storage and
+            Settings are the machine's own housekeeping and already sit in the
+            footer, behind the account button and the disk meter; a third way in
+            was only length. Discussions is an action taken on a set of personas,
+            so it is an entry point on the Teams page rather than a peer of it.
+
+            What is left all reports something: channels with traffic, a brain
+            that flares, loops that run.
+          */}
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem className="text-xs gap-2" onSelect={() => setNewProjectOpen(true)}>
               <FolderPlus className="size-3.5" />
@@ -108,17 +110,10 @@ function SidebarHeader() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild className="text-xs gap-2">
-              <Link to="/projects">
-                <FolderGit2 className="size-3.5" />
-                Projects
-                <span className="ml-auto text-muted-foreground-faint">all repos</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
               <Link to="/teams">
                 <Hash className="size-3.5" />
                 Teams
-                <span className="ml-auto text-muted-foreground-faint">channels</span>
+                <span className="ml-auto text-muted-foreground-faint">channels & personas</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="text-xs gap-2">
@@ -129,39 +124,10 @@ function SidebarHeader() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="text-xs gap-2">
-              <Link to="/templates">
-                <FileText className="size-3.5" />
-                Templates
-                <span className="ml-auto text-muted-foreground-faint">prompts</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
-              <Link to="/discussions">
-                <MessagesSquare className="size-3.5" />
-                Discussions
-                <span className="ml-auto text-muted-foreground-faint">groups</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
               <Link to="/schedules">
                 <Clock className="size-3.5" />
                 Schedules
                 <span className="ml-auto text-muted-foreground-faint">loops</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild className="text-xs gap-2">
-              <Link to="/storage">
-                <HardDrive className="size-3.5" />
-                Storage
-                <span className="ml-auto text-muted-foreground-faint">disk & worktrees</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
-              <Link to="/settings">
-                <SettingsIcon className="size-3.5" />
-                Settings
-                <span className="ml-auto text-muted-foreground-faint">machines & account</span>
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>

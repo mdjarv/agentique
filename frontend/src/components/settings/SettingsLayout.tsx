@@ -7,7 +7,16 @@
  * its URL so a link can point at one.
  */
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
-import { AudioLines, Info, type LucideIcon, Palette, Server, UserCircle } from "lucide-react";
+import {
+  AudioLines,
+  FileText,
+  FolderGit2,
+  Info,
+  type LucideIcon,
+  Palette,
+  Server,
+  UserCircle,
+} from "lucide-react";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { cn } from "~/lib/utils";
 
@@ -19,12 +28,27 @@ interface Category {
   blurb: string;
 }
 
+// Ordered registry -> content -> presentation -> identity. Projects and
+// Machines lead because they are the same kind of thing: the repos you work in
+// and the hosts you work across, each registered once and given a face.
 export const SETTINGS_CATEGORIES: Category[] = [
+  {
+    to: "/settings/projects",
+    label: "Projects",
+    icon: FolderGit2,
+    blurb: "The repos agentique can open a session in.",
+  },
   {
     to: "/settings/machines",
     label: "Machines",
     icon: Server,
     blurb: "Name the machines you work across and give them a face.",
+  },
+  {
+    to: "/settings/templates",
+    label: "Templates",
+    icon: FileText,
+    blurb: "Reusable prompts, with their settings, for any project.",
   },
   {
     to: "/settings/appearance",
@@ -85,7 +109,9 @@ export function SettingsLayout() {
         </nav>
 
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-6 max-md:px-4">
+          {/* 3xl rather than 2xl: a project row carries a line per machine
+              holding a checkout, and those cramp badly in a narrower column. */}
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6 max-md:px-4">
             {active && (
               <div className="flex flex-col gap-1">
                 <h1 className="text-lg font-semibold text-foreground-bright">{active.label}</h1>

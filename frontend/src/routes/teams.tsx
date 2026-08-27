@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Hash, MessageSquare, Plus, UserPlus, Users } from "lucide-react";
+import { Hash, MessageSquare, MessagesSquare, Plus, UserPlus, Users } from "lucide-react";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { PageHeader } from "~/components/layout/PageHeader";
@@ -99,15 +99,28 @@ function TeamsDashboard() {
           </Section>
 
           {/* ── Profiles ──────────────────────────────── */}
+          {/* Starting a discussion is something you do TO a set of profiles,
+              so it lives on the section that lists them rather than as its own
+              top-level destination. */}
           <Section
             title="Agent profiles"
             action={
-              <Button size="sm" variant="outline" asChild>
-                <Link to="/teams/personas/new">
-                  <UserPlus className="size-3.5" />
-                  New profile
-                </Link>
-              </Button>
+              <div className="flex items-center gap-2">
+                {profileList.length > 0 && (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link to="/discussions">
+                      <MessagesSquare className="size-3.5" />
+                      Start discussion
+                    </Link>
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/teams/personas/new">
+                    <UserPlus className="size-3.5" />
+                    New profile
+                  </Link>
+                </Button>
+              </div>
             }
           >
             {!loaded ? (

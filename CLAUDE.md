@@ -217,6 +217,27 @@ included. Reach for it before widening what Delete accepts.
 
 UI copy says "Archive"; `done` reads as "finished" wherever it surfaces.
 
+### Where a destination lives
+
+Three homes, and what a thing **is** decides which one it gets, never how often
+it is opened.
+
+The sidebar's ⋯ menu lists **places where work lives** — somewhere that reports
+something on its own: channels with traffic, a brain that flares, loops that
+run. Settings holds **registrations**: a fact you set once and leave, which is
+why Projects (a path, a name, a colour, which machines hold a checkout) sits
+beside Machines, and Templates (saved text plus saved settings) beside them. The
+sidebar footer holds **this machine's housekeeping** — Storage behind the disk
+meter, Settings behind the account button.
+
+A destination gets **one** home. Storage and Settings were in the menu as well
+as the footer, which was length, not reach. And an action taken *on* a listed
+thing belongs on the surface that lists it, never as a peer of it — that is why
+Discussions is a control on the Teams page's profile section.
+
+A moved route keeps its old path as a `redirect`: `/projects` and `/templates`
+are in bookmarks and in deep links this app minted.
+
 ### Drafts are client-local
 
 An unsent New-session prompt lives only in this browser's localStorage
