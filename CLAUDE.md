@@ -270,11 +270,12 @@ created in another tab cannot move the dropdowns under someone mid-compose. One
 pair, not one per project — which model you want belongs to the task, not the
 repo, and a per-project map would need the pruning `dock` needs.
 
-`ToolbarDropdown`'s `lastUsedValue` marks that option, and only while it is
-*not* the current selection: on open the two coincide, and a row wearing both a
-tick and a note about itself reports one fact twice. A remembered id the catalog
-no longer offers marks nothing — `ModelId` is a bare string by design
-(`docs/model-catalog.md`), so a stale one is a visibly wrong dropdown rather
+Nothing marks it in the dropdowns. The trigger already shows the carried-over
+value as the current selection, which is the whole of what there is to report;
+a second mark saying "and this is also what you had last time" is the same fact
+twice. `ModelId` is a bare string by design (`docs/model-catalog.md`), so a
+remembered id can name a model this build no longer offers — the catalog
+resolves what it can, and a stale one reads as a visibly wrong dropdown rather
 than a broken one.
 
 ### Drafts are client-local

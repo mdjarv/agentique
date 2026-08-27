@@ -115,12 +115,11 @@ export function NewChatPanel({
   );
   const [provider, setProvider] = useState<ProviderId>("claude");
   // Model and effort carry over from the last session created (see
-  // `LastUsedSettings`). Read once, as the initial value: this is a starting
-  // point, not a binding — a session created in another tab must not move the
-  // dropdowns under someone mid-compose.
-  const lastUsed = useRef(useUIStore.getState().lastUsed).current;
-  const [model, setModel] = useState<ModelId>(lastUsed.model);
-  const [effort, setEffort] = useState<EffortLevel>(lastUsed.effort);
+  // `LastUsedSettings`). Read through a lazy initializer, so it is read once
+  // and only once: this is a starting point, not a binding — a session created
+  // in another tab must not move the dropdowns under someone mid-compose.
+  const [model, setModel] = useState<ModelId>(() => useUIStore.getState().lastUsed.model);
+  const [effort, setEffort] = useState<EffortLevel>(() => useUIStore.getState().lastUsed.effort);
   const [sending, setSending] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -376,7 +375,6 @@ export function NewChatPanel({
           onModelChange={setModel}
           effort={effort}
           onEffortChange={setEffort}
-          lastUsed={lastUsed}
           templatePicker={<TemplatePicker onSelect={handleTemplateSelect} disabled={sending} />}
         />
       ) : (
