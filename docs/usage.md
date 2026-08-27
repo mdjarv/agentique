@@ -99,6 +99,15 @@ pretending to be the same kind of thing.
 footer and the Storage page cannot disagree — that one is df-style
 (`used / (used + available)`), which excludes root-reserved blocks.
 
+The gauge is also **the way to that page**. `splitMetered` divides the compact
+indicator in two, because its halves lead different places: an allowance has
+nowhere to go beyond its meter and its reset, which is the popover, while a
+level is a reading *of* something — the disk gauge is a `Link` to `/storage`,
+and the popover carries no Storage row repeating it. A destination gets one
+home, and the meter is the better one because it is also the reason you would
+go. `UsageCluster` therefore takes the agents to draw rather than the document;
+`meteredAgents` stays the caller's filter.
+
 ## Today's spend
 
 `todayTokens` and `todayPrompts` come from **agentique's own turn results**
@@ -235,7 +244,8 @@ in place.
 - **Scale is decided per payload, not per value.**
 - **Windows are named from `kind` or a duration, never from a model name.**
 - **Unknown is not zero.** A negative percent is filtered everywhere.
-- **A gauge never escalates and never counts down.**
+- **A gauge never escalates and never counts down**, and it is the link to the
+  page it is a level of.
 - **A failed refresh never blanks anything.**
 - **A transport failure is not an HTTP status.**
 - **A cached percentage expires on its window, not on a clock.**

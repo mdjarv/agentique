@@ -50,6 +50,31 @@ export function isGauge(agent: UsageAgent): boolean {
   return agent.kind === "gauge";
 }
 
+/** The disk gauge's id, as the storage collector reports it. */
+export const STORAGE_AGENT_ID = "storage";
+
+/**
+ * The compact indicator's two halves, because they lead different places.
+ *
+ * An allowance has nowhere to go — what there is to know about it is the meter
+ * and the reset, which is the usage popover. A level does: the disk is what
+ * `/storage` is a page about, so its mark IS the way there and the popover
+ * needs no row repeating it (CLAUDE.md, "a destination gets one home").
+ *
+ * Order is preserved, so the cluster reads the same left-to-right as it did
+ * when one control drew all of it.
+ */
+export function splitMetered(doc: UsageDocument | null): {
+  allowances: UsageAgent[];
+  storage: UsageAgent | null;
+} {
+  const metered = meteredAgents(doc);
+  return {
+    allowances: metered.filter((a) => a.id !== STORAGE_AGENT_ID),
+    storage: metered.find((a) => a.id === STORAGE_AGENT_ID) ?? null,
+  };
+}
+
 export type Tier = "normal" | "warning" | "critical";
 
 /**

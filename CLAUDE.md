@@ -235,8 +235,39 @@ as the footer, which was length, not reach. And an action taken *on* a listed
 thing belongs on the surface that lists it, never as a peer of it — that is why
 Discussions is a control on the Teams page's profile section.
 
+"Behind the disk meter" is literal: `splitMetered` draws the compact indicator
+with two controls, because its halves lead different places. The allowances open
+the usage popover; the disk gauge is a `Link` to `/storage`, so that popover
+carries **no** Storage row. A level is a reading *of* a page, which makes the
+meter the better home — it is also the reason you would go — where an allowance
+has nowhere to go beyond its own reset.
+
 A moved route keeps its old path as a `redirect`: `/projects` and `/templates`
 are in bookmarks and in deep links this app minted.
+
+### The footer line indicates with marks, not sentences
+
+That row is 271px and already carries identity, liveness and the usage cluster —
+which **grows**, since the set of allowance windows is never hardcoded. So
+everything right of the account name is `shrink-0` and the name truncates: a
+mark's width is what it means, and the name is the only thing on the line that
+can give ground. A pill spelling "Rebuild available" wrapped to two rows and
+pushed the codex and disk marks outside the sidebar.
+
+`UpdateMark` is therefore a dot, on the same argument the sidebar row settled for
+parked sessions. The words are not lost — `UpdatePopoverRows` renders the label,
+the detail and the button one click away, so the pill was spending a third of the
+footer duplicating what it fronts. The dot rides **inside** the usage trigger
+(one in the gap would be dead pixels beside the control it is about, and every
+instinct is to click it) and is `pointer-events-none`, so the click reaches the
+button. Since a dot cannot say which kind of thing waits, the button says it:
+`useUpdateWaiting` is what its tooltip and accessible name are built from, and
+that trigger stays mounted for a machine with no windows but a waiting update,
+because it is what the mark rides.
+
+Nothing here can be dismissed. The old chip's × existed because a sentence in the
+footer is loud; a dot is not, and an update that can be waved away is one nobody
+applies.
 
 ### A row names a project by its name
 

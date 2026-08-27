@@ -16,9 +16,10 @@ import { useMachineStore } from "~/stores/machine-store";
  * on it is going (docs/upgrades.md).
  *
  * Keyed by machine: PRIMARY_MACHINE_KEY for the server serving this SPA, the
- * machineId for each paired remote. Nothing here is persisted — including the
- * dismissal (decision U2): a reload brings the chip back, deliberately. An
- * update you waved away in the morning should still be there in the afternoon.
+ * machineId for each paired remote. Nothing here is persisted, and nothing here
+ * can be waved away: the footer's mark is a dot (decision U2), which is quiet
+ * enough not to need silencing — and an update that can be silenced is one
+ * nobody applies.
  *
  * The two client-only phases exist because the server cannot narrate its own
  * replacement: after `restarting` nobody is left to report, so the client
@@ -44,8 +45,6 @@ interface UpdateState {
   errors: Record<string, string>;
   /** Live upgrades, keyed like statuses. */
   flights: Record<string, Flight>;
-  /** The footer chip is hidden for this page session only. */
-  dismissed: boolean;
 
   /** Fetch one machine's status. `refresh` forces that server to re-check. */
   fetch: (key: string, refresh?: boolean) => Promise<void>;
@@ -63,7 +62,6 @@ interface UpdateState {
   cancel: (key: string) => Promise<void>;
   /** Forget a finished flight so the row goes back to normal. */
   clearFlight: (key: string) => void;
-  dismiss: () => void;
   /** Poll a restarting machine's descriptor until it answers on a new version.
    *  Driven by applyProgress; not called directly. */
   watchRestart: (key: string, was: string) => Promise<void>;
@@ -81,7 +79,6 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   checking: {},
   errors: {},
   flights: {},
-  dismissed: false,
 
   fetch: async (key, refresh = false) => {
     set((s) => ({ checking: { ...s.checking, [key]: true } }));
@@ -163,8 +160,6 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       delete flights[key];
       return { flights };
     }),
-
-  dismiss: () => set({ dismissed: true }),
 
   watchRestart: async (key, was) => {
     set((s) => ({

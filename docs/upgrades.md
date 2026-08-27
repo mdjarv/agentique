@@ -45,7 +45,7 @@ POST   /api/update/apply      body {"expect": "v0.5.0"}   (full access)
 DELETE /api/update/apply      cancel: disarm, or abort before replacing
 ```
 
-Reading the status needs only a session, because every client shows the chip.
+Reading the status needs only a session, because every client shows the mark.
 Applying needs **full access**: it replaces this machine's binary and restarts its
 service, and `force` ends every turn in flight. That is at least as privileged as
 reading the machine catalog, so it carries the same guard.
@@ -203,9 +203,43 @@ A local build reports `channel: "dev"`. `git describe --tags --always --dirty`
 yields something like `v0.4.1-7-gab12cd3-dirty`, and a machine you are actively
 developing on must never be told it is behind.
 
-The chip that opens the dialog renders only when a machine is behind, so the
-dialog is the contextual surface. Settings › About is the permanent one and is
-always reachable.
+The mark renders only when a machine is behind, so the popover and the dialog
+behind it are the contextual surfaces. Settings › About is the permanent one and
+is always reachable.
+
+## The footer says it with a mark
+
+`UpdateMark` is a dot on the sidebar footer's usage trigger, and it is neither a
+pill nor an element of its own.
+
+The footer is one 271px line already carrying identity, liveness and the usage
+cluster — and the cluster **grows**, because the set of allowance windows is
+never hardcoded (`docs/usage.md`). A pill spelling "Rebuild available" was the
+longest string on that line: it wrapped to two rows and pushed the codex and disk
+marks outside the sidebar. Everything right of the account name is now
+`shrink-0`, because a mark's width is what it means, and the name is the only
+thing on the line that can give ground.
+
+The words were never the chip's to carry. `UpdatePopoverRows` renders the label,
+the detail **and** the button in the popover one click away, so the pill spent a
+third of the footer duplicating what it fronts. What is irreducible is "there is
+something waiting, here".
+
+It rides the usage trigger rather than sitting beside it, for the reason the
+sidebar's notches ride the chip: a mark at a constant position is found by
+glancing, and one that claims width can push its neighbours off the row. It sits
+**inside** that button — a dot in the gap would be eight pixels of dead target
+next to the control it is about, and every instinct is to click the dot — and is
+`pointer-events-none`, so the click reaches the button under it.
+
+A dot cannot say WHICH kind of thing waits, so the control it rides says it:
+`useUpdateWaiting` hands the footer the sentence for that button's tooltip and
+accessible name. Nothing is hidden from a screen reader by a mark. That trigger
+stays mounted for a machine reporting no windows at all but behind, since it is
+what the mark rides; with neither it would be an empty target and it goes.
+
+The dismissal went with the pill. It existed because a sentence in the footer is
+loud; a dot is not, and an update that can be waved away is one nobody applies.
 
 ## Build wide, enable narrow
 
@@ -273,7 +307,7 @@ recognise — a binary installed from a release, a rebased history, a shallow cl
 `docs/storage.md` applies to Delete.
 
 **A dirty checkout says nothing.** Uncommitted work is not a version, and a tree
-someone is typing in would light the chip permanently. The facts are still
+someone is typing in would light the mark permanently. The facts are still
 reported (`ahead` stays true to the commits); it is the *verdict* that is
 withheld, and `blocker` says why.
 
@@ -287,7 +321,7 @@ the commit the row named.
 ### Three states, three costs
 
 `lib/update-source.ts` is the one closed union that decides what the row says,
-read by the row and by the chip. It ranks by the cheapest **complete** answer,
+read by the row and by the mark. It ranks by the cheapest **complete** answer,
 which is not the same as the cheapest one:
 
 - A staged binary **built from the head** wins outright. A restart is seconds
@@ -468,7 +502,7 @@ starts calling a shared-tree rewrite self-managed.
 | # | Decision | Why |
 |---|---|---|
 | U1 | Each server checks for itself | A machine that cannot reach GitHub cannot upgrade anyway. |
-| U2 | Chip; dismissal dies on reload | Deliberate pressure to update. Nothing about it persists to storage. |
+| U2 | A dot on the usage trigger, no dismissal | A mark is quiet enough not to need silencing, and costs no width on a line that has none. The words are in the popover it opens. |
 | U3 | Per-row action, no bulk | One machine, one button, one visible outcome. |
 | U4 | Arm when idle; override on a second click | See the drain gate. |
 | U5 | Build wide, enable narrow | No Mac or ARM hardware to verify against. |
@@ -489,7 +523,7 @@ starts calling a shared-tree rewrite self-managed.
 | C4 | Knowing and acting are separate | Root-owned installs are knowable and untouchable at the same time. |
 | C5 | Only the tools' own updaters, run by their own libraries | The server has no npm prefix, and never should. |
 | C6 | No drain gate for CLI updates | Not a restart; the CLI already self-updates under live sessions. |
-| C7 | CLIs never drive the footer chip | They ship most days; a permanently lit chip is one nobody reads. |
+| C7 | CLIs never drive the footer mark | They ship most days; a permanently lit mark is one nobody reads. |
 | C8 | `clis` rides `/api/update/status` | Detection is offline and cheap; a second endpoint buys nothing. |
 | C9 | Shadowing is reported, symmetrically | A warning that works for one CLI and not the other teaches false trust. |
 | C10 | `internal/doctor` does not run the CLI | Two answers to "how do I update this" must not differ. |
@@ -506,11 +540,11 @@ starts calling a shared-tree rewrite self-managed.
   from serve's production block, same precedent as the scheduler, so a unit test
   never reaches the network. `release.yml` gained `linux-arm64` and `darwin-arm64`
   and `install.sh` accepts them.
-- **V2, tell.** The footer chip and the dialog, fanned out across machines.
+- **V2, tell.** The footer mark and the dialog, fanned out across machines.
   `useUpdateChecks` re-reads every machine's cached answer on a 15-minute beat and
   immediately when the catalog changes; the servers do the hourly GitHub check and
-  the client only re-reads. Dismissal is a field on an unpersisted store, so a
-  reload brings the chip back and nothing lands in localStorage.
+  the client only re-reads. Nothing about it persists, and nothing can be waved
+  away.
 - **V3, apply.** Preflight, download, verify, replace, restart, plus
   reconnect-and-confirm, per-phase progress, cancel through verification, and
   `agentique rollback`. Verified on throwaway servers with an isolated

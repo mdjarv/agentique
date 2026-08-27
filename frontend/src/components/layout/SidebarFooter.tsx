@@ -1,7 +1,7 @@
 /**
  * Sidebar footer — one line: account identity on the left, the usage cluster on
  * the right, and a reconnecting chip that only exists while the socket is down.
- * Both open one popover.
+ * The account button and the allowance meters open one popover.
  *
  * The cluster is one group per agent — a run of meters, then that vendor's mark
  * (docs/usage.md). Its numbers come from ONE server-side collector rather than
@@ -9,23 +9,36 @@
  * session open and they cover every provider rather than only the one that
  * volunteers events.
  *
+ * It is drawn by two controls, because its two halves lead different places
+ * (`splitMetered`). The allowances open the popover. The disk gauge is a LINK
+ * to /storage — the page it is a level of — so the popover carries no Storage
+ * row: a destination gets one home, and the meter is the better one because it
+ * is also the reason you would go.
+ *
  * The popover is deliberately thin: the meters it fronts, and the way through
  * to everything else. Machines, theme, the Claude account and sign-out moved
  * to /settings once they outgrew a 288px column — a popover is a glance, not
  * a control panel.
+ *
+ * Everything right of the account name is `shrink-0`, and the name truncates.
+ * A mark's width is what it means, and the cluster grows a meter whenever a new
+ * allowance window appears, so the name is the only thing on this line that can
+ * give ground. Without that the row overflowed and pushed the last vendor marks
+ * outside the sidebar.
  */
 import { Link } from "@tanstack/react-router";
-import { Boxes, HardDrive, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Boxes, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { UpdateChip } from "~/components/update/UpdateChip";
 import { UpdateDialog } from "~/components/update/UpdateDialog";
+import { UpdateMark, useUpdateWaiting } from "~/components/update/UpdateMark";
 import { UpdatePopoverRows } from "~/components/update/UpdatePopoverRows";
 import { UsageCluster } from "~/components/usage/UsageCluster";
 import { UsagePanel } from "~/components/usage/UsagePanel";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
 import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
+import { splitMetered } from "~/lib/usage-api";
 import { cn } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
 import { useUpdateStore } from "~/stores/update-store";
@@ -38,7 +51,14 @@ export function SidebarFooter() {
   const connection = useConnectionStatus();
   const doc = useUsageStore((s) => s.doc);
   const version = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]?.current) ?? "";
+  const waiting = useUpdateWaiting();
+  const { allowances, storage } = useMemo(() => splitMetered(doc), [doc]);
   const close = () => setOpen(false);
+
+  // The allowance trigger is also what the update mark rides, so it stays
+  // mounted for a machine that reports no windows at all but is behind. With
+  // neither it would be an empty target, so it goes.
+  const showAllowances = allowances.length > 0 || Boolean(waiting);
 
   // One poll for the whole app, started here because the footer outlives every
   // route. The server holds the cache and does the probing, so this is a cheap
@@ -48,16 +68,15 @@ export function SidebarFooter() {
   return (
     <div className="border-t border-sidebar-border px-2 py-1.5">
       <Popover open={open} onOpenChange={setOpen}>
-        <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <PopoverTrigger asChild>
             <AccountButton />
           </PopoverTrigger>
-          <span className="flex-1" />
-          <UpdateChip />
+          <span className="min-w-0 flex-1" />
           {connection !== "connected" && (
             <span
               className={cn(
-                "rounded-full px-2 py-1 font-mono text-[10px] font-semibold",
+                "shrink-0 rounded-full px-2 py-1 font-mono text-[10px] font-semibold",
                 connection === "reconnecting"
                   ? "animate-pulse bg-warning/15 text-warning motion-reduce:animate-none"
                   : "bg-destructive/15 text-destructive",
@@ -66,15 +85,33 @@ export function SidebarFooter() {
               {connection === "reconnecting" ? "reconnecting" : "disconnected"}
             </span>
           )}
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label="Subscription usage"
-              className="flex h-6 cursor-pointer items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
+          {showAllowances && (
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                // The mark it wears is a dot, so this button says what waits.
+                aria-label={waiting ? `Subscription usage — ${waiting}` : "Subscription usage"}
+                title={waiting ?? undefined}
+                className="relative flex h-6 shrink-0 cursor-pointer items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
+              >
+                <UsageCluster agents={allowances} />
+                {/* Inside the button, not beside it: a mark that sat in the gap
+                    would be 8px of dead pixels next to the control it is about,
+                    and every instinct is to click the dot. */}
+                <UpdateMark className="absolute right-0 top-0" />
+              </button>
+            </PopoverTrigger>
+          )}
+          {storage && (
+            <Link
+              to="/storage"
+              aria-label="Storage"
+              title="Storage"
+              className="flex h-6 shrink-0 items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
             >
-              <UsageCluster doc={doc} />
-            </button>
-          </PopoverTrigger>
+              <UsageCluster agents={[storage]} />
+            </Link>
+          )}
         </div>
         {/* The content grows with what is true: an upgrade row, a window per
             allowance, the disk gauge and the ways out. On a short window that
@@ -105,8 +142,9 @@ export function SidebarFooter() {
               {version}
             </span>
           </button>
+          {/* No Storage row: the disk gauge on the footer line is the way
+              there, and it is the reason you would go. */}
           <NavRow to="/settings" icon={SettingsIcon} label="Settings" onNavigate={close} />
-          <NavRow to="/storage" icon={HardDrive} label="Storage" onNavigate={close} />
         </PopoverContent>
       </Popover>
       {/* The fleet view. The popover carries this machine's verb; a row per
@@ -126,14 +164,14 @@ const AccountButton = ({ ...props }: React.ComponentPropsWithoutRef<"button">) =
     <button
       type="button"
       {...props}
-      className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+      className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
     >
       <Avatar className="h-5 w-5 shrink-0">
         <AvatarFallback className="bg-primary/20 text-primary">
           <User className="h-3 w-3" />
         </AvatarFallback>
       </Avatar>
-      <span className="max-w-[110px] truncate">{name}</span>
+      <span className="min-w-0 max-w-[110px] truncate">{name}</span>
     </button>
   );
 };

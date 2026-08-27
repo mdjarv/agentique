@@ -11,11 +11,16 @@
  *     MISSING agent rather than an unused one.
  *   - When no agent has a usable window, the component renders nothing at all.
  *     A row of zeros is a worse lie than silence.
+ *
+ * It takes the agents to draw rather than the document, because the footer
+ * splits them across two controls: the allowances open the usage popover, and
+ * the disk gauge is a link to Storage — a level has somewhere to go, an
+ * allowance does not. `meteredAgents` stays the caller's filter.
  */
 
 import { agentColor, ProviderMark } from "~/components/usage/ProviderMark";
-import type { UsageDocument } from "~/lib/generated-types";
-import { drawFraction, isGauge, limitTier, meteredAgents, usableLimits } from "~/lib/usage-api";
+import type { UsageAgent } from "~/lib/generated-types";
+import { drawFraction, isGauge, limitTier, usableLimits } from "~/lib/usage-api";
 import { cn } from "~/lib/utils";
 
 /** A meter never drops below this, so "unused" and "absent" stay distinct. */
@@ -26,14 +31,7 @@ const TIER_FILL: Record<string, string> = {
   critical: "var(--destructive)",
 };
 
-export function UsageCluster({
-  doc,
-  className,
-}: {
-  doc: UsageDocument | null;
-  className?: string;
-}) {
-  const agents = meteredAgents(doc);
+export function UsageCluster({ agents, className }: { agents: UsageAgent[]; className?: string }) {
   if (agents.length === 0) return null;
 
   return (
