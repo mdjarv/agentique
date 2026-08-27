@@ -659,10 +659,11 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 		// the first request's "yes", and the reports from a run still in
 		// flight would go nowhere while the listener waited for them.
 		//
-		// So this only means "do not start following". When nothing is being
-		// followed the phase stays "gathering", and the short conversational
-		// idle rule closes the call once they stop talking — the billing guard
-		// does the hanging up, which is why "ping me later" needs no teardown.
+		// So this only means "do not start following". It is not hanging up
+		// either — that is hang_up, a different gesture with its own verb. When
+		// nothing is being followed the phase stays "gathering", so a call the
+		// operator then abandons falls to the short conversational rule rather
+		// than the working ceiling.
 		//
 		// The extra clause rides *inside* the confirmation rather than after it:
 		// the confirmation ends by telling the model to stop and wait, and a
