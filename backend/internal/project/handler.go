@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/allbin/agentkit/worktree"
@@ -39,19 +38,6 @@ type updateProjectRequest struct {
 	Icon            *string                  `json:"icon,omitempty"`
 	Folder          *string                  `json:"folder,omitempty"`
 	MaxSessions     *int64                   `json:"maxSessions,omitempty"`
-}
-
-var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
-var validSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
-
-// Slugify converts a name to a URL-safe lowercase slug.
-func Slugify(name string) string {
-	s := slugRe.ReplaceAllString(strings.ToLower(name), "-")
-	s = strings.Trim(s, "-")
-	if s == "" {
-		return "project"
-	}
-	return s
 }
 
 func (h *Handler) uniqueSlug(r *http.Request, base, excludeID string) (string, error) {
